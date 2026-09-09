@@ -105,6 +105,10 @@ if ($Rust) {
     $targetDir = Join-Path $root 'tmp\build\rust-target'
     $env:CARGO_TARGET_DIR = $targetDir
     $env:TMP = 'C:\Windows\Temp'; $env:TEMP = 'C:\Windows\Temp'; $env:TMPDIR = 'C:\Windows\Temp'
+    $duckdbRoot = Join-Path $root 'core\vendor\duckdb'
+    $env:DUCKDB_INCLUDE_DIR = Join-Path $duckdbRoot 'include'
+    $env:DUCKDB_LIB_DIR = Join-Path $duckdbRoot 'lib\windows-x64'
+    $env:DUCKDB_STATIC = '0'
     $rustDir = Join-Path $root 'rust'
     Log "Building Rust workspace (release, stripped)..."
     Push-Location $rustDir
@@ -126,6 +130,7 @@ if ($Rust) {
     New-Item -ItemType Directory -Force -Path (Join-Path $packagedRoot 'bin') | Out-Null
     Copy-Item (Join-Path $targetDir "release\streamfind-rust-cli.exe") (Join-Path $packagedRoot 'bin')
     Copy-Item (Join-Path $targetDir "release\streamfind-rust-mcp.exe")  (Join-Path $packagedRoot 'bin')
+    Copy-Item (Join-Path $root 'core\vendor\duckdb\lib\windows-x64\duckdb.dll') (Join-Path $packagedRoot 'bin')
     $share = Join-Path $packagedRoot 'share\streamfind'
     New-Item -ItemType Directory -Force -Path $share | Out-Null
     Copy-Item (Join-Path $root 'semantic\generated\catalogue.duckdb') $share

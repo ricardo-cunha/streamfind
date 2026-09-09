@@ -1,4 +1,5 @@
 #include "streamfind/catalogue.hpp"
+#include "streamfind/catalogue_binding.hpp"
 #include "streamfind/mass_spec/mass_spec.hpp"
 #include "streamfind/mass_spec/processing_methods_chromatograms.hpp"
 #include "streamfind/mass_spec/processing_methods_nta.hpp"
@@ -309,78 +310,46 @@ MethodValidator nta_validator(const std::string &id) {
 }
 
 void register_methods(MethodRegistry &registry) {
-    const auto entries = streamfind::catalogue::entries_json();
-    if (!entries) return;
-    for (const auto &entry : *entries) {
-        if (entry.value("domain", "") != "mass_spec" || entry.value("kind", "") != "method") continue;
-        MethodDefinition definition;
-        definition.id = entry.at("canonical_id").get<std::string>();
-        definition.name = definition.id;
-        definition.description = entry.value("definition", entry.value("label", ""));
-        definition.domain = "mass_spec";
-        definition.cacheable = entry.value("cacheable", false);
-        definition.writes = entry.value("effects", Json::object()).value("writes", std::vector<std::string>{});
-        definition.required_methods = entry.value("required_methods", std::vector<std::string>{});
-        definition.single_occurrence = entry.value("single_occurrence", false);
-        for (const auto &item : entry.value("parameters", Json::array())) {
-            ParameterDefinition parameter;
-            parameter.name = item.at("name").get<std::string>();
-            parameter.description = item.value("definition", "");
-            parameter.type = TypeDescriptor::from_json(item.at("schema"));
-            parameter.required = item.value("required", false);
-            parameter.default_value = item.value("default", Json(nullptr));
-            parameter.example = item.value("example", Json(nullptr));
-            definition.parameters.definitions.push_back(std::move(parameter));
-        }
-        const auto id = entry.at("canonical_id").get<std::string>();
-        MethodExecutor executor;
-        if (id == "mass_spec.find_features") executor = processing_methods::find_features;
-        else if (id == "mass_spec.load_features_ms1") executor = processing_methods::load_features_ms1;
-        else if (id == "mass_spec.load_features_ms2") executor = processing_methods::load_features_ms2;
-        else if (id == "mass_spec.subtract_blank") executor = processing_methods::subtract_blank;
-        else if (id == "mass_spec.filter_features") executor = processing_methods::filter_features;
-        else if (id == "mass_spec.filter_features_ms2") executor = processing_methods::filter_features_ms2;
-        else if (id == "mass_spec.group_features") executor = processing_methods::group_features;
-        else if (id == "mass_spec.fill_features") executor = processing_methods::fill_features;
-        else if (id == "mass_spec.create_components") executor = processing_methods::create_components;
-        else if (id == "mass_spec.annotate_components") executor = processing_methods::annotate_components;
-        else if (id == "mass_spec.suspect_screening") executor = processing_methods::suspect_screening;
-        else if (id == "mass_spec.find_internal_standards") executor = processing_methods::find_internal_standards;
-        else if (id == "mass_spec.filter_suspects") executor = processing_methods::filter_suspects;
-        else if (id == "mass_spec.filter_internal_standards") executor = processing_methods::filter_internal_standards;
-        else if (id == "mass_spec.correct_matrix_suppression") executor = processing_methods::correct_matrix_suppression;
-        else if (id == "mass_spec.assign_transformation_products") executor = processing_methods::assign_transformation_products;
-        else if (id == "mass_spec.metfrag_screening") executor = processing_methods::metfrag_screening;
-        else if (id == "mass_spec.load_chromatograms") executor = processing::load_chromatograms;
-        else if (id == "mass_spec.filter_chromatograms_retention_time") executor = processing::filter_chromatograms_retention_time;
-        else continue;
-        registry.register_method(Method(std::move(definition), std::move(executor), detail::nta_validator(id)));
-    }
+    const auto resolver = [](const std::string &id) -> MethodExecutor {
+        if (id == "mass_spec.load_chromatograms") return processing::load_chromatograms;
+        if (id == "mass_spec.filter_chromatograms_retention_time") return processing::filter_chromatograms_retention_time;
+        if (id == "mass_spec.find_features") return processing_methods::find_features;
+        if (id == "mass_spec.load_features_ms1") return processing_methods::load_features_ms1;
+        if (id == "mass_spec.load_features_ms2") return processing_methods::load_features_ms2;
+        if (id == "mass_spec.subtract_blank") return processing_methods::subtract_blank;
+        if (id == "mass_spec.filter_features") return processing_methods::filter_features;
+        if (id == "mass_spec.filter_features_ms2") return processing_methods::filter_features_ms2;
+        if (id == "mass_spec.group_features") return processing_methods::group_features;
+        if (id == "mass_spec.fill_features") return processing_methods::fill_features;
+        if (id == "mass_spec.create_components") return processing_methods::create_components;
+        if (id == "mass_spec.annotate_components") return processing_methods::annotate_components;
+        if (id == "mass_spec.suspect_screening") return processing_methods::suspect_screening;
+        if (id == "mass_spec.find_internal_standards") return processing_methods::find_internal_standards;
+        if (id == "mass_spec.filter_suspects") return processing_methods::filter_suspects;
+        if (id == "mass_spec.filter_internal_standards") return processing_methods::filter_internal_standards;
+        if (id == "mass_spec.correct_matrix_suppression") return processing_methods::correct_matrix_suppression;
+        if (id == "mass_spec.assign_transformation_products") return processing_methods::assign_transformation_products;
+        if (id == "mass_spec.metfrag_screening") return processing_methods::metfrag_screening;
+        return {};
+    };
+    const auto chromatograms = [&resolver](const std::string &id) -> MethodExecutor {
+        if (id == "mass_spec.load_chromatograms" ||
+            id == "mass_spec.filter_chromatograms_retention_time") return resolver(id);
+        return {};
+    };
+    const auto nta = [&resolver](const std::string &id) -> MethodExecutor {
+        if (id == "mass_spec.load_chromatograms" ||
+            id == "mass_spec.filter_chromatograms_retention_time") return {};
+        return resolver(id);
+    };
+    const auto validator = [](const std::string &id) { return detail::nta_validator(id); };
+    streamfind::catalogue::register_methods("mass_spec", registry, chromatograms, validator);
+    streamfind::catalogue::register_methods("mass_spec", registry, nta, validator);
 }
 
 void register_operations(OperationRegistry &registry) {
-    const auto entries = streamfind::catalogue::entries_json();
-    if (!entries) return;
-    for (const auto &entry : *entries) {
-        if (entry.value("domain", "") != "mass_spec" || entry.value("kind", "") != "operation") continue;
-        OperationDefinition definition;
-        const std::string id = entry.at("canonical_id").get<std::string>();
-        const Json result_schema = entry.value("result", Json::object()).value("schema", Json::object());
-        definition.id = id;
-        definition.name = id;
-        definition.domain = "mass_spec";
-        definition.description = entry.value("definition", entry.value("label", ""));
-        for (const auto &item : entry.value("parameters", Json::array())) {
-            ParameterDefinition parameter;
-            parameter.name = item.at("name").get<std::string>();
-            parameter.description = item.value("description", "");
-            parameter.type = TypeDescriptor::from_json(item.at("schema"));
-            parameter.default_value = item.value("default", Json(nullptr));
-            parameter.required = item.value("required", false);
-            parameter.example = item.value("example", Json(nullptr));
-            definition.parameters.definitions.push_back(std::move(parameter));
-        }
-        registry.register_operation(Operation(std::move(definition), [id, result_schema](streamfind::Project &project, const Json &parameters) {
+    const auto resolver = [](const std::string &id, const Json &result_schema) -> OperationExecutor {
+        return [id, result_schema](streamfind::Project &project, const Json &parameters) {
             auto domain = mass_spec::Project(project);
             Json result;
             if (id == "mass_spec.add_analyses") result = domain.add_analyses(parameters);
@@ -408,8 +377,36 @@ void register_operations(OperationRegistry &registry) {
             else if (id == "mass_spec.get_transformation_products") result = domain.get_transformation_products(parameters);
             else result = domain.get_analyses_info(parameters);
             return result_schema.value("type", "") == "table" ? detail::columnar(std::move(result), result_schema) : result;
-        }));
-    }
+        };
+    };
+    const auto base = [&resolver](const std::string &id, const Json &schema) -> OperationExecutor {
+        if (id.rfind("mass_spec.get_chromatograms", 0) == 0 ||
+            id.rfind("mass_spec.get_raw_chromatograms", 0) == 0 ||
+            id.rfind("mass_spec.load_chromatograms", 0) == 0 ||
+            id.rfind("mass_spec.filter_chromatograms", 0) == 0) return {};
+        if (id.rfind("mass_spec.get_features", 0) == 0 ||
+            id.rfind("mass_spec.get_suspects", 0) == 0 ||
+            id.rfind("mass_spec.get_internal_standards", 0) == 0 ||
+            id.rfind("mass_spec.get_transformation_products", 0) == 0) return {};
+        return resolver(id, schema);
+    };
+    const auto chromatograms = [&resolver](const std::string &id, const Json &schema) -> OperationExecutor {
+        if (id.rfind("mass_spec.get_chromatograms", 0) == 0 ||
+            id.rfind("mass_spec.get_raw_chromatograms", 0) == 0 ||
+            id.rfind("mass_spec.load_chromatograms", 0) == 0 ||
+            id.rfind("mass_spec.filter_chromatograms", 0) == 0) return resolver(id, schema);
+        return {};
+    };
+    const auto nta = [&resolver](const std::string &id, const Json &schema) -> OperationExecutor {
+        if (id.rfind("mass_spec.get_features", 0) == 0 ||
+            id.rfind("mass_spec.get_suspects", 0) == 0 ||
+            id.rfind("mass_spec.get_internal_standards", 0) == 0 ||
+            id.rfind("mass_spec.get_transformation_products", 0) == 0) return resolver(id, schema);
+        return {};
+    };
+    streamfind::catalogue::register_operations("mass_spec", registry, base);
+    streamfind::catalogue::register_operations("mass_spec", registry, chromatograms);
+    streamfind::catalogue::register_operations("mass_spec", registry, nta);
 }
 
 }

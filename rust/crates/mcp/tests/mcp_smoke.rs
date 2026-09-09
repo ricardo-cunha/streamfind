@@ -134,7 +134,7 @@ fn session_lifecycle_rebinds_catalogue() {
             &mut session,
             1,
             "create",
-            json!({"database_path": path, "project_id": "mcp", "domain": "mass_spec"})
+            json!({"database_path": path, "domain": "mass_spec"})
         )["result"]["isError"]
             != true
     );
@@ -177,7 +177,7 @@ fn session_lifecycle_rebinds_catalogue() {
         &mut session,
         4,
         "mass_spec.get_analyses_info",
-        json!({"database_path": path, "project_id": "mcp"}),
+        json!({"database_path": path}),
     );
     assert_ne!(
         pre_connect_info["result"]["isError"], true,
@@ -187,7 +187,7 @@ fn session_lifecycle_rebinds_catalogue() {
         &mut session,
         5,
         "mass_spec.get_analyses_info",
-        json!({"database_path": path, "project_id": "mcp"}),
+        json!({"database_path": path}),
     );
     assert_ne!(info["result"]["isError"], true, "{info}");
     assert_eq!(
@@ -209,13 +209,7 @@ fn session_lifecycle_rebinds_catalogue() {
         })
     );
     assert!(
-        call(
-            &mut session,
-            5,
-            "close",
-            json!({"database_path": path, "project_id": "mcp"})
-        )["result"]["isError"]
-            != true
+        call(&mut session, 5, "close", json!({"database_path": path}))["result"]["isError"] != true
     );
     // After close, operations remain advertised because they are stateless;
     // only the connected method context is cleared.

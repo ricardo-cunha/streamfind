@@ -10,16 +10,36 @@ fn fixture() -> Value {
     .unwrap()
 }
 
+fn domain_schema_fixture() -> Value {
+    serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/project/domain_schema_manifest.json"
+    ))
+    .unwrap()
+}
+
 fn database(name: &str) -> PathBuf {
     let path = streamfind_rust_test_support::tmp_projects_dir().join(name);
     let _ = fs::remove_file(&path);
     path
 }
 
+fn install_domain_schema(project: &mut Project) {
+    for table in domain_schema_fixture()["domains"]["mass_spec"]["required_tables"]
+        .as_array()
+        .unwrap()
+    {
+        project
+            .execute_sql(&format!(
+                "CREATE TABLE {} (marker VARCHAR)",
+                table.as_str().unwrap()
+            ))
+            .unwrap();
+    }
+}
+
 fn options(path: PathBuf, fixture: &Value, read_only: bool) -> ProjectOptions {
     ProjectOptions {
         database_path: path,
-        project_id: fixture["project_id"].as_str().unwrap().into(),
         domain: fixture["domain"].as_str().unwrap().into(),
         create_if_missing: false,
         read_only,
@@ -46,7 +66,7 @@ fn shared_fixture_round_trips_project_contract() {
             &fixture["cache"]["value"],
         )
         .unwrap();
-    assert_eq!(project.get_project_id(), fixture["project_id"]);
+    install_domain_schema(&mut project);
     assert_eq!(project.get_domain(), fixture["domain"]);
     assert_eq!(project.get_metadata(), fixture["metadata"]);
     assert_eq!(

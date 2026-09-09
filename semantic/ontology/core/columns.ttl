@@ -2,17 +2,10 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfcore:projectIdColumn
-    a sf:Column ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Project ID" ;
-    skos:definition "Logical project identifier." ;
-    sf:columnName "project_id" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
 
 sfcore:projectDomainColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Domain" ;
     skos:definition "Immutable project domain." ;
@@ -22,6 +15,7 @@ sfcore:projectDomainColumn
 
 sfcore:projectMetadataColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Metadata" ;
     skos:definition "Project metadata JSON." ;
@@ -31,6 +25,7 @@ sfcore:projectMetadataColumn
 
 sfcore:projectWorkflowColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow" ;
     skos:definition "Persisted workflow JSON." ;
@@ -41,6 +36,7 @@ sfcore:projectWorkflowColumn
 
 sfcore:createdAtColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Created at" ;
     skos:definition "Creation timestamp." ;
@@ -48,8 +44,19 @@ sfcore:createdAtColumn
     sf:type "timestamp" ;
     sf:storageType "TIMESTAMP" .
 
+sfcore:updatedAtColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Updated at" ;
+    skos:definition "Last update timestamp." ;
+    sf:columnName "updated_at" ;
+    sf:type "timestamp" ;
+    sf:storageType "TIMESTAMP" .
+
 sfcore:schemaVersionColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Schema version" ;
     skos:definition "Project schema version." ;
@@ -59,6 +66,7 @@ sfcore:schemaVersionColumn
 
 sfcore:frameworkVersionColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Framework version" ;
     skos:definition "streamfind framework version." ;
@@ -68,6 +76,7 @@ sfcore:frameworkVersionColumn
 
 sfcore:cacheNameColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cache name" ;
     skos:definition "Cache entry name." ;
@@ -77,6 +86,7 @@ sfcore:cacheNameColumn
 
 sfcore:cacheDescriptionColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cache description" ;
     skos:definition "Cache entry description." ;
@@ -86,6 +96,7 @@ sfcore:cacheDescriptionColumn
 
 sfcore:cacheHashColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cache hash" ;
     skos:definition "Cache entry content hash." ;
@@ -95,6 +106,7 @@ sfcore:cacheHashColumn
 
 sfcore:cacheDataColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cache data" ;
     skos:definition "Serialized cached result." ;
@@ -104,6 +116,7 @@ sfcore:cacheDataColumn
 
 sfcore:operationTypeColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation type" ;
     skos:definition "Audit operation category." ;
@@ -113,6 +126,7 @@ sfcore:operationTypeColumn
 
 sfcore:objectTypeColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Object type" ;
     skos:definition "Audited object category." ;
@@ -122,6 +136,7 @@ sfcore:objectTypeColumn
 
 sfcore:operationDetailsColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation details" ;
     skos:definition "Audit details JSON." ;
@@ -131,6 +146,7 @@ sfcore:operationDetailsColumn
 
 sfcore:workflowRevisionColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow revision" ;
     skos:definition "Version of the persisted workflow." ;
@@ -140,6 +156,7 @@ sfcore:workflowRevisionColumn
 
 sfcore:stepIndexColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Step index" ;
     skos:definition "Zero-based workflow step index." ;
@@ -147,8 +164,79 @@ sfcore:stepIndexColumn
     sf:type "integer" ;
     sf:storageType "INTEGER" .
 
+sfcore:executionDomainColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Domain ID" ;
+    skos:definition "Immutable project domain associated with the execution." ;
+    sf:columnName "domain_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfcore:launchSnapshotColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Launch snapshot" ;
+    skos:definition "Resolved workflow definition captured when the execution starts." ;
+    sf:columnName "launch_snapshot" ;
+    sf:type "object" ;
+    sf:storageType "JSON" .
+
+sfcore:executionParametersColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Resolved parameters" ;
+    skos:definition "Resolved parameters captured in the workflow execution launch snapshot." ;
+    sf:columnName "parameters" ;
+    sf:type "object" ;
+    sf:storageType "JSON" .
+
+sfcore:executionProgressColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Progress" ;
+    skos:definition "Structured execution progress snapshot." ;
+    sf:columnName "progress" ;
+    sf:type "object" ;
+    sf:storageType "JSON" .
+
+sfcore:resultReferenceColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Result reference" ;
+    skos:definition "Reference to the durable terminal execution result." ;
+    sf:columnName "result_reference" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfcore:processIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Process ID" ;
+    skos:definition "Owning server process identifier." ;
+    sf:columnName "process_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfcore:serverIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Server ID" ;
+    skos:definition "Owning server instance identifier." ;
+    sf:columnName "server_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
 sfcore:executionMethodColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method" ;
     skos:definition "Method executed at this step." ;
@@ -158,6 +246,7 @@ sfcore:executionMethodColumn
 
 sfcore:parameterHashColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Parameter hash" ;
     skos:definition "Hash of resolved step parameters." ;
@@ -167,6 +256,7 @@ sfcore:parameterHashColumn
 
 sfcore:executionStatusColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Status" ;
     skos:definition "pending, running, succeeded, or failed." ;
@@ -176,6 +266,7 @@ sfcore:executionStatusColumn
 
 sfcore:startedAtColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Started at" ;
     skos:definition "Step start timestamp." ;
@@ -185,6 +276,7 @@ sfcore:startedAtColumn
 
 sfcore:completedAtColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Completed at" ;
     skos:definition "Step completion timestamp." ;
@@ -194,6 +286,7 @@ sfcore:completedAtColumn
 
 sfcore:executionErrorColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Execution error" ;
     skos:definition "Failure message, when present." ;
@@ -201,8 +294,29 @@ sfcore:executionErrorColumn
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
+sfcore:stepErrorCodeColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Step error code" ;
+    skos:definition "Canonical error code recorded for a failed workflow step." ;
+    sf:columnName "error_code" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfcore:stepErrorMessageColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Step error message" ;
+    skos:definition "Failure message recorded for a workflow step." ;
+    sf:columnName "error_message" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
 sfcore:cacheKeyColumn
     a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cache key" ;
     skos:definition "Chained deterministic cache key." ;

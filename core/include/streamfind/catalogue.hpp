@@ -42,6 +42,7 @@ STREAMFIND_CORE_API std::optional<Json> tools_json();
 
 /** @brief All entry documents, for the registry auto-registration loops. */
 STREAMFIND_CORE_API std::optional<Json> entries_json();
+STREAMFIND_CORE_API std::optional<Json> table_manifest_json(const std::string &domain);
 
 /**
  * @brief Method contract documents (kind='method'), for available-methods

@@ -302,6 +302,21 @@ enum class STREAMFIND_CORE_API ErrorCode {
     Cancelled,
 };
 
+/** @brief Durable workflow execution lifecycle states. */
+enum class STREAMFIND_CORE_API ExecutionState {
+    queued,
+    running,
+    cancelling,
+    cancelled,
+    completed,
+    failed,
+    interrupted,
+};
+
+/** @brief Return whether a workflow execution lifecycle transition is allowed. */
+STREAMFIND_CORE_API bool valid_execution_transition(ExecutionState from,
+                                                     ExecutionState to) noexcept;
+
 /** @brief Cooperative cancellation state for long-running operations. */
 class STREAMFIND_CORE_API CancellationToken {
 public:
@@ -345,20 +360,14 @@ private:
 struct STREAMFIND_CORE_API ProjectOptions {
     /// DuckDB file to create or open.
     std::filesystem::path database_path;
-    /// Logical project row selected in the database.
-    std::string project_id;
-    /// Optional creation profile identifier.
-    std::optional<std::string> profile_id;
-    bool create_if_missing{false};
-    bool read_only{false};
     /// Domain assigned once when a project is created.
     std::string domain;
+    /// Project-owned metadata initialized on creation.
+    Json metadata{Json::object()};
 };
 
 /** @brief Persisted identity and metadata for an open Project. */
 struct STREAMFIND_CORE_API ProjectInfo {
-    /// Logical project identifier.
-    std::string id;
     /// Domain selected for the project.
     std::string domain;
     /// Project-owned metadata.
@@ -415,7 +424,7 @@ public:
     /** @brief Return a copy of the project metadata. */
     Json get_metadata() const;
     const std::filesystem::path &get_database_path() const noexcept;
-    const std::string &get_project_id() const noexcept;
+
     /** @brief Replace project metadata. */
     void set_metadata(Json metadata);
     /** @brief Return the project domain. */
@@ -425,7 +434,7 @@ public:
     Workflow get_workflow() const;
     /** @brief Persist a workflow using the supplied method registry. */
     void set_workflow(Workflow workflow, const MethodRegistry &registry = methods());
-    /** @brief Copy this project to a new database and project id. */
+    /** @brief Copy this project to a new database. */
     Project copy(const ProjectOptions &options) const;
     /** @brief List tables visible in the project database. */
     std::vector<std::string> list_tables() const;
@@ -469,6 +478,9 @@ public:
     ExecutionResult run_workflow(const MethodRegistry &registry = methods(),
                                  CancellationToken *cancellation = nullptr,
                                  ProgressCallback progress = {});
+    /** @brief Claim, execute, and release one externally-triggered worker run. */
+    Json run_worker(const std::string &worker_id,
+                    const MethodRegistry &registry = methods());
     /** @brief Execute one registered method with supplied parameters. */
     Json run_method(const std::string &method_id, const Json &parameters,
                     const MethodRegistry &registry = methods());
@@ -479,6 +491,23 @@ public:
 
 private:
     std::shared_ptr<Impl> impl_;
+};
+
+/** @brief Durable execution lifecycle operations scoped to one Project. */
+class STREAMFIND_CORE_API WorkflowExecutionManager {
+public:
+    explicit WorkflowExecutionManager(Project &project) noexcept;
+    Json create(const Json &request = Json::object());
+    Json current() const;
+    Json list() const;
+    Json transition(ExecutionState state);
+    Json cancel();
+    Json scheduler_tick(const std::string &worker_id);
+    Json release_worker(const std::string &worker_id, ExecutionState state);
+    std::size_t recover_interrupted();
+
+private:
+    Project *project_;
 };
 
 }

@@ -1,0 +1,26 @@
+{
+  "fixture_id": "domain_schema_manifest",
+  "domains": {
+    "mass_spec": {
+      "required_tables": [
+        "MASS_SPEC_ANALYSES",
+        "MASS_SPEC_SPECTRA_HEADERS",
+        "MASS_SPEC_CHROMATOGRAMS_HEADERS",
+        "MASS_SPEC_CHROMATOGRAMS",
+        "MASS_SPEC_NTA_FEATURES",
+        "MASS_SPEC_NTA_SUSPECTS",
+        "MASS_SPEC_NTA_INTERNAL_STANDARDS",
+        "MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS"
+      ]
+    },
+    "raman": {
+      "required_tables": []
+    },
+    "sensors": {
+      "required_tables": []
+    },
+    "streamfind": {
+      "required_tables": []
+    }
+  }
+}

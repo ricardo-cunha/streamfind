@@ -14,21 +14,18 @@ namespace streamfind::api {
 namespace detail {
 
 ProjectOptions options_from_request(const Json &request, bool read_only = false) {
-    if (!request.is_object() || !request.contains("database_path") || !request.contains("project_id")) {
-        throw Error(ErrorCode::InvalidArgument, "Request requires database_path and project_id");
+    if (!request.is_object() || !request.contains("database_path")) {
+        throw Error(ErrorCode::InvalidArgument, "Request requires database_path");
     }
     ProjectOptions options;
     options.database_path = request.at("database_path").get<std::string>();
-    options.project_id = request.at("project_id").get<std::string>();
     options.domain = request.value("domain", "");
-    options.read_only = read_only;
     return options;
 }
 
 Json descriptor(const Project &project, const MethodRegistry &registry) {
     const auto &info = project.info();
     return {
-        {"project_id", info.id},
         {"domain", info.domain},
         {"metadata", info.metadata.dump()},
         {"schema_version", info.schema_version},
@@ -47,7 +44,7 @@ Json descriptor_table(const Project &project, const MethodRegistry &registry) {
 
 Json workflow_execution_table(const Json &rows) {
     const std::vector<std::string> names = {
-        "project_id", "workflow_revision", "step_index", "method", "parameter_hash",
+        "workflow_revision", "step_index", "method", "parameter_hash",
         "status", "started_at", "completed_at", "error", "cache_key"};
     Json columns = Json::object();
     for (const auto &name : names) columns[name] = Json::array();
@@ -98,6 +95,11 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "describe") return ProjectCommand::describe;
     if (name == "get_workflow") return ProjectCommand::get_workflow;
     if (name == "get_workflow_execution") return ProjectCommand::get_workflow_execution;
+    if (name == "create_workflow_execution") return ProjectCommand::create_workflow_execution;
+    if (name == "get_execution") return ProjectCommand::get_execution;
+    if (name == "list_executions") return ProjectCommand::list_executions;
+    if (name == "transition_execution") return ProjectCommand::transition_execution;
+    if (name == "cancel_execution") return ProjectCommand::cancel_execution;
     if (name == "set_workflow") return ProjectCommand::set_workflow;
     if (name == "add_method") return ProjectCommand::add_method;
     if (name == "remove_method") return ProjectCommand::remove_method;
@@ -157,13 +159,12 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         return project.run_method(request.at("method").get<std::string>(), request.value("parameters", Json::object()), registry);
     }
     case ProjectCommand::copy: {
-        if (!request.contains("destination_database_path") || !request.contains("destination_project_id")) {
-            throw Error(ErrorCode::InvalidArgument, "Request requires destination_database_path and destination_project_id");
+        if (!request.contains("destination_database_path")) {
+            throw Error(ErrorCode::InvalidArgument, "Request requires destination_database_path");
         }
         auto source = Project::open(detail::options_from_request(request, true));
         ProjectOptions destination_options;
         destination_options.database_path = request.at("destination_database_path").get<std::string>();
-        destination_options.project_id = request.at("destination_project_id").get<std::string>();
         auto destination = source.copy(destination_options);
         return detail::descriptor_table(destination, registry);
     }
@@ -177,6 +178,36 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
     }
     case ProjectCommand::get_workflow_execution:
         return detail::workflow_execution_table(Project::open(detail::options_from_request(request, true)).get_workflow_execution());
+    case ProjectCommand::create_workflow_execution: {
+        auto project = Project::open(detail::options_from_request(request));
+        return WorkflowExecutionManager(project).create(request);
+    }
+    case ProjectCommand::get_execution: {
+        auto project = Project::open(detail::options_from_request(request, true));
+        return WorkflowExecutionManager(project).current();
+    }
+    case ProjectCommand::list_executions: {
+        auto project = Project::open(detail::options_from_request(request, true));
+        return WorkflowExecutionManager(project).list();
+    }
+    case ProjectCommand::transition_execution: {
+        auto project = Project::open(detail::options_from_request(request));
+        const auto status = request.at("status").get<std::string>();
+        ExecutionState state;
+        if (status == "queued") state = ExecutionState::queued;
+        else if (status == "running") state = ExecutionState::running;
+        else if (status == "cancelling") state = ExecutionState::cancelling;
+        else if (status == "cancelled") state = ExecutionState::cancelled;
+        else if (status == "completed") state = ExecutionState::completed;
+        else if (status == "failed") state = ExecutionState::failed;
+        else if (status == "interrupted") state = ExecutionState::interrupted;
+        else throw Error(ErrorCode::InvalidArgument, "unknown execution state");
+        return WorkflowExecutionManager(project).transition(state);
+    }
+    case ProjectCommand::cancel_execution: {
+        auto project = Project::open(detail::options_from_request(request));
+        return WorkflowExecutionManager(project).cancel();
+    }
     case ProjectCommand::add_method: {
         if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
         auto project = Project::open(detail::options_from_request(request));
@@ -199,7 +230,10 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
     }
     case ProjectCommand::run_workflow: {
         auto project = Project::open(detail::options_from_request(request));
-        return {{"result", project.run_workflow(registry).to_json()}, {"workflow", detail::workflow_table(project.get_workflow(), registry)}};
+        const Json result = request.contains("worker_id")
+            ? project.run_worker(request.at("worker_id").get<std::string>(), registry)
+            : project.run_workflow(registry).to_json();
+        return {{"result", result}, {"workflow", detail::workflow_table(project.get_workflow(), registry)}};
     }
     case ProjectCommand::get_metadata:
         return detail::metadata_table(Project::open(detail::options_from_request(request, true)).get_metadata());

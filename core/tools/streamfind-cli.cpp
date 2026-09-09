@@ -1,7 +1,7 @@
 // streamfind-cli — minimal command-line interface for the C++ core, mirroring
 // the Rust CLI (rust/crates/cli). Commands:
-//   streamfind-cli create               --database-path <path> --project-id <id> [--domain <d>]
-//   streamfind-cli describe             --database-path <path> --project-id <id>
+//   streamfind-cli create               --database-path <path> [--domain <d>]
+//   streamfind-cli describe             --database-path <path>
 //   streamfind-cli tools status|install|install-java|install-metfrag
 // The tools subcommands manage the user-scoped ~/.streamfind external-tools
 // layout (Java/Temurin JDK 21 + MetFragCL), mirroring bindings/r.
@@ -57,20 +57,17 @@ int main(int argc, char **argv) {
         const std::string command = args.empty() ? "describe" : args[0];
         streamfind::ProjectOptions options;
         options.database_path = option(args, "--database-path");
-        options.project_id = option(args, "--project-id");
-        for (size_t i = 0; i + 1 < args.size(); ++i)
+                for (size_t i = 0; i + 1 < args.size(); ++i)
             if (args[i] == "--domain") options.domain = args[i + 1];
-        options.create_if_missing = false;
-        options.read_only = command == "describe";
-        if (command == "create") {
+                if (command == "create") {
             auto project = streamfind::Project::create(options);
             const auto &info = project.info();
-            std::cout << "{\"id\":\"" << info.id << "\",\"domain\":\"" << info.domain
+            std::cout << "{\"domain\":\"" << info.domain << "\",\"domain\":\"" << info.domain
                       << "\",\"metadata\":" << info.metadata.dump() << "}\n";
         } else {
             auto project = streamfind::Project::open(options);
             const auto &info = project.info();
-            std::cout << "{\"id\":\"" << info.id << "\",\"domain\":\"" << info.domain
+            std::cout << "{\"domain\":\"" << info.domain << "\",\"domain\":\"" << info.domain
                       << "\",\"metadata\":" << info.metadata.dump() << "}\n";
         }
         return 0;

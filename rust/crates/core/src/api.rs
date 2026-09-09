@@ -11,11 +11,6 @@ fn options(request: &Json, read_only: bool) -> Result<ProjectOptions> {
                 .and_then(Json::as_str)
                 .ok_or_else(|| Error::new(ErrorCode::InvalidArgument, "missing database_path"))?,
         ),
-        project_id: request
-            .get("project_id")
-            .and_then(Json::as_str)
-            .ok_or_else(|| Error::new(ErrorCode::InvalidArgument, "missing project_id"))?
-            .into(),
         domain: request
             .get("domain")
             .and_then(Json::as_str)
@@ -28,7 +23,6 @@ fn options(request: &Json, read_only: bool) -> Result<ProjectOptions> {
 
 fn descriptor(project: &Project) -> Result<Json> {
     let row = json!({
-        "project_id": project.info().id,
         "domain": project.info().domain,
         "metadata": project.info().metadata.to_string(),
         "schema_version": project.info().schema_version,
@@ -55,7 +49,6 @@ fn workflow_table(workflow: &crate::Workflow) -> Json {
 
 fn workflow_execution_table(rows: &Json) -> Json {
     let names = [
-        "project_id",
         "workflow_revision",
         "step_index",
         "method",
@@ -122,6 +115,50 @@ pub fn get_workflow_execution(request: &Json) -> Result<Json> {
     Ok(workflow_execution_table(&rows))
 }
 
+pub fn create_workflow_execution(request: &Json) -> Result<Json> {
+    let project = Project::open(options(request, false)?)?;
+    crate::WorkflowExecutionManager::new(&project).create(request)
+}
+
+pub fn get_execution(request: &Json) -> Result<Json> {
+    let project = Project::open(options(request, true)?)?;
+    crate::WorkflowExecutionManager::new(&project).current()
+}
+
+pub fn list_executions(request: &Json) -> Result<Json> {
+    let project = Project::open(options(request, true)?)?;
+    crate::WorkflowExecutionManager::new(&project).list()
+}
+
+pub fn transition_execution(request: &Json) -> Result<Json> {
+    let project = Project::open(options(request, false)?)?;
+    let status = request
+        .get("status")
+        .and_then(Json::as_str)
+        .ok_or_else(|| Error::new(ErrorCode::InvalidArgument, "missing status"))?;
+    let state = match status {
+        "queued" => crate::ExecutionState::Queued,
+        "running" => crate::ExecutionState::Running,
+        "cancelling" => crate::ExecutionState::Cancelling,
+        "cancelled" => crate::ExecutionState::Cancelled,
+        "completed" => crate::ExecutionState::Completed,
+        "failed" => crate::ExecutionState::Failed,
+        "interrupted" => crate::ExecutionState::Interrupted,
+        _ => {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "unknown execution state",
+            ))
+        }
+    };
+    crate::WorkflowExecutionManager::new(&project).transition(state)
+}
+
+pub fn cancel_execution(request: &Json) -> Result<Json> {
+    let project = Project::open(options(request, false)?)?;
+    crate::WorkflowExecutionManager::new(&project).cancel()
+}
+
 pub fn validate_workflow(request: &Json, registry: &crate::MethodRegistry) -> Result<Json> {
     let workflow = crate::Workflow::from_json(
         request
@@ -180,11 +217,14 @@ pub fn remove_method(request: &Json, registry: &crate::MethodRegistry) -> Result
 }
 
 pub fn run_workflow(request: &Json, registry: &crate::MethodRegistry) -> Result<Json> {
+    let mut project = Project::open(options(request, false)?)?;
+    if let Some(worker_id) = request.get("worker_id").and_then(Json::as_str) {
+        return project.run_worker(worker_id, registry);
+    }
     let workflow = match request.get("workflow") {
         Some(value) => crate::Workflow::from_json(value)?,
-        None => Project::open(options(request, true)?)?.get_workflow()?,
+        None => project.get_workflow()?,
     };
-    let mut project = Project::open(options(request, false)?)?;
     Ok(project
         .run_workflow(&workflow, registry, None, None)?
         .to_json())
@@ -222,13 +262,8 @@ pub fn copy(request: &Json) -> Result<Json> {
                 "missing destination_database_path",
             )
         })?;
-    let destination_id = request
-        .get("destination_project_id")
-        .and_then(Json::as_str)
-        .ok_or_else(|| Error::new(ErrorCode::InvalidArgument, "missing destination_project_id"))?;
     let destination = source.copy(ProjectOptions {
         database_path: PathBuf::from(destination_path),
-        project_id: destination_id.into(),
         domain: String::new(),
         create_if_missing: false,
         read_only: false,
@@ -237,11 +272,9 @@ pub fn copy(request: &Json) -> Result<Json> {
         .get_database_path()
         .to_string_lossy()
         .into_owned();
-    let destination_id = destination.get_project_id().to_owned();
     drop(destination);
     describe(&json!({
-        "database_path": destination_path,
-        "project_id": destination_id
+        "database_path": destination_path
     }))
 }
 

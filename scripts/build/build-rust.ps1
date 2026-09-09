@@ -25,6 +25,7 @@ param(
 . "$PSScriptRoot\build-common.ps1"
 Start-ScriptLog 'build-rust'
 Invoke-SemanticChecks
+Invoke-VcvarsAll -Arch 'x64'
 
 $cargo     = Get-Cargo
 $targetDir = Join-Path $Script:TMP_BUILD 'rust-target'
@@ -36,6 +37,16 @@ if (-not (Test-Path (Join-Path $workspace 'Cargo.toml'))) {
 
 # Centralize cargo artifacts under tmp/ (AGENTS.md) regardless of .cargo config.
 $env:CARGO_TARGET_DIR = $targetDir
+
+# On Windows, use the repository's C++ DuckDB package instead of compiling a
+# second engine through libduckdb-sys. The Windows dependency intentionally
+# omits DuckDB features that force the bundled build (for example `json`).
+if ($env:OS -eq 'Windows_NT') {
+    $duckdbRoot = Join-Path $Script:REPO_ROOT 'core\vendor\duckdb'
+    $env:DUCKDB_INCLUDE_DIR = Join-Path $duckdbRoot 'include'
+    $env:DUCKDB_LIB_DIR = Join-Path $duckdbRoot 'lib\windows-x64'
+    $env:DUCKDB_STATIC = '0'
+}
 
 if ($Clean -and (Test-Path $targetDir)) {
     Write-Log "Cleaning cargo target dir: $targetDir"

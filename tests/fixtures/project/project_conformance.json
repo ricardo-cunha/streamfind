@@ -1,7 +1,6 @@
 {
-  "project_id": "conformance",
   "domain": "mass_spec",
-  "metadata": {"owner": "conformance", "version": 1},
+  "metadata": {"id": "conformance", "owner": "conformance", "version": 1},
   "workflow": [],
   "cache": {
     "name": "fixture",

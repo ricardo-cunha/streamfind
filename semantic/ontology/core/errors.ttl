@@ -13,5 +13,5 @@ sfcore:projectNotFound
     a sf:Error ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project not found" ;
-    skos:definition "The requested project database or project identifier does not exist." ;
+    skos:definition "The requested project database does not exist." ;
     sf:errorCode "ProjectNotFound" .

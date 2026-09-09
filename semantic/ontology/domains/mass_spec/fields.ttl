@@ -5,6 +5,7 @@
 
 sfms:updatedField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Updated row count" ;
     skos:definition "Number of analysis rows updated by a metadata operation." ;
@@ -13,6 +14,7 @@ sfms:updatedField
 
 sfms:targetIdField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target identifier" ;
     skos:definition "Stable identifier returned with rows matched to this target." ;
@@ -23,6 +25,7 @@ sfms:targetIdField
 
 sfms:targetAnalysesField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target analyses" ;
     skos:definition "Optional canonical analysis names to match. Use names returned by mass_spec.get_analysis_names; omit to search all analyses selected by the operation." ;
@@ -34,6 +37,7 @@ sfms:targetAnalysesField
 
 sfms:targetPolarityField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target polarity" ;
     skos:definition "Optional ion polarity for this target: 1 for positive ions or -1 for negative ions." ;
@@ -44,6 +48,7 @@ sfms:targetPolarityField
 
 sfms:targetLevelsField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target MS levels" ;
     skos:definition "Optional MS levels to match for this target, normally 1 for precursor/MS1 data or 2 for fragment/MS2 data." ;
@@ -55,6 +60,7 @@ sfms:targetLevelsField
 
 sfms:targetMassField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target neutral mass" ;
     skos:definition "Exact neutral monoisotopic mass in daltons. The operation converts it to m/z using charge and polarity when needed." ;
@@ -65,6 +71,7 @@ sfms:targetMassField
 
 sfms:targetMassMinField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum target neutral mass" ;
     skos:definition "Inclusive lower neutral monoisotopic-mass bound in daltons." ;
@@ -75,6 +82,7 @@ sfms:targetMassMinField
 
 sfms:targetMassMaxField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum target neutral mass" ;
     skos:definition "Inclusive upper neutral monoisotopic-mass bound in daltons." ;
@@ -85,6 +93,7 @@ sfms:targetMassMaxField
 
 sfms:targetMzField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target m/z" ;
     skos:definition "Exact measured ion m/z in Thomson. The operation expands an exact value by ppm tolerance." ;
@@ -95,6 +104,7 @@ sfms:targetMzField
 
 sfms:targetMzMinField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum target m/z" ;
     skos:definition "Lower m/z bound." ;
@@ -105,6 +115,7 @@ sfms:targetMzMinField
 
 sfms:targetMzMaxField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum target m/z" ;
     skos:definition "Upper m/z bound." ;
@@ -115,6 +126,7 @@ sfms:targetMzMaxField
 
 sfms:targetRtField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target retention time" ;
     skos:definition "Exact retention time." ;
@@ -125,6 +137,7 @@ sfms:targetRtField
 
 sfms:targetRtMinField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum target retention time" ;
     skos:definition "Lower retention-time bound." ;
@@ -135,6 +148,7 @@ sfms:targetRtMinField
 
 sfms:targetRtMaxField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum target retention time" ;
     skos:definition "Upper retention-time bound." ;
@@ -145,6 +159,7 @@ sfms:targetRtMaxField
 
 sfms:suspectNameField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect name" ;
     skos:definition "Suspect display name used in assignment rows and filtering; an alias of the target identifier." ;
@@ -155,6 +170,7 @@ sfms:suspectNameField
 
 sfms:suspectFormulaField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect formula" ;
     skos:definition "Molecular formula; used to derive exact mass when mass/mz are absent." ;
@@ -165,6 +181,7 @@ sfms:suspectFormulaField
 
 sfms:suspectSmilesField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect SMILES" ;
     skos:definition "SMILES string used with Open Babel to derive formula, exact mass, and identifiers." ;
@@ -175,6 +192,7 @@ sfms:suspectSmilesField
 
 sfms:suspectInChIField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect InChI" ;
     skos:definition "IUPAC InChI used with Open Babel when SMILES is absent." ;
@@ -184,6 +202,7 @@ sfms:suspectInChIField
 
 sfms:suspectInChIKeyField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect InChIKey" ;
     skos:definition "InChIKey hash; replaced by the Open Babel value when normalised." ;
@@ -193,6 +212,7 @@ sfms:suspectInChIKeyField
 
 sfms:suspectXLogPField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect xLogP" ;
     skos:definition "Predicted log P; replaced by the Open Babel value when normalised." ;
@@ -203,6 +223,7 @@ sfms:suspectXLogPField
 
 sfms:suspectScoreField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect score" ;
     skos:definition "Optional user-assigned base score stored on every assignment row." ;
@@ -213,6 +234,7 @@ sfms:suspectScoreField
 
 sfms:suspectDatabaseIdField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect database identifier" ;
     skos:definition "External database identifier carried through to assignment rows." ;
@@ -222,6 +244,7 @@ sfms:suspectDatabaseIdField
 
 sfms:suspectFragmentsMzPosField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Positive-mode fragment m/z" ;
     skos:definition "Positive-mode MS2 fragment m/z values paired with fragments_intensity_pos." ;
@@ -233,6 +256,7 @@ sfms:suspectFragmentsMzPosField
 
 sfms:suspectFragmentsIntensityPosField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Positive-mode fragment intensities" ;
     skos:definition "Positive-mode MS2 fragment intensities paired with fragments_mz_pos." ;
@@ -244,6 +268,7 @@ sfms:suspectFragmentsIntensityPosField
 
 sfms:suspectFragmentsMzNegField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Negative-mode fragment m/z" ;
     skos:definition "Negative-mode MS2 fragment m/z values paired with fragments_intensity_neg." ;
@@ -255,6 +280,7 @@ sfms:suspectFragmentsMzNegField
 
 sfms:suspectFragmentsIntensityNegField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Negative-mode fragment intensities" ;
     skos:definition "Negative-mode MS2 fragment intensities paired with fragments_mz_neg." ;
@@ -266,6 +292,7 @@ sfms:suspectFragmentsIntensityNegField
 
 sfms:tpProductNameField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Name" ;
     skos:definition "Transformation-product candidate field name." ;
@@ -276,6 +303,7 @@ sfms:tpProductNameField
 
 sfms:tpTransformationField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Transformation" ;
     skos:definition "Transformation-product candidate field transformation." ;
@@ -286,6 +314,7 @@ sfms:tpTransformationField
 
 sfms:tpPrecursorNameField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Name" ;
     skos:definition "Transformation-product candidate field precursor_name." ;
@@ -296,6 +325,7 @@ sfms:tpPrecursorNameField
 
 sfms:tpPrecursorFormulaField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Formula" ;
     skos:definition "Transformation-product candidate field precursor_formula." ;
@@ -306,6 +336,7 @@ sfms:tpPrecursorFormulaField
 
 sfms:tpPrecursorMassField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Mass" ;
     skos:definition "Transformation-product candidate field precursor_mass." ;
@@ -316,6 +347,7 @@ sfms:tpPrecursorMassField
 
 sfms:tpPrecursorSmilesField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Smiles" ;
     skos:definition "Transformation-product candidate field precursor_SMILES." ;
@@ -326,6 +358,7 @@ sfms:tpPrecursorSmilesField
 
 sfms:tpPrecursorInChIField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Inchi" ;
     skos:definition "Transformation-product candidate field precursor_InChI." ;
@@ -336,6 +369,7 @@ sfms:tpPrecursorInChIField
 
 sfms:tpPrecursorInChIKeyField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Inchikey" ;
     skos:definition "Transformation-product candidate field precursor_InChIKey." ;
@@ -346,6 +380,7 @@ sfms:tpPrecursorInChIKeyField
 
 sfms:tpPrecursorXLogPField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor Xlogp" ;
     skos:definition "Transformation-product candidate field precursor_xLogP." ;
@@ -356,6 +391,7 @@ sfms:tpPrecursorXLogPField
 
 sfms:tpMainPrecursorNameField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Name" ;
     skos:definition "Transformation-product candidate field main_precursor_name." ;
@@ -366,6 +402,7 @@ sfms:tpMainPrecursorNameField
 
 sfms:tpMainPrecursorFormulaField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Formula" ;
     skos:definition "Transformation-product candidate field main_precursor_formula." ;
@@ -376,6 +413,7 @@ sfms:tpMainPrecursorFormulaField
 
 sfms:tpMainPrecursorMassField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Mass" ;
     skos:definition "Transformation-product candidate field main_precursor_mass." ;
@@ -386,6 +424,7 @@ sfms:tpMainPrecursorMassField
 
 sfms:tpMainPrecursorSmilesField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Smiles" ;
     skos:definition "Transformation-product candidate field main_precursor_SMILES." ;
@@ -396,6 +435,7 @@ sfms:tpMainPrecursorSmilesField
 
 sfms:tpMainPrecursorInChIField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Inchi" ;
     skos:definition "Transformation-product candidate field main_precursor_InChI." ;
@@ -406,6 +446,7 @@ sfms:tpMainPrecursorInChIField
 
 sfms:tpMainPrecursorInChIKeyField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Inchikey" ;
     skos:definition "Transformation-product candidate field main_precursor_InChIKey." ;
@@ -416,6 +457,7 @@ sfms:tpMainPrecursorInChIKeyField
 
 sfms:tpMainPrecursorXLogPField
     a sf:Field ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main Precursor Xlogp" ;
     skos:definition "Transformation-product candidate field main_precursor_xLogP." ;

@@ -680,9 +680,8 @@ where
     }
 }
 
-fn row_sql(project: &str, f: &Feature) -> String {
+fn row_sql(f: &Feature) -> String {
     let mut vals = vec![
-        sql(project),
         sql(&f.analysis),
         sql(&f.feature),
         "NULL".into(),
@@ -805,21 +804,16 @@ pub fn find_features(project: &mut Project, p: &Value) -> Result<Value> {
         .get("base_quantile")
         .and_then(Value::as_f64)
         .unwrap_or(0.1) as f32;
-    let project_id = project.get_project_id();
-    let schema="CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_FEATURES (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_component VARCHAR, feature_group VARCHAR, adduct VARCHAR, rt DOUBLE, mz DOUBLE, mass DOUBLE, intensity DOUBLE, noise DOUBLE, sn DOUBLE, area DOUBLE, trace_count INTEGER, rtmin DOUBLE, rtmax DOUBLE, width DOUBLE, mzmin DOUBLE, mzmax DOUBLE, ppm DOUBLE, fwhm_rt DOUBLE, fwhm_mz DOUBLE, gaussian_A DOUBLE, gaussian_mu DOUBLE, gaussian_sigma DOUBLE, gaussian_r2 DOUBLE, jaggedness DOUBLE, sharpness DOUBLE, asymmetry DOUBLE, modality INTEGER, plates DOUBLE, polarity INTEGER, filtered BOOLEAN, filter VARCHAR, filled BOOLEAN, correction DOUBLE, eic_size INTEGER, eic_rt VARCHAR, eic_mz VARCHAR, eic_intensity VARCHAR, eic_baseline VARCHAR, eic_smoothed VARCHAR, ms1_size INTEGER, ms1_mz VARCHAR, ms1_intensity VARCHAR, ms2_size INTEGER, ms2_mz VARCHAR, ms2_intensity VARCHAR, annotation_category VARCHAR, annotation_type VARCHAR, annotation_parent_feature VARCHAR, annotation_element VARCHAR, annotation_mass_error_da DOUBLE, annotation_mass_error_ppm DOUBLE, annotation_rt_error DOUBLE, annotation_rel_intensity DOUBLE, annotation_expected_rel_intensity_min DOUBLE, annotation_expected_rel_intensity_max DOUBLE, annotation_score DOUBLE, component_size INTEGER, component_rt_center DOUBLE, component_rt_spread DOUBLE, component_density DOUBLE, component_mean_correlation DOUBLE, component_best_partner VARCHAR, component_max_correlation DOUBLE, component_mean_correlation_to_component DOUBLE, component_membership_score DOUBLE, component_is_core BOOLEAN, component_bridge_flag BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))";
+    let schema="CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_FEATURES (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_component VARCHAR, feature_group VARCHAR, adduct VARCHAR, rt DOUBLE, mz DOUBLE, mass DOUBLE, intensity DOUBLE, noise DOUBLE, sn DOUBLE, area DOUBLE, trace_count INTEGER, rtmin DOUBLE, rtmax DOUBLE, width DOUBLE, mzmin DOUBLE, mzmax DOUBLE, ppm DOUBLE, fwhm_rt DOUBLE, fwhm_mz DOUBLE, gaussian_A DOUBLE, gaussian_mu DOUBLE, gaussian_sigma DOUBLE, gaussian_r2 DOUBLE, jaggedness DOUBLE, sharpness DOUBLE, asymmetry DOUBLE, modality INTEGER, plates DOUBLE, polarity INTEGER, filtered BOOLEAN, filter VARCHAR, filled BOOLEAN, correction DOUBLE, eic_size INTEGER, eic_rt VARCHAR, eic_mz VARCHAR, eic_intensity VARCHAR, eic_baseline VARCHAR, eic_smoothed VARCHAR, ms1_size INTEGER, ms1_mz VARCHAR, ms1_intensity VARCHAR, ms2_size INTEGER, ms2_mz VARCHAR, ms2_intensity VARCHAR, annotation_category VARCHAR, annotation_type VARCHAR, annotation_parent_feature VARCHAR, annotation_element VARCHAR, annotation_mass_error_da DOUBLE, annotation_mass_error_ppm DOUBLE, annotation_rt_error DOUBLE, annotation_rel_intensity DOUBLE, annotation_expected_rel_intensity_min DOUBLE, annotation_expected_rel_intensity_max DOUBLE, annotation_score DOUBLE, component_size INTEGER, component_rt_center DOUBLE, component_rt_spread DOUBLE, component_density DOUBLE, component_mean_correlation DOUBLE, component_best_partner VARCHAR, component_max_correlation DOUBLE, component_mean_correlation_to_component DOUBLE, component_membership_score DOUBLE, component_is_core BOOLEAN, component_bridge_flag BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))";
     project.execute_sql(schema)?;
-    project.execute_sql(&format!(
-        "DELETE FROM MASS_SPEC_NTA_FEATURES WHERE project_id={}",
-        sql(&project_id)
-    ))?;
+    project.execute_sql(&format!("DELETE FROM MASS_SPEC_NTA_FEATURES"))?;
     let wanted = p
         .get("analysis_names")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     let rows = project.query_json(&format!(
-        "SELECT analysis,file_path,analysis_index FROM MASS_SPEC_ANALYSES WHERE project_id={} ORDER BY analysis",
-        sql(&project_id)
+        "SELECT analysis,file_path,analysis_index FROM MASS_SPEC_ANALYSES ORDER BY analysis",
     ))?;
     for (analysis_index, row) in rows.as_array().into_iter().flatten().enumerate() {
         let name = row["analysis"].as_str().unwrap_or_default();
@@ -956,12 +950,7 @@ pub fn find_features(project: &mut Project, p: &Value) -> Result<Value> {
             eprintln!("[find_features] {} {} features", label, features.len());
             let values = features
                 .iter()
-                .map(|f| {
-                    format!(
-                        "({}, NULL, NULL, CURRENT_TIMESTAMP)",
-                        row_sql(&project_id, f)
-                    )
-                })
+                .map(|f| format!("({}, NULL, NULL, CURRENT_TIMESTAMP)", row_sql(&f)))
                 .collect::<Vec<_>>();
             if !values.is_empty() {
                 project.execute_sql(&format!(
@@ -1117,16 +1106,13 @@ pub fn load_features_ms1(project: &mut Project, p: &Value) -> Result<Value> {
     let presence = p.get("presence").and_then(Value::as_f64).unwrap_or(0.8) as f32;
     let has_rt = rt_window.len() >= 2;
     let has_mz = mz_window.len() >= 2;
-
-    let project_id = project.get_project_id();
     let wanted = p
         .get("analysis_names")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     let rows = project.query_json(&format!(
-        "SELECT analysis, feature, rt, mz, rtmin, rtmax, mzmin, mzmax, polarity, filtered FROM MASS_SPEC_NTA_FEATURES WHERE project_id={} ORDER BY analysis, feature",
-        sql(&project_id)
+        "SELECT analysis, feature, rt, mz, rtmin, rtmax, mzmin, mzmax, polarity, filtered FROM MASS_SPEC_NTA_FEATURES ORDER BY analysis, feature"
     ))?;
     let mut updated = 0usize;
     let mut per_analysis: std::collections::BTreeMap<String, Vec<Value>> =
@@ -1140,8 +1126,7 @@ pub fn load_features_ms1(project: &mut Project, p: &Value) -> Result<Value> {
     }
     for (analysis, frows) in per_analysis {
         let fs = project.query_json(&format!(
-            "SELECT file_path, analysis_index FROM MASS_SPEC_ANALYSES WHERE project_id={} AND analysis={}",
-            sql(&project_id),
+            "SELECT file_path, analysis_index FROM MASS_SPEC_ANALYSES WHERE analysis={}",
             sql(&analysis)
         ))?;
         let (file, analysis_index) = match fs.as_array().and_then(|a| a.first()) {
@@ -1241,11 +1226,10 @@ pub fn load_features_ms1(project: &mut Project, p: &Value) -> Result<Value> {
             let ints: Vec<f32> = clustered.iter().map(|x| x.1).collect();
             let n = mzs.len();
             updates.push(format!(
-                "UPDATE MASS_SPEC_NTA_FEATURES SET ms1_size={}, ms1_mz={}, ms1_intensity={} WHERE project_id={} AND analysis={} AND feature={}",
+                "UPDATE MASS_SPEC_NTA_FEATURES SET ms1_size={}, ms1_mz={}, ms1_intensity={} WHERE analysis={} AND feature={}",
                 n,
                 sql(&encode(&mzs)),
                 sql(&encode(&ints)),
-                sql(&project_id),
                 sql(&analysis),
                 sql(&feature)
             ));
@@ -1283,16 +1267,13 @@ pub fn load_features_ms2(project: &mut Project, p: &Value) -> Result<Value> {
         .unwrap_or(1.3) as f32;
     let mz_clust = p.get("mz_clust").and_then(Value::as_f64).unwrap_or(0.005) as f32;
     let presence = p.get("presence").and_then(Value::as_f64).unwrap_or(0.8) as f32;
-
-    let project_id = project.get_project_id();
     let wanted = p
         .get("analysis_names")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     let rows = project.query_json(&format!(
-        "SELECT analysis, feature, rt, mz, rtmin, rtmax, polarity, filtered FROM MASS_SPEC_NTA_FEATURES WHERE project_id={} ORDER BY analysis, feature",
-        sql(&project_id)
+        "SELECT analysis, feature, rt, mz, rtmin, rtmax, polarity, filtered FROM MASS_SPEC_NTA_FEATURES ORDER BY analysis, feature",
     ))?;
     let mut updated = 0usize;
     let mut per_analysis: std::collections::BTreeMap<String, Vec<Value>> =
@@ -1306,8 +1287,7 @@ pub fn load_features_ms2(project: &mut Project, p: &Value) -> Result<Value> {
     }
     for (analysis, frows) in per_analysis {
         let fs = project.query_json(&format!(
-            "SELECT file_path, analysis_index FROM MASS_SPEC_ANALYSES WHERE project_id={} AND analysis={}",
-            sql(&project_id),
+            "SELECT file_path, analysis_index FROM MASS_SPEC_ANALYSES WHERE analysis={}",
             sql(&analysis)
         ))?;
         let (file, analysis_index) = match fs.as_array().and_then(|a| a.first()) {
@@ -1411,11 +1391,10 @@ pub fn load_features_ms2(project: &mut Project, p: &Value) -> Result<Value> {
             let ints: Vec<f32> = clustered.iter().map(|x| x.1).collect();
             let n = mzs.len();
             updates.push(format!(
-                "UPDATE MASS_SPEC_NTA_FEATURES SET ms2_size={}, ms2_mz={}, ms2_intensity={} WHERE project_id={} AND analysis={} AND feature={}",
+                "UPDATE MASS_SPEC_NTA_FEATURES SET ms2_size={}, ms2_mz={}, ms2_intensity={} WHERE analysis={} AND feature={}",
                 n,
                 sql(&encode(&mzs)),
                 sql(&encode(&ints)),
-                sql(&project_id),
                 sql(&analysis),
                 sql(&feature)
             ));
@@ -1441,13 +1420,13 @@ pub fn load_features_ms2(project: &mut Project, p: &Value) -> Result<Value> {
 // ---------------------------------------------------------------------------
 
 #[allow(dead_code)]
-pub(crate) const NTA_FEATURES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_FEATURES (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_component VARCHAR, feature_group VARCHAR, adduct VARCHAR, rt DOUBLE, mz DOUBLE, mass DOUBLE, intensity DOUBLE, noise DOUBLE, sn DOUBLE, area DOUBLE, trace_count INTEGER, rtmin DOUBLE, rtmax DOUBLE, width DOUBLE, mzmin DOUBLE, mzmax DOUBLE, ppm DOUBLE, fwhm_rt DOUBLE, fwhm_mz DOUBLE, gaussian_A DOUBLE, gaussian_mu DOUBLE, gaussian_sigma DOUBLE, gaussian_r2 DOUBLE, jaggedness DOUBLE, sharpness DOUBLE, asymmetry DOUBLE, modality INTEGER, plates DOUBLE, polarity INTEGER, filtered BOOLEAN, filter VARCHAR, filled BOOLEAN, correction DOUBLE, eic_size INTEGER, eic_rt VARCHAR, eic_mz VARCHAR, eic_intensity VARCHAR, eic_baseline VARCHAR, eic_smoothed VARCHAR, ms1_size INTEGER, ms1_mz VARCHAR, ms1_intensity VARCHAR, ms2_size INTEGER, ms2_mz VARCHAR, ms2_intensity VARCHAR, annotation_category VARCHAR, annotation_type VARCHAR, annotation_parent_feature VARCHAR, annotation_element VARCHAR, annotation_mass_error_da DOUBLE, annotation_mass_error_ppm DOUBLE, annotation_rt_error DOUBLE, annotation_rel_intensity DOUBLE, annotation_expected_rel_intensity_min DOUBLE, annotation_expected_rel_intensity_max DOUBLE, annotation_score DOUBLE, component_size INTEGER, component_rt_center DOUBLE, component_rt_spread DOUBLE, component_density DOUBLE, component_mean_correlation DOUBLE, component_best_partner VARCHAR, component_max_correlation DOUBLE, component_mean_correlation_to_component DOUBLE, component_membership_score DOUBLE, component_is_core BOOLEAN, component_bridge_flag BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))";
+pub(crate) const NTA_FEATURES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_FEATURES (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_component VARCHAR, feature_group VARCHAR, adduct VARCHAR, rt DOUBLE, mz DOUBLE, mass DOUBLE, intensity DOUBLE, noise DOUBLE, sn DOUBLE, area DOUBLE, trace_count INTEGER, rtmin DOUBLE, rtmax DOUBLE, width DOUBLE, mzmin DOUBLE, mzmax DOUBLE, ppm DOUBLE, fwhm_rt DOUBLE, fwhm_mz DOUBLE, gaussian_A DOUBLE, gaussian_mu DOUBLE, gaussian_sigma DOUBLE, gaussian_r2 DOUBLE, jaggedness DOUBLE, sharpness DOUBLE, asymmetry DOUBLE, modality INTEGER, plates DOUBLE, polarity INTEGER, filtered BOOLEAN, filter VARCHAR, filled BOOLEAN, correction DOUBLE, eic_size INTEGER, eic_rt VARCHAR, eic_mz VARCHAR, eic_intensity VARCHAR, eic_baseline VARCHAR, eic_smoothed VARCHAR, ms1_size INTEGER, ms1_mz VARCHAR, ms1_intensity VARCHAR, ms2_size INTEGER, ms2_mz VARCHAR, ms2_intensity VARCHAR, annotation_category VARCHAR, annotation_type VARCHAR, annotation_parent_feature VARCHAR, annotation_element VARCHAR, annotation_mass_error_da DOUBLE, annotation_mass_error_ppm DOUBLE, annotation_rt_error DOUBLE, annotation_rel_intensity DOUBLE, annotation_expected_rel_intensity_min DOUBLE, annotation_expected_rel_intensity_max DOUBLE, annotation_score DOUBLE, component_size INTEGER, component_rt_center DOUBLE, component_rt_spread DOUBLE, component_density DOUBLE, component_mean_correlation DOUBLE, component_best_partner VARCHAR, component_max_correlation DOUBLE, component_mean_correlation_to_component DOUBLE, component_membership_score DOUBLE, component_is_core BOOLEAN, component_bridge_flag BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))";
 
-const NTA_SUSPECTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_SUSPECTS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))";
+const NTA_SUSPECTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_SUSPECTS (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))";
 
-const NTA_INTERNAL_STANDARDS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_INTERNAL_STANDARDS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, feature_component VARCHAR, adduct VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))";
+const NTA_INTERNAL_STANDARDS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_INTERNAL_STANDARDS (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, feature_component VARCHAR, adduct VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))";
 
-const NTA_TRANSFORMATION_PRODUCTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature_group VARCHAR, precursor_feature_group VARCHAR, main_precursor_feature_group VARCHAR, assignment_rank INTEGER, name VARCHAR NOT NULL, formula VARCHAR, mass DOUBLE, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, transformation VARCHAR, precursor_name VARCHAR, precursor_formula VARCHAR, precursor_mass DOUBLE, precursor_SMILES VARCHAR, precursor_InChI VARCHAR, precursor_InChIKey VARCHAR, precursor_xLogP DOUBLE, main_precursor_name VARCHAR, main_precursor_formula VARCHAR, main_precursor_mass DOUBLE, main_precursor_SMILES VARCHAR, main_precursor_InChI VARCHAR, main_precursor_InChIKey VARCHAR, main_precursor_xLogP DOUBLE, cosine_similarity DOUBLE, main_precursor_cosine_similarity DOUBLE, rt_plausibility DOUBLE, main_precursor_rt_plausibility DOUBLE, assignment_score DOUBLE, network_level INTEGER, assignment_status VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature_group, name))";
+const NTA_TRANSFORMATION_PRODUCTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS (analysis VARCHAR NOT NULL, feature_group VARCHAR, precursor_feature_group VARCHAR, main_precursor_feature_group VARCHAR, assignment_rank INTEGER, name VARCHAR NOT NULL, formula VARCHAR, mass DOUBLE, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, transformation VARCHAR, precursor_name VARCHAR, precursor_formula VARCHAR, precursor_mass DOUBLE, precursor_SMILES VARCHAR, precursor_InChI VARCHAR, precursor_InChIKey VARCHAR, precursor_xLogP DOUBLE, main_precursor_name VARCHAR, main_precursor_formula VARCHAR, main_precursor_mass DOUBLE, main_precursor_SMILES VARCHAR, main_precursor_InChI VARCHAR, main_precursor_InChIKey VARCHAR, main_precursor_xLogP DOUBLE, cosine_similarity DOUBLE, main_precursor_cosine_similarity DOUBLE, rt_plausibility DOUBLE, main_precursor_rt_plausibility DOUBLE, assignment_score DOUBLE, network_level INTEGER, assignment_status VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature_group, name))";
 
 #[allow(dead_code)]
 pub(crate) fn ensure_nta_schemas(project: &Project) -> Result<()> {
@@ -1489,7 +1468,6 @@ pub(crate) fn load_analysis_features(
     project: &Project,
     parameters: &Value,
 ) -> Result<crate::nta::ProjectNonTargetAnalysis> {
-    let project_id = project.get_project_id().to_string();
     let wanted = parameters
         .get("analysis_names")
         .and_then(Value::as_array)
@@ -1501,8 +1479,7 @@ pub(crate) fn load_analysis_features(
     let mut blanks = Vec::new();
     let mut replicates = Vec::new();
     let rows = project.query_json(&format!(
-        "SELECT analysis,file_path,analysis_index,blank,replicate FROM MASS_SPEC_ANALYSES WHERE project_id={} ORDER BY analysis",
-        sql(&project_id)
+        "SELECT analysis,file_path,analysis_index,blank,replicate FROM MASS_SPEC_ANALYSES ORDER BY analysis",
     ))?;
     for row in rows.as_array().into_iter().flatten() {
         let name = row_text(row, "analysis");
@@ -1526,8 +1503,7 @@ pub(crate) fn load_analysis_features(
         buffer.analysis = names[i].clone();
     }
     let features = project.query_json(&format!(
-        "SELECT analysis, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM MASS_SPEC_NTA_FEATURES WHERE project_id={} ORDER BY analysis",
-        sql(&project_id)
+        "SELECT analysis, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM MASS_SPEC_NTA_FEATURES ORDER BY analysis",
     ))?;
     for row in features.as_array().into_iter().flatten() {
         let an = row_text(row, "analysis");
@@ -1632,9 +1608,8 @@ fn dnum_cell(v: f64) -> String {
 
 /// Build one `MASS_SPEC_NTA_FEATURES` value tuple (column order mirrors the
 /// C++ `features_columns()`; `created_at` is left to the DEFAULT).
-fn feature_values(project_id: &str, r: &crate::nta::NtaFeatureRow) -> String {
+fn feature_values(r: &crate::nta::NtaFeatureRow) -> String {
     let vals = vec![
-        sql(project_id),
         sql(&r.analysis),
         sql(&r.feature),
         sql(&r.feature_component),
@@ -1713,7 +1688,7 @@ fn feature_values(project_id: &str, r: &crate::nta::NtaFeatureRow) -> String {
     format!("({})", vals.join(","))
 }
 
-const FEATURES_COLUMNS: &str = "project_id,analysis,feature,feature_component,feature_group,adduct,rt,mz,mass,intensity,noise,sn,area,trace_count,rtmin,rtmax,width,mzmin,mzmax,ppm,fwhm_rt,fwhm_mz,gaussian_A,gaussian_mu,gaussian_sigma,gaussian_r2,jaggedness,sharpness,asymmetry,modality,plates,polarity,filtered,filter,filled,correction,eic_size,eic_rt,eic_mz,eic_intensity,eic_baseline,eic_smoothed,ms1_size,ms1_mz,ms1_intensity,ms2_size,ms2_mz,ms2_intensity,annotation_category,annotation_type,annotation_parent_feature,annotation_element,annotation_mass_error_da,annotation_mass_error_ppm,annotation_rt_error,annotation_rel_intensity,annotation_expected_rel_intensity_min,annotation_expected_rel_intensity_max,annotation_score,component_size,component_rt_center,component_rt_spread,component_density,component_mean_correlation,component_best_partner,component_max_correlation,component_mean_correlation_to_component,component_membership_score,component_is_core,component_bridge_flag";
+const FEATURES_COLUMNS: &str = "analysis,feature,feature_component,feature_group,adduct,rt,mz,mass,intensity,noise,sn,area,trace_count,rtmin,rtmax,width,mzmin,mzmax,ppm,fwhm_rt,fwhm_mz,gaussian_A,gaussian_mu,gaussian_sigma,gaussian_r2,jaggedness,sharpness,asymmetry,modality,plates,polarity,filtered,filter,filled,correction,eic_size,eic_rt,eic_mz,eic_intensity,eic_baseline,eic_smoothed,ms1_size,ms1_mz,ms1_intensity,ms2_size,ms2_mz,ms2_intensity,annotation_category,annotation_type,annotation_parent_feature,annotation_element,annotation_mass_error_da,annotation_mass_error_ppm,annotation_rt_error,annotation_rel_intensity,annotation_expected_rel_intensity_min,annotation_expected_rel_intensity_max,annotation_score,component_size,component_rt_center,component_rt_spread,component_density,component_mean_correlation,component_best_partner,component_max_correlation,component_mean_correlation_to_component,component_membership_score,component_is_core,component_bridge_flag";
 
 /// Batched multi-row INSERT (DuckDB accepts many VALUES tuples in one
 /// statement); chunked to keep statement sizes bounded.
@@ -1736,23 +1711,18 @@ pub(crate) fn persist_features(
     project: &Project,
     data: &crate::nta::ProjectNonTargetAnalysis,
 ) -> Result<()> {
-    let project_id = project.get_project_id().to_string();
-    project.execute_sql(&format!(
-        "DELETE FROM MASS_SPEC_NTA_FEATURES WHERE project_id={}",
-        sql(&project_id)
-    ))?;
+    project.execute_sql(&format!("DELETE FROM MASS_SPEC_NTA_FEATURES"))?;
     let mut tuples = Vec::new();
     for buffer in &data.feature_buffers {
         for i in 0..buffer.size() {
-            tuples.push(feature_values(&project_id, &buffer.get_feature(i)));
+            tuples.push(feature_values(&&buffer.get_feature(i)));
         }
     }
     insert_rows(project, "MASS_SPEC_NTA_FEATURES", FEATURES_COLUMNS, tuples)
 }
 
-fn suspect_values(project_id: &str, r: &crate::nta::NtaSuspectRow) -> String {
+fn suspect_values(r: &crate::nta::NtaSuspectRow) -> String {
     let vals = vec![
-        sql(project_id),
         sql(&r.analysis),
         sql(&r.feature),
         sql(&r.feature_group),
@@ -1789,30 +1759,25 @@ fn suspect_values(project_id: &str, r: &crate::nta::NtaSuspectRow) -> String {
     format!("({})", vals.join(","))
 }
 
-const SUSPECTS_COLUMNS: &str = "project_id,analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity";
+const SUSPECTS_COLUMNS: &str = "analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity";
 
 pub(crate) fn persist_suspects(
     project: &Project,
     data: &crate::nta::ProjectNonTargetAnalysis,
 ) -> Result<()> {
-    let project_id = project.get_project_id().to_string();
     project.execute_sql(NTA_SUSPECTS_SCHEMA)?;
-    project.execute_sql(&format!(
-        "DELETE FROM MASS_SPEC_NTA_SUSPECTS WHERE project_id={}",
-        sql(&project_id)
-    ))?;
+    project.execute_sql(&format!("DELETE FROM MASS_SPEC_NTA_SUSPECTS"))?;
     let mut tuples = Vec::new();
     for buffer in &data.suspect_buffers {
         for i in 0..buffer.size() {
-            tuples.push(suspect_values(&project_id, &buffer.get_suspect(i)));
+            tuples.push(suspect_values(&&buffer.get_suspect(i)));
         }
     }
     insert_rows(project, "MASS_SPEC_NTA_SUSPECTS", SUSPECTS_COLUMNS, tuples)
 }
 
-fn internal_standard_values(project_id: &str, r: &crate::nta::NtaInternalStandardRow) -> String {
+fn internal_standard_values(r: &crate::nta::NtaInternalStandardRow) -> String {
     let vals = vec![
-        sql(project_id),
         sql(&r.analysis),
         sql(&r.feature),
         sql(&r.feature_group),
@@ -1851,25 +1816,18 @@ fn internal_standard_values(project_id: &str, r: &crate::nta::NtaInternalStandar
     format!("({})", vals.join(","))
 }
 
-const INTERNAL_STANDARDS_COLUMNS: &str = "project_id,analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity";
+const INTERNAL_STANDARDS_COLUMNS: &str = "analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity";
 
 pub(crate) fn persist_internal_standards(
     project: &Project,
     data: &crate::nta::ProjectNonTargetAnalysis,
 ) -> Result<()> {
-    let project_id = project.get_project_id().to_string();
     project.execute_sql(NTA_INTERNAL_STANDARDS_SCHEMA)?;
-    project.execute_sql(&format!(
-        "DELETE FROM MASS_SPEC_NTA_INTERNAL_STANDARDS WHERE project_id={}",
-        sql(&project_id)
-    ))?;
+    project.execute_sql(&format!("DELETE FROM MASS_SPEC_NTA_INTERNAL_STANDARDS"))?;
     let mut tuples = Vec::new();
     for buffer in &data.internal_standard_buffers {
         for i in 0..buffer.size() {
-            tuples.push(internal_standard_values(
-                &project_id,
-                &buffer.get_internal_standard(i),
-            ));
+            tuples.push(internal_standard_values(&&buffer.get_internal_standard(i)));
         }
     }
     insert_rows(
@@ -1879,15 +1837,13 @@ pub(crate) fn persist_internal_standards(
         tuples,
     )
 }
-const TRANSFORMATION_PRODUCTS_COLUMNS: &str = "project_id,analysis,feature_group,precursor_feature_group,main_precursor_feature_group,assignment_rank,name,formula,mass,SMILES,InChI,InChIKey,xLogP,transformation,precursor_name,precursor_formula,precursor_mass,precursor_SMILES,precursor_InChI,precursor_InChIKey,precursor_xLogP,main_precursor_name,main_precursor_formula,main_precursor_mass,main_precursor_SMILES,main_precursor_InChI,main_precursor_InChIKey,main_precursor_xLogP,cosine_similarity,main_precursor_cosine_similarity,rt_plausibility,main_precursor_rt_plausibility,assignment_score,network_level,assignment_status";
+const TRANSFORMATION_PRODUCTS_COLUMNS: &str = "analysis,feature_group,precursor_feature_group,main_precursor_feature_group,assignment_rank,name,formula,mass,SMILES,InChI,InChIKey,xLogP,transformation,precursor_name,precursor_formula,precursor_mass,precursor_SMILES,precursor_InChI,precursor_InChIKey,precursor_xLogP,main_precursor_name,main_precursor_formula,main_precursor_mass,main_precursor_SMILES,main_precursor_InChI,main_precursor_InChIKey,main_precursor_xLogP,cosine_similarity,main_precursor_cosine_similarity,rt_plausibility,main_precursor_rt_plausibility,assignment_score,network_level,assignment_status";
 
 fn transformation_product_values(
-    project_id: &str,
     analysis: &str,
     r: &crate::nta_transformation_products::TransformationProductRow,
 ) -> String {
     let vals = vec![
-        sql(project_id),
         sql(analysis),
         sql(&r.feature_group),
         sql(&r.precursor_feature_group),
@@ -1935,15 +1891,13 @@ pub(crate) fn persist_transformation_products(
         crate::nta_transformation_products::TransformationProductRow,
     )],
 ) -> Result<()> {
-    let project_id = project.get_project_id().to_string();
     project.execute_sql(NTA_TRANSFORMATION_PRODUCTS_SCHEMA)?;
     project.execute_sql(&format!(
-        "DELETE FROM MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS WHERE project_id={}",
-        sql(&project_id)
+        "DELETE FROM MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS"
     ))?;
     let tuples: Vec<String> = rows
         .iter()
-        .map(|(analysis, row)| transformation_product_values(&project_id, analysis, row))
+        .map(|(analysis, row)| transformation_product_values(&analysis, row))
         .collect();
     insert_rows(
         project,
@@ -1963,15 +1917,13 @@ pub(crate) fn load_suspects(
     project: &Project,
     data: &mut crate::nta::ProjectNonTargetAnalysis,
 ) -> Result<()> {
-    let project_id = project.get_project_id().to_string();
     project.execute_sql(NTA_SUSPECTS_SCHEMA)?;
     for buffer in data.suspect_buffers.iter_mut() {
         *buffer = crate::nta::NtaSuspects::default();
     }
     let names = data.analysis_names().to_vec();
     let rows = project.query_json(&format!(
-        "SELECT * FROM MASS_SPEC_NTA_SUSPECTS WHERE project_id={} ORDER BY analysis",
-        sql(&project_id)
+        "SELECT * FROM MASS_SPEC_NTA_SUSPECTS ORDER BY analysis",
     ))?;
     for row in rows.as_array().into_iter().flatten() {
         let an = row_text(row, "analysis");
@@ -2020,15 +1972,13 @@ pub(crate) fn load_internal_standards(
     project: &Project,
     data: &mut crate::nta::ProjectNonTargetAnalysis,
 ) -> Result<()> {
-    let project_id = project.get_project_id().to_string();
     project.execute_sql(NTA_INTERNAL_STANDARDS_SCHEMA)?;
     for buffer in data.internal_standard_buffers.iter_mut() {
         *buffer = crate::nta::NtaInternalStandards::default();
     }
     let names = data.analysis_names().to_vec();
     let rows = project.query_json(&format!(
-        "SELECT * FROM MASS_SPEC_NTA_INTERNAL_STANDARDS WHERE project_id={} ORDER BY analysis",
-        sql(&project_id)
+        "SELECT * FROM MASS_SPEC_NTA_INTERNAL_STANDARDS ORDER BY analysis",
     ))?;
     for row in rows.as_array().into_iter().flatten() {
         let an = row_text(row, "analysis");

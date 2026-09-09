@@ -15,6 +15,26 @@
       "id": "operations",
       "path": "operations.json",
       "consumers": ["cpp", "rust"]
+    },
+    {
+      "id": "multiproject",
+      "path": "../project/multiproject.json",
+      "consumers": ["cpp", "rust"]
+    },
+    {
+      "id": "domain_schema_manifest",
+      "path": "../project/domain_schema_manifest.json",
+      "consumers": ["cpp", "rust"]
+    },
+    {
+      "id": "execution_lifecycle",
+      "path": "../execution/execution_lifecycle.json",
+      "consumers": ["cpp", "rust"]
+    },
+    {
+      "id": "mcp_execution_contract",
+      "path": "../mcp/execution_contract.json",
+      "consumers": ["cpp", "rust"]
     }
   ]
 }

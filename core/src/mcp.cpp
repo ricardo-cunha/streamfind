@@ -26,9 +26,9 @@ Json tools() {
 }
 
 const char *command(const std::string &name) {
-    static const std::array<std::string, 25> commands = {
+    static const std::array<std::string, 30> commands = {
         "create", "describe", "validate", "get_domain", "get_metadata",
-        "set_metadata", "get_workflow", "get_workflow_execution", "set_workflow", "add_method", "remove_method", "validate_workflow",
+        "set_metadata", "get_workflow", "get_workflow_execution", "create_workflow_execution", "get_execution", "list_executions", "transition_execution", "cancel_execution", "set_workflow", "add_method", "remove_method", "validate_workflow",
         "run_workflow", "get_cache", "get_cache_size", "delete_cache",
         "get_audit_trail", "get_available_methods", "run_method", "copy", "close",
         "tools_status", "tools_install", "tools_install_java", "tools_install_metfrag"
@@ -43,7 +43,7 @@ std::string interface_guidance() {
             if (!guidance.empty()) return guidance;
         }
     }
-    return "Start with create, then describe the project. Domain operations are stateless and require database_path and project_id; connect is only needed for workflow methods.";
+    return "Start with create, then describe the project. Domain operations are stateless and require database_path; connect is only needed for workflow methods.";
 }
 
 std::string tool_description(const Json &entry, const std::string &fallback) {
@@ -67,7 +67,7 @@ Json Session::handle(const Json &request) {
             // Methods (kind='method') are NEVER tools: they are referenced by the
             // workflow operations and discovered via get_available_methods.
             // All exposed domain operations are always advertised. They are
-            // stateless and carry database_path/project_id, so discovery and
+            // stateless and carry database_path, so discovery and
             // invocation do not depend on connect.
             const auto entries = streamfind::catalogue::entries_json();
             for (const auto &definition : operations_.list("")) {
@@ -118,12 +118,12 @@ Json Session::handle(const Json &request) {
     if (!command && operation) {
         const auto arguments = request.at("params").value("arguments", Json::object());
         try {
-            if (!arguments.contains("database_path") || !arguments.contains("project_id")) {
-                throw Error(ErrorCode::InvalidArgument, "Domain operations require database_path and project_id");
+            if (!arguments.contains("database_path")) {
+                throw Error(ErrorCode::InvalidArgument, "Domain operations require database_path");
             }
-            ProjectOptions options{arguments.at("database_path").get<std::string>(),
-                                   arguments.at("project_id").get<std::string>(), {}, false, false,
-                                   operation->definition().domain};
+            ProjectOptions options;
+            options.database_path = arguments.at("database_path").get<std::string>();
+            options.domain = operation->definition().domain;
             auto project = Project::open(options);
             const Json result = project.run_operation(name, arguments, operations_);
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};

@@ -257,7 +257,6 @@ fn normalize_suspects(suspects: &[SuspectQuery]) -> Vec<SuspectQuery> {
 /// `adduct`) empty.
 fn suspect_to_internal_standard(suspect: &NtaSuspectRow) -> NtaInternalStandardRow {
     let mut row = NtaInternalStandardRow::default();
-    row.project_id = suspect.project_id.clone();
     row.created_at = suspect.created_at.clone();
     row.analysis = suspect.analysis.clone();
     row.feature = suspect.feature.clone();

@@ -36,6 +36,8 @@ set(STREAMFIND_CORE_SOURCES
     src/project.cpp
     src/mcp.cpp
     src/catalogue.cpp
+    src/catalogue_binding.cpp
+    src/project_table_store.cpp
     src/tools_resolver.cpp
 )
 

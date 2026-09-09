@@ -65,7 +65,7 @@ def comparable(response: dict) -> dict:
 
 
 def requests_for(database: Path, files: list[Path], selected: Path, index: int, include_fallback: bool) -> list[dict]:
-    common = {"database_path": str(database), "project_id": "mcp-differential"}
+    common = {"database_path": str(database)}
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},

@@ -42,7 +42,6 @@ fn mass_spec_interface_matches_catalogue_and_initializes_schema() {
     let _ = fs::remove_file(&database);
     let mut project = Project::create(ProjectOptions {
         database_path: database.clone(),
-        project_id: "mass-spec-interface".into(),
         domain: "mass_spec".into(),
         create_if_missing: false,
         read_only: false,

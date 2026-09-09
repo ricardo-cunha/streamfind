@@ -4,6 +4,7 @@
 
 sfcore:databasePathParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Database path" ;
     skos:definition "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create." ;
@@ -11,17 +12,20 @@ sfcore:databasePathParameter
     sf:required true ;
     sf:example "/data/project.duckdb" .
 
-sfcore:projectIdParameter
+sfcore:workerIdParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Project identifier" ;
-    skos:definition "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call." ;
+    skos:prefLabel "Worker ID" ;
+    skos:definition "External worker identity used to claim and release one project workflow execution." ;
     sf:type "string" ;
-    sf:required true ;
-    sf:example "demo" .
+    sf:required false ;
+    sf:example "frontend-worker-1" .
+
 
 sfcore:domainParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project domain" ;
     skos:definition "Immutable domain assigned to a project at creation time. Use the domain value reported by get_domain when selecting workflow methods." ;
@@ -32,6 +36,7 @@ sfcore:domainParameter
 
 sfcore:metadataParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project metadata" ;
     skos:definition "JSON object containing project-owned metadata. Metadata is user-owned and may contain arbitrary JSON keys." ;
@@ -41,6 +46,7 @@ sfcore:metadataParameter
 
 sfcore:workflowParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow" ;
     skos:definition "Ordered array of workflow method objects. Each object must identify a registered method and may contain that method's validated parameters." ;
@@ -51,6 +57,7 @@ sfcore:workflowParameter
 
 sfcore:methodParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method identifier" ;
     skos:definition "Stable canonical identifier of a registered workflow method, for example mass_spec.find_features. Obtain valid method identifiers and their parameters from get_available_methods(domain)." ;
@@ -60,6 +67,7 @@ sfcore:methodParameter
 
 sfcore:parametersParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method parameters" ;
     skos:definition "JSON object containing method-specific parameter values. Use the selected method's parameter definitions from get_available_methods; unknown keys are rejected." ;
@@ -69,6 +77,7 @@ sfcore:parametersParameter
 
 sfcore:destinationDatabasePathParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Destination database path" ;
     skos:definition "Filesystem path for the copied DuckDB project database." ;
@@ -76,17 +85,10 @@ sfcore:destinationDatabasePathParameter
     sf:required true ;
     sf:example "/data/copied.duckdb" .
 
-sfcore:destinationProjectIdParameter
-    a sf:Parameter ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Destination project identifier" ;
-    skos:definition "Logical identifier for the copied project." ;
-    sf:type "string" ;
-    sf:required true ;
-    sf:example "copy" .
 
 sfcore:analysesParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analyses" ;
     skos:definition "Array of analysis file records." ;
@@ -97,6 +99,7 @@ sfcore:analysesParameter
 
 sfcore:analysisFileParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis file" ;
     skos:definition "One analysis file and optional replicate and blank labels." ;
@@ -110,6 +113,7 @@ sfcore:analysisFileParameter
 
 sfcore:analysisNamesParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis names" ;
     skos:definition "Array of analysis file names without filename extensions." ;
@@ -120,6 +124,7 @@ sfcore:analysisNamesParameter
 
 sfcore:replicateNamesParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Replicate names" ;
     skos:definition "Replicate labels ordered by analysis name." ;
@@ -130,6 +135,7 @@ sfcore:replicateNamesParameter
 
 sfcore:blankNamesParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank names" ;
     skos:definition "Blank labels ordered by analysis name." ;
@@ -140,6 +146,7 @@ sfcore:blankNamesParameter
 
 sfcore:concentrationsParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Concentrations" ;
     skos:definition "Analysis concentrations ordered by analysis name." ;
@@ -150,6 +157,7 @@ sfcore:concentrationsParameter
 
 sfcore:stringItemParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "String array item" ;
     skos:definition "One string value in a string array parameter." ;
@@ -159,6 +167,7 @@ sfcore:stringItemParameter
 
 sfcore:integerItemParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Integer array item" ;
     skos:definition "One integer value in an integer array parameter." ;
@@ -168,6 +177,7 @@ sfcore:integerItemParameter
 
 sfcore:realItemParameter
     a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Real array item" ;
     skos:definition "One real value in a real array parameter." ;

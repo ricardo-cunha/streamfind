@@ -728,7 +728,7 @@ fn analysis_index_of_group(data: &ProjectNonTargetAnalysis, feature_group: &str)
 }
 
 /// Convert an assignment row to a SUSPECT row for the SUSPECTS table. The
-/// SUSPECTS primary key is (project_id, analysis, feature); assignment rows
+/// SUSPECTS primary key is (analysis, feature); assignment rows
 /// have no underlying feature, so the product feature group (when resolved)
 /// or the transformation product name is used as the feature identifier —
 /// this keeps one row per product assignment while staying unique.

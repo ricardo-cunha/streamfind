@@ -1,7 +1,7 @@
 //! Minimal command-line interface for the Rust project backend.
 //!
 //! Supported commands are `create` and `describe`. Both require
-//! `--database-path` and `--project-id`. The `tools` subcommand manages the
+//! `--database-path`. The `tools` subcommand manages the
 //! `~/.streamfind` external-tools layout (Java + MetFragCL), mirroring
 //! `bindings/r`.
 
@@ -86,7 +86,6 @@ fn run() -> Result<()> {
     let command = args.get(1).map(String::as_str).unwrap_or("describe");
     let options = ProjectOptions {
         database_path: PathBuf::from(option(&args, "--database-path")?),
-        project_id: option(&args, "--project-id")?,
         domain: args
             .windows(2)
             .find(|pair| pair[0] == "--domain")
@@ -102,7 +101,7 @@ fn run() -> Result<()> {
     };
     println!(
         "{}",
-        serde_json::json!({"id": project.info().id, "domain": project.info().domain, "metadata": project.info().metadata})
+        serde_json::json!({"domain": project.info().domain, "metadata": project.info().metadata})
     );
     Ok(())
 }

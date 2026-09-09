@@ -644,7 +644,6 @@ struct NTA_FEATURES {
 
 // MARK: NTA_SUSPECT_ROW
 struct NTA_SUSPECT_ROW {
-    std::string project_id;
     std::string created_at;
     std::string analysis;
     std::string feature;
@@ -826,7 +825,6 @@ struct NTA_SUSPECTS {
 
 // MARK: NTA_TRANSFORMATION_PRODUCT_ROW
 struct NTA_TRANSFORMATION_PRODUCT_ROW {
-    std::string project_id;
     std::string created_at;
     std::string name;
     std::string formula;
@@ -1024,7 +1022,6 @@ struct NTA_TRANSFORMATION_PRODUCTS {
 
 // MARK: NTA_INTERNAL_STANDARD_ROW
 struct NTA_INTERNAL_STANDARD_ROW {
-    std::string project_id;
     std::string created_at;
     std::string analysis;
     std::string feature;

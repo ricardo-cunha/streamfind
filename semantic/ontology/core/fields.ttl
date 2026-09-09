@@ -4,6 +4,7 @@
 
 sfcore:statusField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation status" ;
     skos:definition "Deterministic operation status." ;
@@ -13,6 +14,7 @@ sfcore:statusField
 
 sfcore:infoField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation information" ;
     skos:definition "Human-readable information about the operation outcome." ;
@@ -21,6 +23,7 @@ sfcore:infoField
 
 sfcore:validField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Validation status" ;
     skos:definition "Whether validation succeeded." ;
@@ -29,6 +32,7 @@ sfcore:validField
 
 sfcore:methodField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow method" ;
     skos:definition "One validated method record in the ordered project workflow." ;
@@ -45,23 +49,26 @@ sfcore:methodField
 
 sfcore:methodIdField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method ID" ;
     skos:definition "Registered method identifier." ;
     sf:propertyName "id" ;
-     sf:type "string" .
+    sf:type "string" .
 
 sfcore:methodNameField
-     a sf:Field ;
-     skos:inScheme sfcore:scheme ;
-     skos:prefLabel "Method name" ;
-     skos:definition "Method display name." ;
-     sf:propertyName "name" ;
-     sf:type "string" .
+    a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Method name" ;
+    skos:definition "Method display name." ;
+    sf:propertyName "name" ;
+    sf:type "string" .
 
 
 sfcore:methodDescriptionField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method description" ;
     skos:definition "Method description." ;
@@ -70,6 +77,7 @@ sfcore:methodDescriptionField
 
 sfcore:methodDomainField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method domain" ;
     skos:definition "Domain owning the method." ;
@@ -78,6 +86,7 @@ sfcore:methodDomainField
 
 sfcore:methodParametersField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Configured parameters" ;
     skos:definition "Validated configured method parameter values." ;
@@ -86,6 +95,7 @@ sfcore:methodParametersField
 
 sfcore:methodCacheableField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cacheable" ;
     skos:definition "Whether method results may be cached." ;
@@ -94,15 +104,17 @@ sfcore:methodCacheableField
 
 sfcore:methodRequiredField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Required methods" ;
     skos:definition "Methods required earlier in the workflow." ;
     sf:propertyName "required_methods" ;
     sf:type "array" ;
-     sf:items sfcore:stringItemParameter .
+    sf:items sfcore:stringItemParameter .
 
 sfcore:methodSingleOccurrenceField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Single occurrence" ;
     skos:definition "Whether the method may occur only once in a workflow." ;
@@ -111,6 +123,7 @@ sfcore:methodSingleOccurrenceField
 
 sfcore:methodInputSchemaField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method input schema" ;
     skos:definition "Complete JSON Schema for the method-specific parameter object. Use this schema when constructing add_method or run_method parameters." ;
@@ -119,6 +132,7 @@ sfcore:methodInputSchemaField
 
 sfcore:methodWritesField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method written tables" ;
     skos:definition "Persisted tables written by the method." ;
@@ -128,6 +142,7 @@ sfcore:methodWritesField
 
 sfcore:analysisFilePathField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis file path" ;
     skos:definition "Filesystem path of the analysis file." ;
@@ -138,6 +153,7 @@ sfcore:analysisFilePathField
 
 sfcore:analysisFileReplicateField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis replicate name" ;
     skos:definition "Optional replicate label for the analysis." ;
@@ -148,6 +164,7 @@ sfcore:analysisFileReplicateField
 
 sfcore:analysisFileBlankField
     a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis blank name" ;
     skos:definition "Optional blank label for the analysis." ;

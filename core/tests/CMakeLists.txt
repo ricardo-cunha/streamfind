@@ -36,9 +36,37 @@ add_executable(streamfind_conformance_tests unit/conformance.cpp)
 target_link_libraries(streamfind_conformance_tests PRIVATE streamfind::core)
 target_compile_definitions(streamfind_conformance_tests PRIVATE
     STREAMFIND_CONFORMANCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/project_conformance.json"
+    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/domain_schema_manifest.json"
 )
 add_test(NAME streamfind_conformance_tests COMMAND streamfind_conformance_tests)
 set_tests_properties(streamfind_conformance_tests PROPERTIES LABELS "framework")
+
+add_executable(streamfind_project_table_store_manifest_tests unit/project_table_store_manifest.cpp)
+target_link_libraries(streamfind_project_table_store_manifest_tests PRIVATE streamfind::core)
+target_compile_definitions(streamfind_project_table_store_manifest_tests PRIVATE
+    STREAMFIND_CATALOGUE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../semantic/generated/catalogue.duckdb"
+)
+add_test(NAME streamfind_project_table_store_manifest_tests COMMAND streamfind_project_table_store_manifest_tests)
+set_tests_properties(streamfind_project_table_store_manifest_tests PROPERTIES LABELS "framework")
+
+add_executable(streamfind_execution_contract_tests unit/execution_contract_smoke.cpp)
+target_link_libraries(streamfind_execution_contract_tests PRIVATE streamfind::core)
+target_compile_definitions(streamfind_execution_contract_tests PRIVATE
+    STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/multiproject.json"
+    STREAMFIND_EXECUTION_LIFECYCLE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/execution/execution_lifecycle.json"
+    STREAMFIND_MCP_EXECUTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/mcp/execution_contract.json"
+)
+add_test(NAME streamfind_execution_contract_tests COMMAND streamfind_execution_contract_tests)
+set_tests_properties(streamfind_execution_contract_tests PROPERTIES LABELS "framework")
+
+add_executable(streamfind_multiproject_tests unit/multiproject_smoke.cpp)
+target_link_libraries(streamfind_multiproject_tests PRIVATE streamfind::core)
+target_compile_definitions(streamfind_multiproject_tests PRIVATE
+    STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/multiproject.json"
+    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/domain_schema_manifest.json"
+)
+add_test(NAME streamfind_multiproject_tests COMMAND streamfind_multiproject_tests)
+set_tests_properties(streamfind_multiproject_tests PROPERTIES LABELS "framework")
 
 add_executable(streamfind_vendor_tests unit/vendor_smoke.cpp)
 target_link_libraries(streamfind_vendor_tests PRIVATE streamfind::duckdb streamfind::openbabel)
@@ -68,6 +96,9 @@ foreach(_test_target IN ITEMS
 
     streamfind_nta_interface_tests
     streamfind_conformance_tests
+    streamfind_project_table_store_manifest_tests
+    streamfind_execution_contract_tests
+    streamfind_multiproject_tests
     streamfind_vendor_tests
 )
     add_custom_command(TARGET ${_test_target} POST_BUILD

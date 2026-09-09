@@ -5,6 +5,7 @@
 
 sfms:analysisNameColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis" ;
     skos:definition "Analysis identifier." ;
@@ -14,6 +15,7 @@ sfms:analysisNameColumn
 
 sfms:analysisIndexColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis index" ;
     skos:definition "Zero-based logical analysis index within the physical source file." ;
@@ -23,6 +25,7 @@ sfms:analysisIndexColumn
 
 sfms:sourceAnalysisNumberColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source analysis number" ;
     skos:definition "Vendor-provided analysis number within the physical source file." ;
@@ -32,6 +35,7 @@ sfms:sourceAnalysisNumberColumn
 
 sfms:analysisCountColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis count" ;
     skos:definition "Number of logical analyses contained in the physical source file." ;
@@ -41,6 +45,7 @@ sfms:analysisCountColumn
 
 sfms:replicateNameColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Replicate" ;
     skos:definition "Optional replicate label." ;
@@ -50,6 +55,7 @@ sfms:replicateNameColumn
 
 sfms:blankNameColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank" ;
     skos:definition "Optional blank label." ;
@@ -59,6 +65,7 @@ sfms:blankNameColumn
 
 sfms:fileNameColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File name" ;
     skos:definition "Source file name." ;
@@ -68,6 +75,7 @@ sfms:fileNameColumn
 
 sfms:filePathColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File path" ;
     skos:definition "Source file path." ;
@@ -77,6 +85,7 @@ sfms:filePathColumn
 
 sfms:fileDirColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File directory" ;
     skos:definition "Source file directory." ;
@@ -86,6 +95,7 @@ sfms:fileDirColumn
 
 sfms:fileExtensionColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File extension" ;
     skos:definition "Source file extension." ;
@@ -95,6 +105,7 @@ sfms:fileExtensionColumn
 
 sfms:formatColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Format" ;
     skos:definition "Detected source format." ;
@@ -104,6 +115,7 @@ sfms:formatColumn
 
 sfms:typeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Type" ;
     skos:definition "Source data type." ;
@@ -113,6 +125,7 @@ sfms:typeColumn
 
 sfms:timeStampColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Time stamp" ;
     skos:definition "Source acquisition timestamp." ;
@@ -122,6 +135,7 @@ sfms:timeStampColumn
 
 sfms:numberSpectraColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of spectra" ;
     skos:definition "Number of spectra." ;
@@ -131,6 +145,7 @@ sfms:numberSpectraColumn
 
 sfms:numberChromatogramsColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of chromatograms" ;
     skos:definition "Number of chromatograms." ;
@@ -140,6 +155,7 @@ sfms:numberChromatogramsColumn
 
 sfms:numberSpectraBinaryArraysColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of binary arrays" ;
     skos:definition "Number of binary spectrum arrays." ;
@@ -149,6 +165,7 @@ sfms:numberSpectraBinaryArraysColumn
 
 sfms:minMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum m/z" ;
     skos:definition "Minimum mass-to-charge value." ;
@@ -158,6 +175,7 @@ sfms:minMzColumn
 
 sfms:maxMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum m/z" ;
     skos:definition "Maximum mass-to-charge value." ;
@@ -167,6 +185,7 @@ sfms:maxMzColumn
 
 sfms:startRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Start retention time" ;
     skos:definition "Start retention time." ;
@@ -176,6 +195,7 @@ sfms:startRtColumn
 
 sfms:endRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "End retention time" ;
     skos:definition "End retention time." ;
@@ -185,6 +205,7 @@ sfms:endRtColumn
 
 sfms:hasIonMobilityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Has ion mobility" ;
     skos:definition "Whether ion mobility data exists." ;
@@ -194,6 +215,7 @@ sfms:hasIonMobilityColumn
 
 sfms:concentrationColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Concentration" ;
     skos:definition "Analysis concentration." ;
@@ -203,6 +225,7 @@ sfms:concentrationColumn
 
 sfms:indexColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Index" ;
     skos:definition "Header row index." ;
@@ -212,6 +235,7 @@ sfms:indexColumn
 
 sfms:scanColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Scan" ;
     skos:definition "Scan number." ;
@@ -221,6 +245,7 @@ sfms:scanColumn
 
 sfms:arrayLengthColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Array length" ;
     skos:definition "Binary array length." ;
@@ -230,6 +255,7 @@ sfms:arrayLengthColumn
 
 sfms:levelColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Level" ;
     skos:definition "MS level." ;
@@ -239,6 +265,7 @@ sfms:levelColumn
 
 sfms:modeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mode" ;
     skos:definition "Acquisition mode." ;
@@ -248,6 +275,7 @@ sfms:modeColumn
 
 sfms:polarityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Polarity" ;
     skos:definition "Ion polarity." ;
@@ -257,6 +285,7 @@ sfms:polarityColumn
 
 sfms:configurationColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Configuration" ;
     skos:definition "Instrument configuration." ;
@@ -266,6 +295,7 @@ sfms:configurationColumn
 
 sfms:lowMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Low m/z" ;
     skos:definition "Low m/z bound." ;
@@ -275,6 +305,7 @@ sfms:lowMzColumn
 
 sfms:highMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "High m/z" ;
     skos:definition "High m/z bound." ;
@@ -284,6 +315,7 @@ sfms:highMzColumn
 
 sfms:bpMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Base peak m/z" ;
     skos:definition "Base peak m/z." ;
@@ -293,6 +325,7 @@ sfms:bpMzColumn
 
 sfms:bpIntColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Base peak intensity" ;
     skos:definition "Base peak intensity." ;
@@ -302,6 +335,7 @@ sfms:bpIntColumn
 
 sfms:ticColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "TIC" ;
     skos:definition "Total ion current." ;
@@ -311,6 +345,7 @@ sfms:ticColumn
 
 sfms:rtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention time" ;
     skos:definition "Retention time." ;
@@ -320,6 +355,7 @@ sfms:rtColumn
 
 sfms:mobilityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mobility" ;
     skos:definition "Ion mobility." ;
@@ -329,6 +365,7 @@ sfms:mobilityColumn
 
 sfms:windowMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window m/z" ;
     skos:definition "Isolation window center." ;
@@ -338,6 +375,7 @@ sfms:windowMzColumn
 
 sfms:windowMzLowColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window low m/z" ;
     skos:definition "Isolation window lower bound." ;
@@ -347,6 +385,7 @@ sfms:windowMzLowColumn
 
 sfms:windowMzHighColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window high m/z" ;
     skos:definition "Isolation window upper bound." ;
@@ -356,6 +395,7 @@ sfms:windowMzHighColumn
 
 sfms:precursorMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor m/z" ;
     skos:definition "Precursor m/z." ;
@@ -365,6 +405,7 @@ sfms:precursorMzColumn
 
 sfms:precursorIntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor intensity" ;
     skos:definition "Precursor intensity." ;
@@ -374,6 +415,7 @@ sfms:precursorIntensityColumn
 
 sfms:precursorChargeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor charge" ;
     skos:definition "Precursor charge." ;
@@ -383,6 +425,7 @@ sfms:precursorChargeColumn
 
 sfms:activationCeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Activation energy" ;
     skos:definition "Activation collision energy." ;
@@ -392,6 +435,7 @@ sfms:activationCeColumn
 
 sfms:chromatogramIdColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatogram ID" ;
     skos:definition "Chromatogram identifier." ;
@@ -401,6 +445,7 @@ sfms:chromatogramIdColumn
 
 sfms:productMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Product m/z" ;
     skos:definition "Product m/z." ;
@@ -410,6 +455,7 @@ sfms:productMzColumn
 
 sfms:signalTypeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Signal type" ;
     skos:definition "Signal type." ;
@@ -419,6 +465,7 @@ sfms:signalTypeColumn
 
 sfms:chromatogramTypeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatogram type" ;
     skos:definition "Chromatogram type." ;
@@ -428,6 +475,7 @@ sfms:chromatogramTypeColumn
 
 sfms:detectorColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Detector" ;
     skos:definition "Detector name." ;
@@ -437,6 +485,7 @@ sfms:detectorColumn
 
 sfms:channelColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Channel" ;
     skos:definition "Acquisition channel." ;
@@ -446,6 +495,7 @@ sfms:channelColumn
 
 sfms:unitsColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Units" ;
     skos:definition "Measurement units." ;
@@ -455,6 +505,7 @@ sfms:unitsColumn
 
 sfms:wavelengthNmColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Wavelength" ;
     skos:definition "Wavelength in nanometers." ;
@@ -464,6 +515,7 @@ sfms:wavelengthNmColumn
 
 sfms:intervalMsColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Interval" ;
     skos:definition "Interval in milliseconds." ;
@@ -473,6 +525,7 @@ sfms:intervalMsColumn
 
 sfms:startTimeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Start time" ;
     skos:definition "Chromatogram start time." ;
@@ -482,6 +535,7 @@ sfms:startTimeColumn
 
 sfms:endTimeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "End time" ;
     skos:definition "Chromatogram end time." ;
@@ -491,6 +545,7 @@ sfms:endTimeColumn
 
 sfms:intensityMultiplierColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Intensity multiplier" ;
     skos:definition "Intensity multiplier." ;
@@ -500,6 +555,7 @@ sfms:intensityMultiplierColumn
 
 sfms:targetIdColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target ID" ;
     skos:definition "Target identifier returned with a result row." ;
@@ -509,6 +565,7 @@ sfms:targetIdColumn
 
 sfms:idColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Spectrum ID" ;
     skos:definition "Stable spectrum identifier." ;
@@ -518,6 +575,7 @@ sfms:idColumn
 
 sfms:preMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor m/z" ;
     skos:definition "Precursor m/z value." ;
@@ -527,6 +585,7 @@ sfms:preMzColumn
 
 sfms:preMzLowColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor low m/z" ;
     skos:definition "Lower precursor isolation m/z value." ;
@@ -536,6 +595,7 @@ sfms:preMzLowColumn
 
 sfms:preMzHighColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor high m/z" ;
     skos:definition "Upper precursor isolation m/z value." ;
@@ -545,6 +605,7 @@ sfms:preMzHighColumn
 
 sfms:preCeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor collision energy" ;
     skos:definition "Precursor collision energy." ;
@@ -554,6 +615,7 @@ sfms:preCeColumn
 
 sfms:mzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Observed m/z" ;
     skos:definition "Observed mass-to-charge value." ;
@@ -563,6 +625,7 @@ sfms:mzColumn
 
 sfms:intensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Observed intensity" ;
     skos:definition "Observed intensity." ;
@@ -572,6 +635,7 @@ sfms:intensityColumn
 
 sfms:ntaFeatureIdColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature" ;
     skos:definition "Stable feature identifier within an analysis." ;
@@ -581,6 +645,7 @@ sfms:ntaFeatureIdColumn
 
 sfms:ntaFeatureRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature retention time" ;
     skos:definition "Feature apex retention time." ;
@@ -590,6 +655,7 @@ sfms:ntaFeatureRtColumn
 
 sfms:ntaFeatureMzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature m/z" ;
     skos:definition "Intensity-weighted feature m/z." ;
@@ -599,6 +665,7 @@ sfms:ntaFeatureMzColumn
 
 sfms:ntaFeatureIntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature intensity" ;
     skos:definition "Maximum intensity observed in the feature traces." ;
@@ -608,6 +675,7 @@ sfms:ntaFeatureIntensityColumn
 
 sfms:ntaFeatureAreaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature area" ;
     skos:definition "Sum of intensities in the grouped feature traces." ;
@@ -617,6 +685,7 @@ sfms:ntaFeatureAreaColumn
 
 sfms:ntaFeatureSnColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature SNR" ;
     skos:definition "Feature signal-to-noise ratio." ;
@@ -626,6 +695,7 @@ sfms:ntaFeatureSnColumn
 
 sfms:ntaFeatureTraceCountColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature trace count" ;
     skos:definition "Number of spectra contributing to the feature." ;
@@ -635,6 +705,7 @@ sfms:ntaFeatureTraceCountColumn
 
 sfms:rawIntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raw intensity" ;
     skos:definition "Original chromatogram intensity." ;
@@ -644,6 +715,7 @@ sfms:rawIntensityColumn
 
 sfms:baselineColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Baseline" ;
     skos:definition "Chromatogram baseline value." ;
@@ -655,14 +727,16 @@ sfms:baselineColumn
 
 sfms:ntaFeatureComponentColumn
     a sf:Column ;
-    skos:prefLabel "Feature component";
-    skos:definition "Feature component identifier.";
-    sf:columnName "feature_component";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Feature component" ;
+    skos:definition "Feature component identifier." ;
+    sf:columnName "feature_component" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaPolarityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "NTA polarity" ;
     skos:definition "Ion polarity of the NTA feature." ;
     sf:columnName "polarity" ;
@@ -671,572 +745,632 @@ sfms:ntaPolarityColumn
 
 sfms:ntaFeatureGroupColumn
     a sf:Column ;
-    skos:prefLabel "Feature group";
-    skos:definition "Feature group identifier.";
-    sf:columnName "feature_group";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Feature group" ;
+    skos:definition "Feature group identifier." ;
+    sf:columnName "feature_group" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaAdductColumn
     a sf:Column ;
-    skos:prefLabel "Adduct";
-    skos:definition "Assigned ion adduct.";
-    sf:columnName "adduct";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Adduct" ;
+    skos:definition "Assigned ion adduct." ;
+    sf:columnName "adduct" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaMassColumn
     a sf:Column ;
-    skos:prefLabel "Mass";
-    skos:definition "Neutral mass.";
-    sf:columnName "mass";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Mass" ;
+    skos:definition "Neutral mass." ;
+    sf:columnName "mass" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaNoiseColumn
     a sf:Column ;
-    skos:prefLabel "Noise";
-    skos:definition "Estimated noise.";
-    sf:columnName "noise";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Noise" ;
+    skos:definition "Estimated noise." ;
+    sf:columnName "noise" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaRtMinColumn
     a sf:Column ;
-    skos:prefLabel "RT minimum";
-    skos:definition "Feature lower retention-time boundary.";
-    sf:columnName "rtmin";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "RT minimum" ;
+    skos:definition "Feature lower retention-time boundary." ;
+    sf:columnName "rtmin" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaRtMaxColumn
     a sf:Column ;
-    skos:prefLabel "RT maximum";
-    skos:definition "Feature upper retention-time boundary.";
-    sf:columnName "rtmax";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "RT maximum" ;
+    skos:definition "Feature upper retention-time boundary." ;
+    sf:columnName "rtmax" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaWidthColumn
     a sf:Column ;
-    skos:prefLabel "Width";
-    skos:definition "Feature retention-time width.";
-    sf:columnName "width";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Width" ;
+    skos:definition "Feature retention-time width." ;
+    sf:columnName "width" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaMzMinColumn
     a sf:Column ;
-    skos:prefLabel "MZ minimum";
-    skos:definition "Feature lower m/z boundary.";
-    sf:columnName "mzmin";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "MZ minimum" ;
+    skos:definition "Feature lower m/z boundary." ;
+    sf:columnName "mzmin" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaMzMaxColumn
     a sf:Column ;
-    skos:prefLabel "MZ maximum";
-    skos:definition "Feature upper m/z boundary.";
-    sf:columnName "mzmax";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "MZ maximum" ;
+    skos:definition "Feature upper m/z boundary." ;
+    sf:columnName "mzmax" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaPpmColumn
     a sf:Column ;
-    skos:prefLabel "PPM";
-    skos:definition "Feature m/z spread in parts per million.";
-    sf:columnName "ppm";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "PPM" ;
+    skos:definition "Feature m/z spread in parts per million." ;
+    sf:columnName "ppm" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaFwhmRtColumn
     a sf:Column ;
-    skos:prefLabel "RT FWHM";
-    skos:definition "Full width at half maximum in retention time.";
-    sf:columnName "fwhm_rt";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "RT FWHM" ;
+    skos:definition "Full width at half maximum in retention time." ;
+    sf:columnName "fwhm_rt" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaFwhmMzColumn
     a sf:Column ;
-    skos:prefLabel "MZ FWHM";
-    skos:definition "Full width at half maximum in m/z.";
-    sf:columnName "fwhm_mz";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "MZ FWHM" ;
+    skos:definition "Full width at half maximum in m/z." ;
+    sf:columnName "fwhm_mz" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaGaussianAColumn
     a sf:Column ;
-    sf:columnName "gaussian_A";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "gaussian_A" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaGaussianMuColumn
     a sf:Column ;
-    sf:columnName "gaussian_mu";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "gaussian_mu" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaGaussianSigmaColumn
     a sf:Column ;
-    sf:columnName "gaussian_sigma";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "gaussian_sigma" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaGaussianR2Column
     a sf:Column ;
-    sf:columnName "gaussian_r2";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "gaussian_r2" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaJaggednessColumn
     a sf:Column ;
-    sf:columnName "jaggedness";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "jaggedness" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaSharpnessColumn
     a sf:Column ;
-    sf:columnName "sharpness";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "sharpness" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAsymmetryColumn
     a sf:Column ;
-    sf:columnName "asymmetry";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "asymmetry" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaModalityColumn
     a sf:Column ;
-    sf:columnName "modality";
-    sf:type "integer";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "modality" ;
+    sf:type "integer" ;
     sf:storageType "INTEGER" .
 
 sfms:ntaPlatesColumn
     a sf:Column ;
-    sf:columnName "plates";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "plates" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaFilteredColumn
     a sf:Column ;
-    sf:columnName "filtered";
-    sf:type "boolean";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "filtered" ;
+    sf:type "boolean" ;
     sf:storageType "BOOLEAN" .
 
 sfms:ntaFilterColumn
     a sf:Column ;
-    sf:columnName "filter";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "filter" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaFilledColumn
     a sf:Column ;
-    sf:columnName "filled";
-    sf:type "boolean";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "filled" ;
+    sf:type "boolean" ;
     sf:storageType "BOOLEAN" .
 
 sfms:ntaCorrectionColumn
     a sf:Column ;
-    sf:columnName "correction";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "correction" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaEicSizeColumn
     a sf:Column ;
-    sf:columnName "eic_size";
-    sf:type "integer";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "eic_size" ;
+    sf:type "integer" ;
     sf:storageType "INTEGER" .
 
 sfms:ntaEicRtColumn
     a sf:Column ;
-    sf:columnName "eic_rt";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "eic_rt" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaEicMzColumn
     a sf:Column ;
-    sf:columnName "eic_mz";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "eic_mz" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaEicIntensityColumn
     a sf:Column ;
-    sf:columnName "eic_intensity";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "eic_intensity" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaEicBaselineColumn
     a sf:Column ;
-    sf:columnName "eic_baseline";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "eic_baseline" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaEicSmoothedColumn
     a sf:Column ;
-    sf:columnName "eic_smoothed";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "eic_smoothed" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaMs1SizeColumn
     a sf:Column ;
-    sf:columnName "ms1_size";
-    sf:type "integer";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "ms1_size" ;
+    sf:type "integer" ;
     sf:storageType "INTEGER" .
 
 sfms:ntaMs1MzColumn
     a sf:Column ;
-    sf:columnName "ms1_mz";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "ms1_mz" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaMs1IntensityColumn
     a sf:Column ;
-    sf:columnName "ms1_intensity";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "ms1_intensity" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaMs2SizeColumn
     a sf:Column ;
-    sf:columnName "ms2_size";
-    sf:type "integer";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "ms2_size" ;
+    sf:type "integer" ;
     sf:storageType "INTEGER" .
 
 sfms:ntaMs2MzColumn
     a sf:Column ;
-    sf:columnName "ms2_mz";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "ms2_mz" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaMs2IntensityColumn
     a sf:Column ;
-    sf:columnName "ms2_intensity";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "ms2_intensity" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaAnnotationCategoryColumn
     a sf:Column ;
-    sf:columnName "annotation_category";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_category" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaAnnotationTypeColumn
     a sf:Column ;
-    sf:columnName "annotation_type";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_type" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaAnnotationParentFeatureColumn
     a sf:Column ;
-    sf:columnName "annotation_parent_feature";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_parent_feature" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaAnnotationElementColumn
     a sf:Column ;
-    sf:columnName "annotation_element";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_element" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaAnnotationMassErrorDaColumn
     a sf:Column ;
-    sf:columnName "annotation_mass_error_da";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_mass_error_da" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAnnotationMassErrorPpmColumn
     a sf:Column ;
-    sf:columnName "annotation_mass_error_ppm";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_mass_error_ppm" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAnnotationRtErrorColumn
     a sf:Column ;
-    sf:columnName "annotation_rt_error";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_rt_error" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAnnotationRelIntensityColumn
     a sf:Column ;
-    sf:columnName "annotation_rel_intensity";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_rel_intensity" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAnnotationExpectedRelIntensityMinColumn
     a sf:Column ;
-    sf:columnName "annotation_expected_rel_intensity_min";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_expected_rel_intensity_min" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAnnotationExpectedRelIntensityMaxColumn
     a sf:Column ;
-    sf:columnName "annotation_expected_rel_intensity_max";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_expected_rel_intensity_max" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaAnnotationScoreColumn
     a sf:Column ;
-    sf:columnName "annotation_score";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "annotation_score" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentSizeColumn
     a sf:Column ;
-    sf:columnName "component_size";
-    sf:type "integer";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_size" ;
+    sf:type "integer" ;
     sf:storageType "INTEGER" .
 
 sfms:ntaComponentRtCenterColumn
     a sf:Column ;
-    sf:columnName "component_rt_center";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_rt_center" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentRtSpreadColumn
     a sf:Column ;
-    sf:columnName "component_rt_spread";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_rt_spread" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentDensityColumn
     a sf:Column ;
-    sf:columnName "component_density";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_density" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentMeanCorrelationColumn
     a sf:Column ;
-    sf:columnName "component_mean_correlation";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_mean_correlation" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentBestPartnerColumn
     a sf:Column ;
-    sf:columnName "component_best_partner";
-    sf:type "string";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_best_partner" ;
+    sf:type "string" ;
     sf:storageType "VARCHAR" .
 
 sfms:ntaComponentMaxCorrelationColumn
     a sf:Column ;
-    sf:columnName "component_max_correlation";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_max_correlation" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentMeanCorrelationToComponentColumn
     a sf:Column ;
-    sf:columnName "component_mean_correlation_to_component";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_mean_correlation_to_component" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentMembershipScoreColumn
     a sf:Column ;
-    sf:columnName "component_membership_score";
-    sf:type "real";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_membership_score" ;
+    sf:type "real" ;
     sf:storageType "DOUBLE" .
 
 sfms:ntaComponentIsCoreColumn
     a sf:Column ;
-    sf:columnName "component_is_core";
-    sf:type "boolean";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_is_core" ;
+    sf:type "boolean" ;
     sf:storageType "BOOLEAN" .
 
 sfms:ntaComponentBridgeFlagColumn
     a sf:Column ;
-    sf:columnName "component_bridge_flag";
-    sf:type "boolean";
+    sf:availableInDomain sfms:mass_spec ;
+    sf:columnName "component_bridge_flag" ;
+    sf:type "boolean" ;
     sf:storageType "BOOLEAN" .
 
 sfms:ntaGaussianAColumn
-    skos:prefLabel "Gaussian A";
+    skos:prefLabel "Gaussian A" ;
     skos:definition "Gaussian amplitude." .
 
 sfms:ntaGaussianMuColumn
-    skos:prefLabel "Gaussian mu";
+    skos:prefLabel "Gaussian mu" ;
     skos:definition "Gaussian center." .
 
 sfms:ntaGaussianSigmaColumn
-    skos:prefLabel "Gaussian sigma";
+    skos:prefLabel "Gaussian sigma" ;
     skos:definition "Gaussian spread." .
 
 sfms:ntaGaussianR2Column
-    skos:prefLabel "Gaussian R2";
+    skos:prefLabel "Gaussian R2" ;
     skos:definition "Gaussian fit coefficient." .
 
 sfms:ntaJaggednessColumn
-    skos:prefLabel "Jaggedness";
+    skos:prefLabel "Jaggedness" ;
     skos:definition "Peak jaggedness metric." .
 
 sfms:ntaSharpnessColumn
-    skos:prefLabel "Sharpness";
+    skos:prefLabel "Sharpness" ;
     skos:definition "Peak sharpness metric." .
 
 sfms:ntaAsymmetryColumn
-    skos:prefLabel "Asymmetry";
+    skos:prefLabel "Asymmetry" ;
     skos:definition "Peak asymmetry metric." .
 
 sfms:ntaModalityColumn
-    skos:prefLabel "Modality";
+    skos:prefLabel "Modality" ;
     skos:definition "Peak modality count." .
 
 sfms:ntaPlatesColumn
-    skos:prefLabel "Plates";
+    skos:prefLabel "Plates" ;
     skos:definition "Theoretical plate count." .
 
 sfms:ntaFilteredColumn
-    skos:prefLabel "Filtered";
+    skos:prefLabel "Filtered" ;
     skos:definition "Whether the feature was filtered." .
 
 sfms:ntaFilterColumn
-    skos:prefLabel "Filter";
+    skos:prefLabel "Filter" ;
     skos:definition "Applied filter name." .
 
 sfms:ntaFilledColumn
-    skos:prefLabel "Filled";
+    skos:prefLabel "Filled" ;
     skos:definition "Whether the feature was gap filled." .
 
 sfms:ntaCorrectionColumn
-    skos:prefLabel "Correction";
+    skos:prefLabel "Correction" ;
     skos:definition "Feature correction factor." .
 
 sfms:ntaEicSizeColumn
-    skos:prefLabel "EIC size";
+    skos:prefLabel "EIC size" ;
     skos:definition "Encoded EIC point count." .
 
 sfms:ntaEicRtColumn
-    skos:prefLabel "EIC RT";
+    skos:prefLabel "EIC RT" ;
     skos:definition "Encoded EIC retention times." .
 
 sfms:ntaEicMzColumn
-    skos:prefLabel "EIC m/z";
+    skos:prefLabel "EIC m/z" ;
     skos:definition "Encoded EIC m/z values." .
 
 sfms:ntaEicIntensityColumn
-    skos:prefLabel "EIC intensity";
+    skos:prefLabel "EIC intensity" ;
     skos:definition "Encoded EIC intensities." .
 
 sfms:ntaEicBaselineColumn
-    skos:prefLabel "EIC baseline";
+    skos:prefLabel "EIC baseline" ;
     skos:definition "Encoded EIC baseline." .
 
 sfms:ntaEicSmoothedColumn
-    skos:prefLabel "EIC smoothed";
+    skos:prefLabel "EIC smoothed" ;
     skos:definition "Encoded smoothed EIC." .
 
 sfms:ntaMs1SizeColumn
-    skos:prefLabel "MS1 size";
+    skos:prefLabel "MS1 size" ;
     skos:definition "MS1 point count." .
 
 sfms:ntaMs1MzColumn
-    skos:prefLabel "MS1 m/z";
+    skos:prefLabel "MS1 m/z" ;
     skos:definition "Encoded MS1 m/z values." .
 
 sfms:ntaMs1IntensityColumn
-    skos:prefLabel "MS1 intensity";
+    skos:prefLabel "MS1 intensity" ;
     skos:definition "Encoded MS1 intensities." .
 
 sfms:ntaMs2SizeColumn
-    skos:prefLabel "MS2 size";
+    skos:prefLabel "MS2 size" ;
     skos:definition "MS2 point count." .
 
 sfms:ntaMs2MzColumn
-    skos:prefLabel "MS2 m/z";
+    skos:prefLabel "MS2 m/z" ;
     skos:definition "Encoded MS2 m/z values." .
 
 sfms:ntaMs2IntensityColumn
-    skos:prefLabel "MS2 intensity";
+    skos:prefLabel "MS2 intensity" ;
     skos:definition "Encoded MS2 intensities." .
 
 sfms:ntaAnnotationCategoryColumn
-    skos:prefLabel "Annotation category";
+    skos:prefLabel "Annotation category" ;
     skos:definition "Annotation category." .
 
 sfms:ntaAnnotationTypeColumn
-    skos:prefLabel "Annotation type";
+    skos:prefLabel "Annotation type" ;
     skos:definition "Annotation type." .
 
 sfms:ntaAnnotationParentFeatureColumn
-    skos:prefLabel "Annotation parent";
+    skos:prefLabel "Annotation parent" ;
     skos:definition "Annotation parent feature." .
 
 sfms:ntaAnnotationElementColumn
-    skos:prefLabel "Annotation element";
+    skos:prefLabel "Annotation element" ;
     skos:definition "Annotation element." .
 
 sfms:ntaAnnotationMassErrorDaColumn
-    skos:prefLabel "Annotation mass error";
+    skos:prefLabel "Annotation mass error" ;
     skos:definition "Annotation mass error in daltons." .
 
 sfms:ntaAnnotationMassErrorPpmColumn
-    skos:prefLabel "Annotation mass error PPM";
+    skos:prefLabel "Annotation mass error PPM" ;
     skos:definition "Annotation mass error in PPM." .
 
 sfms:ntaAnnotationRtErrorColumn
-    skos:prefLabel "Annotation RT error";
+    skos:prefLabel "Annotation RT error" ;
     skos:definition "Annotation retention-time error." .
 
 sfms:ntaAnnotationRelIntensityColumn
-    skos:prefLabel "Annotation relative intensity";
+    skos:prefLabel "Annotation relative intensity" ;
     skos:definition "Annotation relative intensity." .
 
 sfms:ntaAnnotationExpectedRelIntensityMinColumn
-    skos:prefLabel "Annotation expected minimum";
+    skos:prefLabel "Annotation expected minimum" ;
     skos:definition "Minimum expected relative intensity." .
 
 sfms:ntaAnnotationExpectedRelIntensityMaxColumn
-    skos:prefLabel "Annotation expected maximum";
+    skos:prefLabel "Annotation expected maximum" ;
     skos:definition "Maximum expected relative intensity." .
 
 sfms:ntaAnnotationScoreColumn
-    skos:prefLabel "Annotation score";
+    skos:prefLabel "Annotation score" ;
     skos:definition "Annotation score." .
 
 sfms:ntaComponentSizeColumn
-    skos:prefLabel "Component size";
+    skos:prefLabel "Component size" ;
     skos:definition "Component feature count." .
 
 sfms:ntaComponentRtCenterColumn
-    skos:prefLabel "Component RT center";
+    skos:prefLabel "Component RT center" ;
     skos:definition "Component retention-time center." .
 
 sfms:ntaComponentRtSpreadColumn
-    skos:prefLabel "Component RT spread";
+    skos:prefLabel "Component RT spread" ;
     skos:definition "Component retention-time spread." .
 
 sfms:ntaComponentDensityColumn
-    skos:prefLabel "Component density";
+    skos:prefLabel "Component density" ;
     skos:definition "Component density." .
 
 sfms:ntaComponentMeanCorrelationColumn
-    skos:prefLabel "Component mean correlation";
+    skos:prefLabel "Component mean correlation" ;
     skos:definition "Mean component correlation." .
 
 sfms:ntaComponentBestPartnerColumn
-    skos:prefLabel "Component best partner";
+    skos:prefLabel "Component best partner" ;
     skos:definition "Best correlated component partner." .
 
 sfms:ntaComponentMaxCorrelationColumn
-    skos:prefLabel "Component maximum correlation";
+    skos:prefLabel "Component maximum correlation" ;
     skos:definition "Maximum component correlation." .
 
 sfms:ntaComponentMeanCorrelationToComponentColumn
-    skos:prefLabel "Component correlation";
+    skos:prefLabel "Component correlation" ;
     skos:definition "Mean correlation to component." .
 
 sfms:ntaComponentMembershipScoreColumn
-    skos:prefLabel "Component membership";
+    skos:prefLabel "Component membership" ;
     skos:definition "Component membership score." .
 
 sfms:ntaComponentIsCoreColumn
-    skos:prefLabel "Component core";
+    skos:prefLabel "Component core" ;
     skos:definition "Whether the feature is component core." .
 
 sfms:ntaComponentBridgeFlagColumn
-    skos:prefLabel "Component bridge";
+    skos:prefLabel "Component bridge" ;
     skos:definition "Whether the feature is a component bridge." .
 
 sfms:suspectsAnalysisColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis" ;
     skos:definition "NTA suspect or internal-standard table column analysis." ;
@@ -1246,6 +1380,7 @@ sfms:suspectsAnalysisColumn
 
 sfms:suspectsFeatureColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature" ;
     skos:definition "NTA suspect or internal-standard table column feature." ;
@@ -1255,6 +1390,7 @@ sfms:suspectsFeatureColumn
 
 sfms:suspectsFeatureGroupColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature Group" ;
     skos:definition "NTA suspect or internal-standard table column feature_group." ;
@@ -1264,6 +1400,7 @@ sfms:suspectsFeatureGroupColumn
 
 sfms:suspectsCandidateRankColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Candidate Rank" ;
     skos:definition "NTA suspect or internal-standard table column candidate_rank." ;
@@ -1273,6 +1410,7 @@ sfms:suspectsCandidateRankColumn
 
 sfms:suspectsNameColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Name" ;
     skos:definition "NTA suspect or internal-standard table column name." ;
@@ -1282,6 +1420,7 @@ sfms:suspectsNameColumn
 
 sfms:suspectsPolarityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Polarity" ;
     skos:definition "NTA suspect or internal-standard table column polarity." ;
@@ -1291,6 +1430,7 @@ sfms:suspectsPolarityColumn
 
 sfms:suspectsDbMassColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Mass" ;
     skos:definition "NTA suspect or internal-standard table column db_mass." ;
@@ -1300,6 +1440,7 @@ sfms:suspectsDbMassColumn
 
 sfms:suspectsExpMassColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Mass" ;
     skos:definition "NTA suspect or internal-standard table column exp_mass." ;
@@ -1309,6 +1450,7 @@ sfms:suspectsExpMassColumn
 
 sfms:suspectsErrorMassColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Error Mass" ;
     skos:definition "NTA suspect or internal-standard table column error_mass." ;
@@ -1318,6 +1460,7 @@ sfms:suspectsErrorMassColumn
 
 sfms:suspectsDbRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Rt" ;
     skos:definition "NTA suspect or internal-standard table column db_rt." ;
@@ -1327,6 +1470,7 @@ sfms:suspectsDbRtColumn
 
 sfms:suspectsExpRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Rt" ;
     skos:definition "NTA suspect or internal-standard table column exp_rt." ;
@@ -1336,6 +1480,7 @@ sfms:suspectsExpRtColumn
 
 sfms:suspectsErrorRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Error Rt" ;
     skos:definition "NTA suspect or internal-standard table column error_rt." ;
@@ -1345,6 +1490,7 @@ sfms:suspectsErrorRtColumn
 
 sfms:suspectsIntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Intensity" ;
     skos:definition "NTA suspect or internal-standard table column intensity." ;
@@ -1354,6 +1500,7 @@ sfms:suspectsIntensityColumn
 
 sfms:suspectsAreaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Area" ;
     skos:definition "NTA suspect or internal-standard table column area." ;
@@ -1363,6 +1510,7 @@ sfms:suspectsAreaColumn
 
 sfms:suspectsIdLevelColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Id Level" ;
     skos:definition "NTA suspect or internal-standard table column id_level." ;
@@ -1372,6 +1520,7 @@ sfms:suspectsIdLevelColumn
 
 sfms:suspectsScoreColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Score" ;
     skos:definition "NTA suspect or internal-standard table column score." ;
@@ -1381,6 +1530,7 @@ sfms:suspectsScoreColumn
 
 sfms:suspectsSharedFragmentsColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Shared Fragments" ;
     skos:definition "NTA suspect or internal-standard table column shared_fragments." ;
@@ -1390,6 +1540,7 @@ sfms:suspectsSharedFragmentsColumn
 
 sfms:suspectsCosineSimilarityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cosine Similarity" ;
     skos:definition "NTA suspect or internal-standard table column cosine_similarity." ;
@@ -1399,6 +1550,7 @@ sfms:suspectsCosineSimilarityColumn
 
 sfms:suspectsFormulaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Formula" ;
     skos:definition "NTA suspect or internal-standard table column formula." ;
@@ -1408,6 +1560,7 @@ sfms:suspectsFormulaColumn
 
 sfms:suspectsSmilesColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Smiles" ;
     skos:definition "NTA suspect or internal-standard table column SMILES." ;
@@ -1417,6 +1570,7 @@ sfms:suspectsSmilesColumn
 
 sfms:suspectsInChIColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Inchi" ;
     skos:definition "NTA suspect or internal-standard table column InChI." ;
@@ -1426,6 +1580,7 @@ sfms:suspectsInChIColumn
 
 sfms:suspectsInChIKeyColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Inchikey" ;
     skos:definition "NTA suspect or internal-standard table column InChIKey." ;
@@ -1435,6 +1590,7 @@ sfms:suspectsInChIKeyColumn
 
 sfms:suspectsXLogPColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Xlogp" ;
     skos:definition "NTA suspect or internal-standard table column xLogP." ;
@@ -1444,6 +1600,7 @@ sfms:suspectsXLogPColumn
 
 sfms:suspectsDatabaseIdColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Database Id" ;
     skos:definition "NTA suspect or internal-standard table column database_id." ;
@@ -1453,6 +1610,7 @@ sfms:suspectsDatabaseIdColumn
 
 sfms:suspectsDbMs2SizeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Size" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_size." ;
@@ -1462,6 +1620,7 @@ sfms:suspectsDbMs2SizeColumn
 
 sfms:suspectsDbMs2MzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Mz" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_mz." ;
@@ -1471,6 +1630,7 @@ sfms:suspectsDbMs2MzColumn
 
 sfms:suspectsDbMs2IntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Intensity" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_intensity." ;
@@ -1480,6 +1640,7 @@ sfms:suspectsDbMs2IntensityColumn
 
 sfms:suspectsDbMs2FormulaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Formula" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_formula." ;
@@ -1489,6 +1650,7 @@ sfms:suspectsDbMs2FormulaColumn
 
 sfms:suspectsDbMs2SmilesColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Smiles" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_smiles." ;
@@ -1498,6 +1660,7 @@ sfms:suspectsDbMs2SmilesColumn
 
 sfms:suspectsExpMs2SizeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Ms2 Size" ;
     skos:definition "NTA suspect or internal-standard table column exp_ms2_size." ;
@@ -1507,6 +1670,7 @@ sfms:suspectsExpMs2SizeColumn
 
 sfms:suspectsExpMs2MzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Ms2 Mz" ;
     skos:definition "NTA suspect or internal-standard table column exp_ms2_mz." ;
@@ -1516,6 +1680,7 @@ sfms:suspectsExpMs2MzColumn
 
 sfms:suspectsExpMs2IntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Ms2 Intensity" ;
     skos:definition "NTA suspect or internal-standard table column exp_ms2_intensity." ;
@@ -1525,6 +1690,7 @@ sfms:suspectsExpMs2IntensityColumn
 
 sfms:isAnalysisColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis" ;
     skos:definition "NTA suspect or internal-standard table column analysis." ;
@@ -1534,6 +1700,7 @@ sfms:isAnalysisColumn
 
 sfms:isFeatureColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature" ;
     skos:definition "NTA suspect or internal-standard table column feature." ;
@@ -1543,6 +1710,7 @@ sfms:isFeatureColumn
 
 sfms:isFeatureGroupColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature Group" ;
     skos:definition "NTA suspect or internal-standard table column feature_group." ;
@@ -1552,6 +1720,7 @@ sfms:isFeatureGroupColumn
 
 sfms:isFeatureComponentColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature Component" ;
     skos:definition "NTA suspect or internal-standard table column feature_component." ;
@@ -1561,6 +1730,7 @@ sfms:isFeatureComponentColumn
 
 sfms:isAdductColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Adduct" ;
     skos:definition "NTA suspect or internal-standard table column adduct." ;
@@ -1570,6 +1740,7 @@ sfms:isAdductColumn
 
 sfms:isCandidateRankColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Candidate Rank" ;
     skos:definition "NTA suspect or internal-standard table column candidate_rank." ;
@@ -1579,6 +1750,7 @@ sfms:isCandidateRankColumn
 
 sfms:isNameColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Name" ;
     skos:definition "NTA suspect or internal-standard table column name." ;
@@ -1588,6 +1760,7 @@ sfms:isNameColumn
 
 sfms:isPolarityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Polarity" ;
     skos:definition "NTA suspect or internal-standard table column polarity." ;
@@ -1597,6 +1770,7 @@ sfms:isPolarityColumn
 
 sfms:isDbMassColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Mass" ;
     skos:definition "NTA suspect or internal-standard table column db_mass." ;
@@ -1606,6 +1780,7 @@ sfms:isDbMassColumn
 
 sfms:isExpMassColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Mass" ;
     skos:definition "NTA suspect or internal-standard table column exp_mass." ;
@@ -1615,6 +1790,7 @@ sfms:isExpMassColumn
 
 sfms:isErrorMassColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Error Mass" ;
     skos:definition "NTA suspect or internal-standard table column error_mass." ;
@@ -1624,6 +1800,7 @@ sfms:isErrorMassColumn
 
 sfms:isDbRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Rt" ;
     skos:definition "NTA suspect or internal-standard table column db_rt." ;
@@ -1633,6 +1810,7 @@ sfms:isDbRtColumn
 
 sfms:isExpRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Rt" ;
     skos:definition "NTA suspect or internal-standard table column exp_rt." ;
@@ -1642,6 +1820,7 @@ sfms:isExpRtColumn
 
 sfms:isErrorRtColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Error Rt" ;
     skos:definition "NTA suspect or internal-standard table column error_rt." ;
@@ -1651,6 +1830,7 @@ sfms:isErrorRtColumn
 
 sfms:isIntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Intensity" ;
     skos:definition "NTA suspect or internal-standard table column intensity." ;
@@ -1660,6 +1840,7 @@ sfms:isIntensityColumn
 
 sfms:isAreaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Area" ;
     skos:definition "NTA suspect or internal-standard table column area." ;
@@ -1669,6 +1850,7 @@ sfms:isAreaColumn
 
 sfms:isIdLevelColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Id Level" ;
     skos:definition "NTA suspect or internal-standard table column id_level." ;
@@ -1678,6 +1860,7 @@ sfms:isIdLevelColumn
 
 sfms:isScoreColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Score" ;
     skos:definition "NTA suspect or internal-standard table column score." ;
@@ -1687,6 +1870,7 @@ sfms:isScoreColumn
 
 sfms:isSharedFragmentsColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Shared Fragments" ;
     skos:definition "NTA suspect or internal-standard table column shared_fragments." ;
@@ -1696,6 +1880,7 @@ sfms:isSharedFragmentsColumn
 
 sfms:isCosineSimilarityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cosine Similarity" ;
     skos:definition "NTA suspect or internal-standard table column cosine_similarity." ;
@@ -1705,6 +1890,7 @@ sfms:isCosineSimilarityColumn
 
 sfms:isFormulaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Formula" ;
     skos:definition "NTA suspect or internal-standard table column formula." ;
@@ -1714,6 +1900,7 @@ sfms:isFormulaColumn
 
 sfms:isSmilesColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Smiles" ;
     skos:definition "NTA suspect or internal-standard table column SMILES." ;
@@ -1723,6 +1910,7 @@ sfms:isSmilesColumn
 
 sfms:isInChIColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Inchi" ;
     skos:definition "NTA suspect or internal-standard table column InChI." ;
@@ -1732,6 +1920,7 @@ sfms:isInChIColumn
 
 sfms:isInChIKeyColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Inchikey" ;
     skos:definition "NTA suspect or internal-standard table column InChIKey." ;
@@ -1741,6 +1930,7 @@ sfms:isInChIKeyColumn
 
 sfms:isXLogPColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Xlogp" ;
     skos:definition "NTA suspect or internal-standard table column xLogP." ;
@@ -1750,6 +1940,7 @@ sfms:isXLogPColumn
 
 sfms:isDatabaseIdColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Database Id" ;
     skos:definition "NTA suspect or internal-standard table column database_id." ;
@@ -1759,6 +1950,7 @@ sfms:isDatabaseIdColumn
 
 sfms:isDbMs2SizeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Size" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_size." ;
@@ -1768,6 +1960,7 @@ sfms:isDbMs2SizeColumn
 
 sfms:isDbMs2MzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Mz" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_mz." ;
@@ -1777,6 +1970,7 @@ sfms:isDbMs2MzColumn
 
 sfms:isDbMs2IntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Intensity" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_intensity." ;
@@ -1786,6 +1980,7 @@ sfms:isDbMs2IntensityColumn
 
 sfms:isDbMs2FormulaColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Formula" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_formula." ;
@@ -1795,6 +1990,7 @@ sfms:isDbMs2FormulaColumn
 
 sfms:isDbMs2SmilesColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Smiles" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_smiles." ;
@@ -1804,6 +2000,7 @@ sfms:isDbMs2SmilesColumn
 
 sfms:isExpMs2SizeColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Ms2 Size" ;
     skos:definition "NTA suspect or internal-standard table column exp_ms2_size." ;
@@ -1813,6 +2010,7 @@ sfms:isExpMs2SizeColumn
 
 sfms:isExpMs2MzColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Ms2 Mz" ;
     skos:definition "NTA suspect or internal-standard table column exp_ms2_mz." ;
@@ -1822,9 +2020,250 @@ sfms:isExpMs2MzColumn
 
 sfms:isExpMs2IntensityColumn
     a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Ms2 Intensity" ;
     skos:definition "NTA suspect or internal-standard table column exp_ms2_intensity." ;
     sf:columnName "exp_ms2_intensity" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorFeatureGroupColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor feature group" ;
+    skos:definition "Direct precursor feature group of the transformation product." ;
+    sf:columnName "precursor_feature_group" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpMainPrecursorFeatureGroupColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor feature group" ;
+    skos:definition "Main precursor feature group of the transformation product." ;
+    sf:columnName "main_precursor_feature_group" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpAssignmentRankColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Assignment rank" ;
+    skos:definition "Rank of the transformation-product candidate assignment." ;
+    sf:columnName "assignment_rank" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:tpTransformationColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Transformation" ;
+    skos:definition "Name of the transformation applied to the precursor." ;
+    sf:columnName "transformation" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorNameColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor name" ;
+    skos:definition "Name of the direct precursor." ;
+    sf:columnName "precursor_name" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorFormulaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor formula" ;
+    skos:definition "Molecular formula of the direct precursor." ;
+    sf:columnName "precursor_formula" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorMassColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor mass" ;
+    skos:definition "Monoisotopic mass of the direct precursor." ;
+    sf:columnName "precursor_mass" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpPrecursorSmilesColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor SMILES" ;
+    skos:definition "SMILES structure of the direct precursor." ;
+    sf:columnName "precursor_SMILES" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorInChIColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor InChI" ;
+    skos:definition "InChI structure of the direct precursor." ;
+    sf:columnName "precursor_InChI" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorInChIKeyColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor InChIKey" ;
+    skos:definition "InChIKey structure key of the direct precursor." ;
+    sf:columnName "precursor_InChIKey" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpPrecursorXLogPColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor xLogP" ;
+    skos:definition "Predicted logP of the direct precursor." ;
+    sf:columnName "precursor_xLogP" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpMainPrecursorNameColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor name" ;
+    skos:definition "Name of the main precursor." ;
+    sf:columnName "main_precursor_name" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpMainPrecursorFormulaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor formula" ;
+    skos:definition "Molecular formula of the main precursor." ;
+    sf:columnName "main_precursor_formula" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpMainPrecursorMassColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor mass" ;
+    skos:definition "Monoisotopic mass of the main precursor." ;
+    sf:columnName "main_precursor_mass" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpMainPrecursorSmilesColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor SMILES" ;
+    skos:definition "SMILES structure of the main precursor." ;
+    sf:columnName "main_precursor_SMILES" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpMainPrecursorInChIColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor InChI" ;
+    skos:definition "InChI structure of the main precursor." ;
+    sf:columnName "main_precursor_InChI" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpMainPrecursorInChIKeyColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor InChIKey" ;
+    skos:definition "InChIKey structure key of the main precursor." ;
+    sf:columnName "main_precursor_InChIKey" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:tpMainPrecursorXLogPColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor xLogP" ;
+    skos:definition "Predicted logP of the main precursor." ;
+    sf:columnName "main_precursor_xLogP" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpMainPrecursorCosineSimilarityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor cosine similarity" ;
+    skos:definition "MS2 cosine similarity between the product and the main precursor feature." ;
+    sf:columnName "main_precursor_cosine_similarity" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpRtPlausibilityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "RT plausibility" ;
+    skos:definition "Retention-time plausibility of the assignment relative to the direct precursor." ;
+    sf:columnName "rt_plausibility" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpMainPrecursorRtPlausibilityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main precursor RT plausibility" ;
+    skos:definition "Retention-time plausibility of the assignment relative to the main precursor." ;
+    sf:columnName "main_precursor_rt_plausibility" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpAssignmentScoreColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Assignment score" ;
+    skos:definition "Combined assignment score of the transformation product." ;
+    sf:columnName "assignment_score" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:tpNetworkLevelColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Network level" ;
+    skos:definition "Network depth of the transformation product relative to the main precursor." ;
+    sf:columnName "network_level" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:tpAssignmentStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Assignment status" ;
+    skos:definition "Status of the transformation-product assignment." ;
+    sf:columnName "assignment_status" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .

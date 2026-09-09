@@ -59,7 +59,7 @@ int main() {
     std::error_code error;
     std::filesystem::remove(database, error);
     auto project = streamfind::Project::create(
-        {database, "mass-spec-interface", std::nullopt, false, false, "mass_spec"});
+        {database, "mass_spec", {{"owner", "project-a"}}});
 
     const auto analyses = project.run_operation("mass_spec.get_analyses_info", {}, operations);
     if (analyses.at("row_count") != 0) {

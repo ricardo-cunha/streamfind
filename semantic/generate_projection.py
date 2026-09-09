@@ -41,10 +41,17 @@ CREATE TABLE catalogue_entries (
   cacheable         BOOLEAN,               -- methods only
   single_occurrence BOOLEAN,               -- methods only
   mutates_project   BOOLEAN,               -- operations + methods
-  required_methods  JSON                   -- methods only: ordered [canonical_id, ...]
+  required_methods  JSON,                  -- methods only: ordered [canonical_id, ...]
+  module_id         VARCHAR                -- native domain module providing the capability
 );
 CREATE INDEX catalogue_kind_domain ON catalogue_entries (kind, domain);
 CREATE INDEX catalogue_executable ON catalogue_entries (executable);
+CREATE TABLE catalogue_tables (
+  table_name VARCHAR PRIMARY KEY,
+  domain VARCHAR,
+  module_id VARCHAR,
+  columns JSON
+);
 """
 
 
@@ -59,6 +66,22 @@ def resource_name(value):
 
 def json_value(value):
     return float(value) if isinstance(value, Decimal) else value
+
+
+def module_id(graph, resource, kind, domain, canonical_id):
+    declared = graph.value(resource, SF.providedByModule)
+    if declared:
+        return str(declared).rsplit("#", 1)[-1]
+    if domain == "mass_spec":
+        if canonical_id in {
+            "mass_spec.load_chromatograms",
+            "mass_spec.filter_chromatograms_retention_time",
+        }:
+            return "mass_spec.chromatograms"
+        if kind == "method":
+            return "mass_spec.nta"
+        return "mass_spec.base"
+    return f"{domain}.base"
 
 
 def projection():
@@ -199,6 +222,30 @@ def projection():
         if constraint:
             schema["enum"] = str(constraint).split("|")
         return schema
+    def table_manifest():
+        tables = []
+        for table in graph.subjects(RDF.type, SF.Table):
+            table_name = graph.value(table, SF.tableName)
+            if not table_name:
+                continue
+            physical_name = str(table_name)
+            domain_resource = graph.value(table, SF.availableInDomain)
+            domain = str(domain_resource).rsplit("#", 1)[-1] if domain_resource else "streamfind"
+            columns = []
+            for column in graph.objects(table, SF.hasColumn):
+                column_name = graph.value(column, SF.columnName) or graph.value(column, SF.propertyName)
+                column_type = graph.value(column, SF.type)
+                if column_name:
+                    columns.append({"name": str(column_name), "type": str(column_type or "")})
+            module = "mass_spec.base" if domain == "mass_spec" else "streamfind.base"
+            tables.append({
+                "table_name": physical_name,
+                "domain": domain,
+                "module_id": module,
+                "columns": columns,
+            })
+        return sorted(tables, key=lambda value: value["table_name"])
+
     entries = []
     subjects = set(graph.subjects(SF.operationId, None)) | set(graph.subjects(SF.methodId, None))
     for operation in subjects:
@@ -241,6 +288,7 @@ def projection():
             "kind": kind,
             "canonical_id": canonical_id,
             "domain": domain,
+            "module_id": module_id(graph, operation, kind, domain, canonical_id),
             "label": str(graph.value(operation, SKOS.prefLabel)),
             "definition": str(graph.value(operation, SKOS.definition)),
             "interface": {
@@ -271,7 +319,7 @@ def projection():
             entry.update(method_metadata(operation))
         entries.append(entry)
     entries.sort(key=lambda value: value["canonical_id"])
-    return {"version": 2, "entries": entries}
+    return {"version": 2, "entries": entries, "tables": table_manifest()}
 
 
 def entry_json(value):
@@ -311,16 +359,24 @@ def entry_row(entry):
         entry.get("single_occurrence"),
         effects["mutates_project"],
         entry_json(entry.get("required_methods")),
+        entry["module_id"],
     )
 
 
-def build_catalogue_db(entries, path):
+def build_catalogue_db(value, path):
     connection = duckdb.connect(str(path))
     try:
         connection.execute(CATALOGUE_SCHEMA)
         connection.executemany(
-            "INSERT INTO catalogue_entries VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [entry_row(entry) for entry in entries],
+            "INSERT INTO catalogue_entries VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [entry_row(entry) for entry in value["entries"]],
+        )
+        connection.executemany(
+            "INSERT INTO catalogue_tables VALUES (?,?,?,?)",
+            [
+                (table["table_name"], table["domain"], table["module_id"], entry_json(table["columns"]))
+                for table in value["tables"]
+            ],
         )
     finally:
         connection.close()
@@ -368,15 +424,32 @@ def main():
     value = projection()
     payload = catalogue_json(value)
     json_path = ROOT / "generated" / "catalogue.json"
+    matrix_path = ROOT / "generated" / "capability_matrix.json"
     db_path = CATALOGUE_DB
 
     if args.check:
         stale = []
         if not json_path.exists() or json_path.read_text(encoding="utf-8") != payload:
             stale.append("semantic/generated/catalogue.json")
+        matrix = {
+            "version": 1,
+            "capabilities": [
+                {
+                    "canonical_id": entry["canonical_id"],
+                    "kind": entry["kind"],
+                    "domain_id": entry["domain"],
+                    "module_id": entry["module_id"],
+                    "semantic_executable": entry["executable"],
+                }
+                for entry in value["entries"]
+            ],
+        }
+        matrix_payload = catalogue_json(matrix)
+        if not matrix_path.exists() or matrix_path.read_text(encoding="utf-8") != matrix_payload:
+            stale.append("semantic/generated/capability_matrix.json")
         with tempfile.TemporaryDirectory(dir=str(ROOT / "generated")) as tmp_dir:
             tmp_db = Path(tmp_dir) / "catalogue.duckdb"
-            build_catalogue_db(value["entries"], tmp_db)
+            build_catalogue_db(value, tmp_db)
             fresh_hash = duckdb_hash(tmp_db)
             existing_hash = duckdb_hash(db_path) if db_path.exists() else None
         if existing_hash != fresh_hash:
@@ -388,9 +461,23 @@ def main():
 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(payload, encoding="utf-8")
+    matrix = {
+        "version": 1,
+        "capabilities": [
+            {
+                "canonical_id": entry["canonical_id"],
+                "kind": entry["kind"],
+                "domain_id": entry["domain"],
+                "module_id": entry["module_id"],
+                "semantic_executable": entry["executable"],
+            }
+            for entry in value["entries"]
+        ],
+    }
+    matrix_path.write_text(catalogue_json(matrix), encoding="utf-8")
     with tempfile.TemporaryDirectory(dir=str(ROOT / "generated")) as tmp_dir:
         tmp_db = Path(tmp_dir) / "catalogue.duckdb"
-        build_catalogue_db(value["entries"], tmp_db)
+        build_catalogue_db(value, tmp_db)
         os.replace(tmp_db, db_path)
     print(f"generated {len(value['entries'])} semantic entries (catalogue.json + catalogue.duckdb)")
 

@@ -17,8 +17,8 @@ sfcore:OperationShape
     sh:property [ sh:path sf:operationId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:toolName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[a-z][a-z0-9_]*$" ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
-        sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
-        sh:property [ sh:path sf:returns ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Result ] ;
+    sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
+    sh:property [ sh:path sf:returns ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Result ] ;
     sh:property [ sh:path sf:reads ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:mutatesProject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
@@ -28,12 +28,7 @@ sfcore:OperationShape
     sh:property [ sh:path sf:guidance ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path sf:nextOperation ; sh:class sf:Operation ] ;
     sh:property [ sh:path sf:defaults ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:sparql [
-        sh:message "Operation identifiers must be unique." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                $this sf:operationId ?id .
+    sh:sparql [ sh:message "Operation identifiers must be unique." ; sh:select """ SELECT $this WHERE { $this sf:operationId ?id .
                 ?other a sf:Operation ; sf:operationId ?id .
                 FILTER (?other != $this)
             }
@@ -71,12 +66,7 @@ sfcore:MethodShape
     sh:property [ sh:path sf:reads ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:returns ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Result ] ;
-    sh:sparql [
-        sh:message "Method identifiers must be unique." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                $this sf:methodId ?id .
+    sh:sparql [ sh:message "Method identifiers must be unique." ; sh:select """ SELECT $this WHERE { $this sf:methodId ?id .
                 ?other a sf:Method ; sf:methodId ?id .
                 FILTER (?other != $this)
             }
@@ -129,25 +119,15 @@ sfcore:MethodShape
 sfcore:ParameterShape
     a sh:NodeShape ;
     sh:targetClass sf:Parameter ;
-    sh:property [
-        sh:path sf:type ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:string ;
-        sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" )
-    ] ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" ) ] ;
     sh:property [ sh:path sf:required ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:example ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path sf:units ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path sf:nullable ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path sf:hasProperty ; sh:class sf:Field ] ;
-    sh:sparql [
-        sh:message "Array parameters must declare exactly one sf:items schema." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                $this sf:type "array" .
+    sh:sparql [ sh:message "Array parameters must declare exactly one sf:items schema." ; sh:select """ SELECT $this WHERE { $this sf:type "array" .
                 { FILTER NOT EXISTS { $this sf:items ?items . } }
                 UNION
                 { $this sf:items ?items1, ?items2 . FILTER (?items1 != ?items2) }
@@ -178,21 +158,11 @@ sfcore:ErrorShape
 sfcore:ResultShape
     a sh:NodeShape ;
     sh:targetClass sf:Result ;
-    sh:property [
-        sh:path sf:type ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:string ;
-        sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" )
-    ] ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" ) ] ;
     sh:property [ sh:path sf:hasProperty ; sh:class sf:Field ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
-    sh:sparql [
-        sh:message "Array results must declare exactly one sf:items schema." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                $this sf:type "array" .
+    sh:sparql [ sh:message "Array results must declare exactly one sf:items schema." ; sh:select """ SELECT $this WHERE { $this sf:type "array" .
                 FILTER NOT EXISTS { $this sf:items ?items . }
             }
         """
@@ -231,14 +201,10 @@ sfcore:ResultShape
 sfcore:TableShape
     a sh:NodeShape ;
     sh:targetClass sf:Table ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:tableName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Z][A-Z0-9_]*$" ] ;
     sh:property [ sh:path sf:hasColumn ; sh:minCount 1 ; sh:class sf:Column ] ;
-    sh:sparql [
-        sh:message "Table names must be unique." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                $this sf:tableName ?name .
+    sh:sparql [ sh:message "Table names must be unique." ; sh:select """ SELECT $this WHERE { $this sf:tableName ?name .
                 ?other a sf:Table ; sf:tableName ?name .
                 FILTER (?other != $this)
             }
@@ -260,70 +226,26 @@ sfcore:TableShape
 sfcore:ColumnShape
     a sh:NodeShape ;
     sh:targetClass sf:Column ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:columnName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Za-z][A-Za-z0-9_]*$" ] ;
-    sh:property [
-        sh:path sf:type ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:string ;
-        sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" )
-    ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 0 ] ;
     sh:property [ sh:path sf:storageType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:sparql [
-        sh:message "Every column must be referenced by a persisted table or table result." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                FILTER NOT EXISTS { ?table sf:hasColumn $this . }
-                FILTER NOT EXISTS { ?result sf:type "table" ; sf:hasProperty $this . }
-            }
-        """
-    ] .
+    sh:sparql [ sh:message "Every column must be referenced by a persisted table or table result." ; sh:select """ SELECT $this WHERE { FILTER NOT EXISTS { ?table sf:hasColumn $this . } FILTER NOT EXISTS { ?result sf:type "table" ; sf:hasProperty $this . } } """ ] .
 
 sfcore:FieldShape
     a sh:NodeShape ;
     sh:targetClass sf:Field ;
-    sh:property [
-        sh:path sf:type ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:string ;
-        sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" )
-    ] ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:required ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:example ; sh:maxCount 1 ] ;
     sh:property [ sh:path sf:hasProperty ; sh:class sf:Field ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
-    sh:sparql [
-        sh:message "Logical fields must declare exactly one JSON property name." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                FILTER NOT EXISTS { $this a sf:Column . }
-                { FILTER NOT EXISTS { $this sf:propertyName ?name . } }
-                UNION
-                { $this sf:propertyName ?name1, ?name2 . FILTER (?name1 != ?name2) }
-            }
-        """
-    ] ;
-    sh:sparql [
-        sh:message "Logical fields must not declare physical column metadata." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                FILTER NOT EXISTS { $this a sf:Column . }
-                { $this sf:columnName ?value } UNION { $this sf:storageType ?value }
-            }
-        """
-    ] ;
-    sh:sparql [
-        sh:message "Array fields must declare exactly one sf:items schema." ;
-        sh:select """
-            SELECT $this
-            WHERE {
-                $this sf:type "array" .
+    sh:sparql [ sh:message "Logical fields must declare exactly one JSON property name." ; sh:select """ SELECT $this WHERE { FILTER NOT EXISTS { $this a sf:Column . } { FILTER NOT EXISTS { $this sf:propertyName ?name . } } UNION { $this sf:propertyName ?name1, ?name2 . FILTER (?name1 != ?name2) } } """ ] ;
+    sh:sparql [ sh:message "Logical fields must not declare physical column metadata." ; sh:select """ SELECT $this WHERE { FILTER NOT EXISTS { $this a sf:Column . } { $this sf:columnName ?value } UNION { $this sf:storageType ?value } } """ ] ;
+    sh:sparql [ sh:message "Array fields must declare exactly one sf:items schema." ; sh:select """ SELECT $this WHERE { $this sf:type "array" .
                 FILTER NOT EXISTS { $this sf:items ?items . }
             }
         """

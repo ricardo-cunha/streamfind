@@ -35,7 +35,7 @@ std::vector<std::string> expected_core_tools(const streamfind::Json &entries) {
 
 /// The full expected tool set: core tools + all registered domain operations
 /// (methods are never tools). Operations are always advertised because they
-/// are stateless and carry their own database_path/project_id.
+/// are stateless and carry their own database_path.
 std::vector<std::string> expected_all_tools(const streamfind::Json &entries,
                                              const streamfind::OperationRegistry &operations) {
     auto names = expected_core_tools(entries);
@@ -80,7 +80,6 @@ int main() {
     assert(create != tools.end());
     const auto required = create->at("inputSchema").at("required");
     assert(std::find(required.begin(), required.end(), "database_path") != required.end());
-    assert(std::find(required.begin(), required.end(), "project_id") != required.end());
 
     const auto path = streamfind::test::tmp_projects_dir() / "streamfind-mcp-lifecycle.duckdb";
     std::error_code error;
@@ -103,7 +102,7 @@ int main() {
     assert(find_features->at("inputSchema").at("properties").is_object());
 
     const auto create_call = session.handle({{"id", 2}, {"method", "tools/call"}, {"params", {
-        {"name", "create"}, {"arguments", {{"database_path", path.string()}, {"project_id", "mcp"}, {"domain", "mass_spec"}}}
+        {"name", "create"}, {"arguments", {{"database_path", path.string()}, {"domain", "mass_spec"}}}
     }}});
     if (create_call.at("result").value("isError", false)) {
         std::cerr << "create failed\n";
@@ -117,11 +116,11 @@ int main() {
     assert(eic_before_connect != before_connect.end());
     assert(eic_before_connect->at("inputSchema").at("properties").at("targets").at("items").contains("properties"));
     const auto pre_connect_info = session.handle({{"id", 10}, {"method", "tools/call"}, {"params", {
-        {"name", "mass_spec.get_analyses_info"}, {"arguments", {{"database_path", path.string()}, {"project_id", "mcp"}}}
+        {"name", "mass_spec.get_analyses_info"}, {"arguments", {{"database_path", path.string()}}}
     }}});
     assert(!pre_connect_info.at("result").value("isError", false));
     const auto connect = session.handle({{"id", 4}, {"method", "tools/call"}, {"params", {
-        {"name", "connect"}, {"arguments", {{"database_path", path.string()}, {"project_id", "mcp"}}}
+        {"name", "connect"}, {"arguments", {{"database_path", path.string()}}}
     }}});
     if (connect.at("result").value("isError", false)) {
         std::cerr << "connect failed\n";
@@ -151,7 +150,7 @@ int main() {
         return 1;
     }
     const auto info = session.handle({{"id", 5}, {"method", "tools/call"}, {"params", {
-        {"name", "mass_spec.get_analyses_info"}, {"arguments", {{"database_path", path.string()}, {"project_id", "mcp"}}}
+        {"name", "mass_spec.get_analyses_info"}, {"arguments", {{"database_path", path.string()}}}
     }}});
     if (info.at("result").value("isError", false) ||
         streamfind::Json::parse(info.at("result").at("content").at(0).at("text").get<std::string>()).at("row_count") != 0) {
@@ -159,7 +158,7 @@ int main() {
         return 1;
     }
     const auto close = session.handle({{"id", 6}, {"method", "tools/call"}, {"params", {
-        {"name", "close"}, {"arguments", {{"database_path", path.string()}, {"project_id", "mcp"}}}
+        {"name", "close"}, {"arguments", {{"database_path", path.string()}}}
     }}});
     if (close.at("result").value("isError", false)) {
         std::cerr << "close failed\n";

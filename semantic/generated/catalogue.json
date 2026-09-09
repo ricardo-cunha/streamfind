@@ -5,6 +5,7 @@
       "kind": "operation",
       "canonical_id": "add_method",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Add a method to the project workflow",
       "definition": "Append one validated workflow method to the ordered project workflow. The method must belong to the project's immutable domain and its parameters must match the method schema returned by get_available_methods.",
       "interface": {
@@ -14,7 +15,7 @@
         "guidance": "Use get_available_methods(domain) first, copy a method id and its parameter names/types, then call add_method. Call validate_workflow before run_workflow.",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -30,14 +31,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "method": {
@@ -59,7 +52,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "method"
           ]
         }
@@ -82,25 +74,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -194,10 +167,11 @@
     },
     {
       "kind": "operation",
-      "canonical_id": "close",
+      "canonical_id": "cancel_execution",
       "domain": "streamfind",
-      "label": "Close a project handle",
-      "definition": "Clear the connected project context used for workflow methods. This does not delete the project and does not remove stateless operation tools.",
+      "module_id": "streamfind.base",
+      "label": "Cancel workflow execution",
+      "definition": "Cancel a queued execution or request cancellation of a running execution.",
       "interface": {
         "category": "domain-operation",
         "invocation_model": "stateless",
@@ -205,15 +179,15 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
-        "name": "close",
+        "name": "cancel_execution",
         "input_schema": {
           "type": "object",
-          "title": "Close a project handle",
-          "description": "Clear the connected project context used for workflow methods. This does not delete the project and does not remove stateless operation tools.",
+          "title": "Cancel workflow execution",
+          "description": "Cancel a queued execution or request cancellation of a running execution.",
           "properties": {
             "database_path": {
               "type": "string",
@@ -222,19 +196,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -257,9 +222,65 @@
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
-        },
+        }
+      ],
+      "result": {
+        "id": "https://streamfind.dev/catalogue/core#workflowExecutionResult",
+        "schema": {
+          "type": "object",
+          "title": "Workflow execution result",
+          "description": "Workflow results, cancellation state, and the persisted workflow."
+        }
+      },
+      "effects": {
+        "mutates_project": true,
+        "reads": [],
+        "writes": [
+          "WORKFLOW_EXECUTION"
+        ]
+      }
+    },
+    {
+      "kind": "operation",
+      "canonical_id": "close",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "label": "Close a project handle",
+      "definition": "Clear the connected project context used for workflow methods. This does not delete the project and does not remove stateless operation tools.",
+      "interface": {
+        "category": "domain-operation",
+        "invocation_model": "stateless",
+        "requires_connection": false,
+        "guidance": "",
+        "next_operations": []
+      },
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "executable": true,
+      "exposed": true,
+      "mcp": {
+        "name": "close",
+        "input_schema": {
+          "type": "object",
+          "title": "Close a project handle",
+          "description": "Clear the connected project context used for workflow methods. This does not delete the project and does not remove stateless operation tools.",
+          "properties": {
+            "database_path": {
+              "type": "string",
+              "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+              "title": "Database path",
+              "examples": [
+                "/data/project.duckdb"
+              ]
+            }
+          },
+          "required": [
+            "database_path"
+          ]
+        }
+      },
+      "parameters": [
         {
-          "name": "project_id",
+          "name": "database_path",
           "type": "string",
           "required": true,
           "constraints": {},
@@ -267,14 +288,14 @@
           "extensions": [],
           "schema": {
             "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
+            "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+            "title": "Database path",
             "examples": [
-              "demo"
+              "/data/project.duckdb"
             ]
           },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
+          "example": "/data/project.duckdb",
+          "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
         }
       ],
@@ -308,6 +329,7 @@
       "kind": "operation",
       "canonical_id": "connect",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Connect an MCP session to a project",
       "definition": "Open an existing project and bind its immutable domain to the MCP session for workflow-method operations. Domain operations remain discoverable and callable without connect; connect establishes the context used by add_method, validate_workflow, run_method, and run_workflow.",
       "interface": {
@@ -317,7 +339,7 @@
         "guidance": "Call connect only after create or describe confirms the project. It does not add operation tools to tools/list. Use it when planning or executing workflow methods; close clears that session context.",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -334,19 +356,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -368,25 +381,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -420,8 +414,9 @@
       "kind": "operation",
       "canonical_id": "copy",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Copy a project",
-      "definition": "Copy a complete persisted project, including metadata, workflow, analyses, cached tables, and audit information, to a destination database and project identifier.",
+      "definition": "Copy a complete persisted project, including metadata, workflow, analyses, cached tables, and audit information, to a destination database.",
       "interface": {
         "category": "domain-operation",
         "invocation_model": "stateless",
@@ -429,7 +424,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -437,7 +432,7 @@
         "input_schema": {
           "type": "object",
           "title": "Copy a project",
-          "description": "Copy a complete persisted project, including metadata, workflow, analyses, cached tables, and audit information, to a destination database and project identifier.",
+          "description": "Copy a complete persisted project, including metadata, workflow, analyses, cached tables, and audit information, to a destination database.",
           "properties": {
             "database_path": {
               "type": "string",
@@ -447,14 +442,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "destination_database_path": {
               "type": "string",
               "description": "Filesystem path for the copied DuckDB project database.",
@@ -462,21 +449,11 @@
               "examples": [
                 "/data/copied.duckdb"
               ]
-            },
-            "destination_project_id": {
-              "type": "string",
-              "description": "Logical identifier for the copied project.",
-              "title": "Destination project identifier",
-              "examples": [
-                "copy"
-              ]
             }
           },
           "required": [
             "database_path",
-            "project_id",
-            "destination_database_path",
-            "destination_project_id"
+            "destination_database_path"
           ]
         }
       },
@@ -501,25 +478,6 @@
           "default": null
         },
         {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-          "default": null
-        },
-        {
           "name": "destination_database_path",
           "type": "string",
           "required": true,
@@ -537,25 +495,6 @@
           "example": "/data/copied.duckdb",
           "description": "Filesystem path for the copied DuckDB project database.",
           "default": null
-        },
-        {
-          "name": "destination_project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical identifier for the copied project.",
-            "title": "Destination project identifier",
-            "examples": [
-              "copy"
-            ]
-          },
-          "example": "copy",
-          "description": "Logical identifier for the copied project.",
-          "default": null
         }
       ],
       "result": {
@@ -565,12 +504,6 @@
           "title": "Project descriptor",
           "description": "Project identity, metadata, workflow, table list, and cache summary.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "domain": {
               "type": "array",
               "items": {
@@ -653,18 +586,19 @@
       "kind": "operation",
       "canonical_id": "create",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Create a project",
       "definition": "Create a new persisted DuckDB project and assign its immutable domain. This is the normal first project-management operation; after it succeeds, call describe to inspect the created project.",
       "interface": {
         "category": "project-management",
         "invocation_model": "stateless",
         "requires_connection": false,
-        "guidance": "Use create once for a new database/project identifier. Then use describe to inspect it. Do not call create to open an existing project; use describe or connect instead.",
+        "guidance": "Use create once for a new database. Then use describe to inspect it. Do not call create to open an existing project; use describe or connect instead.",
         "next_operations": [
           "describe"
         ]
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -680,14 +614,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "domain": {
@@ -707,7 +633,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "domain"
           ]
         }
@@ -730,25 +655,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -784,12 +690,6 @@
           "title": "Project descriptor",
           "description": "Project identity, metadata, workflow, table list, and cache summary.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "domain": {
               "type": "array",
               "items": {
@@ -870,10 +770,11 @@
     },
     {
       "kind": "operation",
-      "canonical_id": "delete_cache",
+      "canonical_id": "create_workflow_execution",
       "domain": "streamfind",
-      "label": "Delete project cache",
-      "definition": "Delete all cache entries stored for a project.",
+      "module_id": "streamfind.base",
+      "label": "Create workflow execution",
+      "definition": "Create a durable queued workflow execution record for the selected project.",
       "interface": {
         "category": "domain-operation",
         "invocation_model": "stateless",
@@ -881,15 +782,15 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
-        "name": "delete_cache",
+        "name": "create_workflow_execution",
         "input_schema": {
           "type": "object",
-          "title": "Delete project cache",
-          "description": "Delete all cache entries stored for a project.",
+          "title": "Create workflow execution",
+          "description": "Create a durable queued workflow execution record for the selected project.",
           "properties": {
             "database_path": {
               "type": "string",
@@ -898,19 +799,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -933,9 +825,65 @@
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
-        },
+        }
+      ],
+      "result": {
+        "id": "https://streamfind.dev/catalogue/core#workflowExecutionResult",
+        "schema": {
+          "type": "object",
+          "title": "Workflow execution result",
+          "description": "Workflow results, cancellation state, and the persisted workflow."
+        }
+      },
+      "effects": {
+        "mutates_project": true,
+        "reads": [],
+        "writes": [
+          "WORKFLOW_EXECUTION"
+        ]
+      }
+    },
+    {
+      "kind": "operation",
+      "canonical_id": "delete_cache",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "label": "Delete project cache",
+      "definition": "Delete all cache entries stored for a project.",
+      "interface": {
+        "category": "domain-operation",
+        "invocation_model": "stateless",
+        "requires_connection": false,
+        "guidance": "",
+        "next_operations": []
+      },
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "executable": true,
+      "exposed": true,
+      "mcp": {
+        "name": "delete_cache",
+        "input_schema": {
+          "type": "object",
+          "title": "Delete project cache",
+          "description": "Delete all cache entries stored for a project.",
+          "properties": {
+            "database_path": {
+              "type": "string",
+              "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+              "title": "Database path",
+              "examples": [
+                "/data/project.duckdb"
+              ]
+            }
+          },
+          "required": [
+            "database_path"
+          ]
+        }
+      },
+      "parameters": [
         {
-          "name": "project_id",
+          "name": "database_path",
           "type": "string",
           "required": true,
           "constraints": {},
@@ -943,14 +891,14 @@
           "extensions": [],
           "schema": {
             "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
+            "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+            "title": "Database path",
             "examples": [
-              "demo"
+              "/data/project.duckdb"
             ]
           },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
+          "example": "/data/project.duckdb",
+          "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
         }
       ],
@@ -987,18 +935,19 @@
       "kind": "operation",
       "canonical_id": "describe",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Describe a project",
       "definition": "Inspect a persisted project's identity, immutable domain, metadata, workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work.",
       "interface": {
         "category": "project-management",
         "invocation_model": "stateless",
         "requires_connection": false,
-        "guidance": "Call describe with the same database_path and project_id used by create. If the project does not exist, do not guess metadata; create it or correct the identifiers.",
+        "guidance": "Call describe with the same database_path used by create. If the project does not exist, do not guess metadata; create it or correct the path.",
         "next_operations": [
           "connect"
         ]
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1015,19 +964,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1050,25 +990,6 @@
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-          "default": null
         }
       ],
       "result": {
@@ -1078,12 +999,6 @@
           "title": "Project descriptor",
           "description": "Project identity, metadata, workflow, table list, and cache summary.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "domain": {
               "type": "array",
               "items": {
@@ -1165,6 +1080,7 @@
       "kind": "operation",
       "canonical_id": "get_audit_trail",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Read project audit events",
       "definition": "Return audit events recorded for a project.",
       "interface": {
@@ -1174,7 +1090,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1191,19 +1107,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1225,25 +1132,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -1286,6 +1174,7 @@
       "kind": "operation",
       "canonical_id": "get_available_methods",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "List workflow methods registered for a domain",
       "definition": "Return workflow methods registered for a domain. This lists methods that can be added to workflows; it does not list MCP operation tools. Operation names and complete input schemas, including nested target fields, are advertised directly by tools/list.",
       "interface": {
@@ -1295,7 +1184,7 @@
         "guidance": "Use this when planning a workflow. Select a method id from the result, then inspect its parameter definitions before calling add_method. Do not use this operation to discover callable MCP tools; tools/list is the operation catalogue.",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1410,6 +1299,7 @@
       "kind": "operation",
       "canonical_id": "get_cache",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Read project cache",
       "definition": "Return cache entries stored for a project.",
       "interface": {
@@ -1419,7 +1309,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1436,19 +1326,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1470,25 +1351,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -1531,6 +1393,7 @@
       "kind": "operation",
       "canonical_id": "get_cache_size",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Read project cache size",
       "definition": "Return the number of cache entries stored for a project.",
       "interface": {
@@ -1540,7 +1403,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1557,19 +1420,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1591,25 +1445,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -1633,6 +1468,7 @@
       "kind": "operation",
       "canonical_id": "get_domain",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Read the project domain",
       "definition": "Read the immutable domain assigned to a persisted project. Use this to confirm which domain-specific operations and workflow methods apply.",
       "interface": {
@@ -1642,7 +1478,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1659,19 +1495,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1693,25 +1520,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -1733,26 +1541,27 @@
     },
     {
       "kind": "operation",
-      "canonical_id": "get_metadata",
+      "canonical_id": "get_execution",
       "domain": "streamfind",
-      "label": "Read project metadata",
-      "definition": "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set.",
+      "module_id": "streamfind.base",
+      "label": "Get workflow execution",
+      "definition": "Read one durable workflow execution by identifier.",
       "interface": {
-        "category": "project-management",
+        "category": "domain-operation",
         "invocation_model": "stateless",
         "requires_connection": false,
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
-        "name": "get_metadata",
+        "name": "get_execution",
         "input_schema": {
           "type": "object",
-          "title": "Read project metadata",
-          "description": "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set.",
+          "title": "Get workflow execution",
+          "description": "Read one durable workflow execution by identifier.",
           "properties": {
             "database_path": {
               "type": "string",
@@ -1761,19 +1570,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1796,9 +1596,65 @@
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
-        },
+        }
+      ],
+      "result": {
+        "id": "https://streamfind.dev/catalogue/core#workflowExecutionResult",
+        "schema": {
+          "type": "object",
+          "title": "Workflow execution result",
+          "description": "Workflow results, cancellation state, and the persisted workflow."
+        }
+      },
+      "effects": {
+        "mutates_project": false,
+        "reads": [
+          "WORKFLOW_EXECUTION"
+        ],
+        "writes": []
+      }
+    },
+    {
+      "kind": "operation",
+      "canonical_id": "get_metadata",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "label": "Read project metadata",
+      "definition": "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set.",
+      "interface": {
+        "category": "project-management",
+        "invocation_model": "stateless",
+        "requires_connection": false,
+        "guidance": "",
+        "next_operations": []
+      },
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "executable": true,
+      "exposed": true,
+      "mcp": {
+        "name": "get_metadata",
+        "input_schema": {
+          "type": "object",
+          "title": "Read project metadata",
+          "description": "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set.",
+          "properties": {
+            "database_path": {
+              "type": "string",
+              "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+              "title": "Database path",
+              "examples": [
+                "/data/project.duckdb"
+              ]
+            }
+          },
+          "required": [
+            "database_path"
+          ]
+        }
+      },
+      "parameters": [
         {
-          "name": "project_id",
+          "name": "database_path",
           "type": "string",
           "required": true,
           "constraints": {},
@@ -1806,14 +1662,14 @@
           "extensions": [],
           "schema": {
             "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
+            "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+            "title": "Database path",
             "examples": [
-              "demo"
+              "/data/project.duckdb"
             ]
           },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
+          "example": "/data/project.duckdb",
+          "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
         }
       ],
@@ -1845,6 +1701,7 @@
       "kind": "operation",
       "canonical_id": "get_workflow",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Read the project workflow",
       "definition": "Return the ordered persisted workflow, including each method identifier and configured parameters.",
       "interface": {
@@ -1854,7 +1711,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -1871,19 +1728,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -1905,25 +1753,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -1978,6 +1807,7 @@
       "kind": "operation",
       "canonical_id": "get_workflow_execution",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Read workflow execution",
       "definition": "Return execution status, hashes, timestamps, errors, and cache keys for the project's workflow steps.",
       "interface": {
@@ -1987,7 +1817,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -2004,19 +1834,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -2039,9 +1860,121 @@
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
-        },
+        }
+      ],
+      "result": {
+        "id": "https://streamfind.dev/catalogue/core#workflowExecutionEntriesResult",
+        "schema": {
+          "type": "table",
+          "title": "Workflow execution entries",
+          "description": "Execution status for workflow steps.",
+          "properties": {
+            "workflow_revision": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "step_index": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "method": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parameter_hash": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "status": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "started_at": {
+              "type": "array",
+              "items": {
+                "type": "timestamp"
+              }
+            },
+            "completed_at": {
+              "type": "array",
+              "items": {
+                "type": "timestamp"
+              }
+            },
+            "error": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cache_key": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "effects": {
+        "mutates_project": false,
+        "reads": [
+          "WORKFLOW_EXECUTION"
+        ],
+        "writes": []
+      }
+    },
+    {
+      "kind": "operation",
+      "canonical_id": "list_executions",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "label": "List workflow executions",
+      "definition": "List durable workflow executions scoped to the selected project.",
+      "interface": {
+        "category": "domain-operation",
+        "invocation_model": "stateless",
+        "requires_connection": false,
+        "guidance": "",
+        "next_operations": []
+      },
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "executable": true,
+      "exposed": true,
+      "mcp": {
+        "name": "list_executions",
+        "input_schema": {
+          "type": "object",
+          "title": "List workflow executions",
+          "description": "List durable workflow executions scoped to the selected project.",
+          "properties": {
+            "database_path": {
+              "type": "string",
+              "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+              "title": "Database path",
+              "examples": [
+                "/data/project.duckdb"
+              ]
+            }
+          },
+          "required": [
+            "database_path"
+          ]
+        }
+      },
+      "parameters": [
         {
-          "name": "project_id",
+          "name": "database_path",
           "type": "string",
           "required": true,
           "constraints": {},
@@ -2049,14 +1982,14 @@
           "extensions": [],
           "schema": {
             "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
+            "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+            "title": "Database path",
             "examples": [
-              "demo"
+              "/data/project.duckdb"
             ]
           },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
+          "example": "/data/project.duckdb",
+          "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
         }
       ],
@@ -2067,12 +2000,6 @@
           "title": "Workflow execution entries",
           "description": "Execution status for workflow steps.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "workflow_revision": {
               "type": "array",
               "items": {
@@ -2142,6 +2069,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.add_analyses",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Add mass spectrometry analyses",
       "definition": "Read one or more mass-spectrometry files and persist their analysis metadata, spectra, and chromatograms in the project. This is the normal ingestion operation after project creation.",
       "interface": {
@@ -2167,14 +2095,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analyses": {
@@ -2234,7 +2154,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analyses"
           ]
         }
@@ -2257,25 +2176,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -2395,6 +2295,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.annotate_components",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Annotate components",
       "definition": "Annotate feature components with isotopic, adduct, and fragment relationships.",
       "interface": {
@@ -2686,6 +2587,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.assign_transformation_products",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Assign transformation products",
       "definition": "Assign plausible biotransformation products to suspected features using transformation-product candidates, scoring combinations by mass/MS2 cosine similarity and logP-based retention-time plausibility, and append the assignments to the suspect results.",
       "interface": {
@@ -3235,6 +3137,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.correct_matrix_suppression",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Correct matrix suppression",
       "definition": "Apply matrix/suppression correction factors derived from analysis intensity profiles.",
       "interface": {
@@ -3409,6 +3312,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.create_components",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Create components",
       "definition": "Join correlated features into components based on EIC correlation within a retention-time window.",
       "interface": {
@@ -3606,6 +3510,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.fill_features",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Fill feature gaps",
       "definition": "Fill missing feature values across analyses by extracting and integrating EIC peaks in the expected windows.",
       "interface": {
@@ -4011,6 +3916,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.filter_chromatograms_retention_time",
       "domain": "mass_spec",
+      "module_id": "mass_spec.chromatograms",
       "label": "Filter chromatograms by retention time",
       "definition": "Keep chromatogram rows whose retention time is within the inclusive minimum and maximum window.",
       "interface": {
@@ -4185,6 +4091,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.filter_features",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Filter features",
       "definition": "Remove or flag features failing signal, shape, and quality criteria.",
       "interface": {
@@ -5086,6 +4993,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.filter_features_ms2",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Filter feature MS2 spectra",
       "definition": "Clean feature MS2 spectra: remove blank contaminants, apply relative intensity and top-N limits.",
       "interface": {
@@ -5383,6 +5291,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.filter_internal_standards",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Filter internal standards",
       "definition": "Refine internal-standard matches by applying name, score, RT/mass error, identification-level, fragment, and cosine-similarity thresholds.",
       "interface": {
@@ -5741,6 +5650,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.filter_suspects",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Filter suspects",
       "definition": "Refine suspect-screening results by applying name, score, RT/mass error, identification-level, fragment, and cosine-similarity thresholds.",
       "interface": {
@@ -6099,6 +6009,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.find_features",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Find mass spectrometry features",
       "definition": "Group MS1 centroid traces within retention-time windows and persist detected NTA features.",
       "interface": {
@@ -6502,6 +6413,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.find_internal_standards",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Find internal standards",
       "definition": "Match detected features against internal-standard targets by mass, RT, and MS2 similarity.",
       "interface": {
@@ -7472,6 +7384,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_analyses_info",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get mass spectrometry analysis information",
       "definition": "Return persisted mass-spectrometry analysis metadata, including analysis names, source paths, replicate/blank labels, and available counts.",
       "interface": {
@@ -7498,19 +7411,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -7532,25 +7436,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -7618,6 +7503,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_analysis_names",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get mass spectrometry analysis names",
       "definition": "Return the canonical analysis names registered in the project. Names are normally the source file stem and are passed to analysis_names in later operations and methods.",
       "interface": {
@@ -7644,19 +7530,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -7678,25 +7555,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -7725,6 +7583,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_blank_names",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get blank names",
       "definition": "Return blank-analysis labels in the same analysis order as get_analysis_names.",
       "interface": {
@@ -7751,19 +7610,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -7785,25 +7635,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -7832,6 +7663,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_chromatograms",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get chromatograms",
       "definition": "Read persisted chromatogram arrays for selected analyses and zero-based chromatogram indices.",
       "interface": {
@@ -7857,14 +7689,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -7910,7 +7734,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -7933,25 +7756,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -8030,12 +7834,6 @@
           "title": "Mass spectrometry chromatograms",
           "description": "Table of chromatogram point records with chromatogram metadata and intensities.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "analysis": {
               "type": "array",
               "items": {
@@ -8123,6 +7921,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_chromatograms_headers",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get chromatogram headers",
       "definition": "Read chromatogram-header rows for selected analyses, including identifiers, retention-time ranges, polarity, and point counts.",
       "interface": {
@@ -8150,14 +7949,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "analysis_names": {
               "type": "array",
               "description": "Array of analysis file names without filename extensions.",
@@ -8181,7 +7972,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -8204,25 +7994,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -8390,6 +8161,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_concentrations",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get concentrations",
       "definition": "Return analysis concentrations in the same analysis order as get_analysis_names.",
       "interface": {
@@ -8416,19 +8188,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -8450,25 +8213,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -8497,6 +8241,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_features",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get NTA features",
       "definition": "Read persisted non-target-analysis features matching analysis, mass or m/z, retention time, and polarity targets.",
       "interface": {
@@ -8522,14 +8267,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -8909,11 +8646,16 @@
                 60.0
               ],
               "default": 60.0
+            },
+            "filtered": {
+              "type": "boolean",
+              "description": "When false (default), features marked as filtered are excluded from spectrum loading.",
+              "title": "Include filtered features",
+              "default": false
             }
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -8936,25 +8678,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -9397,6 +9120,23 @@
           "example": 60.0,
           "description": "Retention-time tolerance in seconds applied when a target supplies exact rt. It is not a substitute for rt_min/rt_max when an explicit interval is needed.",
           "default": 60.0
+        },
+        {
+          "name": "filtered",
+          "type": "boolean",
+          "required": false,
+          "constraints": {},
+          "items": null,
+          "extensions": [],
+          "schema": {
+            "type": "boolean",
+            "description": "When false (default), features marked as filtered are excluded from spectrum loading.",
+            "title": "Include filtered features",
+            "default": false
+          },
+          "example": null,
+          "description": "When false (default), features marked as filtered are excluded from spectrum loading.",
+          "default": false
         }
       ],
       "result": {
@@ -9406,12 +9146,6 @@
           "title": "NTA features",
           "description": "Persisted MS1 feature rows detected by non-target analysis.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "analysis": {
               "type": "array",
               "items": {
@@ -9841,6 +9575,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_internal_standards",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get NTA internal standards",
       "definition": "Read persisted non-target-analysis internal-standard assignments matching analysis, mass or m/z, retention time, and polarity targets.",
       "interface": {
@@ -9866,14 +9601,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -10257,7 +9984,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -10280,25 +10006,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -10750,12 +10457,6 @@
           "title": "NTA internal standards",
           "description": "Persisted internal-standard assignment rows.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "analysis": {
               "type": "array",
               "items": {
@@ -10981,6 +10682,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_raw_chromatograms",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get raw chromatograms",
       "definition": "Read chromatogram point records directly from the selected mass spectrometry files.",
       "interface": {
@@ -11006,14 +10708,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -11057,7 +10751,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -11080,25 +10773,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -11175,12 +10849,6 @@
           "title": "Mass spectrometry chromatograms",
           "description": "Table of chromatogram point records with chromatogram metadata and intensities.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "analysis": {
               "type": "array",
               "items": {
@@ -11268,6 +10936,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_raw_spectra",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get raw spectra",
       "definition": "Read flattened raw spectrum points. analysis_names selects analyses first; non-empty indices selects spectra and takes priority over targets; targets are used when indices are omitted or empty.",
       "interface": {
@@ -11293,14 +10962,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -11731,7 +11392,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -11754,25 +11414,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -12409,6 +12050,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_raw_spectra_eic",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get extracted ion chromatograms",
       "definition": "Read MS1 raw points grouped as extracted-ion chromatograms for independent target ranges. Each target must provide mass/mz bounds or a chemical structure; optional id, analysis, polarity, level, and retention-time fields narrow the result.",
       "interface": {
@@ -12434,14 +12076,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -12832,7 +12466,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -12855,25 +12488,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -13442,6 +13056,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_raw_spectra_ms1",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get MS1 spectra",
       "definition": "Read MS1 raw spectrum points using independent target ranges and shared filters.",
       "interface": {
@@ -13467,14 +13082,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -13892,7 +13499,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -13915,25 +13521,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -14562,6 +14149,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_raw_spectra_ms2",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get MS2 spectra",
       "definition": "Read MS2 raw spectrum points using independent target ranges and shared filters.",
       "interface": {
@@ -14587,14 +14175,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -15021,7 +14601,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -15044,25 +14623,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -15711,6 +15271,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_replicate_names",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get replicate names",
       "definition": "Return replicate labels in the same analysis order as get_analysis_names.",
       "interface": {
@@ -15737,19 +15298,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -15771,25 +15323,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         }
       ],
@@ -15818,6 +15351,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_spectra_headers",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get spectra headers",
       "definition": "Read spectrum-header rows for selected analyses, including scan number, retention time, polarity, MS level, precursor information, and point counts. Use this lightweight inspection operation before requesting large point arrays.",
       "interface": {
@@ -15845,14 +15379,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "analysis_names": {
               "type": "array",
               "description": "Array of analysis file names without filename extensions.",
@@ -15876,7 +15402,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -15899,25 +15424,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -16109,6 +15615,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_spectra_tic",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get spectra TIC",
       "definition": "Read total-ion-current values from spectrum headers using analysis, MS-level, and retention-time filters.",
       "interface": {
@@ -16134,14 +15641,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -16205,7 +15704,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -16228,25 +15726,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -16434,6 +15913,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_suspects",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get NTA suspects",
       "definition": "Read persisted non-target-analysis suspect-screening assignments matching analysis, mass or m/z, retention time, and polarity targets.",
       "interface": {
@@ -16459,14 +15939,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -16850,7 +16322,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -16873,25 +16344,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -17343,12 +16795,6 @@
           "title": "NTA suspects",
           "description": "Persisted suspect-screening assignment rows.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "analysis": {
               "type": "array",
               "items": {
@@ -17562,6 +17008,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.get_transformation_products",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Get NTA transformation products",
       "definition": "Read persisted non-target-analysis transformation-product assignments matching analysis, mass or m/z, and retention time targets.",
       "interface": {
@@ -17587,14 +17034,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "analysis_names": {
@@ -17966,7 +17405,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -17989,25 +17427,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -18436,12 +17855,6 @@
           "title": "NTA transformation products",
           "description": "Persisted transformation-product assignment rows.",
           "properties": {
-            "project_id": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "analysis": {
               "type": "array",
               "items": {
@@ -18667,6 +18080,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.group_features",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Group features",
       "definition": "Group features across analyses into shared feature groups using RT/mass tolerance and an alignment method.",
       "interface": {
@@ -18934,6 +18348,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.load_chromatograms",
       "domain": "mass_spec",
+      "module_id": "mass_spec.chromatograms",
       "label": "Load chromatograms",
       "definition": "Load selected chromatograms from persisted mass spectrometry analyses into MASS_SPEC_CHROMATOGRAMS.",
       "interface": {
@@ -19147,6 +18562,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.load_features_ms1",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Load MS1 spectra for features",
       "definition": "Resolve and cluster MS1 spectra for each persisted feature and store the joined MS1 spectrum on the feature row.",
       "interface": {
@@ -19472,6 +18888,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.load_features_ms2",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Load MS2 spectra for features",
       "definition": "Resolve and cluster MS2 spectra for each persisted feature using the precursor isolation window and store the joined MS2 spectrum on the feature row.",
       "interface": {
@@ -19720,6 +19137,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.metfrag_screening",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Screen features with MetFrag",
       "definition": "Run in-silico MetFrag fragmenter screening for detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results.",
       "interface": {
@@ -20502,6 +19920,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.remove_analyses",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Remove mass spectrometry analyses",
       "definition": "Remove persisted mass-spectrometry analyses by their canonical analysis names and delete their associated spectra/chromatogram data.",
       "interface": {
@@ -20529,14 +19948,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "analysis_names": {
               "type": "array",
               "description": "Array of analysis file names without filename extensions.",
@@ -20559,7 +19970,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "analysis_names"
           ]
         }
@@ -20582,25 +19992,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -20662,6 +20053,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.set_blank_names",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Set blank names",
       "definition": "Replace blank labels for all persisted analyses; the array must have one value per analysis.",
       "interface": {
@@ -20689,14 +20081,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "blank_names": {
               "type": "array",
               "description": "Blank labels ordered by analysis name.",
@@ -20719,7 +20103,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "blank_names"
           ]
         }
@@ -20742,25 +20125,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -20822,6 +20186,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.set_concentrations",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Set concentrations",
       "definition": "Replace analysis concentrations for all persisted analyses; the array must have one value per analysis.",
       "interface": {
@@ -20849,14 +20214,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "concentrations": {
               "type": "array",
               "description": "Analysis concentrations ordered by analysis name.",
@@ -20879,7 +20236,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "concentrations"
           ]
         }
@@ -20902,25 +20258,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -20982,6 +20319,7 @@
       "kind": "operation",
       "canonical_id": "mass_spec.set_replicate_names",
       "domain": "mass_spec",
+      "module_id": "mass_spec.base",
       "label": "Set replicate names",
       "definition": "Replace replicate labels for all persisted analyses; the array must have one value per analysis.",
       "interface": {
@@ -21009,14 +20347,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "replicate_names": {
               "type": "array",
               "description": "Replicate labels ordered by analysis name.",
@@ -21039,7 +20369,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "replicate_names"
           ]
         }
@@ -21062,25 +20391,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -21142,6 +20452,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.subtract_blank",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Subtract blank features",
       "definition": "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows.",
       "interface": {
@@ -21342,6 +20653,7 @@
       "kind": "method",
       "canonical_id": "mass_spec.suspect_screening",
       "domain": "mass_spec",
+      "module_id": "mass_spec.nta",
       "label": "Screen suspect features",
       "definition": "Match detected features against a suspect list by mass, RT, and MS2 similarity and record candidate assignments.",
       "interface": {
@@ -22312,6 +21624,7 @@
       "kind": "method",
       "canonical_id": "raman.add_analyses",
       "domain": "raman",
+      "module_id": "raman.base",
       "label": "Add Raman analyses",
       "definition": "Add Raman analysis files to a project.",
       "interface": {
@@ -22496,6 +21809,7 @@
       "kind": "method",
       "canonical_id": "raman.remove_analyses",
       "domain": "raman",
+      "module_id": "raman.base",
       "label": "Remove Raman analyses",
       "definition": "Remove Raman analysis files from a project.",
       "interface": {
@@ -22608,6 +21922,7 @@
       "kind": "operation",
       "canonical_id": "remove_method",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Remove a method from the project workflow",
       "definition": "Remove the first matching method object from the ordered project workflow.",
       "interface": {
@@ -22617,7 +21932,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -22635,14 +21950,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "method": {
               "type": "string",
               "description": "Stable canonical identifier of a registered workflow method, for example mass_spec.find_features. Obtain valid method identifiers and their parameters from get_available_methods(domain).",
@@ -22654,7 +21961,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "method"
           ]
         }
@@ -22677,25 +21983,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -22772,6 +22059,7 @@
       "kind": "operation",
       "canonical_id": "run_method",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Run a planned workflow method",
       "definition": "Execute one selected workflow method for a connected project. The method must be registered for the project domain and its parameters are validated before execution.",
       "interface": {
@@ -22781,7 +22069,7 @@
         "guidance": "Connect first, discover methods with get_available_methods, and use the method's input schema. Use run_workflow instead when the whole persisted workflow should execute.",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -22797,14 +22085,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "method": {
@@ -22826,7 +22106,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "method"
           ]
         }
@@ -22849,25 +22128,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -22932,6 +22192,7 @@
       "kind": "operation",
       "canonical_id": "run_workflow",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Run the project workflow",
       "definition": "Execute the persisted workflow for a project in order, using the connected project's domain and cached results where valid.",
       "interface": {
@@ -22941,7 +22202,7 @@
         "guidance": "Connect to the project first, inspect or validate the workflow, then call run_workflow. For one-step execution use run_method with a connected session.",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -22959,18 +22220,17 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
+            "worker_id": {
               "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
+              "description": "External worker identity used to claim and release one project workflow execution.",
+              "title": "Worker ID",
               "examples": [
-                "demo"
+                "frontend-worker-1"
               ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -22995,22 +22255,22 @@
           "default": null
         },
         {
-          "name": "project_id",
+          "name": "worker_id",
           "type": "string",
-          "required": true,
+          "required": false,
           "constraints": {},
           "items": null,
           "extensions": [],
           "schema": {
             "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
+            "description": "External worker identity used to claim and release one project workflow execution.",
+            "title": "Worker ID",
             "examples": [
-              "demo"
+              "frontend-worker-1"
             ]
           },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
+          "example": "frontend-worker-1",
+          "description": "External worker identity used to claim and release one project workflow execution.",
           "default": null
         }
       ],
@@ -23039,6 +22299,7 @@
       "kind": "operation",
       "canonical_id": "set_metadata",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Set project metadata",
       "definition": "Replace the user-defined metadata stored for a project. This changes metadata only; it does not change the immutable domain or analyses.",
       "interface": {
@@ -23048,7 +22309,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23066,14 +22327,6 @@
                 "/data/project.duckdb"
               ]
             },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
-            },
             "metadata": {
               "type": "object",
               "description": "JSON object containing project-owned metadata. Metadata is user-owned and may contain arbitrary JSON keys.",
@@ -23085,7 +22338,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "metadata"
           ]
         }
@@ -23108,25 +22360,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -23178,6 +22411,7 @@
       "kind": "operation",
       "canonical_id": "set_workflow",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Set the project workflow",
       "definition": "Validate and replace a project's ordered workflow. Method identifiers, domain compatibility, dependency ordering, and parameters are checked before persistence.",
       "interface": {
@@ -23187,7 +22421,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23203,14 +22437,6 @@
               "title": "Database path",
               "examples": [
                 "/data/project.duckdb"
-              ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
               ]
             },
             "workflow": {
@@ -23275,7 +22501,6 @@
           },
           "required": [
             "database_path",
-            "project_id",
             "workflow"
           ]
         }
@@ -23298,25 +22523,6 @@
           },
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
-          "default": null
-        },
-        {
-          "name": "project_id",
-          "type": "string",
-          "required": true,
-          "constraints": {},
-          "items": null,
-          "extensions": [],
-          "schema": {
-            "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
-            "examples": [
-              "demo"
-            ]
-          },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
           "default": null
         },
         {
@@ -23442,6 +22648,7 @@
       "kind": "operation",
       "canonical_id": "tools_install",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Install external tools",
       "definition": "Install the external tools stack (Java + MetFrag) into the user-scoped ~/.streamfind layout. Downloads may take minutes; no project change is performed.",
       "interface": {
@@ -23451,7 +22658,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23495,6 +22702,7 @@
       "kind": "operation",
       "canonical_id": "tools_install_java",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Install Java",
       "definition": "Install the Temurin JDK 21 into the user-scoped ~/.streamfind layout. Downloads may take minutes; no project change is performed.",
       "interface": {
@@ -23504,7 +22712,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23548,6 +22756,7 @@
       "kind": "operation",
       "canonical_id": "tools_install_metfrag",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Install MetFrag",
       "definition": "Install the MetFrag command-line jar into the user-scoped ~/.streamfind layout. Downloads may take minutes; no project change is performed.",
       "interface": {
@@ -23557,7 +22766,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23601,6 +22810,7 @@
       "kind": "operation",
       "canonical_id": "tools_status",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "External tools status",
       "definition": "Report the resolution state of the user-scoped external tools (~/.streamfind): the tools home, Java, and MetFrag paths, or not-found markers. No downloads are performed.",
       "interface": {
@@ -23610,7 +22820,7 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23652,10 +22862,11 @@
     },
     {
       "kind": "operation",
-      "canonical_id": "validate",
+      "canonical_id": "transition_execution",
       "domain": "streamfind",
-      "label": "Validate a project",
-      "definition": "Validate a project's schema and persisted state.",
+      "module_id": "streamfind.base",
+      "label": "Transition workflow execution",
+      "definition": "Advance one workflow execution through a valid lifecycle transition.",
       "interface": {
         "category": "domain-operation",
         "invocation_model": "stateless",
@@ -23663,15 +22874,15 @@
         "guidance": "",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
-        "name": "validate",
+        "name": "transition_execution",
         "input_schema": {
           "type": "object",
-          "title": "Validate a project",
-          "description": "Validate a project's schema and persisted state.",
+          "title": "Transition workflow execution",
+          "description": "Advance one workflow execution through a valid lifecycle transition.",
           "properties": {
             "database_path": {
               "type": "string",
@@ -23680,19 +22891,10 @@
               "examples": [
                 "/data/project.duckdb"
               ]
-            },
-            "project_id": {
-              "type": "string",
-              "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-              "title": "Project identifier",
-              "examples": [
-                "demo"
-              ]
             }
           },
           "required": [
-            "database_path",
-            "project_id"
+            "database_path"
           ]
         }
       },
@@ -23715,9 +22917,65 @@
           "example": "/data/project.duckdb",
           "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
-        },
+        }
+      ],
+      "result": {
+        "id": "https://streamfind.dev/catalogue/core#workflowExecutionResult",
+        "schema": {
+          "type": "object",
+          "title": "Workflow execution result",
+          "description": "Workflow results, cancellation state, and the persisted workflow."
+        }
+      },
+      "effects": {
+        "mutates_project": true,
+        "reads": [],
+        "writes": [
+          "WORKFLOW_EXECUTION"
+        ]
+      }
+    },
+    {
+      "kind": "operation",
+      "canonical_id": "validate",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "label": "Validate a project",
+      "definition": "Validate a project's schema and persisted state.",
+      "interface": {
+        "category": "domain-operation",
+        "invocation_model": "stateless",
+        "requires_connection": false,
+        "guidance": "",
+        "next_operations": []
+      },
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "executable": true,
+      "exposed": true,
+      "mcp": {
+        "name": "validate",
+        "input_schema": {
+          "type": "object",
+          "title": "Validate a project",
+          "description": "Validate a project's schema and persisted state.",
+          "properties": {
+            "database_path": {
+              "type": "string",
+              "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+              "title": "Database path",
+              "examples": [
+                "/data/project.duckdb"
+              ]
+            }
+          },
+          "required": [
+            "database_path"
+          ]
+        }
+      },
+      "parameters": [
         {
-          "name": "project_id",
+          "name": "database_path",
           "type": "string",
           "required": true,
           "constraints": {},
@@ -23725,14 +22983,14 @@
           "extensions": [],
           "schema": {
             "type": "string",
-            "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
-            "title": "Project identifier",
+            "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
+            "title": "Database path",
             "examples": [
-              "demo"
+              "/data/project.duckdb"
             ]
           },
-          "example": "demo",
-          "description": "Logical project identifier within the database. Reuse exactly the same identifier in every later operation call.",
+          "example": "/data/project.duckdb",
+          "description": "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create.",
           "default": null
         }
       ],
@@ -23766,6 +23024,7 @@
       "kind": "operation",
       "canonical_id": "validate_workflow",
       "domain": "streamfind",
+      "module_id": "streamfind.base",
       "label": "Validate a workflow",
       "definition": "Validate workflow method identifiers, ordering dependencies, project-domain compatibility, occurrence rules, and method parameter values without executing the workflow.",
       "interface": {
@@ -23775,7 +23034,7 @@
         "guidance": "Use after assembling a workflow and before run_workflow. Fix the returned validation message before executing.",
         "next_operations": []
       },
-      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its identity, metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path and project_id on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
+      "interface_guidance": "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations.",
       "executable": true,
       "exposed": true,
       "mcp": {
@@ -23943,6 +23202,1251 @@
         "reads": [],
         "writes": []
       }
+    }
+  ],
+  "tables": [
+    {
+      "table_name": "AUDIT_TRAIL",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "columns": [
+        {
+          "name": "operation_type",
+          "type": "string"
+        },
+        {
+          "name": "object_type",
+          "type": "string"
+        },
+        {
+          "name": "operation_details",
+          "type": "object"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "CACHE",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "columns": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "hash",
+          "type": "string"
+        },
+        {
+          "name": "data",
+          "type": "binary"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_ANALYSES",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "analysis_index",
+          "type": "integer"
+        },
+        {
+          "name": "source_analysis_number",
+          "type": "integer"
+        },
+        {
+          "name": "analysis_count",
+          "type": "integer"
+        },
+        {
+          "name": "replicate",
+          "type": "string"
+        },
+        {
+          "name": "blank",
+          "type": "string"
+        },
+        {
+          "name": "file_name",
+          "type": "string"
+        },
+        {
+          "name": "file_path",
+          "type": "string"
+        },
+        {
+          "name": "file_dir",
+          "type": "string"
+        },
+        {
+          "name": "file_extension",
+          "type": "string"
+        },
+        {
+          "name": "format",
+          "type": "string"
+        },
+        {
+          "name": "type",
+          "type": "string"
+        },
+        {
+          "name": "time_stamp",
+          "type": "string"
+        },
+        {
+          "name": "number_spectra",
+          "type": "integer"
+        },
+        {
+          "name": "number_chromatograms",
+          "type": "integer"
+        },
+        {
+          "name": "number_spectra_binary_arrays",
+          "type": "integer"
+        },
+        {
+          "name": "min_mz",
+          "type": "real"
+        },
+        {
+          "name": "max_mz",
+          "type": "real"
+        },
+        {
+          "name": "start_rt",
+          "type": "real"
+        },
+        {
+          "name": "end_rt",
+          "type": "real"
+        },
+        {
+          "name": "has_ion_mobility",
+          "type": "boolean"
+        },
+        {
+          "name": "concentration",
+          "type": "real"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_CHROMATOGRAMS",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "index",
+          "type": "integer"
+        },
+        {
+          "name": "chromatogram_id",
+          "type": "string"
+        },
+        {
+          "name": "polarity",
+          "type": "integer"
+        },
+        {
+          "name": "precursor_mz",
+          "type": "real"
+        },
+        {
+          "name": "activation_ce",
+          "type": "real"
+        },
+        {
+          "name": "product_mz",
+          "type": "real"
+        },
+        {
+          "name": "rt",
+          "type": "real"
+        },
+        {
+          "name": "raw_intensity",
+          "type": "real"
+        },
+        {
+          "name": "baseline",
+          "type": "real"
+        },
+        {
+          "name": "intensity",
+          "type": "real"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_CHROMATOGRAMS_HEADERS",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "index",
+          "type": "integer"
+        },
+        {
+          "name": "chromatogram_id",
+          "type": "string"
+        },
+        {
+          "name": "array_length",
+          "type": "integer"
+        },
+        {
+          "name": "polarity",
+          "type": "integer"
+        },
+        {
+          "name": "precursor_mz",
+          "type": "real"
+        },
+        {
+          "name": "activation_ce",
+          "type": "real"
+        },
+        {
+          "name": "product_mz",
+          "type": "real"
+        },
+        {
+          "name": "signal_type",
+          "type": "string"
+        },
+        {
+          "name": "chromatogram_type",
+          "type": "string"
+        },
+        {
+          "name": "detector",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "units",
+          "type": "string"
+        },
+        {
+          "name": "wavelength_nm",
+          "type": "real"
+        },
+        {
+          "name": "interval_ms",
+          "type": "real"
+        },
+        {
+          "name": "start_time",
+          "type": "real"
+        },
+        {
+          "name": "end_time",
+          "type": "real"
+        },
+        {
+          "name": "intensity_multiplier",
+          "type": "real"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_NTA_FEATURES",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "feature",
+          "type": "string"
+        },
+        {
+          "name": "feature_component",
+          "type": "string"
+        },
+        {
+          "name": "feature_group",
+          "type": "string"
+        },
+        {
+          "name": "adduct",
+          "type": "string"
+        },
+        {
+          "name": "rt",
+          "type": "real"
+        },
+        {
+          "name": "mz",
+          "type": "real"
+        },
+        {
+          "name": "mass",
+          "type": "real"
+        },
+        {
+          "name": "intensity",
+          "type": "real"
+        },
+        {
+          "name": "noise",
+          "type": "real"
+        },
+        {
+          "name": "sn",
+          "type": "real"
+        },
+        {
+          "name": "area",
+          "type": "real"
+        },
+        {
+          "name": "trace_count",
+          "type": "integer"
+        },
+        {
+          "name": "rtmin",
+          "type": "real"
+        },
+        {
+          "name": "rtmax",
+          "type": "real"
+        },
+        {
+          "name": "width",
+          "type": "real"
+        },
+        {
+          "name": "mzmin",
+          "type": "real"
+        },
+        {
+          "name": "mzmax",
+          "type": "real"
+        },
+        {
+          "name": "ppm",
+          "type": "real"
+        },
+        {
+          "name": "fwhm_rt",
+          "type": "real"
+        },
+        {
+          "name": "fwhm_mz",
+          "type": "real"
+        },
+        {
+          "name": "gaussian_A",
+          "type": "real"
+        },
+        {
+          "name": "gaussian_mu",
+          "type": "real"
+        },
+        {
+          "name": "gaussian_sigma",
+          "type": "real"
+        },
+        {
+          "name": "gaussian_r2",
+          "type": "real"
+        },
+        {
+          "name": "jaggedness",
+          "type": "real"
+        },
+        {
+          "name": "sharpness",
+          "type": "real"
+        },
+        {
+          "name": "asymmetry",
+          "type": "real"
+        },
+        {
+          "name": "modality",
+          "type": "integer"
+        },
+        {
+          "name": "plates",
+          "type": "real"
+        },
+        {
+          "name": "polarity",
+          "type": "integer"
+        },
+        {
+          "name": "filtered",
+          "type": "boolean"
+        },
+        {
+          "name": "filter",
+          "type": "string"
+        },
+        {
+          "name": "filled",
+          "type": "boolean"
+        },
+        {
+          "name": "correction",
+          "type": "real"
+        },
+        {
+          "name": "eic_size",
+          "type": "integer"
+        },
+        {
+          "name": "eic_rt",
+          "type": "string"
+        },
+        {
+          "name": "eic_mz",
+          "type": "string"
+        },
+        {
+          "name": "eic_intensity",
+          "type": "string"
+        },
+        {
+          "name": "eic_baseline",
+          "type": "string"
+        },
+        {
+          "name": "eic_smoothed",
+          "type": "string"
+        },
+        {
+          "name": "ms1_size",
+          "type": "integer"
+        },
+        {
+          "name": "ms1_mz",
+          "type": "string"
+        },
+        {
+          "name": "ms1_intensity",
+          "type": "string"
+        },
+        {
+          "name": "ms2_size",
+          "type": "integer"
+        },
+        {
+          "name": "ms2_mz",
+          "type": "string"
+        },
+        {
+          "name": "ms2_intensity",
+          "type": "string"
+        },
+        {
+          "name": "annotation_category",
+          "type": "string"
+        },
+        {
+          "name": "annotation_type",
+          "type": "string"
+        },
+        {
+          "name": "annotation_parent_feature",
+          "type": "string"
+        },
+        {
+          "name": "annotation_element",
+          "type": "string"
+        },
+        {
+          "name": "annotation_mass_error_da",
+          "type": "real"
+        },
+        {
+          "name": "annotation_mass_error_ppm",
+          "type": "real"
+        },
+        {
+          "name": "annotation_rt_error",
+          "type": "real"
+        },
+        {
+          "name": "annotation_rel_intensity",
+          "type": "real"
+        },
+        {
+          "name": "annotation_expected_rel_intensity_min",
+          "type": "real"
+        },
+        {
+          "name": "annotation_expected_rel_intensity_max",
+          "type": "real"
+        },
+        {
+          "name": "annotation_score",
+          "type": "real"
+        },
+        {
+          "name": "component_size",
+          "type": "integer"
+        },
+        {
+          "name": "component_rt_center",
+          "type": "real"
+        },
+        {
+          "name": "component_rt_spread",
+          "type": "real"
+        },
+        {
+          "name": "component_density",
+          "type": "real"
+        },
+        {
+          "name": "component_mean_correlation",
+          "type": "real"
+        },
+        {
+          "name": "component_best_partner",
+          "type": "string"
+        },
+        {
+          "name": "component_max_correlation",
+          "type": "real"
+        },
+        {
+          "name": "component_mean_correlation_to_component",
+          "type": "real"
+        },
+        {
+          "name": "component_membership_score",
+          "type": "real"
+        },
+        {
+          "name": "component_is_core",
+          "type": "boolean"
+        },
+        {
+          "name": "component_bridge_flag",
+          "type": "boolean"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_NTA_INTERNAL_STANDARDS",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "feature",
+          "type": "string"
+        },
+        {
+          "name": "feature_group",
+          "type": "string"
+        },
+        {
+          "name": "feature_component",
+          "type": "string"
+        },
+        {
+          "name": "adduct",
+          "type": "string"
+        },
+        {
+          "name": "candidate_rank",
+          "type": "integer"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "polarity",
+          "type": "integer"
+        },
+        {
+          "name": "db_mass",
+          "type": "real"
+        },
+        {
+          "name": "exp_mass",
+          "type": "real"
+        },
+        {
+          "name": "error_mass",
+          "type": "real"
+        },
+        {
+          "name": "db_rt",
+          "type": "real"
+        },
+        {
+          "name": "exp_rt",
+          "type": "real"
+        },
+        {
+          "name": "error_rt",
+          "type": "real"
+        },
+        {
+          "name": "intensity",
+          "type": "real"
+        },
+        {
+          "name": "area",
+          "type": "real"
+        },
+        {
+          "name": "id_level",
+          "type": "integer"
+        },
+        {
+          "name": "score",
+          "type": "real"
+        },
+        {
+          "name": "shared_fragments",
+          "type": "integer"
+        },
+        {
+          "name": "cosine_similarity",
+          "type": "real"
+        },
+        {
+          "name": "formula",
+          "type": "string"
+        },
+        {
+          "name": "SMILES",
+          "type": "string"
+        },
+        {
+          "name": "InChI",
+          "type": "string"
+        },
+        {
+          "name": "InChIKey",
+          "type": "string"
+        },
+        {
+          "name": "xLogP",
+          "type": "real"
+        },
+        {
+          "name": "database_id",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_size",
+          "type": "integer"
+        },
+        {
+          "name": "db_ms2_mz",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_intensity",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_formula",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_smiles",
+          "type": "string"
+        },
+        {
+          "name": "exp_ms2_size",
+          "type": "integer"
+        },
+        {
+          "name": "exp_ms2_mz",
+          "type": "string"
+        },
+        {
+          "name": "exp_ms2_intensity",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_NTA_SUSPECTS",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "feature",
+          "type": "string"
+        },
+        {
+          "name": "feature_group",
+          "type": "string"
+        },
+        {
+          "name": "candidate_rank",
+          "type": "integer"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "polarity",
+          "type": "integer"
+        },
+        {
+          "name": "db_mass",
+          "type": "real"
+        },
+        {
+          "name": "exp_mass",
+          "type": "real"
+        },
+        {
+          "name": "error_mass",
+          "type": "real"
+        },
+        {
+          "name": "db_rt",
+          "type": "real"
+        },
+        {
+          "name": "exp_rt",
+          "type": "real"
+        },
+        {
+          "name": "error_rt",
+          "type": "real"
+        },
+        {
+          "name": "intensity",
+          "type": "real"
+        },
+        {
+          "name": "area",
+          "type": "real"
+        },
+        {
+          "name": "id_level",
+          "type": "integer"
+        },
+        {
+          "name": "score",
+          "type": "real"
+        },
+        {
+          "name": "shared_fragments",
+          "type": "integer"
+        },
+        {
+          "name": "cosine_similarity",
+          "type": "real"
+        },
+        {
+          "name": "formula",
+          "type": "string"
+        },
+        {
+          "name": "SMILES",
+          "type": "string"
+        },
+        {
+          "name": "InChI",
+          "type": "string"
+        },
+        {
+          "name": "InChIKey",
+          "type": "string"
+        },
+        {
+          "name": "xLogP",
+          "type": "real"
+        },
+        {
+          "name": "database_id",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_size",
+          "type": "integer"
+        },
+        {
+          "name": "db_ms2_mz",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_intensity",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_formula",
+          "type": "string"
+        },
+        {
+          "name": "db_ms2_smiles",
+          "type": "string"
+        },
+        {
+          "name": "exp_ms2_size",
+          "type": "integer"
+        },
+        {
+          "name": "exp_ms2_mz",
+          "type": "string"
+        },
+        {
+          "name": "exp_ms2_intensity",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "feature_group",
+          "type": "string"
+        },
+        {
+          "name": "precursor_feature_group",
+          "type": "string"
+        },
+        {
+          "name": "main_precursor_feature_group",
+          "type": "string"
+        },
+        {
+          "name": "assignment_rank",
+          "type": "integer"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "formula",
+          "type": "string"
+        },
+        {
+          "name": "mass",
+          "type": "real"
+        },
+        {
+          "name": "SMILES",
+          "type": "string"
+        },
+        {
+          "name": "InChI",
+          "type": "string"
+        },
+        {
+          "name": "InChIKey",
+          "type": "string"
+        },
+        {
+          "name": "xLogP",
+          "type": "real"
+        },
+        {
+          "name": "transformation",
+          "type": "string"
+        },
+        {
+          "name": "precursor_name",
+          "type": "string"
+        },
+        {
+          "name": "precursor_formula",
+          "type": "string"
+        },
+        {
+          "name": "precursor_mass",
+          "type": "real"
+        },
+        {
+          "name": "precursor_SMILES",
+          "type": "string"
+        },
+        {
+          "name": "precursor_InChI",
+          "type": "string"
+        },
+        {
+          "name": "precursor_InChIKey",
+          "type": "string"
+        },
+        {
+          "name": "precursor_xLogP",
+          "type": "real"
+        },
+        {
+          "name": "main_precursor_name",
+          "type": "string"
+        },
+        {
+          "name": "main_precursor_formula",
+          "type": "string"
+        },
+        {
+          "name": "main_precursor_mass",
+          "type": "real"
+        },
+        {
+          "name": "main_precursor_SMILES",
+          "type": "string"
+        },
+        {
+          "name": "main_precursor_InChI",
+          "type": "string"
+        },
+        {
+          "name": "main_precursor_InChIKey",
+          "type": "string"
+        },
+        {
+          "name": "main_precursor_xLogP",
+          "type": "real"
+        },
+        {
+          "name": "cosine_similarity",
+          "type": "real"
+        },
+        {
+          "name": "main_precursor_cosine_similarity",
+          "type": "real"
+        },
+        {
+          "name": "rt_plausibility",
+          "type": "real"
+        },
+        {
+          "name": "main_precursor_rt_plausibility",
+          "type": "real"
+        },
+        {
+          "name": "assignment_score",
+          "type": "real"
+        },
+        {
+          "name": "network_level",
+          "type": "integer"
+        },
+        {
+          "name": "assignment_status",
+          "type": "string"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "MASS_SPEC_SPECTRA_HEADERS",
+      "domain": "mass_spec",
+      "module_id": "mass_spec.base",
+      "columns": [
+        {
+          "name": "analysis",
+          "type": "string"
+        },
+        {
+          "name": "index",
+          "type": "integer"
+        },
+        {
+          "name": "scan",
+          "type": "integer"
+        },
+        {
+          "name": "array_length",
+          "type": "integer"
+        },
+        {
+          "name": "level",
+          "type": "integer"
+        },
+        {
+          "name": "mode",
+          "type": "integer"
+        },
+        {
+          "name": "polarity",
+          "type": "integer"
+        },
+        {
+          "name": "configuration",
+          "type": "integer"
+        },
+        {
+          "name": "lowmz",
+          "type": "real"
+        },
+        {
+          "name": "highmz",
+          "type": "real"
+        },
+        {
+          "name": "bpmz",
+          "type": "real"
+        },
+        {
+          "name": "bpint",
+          "type": "real"
+        },
+        {
+          "name": "tic",
+          "type": "real"
+        },
+        {
+          "name": "rt",
+          "type": "real"
+        },
+        {
+          "name": "mobility",
+          "type": "real"
+        },
+        {
+          "name": "window_mz",
+          "type": "real"
+        },
+        {
+          "name": "window_mzlow",
+          "type": "real"
+        },
+        {
+          "name": "window_mzhigh",
+          "type": "real"
+        },
+        {
+          "name": "precursor_mz",
+          "type": "real"
+        },
+        {
+          "name": "precursor_intensity",
+          "type": "real"
+        },
+        {
+          "name": "precursor_charge",
+          "type": "integer"
+        },
+        {
+          "name": "activation_ce",
+          "type": "real"
+        }
+      ]
+    },
+    {
+      "table_name": "PROJECT",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "columns": [
+        {
+          "name": "domain",
+          "type": "string"
+        },
+        {
+          "name": "metadata",
+          "type": "string"
+        },
+        {
+          "name": "workflow",
+          "type": "array"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "schema_version",
+          "type": "integer"
+        },
+        {
+          "name": "framework_version",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "table_name": "WORKFLOW_EXECUTION",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "columns": [
+        {
+          "name": "domain_id",
+          "type": "string"
+        },
+        {
+          "name": "workflow_revision",
+          "type": "integer"
+        },
+        {
+          "name": "launch_snapshot",
+          "type": "object"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "progress",
+          "type": "object"
+        },
+        {
+          "name": "result_reference",
+          "type": "string"
+        },
+        {
+          "name": "process_id",
+          "type": "string"
+        },
+        {
+          "name": "server_id",
+          "type": "string"
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "table_name": "WORKFLOW_EXECUTION_STEP",
+      "domain": "streamfind",
+      "module_id": "streamfind.base",
+      "columns": [
+        {
+          "name": "workflow_revision",
+          "type": "integer"
+        },
+        {
+          "name": "step_index",
+          "type": "integer"
+        },
+        {
+          "name": "method",
+          "type": "string"
+        },
+        {
+          "name": "parameters",
+          "type": "object"
+        },
+        {
+          "name": "parameter_hash",
+          "type": "string"
+        },
+        {
+          "name": "cache_key",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "progress",
+          "type": "object"
+        },
+        {
+          "name": "result_reference",
+          "type": "string"
+        },
+        {
+          "name": "error_code",
+          "type": "string"
+        },
+        {
+          "name": "error_message",
+          "type": "string"
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp"
+        }
+      ]
     }
   ]
 }

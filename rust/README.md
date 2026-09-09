@@ -32,7 +32,7 @@ Create or open a project with `ProjectOptions`:
 ```rust
 let project = Project::create(ProjectOptions {
     database_path: "project.duckdb".into(),
-    project_id: "demo".into(),
+
     domain: "mass_spec".into(),
     create_if_missing: false,
     read_only: false,
@@ -41,7 +41,7 @@ let project = Project::create(ProjectOptions {
 
 Canonical `Project` methods use these prefixes:
 
-- `get_*`: read state, metadata, workflow, cache, audit, identity, or path.
+- `get_*`: read state, metadata, workflow, cache, audit, or path.
 - `set_*`: mutate metadata, workflow, or cache entries.
 - `run_*`: execute a method or workflow.
 - `delete_*`: remove project-owned cache data.
@@ -51,7 +51,6 @@ Canonical methods:
 ```text
 get_metadata() / set_metadata(Json)
 get_database_path()
-get_project_id()
 get_domain()
 validate()
 get_workflow() / set_workflow(Workflow)
@@ -73,8 +72,8 @@ assigned in `ProjectOptions` at creation and are immutable afterward.
 ## JSON API
 
 The `streamfind_rust_core::api` module exposes the same generic operations as
-Rust functions. Requests identify a project with `database_path` and
-`project_id`.
+Requests identify a project with `database_path`; one DuckDB file contains one
+project.
 
 Canonical operations include:
 

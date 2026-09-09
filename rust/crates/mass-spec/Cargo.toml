@@ -13,8 +13,13 @@ cfb = "0.14"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 quick-xml = "0.38"
 regex = "1"
-duckdb = { version = "1.10504.0", features = ["bundled"] }
 zstd = "0.13"
+
+[target.'cfg(windows)'.dependencies]
+duckdb = { version = "1.10505.0" }
+
+[target.'cfg(not(windows))'.dependencies]
+duckdb = { version = "1.10505.0", features = ["bundled"] }
 
 [dev-dependencies]
 streamfind-rust-test-support = { path = "../test-support" }

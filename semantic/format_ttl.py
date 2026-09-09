@@ -1,6 +1,7 @@
 """Format compact Turtle declarations without expanding prefixes or ``a``."""
 
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).parent / "ontology"
@@ -16,10 +17,15 @@ def split_predicates(text):
     start = 0
     quoted = False
     escaped = False
+    depth = 0
     for index, char in enumerate(text):
         if char == '"' and not escaped:
             quoted = not quoted
-        if char == ";" and not quoted:
+        elif not quoted and char in "([":
+            depth += 1
+        elif not quoted and char in ")]":
+            depth -= 1
+        if char == ";" and not quoted and depth == 0:
             parts.append(text[start:index].strip())
             start = index + 1
         escaped = char == "\\" and not escaped
@@ -62,6 +68,25 @@ def format_predicate(predicate):
     ]
 
 
+def is_subject_start(stripped):
+    """Return whether a line starts a subject declaration.
+
+    Subject lines can be indented in hand-authored Turtle.  Predicate and
+    object continuation lines must remain indented, so identify subjects by
+    their prefixed name followed by a declaration predicate.
+    """
+    return bool(
+        re.match(
+            r"^(?:sfcore|sfms|sfram|sfsensors):[^\s]+\s+(?:a|sf:|skos:)",
+            stripped,
+        )
+    )
+
+
+def is_subject_name(stripped):
+    return bool(re.match(r"^(?:sfcore|sfms|sfram|sfsensors):[^\s]+$", stripped))
+
+
 def format_file(path):
     output = []
     lines = path.read_text().splitlines()
@@ -70,6 +95,23 @@ def format_file(path):
         line = lines[index]
         stripped = line.strip()
         predicate_name = stripped.split(None, 1)[0] if stripped else ""
+        if is_subject_name(stripped):
+            declaration = stripped
+            index += 1
+            while index < len(lines):
+                declaration += " " + lines[index].strip()
+                if declaration.endswith("."):
+                    break
+                index += 1
+            subject, predicates = declaration.split(None, 1)
+            parts = split_predicates(predicates)
+            output.append(subject)
+            for part_index, predicate in enumerate(parts):
+                if part_index < len(parts) - 1 and predicate.endswith("."):
+                    predicate = predicate[:-1].rstrip() + " ;"
+                output.extend(format_predicate(predicate))
+            index += 1
+            continue
         if predicate_name in LIST_PREDICATES:
             predicate = stripped
             index += 1
@@ -78,7 +120,12 @@ def format_file(path):
                 index += 1
             output.extend(format_predicate(predicate))
             continue
-        if not stripped or stripped.startswith("@prefix") or line[:1].isspace() or ";" not in stripped:
+        if (
+            not stripped
+            or stripped.startswith("@prefix")
+            or (line[:1].isspace() and not is_subject_start(stripped))
+            or ";" not in stripped
+        ):
             output.append(line)
             index += 1
             continue

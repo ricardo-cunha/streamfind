@@ -1,0 +1,48 @@
+{
+  "fixture_id": "mcp_execution_contract",
+  "requests": {
+    "start": {
+      "required": ["database_path"],
+      "optional": ["workflow_revision", "parameters"]
+    },
+    "list": {
+      "required": ["database_path"],
+      "optional": ["status"]
+    },
+    "get": {
+      "required": ["database_path"]
+    },
+    "cancel": {
+      "required": ["database_path"]
+    }
+  },
+  "result_fields": [
+    "domain_id",
+    "workflow_revision",
+    "status",
+    "progress",
+    "result_reference",
+    "error"
+  ],
+  "progress_fields": [
+    "completed",
+    "total",
+    "current_step_index",
+    "current_step_id",
+    "message"
+  ],
+  "error_codes": [
+    "project_not_found",
+    "project_domain_mismatch",
+    "workflow_not_found",
+    "workflow_invalid",
+    "execution_not_found",
+    "execution_not_cancellable",
+    "execution_state_conflict",
+    "execution_interrupted",
+    "backend_busy",
+    "database_error",
+    "method_error"
+  ],
+  "consumers": ["cpp", "rust"]
+}

@@ -29,9 +29,9 @@
 namespace streamfind::mass_spec::processing_methods {
 namespace detail {
 std::string sql(const std::string &value) { std::string out = "'"; for (char c : value) out += c == '\'' ? "''" : std::string(1, c); return out + "'"; }
-std::string row_sql(const std::string &project, const nta::api::NTA_FEATURE_ROW &r) {
+std::string row_sql(const nta::api::NTA_FEATURE_ROW &r) {
     auto n = [](double v) { return std::to_string(v); };
-    return sql(project)+","+sql(r.analysis)+","+sql(r.feature)+","+sql(r.feature_component)+","+sql(r.feature_group)+","+sql(r.adduct)+","+
+    return sql(r.analysis)+","+sql(r.feature)+","+sql(r.feature_component)+","+sql(r.feature_group)+","+sql(r.adduct)+","+
       n(r.rt)+","+n(r.mz)+","+n(r.mass)+","+n(r.intensity)+","+n(r.noise)+","+n(r.sn)+","+n(r.area)+","+std::to_string(r.eic_size)+","+n(r.rtmin)+","+n(r.rtmax)+","+n(r.width)+","+
       n(r.mzmin)+","+n(r.mzmax)+","+n(r.ppm)+","+n(r.fwhm_rt)+","+n(r.fwhm_mz)+","+n(r.gaussian_A)+","+n(r.gaussian_mu)+","+n(r.gaussian_sigma)+","+n(r.gaussian_r2)+","+
       n(r.jaggedness)+","+n(r.sharpness)+","+n(r.asymmetry)+","+std::to_string(r.modality)+","+n(r.plates)+","+std::to_string(r.polarity)+","+(r.filtered?"TRUE":"FALSE")+","+
@@ -162,7 +162,6 @@ std::string encode_float_array(const std::vector<float> &values) {
 // open the raw data through the reader, and the blank/replicate metadata used by the
 // processing algorithms.
 nta::PROJECT_NON_TARGET_ANALYSIS load_analysis_features(streamfind::Project &project, const Json &parameters) {
-    const auto project_id = project.get_project_id();
     std::vector<std::string> names, paths, blanks, replicates;
     std::vector<int> indices;
     std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
@@ -174,7 +173,7 @@ nta::PROJECT_NON_TARGET_ANALYSIS load_analysis_features(streamfind::Project &pro
         const auto v = it->get<std::string>();
         return v.empty() ? 0 : std::stoi(v);
     };
-    for (const auto &row : project.query_json("SELECT analysis,file_path,analysis_index,blank,replicate FROM MASS_SPEC_ANALYSES WHERE project_id="+detail::sql(project_id)+" ORDER BY analysis")) {
+    for (const auto &row : project.query_json("SELECT analysis,file_path,analysis_index,blank,replicate FROM MASS_SPEC_ANALYSES ORDER BY analysis")) {
         const auto name = row.at("analysis").get<std::string>();
         bool selected = wanted.empty();
         for (const auto &x : wanted) selected = selected || x.get<std::string>() == name;
@@ -205,7 +204,7 @@ nta::PROJECT_NON_TARGET_ANALYSIS load_analysis_features(streamfind::Project &pro
         auto v = s(row, col);
         return v == "true" || v == "TRUE" || v == "1";
     };
-    for (const auto &row : project.query_json("SELECT analysis, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM MASS_SPEC_NTA_FEATURES WHERE project_id="+detail::sql(project_id)+" ORDER BY analysis")) {
+    for (const auto &row : project.query_json("SELECT analysis, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM MASS_SPEC_NTA_FEATURES ORDER BY analysis")) {
         const auto an = row.at("analysis").get<std::string>();
         const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
         if (it == data.analysis_names().end()) continue;
@@ -322,8 +321,8 @@ bool already_had(const nta::api::NTA_FEATURE_ROW &r, int level) {
 // Non-finite doubles are stored as SQL NULL so DuckDB accepts them; loading maps
 // NULL back to NaN to preserve the R NA "disabled" semantics of the filter steps.
 std::string dn(const double v) { return std::isfinite(v) ? std::to_string(v) : std::string("NULL"); }
-std::string suspect_row_sql(const std::string &project, const nta::api::NTA_SUSPECT_ROW &r) {
-    return detail::sql(project) + "," + detail::sql(r.analysis) + "," + detail::sql(r.feature) + "," + detail::sql(r.feature_group) + "," +
+std::string suspect_row_sql(const nta::api::NTA_SUSPECT_ROW &r) {
+    return detail::sql(r.analysis) + "," + detail::sql(r.feature) + "," + detail::sql(r.feature_group) + "," +
       std::to_string(r.candidate_rank) + "," + detail::sql(r.name) + "," + std::to_string(r.polarity) + "," + dn(r.db_mass) + "," + dn(r.exp_mass) + "," + dn(r.error_mass) + "," +
       dn(r.db_rt) + "," + dn(r.exp_rt) + "," + dn(r.error_rt) + "," + dn(r.intensity) + "," + dn(r.area) + "," + std::to_string(r.id_level) + "," + dn(r.score) + "," +
       std::to_string(r.shared_fragments) + "," + dn(r.cosine_similarity) + "," + detail::sql(r.formula) + "," + detail::sql(r.SMILES) + "," + detail::sql(r.InChI) + "," +
@@ -331,8 +330,8 @@ std::string suspect_row_sql(const std::string &project, const nta::api::NTA_SUSP
       detail::sql(r.db_ms2_intensity) + "," + detail::sql(r.db_ms2_formula) + "," + detail::sql(r.db_ms2_smiles) + "," + std::to_string(r.exp_ms2_size) + "," +
       detail::sql(r.exp_ms2_mz) + "," + detail::sql(r.exp_ms2_intensity);
 }
-std::string internal_standard_row_sql(const std::string &project, const nta::api::NTA_INTERNAL_STANDARD_ROW &r) {
-    return detail::sql(project) + "," + detail::sql(r.analysis) + "," + detail::sql(r.feature) + "," + detail::sql(r.feature_group) + "," +
+std::string internal_standard_row_sql(const nta::api::NTA_INTERNAL_STANDARD_ROW &r) {
+    return detail::sql(r.analysis) + "," + detail::sql(r.feature) + "," + detail::sql(r.feature_group) + "," +
       detail::sql(r.feature_component) + "," + detail::sql(r.adduct) + "," + std::to_string(r.candidate_rank) + "," + detail::sql(r.name) + "," +
       std::to_string(r.polarity) + "," + dn(r.db_mass) + "," + dn(r.exp_mass) + "," + dn(r.error_mass) + "," + dn(r.db_rt) + "," + dn(r.exp_rt) + "," + dn(r.error_rt) + "," +
       dn(r.intensity) + "," + dn(r.area) + "," + std::to_string(r.id_level) + "," + dn(r.score) + "," + std::to_string(r.shared_fragments) + "," + dn(r.cosine_similarity) + "," +
@@ -363,7 +362,7 @@ std::optional<std::string> bool_cell(bool v) { return v ? "true" : "false"; }
 
 const std::vector<std::string> &features_columns() {
     static const std::vector<std::string> cols = {
-        "project_id", "analysis", "feature", "feature_component", "feature_group", "adduct",
+        "analysis", "feature", "feature_component", "feature_group", "adduct",
         "rt", "mz", "mass", "intensity", "noise", "sn", "area", "trace_count",
         "rtmin", "rtmax", "width", "mzmin", "mzmax", "ppm", "fwhm_rt", "fwhm_mz",
         "gaussian_A", "gaussian_mu", "gaussian_sigma", "gaussian_r2", "jaggedness", "sharpness", "asymmetry",
@@ -379,9 +378,9 @@ const std::vector<std::string> &features_columns() {
     return cols;
 }
 
-std::vector<std::optional<std::string>> feature_cells(const std::string &project, const nta::api::NTA_FEATURE_ROW &r) {
+std::vector<std::optional<std::string>> feature_cells(const nta::api::NTA_FEATURE_ROW &r) {
     return {
-        str_cell(project), str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_component), str_cell(r.feature_group), str_cell(r.adduct),
+        str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_component), str_cell(r.feature_group), str_cell(r.adduct),
         fnum_cell(r.rt), fnum_cell(r.mz), fnum_cell(r.mass), fnum_cell(r.intensity), fnum_cell(r.noise), fnum_cell(r.sn), fnum_cell(r.area),
         // Note: preserved existing binding — the current row_sql writes eic_size
         // into the trace_count column slot.
@@ -404,7 +403,7 @@ std::vector<std::optional<std::string>> feature_cells(const std::string &project
 
 const std::vector<std::string> &suspects_columns() {
     static const std::vector<std::string> cols = {
-        "project_id", "analysis", "feature", "feature_group", "candidate_rank", "name", "polarity",
+        "analysis", "feature", "feature_group", "candidate_rank", "name", "polarity",
         "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area",
         "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "SMILES", "InChI", "InChIKey",
         "xLogP", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
@@ -412,9 +411,9 @@ const std::vector<std::string> &suspects_columns() {
     return cols;
 }
 
-std::vector<std::optional<std::string>> suspect_cells(const std::string &project, const nta::api::NTA_SUSPECT_ROW &r) {
+std::vector<std::optional<std::string>> suspect_cells(const nta::api::NTA_SUSPECT_ROW &r) {
     return {
-        str_cell(project), str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_group),
+        str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_group),
         inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
         dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
         dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
@@ -425,7 +424,7 @@ std::vector<std::optional<std::string>> suspect_cells(const std::string &project
 
 const std::vector<std::string> &internal_standards_columns() {
     static const std::vector<std::string> cols = {
-        "project_id", "analysis", "feature", "feature_group", "feature_component", "adduct",
+        "analysis", "feature", "feature_group", "feature_component", "adduct",
         "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt",
         "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity",
         "formula", "SMILES", "InChI", "InChIKey", "xLogP", "database_id",
@@ -434,9 +433,9 @@ const std::vector<std::string> &internal_standards_columns() {
     return cols;
 }
 
-std::vector<std::optional<std::string>> internal_standard_cells(const std::string &project, const nta::api::NTA_INTERNAL_STANDARD_ROW &r) {
+std::vector<std::optional<std::string>> internal_standard_cells(const nta::api::NTA_INTERNAL_STANDARD_ROW &r) {
     return {
-        str_cell(project), str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
+        str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
         inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
         dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
         dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
@@ -446,34 +445,31 @@ std::vector<std::optional<std::string>> internal_standard_cells(const std::strin
 }
 
 void persist_features(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSIS &data) {
-    const auto project_id = project.get_project_id();
-    project.execute_sql("DELETE FROM MASS_SPEC_NTA_FEATURES WHERE project_id="+detail::sql(project_id));
+    project.execute_sql("DELETE FROM MASS_SPEC_NTA_FEATURES");
     std::vector<std::vector<std::optional<std::string>>> rows;
     for (const auto &buffer : data.feature_buffers())
         for (int fi = 0; fi < buffer.size(); ++fi)
-            rows.push_back(feature_cells(project_id, buffer.get_feature(fi)));
+            rows.push_back(feature_cells(buffer.get_feature(fi)));
     project.append_rows("MASS_SPEC_NTA_FEATURES", features_columns(), rows);
 }
 
 void persist_suspects(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSIS &data) {
-    const auto project_id = project.get_project_id();
-    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_SUSPECTS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))");
-    project.execute_sql("DELETE FROM MASS_SPEC_NTA_SUSPECTS WHERE project_id=" + detail::sql(project_id));
+    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_SUSPECTS (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))");
+    project.execute_sql("DELETE FROM MASS_SPEC_NTA_SUSPECTS");
     std::vector<std::vector<std::optional<std::string>>> rows;
     for (const auto &buffer : data.suspect_buffers())
         for (int s = 0; s < buffer.size(); ++s)
-            rows.push_back(suspect_cells(project_id, buffer.get_suspect(s)));
+            rows.push_back(suspect_cells(buffer.get_suspect(s)));
     project.append_rows("MASS_SPEC_NTA_SUSPECTS", suspects_columns(), rows);
 }
 
 void persist_internal_standards(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSIS &data) {
-    const auto project_id = project.get_project_id();
-    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_INTERNAL_STANDARDS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, feature_component VARCHAR, adduct VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))");
-    project.execute_sql("DELETE FROM MASS_SPEC_NTA_INTERNAL_STANDARDS WHERE project_id=" + detail::sql(project_id));
+    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_INTERNAL_STANDARDS (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, feature_component VARCHAR, adduct VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))");
+    project.execute_sql("DELETE FROM MASS_SPEC_NTA_INTERNAL_STANDARDS");
     std::vector<std::vector<std::optional<std::string>>> rows;
     for (const auto &buffer : data.internal_standard_buffers())
         for (int s = 0; s < buffer.size(); ++s)
-            rows.push_back(internal_standard_cells(project_id, buffer.get_internal_standard(s)));
+            rows.push_back(internal_standard_cells(buffer.get_internal_standard(s)));
     project.append_rows("MASS_SPEC_NTA_INTERNAL_STANDARDS", internal_standards_columns(), rows);
 }
 
@@ -483,11 +479,10 @@ static double col_d(const Json &row, const char *col) { auto v = col_s(row, col)
 static int col_i(const Json &row, const char *col) { auto v = col_s(row, col); return v.empty() ? 0 : std::stoi(v); }
 
 void load_suspects(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSIS &data) {
-    const auto project_id = project.get_project_id();
-    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_SUSPECTS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))");
+    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_SUSPECTS (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))");
     auto &buffers = data.suspect_buffers();
     for (auto &b : buffers) b = nta::api::NTA_SUSPECTS();
-    for (const auto &row : project.query_json("SELECT * FROM MASS_SPEC_NTA_SUSPECTS WHERE project_id=" + detail::sql(project_id) + " ORDER BY analysis")) {
+    for (const auto &row : project.query_json("SELECT * FROM MASS_SPEC_NTA_SUSPECTS ORDER BY analysis")) {
         const auto an = row.at("analysis").get<std::string>();
         const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
         if (it == data.analysis_names().end()) continue;
@@ -508,11 +503,10 @@ void load_suspects(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSI
 }
 
 void load_internal_standards(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSIS &data) {
-    const auto project_id = project.get_project_id();
-    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_INTERNAL_STANDARDS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, feature_component VARCHAR, adduct VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))");
+    project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_INTERNAL_STANDARDS (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_group VARCHAR, feature_component VARCHAR, adduct VARCHAR, candidate_rank INTEGER, name VARCHAR, polarity INTEGER, db_mass DOUBLE, exp_mass DOUBLE, error_mass DOUBLE, db_rt DOUBLE, exp_rt DOUBLE, error_rt DOUBLE, intensity DOUBLE, area DOUBLE, id_level INTEGER, score DOUBLE, shared_fragments INTEGER, cosine_similarity DOUBLE, formula VARCHAR, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, database_id VARCHAR, db_ms2_size INTEGER, db_ms2_mz VARCHAR, db_ms2_intensity VARCHAR, db_ms2_formula VARCHAR, db_ms2_smiles VARCHAR, exp_ms2_size INTEGER, exp_ms2_mz VARCHAR, exp_ms2_intensity VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))");
     auto &buffers = data.internal_standard_buffers();
     for (auto &b : buffers) b = nta::api::NTA_INTERNAL_STANDARDS();
-    for (const auto &row : project.query_json("SELECT * FROM MASS_SPEC_NTA_INTERNAL_STANDARDS WHERE project_id=" + detail::sql(project_id) + " ORDER BY analysis")) {
+    for (const auto &row : project.query_json("SELECT * FROM MASS_SPEC_NTA_INTERNAL_STANDARDS ORDER BY analysis")) {
         const auto an = row.at("analysis").get<std::string>();
         const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
         if (it == data.analysis_names().end()) continue;
@@ -639,7 +633,7 @@ void load_internal_standards(streamfind::Project &project, nta::PROJECT_NON_TARG
     // (polarity, RT, intensity, experimental MS2) are carried over from a
     // representative suspect of the target analysis when one exists. The `feature`
     // cell is synthesized per row so the SUSPECTS primary key
-    // (project_id, analysis, feature) stays unique.
+    // (analysis, feature) stays unique.
     void append_transformation_products_to_suspects(nta::PROJECT_NON_TARGET_ANALYSIS &data,
                                                     const nta::api::NTA_TRANSFORMATION_PRODUCTS &products) {
         auto &buffers = data.suspect_buffers();
@@ -700,7 +694,7 @@ void load_internal_standards(streamfind::Project &project, nta::PROJECT_NON_TARG
 
     const std::vector<std::string> &transformation_products_columns() {
         static const std::vector<std::string> cols = {
-            "project_id", "analysis", "feature_group", "precursor_feature_group", "main_precursor_feature_group",
+            "analysis", "feature_group", "precursor_feature_group", "main_precursor_feature_group",
             "assignment_rank", "name", "formula", "mass", "SMILES", "InChI", "InChIKey", "xLogP", "transformation",
             "precursor_name", "precursor_formula", "precursor_mass", "precursor_SMILES", "precursor_InChI", "precursor_InChIKey", "precursor_xLogP",
             "main_precursor_name", "main_precursor_formula", "main_precursor_mass", "main_precursor_SMILES", "main_precursor_InChI", "main_precursor_InChIKey", "main_precursor_xLogP",
@@ -709,10 +703,10 @@ void load_internal_standards(streamfind::Project &project, nta::PROJECT_NON_TARG
         return cols;
     }
 
-    std::vector<std::optional<std::string>> transformation_product_cells(const std::string &project, const std::string &analysis,
+    std::vector<std::optional<std::string>> transformation_product_cells(const std::string &analysis,
                                                                         const nta::api::NTA_TRANSFORMATION_PRODUCT_ROW &r) {
         return {
-            str_cell(project), str_cell(analysis), str_cell(r.feature_group), str_cell(r.precursor_feature_group), str_cell(r.main_precursor_feature_group),
+            str_cell(analysis), str_cell(r.feature_group), str_cell(r.precursor_feature_group), str_cell(r.main_precursor_feature_group),
             inum_cell(r.assignment_rank), str_cell(r.name), str_cell(r.formula), dnum_cell(r.mass), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP), str_cell(r.transformation),
             str_cell(r.precursor_name), str_cell(r.precursor_formula), dnum_cell(r.precursor_mass), str_cell(r.precursor_SMILES), str_cell(r.precursor_InChI), str_cell(r.precursor_InChIKey), dnum_cell(r.precursor_xLogP),
             str_cell(r.main_precursor_name), str_cell(r.main_precursor_formula), dnum_cell(r.main_precursor_mass), str_cell(r.main_precursor_SMILES), str_cell(r.main_precursor_InChI), str_cell(r.main_precursor_InChIKey), dnum_cell(r.main_precursor_xLogP),
@@ -722,15 +716,14 @@ void load_internal_standards(streamfind::Project &project, nta::PROJECT_NON_TARG
 
     void persist_transformation_products(streamfind::Project &project, nta::PROJECT_NON_TARGET_ANALYSIS &data,
                                          const nta::api::NTA_TRANSFORMATION_PRODUCTS &products) {
-        const auto project_id = project.get_project_id();
-        project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature_group VARCHAR, precursor_feature_group VARCHAR, main_precursor_feature_group VARCHAR, assignment_rank INTEGER, name VARCHAR NOT NULL, formula VARCHAR, mass DOUBLE, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, transformation VARCHAR, precursor_name VARCHAR, precursor_formula VARCHAR, precursor_mass DOUBLE, precursor_SMILES VARCHAR, precursor_InChI VARCHAR, precursor_InChIKey VARCHAR, precursor_xLogP DOUBLE, main_precursor_name VARCHAR, main_precursor_formula VARCHAR, main_precursor_mass DOUBLE, main_precursor_SMILES VARCHAR, main_precursor_InChI VARCHAR, main_precursor_InChIKey VARCHAR, main_precursor_xLogP DOUBLE, cosine_similarity DOUBLE, main_precursor_cosine_similarity DOUBLE, rt_plausibility DOUBLE, main_precursor_rt_plausibility DOUBLE, assignment_score DOUBLE, network_level INTEGER, assignment_status VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature_group, name))");
-        project.execute_sql("DELETE FROM MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS WHERE project_id=" + detail::sql(project_id));
+            project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS (analysis VARCHAR NOT NULL, feature_group VARCHAR, precursor_feature_group VARCHAR, main_precursor_feature_group VARCHAR, assignment_rank INTEGER, name VARCHAR NOT NULL, formula VARCHAR, mass DOUBLE, SMILES VARCHAR, InChI VARCHAR, InChIKey VARCHAR, xLogP DOUBLE, transformation VARCHAR, precursor_name VARCHAR, precursor_formula VARCHAR, precursor_mass DOUBLE, precursor_SMILES VARCHAR, precursor_InChI VARCHAR, precursor_InChIKey VARCHAR, precursor_xLogP DOUBLE, main_precursor_name VARCHAR, main_precursor_formula VARCHAR, main_precursor_mass DOUBLE, main_precursor_SMILES VARCHAR, main_precursor_InChI VARCHAR, main_precursor_InChIKey VARCHAR, main_precursor_xLogP DOUBLE, cosine_similarity DOUBLE, main_precursor_cosine_similarity DOUBLE, rt_plausibility DOUBLE, main_precursor_rt_plausibility DOUBLE, assignment_score DOUBLE, network_level INTEGER, assignment_status VARCHAR, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature_group, name))");
+        project.execute_sql("DELETE FROM MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS");
         const auto assigned = transformation_product_analysis_indices(data, products);
         const auto &names = data.analysis_names();
         std::vector<std::vector<std::optional<std::string>>> rows;
         rows.reserve(static_cast<size_t>(products.size()));
         for (int i = 0; i < products.size(); ++i)
-            rows.push_back(transformation_product_cells(project_id, names[static_cast<size_t>(assigned[static_cast<size_t>(i)])], products.get_transformation_product(i)));
+            rows.push_back(transformation_product_cells(names[static_cast<size_t>(assigned[static_cast<size_t>(i)])], products.get_transformation_product(i)));
         project.append_rows("MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS", transformation_products_columns(), rows);
     }
 
@@ -819,12 +812,11 @@ Json find_features(streamfind::Project &project, const Json &parameters) {
     const int traces = parameters.value("min_traces", 3);
     const float baseline = parameters.value("baseline_window", 200.0), width = parameters.value("max_width", parameters.value("max_feature_width", 100.0)), quantile = parameters.value("base_quantile", .1);
     if (ppm <= 0 || noise < 0 || snr < 0 || traces < 1 || baseline <= 0 || width <= 0 || quantile <= 0 || quantile >= 1) throw Error(ErrorCode::InvalidArgument, "invalid feature detector parameters");
-    const auto project_id = project.get_project_id();
-     project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_FEATURES (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_component VARCHAR, feature_group VARCHAR, adduct VARCHAR, rt DOUBLE, mz DOUBLE, mass DOUBLE, intensity DOUBLE, noise DOUBLE, sn DOUBLE, area DOUBLE, trace_count INTEGER, rtmin DOUBLE, rtmax DOUBLE, width DOUBLE, mzmin DOUBLE, mzmax DOUBLE, ppm DOUBLE, fwhm_rt DOUBLE, fwhm_mz DOUBLE, gaussian_A DOUBLE, gaussian_mu DOUBLE, gaussian_sigma DOUBLE, gaussian_r2 DOUBLE, jaggedness DOUBLE, sharpness DOUBLE, asymmetry DOUBLE, modality INTEGER, plates DOUBLE, polarity INTEGER, filtered BOOLEAN, filter VARCHAR, filled BOOLEAN, correction DOUBLE, eic_size INTEGER, eic_rt VARCHAR, eic_mz VARCHAR, eic_intensity VARCHAR, eic_baseline VARCHAR, eic_smoothed VARCHAR, ms1_size INTEGER, ms1_mz VARCHAR, ms1_intensity VARCHAR, ms2_size INTEGER, ms2_mz VARCHAR, ms2_intensity VARCHAR, annotation_category VARCHAR, annotation_type VARCHAR, annotation_parent_feature VARCHAR, annotation_element VARCHAR, annotation_mass_error_da DOUBLE, annotation_mass_error_ppm DOUBLE, annotation_rt_error DOUBLE, annotation_rel_intensity DOUBLE, annotation_expected_rel_intensity_min DOUBLE, annotation_expected_rel_intensity_max DOUBLE, annotation_score DOUBLE, component_size INTEGER, component_rt_center DOUBLE, component_rt_spread DOUBLE, component_density DOUBLE, component_mean_correlation DOUBLE, component_best_partner VARCHAR, component_max_correlation DOUBLE, component_mean_correlation_to_component DOUBLE, component_membership_score DOUBLE, component_is_core BOOLEAN, component_bridge_flag BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, feature))");
-    project.execute_sql("DELETE FROM MASS_SPEC_NTA_FEATURES WHERE project_id=" + detail::sql(project_id));
+     project.execute_sql("CREATE TABLE IF NOT EXISTS MASS_SPEC_NTA_FEATURES (analysis VARCHAR NOT NULL, feature VARCHAR NOT NULL, feature_component VARCHAR, feature_group VARCHAR, adduct VARCHAR, rt DOUBLE, mz DOUBLE, mass DOUBLE, intensity DOUBLE, noise DOUBLE, sn DOUBLE, area DOUBLE, trace_count INTEGER, rtmin DOUBLE, rtmax DOUBLE, width DOUBLE, mzmin DOUBLE, mzmax DOUBLE, ppm DOUBLE, fwhm_rt DOUBLE, fwhm_mz DOUBLE, gaussian_A DOUBLE, gaussian_mu DOUBLE, gaussian_sigma DOUBLE, gaussian_r2 DOUBLE, jaggedness DOUBLE, sharpness DOUBLE, asymmetry DOUBLE, modality INTEGER, plates DOUBLE, polarity INTEGER, filtered BOOLEAN, filter VARCHAR, filled BOOLEAN, correction DOUBLE, eic_size INTEGER, eic_rt VARCHAR, eic_mz VARCHAR, eic_intensity VARCHAR, eic_baseline VARCHAR, eic_smoothed VARCHAR, ms1_size INTEGER, ms1_mz VARCHAR, ms1_intensity VARCHAR, ms2_size INTEGER, ms2_mz VARCHAR, ms2_intensity VARCHAR, annotation_category VARCHAR, annotation_type VARCHAR, annotation_parent_feature VARCHAR, annotation_element VARCHAR, annotation_mass_error_da DOUBLE, annotation_mass_error_ppm DOUBLE, annotation_rt_error DOUBLE, annotation_rel_intensity DOUBLE, annotation_expected_rel_intensity_min DOUBLE, annotation_expected_rel_intensity_max DOUBLE, annotation_score DOUBLE, component_size INTEGER, component_rt_center DOUBLE, component_rt_spread DOUBLE, component_density DOUBLE, component_mean_correlation DOUBLE, component_best_partner VARCHAR, component_max_correlation DOUBLE, component_mean_correlation_to_component DOUBLE, component_membership_score DOUBLE, component_is_core BOOLEAN, component_bridge_flag BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, feature))");
+    project.execute_sql("DELETE FROM MASS_SPEC_NTA_FEATURES");
     std::vector<std::string> names, paths; std::vector<int> indices; std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
     const auto wanted = parameters.value("analysis_names", Json::array());
-    for (const auto &row : project.query_json("SELECT analysis,file_path,analysis_index FROM MASS_SPEC_ANALYSES WHERE project_id="+detail::sql(project_id)+" ORDER BY analysis")) {
+    for (const auto &row : project.query_json("SELECT analysis,file_path,analysis_index FROM MASS_SPEC_ANALYSES ORDER BY analysis")) {
         const auto name=row.at("analysis").get<std::string>(); bool selected=wanted.empty(); for(const auto &x:wanted) selected=selected||x.get<std::string>()==name; if(!selected)continue;
         int index = 0;
         if (auto it = row.find("analysis_index"); it != row.end() && !it->is_null()) {
@@ -842,7 +834,7 @@ Json find_features(streamfind::Project &project, const Json &parameters) {
     std::vector<std::vector<std::optional<std::string>>> feature_rows;
     for (const auto &buffer : data.feature_buffers())
         for (int fi = 0; fi < buffer.size(); ++fi)
-            feature_rows.push_back(detail::feature_cells(project_id, buffer.get_feature(fi)));
+            feature_rows.push_back(detail::feature_cells(buffer.get_feature(fi)));
     project.append_rows("MASS_SPEC_NTA_FEATURES", detail::features_columns(), feature_rows);
     return Json{{"status","finished"},{"info","Features detected."}};
 }
@@ -859,7 +851,6 @@ Json load_features_ms1(streamfind::Project &project, const Json &parameters) {
     const float rt_hi = rt_window.size() >= 2 ? rt_window[1].get<float>() : 0.0f;
     const float mz_lo = mz_window.size() >= 1 ? mz_window[0].get<float>() : 0.0f;
     const float mz_hi = mz_window.size() >= 2 ? mz_window[1].get<float>() : 0.0f;
-    const auto project_id = project.get_project_id();
     auto data = detail::load_analysis_features(project, parameters);
     auto &buffers = data.feature_buffers();
     for (size_t i = 0; i < buffers.size(); ++i) {
@@ -916,7 +907,7 @@ Json load_features_ms1(streamfind::Project &project, const Json &parameters) {
             buffers[i].set_feature(j, ft);
             updates += "UPDATE MASS_SPEC_NTA_FEATURES SET ms1_size=" + std::to_string(ft.ms1_size) +
                 ", ms1_mz=" + detail::sql(ft.ms1_mz) + ", ms1_intensity=" + detail::sql(ft.ms1_intensity) +
-                " WHERE project_id=" + detail::sql(project_id) + " AND analysis=" + detail::sql(ft.analysis) +
+                " WHERE analysis=" + detail::sql(ft.analysis) +
                 " AND feature=" + detail::sql(ft.feature) + ";";
             ++updated_for_analysis;
         }
@@ -934,7 +925,6 @@ Json load_features_ms2(streamfind::Project &project, const Json &parameters) {
     const float mz_clust = parameters.value("mz_clust", 0.005);
     const float presence = parameters.value("presence", 0.8);
     if (min_traces < 0 || isolation_window < 0 || mz_clust < 0 || presence < 0 || presence > 1) throw Error(ErrorCode::InvalidArgument, "invalid MS2 spectrum loading parameters");
-    const auto project_id = project.get_project_id();
     auto data = detail::load_analysis_features(project, parameters);
     auto &buffers = data.feature_buffers();
     for (size_t i = 0; i < buffers.size(); ++i) {
@@ -991,7 +981,7 @@ Json load_features_ms2(streamfind::Project &project, const Json &parameters) {
             buffers[i].set_feature(j, ft);
             updates += "UPDATE MASS_SPEC_NTA_FEATURES SET ms2_size=" + std::to_string(ft.ms2_size) +
                 ", ms2_mz=" + detail::sql(ft.ms2_mz) + ", ms2_intensity=" + detail::sql(ft.ms2_intensity) +
-                " WHERE project_id=" + detail::sql(project_id) + " AND analysis=" + detail::sql(ft.analysis) +
+                " WHERE analysis=" + detail::sql(ft.analysis) +
                 " AND feature=" + detail::sql(ft.feature) + ";";
             ++updated_for_analysis;
         }

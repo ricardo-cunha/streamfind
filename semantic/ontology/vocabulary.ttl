@@ -90,6 +90,13 @@ sf:methodId
     skos:prefLabel "method identifier" ;
     skos:definition "Stable identifier of a workflow method." .
 
+sf:providedByModule
+    a rdf:Property ;
+    rdfs:domain skos:Concept ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "provided by module" ;
+    skos:definition "Stable native domain-module identifier that provides a method or operation." .
+
 sf:cacheable
     a rdf:Property ;
     rdfs:domain sf:Method ;

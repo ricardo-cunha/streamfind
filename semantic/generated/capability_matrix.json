@@ -1,0 +1,530 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "canonical_id": "add_method",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "cancel_execution",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "close",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "connect",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "copy",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "create",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "create_workflow_execution",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "delete_cache",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "describe",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_audit_trail",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_available_methods",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_cache",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_cache_size",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_domain",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_execution",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_metadata",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_workflow",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "get_workflow_execution",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "list_executions",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.add_analyses",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.annotate_components",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.assign_transformation_products",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.correct_matrix_suppression",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.create_components",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.fill_features",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.filter_chromatograms_retention_time",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.chromatograms",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.filter_features",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.filter_features_ms2",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.filter_internal_standards",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.filter_suspects",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.find_features",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.find_internal_standards",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_analyses_info",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_analysis_names",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_blank_names",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_chromatograms",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_chromatograms_headers",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_concentrations",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_features",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_internal_standards",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_raw_chromatograms",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_raw_spectra",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_raw_spectra_eic",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_raw_spectra_ms1",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_raw_spectra_ms2",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_replicate_names",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_spectra_headers",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_spectra_tic",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_suspects",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.get_transformation_products",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.group_features",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.load_chromatograms",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.chromatograms",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.load_features_ms1",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.load_features_ms2",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.metfrag_screening",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.remove_analyses",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.set_blank_names",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.set_concentrations",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.set_replicate_names",
+      "kind": "operation",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.subtract_blank",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "mass_spec.suspect_screening",
+      "kind": "method",
+      "domain_id": "mass_spec",
+      "module_id": "mass_spec.nta",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "raman.add_analyses",
+      "kind": "method",
+      "domain_id": "raman",
+      "module_id": "raman.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "raman.remove_analyses",
+      "kind": "method",
+      "domain_id": "raman",
+      "module_id": "raman.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "remove_method",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "run_method",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "run_workflow",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "set_metadata",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "set_workflow",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "tools_install",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "tools_install_java",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "tools_install_metfrag",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "tools_status",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "transition_execution",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "validate",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    },
+    {
+      "canonical_id": "validate_workflow",
+      "kind": "operation",
+      "domain_id": "streamfind",
+      "module_id": "streamfind.base",
+      "semantic_executable": true
+    }
+  ]
+}

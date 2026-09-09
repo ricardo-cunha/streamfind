@@ -22,12 +22,12 @@ std::string sql(const std::string &value) {
 void ensure_table(streamfind::Project &project) {
     project.execute_sql(
         "CREATE TABLE IF NOT EXISTS MASS_SPEC_CHROMATOGRAMS ("
-        "project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, "
+        "analysis VARCHAR NOT NULL, "
         "index INTEGER NOT NULL DEFAULT 0, chromatogram_id VARCHAR NOT NULL, "
         "polarity INTEGER, precursor_mz DOUBLE, activation_ce DOUBLE, product_mz DOUBLE, "
         "rt DOUBLE NOT NULL, raw_intensity DOUBLE NOT NULL, baseline DOUBLE NOT NULL DEFAULT 0, "
         "intensity DOUBLE NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-        "PRIMARY KEY(project_id, analysis, chromatogram_id, rt))");
+        "PRIMARY KEY(analysis, chromatogram_id, rt))");
     project.execute_sql("ALTER TABLE MASS_SPEC_CHROMATOGRAMS ADD COLUMN IF NOT EXISTS index INTEGER");
     project.execute_sql("ALTER TABLE MASS_SPEC_CHROMATOGRAMS ADD COLUMN IF NOT EXISTS polarity INTEGER");
     project.execute_sql("ALTER TABLE MASS_SPEC_CHROMATOGRAMS ADD COLUMN IF NOT EXISTS precursor_mz DOUBLE");
@@ -43,17 +43,17 @@ std::optional<std::string> dnum_cell(float value) {
 }
 
 std::vector<std::string> chromatogram_columns() {
-    return {"project_id", "analysis", "index", "chromatogram_id", "polarity",
+    return {"analysis", "index", "chromatogram_id", "polarity",
             "precursor_mz", "activation_ce", "product_mz",
             "rt", "raw_intensity", "baseline", "intensity"};
 }
 
 std::vector<std::optional<std::string>> chromatogram_cells(
-    const std::string &project_id, const std::string &analysis,
+    const std::string &analysis,
     const ::mass_spec::reader::MASS_SPEC_CHROMATOGRAMS_HEADERS &headers, std::size_t i,
     float rt, float intensity) {
     return {
-        str_cell(project_id), str_cell(analysis), inum_cell(headers.index[i]), str_cell(headers.chromatogram_id[i]),
+        str_cell(analysis), inum_cell(headers.index[i]), str_cell(headers.chromatogram_id[i]),
         inum_cell(headers.polarity[i]),
         dnum_cell(headers.precursor_mz[i]), dnum_cell(headers.activation_ce[i]), dnum_cell(headers.product_mz[i]),
         std::to_string(rt), std::to_string(intensity), std::string("0"), std::to_string(intensity)};
@@ -62,8 +62,7 @@ std::vector<std::optional<std::string>> chromatogram_cells(
 std::vector<std::tuple<std::string, std::string, int>> analyses(
     streamfind::Project &project, const Json &parameters) {
     const auto rows = project.query_json(
-        "SELECT analysis, file_path, analysis_index FROM MASS_SPEC_ANALYSES WHERE project_id = " +
-        sql(project.get_project_id()) + " ORDER BY analysis");
+        "SELECT analysis, file_path, analysis_index FROM MASS_SPEC_ANALYSES ORDER BY analysis");
     const auto wanted = parameters.value("analysis_names", Json::array());
     std::vector<std::tuple<std::string, std::string, int>> result;
     for (const auto &row : rows) {
@@ -105,7 +104,7 @@ Json status(const char *message) {
 
 Json load_chromatograms(streamfind::Project &project, const Json &parameters) {
     detail::ensure_table(project);
-    const auto project_id = project.get_project_id();
+
     for (const auto &[analysis, path, index] : detail::analyses(project, parameters)) {
         ::mass_spec::reader::MASS_SPEC_FILE file(path);
         file.select_analysis(index);
@@ -116,14 +115,13 @@ Json load_chromatograms(streamfind::Project &project, const Json &parameters) {
             const auto &id = headers.chromatogram_id[i];
             const bool keep = detail::matches(id, parameters) ^ parameters.value("invert", false);
             if (!keep || arrays[i].size() < 2) continue;
-            project.execute_sql("DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE project_id = " + detail::sql(project_id) +
-                                " AND analysis = " + detail::sql(analysis) + " AND chromatogram_id = " + detail::sql(id));
+            project.execute_sql("DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE analysis = " + detail::sql(analysis) + " AND chromatogram_id = " + detail::sql(id));
             const auto &times = arrays[i][0];
             const auto &intensities = arrays[i][1];
             const auto count = std::min(times.size(), intensities.size());
             rows.reserve(rows.size() + count);
             for (std::size_t j = 0; j < count; ++j)
-                rows.push_back(detail::chromatogram_cells(project_id, analysis, headers, i, times[j], intensities[j]));
+                rows.push_back(detail::chromatogram_cells(analysis, headers, i, times[j], intensities[j]));
         }
         if (!rows.empty())
             project.append_rows("MASS_SPEC_CHROMATOGRAMS", detail::chromatogram_columns(), rows);
@@ -143,7 +141,7 @@ Json filter_chromatograms_retention_time(streamfind::Project &project, const Jso
         for (std::size_t i = 0; i < wanted.size(); ++i) filter += (i ? "," : "") + detail::sql(wanted[i].get<std::string>());
         filter += ")";
     }
-    project.execute_sql("DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE project_id = " + detail::sql(project.get_project_id()) + filter);
+    project.execute_sql("DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE 1=1" + filter);
     return detail::status("Chromatograms filtered by retention time.");
 }
 

@@ -41,11 +41,15 @@ function Set-RepositoryTemp {
     # colliding TMP/tmp or TEMP/temp values (often /tmp); use the managed
     # repository scratch directory for child tool processes instead.
     New-TmpDirs
-    $env:TEMP = $Script:TMP_SCRATCH
-    $env:TMP = $Script:TMP_SCRATCH
-    $env:TMPDIR = $Script:TMP_SCRATCH
-    $env:temp = $Script:TMP_SCRATCH
-    $env:tmp = $Script:TMP_SCRATCH
+    # Git Bash can export a second, lower-case `tmp` variable. Windows treats
+    # environment names case-insensitively in most APIs, but cmd/rustc can
+    # still receive both entries and interpret the MSYS value as C:\c\....
+    [Environment]::SetEnvironmentVariable('tmp', $null, 'Process')
+    [Environment]::SetEnvironmentVariable('temp', $null, 'Process')
+    $nativeScratch = [System.IO.Path]::GetFullPath($Script:TMP_SCRATCH)
+    [Environment]::SetEnvironmentVariable('TEMP', $nativeScratch, 'Process')
+    [Environment]::SetEnvironmentVariable('TMP', $nativeScratch, 'Process')
+    [Environment]::SetEnvironmentVariable('TMPDIR', $nativeScratch, 'Process')
 }
 
 # ---- logging ----------------------------------------------------------------

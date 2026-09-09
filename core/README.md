@@ -48,7 +48,6 @@ Canonical `Project` methods:
 ```text
 get_metadata() / set_metadata(Json)
 get_database_path()
-get_project_id()
 get_domain()
 validate()
 get_workflow() / set_workflow(Workflow)
@@ -71,10 +70,10 @@ changed afterward. Opening a project does not modify its domain.
 ## JSON API
 
 `streamfind::api::run()` exposes the same operations through
-`streamfind::api::ProjectCommand`. Requests select a project with:
+`streamfind::api::ProjectCommand`. The database path selects the project with:
 
 ```json
-{"database_path":"project.duckdb","project_id":"demo"}
+{"database_path":"project.duckdb"}
 ```
 
 Canonical commands are:

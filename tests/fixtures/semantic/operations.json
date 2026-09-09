@@ -1,9 +1,11 @@
 {
   "canonical_ids": [
     "add_method",
+    "cancel_execution",
     "close",
     "copy",
     "create",
+    "create_workflow_execution",
     "delete_cache",
     "describe",
     "get_audit_trail",
@@ -11,9 +13,11 @@
     "get_cache",
     "get_cache_size",
     "get_domain",
+    "get_execution",
     "get_metadata",
     "get_workflow",
     "get_workflow_execution",
+    "list_executions",
     "mass_spec.add_analyses",
     "mass_spec.get_analyses_info",
     "mass_spec.get_analysis_names",
@@ -46,6 +50,7 @@
     "tools_install_java",
     "tools_install_metfrag",
     "tools_status",
+    "transition_execution",
     "validate",
     "validate_workflow"
   ]

@@ -1,8 +1,9 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfcore:mass_spec
+sfms:mass_spec
     a sf:Domain ;
     skos:prefLabel "mass_spec" ;
     skos:definition "Mass spectrometry project domain." ;

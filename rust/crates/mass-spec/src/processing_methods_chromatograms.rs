@@ -33,8 +33,7 @@ fn option(value: Option<f32>) -> String {
 
 fn analyses(project: &Project, wanted: &[String]) -> Result<Vec<(String, String, i64)>> {
     let rows = project.query_json(&format!(
-        "SELECT analysis, file_path, analysis_index FROM MASS_SPEC_ANALYSES WHERE project_id = {} ORDER BY analysis",
-        sql(project.get_project_id())
+        "SELECT analysis, file_path, analysis_index FROM MASS_SPEC_ANALYSES ORDER BY analysis"
     ))?;
     let rows = rows.as_array().cloned().unwrap_or_default();
     let selected = rows
@@ -96,8 +95,9 @@ pub fn load_chromatograms(
             let activation_ce = option(chromatogram.activation_ce);
             let product_mz = option(chromatogram.product_mz);
             let mut statements = format!(
-                "DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE project_id = {} AND analysis = {} AND chromatogram_id = {}",
-                sql(project.get_project_id()), sql(&analysis), sql(&chromatogram.id)
+                "DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE analysis = {} AND chromatogram_id = {}",
+                sql(&analysis),
+                sql(&chromatogram.id)
             );
             statements.push(';');
             for (rt, intensity) in chromatogram
@@ -107,8 +107,8 @@ pub fn load_chromatograms(
                 .take(count)
             {
                 statements.push_str(&format!(
-                    "INSERT INTO MASS_SPEC_CHROMATOGRAMS (project_id, analysis, index, chromatogram_id, polarity, precursor_mz, activation_ce, product_mz, wavelength_nm, rt, raw_intensity, baseline, intensity) VALUES ({},{},{},{},{},{},{},{},{},{},{},0,{})",
-                    sql(project.get_project_id()), sql(&analysis), chromatogram_index, sql(&chromatogram.id), polarity, precursor_mz, activation_ce, product_mz, chromatogram.wavelength_nm, *rt as f64, *intensity as f64, *intensity as f64
+                    "INSERT INTO MASS_SPEC_CHROMATOGRAMS (analysis, index, chromatogram_id, polarity, precursor_mz, activation_ce, product_mz, wavelength_nm, rt, raw_intensity, baseline, intensity) VALUES ({},{},{},{},{},{},{},{},{},{},0,{})",
+                    sql(&analysis), chromatogram_index, sql(&chromatogram.id), polarity, precursor_mz, activation_ce, product_mz, chromatogram.wavelength_nm, *rt as f64, *intensity as f64, *intensity as f64
                 ));
                 statements.push(';');
             }
@@ -140,8 +140,8 @@ pub fn filter_chromatograms_retention_time(
         )
     };
     let rows = project.query_json(&format!(
-        "SELECT analysis, chromatogram_id, index, polarity, precursor_mz, activation_ce, product_mz, wavelength_nm, rt, raw_intensity, baseline, intensity FROM MASS_SPEC_CHROMATOGRAMS WHERE project_id = {}{} AND rt >= {} AND rt <= {} ORDER BY chromatogram_id, rt",
-        sql(project.get_project_id()), analysis_filter, request.rtmin, request.rtmax
+        "SELECT analysis, chromatogram_id, index, polarity, precursor_mz, activation_ce, product_mz, wavelength_nm, rt, raw_intensity, baseline, intensity FROM MASS_SPEC_CHROMATOGRAMS WHERE {} AND rt >= {} AND rt <= {} ORDER BY chromatogram_id, rt",
+        analysis_filter, request.rtmin, request.rtmax
     ))?;
     let mut grouped = std::collections::BTreeMap::<(String, String), Vec<&Value>>::new();
     for row in rows.as_array().into_iter().flatten() {
@@ -154,9 +154,13 @@ pub fn filter_chromatograms_retention_time(
             .push(row);
     }
     for ((analysis, id), selected) in grouped {
-        let mut statements = format!("DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE project_id = {} AND analysis = {} AND chromatogram_id = {};", sql(project.get_project_id()), sql(&analysis), sql(&id));
+        let mut statements = format!(
+            "DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE analysis = {} AND chromatogram_id = {};",
+            sql(&analysis),
+            sql(&id)
+        );
         for row in selected {
-            statements.push_str(&format!("INSERT INTO MASS_SPEC_CHROMATOGRAMS (project_id, analysis, index, chromatogram_id, polarity, precursor_mz, activation_ce, product_mz, wavelength_nm, rt, raw_intensity, baseline, intensity) VALUES ({},{},{},{},{},{},{},{},{},{},{},{},{}) ;", sql(project.get_project_id()), sql(&analysis), row["index"], sql(&id), row["polarity"], row["precursor_mz"], row["activation_ce"], row["product_mz"], row["wavelength_nm"], row["rt"], row["raw_intensity"], row["baseline"], row["intensity"]));
+            statements.push_str(&format!("INSERT INTO MASS_SPEC_CHROMATOGRAMS (analysis, index, chromatogram_id, polarity, precursor_mz, activation_ce, product_mz, wavelength_nm, rt, raw_intensity, baseline, intensity) VALUES ({},{},{},{},{},{},{},{},{},{},{},{}) ;", sql(&analysis), row["index"], sql(&id), row["polarity"], row["precursor_mz"], row["activation_ce"], row["product_mz"], row["wavelength_nm"], row["rt"], row["raw_intensity"], row["baseline"], row["intensity"]));
         }
         project.execute_sql(&statements)?;
     }

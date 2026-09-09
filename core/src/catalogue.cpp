@@ -118,6 +118,22 @@ public:
         return entries;
     }
 
+    Json tables(const std::string &domain) const {
+        duckdb_result result{};
+        const std::string sql = "SELECT table_name, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
+                                domain + "' ORDER BY table_name";
+        if (duckdb_query(connection_, sql.c_str(), &result) == DuckDBError) {
+            const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
+            duckdb_destroy_result(&result);
+            throw Error(ErrorCode::DatabaseError, "catalogue: " + message);
+        }
+        Json output = Json::array();
+        for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
+            output.push_back(Json{{"table_name", text(result, 0, row)}, {"columns", value(result, 1, row)}});
+        duckdb_destroy_result(&result);
+        return output;
+    }
+
 private:
     static bool is_null(duckdb_result &result, idx_t column, idx_t row) {
         return duckdb_value_is_null(&result, column, row) != 0;
@@ -242,6 +258,16 @@ std::optional<Json> load(const std::optional<std::string> &path) {
         }
     }
     return catalogue().entries;
+}
+
+std::optional<Json> table_manifest_json(const std::string &domain) {
+    const auto path = find_path();
+    if (!path) return std::nullopt;
+    try {
+        return detail::CatalogueReader(*path).tables(domain);
+    } catch (const std::exception &) {
+        return std::nullopt;
+    }
 }
 
 std::optional<Json> tools_json() {
