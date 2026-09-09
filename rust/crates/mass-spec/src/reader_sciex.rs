@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
-    fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -226,26 +226,7 @@ pub fn read_tof_spectrum(
             "SCIEX TOF spectrum index has no scan payload: {index}"
         )));
     }
-    let mut scan_file = File::open(scan_path_for_wiff(path))?;
-    let scan_size = scan_file.metadata()?.len() as usize;
-    let payload_start = metadata.sample_base + record.scan_offset as usize + 56;
-    let next_end = metadata
-        .records
-        .get(source_index + 1)
-        .map_or(scan_size, |next| {
-            metadata.sample_base + next.scan_offset as usize + 64
-        });
-    let own_end =
-        metadata.sample_base + record.scan_offset as usize + record.scan_size as usize + 64;
-    let end = next_end.min(own_end).min(scan_size);
-    let points = if end > payload_start {
-        let mut payload = vec![0u8; end - payload_start];
-        scan_file.seek(SeekFrom::Start(payload_start as u64))?;
-        scan_file.read_exact(&mut payload)?;
-        decode_scan_payload(&payload)?
-    } else {
-        Vec::new()
-    };
+    let points = read_scan_points(path, record, metadata.records.get(source_index + 1))?;
     let is_ms1 = metadata.experiment_count > 1 && source_index % metadata.experiment_count == 0;
     let mut spectrum = crate::reader::Spectrum {
         index: index as i32,

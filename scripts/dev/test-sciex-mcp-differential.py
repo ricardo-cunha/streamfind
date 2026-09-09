@@ -81,12 +81,13 @@ def comparable(response: dict) -> dict:
 
 
 def requests_for(database: Path, fixture: Path) -> list[dict]:
-    common = {"database_path": str(database), "project_id": "sciex-mcp-development"}
+    common = {"database_path": str(database)}
+    create_arguments = {**common, "project_id": "sciex-mcp-development", "domain": "mass_spec"}
     selected = fixture.stem
     return [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create", "arguments": {**common, "domain": "mass_spec"}}},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create", "arguments": create_arguments}},
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "mass_spec.add_analyses", "arguments": {**common, "analyses": [{"path": str(fixture)}]}}},
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "mass_spec.get_analysis_names", "arguments": common}},
         {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "mass_spec.get_analyses_info", "arguments": common}},
@@ -123,8 +124,12 @@ def main() -> int:
         print("SKIP: set STREAMFIND_CPP_MCP and STREAMFIND_RUST_MCP")
         return 0
     root = Path(__file__).resolve().parents[2]
-    vendor_root = Path(os.environ.get("STREAMFIND_VENDOR_DATA_ROOT", r"E:\example_files\raw_vendor_files"))
-    fixtures = sorted(vendor_root.joinpath("sciex").rglob("*.wiff"))
+    vendor_root = Path(os.environ.get("STREAMFIND_VENDOR_DATA_ROOT", "E:/example_files/raw_vendor_files"))
+    selected = os.environ.get("STREAMFIND_SCIEX_FIXTURES")
+    if selected:
+        fixtures = [Path(item).expanduser() for item in selected.split(os.pathsep) if item]
+    else:
+        fixtures = sorted(vendor_root.joinpath("sciex").rglob("*.wiff"))
     if not fixtures:
         print(f"SKIP: no SCIEX WIFF fixtures under {vendor_root}")
         return 0
