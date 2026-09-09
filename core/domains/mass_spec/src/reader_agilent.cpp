@@ -987,6 +987,7 @@ public:
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
+    trace_spectrum_decode(index);
     const auto &record = records_.at(static_cast<std::size_t>(index));
     const auto profile = has_centroid(record) ? read_centroid_spectrum(file_, record) : read_profile_spectrum(file_, record);
     MASS_SPEC_SPECTRUM spectrum{};

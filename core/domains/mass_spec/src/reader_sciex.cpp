@@ -224,37 +224,47 @@ MrmExperimentSeries build_compact_mrm_series(const std::string &wiff_path, int s
 
 std::vector<ScanPoint> decode_scan_payload(const std::vector<std::uint8_t> &payload)
 {
+  if (payload.size() < 8 || payload[0] != 0xff || payload[1] != 0xff || payload[2] != 0xff || payload[3] != 0xff)
+    throw std::runtime_error("Sciex WIFF TOF payload has an invalid profile header.");
   std::vector<ScanPoint> points;
-  std::uint32_t mz_bin = 0;
-  std::size_t offset = 0;
+  const auto read_u32 = [&payload](const std::size_t offset) {
+    return static_cast<std::uint32_t>(payload[offset]) |
+           (static_cast<std::uint32_t>(payload[offset + 1]) << 8) |
+           (static_cast<std::uint32_t>(payload[offset + 2]) << 16) |
+           (static_cast<std::uint32_t>(payload[offset + 3]) << 24);
+  };
+  std::uint32_t mz_bin = read_u32(4);
+  std::size_t offset = 8;
   while (offset < payload.size())
   {
     const auto token = payload[offset];
-    if (token == 0xff && offset + 3 < payload.size() && payload[offset + 1] == 0xff &&
-        payload[offset + 2] == 0xff && payload[offset + 3] == 0xff)
+    if (token == 0xff)
       break;
-    if (token <= 0x7f)
-    {
-      if (mz_bin > std::numeric_limits<std::uint32_t>::max() - token)
-        throw std::runtime_error("Sciex WIFF payload m/z bin overflows uint32.");
-      mz_bin += token;
-      ++offset;
-      continue;
-    }
-    std::uint32_t intensity = 0;
-    std::size_t width = 0;
-    if (token <= 0xfb) { intensity = token & 0x7f; width = 1; }
-    else if (token == 0xfc) { width = 2; }
-    else if (token == 0xfd) { width = 3; }
-    else if (token == 0xfe) { width = 4; }
-    else { width = 5; }
+    const auto marker = static_cast<std::uint8_t>(token & 0x7f);
+    std::size_t width = 1;
+    std::uint32_t value = marker;
+    if (marker == 124) width = 2;
+    else if (marker == 125) width = 3;
+    else if (marker == 126) width = 5;
+    else if (marker == 127) throw std::runtime_error("Sciex WIFF TOF payload has an unsupported value marker.");
     if (width > payload.size() - offset)
-      throw std::runtime_error("Sciex WIFF payload contains a truncated intensity token.");
-    if (token == 0xfc) intensity = payload[offset + 1];
-    else if (token == 0xfd) intensity = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8);
-    else if (token == 0xfe) intensity = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8) | (static_cast<std::uint32_t>(payload[offset + 3]) << 16);
-    else if (token == 0xff) intensity = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8) | (static_cast<std::uint32_t>(payload[offset + 3]) << 16) | (static_cast<std::uint32_t>(payload[offset + 4]) << 24);
-    points.push_back({mz_bin, intensity});
+      throw std::runtime_error("Sciex WIFF TOF payload has a truncated value.");
+    if (marker == 124) value = payload[offset + 1];
+    else if (marker == 125) value = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8);
+    else if (marker == 126) value = read_u32(offset + 1);
+    if ((token & 0x80) != 0)
+    {
+      if (value > (std::numeric_limits<std::uint32_t>::max() - mz_bin) / 4)
+        throw std::runtime_error("Sciex WIFF TOF time-bin overflows uint32.");
+      mz_bin += value * 4;
+    }
+    else
+    {
+      if (value != 0) points.push_back({mz_bin, value});
+      if (mz_bin > std::numeric_limits<std::uint32_t>::max() - 4)
+        throw std::runtime_error("Sciex WIFF TOF time-bin overflows uint32.");
+      mz_bin += 4;
+    }
     offset += width;
   }
   return points;
@@ -275,12 +285,9 @@ std::vector<ScanPoint> read_scan_points(const std::string &wiff_path, const IdxR
       throw std::runtime_error(std::string("SCIEX WIFF scan offset overflows while reading ") + field + ".");
     return left + right;
   };
-  const std::size_t payload_start = checked_add(checked_add(sample_base, record.scan_offset, "payload"), 56, "payload");
-  const std::size_t next_end = next_record == nullptr
-                                   ? static_cast<std::size_t>(file_size)
-                                   : checked_add(checked_add(sample_base, next_record->scan_offset, "next scan"), 64, "next scan");
-  const std::size_t own_end = checked_add(checked_add(checked_add(sample_base, record.scan_offset, "scan"), record.scan_size, "scan"), 64, "scan");
-  const std::size_t end = std::min({next_end, own_end, static_cast<std::size_t>(file_size)});
+  const std::size_t payload_start = checked_add(checked_add(sample_base, record.scan_offset, "payload"), 24, "payload");
+  const std::size_t own_end = checked_add(checked_add(sample_base, record.scan_offset, "scan"), record.scan_size, "scan");
+  const std::size_t end = std::min(own_end, static_cast<std::size_t>(file_size));
   if (end <= payload_start)
     return {};
   std::vector<std::uint8_t> payload(end - payload_start);
@@ -430,7 +437,8 @@ MASS_SPEC_SPECTRUM decode_tof_spectrum(const std::string &wiff_path, const TofMe
   }
   for (const auto &point : points)
   {
-    const float mz = static_cast<float>(metadata.slope * point.raw_mz_bin + metadata.intercept);
+    const double calibrated_time = static_cast<double>(point.raw_mz_bin) * 0.025 - metadata.intercept;
+    const float mz = static_cast<float>((metadata.slope * calibrated_time) * (metadata.slope * calibrated_time));
     const float intensity = static_cast<float>(point.raw_intensity);
     spectrum.binary_data[0].push_back(mz);
     spectrum.binary_data[1].push_back(intensity);
@@ -919,25 +927,17 @@ MrmExperimentSeries read_sparse_tagged_mrm_series(const std::string &wiff_path, 
 std::optional<float> detect_tagged_mrm_record_marker(const std::vector<IndexedFloatRecord> &fragments,
                                                       std::size_t method_transition_count)
 {
-  std::map<int, std::size_t> counts;
+  if (method_transition_count == 0)
+    return std::nullopt;
+  const float marker = -static_cast<float>(method_transition_count) - 0.01f;
+  std::size_t marker_count = 0;
   for (const auto &fragment : fragments)
     for (float value : fragment.fields)
-      if (value < -1.0f && detail::approximately(value, std::round(value) - 0.01f))
-      {
-        const int channel_count = static_cast<int>(std::lround(-value));
-        if (channel_count > 0 && static_cast<std::size_t>(channel_count) <= method_transition_count)
-          ++counts[channel_count];
-      }
-  const auto candidate = std::min_element(counts.begin(), counts.end(),
-                                          [&fragments](const auto &left, const auto &right)
-                                          {
-                                            const auto left_distance = left.second > fragments.size() ? left.second - fragments.size() : fragments.size() - left.second;
-                                            const auto right_distance = right.second > fragments.size() ? right.second - fragments.size() : fragments.size() - right.second;
-                                            return left_distance == right_distance ? left.first > right.first : left_distance < right_distance;
-                                          });
-  if (candidate == counts.end() || candidate->second < fragments.size() * 9 / 10)
+      if (detail::approximately(value, marker))
+        ++marker_count;
+  if (marker_count < fragments.size() * 9 / 10)
     return std::nullopt;
-  return -static_cast<float>(candidate->first) - 0.01f;
+  return marker;
 }
 
 std::vector<MASS_SPEC_SPECTRUM> read_tof_spectra(const std::string &wiff_path, int source_analysis_number)
@@ -966,10 +966,9 @@ std::vector<MASS_SPEC_SPECTRUM> read_tof_spectra(const std::string &wiff_path, i
   for (std::size_t i = 0; i < records.size(); ++i) {
     if (i == 0 || i + 1 == records.size()) continue;
     if (records[i].size == 0) continue;
-    const auto payload_start = sample_base + records[i].offset + 56;
-    const auto next_end = i + 1 < records.size() ? sample_base + records[i + 1].offset + 64 : scan_bytes.size();
-    const auto own_end = sample_base + records[i].offset + records[i].size + 64;
-    const auto end = std::min({next_end, own_end, scan_bytes.size()});
+    const auto payload_start = sample_base + records[i].offset + 24;
+    const auto own_end = sample_base + records[i].offset + records[i].size;
+    const auto end = std::min(own_end, scan_bytes.size());
     if (end <= payload_start) continue;
     const auto points = decode_scan_payload(std::vector<std::uint8_t>(scan_bytes.begin() + payload_start, scan_bytes.begin() + end));
     MASS_SPEC_SPECTRUM spectrum{};
@@ -1119,7 +1118,7 @@ public:
   float get_max_mz() override { if (tof_) return 0.0f; float value = 0.0f; for (const auto &spectrum : spectra_) for (float mz : spectrum.binary_data.empty() ? std::vector<float>{} : spectrum.binary_data[0]) value = std::max(value, mz); return value; }
   float get_start_rt() override { if (!spectra_.empty()) return spectra_.front().rt; for (const auto &experiment : mrm_metadata_.experiments) for (const auto &transition : experiment.transitions) if (transition.start_time < transition.end_time) return transition.start_time * 60.0f; return 0.0f; } float get_end_rt() override { if (!spectra_.empty()) return spectra_.back().rt; float value = 0.0f; for (const auto &experiment : mrm_metadata_.experiments) for (const auto &transition : experiment.transitions) value = std::max(value, transition.end_time * 60.0f); return value; }
   bool has_ion_mobility() override { return false; }
-  MASS_SPEC_SUMMARY get_summary() override { MASS_SPEC_SUMMARY s{}; s.number_spectra = static_cast<int>(spectra_.size()); s.number_chromatograms = static_cast<int>(arrays_.size()); s.number_spectra_binary_arrays = static_cast<int>(spectra_.size() * 2); s.min_mz = get_min_mz(); s.max_mz = get_max_mz(); s.start_rt = get_start_rt(); s.end_rt = get_end_rt(); return s; }
+  MASS_SPEC_SUMMARY get_summary() override { MASS_SPEC_SUMMARY s{}; s.format = get_format(); s.type = get_type(); s.number_spectra = static_cast<int>(spectra_.size()); s.number_chromatograms = static_cast<int>(arrays_.size()); s.number_spectra_binary_arrays = static_cast<int>(spectra_.size() * 2); s.min_mz = get_min_mz(); s.max_mz = get_max_mz(); s.start_rt = get_start_rt(); s.end_rt = get_end_rt(); return s; }
   std::vector<int> get_spectra_index(std::vector<int> indices = {}) override { if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); std::vector<int> out; for (int i : indices) out.push_back(spectra_.at(i).index); return out; } std::vector<int> get_spectra_scan_number(std::vector<int> indices = {}) override { if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); std::vector<int> out; for (int i : indices) out.push_back(spectra_.at(i).scan); return out; }
   std::vector<int> get_spectra_array_length(std::vector<int> indices = {}) override { if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); std::vector<int> out; for (int i : indices) out.push_back(spectra_.at(i).array_length); return out; } std::vector<int> get_spectra_level(std::vector<int> indices = {}) override { if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); std::vector<int> out; for (int i : indices) out.push_back(spectra_.at(i).level); return out; }
   std::vector<int> get_spectra_configuration(std::vector<int> = {}) override { return {}; } std::vector<int> get_spectra_mode(std::vector<int> = {}) override { return {}; }
@@ -1131,7 +1130,7 @@ public:
   std::vector<float> get_spectra_precursor_window_mz(std::vector<int> = {}) override { return {}; } std::vector<float> get_spectra_precursor_window_mzlow(std::vector<int> = {}) override { return {}; }
   std::vector<float> get_spectra_precursor_window_mzhigh(std::vector<int> = {}) override { return {}; } std::vector<float> get_spectra_collision_energy(std::vector<int> = {}) override { return {}; }
   MASS_SPEC_SPECTRA_HEADERS get_spectra_headers(std::vector<int> indices = {}, bool = false) override { MASS_SPEC_SPECTRA_HEADERS out; if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); out.resize_all(indices.size()); for (std::size_t i = 0; i < indices.size(); ++i) { const auto &s = spectra_.at(indices[i]); out.index[i] = s.index; out.scan[i] = s.scan; out.array_length[i] = s.array_length; out.level[i] = s.level; out.polarity[i] = s.polarity; out.lowmz[i] = s.lowmz; out.highmz[i] = s.highmz; out.bpmz[i] = s.bpmz; out.bpint[i] = s.bpint; out.tic[i] = s.tic; out.rt[i] = s.rt; out.precursor_mz[i] = s.precursor_mz; out.precursor_intensity[i] = s.precursor_intensity; } return out; }
-  MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> indices = {}) override { ensure_mrm_arrays(); if (indices.empty()) return headers_; return select_chromatogram_headers(headers_, indices); }
+  MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> indices = {}) override { if (indices.empty()) return headers_; return select_chromatogram_headers(headers_, indices); }
   std::vector<std::vector<std::vector<float>>> get_spectra(std::vector<int> indices = {}) override { std::vector<std::vector<std::vector<float>>> out; if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); for (int i : indices) out.push_back(tof_ ? decode_tof_spectrum(file_, tof_metadata_, static_cast<std::size_t>(i)).binary_data : spectra_.at(i).binary_data); return out; }
   std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> indices = {}) override
   {
@@ -1144,7 +1143,7 @@ public:
     return out;
   }
   std::vector<std::vector<std::string>> get_software() override { return {}; } std::vector<std::vector<std::string>> get_hardware() override { return {}; }
-  MASS_SPEC_SPECTRUM get_spectrum(const int &index) override { return tof_ ? decode_tof_spectrum(file_, tof_metadata_, static_cast<std::size_t>(index)) : spectra_.at(index); }
+  MASS_SPEC_SPECTRUM get_spectrum(const int &index) override { trace_spectrum_decode(index); return tof_ ? decode_tof_spectrum(file_, tof_metadata_, static_cast<std::size_t>(index)) : spectra_.at(index); }
 private:
   void ensure_mrm_arrays()
   {

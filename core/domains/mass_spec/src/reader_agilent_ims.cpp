@@ -86,6 +86,7 @@ public:
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
+    trace_spectrum_decode(index);
     if (index < 0 || static_cast<std::size_t>(index) >= records_.size()) return {};
     const auto &record = records_[static_cast<std::size_t>(index)]; const auto profile = read_ims_profile_spectrum(file_, record); MASS_SPEC_SPECTRUM result{}; result.index = index; result.scan = static_cast<int>(record.scan_id); result.array_length = static_cast<int>(profile.mz.size()); result.level = 1; result.polarity = 1; result.rt = static_cast<float>(record.scan_time_minutes * 60.0); result.mobility = static_cast<float>(record.mobility); result.binary_arrays_count = 2; result.binary_names = {"m/z", "intensity"}; result.binary_data = {profile.mz, profile.intensity}; result.lowmz = profile.mz.empty() ? 0.0f : profile.mz.front(); result.highmz = profile.mz.empty() ? 0.0f : profile.mz.back(); result.tic = std::accumulate(profile.intensity.begin(), profile.intensity.end(), 0.0f); auto peak = std::max_element(profile.intensity.begin(), profile.intensity.end()); if (peak != profile.intensity.end()) { result.bpint = *peak; result.bpmz = profile.mz[static_cast<std::size_t>(std::distance(profile.intensity.begin(), peak))]; } return result;
   }

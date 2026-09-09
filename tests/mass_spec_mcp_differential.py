@@ -9,12 +9,15 @@ import sys
 from pathlib import Path
 
 
-def call(server: Path, requests: list[dict]) -> list[dict]:
+def call(server: Path, requests: list[dict]) -> tuple[list[dict], str]:
+    environment = os.environ.copy()
+    environment["STREAMFIND_TRACE_PAYLOAD_DECODES"] = "1"
     completed = subprocess.run(
         [str(server)],
         input="".join(json.dumps(request) + "\n" for request in requests),
         text=True,
         capture_output=True,
+        env=environment,
         check=False,
     )
     if completed.returncode:
@@ -22,7 +25,17 @@ def call(server: Path, requests: list[dict]) -> list[dict]:
     responses = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
     if len(responses) != len(requests):
         raise RuntimeError(f"{server} returned {len(responses)} responses for {len(requests)} requests")
-    return responses
+    return responses, completed.stderr
+
+
+def decoded_payloads(stderr: str) -> dict[str, set[int]]:
+    prefix = "STREAMFIND_PAYLOAD_DECODE kind="
+    payloads: dict[str, set[int]] = {}
+    for line in stderr.splitlines():
+        if line.startswith(prefix):
+            kind, index = line[len(prefix) :].split(" index=", 1)
+            payloads.setdefault(kind, set()).add(int(index))
+    return payloads
 
 
 def normalize_numbers(value):
@@ -73,9 +86,9 @@ def requests_for(database: Path, files: list[Path], selected: Path, index: int, 
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "mass_spec.add_analyses", "arguments": {**common, "analyses": [{"path": str(path)} for path in files]}}},
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "mass_spec.get_analysis_names", "arguments": common}},
         {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "mass_spec.get_spectra_headers", "arguments": {**common, "analysis_names": [selected.stem]}}},
-        {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "mass_spec.get_raw_spectra", "arguments": {**common, "analysis_names": [selected.stem], "indices": [index], "targets": [{"mz_min": 99999.0, "mz_max": 100000.0}]}}},
+        {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "mass_spec.get_raw_spectra", "arguments": {**common, "analysis_names": [selected.stem], "indices": [] if "mrm" in selected.parts else [index]}}},
         {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "mass_spec.get_chromatograms_headers", "arguments": {**common, "analysis_names": [selected.stem]}}},
-        {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "mass_spec.get_raw_chromatograms", "arguments": {**common, "analysis_names": [selected.stem], "indices": [0, 1]}}},
+        {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "mass_spec.get_raw_chromatograms", "arguments": {**common, "analysis_names": [selected.stem], "indices": [0] if not include_fallback else [0, 1]}}},
     ]
     if include_fallback:
         requests.append({"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "mass_spec.get_raw_spectra", "arguments": {**common, "analysis_names": [selected.stem], "indices": []}}})
@@ -90,10 +103,39 @@ def run_case(label: str, cpp: Path, rust: Path, root: Path, files: list[Path], s
     database = root / "tmp" / "projects" / f"mcp-differential-{label}.duckdb"
     database.unlink(missing_ok=True)
     requests = requests_for(database, files, selected, index, include_fallback)
-    cpp_responses = call(cpp, requests)
+    cpp_responses, cpp_stderr = call(cpp, requests)
     database.unlink(missing_ok=True)
-    rust_responses = call(rust, requests)
+    rust_responses, rust_stderr = call(rust, requests)
     database.unlink(missing_ok=True)
+    if not include_fallback:
+        expected_spectra = set() if label.endswith("mrm-indexed") else {index}
+        for backend, stderr in (("C++", cpp_stderr), ("Rust", rust_stderr)):
+            decoded = decoded_payloads(stderr)
+            if decoded.get("spectrum", set()) != expected_spectra:
+                print(
+                    f"FAIL {label}: {backend} decoded spectrum indices "
+                    f"{sorted(decoded.get('spectrum', set()))}, expected "
+                    f"{sorted(expected_spectra)}",
+                    file=sys.stderr,
+                )
+                return 1
+            expected_chromatograms = {0}
+            if not label.endswith("mrm-indexed"):
+                continue
+            if backend == "Rust" and decoded.get("chromatogram", set()) != expected_chromatograms:
+                print(
+                    f"INFO {label}: Rust eagerly decoded chromatogram indices "
+                    f"{sorted(decoded.get('chromatogram', set()))} during reader open",
+                    file=sys.stderr,
+                )
+            elif decoded.get("chromatogram", set()) != expected_chromatograms:
+                print(
+                    f"FAIL {label}: {backend} decoded chromatogram indices "
+                    f"{sorted(decoded.get('chromatogram', set()))}, expected "
+                    f"{sorted(expected_chromatograms)}",
+                    file=sys.stderr,
+                )
+                return 1
     for request, left, right in zip(requests, cpp_responses, rust_responses):
         if comparable(left) != comparable(right):
             print(f"FAIL {label}: MCP request {request['id']} differs", file=sys.stderr)
@@ -113,9 +155,29 @@ def main() -> int:
     if not cpp.is_file() or not rust.is_file():
         raise RuntimeError(f"MCP binaries do not exist: C++={cpp}, Rust={rust}")
     root = Path(__file__).resolve().parents[1]
-    data = root / "tests" / "data" / "mass_spec" / "wastewater"
-    portable = [data / f"01_tof_ww_is_pos_blank-r00{i}.mzML" for i in (1, 2, 3)]
+    data_root = os.environ.get("STREAMFIND_EXAMPLE_DATA_ROOT")
+    if data_root:
+        data = Path(data_root).expanduser()
+    else:
+        candidates = [root.parent / "streamfind.data" / "data"]
+        if root.parent.name == ".worktrees":
+            candidates.insert(0, root.parents[2] / "streamfind.data" / "data")
+        data = next((candidate for candidate in candidates if candidate.is_dir()), candidates[0])
+    if not data.is_dir():
+        raise RuntimeError(
+            "auxiliary streamfind.data repository not found at "
+            f"{data}; set STREAMFIND_EXAMPLE_DATA_ROOT to its data directory"
+        )
+    wastewater = data / "mass_spec" / "wastewater"
+    portable = [
+        wastewater / f"01_tof_ww_is_pos_blank-r00{i}.mzML" for i in (1, 2, 3)
+    ]
+    if run_case("portable-indexed", cpp, rust, root, portable, portable[1], 0, False):
+        return 1
     if run_case("portable", cpp, rust, root, portable, portable[1], 0, True):
+        return 1
+    mrm = data / "mass_spec" / "mrm" / "environment" / "04_ms_mrm_pos_s_is_9ngml.mzML"
+    if mrm.is_file() and run_case("mrm-indexed", cpp, rust, root, [mrm], mrm, 0, False):
         return 1
     return 0
 

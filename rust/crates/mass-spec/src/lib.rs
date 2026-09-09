@@ -575,11 +575,12 @@ fn get_chromatograms_headers_impl(project: &mut Project, parameters: &Value) -> 
         reader
             .select_analysis(row["analysis_index"].as_i64().unwrap_or(0) as usize)
             .map_err(|e| invalid(e.to_string()))?;
-        let chromatograms = reader
-            .chromatograms_data(&[])
-            .map_err(|error| invalid(error.to_string()))?;
+        let chromatograms = reader.chromatograms().to_vec();
         for (index, chromatogram) in chromatograms.iter().enumerate() {
-            out.push(json!({"analysis": analysis, "index": index, "chromatogram_id": chromatogram.id, "array_length": chromatogram.time.len().min(chromatogram.intensity.len()), "polarity": chromatogram.polarity, "precursor_mz": chromatogram.precursor_mz.unwrap_or(0.0), "activation_ce": chromatogram.activation_ce.unwrap_or(0.0), "product_mz": chromatogram.product_mz.unwrap_or(0.0), "signal_type": chromatogram.signal_type, "chromatogram_type": chromatogram.chromatogram_type, "detector": chromatogram.detector, "channel": chromatogram.channel, "units": chromatogram.units, "wavelength_nm": chromatogram.wavelength_nm, "interval_ms": chromatogram.interval_ms, "start_time": chromatogram.time.first().copied().unwrap_or(0.0), "end_time": chromatogram.time.last().copied().unwrap_or(0.0), "intensity_multiplier": 1.0}));
+            let start_time = chromatogram.time.first().copied();
+            let end_time = chromatogram.time.last().copied();
+            let interval_ms = (chromatogram.time.len() > 1).then_some(chromatogram.interval_ms);
+            out.push(json!({"analysis": analysis, "index": index, "chromatogram_id": chromatogram.id, "array_length": chromatogram.array_length, "polarity": chromatogram.polarity, "precursor_mz": chromatogram.precursor_mz.unwrap_or(0.0), "activation_ce": chromatogram.activation_ce.unwrap_or(0.0), "product_mz": chromatogram.product_mz.unwrap_or(0.0), "signal_type": chromatogram.signal_type, "chromatogram_type": chromatogram.chromatogram_type, "detector": chromatogram.detector, "channel": chromatogram.channel, "units": chromatogram.units, "wavelength_nm": chromatogram.wavelength_nm, "interval_ms": interval_ms, "start_time": start_time, "end_time": end_time, "intensity_multiplier": 1.0}));
         }
     }
     Ok(Value::Array(out))

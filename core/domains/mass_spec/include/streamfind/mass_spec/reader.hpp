@@ -5,6 +5,8 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
+#include <cstdlib>
+#include <cstdio>
 
 namespace mass_spec::spectra {
 struct MASS_SPEC_TARGETS {
@@ -349,6 +351,16 @@ namespace mass_spec
       const std::string &file() const { return file_; }
 
     protected:
+      void trace_payload_decode(const char *kind, const int index) const
+      {
+        const char *enabled = std::getenv("STREAMFIND_TRACE_PAYLOAD_DECODES");
+        if (enabled != nullptr && enabled[0] != '\0' && std::string(enabled) != "0")
+          std::fprintf(stderr, "STREAMFIND_PAYLOAD_DECODE kind=%s index=%d\n", kind, index);
+      }
+
+      void trace_spectrum_decode(const int index) const { trace_payload_decode("spectrum", index); }
+      void trace_chromatogram_decode(const int index) const { trace_payload_decode("chromatogram", index); }
+
       std::string file_;
     };
 

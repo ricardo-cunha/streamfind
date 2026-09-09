@@ -567,6 +567,7 @@ public:
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
+    trace_spectrum_decode(index);
     const auto &frame = frames_.at(static_cast<std::size_t>(index)); const auto raw = read_tsf_line_spectrum(file_, frame); const auto calibration = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(calibration, raw.tof); const auto *info = find_msms(frame.id); MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(frame.id); out.array_length = static_cast<int>(mz.size()); out.level = frame.msms_type == 0 ? 1 : 2; out.mode = frame.scan_mode; out.polarity = frame.polarity == "+" ? 1 : frame.polarity == "-" ? -1 : 0; out.lowmz = 95.0f; out.highmz = 2505.0f; out.bpint = static_cast<float>(frame.max_intensity); out.tic = static_cast<float>(frame.summed_intensities); out.rt = static_cast<float>(frame.retention_time); if (info) { out.window_mz = static_cast<float>(info->trigger_mass); out.window_mzlow = static_cast<float>(info->trigger_mass - info->isolation_width / 2.0); out.window_mzhigh = static_cast<float>(info->trigger_mass + info->isolation_width / 2.0); out.precursor_mz = static_cast<float>(info->trigger_mass); out.precursor_charge = info->precursor_charge; out.activation_ce = static_cast<float>(info->collision_energy); } out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].reserve(mz.size()); out.binary_data[1].reserve(raw.intensity.size()); for (std::size_t n = 0; n < mz.size(); ++n) { out.binary_data[0].push_back(static_cast<float>(mz[n])); out.binary_data[1].push_back(static_cast<float>(raw.intensity[n])); } return out;
   }
 private:
@@ -668,6 +669,7 @@ public:
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
+    trace_spectrum_decode(index);
     const auto &s = spectra_.at(static_cast<std::size_t>(index)); const auto profile = read_baf_profile_spectrum(file_, s.profile_intensity_id);
     MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(s.id); out.array_length = static_cast<int>(profile.intensity.size()); out.level = s.ms_level;
     out.mode = s.scan_mode; out.polarity = s.polarity; out.lowmz = static_cast<float>(s.mz_lower); out.highmz = static_cast<float>(s.mz_upper);

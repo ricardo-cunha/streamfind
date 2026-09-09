@@ -503,6 +503,7 @@ public:
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
+    trace_spectrum_decode(index);
     const auto spectrum = read_spectrum(data_file_, static_cast<std::size_t>(index)); MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = index + 1; out.array_length = static_cast<int>(spectrum.mz.size()); out.level = 1; out.rt = spectrum.retention_time_ms / 1000.0f; out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data = {spectrum.mz, spectrum.intensity}; out.lowmz = spectrum.mz.empty() ? 0.0f : spectrum.mz.front(); out.highmz = spectrum.mz.empty() ? 0.0f : spectrum.mz.back(); out.tic = std::accumulate(spectrum.intensity.begin(), spectrum.intensity.end(), 0.0f); auto it = std::max_element(spectrum.intensity.begin(), spectrum.intensity.end()); if (it != spectrum.intensity.end()) { out.bpint = *it; out.bpmz = spectrum.mz[static_cast<std::size_t>(std::distance(spectrum.intensity.begin(), it))]; } return out;
   }
 private:

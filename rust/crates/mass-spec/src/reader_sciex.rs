@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -261,9 +261,10 @@ pub fn read_tof_spectrum(
         spectrum.precursor_intensity = tof_precursor_intensity_for_index(metadata, index);
     }
     for point in points {
-        spectrum
-            .mz
-            .push((metadata.slope * point.raw_mz_bin as f64 + metadata.intercept) as f32);
+        spectrum.mz.push(
+            (metadata.slope * (point.raw_mz_bin as f64 * 0.025 - metadata.intercept)).powi(2)
+                as f32,
+        );
         spectrum.intensity.push(point.raw_intensity as f32);
     }
     spectrum.tic = spectrum.intensity.iter().sum();
@@ -365,7 +366,7 @@ pub fn read_tof_spectra(
         for point in points {
             spectrum
                 .mz
-                .push((slope * point.raw_mz_bin as f64 + intercept) as f32);
+                .push((slope * (point.raw_mz_bin as f64 * 0.025 - intercept)).powi(2) as f32);
             spectrum.intensity.push(point.raw_intensity as f32);
         }
         spectrum.tic = spectrum.intensity.iter().sum();
@@ -533,103 +534,86 @@ pub fn read_idx_records(path: &Path, source_analysis_number: usize) -> Result<Ve
 }
 
 pub fn decode_scan_payload(payload: &[u8]) -> Result<Vec<ScanPoint>> {
+    if payload.len() < 8 || payload[..4] != [0xff, 0xff, 0xff, 0xff] {
+        return Err(ReaderError::Invalid(
+            "Sciex WIFF TOF payload has an invalid profile header".into(),
+        ));
+    }
     let mut points = Vec::new();
-    let mut mz_bin = 0u32;
-    let mut offset = 0usize;
+    let mut mz_bin = u32::from_le_bytes(payload[4..8].try_into().unwrap());
+    let mut offset = 8usize;
     while offset < payload.len() {
         let token = payload[offset];
-        if token == 0xff && payload.get(offset + 1..offset + 4) == Some(&[0xff, 0xff, 0xff][..]) {
+        if token == 0xff {
             break;
         }
-        if token <= 0x7f {
-            mz_bin = mz_bin.checked_add(token as u32).ok_or_else(|| {
-                ReaderError::Invalid("Sciex WIFF payload m/z bin overflows uint32".into())
-            })?;
-            offset += 1;
-            continue;
-        }
-        let (width, intensity) = match token {
-            0x80..=0xfb => (1, (token & 0x7f) as u32),
-            0xfc => (
+        let value = token & 0x7f;
+        let (consumed, value) = match value {
+            0..=123 => (1, value as u32),
+            124 => (
                 2,
-                payload.get(offset + 1).copied().ok_or_else(|| {
-                    ReaderError::Invalid(
-                        "Sciex WIFF payload has a truncated intensity token".into(),
-                    )
+                *payload.get(offset + 1).ok_or_else(|| {
+                    ReaderError::Invalid("Sciex WIFF TOF payload has a truncated value".into())
                 })? as u32,
             ),
-            0xfd => (
+            125 => (
                 3,
-                u16::from_le_bytes([
-                    payload.get(offset + 1).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })?,
-                    payload.get(offset + 2).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })?,
-                ]) as u32,
+                u16::from_le_bytes(
+                    payload
+                        .get(offset + 1..offset + 3)
+                        .ok_or_else(|| {
+                            ReaderError::Invalid(
+                                "Sciex WIFF TOF payload has a truncated value".into(),
+                            )
+                        })?
+                        .try_into()
+                        .unwrap(),
+                ) as u32,
             ),
-            0xfe => (
-                4,
-                payload.get(offset + 1).copied().ok_or_else(|| {
-                    ReaderError::Invalid(
-                        "Sciex WIFF payload has a truncated intensity token".into(),
-                    )
-                })? as u32
-                    | ((payload.get(offset + 2).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })? as u32)
-                        << 8)
-                    | ((payload.get(offset + 3).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })? as u32)
-                        << 16),
-            ),
-            _ => (
+            126 => (
                 5,
-                payload.get(offset + 1).copied().ok_or_else(|| {
-                    ReaderError::Invalid(
-                        "Sciex WIFF payload has a truncated intensity token".into(),
-                    )
-                })? as u32
-                    | ((payload.get(offset + 2).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })? as u32)
-                        << 8)
-                    | ((payload.get(offset + 3).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })? as u32)
-                        << 16)
-                    | ((payload.get(offset + 4).copied().ok_or_else(|| {
-                        ReaderError::Invalid(
-                            "Sciex WIFF payload has a truncated intensity token".into(),
-                        )
-                    })? as u32)
-                        << 24),
+                u32::from_le_bytes(
+                    payload
+                        .get(offset + 1..offset + 5)
+                        .ok_or_else(|| {
+                            ReaderError::Invalid(
+                                "Sciex WIFF TOF payload has a truncated value".into(),
+                            )
+                        })?
+                        .try_into()
+                        .unwrap(),
+                ),
             ),
+            _ => {
+                return Err(ReaderError::Invalid(
+                    "Sciex WIFF TOF payload has an unsupported value marker".into(),
+                ))
+            }
         };
-        if width > payload.len() - offset {
+        if consumed > payload.len() - offset {
             return Err(ReaderError::Invalid(
-                "Sciex WIFF payload has a truncated intensity token".into(),
+                "Sciex WIFF TOF payload has a truncated value".into(),
             ));
         }
-        points.push(ScanPoint {
-            raw_mz_bin: mz_bin,
-            raw_intensity: intensity,
-        });
-        offset += width;
+        let advance = value.checked_mul(4).ok_or_else(|| {
+            ReaderError::Invalid("Sciex WIFF TOF time-bin increment overflows uint32".into())
+        })?;
+        if token & 0x80 != 0 {
+            mz_bin = mz_bin.checked_add(advance).ok_or_else(|| {
+                ReaderError::Invalid("Sciex WIFF TOF time-bin overflows uint32".into())
+            })?;
+        } else {
+            if value != 0 {
+                points.push(ScanPoint {
+                    raw_mz_bin: mz_bin,
+                    raw_intensity: value,
+                });
+            }
+            mz_bin = mz_bin.checked_add(4).ok_or_else(|| {
+                ReaderError::Invalid("Sciex WIFF TOF time-bin overflows uint32".into())
+            })?;
+        }
+        offset += consumed;
     }
     Ok(points)
 }
@@ -637,26 +621,19 @@ pub fn decode_scan_payload(payload: &[u8]) -> Result<Vec<ScanPoint>> {
 pub fn read_scan_points(
     path: &Path,
     record: &IdxRecord,
-    next: Option<&IdxRecord>,
+    _next: Option<&IdxRecord>,
 ) -> Result<Vec<ScanPoint>> {
     let bytes = fs::read(scan_path_for_wiff(path))?;
     let sample_base = sample_block_offset(path, record.sample_number)?;
     let payload_start = sample_base
         .checked_add(record.scan_offset as usize)
-        .and_then(|value| value.checked_add(56))
+        .and_then(|value| value.checked_add(24))
         .ok_or_else(|| ReaderError::Invalid("Sciex WIFF payload offset overflows".into()))?;
-    let next_end = next.map_or(Ok(bytes.len()), |r| {
-        sample_base
-            .checked_add(r.scan_offset as usize)
-            .and_then(|value| value.checked_add(64))
-            .ok_or_else(|| ReaderError::Invalid("Sciex WIFF next-scan offset overflows".into()))
-    })?;
     let own_end = sample_base
         .checked_add(record.scan_offset as usize)
         .and_then(|value| value.checked_add(record.scan_size as usize))
-        .and_then(|value| value.checked_add(64))
         .ok_or_else(|| ReaderError::Invalid("Sciex WIFF scan extent overflows".into()))?;
-    let end = next_end.min(own_end).min(bytes.len());
+    let end = own_end.min(bytes.len());
     if end <= payload_start {
         return Ok(Vec::new());
     }
@@ -869,31 +846,18 @@ fn decode_tagged_mrm_series(
     fragments: &[IndexedFloatRecord],
     transitions: Vec<Transition>,
 ) -> Result<MrmExperimentSeries> {
-    let mut marker_counts = BTreeMap::<usize, usize>::new();
-    for fragment in fragments {
-        for value in &fragment.fields {
-            let channel_count = (-*value).round();
-            if *value < -1.0
-                && (*value - (-channel_count - 0.01)).abs() < 0.001
-                && channel_count > 0.0
-                && channel_count as usize <= transitions.len()
-            {
-                *marker_counts.entry(channel_count as usize).or_default() += 1;
-            }
-        }
-    }
-    let Some((&channel_count, &marker_count)) =
-        marker_counts.iter().min_by_key(|(channels, count)| {
-            (
-                count.abs_diff(fragments.len()),
-                std::cmp::Reverse(**channels),
-            )
-        })
-    else {
+    let channel_count = transitions.len();
+    if channel_count == 0 {
         return Err(ReaderError::Unsupported(
-            "SCIEX MRM payload has no tagged record marker".into(),
+            "SCIEX MRM metadata has no transitions".into(),
         ));
-    };
+    }
+    let marker = -(channel_count as f32) - 0.01;
+    let marker_count = fragments
+        .iter()
+        .flat_map(|fragment| fragment.fields.iter())
+        .filter(|value| (**value - marker).abs() < 0.001)
+        .count();
     if marker_count * 10 < fragments.len() * 9 {
         return Err(ReaderError::Unsupported(
             "SCIEX MRM tagged marker is not record-aligned".into(),
@@ -903,7 +867,7 @@ fn decode_tagged_mrm_series(
         .into_iter()
         .take(channel_count)
         .collect::<Vec<_>>();
-    let record_marker = -(channel_count as f32) - 0.01;
+    let record_marker = marker;
     let flat = fragments
         .iter()
         .flat_map(|fragment| fragment.fields.iter().copied())

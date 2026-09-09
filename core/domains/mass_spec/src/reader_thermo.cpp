@@ -840,6 +840,7 @@ namespace mass_spec::reader::thermo
 
       MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
       {
+        trace_spectrum_decode(index);
         if (index < 0 || static_cast<std::size_t>(index) >= scans_.size())
           return {};
         const auto &metadata = scans_[static_cast<std::size_t>(index)];

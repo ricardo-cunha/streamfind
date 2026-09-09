@@ -1383,6 +1383,7 @@ namespace mass_spec
         for (int i : indices)
           if (i >= 0 && static_cast<size_t>(i) < pimpl->spectra.size())
           {
+            trace_spectrum_decode(i);
             ensure_spectrum_binary_loaded(*pimpl, static_cast<std::size_t>(i));
             out.push_back(pimpl->spectra[i].binary_data);
           }
@@ -1394,6 +1395,7 @@ namespace mass_spec
       std::vector<std::vector<std::string>> Reader::get_hardware() { return {}; }
       MASS_SPEC_SPECTRUM Reader::get_spectrum(const int &idx)
       {
+        trace_spectrum_decode(idx);
         if (idx < 0 || static_cast<size_t>(idx) >= pimpl->spectra.size())
         {
           return MASS_SPEC_SPECTRUM{};
@@ -1943,6 +1945,7 @@ namespace mass_spec
         {
           if (i < 0 || static_cast<size_t>(i) >= pimpl->spectra.size())
             continue;
+          trace_spectrum_decode(i);
           ensure_spectrum_binary_loaded(*pimpl, static_cast<std::size_t>(i));
           out.push_back(pimpl->spectra[i].binary_data);
         }
@@ -1962,6 +1965,7 @@ namespace mass_spec
         {
           if (i < 0 || static_cast<size_t>(i) >= pimpl->chrom_nodes.size())
             continue;
+          trace_chromatogram_decode(i);
           auto node = pimpl->chrom_nodes[i];
           std::vector<float> rt;
           std::vector<float> inten;
@@ -2263,6 +2267,7 @@ namespace mass_spec
       std::vector<std::vector<std::string>> Reader::get_hardware() { return {}; }
       MASS_SPEC_SPECTRUM Reader::get_spectrum(const int &idx)
       {
+        trace_spectrum_decode(idx);
         if (idx < 0 || static_cast<size_t>(idx) >= pimpl->spectra.size())
         {
           return MASS_SPEC_SPECTRUM{};
@@ -3756,6 +3761,7 @@ namespace mass_spec
       std::vector<std::vector<std::string>> Reader::get_hardware() { return {}; }
       MASS_SPEC_SPECTRUM Reader::get_spectrum(const int &idx)
       {
+        trace_spectrum_decode(idx);
         if (idx < 0 || static_cast<std::size_t>(idx) >= pimpl->spectra.size())
         {
           return {};

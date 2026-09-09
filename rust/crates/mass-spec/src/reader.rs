@@ -9,10 +9,19 @@ use flate2::read::ZlibDecoder;
 use quick_xml::{events::Event, Reader as XmlReader};
 use std::{
     collections::BTreeSet,
-    fs,
+    env, fs,
     io::{self, Read},
     path::{Path, PathBuf},
 };
+
+fn trace_payload_decode(kind: &str, index: usize) {
+    if env::var("STREAMFIND_TRACE_PAYLOAD_DECODES")
+        .map(|value| !value.is_empty() && value != "0")
+        .unwrap_or(false)
+    {
+        eprintln!("STREAMFIND_PAYLOAD_DECODE kind={kind} index={index}");
+    }
+}
 
 #[derive(Debug)]
 pub enum ReaderError {
@@ -91,6 +100,7 @@ pub struct Spectrum {
 #[derive(Debug, Clone, Default)]
 pub struct Chromatogram {
     pub id: String,
+    pub array_length: i32,
     pub signal_type: String,
     pub chromatogram_type: String,
     pub detector: String,
@@ -200,7 +210,7 @@ impl Reader {
         let (mut spectra, mut chromatograms) = match format {
             Format::MzMl => (
                 parse_mzml_with_arrays(&bytes, false)?,
-                parse_mzml_chromatograms(&bytes)?,
+                parse_mzml_chromatograms(&bytes, Some(&[]))?,
             ),
             Format::MzXml => (parse_mzxml(&bytes)?, Vec::new()),
             Format::Asc => (Vec::new(), parse_asc(&bytes)),
@@ -671,6 +681,28 @@ impl Reader {
                     .collect()
             });
         }
+        if self.format == Format::MzMl {
+            let bytes = self
+                .mzml_bytes
+                .as_deref()
+                .ok_or_else(|| ReaderError::Invalid("mzML bytes are not loaded".into()))?;
+            let decoded = parse_mzml_chromatograms(
+                bytes,
+                if indices.is_empty() {
+                    None
+                } else {
+                    Some(indices)
+                },
+            )?;
+            return Ok(if indices.is_empty() {
+                decoded
+            } else {
+                indices
+                    .iter()
+                    .filter_map(|index| decoded.get(*index).cloned())
+                    .collect()
+            });
+        }
         Ok(if indices.is_empty() {
             self.chromatograms.clone()
         } else {
@@ -699,6 +731,7 @@ impl Reader {
     }
 
     pub fn spectrum_data(&self, index: usize) -> Result<Spectrum> {
+        trace_payload_decode("spectrum", index);
         if self.mzml_arrays_loaded {
             return self.spectra.get(index).cloned().ok_or_else(|| {
                 ReaderError::Invalid(format!("spectrum index is out of range: {index}"))
@@ -1136,6 +1169,7 @@ fn render_sciex_mrm_chromatograms(
             };
             traces.push(Chromatogram {
                 id: transition.name,
+                array_length: time.len() as i32,
                 signal_type: "MS".into(),
                 chromatogram_type: "SRM".into(),
                 detector: "SCIEX".into(),
@@ -1421,7 +1455,10 @@ fn mzml_spectrum_offsets(bytes: &[u8]) -> Result<Vec<(usize, usize)>> {
     Ok(offsets)
 }
 
-fn parse_mzml_chromatograms(bytes: &[u8]) -> Result<Vec<Chromatogram>> {
+fn parse_mzml_chromatograms(
+    bytes: &[u8],
+    decode_indices: Option<&[usize]>,
+) -> Result<Vec<Chromatogram>> {
     let mut xml = XmlReader::from_reader(bytes);
     xml.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -1429,16 +1466,32 @@ fn parse_mzml_chromatograms(bytes: &[u8]) -> Result<Vec<Chromatogram>> {
     let mut current: Option<Chromatogram> = None;
     let mut array: Option<BinaryArray> = None;
     let mut in_binary = false;
+    let mut decode_current = decode_indices.is_none();
     loop {
         match xml.read_event_into(&mut buf)? {
             Event::Start(e) if local(e.name().as_ref()) == b"chromatogram" => {
+                let index = out.len();
+                decode_current = decode_indices
+                    .map(|indices| indices.contains(&index))
+                    .unwrap_or(true);
+                let id = attr(&e, b"id").unwrap_or_default();
                 current = Some(Chromatogram {
-                    id: attr(&e, b"id").unwrap_or_default(),
-                    precursor_mz: id_value(&attr(&e, b"id").unwrap_or_default(), "Q1"),
-                    product_mz: id_value(&attr(&e, b"id").unwrap_or_default(), "Q3"),
-                    activation_ce: id_value(&attr(&e, b"id").unwrap_or_default(), "ce"),
-                    start_time: id_value(&attr(&e, b"id").unwrap_or_default(), "start"),
-                    end_time: id_value(&attr(&e, b"id").unwrap_or_default(), "end"),
+                    array_length: i32_attr(&e, b"defaultArrayLength"),
+                    id: id.clone(),
+                    signal_type: "MS".into(),
+                    chromatogram_type: if id.contains("TIC") {
+                        "TIC".into()
+                    } else {
+                        "MS Chromatogram".into()
+                    },
+                    detector: "MS".into(),
+                    channel: id.clone(),
+                    units: "counts".into(),
+                    precursor_mz: Some(0.0),
+                    product_mz: Some(0.0),
+                    activation_ce: id_value(&id, "ce"),
+                    start_time: id_value(&id, "start"),
+                    end_time: id_value(&id, "end"),
                     ..Default::default()
                 });
             }
@@ -1470,30 +1523,28 @@ fn parse_mzml_chromatograms(bytes: &[u8]) -> Result<Vec<Chromatogram>> {
                     if accession == "MS:1000515" || name.contains("intensity array") {
                         a.intensity = true;
                     }
-                } else if let Some(c) = current.as_mut() {
-                    if accession == "MS:1000235" || name.contains("total ion current") {
-                        c.signal_type = name.clone();
-                        c.chromatogram_type = "TIC".into();
-                    } else if name.contains("basepeak") || name.contains("base peak") {
-                        c.chromatogram_type = "BPC".into();
-                    }
                 }
             }
             Event::End(e) if local(e.name().as_ref()) == b"binary" => in_binary = false,
             Event::End(e) if local(e.name().as_ref()) == b"binaryDataArray" => {
                 if let Some(a) = array.take() {
                     if let Some(c) = current.as_mut() {
-                        let values = decode_array(&a)?;
-                        if a.mz {
-                            c.time = values;
-                        } else if a.intensity {
-                            c.intensity = values;
+                        if decode_current {
+                            let values = decode_array(&a)?;
+                            if a.mz {
+                                c.time = values;
+                            } else if a.intensity {
+                                c.intensity = values;
+                            }
                         }
                     }
                 }
             }
             Event::End(e) if local(e.name().as_ref()) == b"chromatogram" => {
                 if let Some(c) = current.take() {
+                    if decode_current {
+                        trace_payload_decode("chromatogram", out.len());
+                    }
                     out.push(c);
                 }
             }
