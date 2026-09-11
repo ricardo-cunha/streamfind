@@ -13,6 +13,7 @@
 #else
 #include <spawn.h>
 #include <sys/wait.h>
+extern char** environ;
 #endif
 
 namespace fs = std::filesystem;
@@ -45,7 +46,6 @@ int run_process(const std::string& executable, const std::vector<std::string>& a
     return static_cast<int>(code);
 }
 #else
-extern char** environ;
 int run_process(const std::string& executable, const std::vector<std::string>& arguments) {
     std::vector<std::string> values{executable}; values.insert(values.end(), arguments.begin(), arguments.end());
     std::vector<char*> argv; for (auto& value : values) argv.push_back(value.data()); argv.push_back(nullptr);

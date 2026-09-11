@@ -1,6 +1,9 @@
 #include "streamfind/sdk/semantic_validator.hpp"
 
+#include <cstdlib>
 #include <filesystem>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -10,9 +13,51 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+extern char **environ;
 #endif
 
 namespace streamfind::sdk::detail {
+
+std::optional<std::filesystem::path> find_java() {
+    const auto executable_name =
+#ifdef _WIN32
+        std::string("java.exe");
+#else
+        std::string("java");
+#endif
+    if (const char *raw_path = std::getenv("PATH"); raw_path && *raw_path) {
+#ifdef _WIN32
+        constexpr char separator = ';';
+#else
+        constexpr char separator = ':';
+#endif
+        std::stringstream paths(raw_path);
+        std::string directory;
+        while (std::getline(paths, directory, separator)) {
+            if (directory.empty()) continue;
+            const auto candidate = std::filesystem::path(directory) / executable_name;
+            if (std::filesystem::is_regular_file(candidate)) return candidate;
+        }
+    }
+    if (const char *java_home = std::getenv("JAVA_HOME"); java_home && *java_home) {
+        const auto candidate = std::filesystem::path(java_home) / "bin" / executable_name;
+        if (std::filesystem::is_regular_file(candidate)) return candidate;
+    }
+#ifdef _WIN32
+    const char *home = std::getenv("USERPROFILE");
+#else
+    const char *home = std::getenv("HOME");
+#endif
+    if (!home || !*home) return std::nullopt;
+    const auto java_root = std::filesystem::path(home) / ".streamfind" / "tools" / "java";
+    if (!std::filesystem::is_directory(java_root)) return std::nullopt;
+    for (const auto &entry : std::filesystem::directory_iterator(java_root)) {
+        if (!entry.is_directory()) continue;
+        const auto candidate = entry.path() / "bin" / executable_name;
+        if (std::filesystem::is_regular_file(candidate)) return candidate;
+    }
+    return std::nullopt;
+}
 
 std::string quote_validator_path(const std::filesystem::path &path) {
     return path.generic_string();
@@ -69,8 +114,6 @@ int run_process(const std::filesystem::path &executable, const std::vector<std::
     return static_cast<int>(exit_code);
 }
 #else
-extern char **environ;
-
 int run_process(const std::filesystem::path &executable, const std::vector<std::string> &arguments) {
     std::vector<char *> argv;
     std::vector<std::string> values;
@@ -102,10 +145,15 @@ SemanticValidationResult validate_semantics_with_jena(const SemanticResourceSet 
                                                        const std::filesystem::path &jena_home) {
     std::string diagnostics;
     if (!detail::ensure_jena(jena_home, diagnostics)) return {false, diagnostics};
+    const auto java = detail::find_java();
+    if (!java) {
+        return {false, "Java is required to run Apache Jena semantic validation. Install it with "
+                       "streamfind-cli tools install java into the user-scoped .streamfind/tools/java directory."};
+    }
     const auto shapes = resources.core_directory / "shapes.ttl";
     if (!std::filesystem::exists(shapes)) return {false, "core semantic shapes.ttl is missing"};
 
-    const std::filesystem::path executable("java");
+    const auto &executable = *java;
     std::vector<std::string> arguments = {
         "-Dlog4j.configurationFile=" + (jena_home / "log4j2.properties").generic_string(),
         "-cp", (jena_home / "lib" / "*").generic_string(), "shacl.shacl", "validate", "--text", "--shapes", shapes.generic_string()};

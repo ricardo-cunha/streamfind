@@ -33,16 +33,33 @@ streamfind_configure_dependencies(${CMAKE_CURRENT_SOURCE_DIR}/vendor)
 # Consumers receive a package-facing interface that resolves to the installed
 # import library instead of the build-time target name.
 add_library(streamfind_duckdb_runtime INTERFACE)
-target_link_libraries(streamfind_duckdb_runtime INTERFACE
-    $<BUILD_INTERFACE:streamfind::duckdb>
-    $<INSTALL_INTERFACE:$<IF:$<PLATFORM_ID:Windows>,
-        $<INSTALL_PREFIX>/lib/duckdb.lib,
-        $<IF:$<PLATFORM_ID:Darwin>,
-            $<INSTALL_PREFIX>/lib/libduckdb.dylib,
-            $<INSTALL_PREFIX>/lib/libduckdb.so
-        >
-    >>
-)
+if(STREAMFIND_DUCKDB_STATIC_LIBRARIES)
+    set(STREAMFIND_DUCKDB_INSTALL_LINKS
+        "$<INSTALL_PREFIX>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}duckdb_static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    foreach(_duckdb_archive IN LISTS STREAMFIND_DUCKDB_STATIC_LIBRARIES)
+        get_filename_component(_duckdb_archive_name "${_duckdb_archive}" NAME)
+        list(APPEND STREAMFIND_DUCKDB_INSTALL_LINKS "$<INSTALL_PREFIX>/lib/${_duckdb_archive_name}")
+    endforeach()
+    target_link_libraries(streamfind_duckdb_runtime INTERFACE
+        $<BUILD_INTERFACE:streamfind::duckdb>
+        $<INSTALL_INTERFACE:-Wl,--start-group>
+        $<INSTALL_INTERFACE:${STREAMFIND_DUCKDB_INSTALL_LINKS}>
+        $<INSTALL_INTERFACE:-Wl,--end-group>
+        $<INSTALL_INTERFACE:-pthread>
+        $<INSTALL_INTERFACE:${CMAKE_DL_LIBS}>
+    )
+else()
+    target_link_libraries(streamfind_duckdb_runtime INTERFACE
+        $<BUILD_INTERFACE:streamfind::duckdb>
+        $<INSTALL_INTERFACE:$<IF:$<PLATFORM_ID:Windows>,
+            $<INSTALL_PREFIX>/lib/duckdb.lib,
+            $<IF:$<PLATFORM_ID:Darwin>,
+                $<INSTALL_PREFIX>/lib/libduckdb.dylib,
+                $<INSTALL_PREFIX>/lib/libduckdb.so
+            >
+        >>
+    )
+endif()
 add_library(streamfind::duckdb_runtime ALIAS streamfind_duckdb_runtime)
 
 set(STREAMFIND_SEMANTIC_DIR "${CMAKE_BINARY_DIR}/semantic_catalogue")

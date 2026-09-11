@@ -128,7 +128,7 @@ int main() {
         assert(advertised->at("inputSchema").at("type") == "object");
     }
     const auto sensors_tool = std::find_if(before_connect.begin(), before_connect.end(), [](const auto &tool) {
-        return tool.at("name").get<std::string>().rfind("sensors.", 0) == 0;
+        return tool.at("name").template get<std::string>().rfind("sensors.", 0) == 0;
     });
     assert(sensors_tool == before_connect.end());
     const auto eic_before_connect = std::find_if(before_connect.begin(), before_connect.end(), [](const auto &tool) {
