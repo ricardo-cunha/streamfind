@@ -10,6 +10,7 @@ param(
 . "$PSScriptRoot\..\release-common.ps1"
 
 $root = $Script:REPO_ROOT
+$env:STREAMFIND_PACKAGE_VERSION = $Version
 $buildDir = Join-Path $root 'tmp\build\release-cpp'
 $cmake = Get-CMake
 $ninja = Get-Ninja

@@ -32,8 +32,11 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         'share/streamfind/catalogue.duckdb',
         'share/streamfind/core/catalogue.duckdb',
         'share/streamfind/plugins/mass_spec/catalogue.duckdb',
+        'share/streamfind/plugins/mass_spec/plugin.json',
         'share/streamfind/plugins/raman/catalogue.duckdb',
+        'share/streamfind/plugins/raman/plugin.json',
         'share/streamfind/plugins/sensors/catalogue.duckdb',
+        'share/streamfind/plugins/sensors/plugin.json',
         'lib/cmake/streamfind/streamfindConfig.cmake',
         'lib/cmake/streamfind/streamfind-cpp-targets.cmake',
         'include/streamfind/sdk/catalogue_builder.hpp'
@@ -42,6 +45,22 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
             throw "C++ distribution payload is missing $relative"
         }
+    }
+    foreach ($domain in @('mass_spec', 'raman', 'sensors')) {
+        $manifestPath = Join-Path $PackageRoot "share/streamfind/plugins/$domain/plugin.json"
+        try {
+            $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+        } catch {
+            throw "Invalid plugin manifest: $manifestPath ($($_.Exception.Message))"
+        }
+        if ($manifest.plugin_id -ne $domain) { throw "Plugin manifest ID mismatch: $manifestPath" }
+        if ($manifest.domain -ne $domain) { throw "Plugin manifest domain mismatch: $manifestPath" }
+        if ($manifest.version -ne $env:STREAMFIND_PACKAGE_VERSION -and $env:STREAMFIND_PACKAGE_VERSION) {
+            throw "Plugin manifest version mismatch: $manifestPath"
+        }
+        if (-not $manifest.static_composition) { throw "Plugin manifest must declare static_composition=true: $manifestPath" }
+        if ($manifest.semantic_catalogue -ne 'catalogue.duckdb') { throw "Plugin manifest catalogue mismatch: $manifestPath" }
+        if (-not $manifest.library) { throw "Plugin manifest library is missing: $manifestPath" }
     }
 }
 

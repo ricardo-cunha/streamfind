@@ -1,0 +1,11 @@
+{
+  "plugin_id": "mass_spec",
+  "name": "StreamFind MassSpec plugin",
+  "version": "0.2.0",
+  "sdk_compatibility": "same-major",
+  "library": "streamfind_cpp_mass_spec",
+  "domain": "mass_spec",
+  "semantic_catalogue": "catalogue.duckdb",
+  "static_composition": true,
+  "platforms": ["windows-x86_64", "linux-x86_64"]
+}

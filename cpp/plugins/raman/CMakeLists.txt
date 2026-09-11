@@ -11,3 +11,5 @@ target_include_directories(streamfind_cpp_raman PUBLIC
 target_link_libraries(streamfind_cpp_raman PUBLIC streamfind::cpp_sdk)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION share/streamfind/semantic/raman)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+    DESTINATION share/streamfind/plugins/raman)

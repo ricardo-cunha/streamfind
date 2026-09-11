@@ -87,3 +87,5 @@ install(
 )
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION share/streamfind/semantic/mass_spec)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+    DESTINATION share/streamfind/plugins/mass_spec)
