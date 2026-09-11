@@ -9,5 +9,6 @@ pub mod catalogue;
 pub mod project;
 pub mod project_table_store;
 
+pub use catalogue::{DomainModuleBinding, MethodBinding, OperationBinding};
 pub use project::*;
 pub use project_table_store::{ProjectTableStore, TableRequirement};

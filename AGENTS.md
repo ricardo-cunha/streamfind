@@ -4,14 +4,14 @@
 
 - Read and follow the applicable skill below before making changes in its area.
 - Keep changes focused and preserve the existing architecture and package boundaries.
-- Do not modify third-party or vendored source under `core/vendor/` unless explicitly requested.
+- Do not modify third-party or vendored source under `cpp/vendor/` unless explicitly requested.
 - Run the narrowest relevant validation after each change and report concrete results.
 
 ## C++ Project Rules
 
 - Do not create anonymous namespaces (`namespace {}`) in project C++ code.
 - Use an explicit named internal namespace such as `streamfind::detail` for non-public helpers, or use a file-local `static` function where appropriate.
-- This rule applies to `core/` and project-owned C++ code. Do not rewrite third-party or vendored source under `core/vendor/`.
+- This rule applies to `cpp/` and project-owned C++ code. Do not rewrite third-party or vendored source under `cpp/vendor/`.
 
 ## Rust Project Rules
 
@@ -91,7 +91,7 @@ anything that must be committed.
 - **Never** write repository-work temp files outside the repository (system
   `%TEMP%` / `TMP`, `AppData`, user home, `<tmp>`, `/tmp`, etc.).
 - **Never** drop temp files, scratch, or ad-hoc build outputs in the
-  repository root or in source directories (`core/`, `rust/`, `semantic/`,
+  repository root or in source directories (`cpp/`, `rust/`, `semantic/`,
   `docs/`, `bindings/`, `tests/`, ...). Root-level `log/` and `cache/` are
   legacy locations that are being folded into `tmp/`; do not create new
   content there.
@@ -122,7 +122,7 @@ anything that must be committed.
 - Housekeeping before committing on `dev_refactoring`:
   `scripts\build\clean-build-temp.cmd` removes build/test artifacts and disposable
   scratch (`tmp/build/`, `tmp/projects/`, `tmp/scratch/`, plus the legacy
-  `core/build/`, `rust/target/`, `log/`, `cache/` dirs). It **preserves**
+  `cpp/build/`, `rust/target/`, `log/`, `cache/` dirs). It **preserves**
   `tmp/logs/` by default so diagnostics survive a routine clean. Run
   `scripts\build\clean-build-temp.cmd --all` only to wipe legacy temporary
   scripts/logs; tracked scripts under `scripts/` are never removed.
@@ -174,7 +174,8 @@ automatically when `scripts/release/release.ps1` is run.
 
 ## Turtle Ontology Formatting
 
-Use this style for every edit to `semantic/ontology/**/*.ttl`.
+Use this style for every edit to `cpp/core/semantic/**/*.ttl` and
+`cpp/plugins/*/semantic/**/*.ttl`.
 
 ### Syntax
 
@@ -192,7 +193,7 @@ Use this style for every edit to `semantic/ontology/**/*.ttl`.
 - Put long predicate lists on separate lines.
 - Keep labels and definitions adjacent to the resource type.
 - Keep `skos:inScheme sfcore:scheme` on catalogue concepts that belong to the shared scheme.
-- Keep domain declarations in `semantic/ontology/domains/<domain>/` and generic declarations in `semantic/ontology/core/`.
+- Keep domain declarations in `cpp/plugins/<domain>/semantic/` and generic declarations in `cpp/core/semantic/`.
 - Keep table columns and result properties explicit; do not hide schemas in comments or implementation code.
 
 Example:
@@ -214,25 +215,21 @@ Before validation, use the repository formatter when ontology formatting is
 needed:
 
 ```powershell
-& ".venv\Scripts\python.exe" semantic\format_ttl.py
+& ".venv\Scripts\python.exe" scripts\python-utils\format_ttl.py
 ```
 
 Run it from the repository root. The script formats every `*.ttl` file under
-`semantic/ontology/`; inspect the resulting diff and avoid using it when an
+`cpp/core/semantic/` and `cpp/plugins/*/semantic/`; inspect the resulting diff and avoid using it when an
 unrelated formatting-only rewrite would obscure the intended change.
 
 After ontology edits, run from the repository root:
 
 ```powershell
-& ".venv\Scripts\python.exe" semantic\validate_semantic.py
-& ".venv\Scripts\python.exe" semantic\generate_projection.py --check
+cmake --build tmp\build\core-default --target streamfind_aggregate_catalogue
 ```
 
-If the projection is intentionally changed, regenerate it first:
-
-```powershell
-& ".venv\Scripts\python.exe" semantic\generate_projection.py
-```
+The native SDK catalogue generator is the authoritative projection path. Python/Jena
+validation is no longer part of the tracked runtime build layout.
 
 ## R Package Native Build
 

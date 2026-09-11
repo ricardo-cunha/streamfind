@@ -30,13 +30,13 @@ fn copy_runtime(profile_dir: &Path, source: &Path) {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=../../../core/vendor/duckdb/lib/windows-x64/duckdb.dll");
+    println!("cargo:rerun-if-changed=../../../cpp/vendor/duckdb/lib/windows-x64/duckdb.dll");
     if env::var_os("CARGO_CFG_WINDOWS").is_none() {
         return;
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let runtime = manifest_dir.join("../../../core/vendor/duckdb/lib/windows-x64/duckdb.dll");
+    let runtime = manifest_dir.join("../../../cpp/vendor/duckdb/lib/windows-x64/duckdb.dll");
     if !runtime.is_file() {
         panic!(
             "repository DuckDB runtime is missing: {}",

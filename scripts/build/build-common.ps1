@@ -1,7 +1,6 @@
 <#
     build-common.ps1 — shared toolchain detection + logging for the streamfind
-    build/test scripts (build-core.ps1, test-core.ps1, build-rust.ps1,
-    test-rust.ps1).
+    build/test scripts under build/cpp/ and build/rust/.
 
     Design goals:
       - Machine independent: no hardcoded user or machine paths. Tools are
@@ -123,35 +122,6 @@ function Get-Cargo {
     $path = Resolve-Command 'cargo'
     if (-not $path) { throw 'cargo not found on PATH; set $env:CARGO or install the Rust toolchain (https://rustup.rs)' }
     return $path
-}
-
-function Invoke-SemanticChecks {
-    $python = Join-Path $Script:REPO_ROOT '.venv\Scripts\python.exe'
-    if (-not (Test-Path $python)) {
-        throw "Repository Python environment not found at $python"
-    }
-
-    $validate = Join-Path $Script:REPO_ROOT 'semantic\validate_semantic.py'
-    $check = Join-Path $Script:REPO_ROOT 'semantic\generate_projection.py'
-    foreach ($script in @($validate, $check)) {
-        if (-not (Test-Path $script)) {
-            throw "Semantic script not found: $script"
-        }
-    }
-
-    Push-Location $Script:REPO_ROOT
-    try {
-        Write-Log 'Validating semantic catalogue...'
-        & $python $validate
-        if ($LASTEXITCODE -ne 0) { throw "Semantic validation failed ($LASTEXITCODE)" }
-
-        Write-Log 'Checking generated semantic projection...'
-        & $python $check '--check'
-        if ($LASTEXITCODE -ne 0) { throw "Semantic projection check failed ($LASTEXITCODE)" }
-    } finally {
-        Pop-Location
-    }
-    Write-Log 'Semantic checks passed.'
 }
 
 function Get-VisualStudioPath {

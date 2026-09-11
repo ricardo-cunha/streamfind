@@ -63,7 +63,7 @@ the backend-specific attribution payload:
 ```text
 NOTICE.md
 LICENSE.md
-C++: vendor licence texts from `core/vendor/`
+C++: vendor licence texts from `cpp/vendor/`
 Rust: LICENSES.md
 ```
 

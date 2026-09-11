@@ -709,6 +709,7 @@ pub struct MethodRegistry {
 }
 
 pub type OperationExecutor = Box<dyn Fn(&mut Project, &Json) -> Result<Json> + Send + Sync>;
+pub type OperationValidator = Box<dyn Fn(&Json) -> Result<()> + Send + Sync>;
 
 pub struct Operation {
     pub id: String,
@@ -717,6 +718,7 @@ pub struct Operation {
     pub domain: String,
     pub parameters: ParameterSchema,
     executor: OperationExecutor,
+    validator: Option<OperationValidator>,
 }
 
 impl Operation {
@@ -759,13 +761,22 @@ impl Operation {
             domain: domain.into(),
             parameters,
             executor,
+            validator: None,
         }
+    }
+    pub fn with_validator(mut self, validator: OperationValidator) -> Self {
+        self.validator = Some(validator);
+        self
     }
     pub fn to_json(&self) -> Json {
         json!({"id": self.id, "name": self.name, "description": self.description, "domain": self.domain, "parameters": self.parameters.definitions.iter().map(|d| json!({"name": d.name, "description": d.description, "type": d.kind.to_json(), "default": d.default, "required": d.required, "example": d.example})).collect::<Vec<_>>()})
     }
     pub fn run(&self, project: &mut Project, values: &Json) -> Result<Json> {
-        (self.executor)(project, &self.parameters.resolve(values)?)
+        let resolved = self.parameters.resolve(values)?;
+        if let Some(validator) = &self.validator {
+            validator(&resolved)?;
+        }
+        (self.executor)(project, &resolved)
     }
 }
 
@@ -1105,7 +1116,10 @@ impl<'a> WorkflowExecutionManager<'a> {
 
     pub fn scheduler_tick(&self, worker_id: &str) -> Result<Json> {
         if worker_id.is_empty() {
-            return Err(Error::new(ErrorCode::InvalidArgument, "worker_id must not be empty"));
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "worker_id must not be empty",
+            ));
         }
         self.project.connection()?.execute(
             "UPDATE WORKFLOW_EXECUTION SET status = 'running', process_id = ?1, server_id = ?1, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE status = 'queued' AND (process_id IS NULL OR process_id = '')",
@@ -1113,18 +1127,39 @@ impl<'a> WorkflowExecutionManager<'a> {
         )?;
         let row = self.current()?;
         if row["status"] != "running" {
-            return Err(Error::new(ErrorCode::InvalidArgument, "stale or conflicting workflow worker claim"));
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "stale or conflicting workflow worker claim",
+            ));
         }
-        let owner: String = self.project.connection()?.query_row("SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1", [], |row| row.get(0))?;
+        let owner: String = self.project.connection()?.query_row(
+            "SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
         if owner != worker_id {
-            return Err(Error::new(ErrorCode::InvalidArgument, "stale or conflicting workflow worker claim"));
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "stale or conflicting workflow worker claim",
+            ));
         }
         Ok(row)
     }
 
     pub fn release_worker(&self, worker_id: &str, state: ExecutionState) -> Result<Json> {
-        if worker_id.is_empty() || !matches!(state, ExecutionState::Completed | ExecutionState::Failed | ExecutionState::Cancelled | ExecutionState::Interrupted) {
-            return Err(Error::new(ErrorCode::InvalidArgument, "invalid workflow worker release"));
+        if worker_id.is_empty()
+            || !matches!(
+                state,
+                ExecutionState::Completed
+                    | ExecutionState::Failed
+                    | ExecutionState::Cancelled
+                    | ExecutionState::Interrupted
+            )
+        {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "invalid workflow worker release",
+            ));
         }
         let target = execution_state_name(state);
         self.project.connection()?.execute(
@@ -1132,9 +1167,16 @@ impl<'a> WorkflowExecutionManager<'a> {
             params![target, worker_id],
         )?;
         let row = self.current()?;
-        let owner: String = self.project.connection()?.query_row("SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1", [], |row| row.get(0))?;
+        let owner: String = self.project.connection()?.query_row(
+            "SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
         if row["status"] != target || owner != worker_id {
-            return Err(Error::new(ErrorCode::InvalidArgument, "stale workflow worker cannot release execution"));
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "stale workflow worker cannot release execution",
+            ));
         }
         Ok(row)
     }
@@ -1774,9 +1816,11 @@ impl Project {
                 });
             }
             if cancellation.is_some() {
-                let status: String = self
-                    .connection()?
-                    .query_row("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1", [], |row| row.get(0))?;
+                let status: String = self.connection()?.query_row(
+                    "SELECT status FROM WORKFLOW_EXECUTION LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )?;
                 if status == "cancelling" {
                     return Ok(ExecutionResult {
                         results: Json::Array(results),

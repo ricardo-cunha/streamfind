@@ -13,13 +13,39 @@
 //!    fallback anchored at the core crate manifest dir
 
 use crate::{
-    Method, MethodExecutor, MethodRegistry, Operation, OperationExecutor, OperationRegistry,
-    ParameterSchema,
+    Method, MethodExecutor, MethodRegistry, MethodValidator, Operation, OperationExecutor,
+    OperationRegistry, OperationValidator, ParameterSchema,
 };
 use duckdb::{AccessMode, Config, Connection};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::OnceLock;
+
+/// Explicit executable binding for one semantic workflow method.
+pub struct MethodBinding {
+    pub id: &'static str,
+    pub executor: MethodExecutor,
+    pub validator: Option<MethodValidator>,
+}
+
+/// Explicit executable binding for one semantic public operation.
+pub struct OperationBinding {
+    pub id: &'static str,
+    pub executor: OperationExecutor,
+    pub validator: Option<OperationValidator>,
+}
+
+/// Native composition boundary for one semantic domain module.
+pub struct DomainModuleBinding {
+    pub module_id: &'static str,
+    pub domain_id: &'static str,
+    pub module_version: &'static str,
+    pub required_modules: Vec<&'static str>,
+    pub methods: Vec<MethodBinding>,
+    pub operations: Vec<OperationBinding>,
+    pub tables: Vec<String>,
+    pub schema_binding: Option<Box<dyn Fn() + Send + Sync>>,
+}
 
 const CATALOGUE_SQL: &str = "SELECT canonical_id, kind, domain, label, definition, category, \
      invocation_model, requires_connection, guidance, CAST(next_operations AS VARCHAR), \
@@ -390,6 +416,140 @@ where
             schema_for(entry),
             executor,
         ))?;
+    }
+    Ok(())
+}
+
+/// Register one explicit domain module and verify semantic module ownership.
+pub fn register_module<S>(
+    module: DomainModuleBinding,
+    method_registry: &mut MethodRegistry,
+    operation_registry: &mut OperationRegistry,
+    schema_for: S,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+{
+    register_module_with_entries(
+        entries(),
+        module,
+        method_registry,
+        operation_registry,
+        schema_for,
+    )
+}
+
+/// Register one explicit module against a caller-provided catalogue snapshot.
+pub fn register_module_with_entries<S>(
+    entries: &[Value],
+    module: DomainModuleBinding,
+    method_registry: &mut MethodRegistry,
+    operation_registry: &mut OperationRegistry,
+    schema_for: S,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+{
+    for dependency in &module.required_modules {
+        if !entries
+            .iter()
+            .any(|entry| entry["module_id"] == *dependency)
+        {
+            return Err(crate::Error::new(
+                crate::ErrorCode::InvalidArgument,
+                format!(
+                    "catalogue: missing module dependency {dependency} for module {}",
+                    module.module_id
+                ),
+            ));
+        }
+    }
+    if !module.tables.is_empty() {
+        let manifest = table_manifest(&module.domain_id)
+            .map_err(|error| crate::Error::new(crate::ErrorCode::InvalidArgument, error))?;
+        for table in &module.tables {
+            if !manifest.iter().any(|(name, _)| name == table) {
+                return Err(crate::Error::new(
+                    crate::ErrorCode::InvalidArgument,
+                    format!(
+                        "catalogue: missing owned table {table} for module {}",
+                        module.module_id
+                    ),
+                ));
+            }
+        }
+    }
+    for binding in module.methods {
+        let entry = entries
+            .iter()
+            .find(|entry| {
+                entry["kind"] == "method"
+                    && entry["canonical_id"].as_str() == Some(binding.id)
+                    && entry["domain"].as_str() == Some(module.domain_id)
+                    && entry["module_id"].as_str() == Some(module.module_id)
+            })
+            .ok_or_else(|| {
+                crate::Error::new(
+                    crate::ErrorCode::InvalidArgument,
+                    format!("invalid method binding: {}", binding.id),
+                )
+            })?;
+        let mut method = Method::new(
+            binding.id,
+            entry["label"].as_str().unwrap_or(binding.id),
+            entry["definition"].as_str().unwrap_or_default(),
+            module.domain_id,
+            schema_for(entry),
+            binding.executor,
+        );
+        method.cacheable = entry["cacheable"].as_bool().unwrap_or(false);
+        method.single_occurrence = entry["single_occurrence"].as_bool().unwrap_or(false);
+        method.writes = entry["effects"]["writes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        method.required_methods = entry["required_methods"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        if let Some(validator) = binding.validator {
+            method = method.with_validator(validator);
+        }
+        method_registry.register(method)?;
+    }
+    for binding in module.operations {
+        let entry = entries
+            .iter()
+            .find(|entry| {
+                entry["kind"] == "operation"
+                    && entry["canonical_id"].as_str() == Some(binding.id)
+                    && entry["domain"].as_str() == Some(module.domain_id)
+                    && entry["module_id"].as_str() == Some(module.module_id)
+            })
+            .ok_or_else(|| {
+                crate::Error::new(
+                    crate::ErrorCode::InvalidArgument,
+                    format!("invalid operation binding: {}", binding.id),
+                )
+            })?;
+        let mut operation = Operation::new(
+            binding.id,
+            entry["label"].as_str().unwrap_or(binding.id),
+            entry["definition"].as_str().unwrap_or_default(),
+            module.domain_id,
+            schema_for(entry),
+            binding.executor,
+        );
+        if let Some(validator) = binding.validator {
+            operation = operation.with_validator(validator);
+        }
+        operation_registry.register(operation)?;
     }
     Ok(())
 }

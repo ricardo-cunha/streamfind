@@ -1,0 +1,4 @@
+Apache Jena 6.2.0 distribution archive
+apache-jena-6.2.0.zip  fb97634215b4667124bdbe4f42efc25d4dc4e9046b70bfa702d7a71e1a8aed049ec79a38eb469cf0e13b18724cc024adec3cc35113a24e8fa62aa66091d7431e
+Source: https://downloads.apache.org/jena/binaries/apache-jena-6.2.0.zip
+Vendored content is limited to bin/, bat/, lib/, LICENSE, and NOTICE.

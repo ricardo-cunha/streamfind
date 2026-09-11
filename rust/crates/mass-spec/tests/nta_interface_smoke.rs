@@ -38,6 +38,10 @@ fn nta_interface_registers_catalogue_methods_without_data_files() {
             .unwrap_or_else(|| panic!("missing catalogue entry for {id}"));
         assert_eq!(entry["kind"], "method");
         assert_eq!(entry["domain"], "mass_spec");
+        assert!(
+            entry["module_id"] == "mass_spec.nta"
+                || entry["module_id"] == "mass_spec.chromatograms"
+        );
     }
 
     let find_features = methods.get("mass_spec.find_features").unwrap();

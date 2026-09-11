@@ -1,0 +1,28 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfms:mass_spec
+    a sf:Domain ;
+    skos:prefLabel "mass_spec" ;
+    skos:definition "Mass spectrometry project domain." ;
+    sf:guidance "Mass-spectrometry workflow: create or describe the project, add analyses with mass_spec.add_analyses, verify names with mass_spec.get_analysis_names, inspect headers with mass_spec.get_spectra_headers, then use query operations or plan workflow methods. Use target objects with mz, mass, bounds, or SMILES/InChI and retain units from their schemas." .
+
+sfms:baseModule
+    a sf:DomainModule ;
+    skos:prefLabel "MassSpec base module" ;
+    skos:definition "Core mass-spectrometry analyses, spectra, and project operations." ;
+    sf:availableInDomain sfms:mass_spec .
+
+sfms:chromatogramsModule
+    a sf:DomainModule ;
+    skos:prefLabel "MassSpec chromatograms module" ;
+    skos:definition "Mass-spectrometry chromatogram loading and retention-time operations." ;
+    sf:availableInDomain sfms:mass_spec .
+
+sfms:ntaModule
+    a sf:DomainModule ;
+    skos:prefLabel "MassSpec NTA module" ;
+    skos:definition "Non-target analysis feature, suspect, and transformation-product methods." ;
+    sf:availableInDomain sfms:mass_spec .

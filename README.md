@@ -96,5 +96,5 @@ workflow and Shiny application.
 streamfind is distributed under the GNU General Public License, version 3;
 see [`LICENSE.md`](LICENSE.md). Native distributions include third-party
 components with their own licence terms. See [`NOTICE.md`](NOTICE.md) and the
-[`core/vendor/`](core/vendor/) vendor-specific licence files before redistributing a source or binary
+[`cpp/vendor/`](cpp/vendor/) vendor-specific licence files before redistributing a source or binary
 package.

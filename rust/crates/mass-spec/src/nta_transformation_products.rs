@@ -15,11 +15,11 @@ use serde_json::Value;
 use streamfind_rust_core::{Error, ErrorCode, Project, Result};
 
 use crate::nta::{NtaSuspectRow, ProjectNonTargetAnalysis};
-use crate::nta_utils::decode_floats_base64;
-use crate::processing_methods_nta::{
+use crate::nta_processing_methods::{
     finished, load_analysis_features, load_suspects, persist_suspects,
     persist_transformation_products,
 };
+use crate::nta_utils::decode_floats_base64;
 
 /// Mirrors `nta::api::NTA_TRANSFORMATION_PRODUCT_ROW`.
 #[derive(Debug, Clone, Default)]

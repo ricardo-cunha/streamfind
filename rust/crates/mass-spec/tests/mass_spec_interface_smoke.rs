@@ -22,6 +22,18 @@ fn mass_spec_interface_matches_catalogue_and_initializes_schema() {
             .unwrap_or_else(|| panic!("missing catalogue entry for {id}"));
         assert_eq!(catalogue_entry["kind"], "operation");
         assert_eq!(catalogue_entry["domain"], "mass_spec");
+        let expected_module = if id.contains("chromatograms") {
+            "mass_spec.chromatograms"
+        } else if id.contains("features")
+            || id.contains("suspects")
+            || id.contains("internal_standards")
+            || id.contains("transformation_products")
+        {
+            "mass_spec.nta"
+        } else {
+            "mass_spec.base"
+        };
+        assert_eq!(catalogue_entry["module_id"], expected_module);
         let actual: BTreeSet<String> = operation["parameters"]
             .as_array()
             .unwrap()

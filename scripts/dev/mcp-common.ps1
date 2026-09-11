@@ -158,7 +158,7 @@ function Get-StreamfindVendorRoot {
 
 function Invoke-StreamfindRustBuild {
     param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
-    $buildScript = Join-Path $RepositoryRoot 'scripts\build\build-rust.ps1'
+    $buildScript = Join-Path $RepositoryRoot 'scripts\build\rust\build-rust.ps1'
     $commandLine = 'set tmp=&&set temp=&&set TMP=C:\Windows\Temp&&set TEMP=C:\Windows\Temp&&set TMPDIR=C:\Windows\Temp&&powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $buildScript + '" -Clean -Release'
     & $env:ComSpec /d /c $commandLine | Out-Host
     return [int]$LASTEXITCODE

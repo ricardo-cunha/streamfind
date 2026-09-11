@@ -1,7 +1,7 @@
 # streamfind build & test scripts
 
-Machine-independent helpers for building and testing the standalone C++ core
-(`core/`) and the Rust workspace (`rust/`). All transient artifacts land under
+Machine-independent helpers for building and testing the primary C++ backend
+(`cpp/`) and the alternative Rust backend (`rust/`). All transient artifacts land under
 the repository-local `tmp/` folder (see AGENTS.md "Repository Scratch, Build,
 and Log Locations"): build trees in `tmp/build/`, release packages in
 `tmp/release-output/`, and logs in `tmp/logs/`.
@@ -10,29 +10,32 @@ and Log Locations"): build trees in `tmp/build/`, release packages in
 
 | Task | Command |
 | --- | --- |
-| Build the C++ core | `scripts\build\build-core.cmd` |
-| C++ core + run CTest | `scripts\build\build-core.cmd -Tests` |
-| Run C++ CTest only | `scripts\build\test-core.cmd` |
-| Build the Rust workspace | `scripts\build\build-rust.cmd` |
-| Rust workspace + run tests | `scripts\build\build-rust.cmd -Tests` |
-| Run Rust tests only | `scripts\build\test-rust.cmd` |
-| Run C++ built-MCP data test | `scripts/dev/test-data.ps1 -Backend Cpp` |
-| Run Rust built-MCP data test | `scripts/dev/test-data.ps1 -Backend Rust` |
-| Run C++ built-MCP NTA test | `scripts/dev/test-nta.ps1 -Backend Cpp` |
-| Run Rust built-MCP NTA test | `scripts/dev/test-nta.ps1 -Backend Rust` |
-| Run vendor reader parser test | `scripts/dev/test-vendor-readers.ps1 -Backend Cpp -Vendor Shimadzu` |
-| Run data-backed NTA pipeline | Add `-RunPipeline` to `scripts/dev/test-nta.ps1` |
-| Build release archives | `scripts/release/release.ps1 -Version <version>` |
-| Publish a prepared GitHub Release | `scripts/release/publish-release.ps1 -Version <version>` |
+| Build the C++ backend | `scripts\build\cpp\build-cpp.cmd` |
+| C++ backend + run CTest | `scripts\build\cpp\build-cpp.cmd -Tests` |
+| Run C++ CTest only | `scripts\build\cpp\test-cpp.cmd` |
+| Build the alternative Rust backend | `scripts/build/rust/build-rust.cmd` |
+| Build Rust and run its tests | `scripts/build/rust/build-rust.cmd -Tests` |
+| Run Rust tests only | `scripts/build/rust/test-rust.cmd` |
+| Run C++ built-MCP data test | `scripts\dev\cpp\test-data.ps1` |
+| Run C++ built-MCP NTA test | `scripts\dev\cpp\test-nta.ps1` |
+| Run C++ vendor reader parser test | `scripts\dev\cpp\test-vendor-readers.ps1 -Vendor Shimadzu` |
+| Run data-backed NTA pipeline | Add `-RunPipeline` to `scripts\dev\cpp\test-nta.ps1` |
+| Run explicit cross-backend conformance | `scripts/dev/conformance/run-conformance.ps1 -CppExecutable <path> -RustExecutable <path> -Thermo` |
+| Build C++ release archive | `scripts/release/cpp/release-cpp.cmd -Version <version>` |
+| Build Rust release archive | `scripts/release/rust/release-rust.cmd -Version <version> -CppCatalogue <path>` |
+| Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version> -Backend Cpp|Rust|All` |
 | Clean build/test artifacts | `scripts\build\clean-build-temp.cmd` |
 
 Every `.cmd` is a thin wrapper over its `.ps1`; use either form.
 
-The official C++ suite is the framework, mass-spectrometry interface, and
-lightweight NTA interface coverage registered by CMake. The official Rust
-workspace suite follows the same boundary. Raw reader/parity tests and
-data-backed NTA tests are development-stage checks under `scripts/dev/`; they
-launch the built MCP executables and are not C++/Rust test-source targets.
+The official C++ suite is the authoritative framework, plugin, mass-spectrometry
+interface, and lightweight NTA coverage registered by CMake. Rust is an
+alternative backend: its wrapper requires the C++ build/release catalogue through
+`STREAMFIND_CATALOGUE` and does not define the C++ acceptance gate. Raw reader,
+parity, and data-backed NTA tests are development-stage checks under
+`scripts/dev/cpp/`; they launch the C++ built MCP executable and are not C++ test
+source targets. Cross-backend comparisons are isolated under `scripts/dev/conformance/`
+and require both executable paths explicitly. They are not part of the C++ gate.
 
 ## External example data
 
@@ -87,22 +90,32 @@ install method.
 
 ## What each script does
 
-- `scripts/build/build-core.ps1` — configures with Ninja into `tmp/build/core-default`
+- `scripts/build/cpp/build-cpp.ps1` — configures with Ninja into `tmp/build/core-default`
   (`STREAMFIND_BUILD_TESTS=ON`, `STREAMFIND_BUILD_SHARED=OFF`), builds, and
   optionally runs CTest. Flags: `-Clean`, `-Tests`, `-Target <name>`,
   `-Config <Debug|Release>`.
-- `scripts/build/test-core.ps1` — runs `ctest --test-dir tmp/build/core-default
+- `scripts/build/cpp/test-cpp.ps1` — runs `ctest --test-dir tmp/build/core-default
   --output-on-failure` for the official framework, mass-spec interface, and
   lightweight NTA interface suite. Data-backed parsing and NTA checks use the
   dedicated scripts in `scripts/dev/`.
-- `scripts/build/build-rust.ps1` — sets `CARGO_TARGET_DIR=tmp/build/rust-target` and builds
+- `scripts/build/rust/build-rust.ps1` — sets `CARGO_TARGET_DIR=tmp/build/rust-target`, requires the C++ catalogue, and builds
   the workspace (or one `-Package`). Flags: `-Clean`, `-Tests`,
   `-Package <name>`, `-Release`.
-- `scripts/build/test-rust.ps1` — `build-rust.ps1 -Tests` shorthand.
-- `scripts/release/release.ps1` — builds, runs the official lightweight test suites, packages,
-  and hashes the C++ and Rust release archives into `tmp/release-output/`. It
-  does not run development-stage data or NTA scripts and does not create or
-  upload a GitHub Release.
+- `scripts/build/rust/test-rust.ps1` — `build-rust.ps1 -Tests` shorthand against the C++ catalogue.
+- `scripts/build/cpp/build-cpp-linux.sh` — configures and builds the authoritative C++ backend with Ninja on Linux; set `STREAMFIND_RUN_TESTS=1` to run CTest.
+- `scripts/build/rust/build-rust-linux.sh` — builds the alternative Rust workspace on Linux using `STREAMFIND_CATALOGUE` from the C++ backend; set `STREAMFIND_RUN_TESTS=1` to run Rust tests.
+- `scripts/release/cpp/release-cpp.ps1` — builds, tests, packages, and hashes the
+  authoritative C++ backend archive. It does not run development-stage data or
+  NTA scripts.
+- `scripts/release/rust/release-rust.ps1` — builds and optionally tests the
+  alternative Rust backend against an explicitly supplied C++ catalogue, then
+  packages and hashes only the Rust archive. It does not define the C++ release
+  gate.
+- `scripts/release/cpp/release-cpp-linux.sh <version>` — builds, tests, and
+  packages only the authoritative C++ Linux backend.
+- `scripts/release/rust/release-rust-linux.sh <version> <cpp-catalogue>` —
+  builds, tests, and packages only the Rust Linux backend against the supplied
+  C++ catalogue.
 - `scripts/release/publish-release.ps1` — validates the versioned archives and checksums in
   `tmp/release-output/`, then creates a GitHub Release. Pass `-Replace` only
   when intentionally replacing assets in an existing release.

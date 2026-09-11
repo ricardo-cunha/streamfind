@@ -2,8 +2,8 @@
     publish-release.ps1 — publish verified archives from tmp/release-output to
     an existing or new GitHub Release.
 
-    This script does not build or test. Run scripts\release\release.ps1 first, review
-    the output, then run this script when the release is ready.
+    This script does not build or test. Run the C++ and/or Rust release script
+    first, review the output, then run this script when the release is ready.
 
     Usage:
       powershell -ExecutionPolicy Bypass -File scripts\release\publish-release.ps1 -Version 0.2.0
@@ -19,6 +19,8 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')]
     [string]$Version,
     [string]$Repository = 'ricardo-cunha/streamfind',
+    [ValidateSet('Cpp', 'Rust', 'All')]
+    [string]$Backend = 'All',
     [switch]$Replace
 )
 
@@ -39,7 +41,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not (Test-Path $output)) {
-    throw "Release output directory not found: $output. Run scripts\release.ps1 first."
+    throw "Release output directory not found: $output. Run scripts\release\cpp\release-cpp.ps1 or scripts\release\rust\release-rust.ps1 first."
 }
 
 $escapedVersion = [regex]::Escape($Version)
@@ -53,12 +55,15 @@ $archives = @(
 if ($archives.Count -eq 0) {
     throw "No versioned release archives found for $Version in $output."
 }
-if (-not ($archives | Where-Object { $_.Name -like "streamfind-core-cpp-$Version-*" })) {
+if (($Backend -in @('Cpp', 'All')) -and -not ($archives | Where-Object { $_.Name -like "streamfind-core-cpp-$Version-*" })) {
     throw "The C++ archive for $Version is missing from $output."
 }
-if (-not ($archives | Where-Object { $_.Name -like "streamfind-rust-$Version-*" })) {
+if (($Backend -in @('Rust', 'All')) -and -not ($archives | Where-Object { $_.Name -like "streamfind-rust-$Version-*" })) {
     throw "The Rust archive for $Version is missing from $output."
 }
+$archives = @($archives | Where-Object {
+    $Backend -eq 'All' -or ($Backend -eq 'Cpp' -and $_.Name -like "streamfind-core-cpp-$Version-*") -or ($Backend -eq 'Rust' -and $_.Name -like "streamfind-rust-$Version-*")
+})
 
 $checksum = Join-Path $output 'sha256sums.txt'
 if (-not (Test-Path $checksum)) {

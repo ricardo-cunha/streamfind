@@ -35,21 +35,22 @@ before redistributing vendor-format data or software.
 ## Third-party components
 
 The exact C++/vendored-library licence texts are kept alongside their owning
-vendor directories under `core/vendor/`. The Rust dependency inventory is provided under
+vendor directories under `cpp/vendor/`. The Rust dependency inventory is provided under
 `rust/LICENSES.md`. Component versions and inclusion can vary by backend and
 platform; the release manifest is authoritative for a particular archive.
 
 | Component | Version in the current native source/package | Licence | Source or retained notice |
 | --- | --- | --- | --- |
-| DuckDB C++ static package | v1.5.2 | MIT | `core/vendor/duckdb/LICENSE` |
-| DuckDB Rust crate/bundled backend | `duckdb` crate 1.10505.0; bundled backend requires separate verification | MIT metadata plus bundled upstream components | C++: `core/vendor/duckdb/LICENSE`; Rust: `rust/LICENSES.md` |
-| Open Babel | 3.2.0 | GPLv2 | `core/vendor/openbabel/openbabel-3-2-0/COPYING` |
-| Zstandard | 1.5.7 | BSD or GPLv2 | `core/vendor/zstd/LICENSE`, `core/vendor/zstd/COPYING` |
-| zlib | 1.3.2.1-motley | zlib licence | `core/vendor/zlib/zlib-develop/LICENSE` |
-| pugixml | 1.14 | MIT | `core/vendor/pugixml-1.14/LICENSE` |
-| simdutf | 7.3.4 | MIT | `core/vendor/simdutf/LICENSE` |
-| nlohmann JSON | 3.12.0 | MIT | `core/vendor/nlohmann/LICENSE` |
-| JSON Schema Validator | vendored version; see source README | MIT | `core/vendor/json-schema-validator/LICENSE` |
+| DuckDB C++ static package | v1.5.2 | MIT | `cpp/vendor/duckdb/LICENSE` |
+| DuckDB Rust crate/bundled backend | `duckdb` crate 1.10505.0; bundled backend requires separate verification | MIT metadata plus bundled upstream components | C++: `cpp/vendor/duckdb/LICENSE`; Rust: `rust/LICENSES.md` |
+| Open Babel | 3.2.0 | GPLv2 | `cpp/vendor/openbabel/openbabel-3-2-0/COPYING` |
+| Zstandard | 1.5.7 | BSD or GPLv2 | `cpp/vendor/zstd/LICENSE`, `cpp/vendor/zstd/COPYING` |
+| zlib | 1.3.2.1-motley | zlib licence | `cpp/vendor/zlib/zlib-develop/LICENSE` |
+| pugixml | 1.14 | MIT | `cpp/vendor/pugixml-1.14/LICENSE` |
+| simdutf | 7.3.4 | MIT | `cpp/vendor/simdutf/LICENSE` |
+| nlohmann JSON | 3.12.0 | MIT | `cpp/vendor/nlohmann/LICENSE` |
+| JSON Schema Validator | vendored version; see source README | MIT | `cpp/vendor/json-schema-validator/LICENSE` |
+| Apache Jena | 6.2.0 | Apache-2.0 | `cpp/vendor/apache-jena/LICENSE`, `cpp/vendor/apache-jena/NOTICE` |
 | Rust dependencies | see `rust/Cargo.lock` and release manifest | package-specific MIT/Apache-2.0 and other declared terms | `rust/LICENSES.md` |
 
 The project must keep the original copyright and licence terms for every
@@ -84,7 +85,7 @@ Before distributing a native archive, verify that it contains:
 
 - `NOTICE.md` and `LICENSE.md` at the package root;
 - the C++ attribution payload assembled from the vendor-specific licence files
-  kept beside their owning libraries under `core/vendor/`, or the Rust
+  kept beside their owning libraries under `cpp/vendor/`, or the Rust
   `LICENSES.md` dependency inventory;
 - only the runtime files and dependencies intended for that backend and platform.
 

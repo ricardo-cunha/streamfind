@@ -1,74 +1,51 @@
 # Development-stage scripts
 
-These scripts are deliberately outside the official C++ and Rust test suites.
-They launch the already-built MCP executables and exercise data-backed parsing,
-reader behavior, and NTA workflows through the public interfaces.
+These scripts are outside the official test suites. The official C++ gate is
+independent and does not require Rust, external vendor data, Java, or MetFrag.
 
-## Backends
+## C++ development checks
 
-```powershell
-scripts/dev/test-data.ps1 -Backend Cpp
-scripts/dev/test-data.ps1 -Backend Rust
-scripts/dev/test-nta.ps1 -Backend Cpp
-scripts/dev/test-nta.ps1 -Backend Rust
-```
-
-Add `-RunPipeline` to `test-nta.ps1` to run the computationally expensive
-NTA method instead of only importing the wastewater analyses and discovering the
-workflow method. Use `-MaxAnalyses 3` for a fast diagnostic run through all 12
-methods; omit it (or use `0`) for the complete wastewater workflow.
-Use `-StopAfter mass_spec.find_features` to inspect only feature detection and
-its diagnostics without entering the later workflow methods.
-Use `-KeepProject` to preserve the temporary DuckDB project file under
-`tmp/projects` after the run for offline inspection.
-
-The full diagnostic sequence is:
-
-```text
-find_features -> load_features_ms1 -> load_features_ms2 ->
-create_components -> annotate_components -> find_internal_standards ->
-group_features -> fill_features -> correct_matrix_suppression ->
-subtract_blank -> filter_features -> suspect_screening
-```
-
-It uses `bindings/r/dev/dev_duckdb/internal_standards_v3.csv` for internal
-standard targets and `bindings/r/dev/dev_duckdb/suspects_with_ms2_template.csv`
-for suspect-screening targets. Each method prints its elapsed time, returned
-result, and a follow-up result-table row count.
-
-## External data
-
-Generic mzML/NTA data is resolved from the sibling repository:
-
-```text
-<parent-directory>/streamfind.data/data
-```
-
-Override it with:
-
-```text
-$env:STREAMFIND_EXAMPLE_DATA_ROOT = '<path-to-data>'
-```
-
-Vendor readers use the development fixture root:
-
-```text
-E:\example_files\raw_vendor_files
-```
-
-Override it with:
-
-```text
-$env:STREAMFIND_VENDOR_DATA_ROOT = '<path-to-raw-vendor-files>'
-```
-
-Run a specific vendor parser check with:
+Run these against the active C++ backend:
 
 ```powershell
-scripts/dev/test-vendor-readers.ps1 -Backend Cpp -Vendor Shimadzu
-scripts/dev/test-vendor-readers.ps1 -Backend Rust -Vendor Shimadzu
+scripts\dev\cpp\test-data.ps1
+scripts\dev\cpp\test-nta.ps1 -MaxAnalyses 3
+scripts\dev\cpp\test-vendor-readers.ps1 -Vendor Shimadzu
 ```
 
-Supported vendor selectors are `Shimadzu`, `Sciex`, `AgilentChemstation`,
-`AgilentMassHunter`, and `Thermo`. Use `-InputPath` to select a particular
-fixture instead of the default representative file.
+Add `-RunPipeline` to `test-nta.ps1` for the expensive NTA workflow. External data
+is resolved from the sibling `streamfind.data` repository and can be overridden with
+`STREAMFIND_EXAMPLE_DATA_ROOT`. Vendor fixtures use `STREAMFIND_VENDOR_DATA_ROOT`.
+
+The C++ scripts use the native catalogue generated at:
+
+```text
+tmp\build\core-default\semantic_catalogue\catalogue.duckdb
+```
+
+## Rust development checks
+
+Rust is an independent backend. Its build and tests are kept under the Rust build
+wrapper; C++ development scripts do not accept a Rust backend:
+
+```powershell
+scripts\build\rust\build-rust.cmd -Tests
+scripts\build\rust\test-rust.cmd
+```
+
+## Cross-backend conformance
+
+Conformance is a separate, opt-in lane. It requires both executable paths and never
+runs as part of C++ CTest:
+
+```powershell
+powershell -File scripts\dev\conformance\run-conformance.ps1 `
+  -CppExecutable <path-to-cpp-mcp.exe> `
+  -RustExecutable <path-to-rust-mcp.exe> `
+  -Thermo
+```
+
+Use `-Sciex` for the SCIEX corpus. The conformance scripts send the same public MCP
+requests to both backends and compare normalized responses. They are intended to
+become a required Rust gate when Rust development is reopened; until then, the C++
+gate remains authoritative and independently runnable.

@@ -1,0 +1,9 @@
+@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfram:raman
+    a sf:Domain ;
+    skos:prefLabel "raman" ;
+    skos:definition "Raman spectroscopy project domain." ;
+    sf:guidance "Raman workflow: create or describe the project, connect when using workflow methods, then discover methods with get_available_methods(domain=raman)." .
