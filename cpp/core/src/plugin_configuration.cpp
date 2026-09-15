@@ -44,9 +44,6 @@ PluginConfigurationResult load_plugin_configuration(
             for (const auto &root : roots) {
                 const auto root_text = detail::required_string(root, "plugin_roots");
                 const std::filesystem::path root_path(root_text);
-                if (!root_path.is_absolute() && root_text.find("..") != std::string::npos) {
-                    throw std::invalid_argument("relative plugin roots cannot escape the configuration directory");
-                }
                 configuration.plugin_roots.push_back(
                     root_path.is_absolute() ? root_path : base / root_path);
             }

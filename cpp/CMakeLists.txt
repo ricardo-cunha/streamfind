@@ -27,6 +27,7 @@ endif()
 include(${CMAKE_CURRENT_SOURCE_DIR}/core/cmake/streamfind_dependencies.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfind_cpp_library.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfind_semantic_catalogue.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfind_plugin_validation.cmake)
 streamfind_configure_dependencies(${CMAKE_CURRENT_SOURCE_DIR}/vendor)
 
 # Keep the internal DuckDB imported target out of the installed export set.
@@ -242,19 +243,12 @@ streamfind_add_aggregate_semantic_catalogue(
     streamfind_aggregate_catalogue
     "${CMAKE_CURRENT_SOURCE_DIR}/core/semantic"
     "${STREAMFIND_SEMANTIC_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mass_spec/semantic"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/raman/semantic"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/sensors/semantic")
+    ${STREAMFIND_PLUGIN_SEMANTIC_DIRS})
 add_dependencies(streamfind_aggregate_catalogue
     streamfind_core_catalogue
-    streamfind_mass_spec_plugin_catalogue
-    streamfind_raman_plugin_catalogue
-    streamfind_sensors_plugin_catalogue)
-add_custom_target(streamfind_plugins)
-add_dependencies(streamfind_plugins
-    streamfind_mass_spec_plugin
-    streamfind_raman_plugin
-    streamfind_sensors_plugin)
+    ${STREAMFIND_PLUGIN_TARGETS})
+add_custom_target(streamfind_plugins ALL)
+add_dependencies(streamfind_plugins ${STREAMFIND_PLUGIN_TARGETS})
 
 if(STREAMFIND_BUILD_TESTS)
     enable_testing()
@@ -263,18 +257,29 @@ if(STREAMFIND_BUILD_TESTS)
     add_dependencies(streamfind_project_isolation_contract streamfind_core_catalogue)
 endif()
 
-add_executable(streamfind_mcp mcp/src/streamfind-mcp.cpp mcp/src/static_plugin_composition.cpp)
-add_dependencies(streamfind_mcp streamfind_core_catalogue streamfind_cpp_sdk
-    streamfind_mass_spec_plugin streamfind_raman_plugin streamfind_sensors_plugin)
+add_executable(streamfind_mcp core/src/streamfind-mcp.cpp)
+add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sdk
+    streamfind_plugins)
 target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
+set(STREAMFIND_ENABLED_PLUGINS_JSON)
+foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
+    if(STREAMFIND_ENABLED_PLUGINS_JSON)
+        string(APPEND STREAMFIND_ENABLED_PLUGINS_JSON ", ")
+    endif()
+    string(APPEND STREAMFIND_ENABLED_PLUGINS_JSON "\"${_plugin_domain}\"")
+endforeach()
 file(GENERATE
     OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
-    CONTENT "{\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [\"mass_spec\", \"raman\", \"sensors\"]\n}\n")
+    CONTENT "{\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
+    CONTENT "{\n  \"plugin_roots\": [\"../share/streamfind/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
+    DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli
-    mcp/src/streamfind-mcp.cpp
-    mcp/src/static_plugin_composition.cpp)
-add_dependencies(streamfind_cli streamfind_core_catalogue streamfind_cpp_sdk
-    streamfind_mass_spec_plugin streamfind_raman_plugin streamfind_sensors_plugin)
+    core/src/streamfind-mcp.cpp)
+add_dependencies(streamfind_cli streamfind_aggregate_catalogue streamfind_cpp_sdk
+    streamfind_plugins)
 target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
 
 # Runtime dependencies: the exes link vendored DuckDB, OpenBabel, zstd, inchi
@@ -288,19 +293,6 @@ install(
     RUNTIME DESTINATION bin
 )
 
-
-install(
-    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mass_spec/include/"
-    DESTINATION include
-)
-install(
-    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/plugins/raman/include/"
-    DESTINATION include
-)
-install(
-    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/plugins/sensors/include/"
-    DESTINATION include
-)
 
 # CPack configuration: set variables BEFORE include(CPack) so they reach the
 # cached defaults CPack::Configure writes into CPackConfig.cmake.

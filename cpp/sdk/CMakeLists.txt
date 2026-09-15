@@ -33,6 +33,12 @@ if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
             "${STREAMFIND_DUCKDB_RUNTIME}"
             "$<TARGET_FILE_DIR:streamfind_sdk_catalogue>")
 endif()
+
+add_executable(streamfind_sdk_plugin_validator
+    tools/streamfind-sdk-plugin-validator.cpp)
+target_link_libraries(streamfind_sdk_plugin_validator PRIVATE streamfind::cpp_sdk)
+target_compile_features(streamfind_sdk_plugin_validator PRIVATE cxx_std_20)
+
 install(TARGETS streamfind_sdk_catalogue RUNTIME DESTINATION bin)
 
 install(

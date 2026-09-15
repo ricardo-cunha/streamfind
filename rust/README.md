@@ -111,13 +111,16 @@ execution, closed projects, and cancellation.
 
 The Rust and C++ implementations share the `PROJECT`, `CACHE`, and
 `AUDIT_TRAIL` tables, workflow JSON, metadata JSON, cache representation, and
-audit representation. Shared fixtures and interoperability tests live in:
+audit representation. Rust-owned tests consume the fixtures under:
 
 ```text
-tests/fixtures/project/project_conformance.json
-core/tests/unit/conformance.cpp
-rust/crates/core/tests/conformance.rs
+cpp/tests/fixtures/
+rust/crates/core/tests/
 ```
+
+The C++ test suite no longer runs Rust-conformance checks. Cross-backend
+conformance will be implemented from the Rust test harness using a released
+C++ MCP executable.
 
 ## CLI
 

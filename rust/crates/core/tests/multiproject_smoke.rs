@@ -4,14 +4,14 @@ use streamfind_rust_core::{ErrorCode, Project, ProjectOptions};
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!(
-        "../../../../tests/fixtures/project/multiproject.json"
+        "../../../../cpp/tests/fixtures/project/multiproject.json"
     ))
     .unwrap()
 }
 
 fn domain_schema_fixture() -> Value {
     serde_json::from_str(include_str!(
-        "../../../../tests/fixtures/project/domain_schema_manifest.json"
+        "../../../../cpp/tests/fixtures/project/domain_schema_manifest.json"
     ))
     .unwrap()
 }

@@ -31,8 +31,10 @@ rust/.cargo/
 # Nested git repositories (have their own .git file); local developer state.
 .worktrees/
 
-# Machine-local development plans ----------------------------------------------
-.plans/
+# Completed and provenance plans are retained locally but are not active tracked
+# planning inputs. Active plans under .plans/ remain trackable.
+/.plans/completed/
+/.plans/provenance/
 
 # Hermes session and workspace metadata ----------------------------------------
 .hermes/

@@ -15,13 +15,11 @@ if [[ -f "$source_archive" ]]; then mv -f "$source_archive" "$archive"; fi
 test -f "$archive"; assert_archive "$archive" licenses
 listing="${archive}.list"
 tar -tzf "$archive" > "$listing"
-grep -Eq '(^|/)share/streamfind/plugins/mass_spec/plugin\.json$' "$listing"
-grep -Eq '(^|/)share/streamfind/plugins/raman/plugin\.json$' "$listing"
-grep -Eq '(^|/)share/streamfind/plugins/sensors/plugin\.json$' "$listing"
+plugin_manifests=$(grep -E '(^|/)share/streamfind/plugins/[^/]+/plugin\.json$' "$listing")
+test -n "$plugin_manifests"
 grep -Eq '(^|/)lib/libduckdb_static\.a$' "$listing"
-for domain in mass_spec raman sensors; do
-    manifest_path="$(grep -m1 "/share/streamfind/plugins/$domain/plugin\.json$" "$listing")"
-    test -n "$manifest_path"
+while IFS= read -r manifest_path; do
+    domain="$(dirname "$manifest_path" | xargs basename)"
     manifest_file="${archive}.${domain}.manifest"
     tar -xOf "$archive" "$manifest_path" > "$manifest_file"
     grep -q "\"plugin_id\": \"$domain\"" "$manifest_file"
@@ -29,14 +27,12 @@ for domain in mass_spec raman sensors; do
     grep -q '"abi_version": { "major": 1, "minor": 1 }' "$manifest_file"
     grep -q '"static_composition": false' "$manifest_file"
     grep -q '"semantic_catalogue": "catalogue.duckdb"' "$manifest_file"
-    if [[ "$domain" == mass_spec ]]; then
-        library_name='libstreamfind_mass_spec.so'
-    else
-        library_name="libstreamfind_$domain.so"
-    fi
+    library_name="$(grep -m1 '"linux-x86_64":' "$manifest_file" | sed -E 's/.*"linux-x86_64": "([^"]+)".*/\1/')"
+    test -n "$library_name"
+    grep -Eq '(^|/)share/streamfind/plugins/'"$domain"'/'"$library_name"'$' "$listing"
     grep -q '"linux-x86_64": "'"$library_name"'"' "$manifest_file"
     rm -f "$manifest_file"
-done
+done <<< "$plugin_manifests"
 rm -f "$listing"
 (cd "$OUT" && find . -maxdepth 1 -type f \( -name 'streamfind-*.tgz' -o -name 'streamfind-*.tar.gz' \) -printf '%f\n' | sort | xargs -r sha256sum > sha256sums.txt)
 echo "C++ Linux release: $archive"

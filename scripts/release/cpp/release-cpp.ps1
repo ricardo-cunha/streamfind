@@ -41,6 +41,9 @@ Expand-Archive -Path $built.FullName -DestinationPath $verifyDir
 $packageRoot = Get-ChildItem -Path $verifyDir -Directory | Select-Object -First 1
 if (-not $packageRoot) { throw 'C++ archive has no top-level package directory' }
 Assert-CppDistributionPayload $packageRoot.FullName
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts\release\cpp\test-packaged-mcp.ps1') `
+    -PackageRoot $packageRoot.FullName
+if ($LASTEXITCODE -ne 0) { throw "Packaged C++ MCP smoke test failed ($LASTEXITCODE)" }
 Move-Item $built.FullName (Join-Path $Script:RELEASE_OUTPUT $built.Name) -Force
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $cpackDir
 Write-ReleaseChecksums

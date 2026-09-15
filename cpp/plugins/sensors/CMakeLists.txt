@@ -14,6 +14,8 @@ target_include_directories(streamfind_sensors_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../core/include")
 target_include_directories(streamfind_sensors_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor")
+target_include_directories(streamfind_sensors_plugin PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src")
 add_custom_command(TARGET streamfind_sensors_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
@@ -21,6 +23,7 @@ add_custom_command(TARGET streamfind_sensors_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_sensors_plugin>/catalogue.duckdb")
+streamfind_validate_plugin_build(streamfind_sensors_plugin sensors)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION share/streamfind/semantic/sensors)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"

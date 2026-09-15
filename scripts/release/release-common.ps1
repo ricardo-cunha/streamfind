@@ -31,12 +31,6 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         'bin/duckdb.dll',
         'share/streamfind/catalogue.duckdb',
         'share/streamfind/core/catalogue.duckdb',
-        'share/streamfind/plugins/mass_spec/catalogue.duckdb',
-        'share/streamfind/plugins/mass_spec/plugin.json',
-        'share/streamfind/plugins/raman/catalogue.duckdb',
-        'share/streamfind/plugins/raman/plugin.json',
-        'share/streamfind/plugins/sensors/catalogue.duckdb',
-        'share/streamfind/plugins/sensors/plugin.json',
         'lib/cmake/streamfind/streamfindConfig.cmake',
         'lib/cmake/streamfind/streamfind-cpp-targets.cmake',
         'include/streamfind/sdk/catalogue_builder.hpp'
@@ -46,8 +40,14 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
             throw "C++ distribution payload is missing $relative"
         }
     }
-    foreach ($domain in @('mass_spec', 'raman', 'sensors')) {
-        $manifestPath = Join-Path $PackageRoot "share/streamfind/plugins/$domain/plugin.json"
+    $pluginRoot = Join-Path $PackageRoot 'share/streamfind/plugins'
+    $pluginDirectories = @(Get-ChildItem -Path $pluginRoot -Directory)
+    if ($pluginDirectories.Count -eq 0) {
+        throw "C++ distribution contains no plugins under $pluginRoot"
+    }
+    foreach ($pluginDirectory in $pluginDirectories) {
+        $domain = $pluginDirectory.Name
+        $manifestPath = Join-Path $pluginDirectory.FullName 'plugin.json'
         try {
             $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
         } catch {
@@ -62,8 +62,14 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         if ($manifest.abi_version.major -ne 1) { throw "Plugin manifest ABI major mismatch: $manifestPath" }
         if ($manifest.abi_version.minor -lt 0) { throw "Plugin manifest ABI minor is invalid: $manifestPath" }
         if ($manifest.semantic_catalogue -ne 'catalogue.duckdb') { throw "Plugin manifest catalogue mismatch: $manifestPath" }
-        if (-not $manifest.library.'windows-x86_64') {
+        $libraryName = $manifest.library.'windows-x86_64'
+        if (-not $libraryName) {
             throw "Plugin manifest Windows library is missing: $manifestPath"
+        }
+        foreach ($requiredPluginFile in @('catalogue.duckdb', $libraryName)) {
+            if (-not (Test-Path (Join-Path $pluginDirectory.FullName $requiredPluginFile))) {
+                throw "C++ distribution plugin payload is missing $requiredPluginFile in $domain"
+            }
         }
     }
 }

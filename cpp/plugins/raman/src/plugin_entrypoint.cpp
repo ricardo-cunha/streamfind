@@ -1,6 +1,7 @@
 #include "streamfind/plugin_abi.h"
-#include "streamfind/sdk/capability_registry.hpp"
 #include "streamfind/sdk/plugin_host_access.hpp"
+#include "operations/operations.hpp"
+#include "utils/error.hpp"
 
 #include <cstring>
 #include <string>
@@ -11,24 +12,6 @@ namespace streamfind::raman::dynamic_detail {
 
 using Json = nlohmann::json;
 
-void report_error(const streamfind_plugin_host_api *host, const std::string &message) {
-    if (host != nullptr && host->report_error != nullptr)
-        host->report_error(message.data(), static_cast<uint32_t>(message.size()), host->user_data);
-}
-
-Json operation(sdk::PluginProjectAccess &, const Json &parameters) {
-    return Json{{"status", "ok"}, {"plugin", "raman"},
-                {"operation", parameters.at("capability_id")}};
-}
-
-const sdk::CapabilityRegistry &capabilities() {
-    static const sdk::CapabilityRegistry registry{
-        {"raman.add_analyses", sdk::CapabilityKind::Operation, &operation},
-        {"raman.remove_analyses", sdk::CapabilityKind::Operation, &operation},
-    };
-    return registry;
-}
-
 streamfind_plugin_status invoke(
     void *execution_context, const char *request_json, uint32_t request_size,
     streamfind_plugin_buffer *result_json, void *user_data) {
@@ -38,7 +21,7 @@ streamfind_plugin_status invoke(
     try {
         const auto request = Json::parse(std::string(request_json, request_size));
         const auto capability = request.at("capability_id").get<std::string>();
-        const auto *binding = capabilities().find(capability);
+        const auto *binding = operations::capabilities().find(capability);
         if (binding == nullptr)
             return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
         sdk::PluginHostAccess access(*host, execution_context);
@@ -51,7 +34,7 @@ streamfind_plugin_status invoke(
         result_json->size = static_cast<uint32_t>(response.size());
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::exception &error) {
-        report_error(host, error.what());
+        utils::report_error(host, error.what());
         return STREAMFIND_PLUGIN_ERROR;
     }
 }

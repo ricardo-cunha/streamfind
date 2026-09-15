@@ -67,15 +67,6 @@ add_test(NAME streamfind_dynamic_plugin_package_contract COMMAND streamfind_dyna
 set_tests_properties(streamfind_dynamic_plugin_package_contract PROPERTIES LABELS "framework")
 
 
-add_executable(streamfind_project_conformance_contract unit/project_conformance_contract.cpp)
-target_link_libraries(streamfind_project_conformance_contract PRIVATE streamfind::cpp_core)
-target_compile_definitions(streamfind_project_conformance_contract PRIVATE
-    STREAMFIND_CONFORMANCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/project_conformance.json"
-    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/domain_schema_manifest.json"
-)
-add_test(NAME streamfind_project_conformance_contract COMMAND streamfind_project_conformance_contract)
-set_tests_properties(streamfind_project_conformance_contract PROPERTIES LABELS "framework")
-
 add_executable(streamfind_project_table_store_manifest_contract unit/project_table_store_manifest_contract.cpp)
 target_link_libraries(streamfind_project_table_store_manifest_contract PRIVATE streamfind::cpp_core)
 target_compile_definitions(streamfind_project_table_store_manifest_contract PRIVATE
@@ -89,9 +80,9 @@ set_tests_properties(streamfind_project_table_store_manifest_contract PROPERTIES
 add_executable(streamfind_execution_lifecycle_contract unit/execution_lifecycle_contract.cpp)
 target_link_libraries(streamfind_execution_lifecycle_contract PRIVATE streamfind::cpp_core)
 target_compile_definitions(streamfind_execution_lifecycle_contract PRIVATE
-    STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/multiproject.json"
-    STREAMFIND_EXECUTION_LIFECYCLE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/execution/execution_lifecycle.json"
-    STREAMFIND_MCP_EXECUTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/mcp/execution_contract.json"
+    STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/multiproject.json"
+    STREAMFIND_EXECUTION_LIFECYCLE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/execution/execution_lifecycle.json"
+    STREAMFIND_MCP_EXECUTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/mcp/execution_contract.json"
 )
 add_test(NAME streamfind_execution_lifecycle_contract COMMAND streamfind_execution_lifecycle_contract)
 set_tests_properties(streamfind_execution_lifecycle_contract PROPERTIES LABELS "framework")
@@ -100,8 +91,8 @@ add_executable(streamfind_project_isolation_contract unit/project_isolation_cont
 target_link_libraries(streamfind_project_isolation_contract PRIVATE streamfind::cpp_core)
 target_compile_definitions(streamfind_project_isolation_contract PRIVATE
     STREAMFIND_CATALOGUE_PATH="${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
-    STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/multiproject.json"
-    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/project/domain_schema_manifest.json"
+    STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/multiproject.json"
+    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/domain_schema_manifest.json"
 )
 add_test(NAME streamfind_project_isolation_contract COMMAND streamfind_project_isolation_contract)
 set_tests_properties(streamfind_project_isolation_contract PROPERTIES

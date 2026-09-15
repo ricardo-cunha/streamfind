@@ -55,13 +55,13 @@ fn assert_request(requests: &Value, name: &str, required: &[&str], optional: &[&
 #[test]
 fn shared_execution_contract_is_consistent() {
     let multiproject = fixture(include_str!(
-        "../../../../tests/fixtures/project/multiproject.json"
+        "../../../../cpp/tests/fixtures/project/multiproject.json"
     ));
     let lifecycle = fixture(include_str!(
-        "../../../../tests/fixtures/execution/execution_lifecycle.json"
+        "../../../../cpp/tests/fixtures/execution/execution_lifecycle.json"
     ));
     let mcp = fixture(include_str!(
-        "../../../../tests/fixtures/mcp/execution_contract.json"
+        "../../../../cpp/tests/fixtures/mcp/execution_contract.json"
     ));
 
     assert_eq!(multiproject["fixture_id"], "separate_project_files");
