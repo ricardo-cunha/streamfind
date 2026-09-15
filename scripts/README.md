@@ -10,8 +10,8 @@ and Log Locations"): build trees in `tmp/build/`, release packages in
 
 | Task | Command |
 | --- | --- |
-| Build the C++ backend | `scripts\build\cpp\build-cpp.cmd` |
-| C++ backend + run CTest | `scripts\build\cpp\build-cpp.cmd -Tests` |
+| Build the C++ backend | `powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1` |
+| C++ backend + run CTest | `powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1 -Tests` |
 | Run C++ CTest only | `scripts\build\cpp\test-cpp.cmd` |
 | Build the alternative Rust backend | `scripts/build/rust/build-rust.cmd` |
 | Build Rust and run its tests | `scripts/build/rust/build-rust.cmd -Tests` |
@@ -90,7 +90,8 @@ install method.
 
 ## What each script does
 
-- `scripts/build/cpp/build-cpp.ps1` — configures with Ninja into `tmp/build/core-default`
+- `scripts/build/cpp/build-cpp.ps1` — required Windows C++ entry point; initializes
+  the MSVC environment, configures with Ninja into `tmp/build/core-default`
   (`STREAMFIND_BUILD_TESTS=ON`, `STREAMFIND_BUILD_SHARED=OFF`), builds, and
   optionally runs CTest. Flags: `-Clean`, `-Tests`, `-Target <name>`,
   `-Config <Debug|Release>`.

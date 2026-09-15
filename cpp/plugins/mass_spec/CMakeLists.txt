@@ -3,60 +3,77 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/zstd.cmake)
 streamfind_add_openbabel(${CMAKE_CURRENT_SOURCE_DIR}/../../vendor)
 streamfind_mass_spec_configure_zstd(${CMAKE_CURRENT_SOURCE_DIR}/../../vendor)
 
-add_library(streamfind_cpp_mass_spec ${STREAMFIND_CPP_LIBRARY_TYPE}
-    src/register.cpp
-    src/tools_resolver.cpp
-    src/reader.cpp
-    src/reader_agilent.cpp
-    src/reader_agilent_ims.cpp
-    src/reader_agilent_chemstation.cpp
-    src/reader_bruker.cpp
-    src/reader_sciex.cpp
-    src/reader_thermo.cpp
-    src/mass_spec.cpp
-    src/chromatograms_processing_methods.cpp
-    src/nta_processing_methods.cpp
-    src/nta_deconvolution.cpp
-    src/nta.cpp
-    src/nta_annotation.cpp
-    src/nta_componentization.cpp
-    src/nta_blank_subtraction.cpp
-    src/nta_filters.cpp
-    src/nta_gap_filling.cpp
-    src/nta_alignment.cpp
-    src/nta_suspect_screening.cpp
-    src/nta_assign_transformation_products.cpp
-    src/nta_metfrag_runner.cpp
-    src/nta_correction_algorithms.cpp
-    src/openbabel_adapter.cpp
-    src/openbabel_c_api.cpp
+add_library(streamfind_mass_spec_plugin SHARED
+    src/utils/tools_resolver.cpp
+    src/readers/reader.cpp
+    src/readers/reader_agilent.cpp
+    src/readers/reader_agilent_ims.cpp
+    src/readers/reader_agilent_chemstation.cpp
+    src/readers/reader_bruker.cpp
+    src/readers/reader_sciex.cpp
+    src/readers/reader_thermo.cpp
+    src/operations/base.cpp
+    src/operations/nta.cpp
+    src/operations/chromatograms.cpp
+    src/methods/chromatograms_processing_methods.cpp
+
+    src/methods/nta_processing_methods.cpp
+
+    src/methods/nta_deconvolution.cpp
+    src/utils/nta.cpp
+    src/methods/nta_annotation.cpp
+    src/methods/nta_componentization.cpp
+    src/methods/nta_blank_subtraction.cpp
+    src/methods/nta_filters.cpp
+    src/methods/nta_gap_filling.cpp
+    src/methods/nta_alignment.cpp
+    src/methods/nta_suspect_screening.cpp
+    src/methods/nta_assign_transformation_products.cpp
+    src/methods/nta_metfrag_runner.cpp
+    src/methods/nta_correction_algorithms.cpp
+    src/utils/openbabel_adapter.cpp
+    src/utils/openbabel_c_api.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"
-)
-streamfind_configure_cpp_library(streamfind_cpp_mass_spec mass_spec
+    src/plugin_entrypoint.cpp)
+streamfind_configure_cpp_library(streamfind_mass_spec_plugin mass_spec
     BUILD_DEFINE STREAMFIND_DOMAIN_BUILDING_SHARED
     USING_DEFINE STREAMFIND_DOMAIN_USING_SHARED)
-streamfind_add_semantic_catalogue(streamfind_cpp_mass_spec mass_spec
+streamfind_add_semantic_catalogue(streamfind_mass_spec_plugin mass_spec
     "${CMAKE_CURRENT_SOURCE_DIR}/semantic")
-target_include_directories(streamfind_cpp_mass_spec PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+target_include_directories(streamfind_mass_spec_plugin PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
-target_link_libraries(streamfind_cpp_mass_spec PUBLIC streamfind::cpp_sdk streamfind::zstd streamfind::openbabel)
+target_link_libraries(streamfind_mass_spec_plugin PRIVATE streamfind::cpp_sdk streamfind::zstd streamfind::openbabel)
 if(UNIX)
-    target_link_options(streamfind_cpp_mass_spec INTERFACE
+    target_link_options(streamfind_mass_spec_plugin PRIVATE
         "-Wl,--whole-archive"
         "$<TARGET_FILE:streamfind_openbabel>"
         "-Wl,--no-whole-archive"
     )
 endif()
 
-target_include_directories(streamfind_cpp_mass_spec PRIVATE
+set_target_properties(streamfind_mass_spec_plugin PROPERTIES OUTPUT_NAME "streamfind_mass_spec")
+add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/plugin.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
+        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/catalogue.duckdb")
+if(MSVC)
+    target_compile_definitions(streamfind_mass_spec_plugin PRIVATE
+        NOMINMAX
+        strcasecmp=_stricmp
+        strncasecmp=_strnicmp)
+endif()
+
+target_include_directories(streamfind_mass_spec_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/pugixml-1.14/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/openbabel/openbabel-3-2-0/include"
 )
 if(MSVC)
-    target_compile_definitions(streamfind_cpp_mass_spec PRIVATE
+    target_compile_definitions(streamfind_mass_spec_plugin PRIVATE
         NOMINMAX
         strcasecmp=_stricmp
         strncasecmp=_strnicmp
@@ -70,6 +87,10 @@ install(
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
 )
+install(TARGETS streamfind_mass_spec_plugin
+    RUNTIME DESTINATION share/streamfind/plugins/mass_spec
+    LIBRARY DESTINATION share/streamfind/plugins/mass_spec
+    ARCHIVE DESTINATION lib)
 install(TARGETS libzstd_static
     EXPORT streamfind-cpp-targets
     ARCHIVE DESTINATION lib

@@ -11,11 +11,13 @@ adapters make it available to applications and AI agents.
                          │
           ┌──────────────┴──────────────┐
           ▼                             ▼
-       C++ backend                   Rust backend
-          │                             │
-          └──────────────┬──────────────┘
-                         ▼
-                   MCP over stdio
+   C++ core + plugins       Rust backend (preserved)
+          │                    development paused
+          ▼
+     C++ public API / MCP
+          │
+          ▼
+   Future React frontend
 ```
 
 ## Operations and workflow Methods
@@ -43,9 +45,31 @@ A typical application or agent follows this sequence:
 6. validate and execute the workflow;
 7. close the connected session.
 
-The C++ and Rust MCP servers return the same operation names and catalogue-
-derived schemas. Their implementations are independent and can be selected
-according to the host application.
+The C++ MCP server is the active application boundary. The Rust MCP server is a
+preserved implementation of the shared catalogue contract; Rust development is
+currently paused and it should not be treated as the target for new capabilities.
+
+The future React frontend will use the C++ public API and service boundary,
+including MCP or a later HTTP adapter. It will not access DuckDB files or plugin
+internals directly.
+
+## C++ plugin framework
+
+The C++ backend is divided into a generic host core, an SDK boundary, and domain
+plugins:
+
+- **Core** owns project handles, DuckDB connections, transactions, table
+  lifecycle, workflow execution, validation, caching, and audit state.
+- **SDK** defines the versioned generic plugin ABI, host callbacks, manifest
+  validation, and semantic catalogue integration.
+- **Plugins** own domain schemas, native readers, processing algorithms, and
+  catalogue-declared Operations and workflow Methods.
+
+Plugins are loaded from allowlisted packages. They receive an opaque,
+transaction-scoped host access context rather than `Project` or DuckDB handles,
+and they use generic table/schema/batch callbacks supplied by the core. This
+keeps persistence policy and transaction control in the host while allowing
+domain capabilities to be deployed selectively.
 
 ## Data and runtime assets
 

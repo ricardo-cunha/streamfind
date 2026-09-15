@@ -11,6 +11,7 @@ function(streamfind_configure_cpp_library target export_name)
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
         EXPORT_NAME ${export_name}
+        POSITION_INDEPENDENT_CODE ON
     )
     target_compile_features(${target} PUBLIC cxx_std_20)
 

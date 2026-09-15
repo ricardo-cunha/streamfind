@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 
 function Start-StreamfindMcp {
     param(
@@ -137,7 +138,7 @@ function Get-StreamfindDataRoot {
         }
         return $override
     }
-    $dataRoot = Join-Path (Split-Path $RepositoryRoot -Parent) 'streamfind.data\data'
+    $dataRoot = Join-Path (Join-Path (Split-Path $RepositoryRoot -Parent) 'streamfind.data') 'data'
     if (-not (Test-Path $dataRoot -PathType Container)) {
         throw "Sibling streamfind.data repository not found at $dataRoot"
     }
@@ -170,7 +171,9 @@ function Get-BackendMcpExecutable {
         [Parameter(Mandatory = $true)][ValidateSet('Cpp', 'Rust')][string]$Backend
     )
     if ($Backend -eq 'Cpp') {
-        return (Join-Path $RepositoryRoot 'tmp\build\core-default\streamfind_mcp.exe')
+        $name = if ($isWindowsPlatform) { 'streamfind_mcp.exe' } else { 'streamfind_mcp' }
+        $buildDir = if ($isWindowsPlatform) { 'tmp/build/core-default' } else { 'tmp/build/linux-cpp' }
+        return (Join-Path (Join-Path $RepositoryRoot $buildDir) $name)
     }
     return (Join-Path $RepositoryRoot 'tmp\build\rust-target\release\streamfind-rust-mcp.exe')
 }

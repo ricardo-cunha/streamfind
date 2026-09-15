@@ -1,17 +1,33 @@
 #pragma once
 
+#include <filesystem>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "streamfind/project.hpp"
+#include "streamfind/sdk/dynamic_plugin_manager.hpp"
 
 namespace streamfind::static_plugins {
 
-/** @brief Compose all statically linked plugins against one catalogue snapshot. */
-void register_all(const Json &entries, MethodRegistry &methods, OperationRegistry &operations);
+class DynamicPluginRuntime {
+public:
+    DynamicPluginRuntime() = default;
+    DynamicPluginRuntime(const DynamicPluginRuntime &) = delete;
+    DynamicPluginRuntime &operator=(const DynamicPluginRuntime &) = delete;
 
-/** @brief Load the core/plugin catalogues and compose all shipped plugins. */
-void load_and_register(const std::string &aggregate_path,
-                       MethodRegistry &methods,
-                       OperationRegistry &operations);
+    void load_and_register(const std::filesystem::path &configuration_path,
+                           MethodRegistry &methods,
+                           OperationRegistry &operations);
+
+private:
+    struct LoadedPlugin {
+        std::filesystem::path package_root;
+        sdk::DynamicPluginLoadResult plugin;
+        streamfind_plugin_host_api host{};
+        Json catalogue;
+    };
+    std::vector<std::unique_ptr<LoadedPlugin>> plugins_;
+};
 
 }  // namespace streamfind::static_plugins

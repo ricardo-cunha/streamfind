@@ -254,10 +254,14 @@ Json result_schema(const Graph &graph, const std::string &resource) {
     if (!properties.empty()) result["properties"] = properties;
     return result;
 }
-std::string module_id(const Graph &graph, const std::string &resource, const std::string &kind, const std::string &domain, const std::string &canonical) {
+std::string module_id(const Graph &graph, const std::string &resource, const std::string &, const std::string &domain, const std::string &) {
     const auto declared = value(graph, resource, std::string(sf) + "providedByModule");
-    if (!declared.empty()) { const auto name = local(declared); if (name == "baseModule") return "mass_spec.base"; if (name == "chromatogramsModule") return "mass_spec.chromatograms"; if (name == "ntaModule") return "mass_spec.nta"; return name; }
-    if (domain == "mass_spec") { if (canonical == "mass_spec.load_chromatograms" || canonical == "mass_spec.filter_chromatograms_retention_time") return "mass_spec.chromatograms"; return kind == "method" ? "mass_spec.nta" : "mass_spec.base"; }
+    if (!declared.empty()) {
+        const auto name = local(declared);
+        if (name == "baseModule") return domain + ".base";
+        if (name.ends_with("Module")) return domain + "." + name.substr(0, name.size() - 6);
+        return name;
+    }
     return domain + ".base";
 }
 

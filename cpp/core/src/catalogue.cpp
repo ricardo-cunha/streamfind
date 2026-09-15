@@ -28,6 +28,7 @@ namespace streamfind::catalogue {
 namespace detail {
 
 std::optional<std::string> runtime_path;
+std::optional<Json> runtime_document;
 void validate_catalogue_document(const Json &document, const char *name) {
     if (!document.is_object() || !document.contains("version") ||
         !document.at("version").is_number_integer() || document.at("version") != 2 ||
@@ -66,6 +67,9 @@ std::optional<std::string> binary_relative() {
 std::optional<std::string> binary_relative_share() {
     const auto candidate = executable_dir().parent_path() / "share" / "streamfind" / "catalogue.duckdb";
     if (std::filesystem::exists(candidate)) return candidate.string();
+    const auto core_candidate = executable_dir().parent_path() / "share" / "streamfind" /
+                                "core" / "catalogue.duckdb";
+    if (std::filesystem::exists(core_candidate)) return core_candidate.string();
     return std::nullopt;
 }
 
@@ -147,6 +151,22 @@ public:
         return output;
     }
 
+    Json document() const {
+        duckdb_result result{};
+        const char *sql = "SELECT table_name, domain, module_id, CAST(columns AS VARCHAR) FROM catalogue_tables ORDER BY table_name";
+        if (duckdb_query(connection_, sql, &result) == DuckDBError) {
+            const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
+            duckdb_destroy_result(&result);
+            throw Error(ErrorCode::DatabaseError, "catalogue: " + message);
+        }
+        Json table_list = Json::array();
+        for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
+            table_list.push_back(Json{{"table_name", text(result, 0, row)}, {"domain", text(result, 1, row)},
+                                      {"module_id", text(result, 2, row)}, {"columns", value(result, 3, row)}});
+        duckdb_destroy_result(&result);
+        return Json{{"version", 2}, {"entries", entries()}, {"tables", std::move(table_list)}};
+    }
+
 private:
     static bool is_null(duckdb_result &result, idx_t column, idx_t row) {
         return duckdb_value_is_null(&result, column, row) != 0;
@@ -204,6 +224,7 @@ private:
             Json method_schema = {{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}};
             if (parameters.is_array()) {
                 for (const auto &parameter : parameters) {
+                    if (!parameter.is_object()) continue;
                     const auto name = parameter.value("name", "");
                     if (name.empty()) continue;
                     method_schema["properties"][name] = parameter.value("schema", Json::object());
@@ -255,6 +276,13 @@ Json import_plugin_catalogue(const Json &base,
     }
 
     Json merged = base;
+    if (!merged.contains("tables") || !merged.at("tables").is_array())
+        merged["tables"] = Json::array();
+    std::set<std::string> table_names;
+    for (const auto &table : merged.at("tables")) {
+        if (!table.is_object()) throw std::invalid_argument("catalogue: base table is not an object");
+        table_names.insert(table.value("table_name", ""));
+    }
     for (const auto &entry : plugin.at("entries")) {
         if (!entry.is_object() || !entry.contains("canonical_id") ||
             !entry.at("canonical_id").is_string() ||
@@ -270,6 +298,17 @@ Json import_plugin_catalogue(const Json &base,
             throw std::invalid_argument("catalogue: duplicate canonical ID " + id);
         merged["entries"].push_back(entry);
     }
+    if (plugin.contains("tables") && plugin.at("tables").is_array()) {
+        for (const auto &table : plugin.at("tables")) {
+            if (!table.is_object()) throw std::invalid_argument("catalogue: plugin table is not an object");
+            if (table.value("domain", "") != expected_domain ||
+                !modules.contains(table.value("module_id", "")))
+                throw std::invalid_argument("catalogue: plugin table has wrong ownership");
+            if (!table_names.insert(table.value("table_name", "")).second)
+                throw std::invalid_argument("catalogue: duplicate table " + table.value("table_name", ""));
+            merged["tables"].push_back(table);
+        }
+    }
     return merged;
 }
 
@@ -282,7 +321,35 @@ std::optional<std::string> find_path() {
     return std::nullopt;
 }
 
+std::optional<std::string> find_core_path() {
+    if (const char *value = std::getenv("STREAMFIND_CORE_CATALOGUE"); value && *value)
+        return std::string(value);
+    const auto executable = detail::executable_dir();
+    const std::vector<std::filesystem::path> candidates = {
+        executable / "core" / "catalogue.duckdb",
+        executable / "semantic_catalogue" / "core" / "catalogue.duckdb",
+        executable.parent_path() / "semantic_catalogue" / "core" / "catalogue.duckdb",
+        executable.parent_path() / "share" / "streamfind" / "core" / "catalogue.duckdb",
+        executable.parent_path() / "share" / "streamfind" / "catalogue.duckdb"};
+    for (const auto &candidate : candidates)
+        if (std::filesystem::exists(candidate)) return candidate.string();
+    return std::nullopt;
+}
+
 void set_runtime_path(const std::string &path) { detail::runtime_path = path; }
+
+void set_runtime_document(Json document) {
+    detail::validate_catalogue_document(document, "runtime");
+    detail::runtime_document = std::move(document);
+}
+
+std::optional<Json> load_document(const std::string &path) {
+    try {
+        return detail::CatalogueReader(path).document();
+    } catch (const std::exception &) {
+        return std::nullopt;
+    }
+}
 
 namespace {
 
@@ -295,6 +362,10 @@ struct Catalogue {
 const Catalogue &catalogue() {
     static const Catalogue value = [] {
         Catalogue result;
+        if (detail::runtime_document) {
+            result.entries = detail::runtime_document->at("entries");
+            return result;
+        }
         const auto path = find_path();
         if (!path) {
             result.error =
@@ -327,6 +398,15 @@ std::optional<Json> load(const std::optional<std::string> &path) {
 }
 
 std::optional<Json> table_manifest_json(const std::string &domain, const std::string &module_id) {
+    if (detail::runtime_document) {
+        Json output = Json::array();
+        if (detail::runtime_document->contains("tables"))
+            for (const auto &table : detail::runtime_document->at("tables"))
+                if (table.value("domain", "") == domain &&
+                    (module_id.empty() || table.value("module_id", "") == module_id))
+                    output.push_back(table);
+        return output;
+    }
     const auto path = find_path();
     if (!path) return std::nullopt;
     try {

@@ -7,13 +7,16 @@ param(
     [ValidateRange(0, 1000)]
     [int]$MaxAnalyses = 0,
     [string]$StopAfter = '',
-    [switch]$KeepProject
+    [switch]$KeepProject,
+    [string]$Executable = '',
+    [string]$Catalogue = ''
 )
 
 . (Join-Path $PSScriptRoot '..\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $dataRoot = Get-StreamfindDataRoot $repoRoot
-$workflowDataRoot = Join-Path $dataRoot 'mass_spec\wastewater'
+$workflowDataRoot = Join-Path (Join-Path $dataRoot 'mass_spec') 'wastewater'
 $workflowFiles = @(Get-ChildItem -LiteralPath $workflowDataRoot -File -Filter '*.mzML' | Sort-Object Name)
 if ($workflowFiles.Count -eq 0) {
     throw "No wastewater mzML files found under $workflowDataRoot"
@@ -23,9 +26,8 @@ if ($MaxAnalyses -gt 0 -and $MaxAnalyses -lt $workflowFiles.Count) {
 }
 $analysisNames = @($workflowFiles | ForEach-Object { $_.BaseName })
 
-$devDuckdb = Join-Path $repoRoot 'bindings\r\dev\dev_duckdb'
-$internalStandardsPath = Join-Path $devDuckdb 'internal_standards_v3.csv'
-$suspectsPath = Join-Path $devDuckdb 'suspects_with_ms2_template.csv'
+$internalStandardsPath = Join-Path $workflowDataRoot 'internal_standards.csv'
+$suspectsPath = Join-Path $workflowDataRoot 'suspects.csv'
 foreach ($path in @($internalStandardsPath, $suspectsPath)) {
     if (-not (Test-Path $path -PathType Leaf)) {
         throw "Required NTA target table not found: $path"
@@ -105,7 +107,11 @@ $blankNames = @($analysisNames | ForEach-Object {
 
 if (-not $SkipBuild) {
     if ($Backend -eq 'Cpp') {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\build\cpp\build-cpp.ps1') -Clean -Config Release
+        if ($isWindowsPlatform) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\build\cpp\build-cpp.ps1') -Clean -Config Release
+        } else {
+            & bash (Join-Path $repoRoot 'scripts/build/cpp/build-cpp-linux.sh')
+        }
         if ($LASTEXITCODE -ne 0) { throw "C++ build failed ($LASTEXITCODE)" }
     } else {
         $buildExitCode = Invoke-StreamfindRustBuild $repoRoot
@@ -113,15 +119,22 @@ if (-not $SkipBuild) {
     }
 }
 
-$executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot -Backend $Backend
-$catalogue = Join-Path $repoRoot 'tmp\build\core-default\semantic_catalogue\catalogue.duckdb'
-$database = Join-Path $repoRoot "tmp\projects\streamfind-$($Backend.ToLowerInvariant())-nta-script.duckdb"
+$executable = if ($Executable) { (Resolve-Path $Executable).Path } else {
+    Get-BackendMcpExecutable -RepositoryRoot $repoRoot -Backend $Backend
+}
+$dynamicRuntime = Test-Path (Join-Path (Split-Path $executable) 'streamfind.json')
+$catalogue = if ($Catalogue) { (Resolve-Path $Catalogue).Path } else {
+    $buildDir = if ($isWindowsPlatform) { 'tmp\build\core-default' } else { 'tmp/build/linux-cpp' }
+    Join-Path $repoRoot (Join-Path $buildDir 'semantic_catalogue/catalogue.duckdb')
+}
+$database = Join-Path $repoRoot (Join-Path (Join-Path 'tmp' 'projects') "streamfind-$($Backend.ToLowerInvariant())-nta-script.duckdb")
 $projectId = "nta-$($Backend.ToLowerInvariant())"
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
 if ($Backend -eq 'Cpp') {
-    $env:PATH = (Join-Path $repoRoot 'tmp\build\core-default\tests') + ';' + $env:PATH
+    $testDir = if ($isWindowsPlatform) { 'tmp/build/core-default/tests' } else { 'tmp/build/linux-cpp/tests' }
+    $env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
 }
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
@@ -157,6 +170,24 @@ function Invoke-NtaMethodWithDiagnostics {
     }
 }
 
+function Assert-NtaWorkflowResults {
+    param([Parameter(Mandatory = $true)]$BaseArguments)
+
+    $python = if (-not $isWindowsPlatform -and (Test-Path (Join-Path $repoRoot '.venv/bin/python'))) {
+                (Join-Path $repoRoot '.venv/bin/python')
+    } elseif (Test-Path (Join-Path $repoRoot '.venv\Scripts\python.exe')) {
+        (Join-Path $repoRoot '.venv\Scripts\python.exe')
+    } elseif (Test-Path         (Join-Path $repoRoot '.venv/bin/python')) {
+                (Join-Path $repoRoot '.venv/bin/python')
+    } else {
+        throw 'Repository-local Python environment not found; create .venv and install duckdb.'
+    }
+    & $python (Join-Path $repoRoot 'scripts\dev\cpp\verify-nta-project.py') $database --expected-analyses $analysisNames.Count --min-similarity 0.7
+    if ($LASTEXITCODE -ne 0) { throw "Persisted NTA verification failed ($LASTEXITCODE)" }
+
+    Write-Host '[verify] persisted NTA result checks passed'
+}
+
 try {
     Initialize-Mcp $process | Out-Null
     Write-Host ("NTA workflow backend={0}; analyses={1}; internal_standards={2}; suspects={3}" -f $Backend, $analysisNames.Count, $internalTargets.Count, $suspectTargets.Count)
@@ -165,29 +196,44 @@ try {
         database_path = $database
         domain = 'mass_spec'
     } | Out-Null
+    $analysisRequests = for ($index = 0; $index -lt $workflowFiles.Count; $index++) {
+        @{
+            path = $workflowFiles[$index].FullName
+            replicate_name = $replicateNames[$index]
+            blank_name = $blankNames[$index]
+        }
+    }
     $added = Invoke-McpTool $process 3 'mass_spec.add_analyses' @{
         database_path = $database
-        analyses = @($workflowFiles | ForEach-Object { @{ path = $_.FullName } })
+        analyses = @($analysisRequests)
     }
-    if ([int]$added.row_count -ne $workflowFiles.Count) {
-        throw "Expected $($workflowFiles.Count) imported analyses, received $($added.row_count)"
+    $addedCount = if ($added.PSObject.Properties.Name -contains 'row_count') {
+        [int]$added.row_count
+    } else {
+        @($added).Count
     }
-    Write-Host "[setup] imported $($added.row_count) wastewater analyses"
+    if ($addedCount -ne $workflowFiles.Count) {
+        throw "Expected $($workflowFiles.Count) imported analyses, received $addedCount"
+    }
+    Write-Host "[setup] imported $addedCount wastewater analyses"
 
-    Invoke-McpTool $process 4 'mass_spec.set_replicate_names' @{
-        database_path = $database
-        replicate_names = $replicateNames
-    } | Out-Null
-    Invoke-McpTool $process 5 'mass_spec.set_blank_names' @{
-        database_path = $database
-        blank_names = $blankNames
-    } | Out-Null
-    # The current C++ backend installs module schemas through domain operations.
-    Invoke-McpTool $process 5 'mass_spec.get_features' @{
-        database_path = $database
-        analysis_names = $analysisNames
-    } | Out-Null
-    Write-Host '[setup] replicate and blank labels assigned'
+    if (-not $dynamicRuntime) {
+        Invoke-McpTool $process 4 'mass_spec.set_replicate_names' @{
+            database_path = $database
+            replicate_names = $replicateNames
+        } | Out-Null
+        Invoke-McpTool $process 5 'mass_spec.set_blank_names' @{
+            database_path = $database
+            blank_names = $blankNames
+        } | Out-Null
+        Invoke-McpTool $process 5 'mass_spec.get_features' @{
+            database_path = $database
+            analysis_names = $analysisNames
+        } | Out-Null
+        Write-Host '[setup] replicate and blank labels assigned'
+    } else {
+        Write-Host '[setup] dynamic runtime: replicate and blank labels supplied during import'
+    }
 
     if ($RunPipeline) {
         $steps = [System.Collections.Generic.List[object]]::new()
@@ -227,7 +273,6 @@ try {
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.suspect_screening'; DiagnosticTool = 'mass_spec.get_suspects'; Parameters = @{
             analysis_names = $analysisNames; targets = $suspectTargets; ppm = 5.0; sec = 10.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
         } })
-
         $workflow = [ordered]@{
             name = 'scripts-dev-nta'
             version = 1
@@ -247,8 +292,12 @@ try {
         Write-Host "[setup] planned $plannedCount NTA workflow methods"
         $execution = Invoke-McpTool $process 10 'run_workflow' $baseArguments
         Write-Host ("[workflow] completed: " + ($execution | ConvertTo-Json -Compress -Depth 8))
+        if (-not $StopAfter) {
+            Assert-NtaWorkflowResults $baseArguments
+        }
         $id = 100
         foreach ($step in @($steps | Select-Object -First $plannedCount)) {
+            if ($dynamicRuntime) { $id++; continue }
             $diagnosticArguments = @{}
             foreach ($entry in $baseArguments.GetEnumerator()) { $diagnosticArguments[$entry.Key] = $entry.Value }
             $diagnosticArguments.analysis_names = $analysisNames

@@ -1,23 +1,25 @@
+#include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
 #include "streamfind/catalogue.hpp"
 #include "streamfind/mcp.hpp"
 #include "static_plugin_composition.hpp"
 
-int main() {
-    // The runtime knowledge base is a required installation artifact; refuse
-    // to start when it cannot be located via the search chain.
-    if (!streamfind::catalogue::load()) {
-        std::cerr << "streamfind-mcp: fatal: " << streamfind::catalogue::load_error() << '\n';
-        return 2;
-    }
+int main(int argc, char **argv) {
     std::string line;
     streamfind::MethodRegistry registry;
     streamfind::OperationRegistry operations;
+    std::unique_ptr<streamfind::static_plugins::DynamicPluginRuntime> dynamic_plugins;
     try {
-        const auto aggregate_path = streamfind::catalogue::find_path();
-        if (!aggregate_path) throw std::runtime_error("aggregate catalogue path is unavailable");
-        streamfind::static_plugins::load_and_register(*aggregate_path, registry, operations);
+        const auto executable_path = argc > 0
+                                         ? std::filesystem::absolute(argv[0])
+                                         : std::filesystem::current_path() / "streamfind_mcp";
+        const auto configuration_path = executable_path.parent_path() / "streamfind.json";
+        if (!std::filesystem::exists(configuration_path))
+            throw std::runtime_error("streamfind.json is required for dynamic plugin loading");
+        dynamic_plugins = std::make_unique<streamfind::static_plugins::DynamicPluginRuntime>();
+        dynamic_plugins->load_and_register(configuration_path, registry, operations);
     } catch (const std::exception &error) {
         std::cerr << "streamfind-mcp: registration failed: " << error.what() << '\n';
         return 3;

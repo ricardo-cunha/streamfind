@@ -63,7 +63,7 @@ sfcore:MethodShape
     sh:targetClass sf:Method ;
     sh:property [ sh:path sf:methodId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:cacheable ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
-    sh:property [ sh:path sf:requiredMethods ; sh:minCount 1 ; sh:maxCount 1 ; sh:class rdf:List ] ;
+    sh:property [ sh:path sf:requiredMethods ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] ;
     sh:property [ sh:path sf:singleOccurrence ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:hasParameter ; sh:minCount 1 ; sh:class sf:Parameter ] ;

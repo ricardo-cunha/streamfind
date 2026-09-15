@@ -26,8 +26,15 @@ for domain in mass_spec raman sensors; do
     tar -xOf "$archive" "$manifest_path" > "$manifest_file"
     grep -q "\"plugin_id\": \"$domain\"" "$manifest_file"
     grep -q '"version": "0.2.0"' "$manifest_file"
-    grep -q '"static_composition": true' "$manifest_file"
+    grep -q '"abi_version": { "major": 1, "minor": 1 }' "$manifest_file"
+    grep -q '"static_composition": false' "$manifest_file"
     grep -q '"semantic_catalogue": "catalogue.duckdb"' "$manifest_file"
+    if [[ "$domain" == mass_spec ]]; then
+        library_name='libstreamfind_mass_spec.so'
+    else
+        library_name="libstreamfind_$domain.so"
+    fi
+    grep -q '"linux-x86_64": "'"$library_name"'"' "$manifest_file"
     rm -f "$manifest_file"
 done
 rm -f "$listing"

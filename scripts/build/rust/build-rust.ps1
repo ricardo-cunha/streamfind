@@ -31,7 +31,7 @@ if (-not $CppCatalogue) {
     $CppCatalogue = Join-Path $Script:TMP_BUILD 'core-default\semantic_catalogue\catalogue.duckdb'
 }
 if (-not (Test-Path $CppCatalogue -PathType Leaf)) {
-    throw "C++ catalogue not found at $CppCatalogue - build the C++ backend first with scripts\build\cpp\build-cpp.cmd."
+    throw "C++ catalogue not found at $CppCatalogue - build the C++ backend first with scripts\build\cpp\build-cpp.ps1."
 }
 $env:STREAMFIND_CATALOGUE = (Resolve-Path $CppCatalogue).Path
 Write-Log "Conformance catalogue: $env:STREAMFIND_CATALOGUE"

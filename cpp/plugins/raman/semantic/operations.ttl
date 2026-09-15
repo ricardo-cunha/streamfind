@@ -10,7 +10,9 @@ sfram:ramanAddAnalyses
     sf:mutatesProject false ;
     skos:prefLabel "Add Raman analyses" ;
     skos:definition "Add Raman analysis files to a project." ;
-    sf:hasParameter sfcore:analysesParameter ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysesParameter ;
     sf:extensions "asc,sif" ;
     sf:returns sfcore:operationStatusResult .
 
@@ -21,5 +23,7 @@ sfram:ramanRemoveAnalyses
     sf:mutatesProject false ;
     skos:prefLabel "Remove Raman analyses" ;
     skos:definition "Remove Raman analysis files from a project." ;
-    sf:hasParameter sfcore:analysisNamesParameter ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter ;
     sf:returns sfcore:operationStatusResult .

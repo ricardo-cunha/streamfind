@@ -48,6 +48,7 @@ $configureArgs = @(
     '-Wno-dev',
     "-DCMAKE_MAKE_PROGRAM=$ninja",
     "-DCMAKE_BUILD_TYPE=$Config",
+    '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
     '-DSTREAMFIND_BUILD_TESTS=ON',
     '-DSTREAMFIND_BUILD_SHARED=OFF',
     "-B $buildDir", "-S $srcDir"

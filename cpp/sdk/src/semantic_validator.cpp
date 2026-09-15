@@ -59,10 +59,6 @@ std::optional<std::filesystem::path> find_java() {
     return std::nullopt;
 }
 
-std::string quote_validator_path(const std::filesystem::path &path) {
-    return path.generic_string();
-}
-
 #ifdef _WIN32
 std::wstring widen(const std::string &value) {
     if (value.empty()) return {};
@@ -155,7 +151,6 @@ SemanticValidationResult validate_semantics_with_jena(const SemanticResourceSet 
 
     const auto &executable = *java;
     std::vector<std::string> arguments = {
-        "-Dlog4j.configurationFile=" + (jena_home / "log4j2.properties").generic_string(),
         "-cp", (jena_home / "lib" / "*").generic_string(), "shacl.shacl", "validate", "--text", "--shapes", shapes.generic_string()};
     for (const auto &file : semantic_files(resources.core_directory)) {
         if (file.filename() == "shapes.ttl") continue;

@@ -1,6 +1,6 @@
 # C++ API
 
-The C++ backend provides a native project API and a C++ MCP server. The current
+The C++ backend provides a native project API, a dynamic plugin framework, and a C++ MCP server. The current
 Windows x64 and Linux x86_64 packages are listed on [Releases](../releases.md).
 
 !!! note "Compatibility"
@@ -18,6 +18,19 @@ The C++ package includes:
 - `share/streamfind/catalogue.duckdb`.
 
 The catalogue is required by the MCP server and must remain with the package.
+
+## Plugin framework
+
+The C++ host owns project persistence, DuckDB connections, transactions, schema
+lifecycle, workflow execution, validation, cache, and audit state. The SDK
+defines the generic versioned plugin ABI and host callbacks. Domain plugins own
+their catalogues, schemas, native readers, algorithms, Operations, and workflow
+Methods.
+
+Dynamic plugins receive an opaque transaction-scoped host access context. They do
+not receive `streamfind::Project` or DuckDB handles, and they do not create
+project tables outside the host lifecycle. This is the active extension boundary
+for new C++ capabilities.
 
 ## Project API
 
@@ -51,5 +64,7 @@ Domains are assigned when a project is created and are immutable afterward.
 The [C++ MCP quickstart](../quickstart/cpp-mcp.md) documents the stdio server
 and the stateless Operation/workflow Method distinction.
 
-The C++ and Rust MCP servers use the same semantic operation names and input
-schemas. They remain separate native implementations.
+The Rust MCP server is a preserved implementation of the same semantic operation
+names and input schemas, but Rust development is currently paused. New
+capabilities target the C++ backend first. A future React frontend will consume
+this C++ public boundary and will not access DuckDB or plugin internals directly.

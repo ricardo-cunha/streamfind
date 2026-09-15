@@ -58,9 +58,13 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         if ($manifest.version -ne $env:STREAMFIND_PACKAGE_VERSION -and $env:STREAMFIND_PACKAGE_VERSION) {
             throw "Plugin manifest version mismatch: $manifestPath"
         }
-        if (-not $manifest.static_composition) { throw "Plugin manifest must declare static_composition=true: $manifestPath" }
+        if ($manifest.static_composition) { throw "Plugin manifest must declare static_composition=false: $manifestPath" }
+        if ($manifest.abi_version.major -ne 1) { throw "Plugin manifest ABI major mismatch: $manifestPath" }
+        if ($manifest.abi_version.minor -lt 0) { throw "Plugin manifest ABI minor is invalid: $manifestPath" }
         if ($manifest.semantic_catalogue -ne 'catalogue.duckdb') { throw "Plugin manifest catalogue mismatch: $manifestPath" }
-        if (-not $manifest.library) { throw "Plugin manifest library is missing: $manifestPath" }
+        if (-not $manifest.library.'windows-x86_64') {
+            throw "Plugin manifest Windows library is missing: $manifestPath"
+        }
     }
 }
 

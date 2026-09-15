@@ -4,9 +4,10 @@
   <img src="docs\assets\streamfind.png" width="70%" />
 </p>
 
-streamfind is a DuckDB-backed framework for analytical data processing. It
-provides native C++ and Rust backends, mass-spectrometry data access, a shared
-semantic catalogue, and MCP servers for applications and AI agents.
+streamfind is a DuckDB-backed framework for analytical data processing. Its
+active native backend is C++, with mass-spectrometry data access, a shared
+semantic catalogue, a dynamic plugin framework, and MCP servers for applications
+and AI agents. A Rust backend is preserved from an earlier development phase.
 
 ## Start here
 
@@ -22,14 +23,34 @@ semantic catalogue, and MCP servers for applications and AI agents.
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
 | C++ backend | Preview packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
-| Rust backend | Preview packages for Windows x64 and Linux x86_64 | Native Rust applications, CLI use, and Rust MCP clients |
-| MCP | Included with both native backends | Applications and AI agents using JSON-RPC over stdio |
+| Rust backend | Preserved preview backend; development is currently paused | Existing Rust experiments and compatibility work |
+| MCP | Included with the native backends | Applications and AI agents using JSON-RPC over stdio |
 | R package | Preserved and functional | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path yet |
 | Cogniflow integration | Separate future path | Not included in native packages |
 
 The native C++ and Rust project version is maintained in the Rust workspace
 manifest. See [Releases](docs/releases.md) for the latest downloadable assets.
+
+## Direction of development
+
+The C++ implementation is the active development path. Its core owns project
+files, DuckDB transactions, workflow execution, schema lifecycle, and the
+generic host ABI. Domain plugins own their semantic catalogues, native readers,
+processing methods, and operations. Plugins are loaded dynamically and access
+project data only through the generic SDK host boundary; they do not own project
+connections or create persistence tables directly.
+
+The Rust backend remains in the repository as a stale, preserved development
+backend. It is not the target for new capability work while the C++ plugin
+framework and native domain implementations are being completed. The shared
+semantic catalogue remains the public compatibility reference.
+
+A React frontend is a future interface, not a released component. It is planned
+to consume the C++ backend through its public API and MCP/HTTP integration
+boundary rather than embedding domain logic or accessing DuckDB directly. The
+frontend will be added after the C++ backend contract and plugin framework are
+stable.
 
 ## Vendor compatibility and trademarks
 

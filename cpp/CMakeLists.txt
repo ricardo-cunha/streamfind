@@ -88,6 +88,8 @@ set(STREAMFIND_CORE_SOURCES
     core/src/catalogue.cpp
     core/src/catalogue_binding.cpp
     core/src/project_table_store.cpp
+    core/src/plugin_loader.cpp
+    core/src/plugin_configuration.cpp
 )
 
 add_library(streamfind_cpp_core ${STREAMFIND_CPP_LIBRARY_TYPE} ${STREAMFIND_CORE_SOURCES})
@@ -103,6 +105,7 @@ set_target_properties(streamfind_cpp_core PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON
     EXPORT_NAME core
 )
 
@@ -244,31 +247,35 @@ streamfind_add_aggregate_semantic_catalogue(
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/sensors/semantic")
 add_dependencies(streamfind_aggregate_catalogue
     streamfind_core_catalogue
-    streamfind_cpp_mass_spec_catalogue
-    streamfind_cpp_raman_catalogue
-    streamfind_cpp_sensors_catalogue)
+    streamfind_mass_spec_plugin_catalogue
+    streamfind_raman_plugin_catalogue
+    streamfind_sensors_plugin_catalogue)
 add_custom_target(streamfind_plugins)
 add_dependencies(streamfind_plugins
-    streamfind_cpp_mass_spec
-    streamfind_cpp_raman
-    streamfind_cpp_sensors)
+    streamfind_mass_spec_plugin
+    streamfind_raman_plugin
+    streamfind_sensors_plugin)
 
 if(STREAMFIND_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
-    add_dependencies(streamfind_mcp_tests streamfind_aggregate_catalogue)
-    add_dependencies(streamfind_cpp_mass_spec_interface_tests streamfind_aggregate_catalogue)
-    add_dependencies(streamfind_nta_interface_tests streamfind_aggregate_catalogue)
-    add_dependencies(streamfind_registration_contract_tests streamfind_aggregate_catalogue)
-    add_dependencies(streamfind_project_table_store_manifest_tests streamfind_core_catalogue)
-    add_dependencies(streamfind_multiproject_tests streamfind_core_catalogue)
+    add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
+    add_dependencies(streamfind_project_isolation_contract streamfind_core_catalogue)
 endif()
 
 add_executable(streamfind_mcp mcp/src/streamfind-mcp.cpp mcp/src/static_plugin_composition.cpp)
-add_dependencies(streamfind_mcp streamfind_core_catalogue streamfind_aggregate_catalogue)
-target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind_cpp_mass_spec streamfind_cpp_raman streamfind_cpp_sensors)
-add_executable(streamfind_cli tools/streamfind-cli.cpp)
-target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind_cpp_mass_spec)
+add_dependencies(streamfind_mcp streamfind_core_catalogue streamfind_cpp_sdk
+    streamfind_mass_spec_plugin streamfind_raman_plugin streamfind_sensors_plugin)
+target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
+file(GENERATE
+    OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
+    CONTENT "{\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [\"mass_spec\", \"raman\", \"sensors\"]\n}\n")
+add_executable(streamfind_cli
+    mcp/src/streamfind-mcp.cpp
+    mcp/src/static_plugin_composition.cpp)
+add_dependencies(streamfind_cli streamfind_core_catalogue streamfind_cpp_sdk
+    streamfind_mass_spec_plugin streamfind_raman_plugin streamfind_sensors_plugin)
+target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
 
 # Runtime dependencies: the exes link vendored DuckDB, OpenBabel, zstd, inchi
 # and zlib as static libraries on both platforms, so the only runtime
@@ -281,13 +288,6 @@ install(
     RUNTIME DESTINATION bin
 )
 
-install(
-    TARGETS streamfind_cpp_mass_spec streamfind_cpp_raman streamfind_cpp_sensors
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
-)
 
 install(
     DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mass_spec/include/"

@@ -3,7 +3,11 @@ add_library(streamfind_cpp_sdk ${STREAMFIND_CPP_LIBRARY_TYPE}
     src/sdk.cpp
     src/semantic_resources.cpp
     src/semantic_validator.cpp
-    src/catalogue_builder.cpp)
+    src/catalogue_builder.cpp
+    src/plugin_manifest.cpp
+    src/dynamic_plugin_manager.cpp
+    src/plugin_data_service.cpp)
+target_sources(streamfind_cpp_sdk PRIVATE src/plugin_host_access.cpp)
 add_library(streamfind::cpp_sdk ALIAS streamfind_cpp_sdk)
 
 streamfind_configure_cpp_library(streamfind_cpp_sdk sdk

@@ -3,6 +3,49 @@
 Standalone C++20 core for project persistence and generic workflow execution.
 The core does not depend on R, Python, FastAPI, or React.
 
+## Native architecture
+
+The C++ implementation is split into three layers:
+
+- `core/` owns project files, DuckDB connections, transactions, generic workflow
+  execution, schema lifecycle, and framework operations.
+- `sdk/` defines the public plugin contract, semantic catalogue projection,
+  manifest validation, and the versioned C ABI used by runtime-loaded libraries.
+- `plugins/` owns domain catalogues, readers, algorithms, and domain capability
+  bindings. The shipped domains are `mass_spec`, `raman`, and `sensors`.
+
+Plugins do not receive `Project`, DuckDB handles, STL objects, JSON objects, or
+C++ exceptions across the dynamic boundary. Dynamic execution receives an opaque
+transaction context and uses the generic host table callbacks declared in
+`sdk/include/streamfind/plugin_abi.h`. The current ABI is major `1`, minor `1`.
+
+Each dynamic plugin package contains a `plugin.json`, a package-local
+`catalogue.duckdb`, and the platform-specific shared library declared by the
+manifest. Runtime loading is allowlisted: presence under a plugin root does not
+enable a plugin. Loaded libraries remain resident for the process lifetime.
+
+The current package manifests are:
+
+| Domain | Windows library | POSIX library | Domain state |
+| --- | --- | --- | --- |
+| `mass_spec` | `streamfind_mass_spec.dll` | `libstreamfind_mass_spec.so` | Native readers and NTA methods |
+| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Dynamic operation boundary; processing is not implemented yet |
+| `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty domain; no executable capabilities yet |
+
+For a development-tree runtime, place `streamfind.json` beside
+`streamfind_mcp.exe` and configure explicit plugin roots and IDs:
+
+```json
+{
+  "plugin_roots": ["C:/path/to/plugins"],
+  "enabled_plugins": ["mass_spec", "raman"]
+}
+```
+
+The host loads the core catalogue first, validates each selected package and
+ABI descriptor, imports the package catalogue, and exposes only capabilities
+present in both the catalogue and the loaded plugin.
+
 ## Vendor compatibility and trademarks
 
 streamfind is independent of the instrument vendors named in its compatibility
@@ -114,7 +157,73 @@ execution, closed projects, and cancellation.
 
 The C++ core uses the shared `PROJECT`, `CACHE`, and `AUDIT_TRAIL` DuckDB tables.
 Workflow, metadata, cache, audit, and result JSON are backend-neutral and are
-tested against the Rust implementation using the project fixture in
+covered by the lightweight project conformance fixture in
 `tests/fixtures/project/project_conformance.json`. Large example datasets are
 provided separately through the streamfind.data repository/data directory and
 are exercised by the development PowerShell scripts under `scripts/dev/`.
+
+## Build and test
+
+From the repository root, the supported Windows wrappers are:
+
+```text
+scripts\build\cpp\build-cpp.cmd -Clean -Tests -Config Release
+scripts\build\cpp\test-cpp.cmd -Config Release
+```
+
+The official CTest suite is intentionally lightweight and fixture-independent.
+It contains 12 focused contracts covering:
+
+- project lifecycle, execution lifecycle, project isolation, persistence
+  manifests, and project conformance;
+- SDK ABI, plugin manifests, configuration, loader failures, dynamic package
+  invocation, and dynamic schema handling;
+- MCP protocol/discoverability and plugin registration;
+- MassSpec and NTA public interfaces; and
+- DuckDB/OpenBabel dependency smoke coverage.
+
+The corresponding source files are under `tests/unit/` and use behavior-based
+names such as `project_lifecycle_contract.cpp`,
+`dynamic_plugin_package_contract.cpp`, and `plugin_registration_contract.cpp`.
+Raw vendor corpora, full NTA pipelines, and external-data checks are not part of
+the default CTest run. Invoke those explicitly through the development scripts,
+for example:
+
+```powershell
+scripts\dev\cpp\test-nta.ps1 -RunPipeline
+```
+
+### Full native C++ NTA workflow
+
+The NTA development test imports the 18 wastewater analyses from the sibling
+`streamfind.data` repository, executes all 12 workflow methods, and verifies the
+persisted DuckDB results with
+`scripts/dev/cpp/verify-nta-project.py`. Verification includes:
+
+- imported analysis count and nonempty feature results;
+- features containing encoded MS2 payloads;
+- suspect rows and shared-fragment counts; and
+- cosine-similarity results against the configured `0.7` threshold.
+
+On Windows, build and run it with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/build/cpp/build-cpp.ps1 -Config Release -Tests
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/dev/cpp/test-nta.ps1 -RunPipeline
+```
+
+On Linux, use the native Linux build and runner:
+
+```bash
+bash scripts/build/cpp/build-cpp-linux.sh
+bash scripts/dev/cpp/test-nta-linux.sh -SkipBuild
+```
+
+The Linux runner requires PowerShell 7 (`pwsh`) and the repository-local
+`.venv` with DuckDB installed. The expensive workflow is intentionally separate
+from CTest. A verified 18-analysis run produced approximately 20.5k feature
+rows, 4.4k features with MS2 payloads, 123 suspect rows, and 25 suspects with
+cosine similarity at or above `0.7`; exact counts can vary slightly between
+native platforms.

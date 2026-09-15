@@ -33,6 +33,10 @@ public:
     static void transaction(Project &project,
                             const std::vector<std::string> &owned_tables,
                             const std::function<void(ProjectTableStore &)> &callback);
+    /** @brief Install tables and schema state from the selected catalogue manifest. */
+    static void install_manifest_schema(Project &project,
+                                        const std::string &domain,
+                                        const std::string &module_id);
 
     /** @brief Return whether a physical table exists in the open project file. */
     bool has_table(const std::string &table_name) const;

@@ -20,7 +20,7 @@ sfms:addAnalyses
     sf:returns sfms:addAnalysesResult ;
     sf:writes sfms:analysesTable ;
     sf:mutatesProject true ;
-    sf:extensions "mzml,mzxml,lcd,asc,.d,.D" .
+    sf:extensions "mzml,mzxml,wiff,lcd,txt,asc,raw,d,baf,tsf" .
 
 sfms:removeAnalyses
     a sf:Operation ;
@@ -310,7 +310,7 @@ sfms:getRawChromatograms
     a sf:Operation ;
     sf:operationId "mass_spec.get_raw_chromatograms" ;
     sf:availableInDomain sfms:mass_spec ;
-    sf:providedByModule sfms:chromatogramsModule ;
+    sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get raw chromatograms" ;
     skos:definition "Read chromatogram point records directly from the selected mass spectrometry files." ;
     sf:hasParameter

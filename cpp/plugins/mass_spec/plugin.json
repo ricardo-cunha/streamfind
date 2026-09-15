@@ -1,11 +1,15 @@
 {
   "plugin_id": "mass_spec",
-  "name": "StreamFind MassSpec plugin",
+  "name": "StreamFind Mass Spectrometry plugin",
   "version": "0.2.0",
-  "sdk_compatibility": "same-major",
-  "library": "streamfind_cpp_mass_spec",
+  "abi_version": { "major": 1, "minor": 1 },
+  "sdk_compatibility": { "minimum": "0.2.0", "maximum": "0.2.x" },
+  "library": {
+    "windows-x86_64": "streamfind_mass_spec.dll",
+    "linux-x86_64": "libstreamfind_mass_spec.so"
+  },
   "domain": "mass_spec",
   "semantic_catalogue": "catalogue.duckdb",
-  "static_composition": true,
+  "static_composition": false,
   "platforms": ["windows-x86_64", "linux-x86_64"]
 }

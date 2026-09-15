@@ -24,9 +24,12 @@ namespace streamfind::catalogue {
 
 /** @brief Resolve the catalogue.duckdb path via the runtime search chain. */
 STREAMFIND_CORE_API std::optional<std::string> find_path();
+STREAMFIND_CORE_API std::optional<std::string> find_core_path();
 
 /** @brief Pin the process catalogue path used by manifest lookups. */
 STREAMFIND_CORE_API void set_runtime_path(const std::string &path);
+STREAMFIND_CORE_API void set_runtime_document(Json document);
+STREAMFIND_CORE_API std::optional<Json> load_document(const std::string &path);
 
 /**
  * @brief Load (and cache) the catalogue entries as a JSON array of entry
