@@ -63,7 +63,6 @@ sfcore:MethodShape
     sh:targetClass sf:Method ;
     sh:property [ sh:path sf:methodId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:cacheable ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
-    sh:property [ sh:path sf:requiredMethods ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] ;
     sh:property [ sh:path sf:singleOccurrence ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:hasParameter ; sh:minCount 1 ; sh:class sf:Parameter ] ;
@@ -97,17 +96,7 @@ sfcore:MethodShape
                 }
             """
         ] ;
-        sh:sparql [
-            sh:message "Every required method must reference a declared method." ;
-            sh:select """
-                PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this ?required
-                WHERE {
-                    $this sf:requiredMethods ?list .
-                    ?list rdf:rest*/rdf:first ?required .
-                    FILTER NOT EXISTS { ?required a sf:Method . }
-                }
-            """
-        ] ;
+        sh:property [ sh:path sf:conditionalRead ; sh:class sf:ReadDependency ] ;
         sh:sparql [
             sh:message "Object parameters must declare at least one property schema." ;
             sh:select """
@@ -119,6 +108,12 @@ sfcore:MethodShape
                 }
             """
         ] .
+
+sf:ReadDependencyShape
+    a sh:NodeShape ;
+    sh:targetClass sf:ReadDependency ;
+    sh:property [ sh:path sf:table ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Table ] ;
+    sh:property [ sh:path sf:when ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Parameter ] .
 
 sfcore:ParameterShape
     a sh:NodeShape ;

@@ -1,6 +1,7 @@
 #include "streamfind/sdk/catalogue_builder.hpp"
 
 #include <fstream>
+#include <functional>
 
 
 
@@ -102,10 +103,22 @@ Graph parse(const SemanticResourceSet &resources) {
         if (source.size() > max_source_bytes) throw std::runtime_error("semantic file exceeds parser input limit: " + path.string());
         std::string statement;
         bool quoted = false, escaped = false, angle = false, comment = false;
-        const auto parse_statement = [&](const std::string &raw) {
+        std::function<void(const std::string &)> parse_statement;
+        parse_statement = [&](const std::string &raw) {
             const auto begin = raw.find_first_not_of(" \t\r\n");
             if (begin == std::string::npos) return;
             auto value = raw.substr(begin);
+            for (;;) {
+                if (value.find("sf:conditionalRead") == std::string::npos) break;
+                const auto open = value.find('[');
+                if (open == std::string::npos) break;
+                const auto close = value.find(']', open + 1);
+                if (close == std::string::npos) throw std::runtime_error("unterminated semantic blank node: " + path.string());
+                static std::size_t blank_counter = 0;
+                const auto blank = "_:blank_" + std::to_string(++blank_counter);
+                parse_statement(blank + " " + value.substr(open + 1, close - open - 1) + " .");
+                value.replace(open, close - open + 1, blank);
+            }
             auto words = tokens(value);
             if (words.size() >= 3 && words[0] == "@prefix") {
                 prefixes[words[1].substr(0, words[1].size() - 1)] = expand(words[2], prefixes); return;
@@ -291,7 +304,23 @@ Json project(const Graph &graph, const std::string &domain) {
         if (std::string(kind) == "method") entry.erase("mcp");
         Json reads = Json::array(); for (const auto &table : values(graph, subject, std::string(sf) + "reads")) reads.push_back(value(graph, table, std::string(sf) + "tableName")); Json writes = Json::array(); for (const auto &table : values(graph, subject, std::string(sf) + "writes")) writes.push_back(value(graph, table, std::string(sf) + "tableName")); entry["effects"] = {{"mutates_project", boolean(graph, subject, std::string(sf) + "mutatesProject")}, {"reads", reads}, {"writes", writes}};
         const auto result = value(graph, subject, std::string(sf) + "returns"); entry["result"] = {{"id", result}, {"schema", result_schema(graph, result)}};
-        if (kind == std::string("method")) { entry["cacheable"] = boolean(graph, subject, std::string(sf) + "cacheable"); entry["single_occurrence"] = boolean(graph, subject, std::string(sf) + "singleOccurrence"); entry["required_methods"] = Json::array(); for (const auto &required : values(graph, subject, std::string(sf) + "requiredMethods")) { const auto id = value(graph, required, std::string(sf) + "methodId").empty() ? value(graph, required, std::string(sf) + "operationId") : value(graph, required, std::string(sf) + "methodId"); entry["required_methods"].push_back(id.empty() ? required : id); } }
+        if (kind == std::string("method")) {
+            entry["cacheable"] = boolean(graph, subject, std::string(sf) + "cacheable");
+            entry["single_occurrence"] = boolean(graph, subject, std::string(sf) + "singleOccurrence");
+            entry["conditional_reads"] = Json::array();
+            for (const auto &dependency : values(graph, subject, std::string(sf) + "conditionalRead")) {
+                const auto table = value(graph, dependency, std::string(sf) + "table");
+                const auto condition = value(graph, dependency, std::string(sf) + "when");
+                const auto parameter = value(graph, condition, std::string(sf) + "parameter").empty()
+                    ? resource_name(condition) : resource_name(value(graph, condition, std::string(sf) + "parameter"));
+                const auto equals = value(graph, dependency, std::string(sf) + "equals");
+                if (!table.empty() && !parameter.empty()) {
+                    Json condition = {{"table", value(graph, table, std::string(sf) + "tableName")}, {"parameter", wire_name(parameter)}};
+                    if (!equals.empty()) condition["equals"] = equals;
+                    entry["conditional_reads"].push_back(std::move(condition));
+                }
+            }
+        }
         output["entries"].push_back(entry);
     }
     for (const auto &[subject, predicates] : graph) {
@@ -319,14 +348,14 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
     duckdb_database database; duckdb_connection connection; duckdb_result result;
     if (duckdb_open(request.output_database.string().c_str(), &database) != DuckDBSuccess || duckdb_connect(database, &connection) != DuckDBSuccess) throw std::runtime_error("cannot open catalogue database");
     const auto exec = [&](const std::string &sql) { if (duckdb_query(connection, sql.c_str(), &result) != DuckDBSuccess) { const std::string error = duckdb_result_error(&result); duckdb_destroy_result(&result); throw std::runtime_error(error); } duckdb_destroy_result(&result); };
-    exec("CREATE TABLE catalogue_entries (canonical_id VARCHAR PRIMARY KEY, kind VARCHAR, domain VARCHAR, label VARCHAR, definition VARCHAR, category VARCHAR, invocation_model VARCHAR, requires_connection BOOLEAN, guidance VARCHAR, next_operations JSON, interface_guidance VARCHAR, executable BOOLEAN, exposed BOOLEAN, mcp_name VARCHAR, input_schema JSON, parameters JSON, result_schema JSON, reads_tables JSON, writes_tables JSON, cacheable BOOLEAN, single_occurrence BOOLEAN, mutates_project BOOLEAN, required_methods JSON, module_id VARCHAR)");
+    exec("CREATE TABLE catalogue_entries (canonical_id VARCHAR PRIMARY KEY, kind VARCHAR, domain VARCHAR, label VARCHAR, definition VARCHAR, category VARCHAR, invocation_model VARCHAR, requires_connection BOOLEAN, guidance VARCHAR, next_operations JSON, interface_guidance VARCHAR, executable BOOLEAN, exposed BOOLEAN, mcp_name VARCHAR, input_schema JSON, parameters JSON, result_schema JSON, reads_tables JSON, writes_tables JSON, cacheable BOOLEAN, single_occurrence BOOLEAN, mutates_project BOOLEAN, module_id VARCHAR, conditional_reads JSON)");
     exec("CREATE TABLE catalogue_tables (table_name VARCHAR PRIMARY KEY, domain VARCHAR, module_id VARCHAR, columns JSON)");
     exec("CREATE TABLE catalogue_metadata (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
     for (const auto &entry : catalogue["entries"]) {
         const auto &iface = entry["interface"]; const auto &effects = entry["effects"];
         const auto mcp_name = entry["kind"] == "operation" ? (entry["mcp"]["name"] == "None" ? entry["canonical_id"].get<std::string>() : entry["mcp"]["name"].get<std::string>()) : "";
         const auto input_schema = entry.contains("mcp") ? sql_quote(entry["mcp"]["input_schema"].dump()) : "NULL";
-        const auto sql = "INSERT INTO catalogue_entries VALUES (" + sql_quote(entry["canonical_id"]) + "," + sql_quote(entry["kind"]) + "," + sql_quote(entry["domain"]) + "," + sql_quote(entry["label"]) + "," + sql_quote(entry["definition"]) + "," + sql_quote(iface["category"]) + "," + sql_quote(iface["invocation_model"]) + "," + (iface["requires_connection"] ? "true" : "false") + "," + sql_quote(iface["guidance"]) + "," + sql_quote(iface["next_operations"].dump()) + "," + sql_quote(entry["interface_guidance"]) + ",true,true," + (mcp_name.empty() ? "NULL" : sql_quote(mcp_name)) + "," + input_schema + "," + sql_quote(entry["parameters"].dump()) + "," + sql_quote(json_text(entry["result"]["schema"])) + "," + sql_quote(effects["reads"].dump()) + "," + sql_quote(effects["writes"].dump()) + "," + ((entry.contains("cacheable") && entry["cacheable"].is_boolean()) ? (entry["cacheable"] ? "true" : "false") : "NULL") + "," + ((entry.contains("single_occurrence") && entry["single_occurrence"].is_boolean()) ? (entry["single_occurrence"] ? "true" : "false") : "NULL") + "," + (effects["mutates_project"] ? "true" : "false") + "," + sql_quote(entry.value("required_methods", Json::array()).dump()) + "," + sql_quote(entry["module_id"]) + ")";
+        const auto sql = "INSERT INTO catalogue_entries VALUES (" + sql_quote(entry["canonical_id"]) + "," + sql_quote(entry["kind"]) + "," + sql_quote(entry["domain"]) + "," + sql_quote(entry["label"]) + "," + sql_quote(entry["definition"]) + "," + sql_quote(iface["category"]) + "," + sql_quote(iface["invocation_model"]) + "," + (iface["requires_connection"] ? "true" : "false") + "," + sql_quote(iface["guidance"]) + "," + sql_quote(iface["next_operations"].dump()) + "," + sql_quote(entry["interface_guidance"]) + ",true,true," + (mcp_name.empty() ? "NULL" : sql_quote(mcp_name)) + "," + input_schema + "," + sql_quote(entry["parameters"].dump()) + "," + sql_quote(json_text(entry["result"]["schema"])) + "," + sql_quote(effects["reads"].dump()) + "," + sql_quote(effects["writes"].dump()) + "," + ((entry.contains("cacheable") && entry["cacheable"].is_boolean()) ? (entry["cacheable"] ? "true" : "false") : "NULL") + "," + ((entry.contains("single_occurrence") && entry["single_occurrence"].is_boolean()) ? (entry["single_occurrence"] ? "true" : "false") : "NULL") + "," + (effects["mutates_project"] ? "true" : "false") + "," + sql_quote(entry["module_id"]) + "," + sql_quote(entry.value("conditional_reads", Json::array()).dump()) + ")";
         exec(sql);
     }
     for (const auto &table : catalogue["tables"]) {

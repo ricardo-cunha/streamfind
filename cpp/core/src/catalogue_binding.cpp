@@ -48,8 +48,10 @@ MethodDefinition method_definition(const Json &entry) {
     definition.description = entry.value("definition", entry.value("label", ""));
     definition.domain = entry.value("domain", "");
     definition.cacheable = entry.value("cacheable", false);
+    definition.reads = entry.value("effects", Json::object()).value("reads", std::vector<std::string>{});
     definition.writes = entry.value("effects", Json::object()).value("writes", std::vector<std::string>{});
-    definition.required_methods = entry.value("required_methods", std::vector<std::string>{});
+    for (const auto &item : entry.value("effects", Json::object()).value("conditional_reads", Json::array()))
+        definition.conditional_reads.push_back({item.at("table").get<std::string>(), item.at("parameter").get<std::string>(), item.value("equals", Json())});
     definition.single_occurrence = entry.value("single_occurrence", false);
     definition.parameters = parameter_schema(entry);
     return definition;

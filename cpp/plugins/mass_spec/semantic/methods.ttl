@@ -16,7 +16,6 @@ sfms:loadChromatogramsMassSpecMethod
         sfms:ignoreCaseParameter,
         sfms:invertParameter ;
     sf:cacheable false ;
-    sf:requiredMethods () ;
     sf:singleOccurrence true ;
     sf:reads sfms:analysesTable ;
     sf:writes sfms:chromatogramsTable ;
@@ -34,7 +33,6 @@ sfms:filterChromatogramsRetentionTimeMassSpecMethod
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
     sf:cacheable false ;
-    sf:requiredMethods () ;
     sf:singleOccurrence false ;
     sf:reads sfms:chromatogramsTable ;
     sf:writes sfms:chromatogramsTable ;
@@ -59,7 +57,6 @@ sfms:findFeaturesMassSpecMethod
         sfms:maxFeatureWidthParameter,
         sfms:baseQuantileParameter ;
     sf:cacheable true ;
-    sf:requiredMethods () ;
     sf:singleOccurrence true ;
     sf:reads sfms:analysesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -81,7 +78,6 @@ sfms:loadFeaturesMs1MassSpecMethod
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -102,7 +98,6 @@ sfms:loadFeaturesMs2MassSpecMethod
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -121,7 +116,6 @@ sfms:subtractBlankMassSpecMethod
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -168,7 +162,6 @@ sfms:filterFeaturesMassSpecMethod
         sfms:removeAdductsParameter,
         sfms:removeLossesParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -191,7 +184,6 @@ sfms:filterFeaturesMs2MassSpecMethod
         sfms:blankPresenceThresholdParameter,
         sfms:globalPresenceThresholdParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod sfms:loadFeaturesMs2MassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -212,9 +204,9 @@ sfms:groupFeaturesMassSpecMethod
         sfms:minSamplesParameter,
         sfms:binSizeParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
-    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:conditionalRead [ a sf:ReadDependency ; sf:table sfms:internalStandardsTable ; sf:when sfms:methodParameter ; sf:equals "internal_standards" ] ;
     sf:writes sfms:ntaFeaturesTable ;
     sf:returns sfcore:operationStatusResult .
 
@@ -239,7 +231,6 @@ sfms:fillFeaturesMassSpecMethod
         sfms:minSignalToNoiseRatioParameter,
         sfms:minGaussianFitParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod sfms:groupFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -257,7 +248,6 @@ sfms:createComponentsMassSpecMethod
         sfms:rtWindowParameter,
         sfms:minCorrelationParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -278,7 +268,6 @@ sfms:annotateComponentsMassSpecMethod
         sfms:ppmParameter,
         sfms:isotopeElementsParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:createComponentsMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -302,7 +291,6 @@ sfms:suspectScreeningMassSpecMethod
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable, sfms:suspectsTable ;
@@ -326,7 +314,6 @@ sfms:findInternalStandardsMassSpecMethod
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
@@ -344,7 +331,6 @@ sfms:correctMatrixSuppressionMassSpecMethod
         sfms:mpRtWindowParameter,
         sfms:refBlankReplicateParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findInternalStandardsMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
     sf:writes sfms:ntaFeaturesTable ;
@@ -367,7 +353,6 @@ sfms:filterSuspectsMassSpecMethod
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:suspectScreeningMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable, sfms:suspectsTable ;
     sf:writes sfms:suspectsTable ;
@@ -390,7 +375,6 @@ sfms:filterInternalStandardsMassSpecMethod
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findInternalStandardsMassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
     sf:writes sfms:internalStandardsTable ;
@@ -410,7 +394,6 @@ sfms:assignTransformationProductsMassSpecMethod
         sfms:chromatographicPhaseParameter,
         sfms:mzrMs2Parameter ;
     sf:cacheable true ;
-    sf:requiredMethods () ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable, sfms:suspectsTable ;
     sf:writes sfms:suspectsTable, sfms:transformationProductsTable ;
@@ -445,7 +428,6 @@ sfms:metfragScreeningMassSpecMethod
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:cacheable true ;
-    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod sfms:loadFeaturesMs2MassSpecMethod ) ;
     sf:singleOccurrence false ;
     sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
     sf:writes sfms:ntaFeaturesTable, sfms:suspectsTable ;

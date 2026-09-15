@@ -791,7 +791,7 @@ namespace streamfind
     Json Method::to_json() const
     {
         return {
-            {"id", definition_.id}, {"name", definition_.name}, {"description", definition_.description}, {"version", definition_.version}, {"domain", definition_.domain}, {"required_methods", definition_.required_methods}, {"single_occurrence", definition_.single_occurrence}, {"developer", definition_.developer}, {"contact", definition_.contact}, {"link", definition_.link}, {"doi", definition_.doi}, {"parameters", definition_.parameters.to_json()}, {"cacheable", definition_.cacheable}, {"writes", definition_.writes}};
+            {"id", definition_.id}, {"name", definition_.name}, {"description", definition_.description}, {"version", definition_.version}, {"domain", definition_.domain}, {"reads", definition_.reads}, {"single_occurrence", definition_.single_occurrence}, {"developer", definition_.developer}, {"contact", definition_.contact}, {"link", definition_.link}, {"doi", definition_.doi}, {"parameters", definition_.parameters.to_json()}, {"cacheable", definition_.cacheable}, {"writes", definition_.writes}};
     }
 
     MethodDefinition Method::definition_from_json(const Json &value)
@@ -806,7 +806,7 @@ namespace streamfind
         definition.description = value.value("description", "");
         definition.version = value.value("version", "1");
         definition.domain = value.value("domain", "");
-        definition.required_methods = value.value("required_methods", std::vector<std::string>{});
+        definition.reads = value.value("reads", std::vector<std::string>{});
         definition.single_occurrence = value.value("single_occurrence", false);
         definition.developer = value.value("developer", "");
         definition.contact = value.value("contact", "");
@@ -983,8 +983,21 @@ namespace streamfind
 
     void Workflow::validate(const MethodRegistry &registry) const
     {
+        validate(registry, {});
+    }
+
+    void Workflow::validate(const MethodRegistry &registry,
+                            const std::function<bool(std::string_view)> &has_table) const
+    {
         std::unordered_map<std::string, std::size_t> counts;
-        std::vector<std::string> prior;
+        std::vector<std::string> available;
+        const auto available_table = [&](const std::string &table) {
+            return std::find(available.begin(), available.end(), table) != available.end() ||
+                   (has_table && has_table(table));
+        };
+        const auto add_table = [&](const std::string &table) {
+            if (!available_table(table)) available.push_back(table);
+        };
         for (const auto &step : steps)
         {
             const Method *method = registry.find(step.method);
@@ -1002,21 +1015,34 @@ namespace streamfind
                 throw Error(ErrorCode::WorkflowValidation,
                             "Method domain does not match workflow domain: " + step.method);
             }
-            for (const auto &required : definition.required_methods)
+            const auto parameters = method->resolve_parameters(step.parameters.values);
+            for (const auto &table : definition.reads)
             {
-                if (std::find(prior.begin(), prior.end(), required) == prior.end())
+                if (!available_table(table))
                 {
                     throw Error(ErrorCode::WorkflowValidation,
-                                "Required method is not earlier in workflow: " + required);
+                                "Required table is not available before method " + step.method + ": " + table);
                 }
+            }
+            for (const auto &conditional : definition.conditional_reads)
+            {
+                if (!parameters.contains(conditional.parameter))
+                    throw Error(ErrorCode::WorkflowValidation,
+                                "Conditional read parameter is missing: " + conditional.parameter);
+                const auto &actual = parameters.at(conditional.parameter);
+                const bool active = conditional.equals.is_null()
+                    ? (actual.is_boolean() && actual.get<bool>())
+                    : actual == conditional.equals;
+                if (active && !available_table(conditional.table))
+                    throw Error(ErrorCode::WorkflowValidation,
+                                "Conditional required table is not available before method " + step.method + ": " + conditional.table);
             }
             if (definition.single_occurrence && ++counts[step.method] > 1)
             {
                 throw Error(ErrorCode::WorkflowValidation,
                             "Method occurs too many times: " + step.method);
             }
-            method->resolve_parameters(step.parameters.values);
-            prior.push_back(step.method);
+            for (const auto &table : definition.writes) add_table(table);
         }
     }
 

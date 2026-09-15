@@ -117,7 +117,7 @@ public:
             "SELECT canonical_id, kind, domain, label, definition, category, invocation_model, "
             "requires_connection, guidance, next_operations, interface_guidance, executable, "
             "exposed, mcp_name, input_schema, parameters, result_schema, reads_tables, "
-            "writes_tables, cacheable, single_occurrence, mutates_project, required_methods, module_id "
+            "writes_tables, cacheable, single_occurrence, mutates_project, module_id, conditional_reads "
             "FROM catalogue_entries ORDER BY canonical_id";
         if (duckdb_query(connection_, sql, &result) == DuckDBError) {
             std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
@@ -239,13 +239,13 @@ private:
             {"mutates_project", boolean(result, 21, row)},
             {"reads", value(result, 17, row)},
             {"writes", value(result, 18, row)},
+            {"conditional_reads", value(result, 23, row)},
         };
         if (kind == "method") {
             entry["cacheable"] = boolean(result, 19, row);
             entry["single_occurrence"] = boolean(result, 20, row);
-            entry["required_methods"] = value(result, 22, row);
         }
-        entry["module_id"] = text(result, 23, row);
+        entry["module_id"] = text(result, 22, row);
         return entry;
     }
 

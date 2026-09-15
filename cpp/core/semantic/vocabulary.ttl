@@ -64,6 +64,12 @@ sf:Table
     skos:prefLabel "Table" ;
     skos:definition "A persisted project table used by a capability." .
 
+sf:ReadDependency
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Read dependency" ;
+    skos:definition "A conditional table dependency of a workflow method." .
+
 sf:Column
     a rdfs:Class ;
     rdfs:subClassOf sf:Field ;
@@ -110,12 +116,32 @@ sf:cacheable
     skos:prefLabel "cacheable" ;
     skos:definition "Whether successful method results may be cached." .
 
-sf:requiredMethods
+sf:conditionalRead
     a rdf:Property ;
     rdfs:domain sf:Method ;
-    rdfs:range rdf:List ;
-    skos:prefLabel "required methods" ;
-    skos:definition "Methods that must already occur earlier in the workflow." .
+    rdfs:range sf:ReadDependency ;
+    skos:prefLabel "conditional read" ;
+    skos:definition "A table read required when its declared condition is true." .
+
+sf:table
+    a rdf:Property ;
+    rdfs:domain sf:ReadDependency ;
+    rdfs:range sf:Table ;
+    skos:prefLabel "dependency table" ;
+    skos:definition "The table required by a conditional read dependency." .
+
+sf:when
+    a rdf:Property ;
+    rdfs:domain sf:ReadDependency ;
+    rdfs:range sf:Parameter ;
+    skos:prefLabel "dependency condition" ;
+    skos:definition "A boolean method parameter that activates a conditional read." .
+
+sf:equals
+    a rdf:Property ;
+    rdfs:domain sf:ReadDependency ;
+    skos:prefLabel "dependency expected value" ;
+    skos:definition "The value at which the dependency condition is active." .
 
 sf:singleOccurrence
     a rdf:Property ;

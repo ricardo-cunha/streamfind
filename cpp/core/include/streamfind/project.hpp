@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <variant>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -156,6 +157,13 @@ struct STREAMFIND_CORE_API ParameterValues {
     static ParameterValues from_json(const Json &value);
 };
 
+/** @brief A table dependency activated by a boolean method parameter. */
+struct STREAMFIND_CORE_API ConditionalRead {
+    std::string table;
+    std::string parameter;
+    Json equals;
+};
+
 /** @brief Complete documented and executable description of a method. */
 struct STREAMFIND_CORE_API MethodDefinition {
     /// Stable registry and persisted workflow identifier.
@@ -166,7 +174,10 @@ struct STREAMFIND_CORE_API MethodDefinition {
     std::string description;
     std::string version{"1"};
     std::string domain;
-    std::vector<std::string> required_methods;
+    /// Tables that must exist before this method can execute.
+    std::vector<std::string> reads;
+    /// Additional tables required when the named boolean parameter is true.
+    std::vector<ConditionalRead> conditional_reads;
     bool single_occurrence{false};
     std::string developer;
     std::string contact;
@@ -288,6 +299,9 @@ public:
 
     /** @brief Validate method ids, ordering, domains, occurrences, and values. */
     void validate(const MethodRegistry &registry) const;
+    /** @brief Validate with table availability from the target project. */
+    void validate(const MethodRegistry &registry,
+                  const std::function<bool(std::string_view)> &has_table) const;
     /** @brief Export the workflow definition as JSON. */
     Json to_json() const;
     /** @brief Export ordered method metadata with configured parameter values. */

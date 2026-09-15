@@ -44,8 +44,7 @@ sfcore:methodField
         sfcore:methodDescriptionField,
         sfcore:methodDomainField,
         sfcore:methodParametersField,
-        sfcore:methodCacheableField,
-        sfcore:methodRequiredField .
+        sfcore:methodCacheableField .
 
 sfcore:methodIdField
     a sf:Field ;
@@ -101,16 +100,6 @@ sfcore:methodCacheableField
     skos:definition "Whether method results may be cached." ;
     sf:propertyName "cacheable" ;
     sf:type "boolean" .
-
-sfcore:methodRequiredField
-    a sf:Field ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Required methods" ;
-    skos:definition "Methods required earlier in the workflow." ;
-    sf:propertyName "required_methods" ;
-    sf:type "array" ;
-    sf:items sfcore:stringItemParameter .
 
 sfcore:methodSingleOccurrenceField
     a sf:Field ;

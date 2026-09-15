@@ -141,7 +141,6 @@ sfcore:methodDefinitionResult
         sfcore:methodInputSchemaField,
         sfcore:methodCacheableField,
         sfcore:methodSingleOccurrenceField,
-        sfcore:methodRequiredField,
         sfcore:methodWritesField .
 
 sfcore:workflowExecutionResult

@@ -4,6 +4,7 @@
  */
 
 #include "streamfind/api.hpp"
+#include "streamfind/project_table_store.hpp"
 
 
 #include <algorithm>
@@ -137,8 +138,12 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
     }
     case ProjectCommand::validate_workflow: {
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
+        auto project = Project::open(detail::options_from_request(request, true));
         const auto workflow = Workflow::from_json(request.at("workflow"));
-        workflow.validate(registry);
+        const std::function<bool(std::string_view)> has_table = [&](std::string_view table) {
+            return ProjectTableStore(project).has_table(std::string(table));
+        };
+        workflow.validate(registry, has_table);
         return {{"valid", true}, {"info", "Workflow validation finished successfully."}};
     }
     case ProjectCommand::validate: {
@@ -169,7 +174,10 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = Workflow::from_json(request.at("workflow"));
-        workflow.validate(registry);
+        const std::function<bool(std::string_view)> has_table = [&](std::string_view table) {
+            return ProjectTableStore(project).has_table(std::string(table));
+        };
+        workflow.validate(registry, has_table);
         project.set_workflow(std::move(workflow), registry);
         return detail::workflow_table(project.get_workflow(), registry);
     }
