@@ -4,19 +4,36 @@
 
 - Read and follow the applicable skill below before making changes in its area.
 - Keep changes focused and preserve the existing architecture and package boundaries.
-- Do not modify third-party or vendored source under `core/vendor/` unless explicitly requested.
+- Do not modify third-party or vendored source under `cpp/vendor/` unless explicitly requested.
 - Run the narrowest relevant validation after each change and report concrete results.
 
 ## C++ Project Rules
 
 - Do not create anonymous namespaces (`namespace {}`) in project C++ code.
 - Use an explicit named internal namespace such as `streamfind::detail` for non-public helpers, or use a file-local `static` function where appropriate.
-- This rule applies to `core/` and project-owned C++ code. Do not rewrite third-party or vendored source under `core/vendor/`.
+- This rule applies to `cpp/` and project-owned C++ code. Do not rewrite third-party or vendored source under `cpp/vendor/`.
 
 ## Rust Project Rules
 
 - Put Rust tests in the owning crate's `tests/` directory. Do not add inline `#[cfg(test)] mod tests` modules to implementation files.
 - Keep integration tests under the relevant crate, such as `rust/crates/core/tests/` or `rust/crates/cli/tests/`.
+
+## C++/Rust Test Parity
+
+- The official C++ and Rust suites must cover the same controlled test matrix:
+  project lifecycle, shared conformance, MCP behavior, dependency smoke,
+  mass-spec interface, and NTA interface.
+- Each corresponding C++/Rust test must exercise the same behavior and use the
+  same filename stem, with only the language extension differing. For example:
+  `project_smoke.cpp` / `project_smoke.rs`, `mcp_smoke.cpp` /
+  `mcp_smoke.rs`, and `mass_spec_interface_smoke.cpp` /
+  `mass_spec_interface_smoke.rs`.
+- When adding, removing, or materially changing an official test, apply the
+  same change to its counterpart backend or document the deliberate exception
+  in the test plan before proceeding.
+- Before finalizing test changes, verify redundancy, necessity, and coverage
+  across both backends; do not add a backend-specific duplicate merely to
+  increase test counts.
 
 ## Legacy-Free Development
 
@@ -63,25 +80,27 @@ Use the repository-local `.venv` for every Python script, test, formatter, or pa
 
 ## Repository Scratch, Build, and Log Locations (`tmp/`)
 
-All transient artifacts — development temp scripts, scratch files, custom
-build trees, test outputs, temp projects created during tests, logs, and any
-other disposable asset — belong in the repository-local `tmp/` folder at the
+All transient artifacts — scratch files, custom build trees, test outputs, temp
+projects created during tests, logs, and any other disposable asset — belong in
+the repository-local `tmp/` folder at the
 checkout root (`<repo-root>/tmp/`). `tmp/` is gitignored
-(`.gitignore` → `/tmp/`), removed by `scripts/clean-build-temp.cmd`, and
+(`.gitignore` → `/tmp/`), removed by `scripts\build\clean-build-temp.cmd`, and
 disposable by design: treat it as managed scratch, never as a place for
 anything that must be committed.
 
 - **Never** write repository-work temp files outside the repository (system
   `%TEMP%` / `TMP`, `AppData`, user home, `<tmp>`, `/tmp`, etc.).
 - **Never** drop temp files, scratch, or ad-hoc build outputs in the
-  repository root or in source directories (`core/`, `rust/`, `semantic/`,
+  repository root or in source directories (`cpp/`, `rust/`, `semantic/`,
   `docs/`, `bindings/`, `tests/`, ...). Root-level `log/` and `cache/` are
   legacy locations that are being folded into `tmp/`; do not create new
   content there.
 
 ### Layout
 
-- `tmp/scripts/` — development helper scripts (`.bat`/`.sh`/`.py` wrappers for builds, tests, and tooling)
+- `scripts/build/` — tracked build and official-test scripts
+- `scripts/release/` — tracked release and publishing scripts
+- `scripts/dev/` — tracked development-stage data/parser/NTA scripts
 - `tmp/build/` — custom/experimental build trees, ad-hoc binaries, staging areas
 - `tmp/projects/` — DuckDB project files and fixtures created by tests or ad-hoc runs
 - `tmp/logs/` — build, test, server, and session logs
@@ -89,8 +108,10 @@ anything that must be committed.
 
 ### Rules
 
-- Development temp scripts and wrapper `.bat`/`.sh` files must be created
-  under `tmp/scripts/`, never in the system temp directory.
+- Development-stage scripts and wrapper `.bat`/`.sh` files belong under the
+  tracked `scripts/dev/` directory; build and release wrappers belong under
+  `scripts/build/` and `scripts/release/`. Do not create them in generated
+  `tmp/` directories or the system temp directory.
 - Test code and ad-hoc runs that create temporary DuckDB projects or fixtures
   must place them under `tmp/projects/` (or another `tmp/`-anchored
   directory), never in `std::filesystem::temp_directory_path()` / system temp.
@@ -99,14 +120,12 @@ anything that must be committed.
 - Custom build trees created outside the canonical build presets go to
   `tmp/build/`.
 - Housekeeping before committing on `dev_refactoring`:
-  `scripts\clean-build-temp.cmd` removes build/test artifacts and disposable
+  `scripts\build\clean-build-temp.cmd` removes build/test artifacts and disposable
   scratch (`tmp/build/`, `tmp/projects/`, `tmp/scratch/`, plus the legacy
-  `core/build/`, `rust/target/`, `log/`, `cache/` dirs). It **preserves**
-  `tmp/scripts/` and `tmp/logs/` by default so development-support wrappers and
-  diagnostics survive a routine clean. Run `scripts\clean-build-temp.cmd --all`
-  to also wipe `tmp/scripts/` and `tmp/logs/` — the intended final step once a
-  feature and its development-support scripts are implemented, leaving only the
-  committed convenience scripts under the root `scripts/` folder.
+  `cpp/build/`, `rust/target/`, `log/`, `cache/` dirs). It **preserves**
+  `tmp/logs/` by default so diagnostics survive a routine clean. Run
+  `scripts\build\clean-build-temp.cmd --all` only to wipe legacy temporary
+  scripts/logs; tracked scripts under `scripts/` are never removed.
 
 ## GitHub Releases
 
@@ -118,7 +137,7 @@ location.
 When a version is ready:
 
 1. Update and commit the C++/Rust version metadata and any release notes.
-2. Run `scripts/release.ps1 -Version <version>` (add `-Linux` when Linux
+2. Run `scripts/release/release.ps1 -Version <version>` (add `-Linux` when Linux
    packages are required). This builds, tests, packages, and hashes the
    archives under `tmp/release-output/`.
 3. Create and push the annotated tag to the official repository:
@@ -132,7 +151,7 @@ When a version is ready:
 4. Publish the generated assets with the guarded helper:
 
    ```powershell
-   scripts/publish-release.ps1 -Version <version>
+   scripts/release/publish-release.ps1 -Version <version>
    ```
 
    The helper requires authenticated `gh`, verifies every archive against
@@ -142,7 +161,7 @@ To replace assets in an existing release intentionally, rebuild the same
 version and pass the explicit replacement switch:
 
 ```powershell
-scripts/publish-release.ps1 -Version <version> -Replace
+scripts/release/publish-release.ps1 -Version <version> -Replace
 ```
 
 This uses `gh release upload --clobber`. Do not move an already-published tag
@@ -151,11 +170,12 @@ for a materially different code revision; create a new version instead.
 The current official repository is `ricardo-cunha/streamfind`. Use
 `-Repository <owner>/<repo>` only when publishing to a deliberately different
 repository. GitHub Release assets are separate from commits and do not update
-automatically when `scripts/release.ps1` is run.
+automatically when `scripts/release/release.ps1` is run.
 
 ## Turtle Ontology Formatting
 
-Use this style for every edit to `semantic/ontology/**/*.ttl`.
+Use this style for every edit to `cpp/core/semantic/**/*.ttl` and
+`cpp/plugins/*/semantic/**/*.ttl`.
 
 ### Syntax
 
@@ -173,7 +193,7 @@ Use this style for every edit to `semantic/ontology/**/*.ttl`.
 - Put long predicate lists on separate lines.
 - Keep labels and definitions adjacent to the resource type.
 - Keep `skos:inScheme sfcore:scheme` on catalogue concepts that belong to the shared scheme.
-- Keep domain declarations in `semantic/ontology/domains/<domain>/` and generic declarations in `semantic/ontology/core/`.
+- Keep domain declarations in `cpp/plugins/<domain>/semantic/` and generic declarations in `cpp/core/semantic/`.
 - Keep table columns and result properties explicit; do not hide schemas in comments or implementation code.
 
 Example:
@@ -195,25 +215,21 @@ Before validation, use the repository formatter when ontology formatting is
 needed:
 
 ```powershell
-& ".venv\Scripts\python.exe" semantic\format_ttl.py
+& ".venv\Scripts\python.exe" scripts\python-utils\format_ttl.py
 ```
 
 Run it from the repository root. The script formats every `*.ttl` file under
-`semantic/ontology/`; inspect the resulting diff and avoid using it when an
+`cpp/core/semantic/` and `cpp/plugins/*/semantic/`; inspect the resulting diff and avoid using it when an
 unrelated formatting-only rewrite would obscure the intended change.
 
 After ontology edits, run from the repository root:
 
 ```powershell
-& ".venv\Scripts\python.exe" semantic\validate_semantic.py
-& ".venv\Scripts\python.exe" semantic\generate_projection.py --check
+cmake --build tmp\build\core-default --target streamfind_aggregate_catalogue
 ```
 
-If the projection is intentionally changed, regenerate it first:
-
-```powershell
-& ".venv\Scripts\python.exe" semantic\generate_projection.py
-```
+The native SDK catalogue generator is the authoritative projection path. Python/Jena
+validation is no longer part of the tracked runtime build layout.
 
 ## R Package Native Build
 

@@ -1,4 +1,4 @@
-# Native Mass-Spectrometry Reader Expansion — Final Status Plan
+# Native Mass-Spectrometry Reader Expansion — Status and Development Plan
 
 > **Status:** implementation substantially complete for the currently validated fixture families; broader format coverage, exact calibration, corpus validation, and release hardening remain open.
 >
@@ -315,6 +315,21 @@ The following items are still open and must not be represented as complete forma
 - validate more WIFF container layouts and malformed/truncated inputs;
 - complete multi-file and multiple-logical-analysis persistence differential tests.
 
+### Thermo
+
+- validate pre-v64 layouts before claiming support beyond the current version-66
+  subset;
+- validate additional Tribrid, DIA, and multi-controller variants and reject
+  unsupported controller/layout combinations explicitly;
+- expose and validate UV/PDA and auxiliary channels where the public contract
+  supports them;
+- add arbitrary XIC/EIC support only after native trace metadata and array
+  semantics are established;
+- validate precursor intensity behavior across files where native metadata is
+  absent or represented differently;
+- broaden malformed/truncated pointer-chain, packet, centroid, profile, and
+  timestamp coverage.
+
 ### Bruker TSF
 
 - replace the validated approximate m/z calibration with vendor-exact calibration where recoverable;
@@ -357,6 +372,124 @@ The following items are still open and must not be represented as complete forma
 - validate all public aggregate operations (`get_raw_spectra_eic`, MS1, MS2, chromatograms) after indexed changes;
 - verify project persistence after reopen for every supported family;
 - keep semantic catalogue, generated projection, C++, Rust, and MCP schemas synchronized.
+
+## Recommended development order
+
+Work in `mass_spec_reader_extension` in the following order. Each phase is a
+gate for the next one; a parser is not promoted from “validated slice” to
+“broader support” until both C++ and Rust produce the same public results and
+reject malformed or unsupported input explicitly.
+
+### Phase 1 — shared reader hardening and validation harness
+
+1. Add lightweight, portable regression coverage for lazy decoding,
+   indexed-selection precedence, logical-analysis persistence/reopen, and
+   error parity. Keep fixture-dependent checks in `scripts/dev/` and do not
+   add external vendor files to CTest or Cargo tests.
+2. Add opt-in counters or instrumentation proving that unrequested spectrum
+   and chromatogram payloads are not decoded.
+3. Run the complete C++/Rust MCP differential matrix after every parser phase,
+   including portable mzML plus every available vendor fixture.
+
+### Phase 2 — SCIEX validated-slice completion
+
+1. Replace MRM marker-frequency heuristics with acquisition metadata-driven
+   transition and event assignment.
+2. Complete Mix1 tagged-cycle reconciliation and Nitrosamine outer-fragment
+   and sparse-tail handling.
+3. Parse all per-period/per-experiment `MassRangeEx` boundaries and add pump
+   and auxiliary chromatogram families where native evidence is available.
+4. Expand TOF calibration and WIFF/WIFF.SCAN layout validation across more
+   files, logical analyses, and malformed/truncated cases.
+5. Re-run C++/Rust multi-analysis persistence and complete-array differential
+   checks before starting another vendor expansion.
+
+SCIEX is first because it is the active hardening area and already has native
+TOF, MRM, sparse, multi-analysis, and malformed-input infrastructure. Do not
+add filename-specific branches or retain marker heuristics as a compatibility
+path.
+
+### Phase 3 — Thermo validated-subset expansion
+
+1. Harden version-66 pointer-chain, packet, centroid, profile, and timestamp
+   parsing against malformed and truncated inputs.
+2. Validate pre-v64 layouts and explicitly reject unsupported layout families
+   until they have independent evidence.
+3. Validate Tribrid, DIA, and multi-controller variants, preserving controller
+   identity and scan metadata.
+4. Add UV/PDA, auxiliary, and arbitrary XIC/EIC support only when native trace
+   semantics and public schema requirements are established.
+5. Re-run C++/Rust corpus and MCP differential checks across every validated
+   Thermo variant.
+
+Thermo follows SCIEX because the current reader is native and validated but
+bounded to one layout family. This phase widens a known parser rather than
+introducing a speculative format interpretation.
+
+### Phase 4 — Bruker calibration and safety
+
+1. Replace the TSF approximate m/z calibration only after its provenance and
+   equation are independently established; otherwise retain the approximation
+   and document its measured tolerance.
+2. Generalize BAF object lookup and classify additional profile, line, APCI,
+   and later-block variants.
+3. Implement and validate native BAF m/z calibration and expose line/profile
+   arrays through both public APIs.
+4. Add malformed-header, truncated-payload, impossible-count, overflow, and
+   unsupported-variant checks for TSF and BAF.
+5. Validate all persisted TSF/BAF paths and the six known BAF acquisitions.
+
+Bruker follows SCIEX because calibration and BAF layout assumptions affect
+large arrays and currently represent the largest correctness/performance risk
+among the validated native readers.
+
+### Phase 5 — Agilent corpus and calibration expansion
+
+1. Validate all supplied MassHunter acquisitions through both public readers
+   and classify every observed `SpectrumFormatID`.
+2. Recover `MSMassCal.bin`, `DefaultMassCal.xml`, `CalibrationID`, and
+   `MassCalOffset` semantics, including scan/segment-specific behavior.
+3. Expand MassHunter instrument layouts, ChemStation 1D/2D coverage, and
+   confirmed DAD/UV/pump/TCC/auxiliary traces.
+4. Validate IMS frame linkage and CCS/mobility calibration only against a
+   corpus that supplies independent evidence.
+
+Agilent is intentionally after Bruker: its current slice is functional, while
+the remaining work is broader acquisition-family and calibration coverage.
+
+### Phase 6 — Shimadzu and XML edge coverage
+
+1. Broaden LCD/TLM corpus validation, add malformed diagnostics, and validate
+   persisted analysis reads.
+2. Validate mzML indexed boundaries for namespace, self-closing, multiline,
+   and unusual formatting cases; add malformed XML/base64/zlib/array-length
+   checks.
+3. Benchmark larger mzML files and decide whether file-backed or memory-mapped
+   indexing is required.
+4. Broaden mzXML variants and retention-time/unit edge cases.
+
+### Phase 7 — release integration gate
+
+1. Validate every supported family through public C++ and Rust reader/MCP
+   paths, including all logical-analysis reopen cases.
+2. Require exact parity or a recorded numeric tolerance for every metadata and
+   array field.
+3. Run semantic validation and projection checks after catalogue changes.
+4. Complete provenance, dependency-license, and fixture-authorization review.
+5. Clean disposable build and fixture artifacts, inspect the final diff, and
+   commit only with explicit approval.
+
+### Per-phase acceptance checklist
+
+- both C++ and Rust implementations changed together when the public contract
+  changes;
+- the same logical analyses, public indices, headers, arrays, and errors are
+  compared;
+- retention times remain seconds at the public boundary;
+- indexed selection decodes only requested payloads;
+- malformed, truncated, overflow, and unsupported inputs fail explicitly;
+- external fixtures and oracle outputs remain development-only under `tmp/`;
+- no runtime SDK, DLL, Clearcore, ProteoWizard, or mzML fallback is added.
 
 ## Validation currently completed
 
@@ -411,25 +544,31 @@ Before declaring the expansion complete:
 - no secrets, credentials, API keys, passwords, tokens, or connection strings in source, plan, logs, or summaries;
 - external fixtures, generated reports, build trees, and benchmark artifacts remain under `tmp/` and are not committed.
 
-# Legal Notice for Docs
+# Legal and provenance boundary
 
-I performed a static provenance and originality audit of the native mass-spectrometry implementation.
+The native mass-spectrometry readers are maintained as independently authored
+C++ and Rust implementations. Their documented development evidence consists
+of lawfully obtained or project-authorized data files, publicly available
+information, independent byte-level analysis, and observable outputs from
+development-only differential oracles. This is a process record, not a legal
+certification or warranty.
 
-## Conclusion
+The production readers must not incorporate vendor source code, decompiled
+implementation code, copied SDK headers, confidential vendor documentation,
+vendor binaries, or translated oracle code. Vendor SDKs, ClearCore,
+ProteoWizard, `msconvert`, `baf2sql`, paired mzML files, debugger traces, and
+restricted sample files remain development-only material and must not become
+runtime dependencies or release contents.
 
-I found **no obvious copied vendor implementation code** in the production C++ or Rust readers.
+The implementation process does not by itself resolve contractual,
+trade-secret, copyright, trademark, or technological-protection obligations.
+The detailed per-vendor evidence and review checklist are maintained in
+`.plans/provenance/vendor-format-provenance.md`.
 
-The implementation appears to be independently authored:
-
-- the changed commits are authored by Ricardo Cunha;
-- production code uses StreamFind-owned namespaces and data structures;
-- there are no vendor SDK headers or vendor source files in the reader paths;
-- no production references to ClearCore, ProteoWizard, `msconvert`, `baf2sql`, or vendor DLLs were found;
-- C++ and Rust contain separate implementations rather than one copied/wrapped implementation;
-- error handling, bounds checks, file access, and metadata models are written in the project’s own style;
-- third-party algorithms such as LZF, Zstandard, OLE parsing, base64, and zlib are implemented or consumed through normal independent/library interfaces rather than copied vendor code.
-
-This is a **technical originality assessment**, not a legal certification. A static code review cannot prove that no restricted source, documentation, or confidential information influenced the implementation.
+SCIEX classic WIFF/WIFF.SCAN decoding is a separate boundary from WIFF2
+encrypted metadata. streamfind does not decrypt or circumvent WIFF2 metadata;
+no WIFF2 key recovery, decryption, or access-control bypass may be added
+without dedicated German/EU technical and legal review.
 
 ## Items that deserve provenance review
 

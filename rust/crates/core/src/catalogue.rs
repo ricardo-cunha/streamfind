@@ -12,17 +12,47 @@
 //! 3. the repository source-tree layout (`semantic/generated`) — dev/test
 //!    fallback anchored at the core crate manifest dir
 
+use crate::{
+    Method, MethodExecutor, MethodRegistry, MethodValidator, Operation, OperationExecutor,
+    OperationRegistry, OperationValidator, ParameterSchema,
+};
 use duckdb::{AccessMode, Config, Connection};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::OnceLock;
+
+/// Explicit executable binding for one semantic workflow method.
+pub struct MethodBinding {
+    pub id: &'static str,
+    pub executor: MethodExecutor,
+    pub validator: Option<MethodValidator>,
+}
+
+/// Explicit executable binding for one semantic public operation.
+pub struct OperationBinding {
+    pub id: &'static str,
+    pub executor: OperationExecutor,
+    pub validator: Option<OperationValidator>,
+}
+
+/// Native composition boundary for one semantic domain module.
+pub struct DomainModuleBinding {
+    pub module_id: &'static str,
+    pub domain_id: &'static str,
+    pub module_version: &'static str,
+    pub required_modules: Vec<&'static str>,
+    pub methods: Vec<MethodBinding>,
+    pub operations: Vec<OperationBinding>,
+    pub tables: Vec<String>,
+    pub schema_binding: Option<Box<dyn Fn() + Send + Sync>>,
+}
 
 const CATALOGUE_SQL: &str = "SELECT canonical_id, kind, domain, label, definition, category, \
      invocation_model, requires_connection, guidance, CAST(next_operations AS VARCHAR), \
      interface_guidance, executable, exposed, mcp_name, CAST(input_schema AS VARCHAR), \
      CAST(parameters AS VARCHAR), CAST(result_schema AS VARCHAR), CAST(reads_tables AS VARCHAR), \
      CAST(writes_tables AS VARCHAR), cacheable, single_occurrence, mutates_project, \
-     CAST(required_methods AS VARCHAR) \
+     CAST(required_methods AS VARCHAR), module_id \
      FROM catalogue_entries ORDER BY canonical_id";
 
 fn env_path() -> Option<PathBuf> {
@@ -106,6 +136,7 @@ fn load_entries() -> Result<Vec<Value>, String> {
             "kind": kind,
             "canonical_id": canonical_id,
             "domain": row.get::<_, String>(2).map_err(|e| e.to_string())?,
+            "module_id": row.get::<_, String>(23).map_err(|e| e.to_string())?,
             "label": row.get::<_, String>(3).map_err(|e| e.to_string())?,
             "definition": row.get::<_, String>(4).map_err(|e| e.to_string())?,
             "interface": json!({
@@ -242,6 +273,287 @@ pub fn methods_json() -> Value {
     Value::Array(methods)
 }
 
+/// Return the semantic module that provides a canonical capability.
+pub fn module_id(id: &str) -> Option<&'static str> {
+    entries()
+        .iter()
+        .find(|entry| entry["canonical_id"] == id)
+        .and_then(|entry| entry["module_id"].as_str())
+}
+
+/// Load generated table contracts for one semantic domain.
+pub fn table_manifest(domain: &str) -> Result<Vec<(String, Vec<(String, String)>)>, String> {
+    let path = find_path().ok_or_else(|| "catalogue.duckdb not found".to_owned())?;
+    let config = Config::default()
+        .access_mode(AccessMode::ReadOnly)
+        .map_err(|error| error.to_string())?;
+    let connection =
+        Connection::open_with_flags(&path, config).map_err(|error| error.to_string())?;
+    let mut statement = connection
+        .prepare("SELECT table_name, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = ? ORDER BY table_name")
+        .map_err(|error| error.to_string())?;
+    let mut rows = statement
+        .query([domain])
+        .map_err(|error| error.to_string())?;
+    let mut tables = Vec::new();
+    while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+        let name: String = row.get(0).map_err(|error| error.to_string())?;
+        let columns: String = row.get(1).map_err(|error| error.to_string())?;
+        let columns: Vec<Value> =
+            serde_json::from_str(&columns).map_err(|error| error.to_string())?;
+        tables.push((
+            name,
+            columns
+                .into_iter()
+                .filter_map(|column| {
+                    Some((
+                        column["name"].as_str()?.to_owned(),
+                        column["type"].as_str().unwrap_or_default().to_owned(),
+                    ))
+                })
+                .collect(),
+        ));
+    }
+    Ok(tables)
+}
+
+/// Register executable catalogue entries through domain-provided bindings.
+pub fn register_methods_from_catalogue<S, R>(
+    registry: &mut MethodRegistry,
+    domain: &str,
+    schema_for: S,
+    resolver: R,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+    R: Fn(&str) -> Option<MethodExecutor>,
+{
+    for entry in entries().iter().filter(|entry| {
+        entry["kind"] == "method"
+            && entry["domain"].as_str() == Some(domain)
+            && entry["executable"].as_bool().unwrap_or(false)
+    }) {
+        let id = entry["canonical_id"].as_str().unwrap_or_default();
+        let Some(executor) = resolver(id) else {
+            continue;
+        };
+        let mut method = Method::new(
+            id,
+            entry["label"].as_str().unwrap_or(id),
+            entry["definition"].as_str().unwrap_or_default(),
+            domain,
+            schema_for(entry),
+            executor,
+        );
+        method.cacheable = entry["cacheable"].as_bool().unwrap_or(false);
+        method.single_occurrence = entry["single_occurrence"].as_bool().unwrap_or(false);
+        registry.register(method)?;
+    }
+    Ok(())
+}
+
+pub fn register_methods_from_catalogue_with<S, R, D>(
+    registry: &mut MethodRegistry,
+    domain: &str,
+    schema_for: S,
+    resolver: R,
+    decorate: D,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+    R: Fn(&str) -> Option<MethodExecutor>,
+    D: Fn(Method) -> Method,
+{
+    for entry in entries().iter().filter(|entry| {
+        entry["kind"] == "method"
+            && entry["domain"].as_str() == Some(domain)
+            && entry["executable"].as_bool().unwrap_or(false)
+    }) {
+        let id = entry["canonical_id"].as_str().unwrap_or_default();
+        let Some(executor) = resolver(id) else {
+            continue;
+        };
+        let mut method = Method::new(
+            id,
+            entry["label"].as_str().unwrap_or(id),
+            entry["definition"].as_str().unwrap_or_default(),
+            domain,
+            schema_for(entry),
+            executor,
+        );
+        method.cacheable = entry["cacheable"].as_bool().unwrap_or(false);
+        method.single_occurrence = entry["single_occurrence"].as_bool().unwrap_or(false);
+        registry.register(decorate(method))?;
+    }
+    Ok(())
+}
+
+/// Register executable operation entries through domain-provided bindings.
+pub fn register_operations_from_catalogue<S, R>(
+    registry: &mut OperationRegistry,
+    domain: &str,
+    schema_for: S,
+    resolver: R,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+    R: Fn(&str) -> Option<OperationExecutor>,
+{
+    for entry in entries().iter().filter(|entry| {
+        entry["kind"] == "operation"
+            && entry["domain"].as_str() == Some(domain)
+            && entry["executable"].as_bool().unwrap_or(false)
+    }) {
+        let id = entry["canonical_id"].as_str().unwrap_or_default();
+        let Some(executor) = resolver(id) else {
+            continue;
+        };
+        registry.register(Operation::new(
+            id,
+            entry["label"].as_str().unwrap_or(id),
+            entry["definition"].as_str().unwrap_or_default(),
+            domain,
+            schema_for(entry),
+            executor,
+        ))?;
+    }
+    Ok(())
+}
+
+/// Register one explicit domain module and verify semantic module ownership.
+pub fn register_module<S>(
+    module: DomainModuleBinding,
+    method_registry: &mut MethodRegistry,
+    operation_registry: &mut OperationRegistry,
+    schema_for: S,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+{
+    register_module_with_entries(
+        entries(),
+        module,
+        method_registry,
+        operation_registry,
+        schema_for,
+    )
+}
+
+/// Register one explicit module against a caller-provided catalogue snapshot.
+pub fn register_module_with_entries<S>(
+    entries: &[Value],
+    module: DomainModuleBinding,
+    method_registry: &mut MethodRegistry,
+    operation_registry: &mut OperationRegistry,
+    schema_for: S,
+) -> crate::Result<()>
+where
+    S: Fn(&Value) -> ParameterSchema,
+{
+    for dependency in &module.required_modules {
+        if !entries
+            .iter()
+            .any(|entry| entry["module_id"] == *dependency)
+        {
+            return Err(crate::Error::new(
+                crate::ErrorCode::InvalidArgument,
+                format!(
+                    "catalogue: missing module dependency {dependency} for module {}",
+                    module.module_id
+                ),
+            ));
+        }
+    }
+    if !module.tables.is_empty() {
+        let manifest = table_manifest(&module.domain_id)
+            .map_err(|error| crate::Error::new(crate::ErrorCode::InvalidArgument, error))?;
+        for table in &module.tables {
+            if !manifest.iter().any(|(name, _)| name == table) {
+                return Err(crate::Error::new(
+                    crate::ErrorCode::InvalidArgument,
+                    format!(
+                        "catalogue: missing owned table {table} for module {}",
+                        module.module_id
+                    ),
+                ));
+            }
+        }
+    }
+    for binding in module.methods {
+        let entry = entries
+            .iter()
+            .find(|entry| {
+                entry["kind"] == "method"
+                    && entry["canonical_id"].as_str() == Some(binding.id)
+                    && entry["domain"].as_str() == Some(module.domain_id)
+                    && entry["module_id"].as_str() == Some(module.module_id)
+            })
+            .ok_or_else(|| {
+                crate::Error::new(
+                    crate::ErrorCode::InvalidArgument,
+                    format!("invalid method binding: {}", binding.id),
+                )
+            })?;
+        let mut method = Method::new(
+            binding.id,
+            entry["label"].as_str().unwrap_or(binding.id),
+            entry["definition"].as_str().unwrap_or_default(),
+            module.domain_id,
+            schema_for(entry),
+            binding.executor,
+        );
+        method.cacheable = entry["cacheable"].as_bool().unwrap_or(false);
+        method.single_occurrence = entry["single_occurrence"].as_bool().unwrap_or(false);
+        method.writes = entry["effects"]["writes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        method.required_methods = entry["required_methods"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        if let Some(validator) = binding.validator {
+            method = method.with_validator(validator);
+        }
+        method_registry.register(method)?;
+    }
+    for binding in module.operations {
+        let entry = entries
+            .iter()
+            .find(|entry| {
+                entry["kind"] == "operation"
+                    && entry["canonical_id"].as_str() == Some(binding.id)
+                    && entry["domain"].as_str() == Some(module.domain_id)
+                    && entry["module_id"].as_str() == Some(module.module_id)
+            })
+            .ok_or_else(|| {
+                crate::Error::new(
+                    crate::ErrorCode::InvalidArgument,
+                    format!("invalid operation binding: {}", binding.id),
+                )
+            })?;
+        let mut operation = Operation::new(
+            binding.id,
+            entry["label"].as_str().unwrap_or(binding.id),
+            entry["definition"].as_str().unwrap_or_default(),
+            module.domain_id,
+            schema_for(entry),
+            binding.executor,
+        );
+        if let Some(validator) = binding.validator {
+            operation = operation.with_validator(validator);
+        }
+        operation_registry.register(operation)?;
+    }
+    Ok(())
+}
+
 /// Shared project-management and workflow guidance returned by MCP initialize.
 /// It is sourced from the streamfind domain entry in the generated catalogue.
 pub fn interface_guidance() -> String {
@@ -250,7 +562,7 @@ pub fn interface_guidance() -> String {
         .find_map(|entry| entry["interface_guidance"].as_str())
         .filter(|value| !value.is_empty())
         .unwrap_or(
-            "Start with create, then describe the project. Domain operations are stateless and require database_path and project_id; connect is only needed for workflow methods.",
+            "Start with create, then describe the project. Domain operations are stateless and require database_path; connect is only needed for workflow methods.",
         )
         .to_owned()
 }

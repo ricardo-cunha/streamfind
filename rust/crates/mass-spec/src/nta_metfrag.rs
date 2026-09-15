@@ -15,11 +15,11 @@ use serde_json::Value;
 use streamfind_rust_core::{Error, ErrorCode, Project, Result};
 
 use crate::nta::{NtaSuspectRow, ProjectNonTargetAnalysis};
-use crate::nta_suspect_screening::{normalize_structure, NormalizedStructure};
-use crate::nta_utils::encode_floats_base64;
-use crate::processing_methods_nta::{
+use crate::nta_processing_methods::{
     finished, load_analysis_features, persist_features, persist_suspects,
 };
+use crate::nta_suspect_screening::{normalize_structure, NormalizedStructure};
+use crate::nta_utils::encode_floats_base64;
 
 const SUPPORTED_METFRAG_DATABASE_TYPES: [&str; 7] = [
     "KEGG",

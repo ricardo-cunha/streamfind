@@ -4,9 +4,10 @@
   <img src="assets/streamfind.png" width="70%" />
 </p>
 
-streamfind is a DuckDB-backed framework for analytical data processing. It
-provides native C++ and Rust backends, mass-spectrometry data access, a shared
-semantic catalogue, and MCP servers for applications and AI agents.
+streamfind is a DuckDB-backed framework for analytical data processing. Its
+active native backend is C++, with mass-spectrometry data access, a shared
+semantic catalogue, a dynamic plugin framework, and MCP servers for applications
+and AI agents. A Rust backend is preserved from an earlier development phase.
 
 ## Start here
 
@@ -28,11 +29,12 @@ semantic catalogue, and MCP servers for applications and AI agents.
 | Interface | Provides | Availability |
 | --- | --- | --- |
 | C++ core | Native project API, mass-spectrometry operations, and MCP server | Available as a native package |
-| Rust backend | Native project API, CLI, mass-spectrometry operations, and MCP server | Available as a native package |
+| Rust backend | Native project API, CLI, mass-spectrometry operations, and MCP server | Preserved preview; development paused |
 | MCP | JSON-RPC over stdio for applications and AI agents | Available through both native backends |
 | R package | Existing R workflows, non-target screening, and Shiny application | Preserved and functional |
 | Python package | Public Python API | Not released |
 | Cogniflow integration | Cogniflow adapter | Separate future integration path |
+| React frontend | Planned user interface over the C++ backend | Future; not released |
 
 ## MCP at a glance
 
@@ -60,3 +62,8 @@ implement the contract independently but expose the same public concepts.
 
 The [architecture](architecture.md) page explains the relationship between
 the catalogue, native APIs, and MCP.
+
+The active implementation path is the C++ plugin framework. Rust remains a
+preserved, stale development backend while C++ domain plugins and native readers
+are completed. A future React frontend will use the C++ backend through its
+public service boundary; it will not access project DuckDB files directly.

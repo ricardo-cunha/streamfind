@@ -2,7 +2,7 @@
 /build/
 /dist/
 /cmake-build-*/
-/core/build/
+/tmp/build/
 /integrations/cf-streamfind/build/
 /site/
 **/CMakeCache.txt
@@ -21,7 +21,7 @@ _skbuild/
 **/*.dylib
 **/*.pyd
 **/*.egg-info/
-/core/vendor/openbabel/build/
+/cpp/vendor/openbabel/build/
 
 # Rust tooling ----------------------------------------------------------------
 # Machine-local Cargo config (e.g. a per-user linker path); never commit.
@@ -31,12 +31,17 @@ rust/.cargo/
 # Nested git repositories (have their own .git file); local developer state.
 .worktrees/
 
+# Completed and provenance plans are retained locally but are not active tracked
+# planning inputs. Active plans under .plans/ remain trackable.
+/.plans/completed/
+/.plans/provenance/
+
 # Hermes session and workspace metadata ----------------------------------------
 .hermes/
 
 # DuckDB runtime/import libraries are vendored for native builds ----------------
-!/core/vendor/duckdb/lib/
-!/core/vendor/duckdb/lib/**
+!/cpp/vendor/duckdb/lib/
+!/cpp/vendor/duckdb/lib/**
 
 # Python tooling ----------------------------------------------------------------
 **/__pycache__/
@@ -53,8 +58,6 @@ rust/.cargo/
 # Runtime and generated data ----------------------------------------------------
 **/*.sqlite
 **/*.duckdb
-# The semantic catalogue knowledge base is a committed runtime artifact.
-!/semantic/generated/catalogue.duckdb
 **/*.rds
 **/*.sf
 **/*.html
@@ -70,5 +73,5 @@ rust/.cargo/
 *.RData
 *.DS_Store
 *.Rproj
-*.vscode/
+.vscode/
 *.quarto/

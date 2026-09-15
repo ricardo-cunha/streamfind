@@ -1123,9 +1123,6 @@ dependencies = [
 [[package]]
 name = "streamfind-rust-external"
 version = "0.2.0"
-dependencies = [
- "streamfind-rust-test-support",
-]
 
 [[package]]
 name = "streamfind-rust-mass-spec"

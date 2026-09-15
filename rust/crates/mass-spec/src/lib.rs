@@ -4,10 +4,13 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use streamfind_rust_core::{
-    Error, ErrorCode, Method, MethodRegistry, MethodValidator, Operation, OperationRegistry,
-    ParameterDefinition, ParameterSchema, ParameterType, Project, Result, TypeDescriptor,
+    catalogue::{register_module, DomainModuleBinding, MethodBinding, OperationBinding},
+    Error, ErrorCode, MethodExecutor, MethodRegistry, MethodValidator, OperationExecutor,
+    OperationRegistry, ParameterDefinition, ParameterSchema, ParameterType, Project,
+    ProjectTableStore, Result, TypeDescriptor,
 };
 
+pub mod chromatograms_processing_methods;
 pub mod nta;
 pub mod nta_alignment;
 pub mod nta_annotation;
@@ -17,22 +20,22 @@ pub mod nta_correction_algorithms;
 pub mod nta_filters;
 pub mod nta_gap_filling;
 pub mod nta_metfrag;
+pub mod nta_processing_methods;
 pub mod nta_suspect_screening;
 pub mod nta_transformation_products;
 pub mod nta_utils;
-pub mod processing_methods_chromatograms;
-pub mod processing_methods_nta;
 pub mod reader;
 pub mod reader_agilent;
 pub mod reader_agilent_chemstation;
 pub mod reader_agilent_ims;
 pub mod reader_bruker;
 pub mod reader_sciex;
+pub mod reader_thermo;
 
-const ANALYSES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_ANALYSES (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, analysis_index INTEGER NOT NULL DEFAULT 0, source_analysis_number INTEGER, analysis_count INTEGER NOT NULL DEFAULT 1, replicate VARCHAR, blank VARCHAR, file_name VARCHAR, file_path VARCHAR NOT NULL, file_dir VARCHAR, file_extension VARCHAR, format VARCHAR, type VARCHAR, time_stamp VARCHAR, number_spectra INTEGER, number_chromatograms INTEGER, number_spectra_binary_arrays INTEGER, min_mz DOUBLE, max_mz DOUBLE, start_rt DOUBLE, end_rt DOUBLE, has_ion_mobility BOOLEAN, concentration DOUBLE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis))";
-const SPECTRA_HEADERS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_SPECTRA_HEADERS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, index INTEGER NOT NULL, scan INTEGER, array_length INTEGER, level INTEGER, mode INTEGER, polarity INTEGER, configuration INTEGER, lowmz DOUBLE, highmz DOUBLE, bpmz DOUBLE, bpint DOUBLE, tic DOUBLE, rt DOUBLE, mobility DOUBLE, window_mz DOUBLE, window_mzlow DOUBLE, window_mzhigh DOUBLE, precursor_mz DOUBLE, precursor_intensity DOUBLE, precursor_charge INTEGER, activation_ce DOUBLE, PRIMARY KEY(project_id, analysis, index))";
-const CHROMATOGRAMS_HEADERS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_CHROMATOGRAMS_HEADERS (project_id VARCHAR NOT NULL, analysis VARCHAR NOT NULL, index INTEGER NOT NULL, chromatogram_id VARCHAR, array_length INTEGER, polarity INTEGER, precursor_mz DOUBLE, activation_ce DOUBLE, product_mz DOUBLE, signal_type VARCHAR, chromatogram_type VARCHAR, detector VARCHAR, channel VARCHAR, units VARCHAR, wavelength_nm DOUBLE, interval_ms DOUBLE, start_time DOUBLE, end_time DOUBLE, intensity_multiplier DOUBLE, PRIMARY KEY(project_id, analysis, index))";
-pub(crate) const CHROMATOGRAMS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_CHROMATOGRAMS (project_id TEXT NOT NULL, analysis TEXT NOT NULL, index INTEGER NOT NULL DEFAULT 0, chromatogram_id TEXT NOT NULL, polarity INTEGER, precursor_mz DOUBLE, activation_ce DOUBLE, product_mz DOUBLE, wavelength_nm DOUBLE NOT NULL DEFAULT 0, rt DOUBLE NOT NULL, raw_intensity DOUBLE NOT NULL, baseline DOUBLE NOT NULL DEFAULT 0, intensity DOUBLE NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, analysis, chromatogram_id, rt))";
+const ANALYSES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_ANALYSES (analysis VARCHAR NOT NULL, analysis_index INTEGER NOT NULL DEFAULT 0, source_analysis_number INTEGER, analysis_count INTEGER NOT NULL DEFAULT 1, replicate VARCHAR, blank VARCHAR, file_name VARCHAR, file_path VARCHAR NOT NULL, file_dir VARCHAR, file_extension VARCHAR, format VARCHAR, type VARCHAR, time_stamp VARCHAR, number_spectra INTEGER, number_chromatograms INTEGER, number_spectra_binary_arrays INTEGER, min_mz DOUBLE, max_mz DOUBLE, start_rt DOUBLE, end_rt DOUBLE, has_ion_mobility BOOLEAN, concentration DOUBLE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis))";
+const SPECTRA_HEADERS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_SPECTRA_HEADERS (analysis VARCHAR NOT NULL, index INTEGER NOT NULL, scan INTEGER, array_length INTEGER, level INTEGER, mode INTEGER, polarity INTEGER, configuration INTEGER, lowmz DOUBLE, highmz DOUBLE, bpmz DOUBLE, bpint DOUBLE, tic DOUBLE, rt DOUBLE, mobility DOUBLE, window_mz DOUBLE, window_mzlow DOUBLE, window_mzhigh DOUBLE, precursor_mz DOUBLE, precursor_intensity DOUBLE, precursor_charge INTEGER, activation_ce DOUBLE, PRIMARY KEY(analysis, index))";
+const CHROMATOGRAMS_HEADERS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_CHROMATOGRAMS_HEADERS (analysis VARCHAR NOT NULL, index INTEGER NOT NULL, chromatogram_id VARCHAR, array_length INTEGER, polarity INTEGER, precursor_mz DOUBLE, activation_ce DOUBLE, product_mz DOUBLE, signal_type VARCHAR, chromatogram_type VARCHAR, detector VARCHAR, channel VARCHAR, units VARCHAR, wavelength_nm DOUBLE, interval_ms DOUBLE, start_time DOUBLE, end_time DOUBLE, intensity_multiplier DOUBLE, PRIMARY KEY(analysis, index))";
+pub(crate) const CHROMATOGRAMS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS MASS_SPEC_CHROMATOGRAMS (analysis TEXT NOT NULL, index INTEGER NOT NULL DEFAULT 0, chromatogram_id TEXT NOT NULL, polarity INTEGER, precursor_mz DOUBLE, activation_ce DOUBLE, product_mz DOUBLE, wavelength_nm DOUBLE NOT NULL DEFAULT 0, rt DOUBLE NOT NULL, raw_intensity DOUBLE NOT NULL, baseline DOUBLE NOT NULL DEFAULT 0, intensity DOUBLE NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(analysis, chromatogram_id, rt))";
 
 const CHROMATOGRAMS_SCHEMA_ALTERS: [&str; 6] = [
     "ALTER TABLE MASS_SPEC_CHROMATOGRAMS ADD COLUMN IF NOT EXISTS index INTEGER DEFAULT 0",
@@ -44,9 +47,10 @@ const CHROMATOGRAMS_SCHEMA_ALTERS: [&str; 6] = [
 ];
 
 pub(crate) fn ensure_chromatograms_schema(project: &Project) -> Result<()> {
-    project.execute_sql(CHROMATOGRAMS_SCHEMA)?;
+    let tables = ProjectTableStore::new(project);
+    tables.ensure_table(CHROMATOGRAMS_SCHEMA)?;
     for alter in CHROMATOGRAMS_SCHEMA_ALTERS {
-        project.execute_sql(alter)?;
+        tables.execute(alter)?;
     }
     Ok(())
 }
@@ -56,20 +60,20 @@ fn sql(value: &str) -> String {
 }
 
 fn ensure_schema(project: &Project) -> Result<()> {
-    project.execute_sql(ANALYSES_SCHEMA)?;
-    project.execute_sql(
+    let tables = ProjectTableStore::new(project);
+    tables.ensure_table(ANALYSES_SCHEMA)?;
+    tables.execute(
         "ALTER TABLE MASS_SPEC_ANALYSES ADD COLUMN IF NOT EXISTS analysis_index INTEGER DEFAULT 0",
     )?;
-    project.execute_sql(
+    tables.execute(
         "ALTER TABLE MASS_SPEC_ANALYSES ADD COLUMN IF NOT EXISTS source_analysis_number INTEGER",
     )?;
-    project.execute_sql(
+    tables.execute(
         "ALTER TABLE MASS_SPEC_ANALYSES ADD COLUMN IF NOT EXISTS analysis_count INTEGER DEFAULT 1",
     )?;
-    project
-        .execute_sql("ALTER TABLE MASS_SPEC_ANALYSES ADD COLUMN IF NOT EXISTS replicate VARCHAR")?;
-    project.execute_sql(SPECTRA_HEADERS_SCHEMA)?;
-    project.execute_sql(CHROMATOGRAMS_HEADERS_SCHEMA)?;
+    tables.execute("ALTER TABLE MASS_SPEC_ANALYSES ADD COLUMN IF NOT EXISTS replicate VARCHAR")?;
+    tables.ensure_table(SPECTRA_HEADERS_SCHEMA)?;
+    tables.ensure_table(CHROMATOGRAMS_HEADERS_SCHEMA)?;
     Ok(())
 }
 
@@ -88,6 +92,7 @@ fn format_name(format: reader::Format) -> &'static str {
         reader::Format::AgilentChemStationD => "AgilentChemStationD",
         reader::Format::BrukerTsf => "BrukerTSF",
         reader::Format::BrukerBaf => "BrukerBAF",
+        reader::Format::ThermoRaw => "ThermoRAW",
     }
 }
 
@@ -145,8 +150,7 @@ fn add_analyses(project: &mut Project, parameters: &Value) -> Result<Value> {
                 base_analysis.to_owned()
             };
             let existing = project.query_json(&format!(
-                "SELECT analysis FROM MASS_SPEC_ANALYSES WHERE project_id = {} AND analysis = {}",
-                sql(project.get_project_id()),
+                "SELECT analysis FROM MASS_SPEC_ANALYSES WHERE analysis = {}",
                 sql(&analysis)
             ))?;
             if existing.as_array().is_some_and(|rows| !rows.is_empty()) {
@@ -157,7 +161,7 @@ fn add_analyses(project: &mut Project, parameters: &Value) -> Result<Value> {
             let source_number = descriptor
                 .source_analysis_number
                 .map_or("NULL".to_owned(), |value| value.to_string());
-            let query = format!("INSERT INTO MASS_SPEC_ANALYSES (project_id, analysis, analysis_index, source_analysis_number, analysis_count, replicate, blank, file_name, file_path, file_dir, file_extension, format, type, time_stamp, number_spectra, number_chromatograms, number_spectra_binary_arrays, min_mz, max_mz, start_rt, end_rt, has_ion_mobility, concentration) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, NULL)", sql(project.get_project_id()), sql(&analysis), descriptor.analysis_index, source_number, descriptor.analysis_count, sql(replicate), sql(blank), sql(file_name), sql(path_string), sql(file_dir.as_ref()), sql(extension), sql(format_name(summary.format)), sql("MS"), sql(""), summary.number_spectra, summary.number_chromatograms, summary.number_spectra_binary_arrays, summary.min_mz, summary.max_mz, summary.start_rt, summary.end_rt, summary.has_ion_mobility);
+            let query = format!("INSERT INTO MASS_SPEC_ANALYSES (analysis, analysis_index, source_analysis_number, analysis_count, replicate, blank, file_name, file_path, file_dir, file_extension, format, type, time_stamp, number_spectra, number_chromatograms, number_spectra_binary_arrays, min_mz, max_mz, start_rt, end_rt, has_ion_mobility, concentration) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, NULL)", sql(&analysis), descriptor.analysis_index, source_number, descriptor.analysis_count, sql(replicate), sql(blank), sql(file_name), sql(path_string), sql(file_dir.as_ref()), sql(extension), sql(format_name(summary.format)), sql("MS"), sql(&summary.time_stamp), summary.number_spectra, summary.number_chromatograms, summary.number_spectra_binary_arrays, summary.min_mz, summary.max_mz, summary.start_rt, summary.end_rt, summary.has_ion_mobility);
             project.execute_sql(&query)?;
             added.push(json!({"analysis": analysis, "file_path": path_string, "analysis_index": descriptor.analysis_index, "source_analysis_number": descriptor.source_analysis_number, "analysis_count": descriptor.analysis_count, "replicate": replicate, "blank": blank}));
         }
@@ -177,8 +181,7 @@ fn remove_analyses(project: &mut Project, parameters: &Value) -> Result<Value> {
             .as_str()
             .ok_or_else(|| invalid("analysis_names must contain strings"))?;
         project.execute_sql(&format!(
-            "DELETE FROM MASS_SPEC_ANALYSES WHERE project_id = {} AND analysis = {}",
-            sql(project.get_project_id()),
+            "DELETE FROM MASS_SPEC_ANALYSES WHERE analysis = {}",
             sql(name)
         ))?;
         removed.push(name);
@@ -188,7 +191,7 @@ fn remove_analyses(project: &mut Project, parameters: &Value) -> Result<Value> {
 
 fn get_analyses_info(project: &Project) -> Result<Value> {
     ensure_schema(project)?;
-    project.query_json(&format!("SELECT analysis, analysis_index, source_analysis_number, analysis_count, replicate, blank, file_path, format, number_spectra, number_chromatograms FROM MASS_SPEC_ANALYSES WHERE project_id = {} ORDER BY analysis", sql(project.get_project_id())))
+    project.query_json("SELECT analysis, analysis_index, source_analysis_number, analysis_count, replicate, blank, file_path, format, number_spectra, number_chromatograms FROM MASS_SPEC_ANALYSES ORDER BY analysis")
 }
 
 fn text(value: &Value) -> String {
@@ -444,7 +447,7 @@ fn target_matches(
 }
 
 fn analysis_rows(project: &Project) -> Result<Value> {
-    project.query_json(&format!("SELECT analysis, file_path, COALESCE(replicate, '') AS replicate FROM MASS_SPEC_ANALYSES WHERE project_id = {} ORDER BY analysis", sql(project.get_project_id())))
+    project.query_json("SELECT analysis, file_path, COALESCE(replicate, '') AS replicate FROM MASS_SPEC_ANALYSES ORDER BY analysis")
 }
 
 fn update_values(
@@ -469,7 +472,10 @@ fn update_values(
         } else {
             sql(&text(value))
         };
-        project.execute_sql(&format!("UPDATE MASS_SPEC_ANALYSES SET {column} = {expression} WHERE project_id = {} AND analysis = {}", sql(project.get_project_id()), sql(&text(&row["analysis"]))))?;
+        project.execute_sql(&format!(
+            "UPDATE MASS_SPEC_ANALYSES SET {column} = {expression} WHERE analysis = {}",
+            sql(&text(&row["analysis"]))
+        ))?;
     }
     Ok(json!({"updated": values.len()}))
 }
@@ -477,8 +483,7 @@ fn update_values(
 fn get_analysis_column(project: &Project, column: &str) -> Result<Value> {
     ensure_schema(project)?;
     let rows = project.query_json(&format!(
-        "SELECT {column} FROM MASS_SPEC_ANALYSES WHERE project_id = {} ORDER BY analysis",
-        sql(project.get_project_id())
+        "SELECT {column} FROM MASS_SPEC_ANALYSES ORDER BY analysis"
     ))?;
     Ok(Value::Array(
         rows.as_array()
@@ -513,6 +518,7 @@ fn get_spectra_headers_impl(project: &mut Project, parameters: &Value) -> Result
                     | reader::Format::BrukerTsf
                     | reader::Format::SciexWiff
                     | reader::Format::AgilentMassHunterD
+                    | reader::Format::ThermoRaw
             ) {
                 reader
                     .spectrum(index)
@@ -570,11 +576,12 @@ fn get_chromatograms_headers_impl(project: &mut Project, parameters: &Value) -> 
         reader
             .select_analysis(row["analysis_index"].as_i64().unwrap_or(0) as usize)
             .map_err(|e| invalid(e.to_string()))?;
-        let chromatograms = reader
-            .chromatograms_data(&[])
-            .map_err(|error| invalid(error.to_string()))?;
+        let chromatograms = reader.chromatograms().to_vec();
         for (index, chromatogram) in chromatograms.iter().enumerate() {
-            out.push(json!({"analysis": analysis, "index": index, "chromatogram_id": chromatogram.id, "array_length": chromatogram.time.len().min(chromatogram.intensity.len()), "polarity": chromatogram.polarity, "precursor_mz": chromatogram.precursor_mz.unwrap_or(0.0), "activation_ce": chromatogram.activation_ce.unwrap_or(0.0), "product_mz": chromatogram.product_mz.unwrap_or(0.0), "signal_type": chromatogram.signal_type, "chromatogram_type": chromatogram.chromatogram_type, "detector": chromatogram.detector, "channel": chromatogram.channel, "units": chromatogram.units, "wavelength_nm": chromatogram.wavelength_nm, "interval_ms": chromatogram.interval_ms, "start_time": chromatogram.time.first().copied().unwrap_or(0.0), "end_time": chromatogram.time.last().copied().unwrap_or(0.0), "intensity_multiplier": 1.0}));
+            let start_time = chromatogram.time.first().copied();
+            let end_time = chromatogram.time.last().copied();
+            let interval_ms = (chromatogram.time.len() > 1).then_some(chromatogram.interval_ms);
+            out.push(json!({"analysis": analysis, "index": index, "chromatogram_id": chromatogram.id, "array_length": chromatogram.array_length, "polarity": chromatogram.polarity, "precursor_mz": chromatogram.precursor_mz.unwrap_or(0.0), "activation_ce": chromatogram.activation_ce.unwrap_or(0.0), "product_mz": chromatogram.product_mz.unwrap_or(0.0), "signal_type": chromatogram.signal_type, "chromatogram_type": chromatogram.chromatogram_type, "detector": chromatogram.detector, "channel": chromatogram.channel, "units": chromatogram.units, "wavelength_nm": chromatogram.wavelength_nm, "interval_ms": interval_ms, "start_time": start_time, "end_time": end_time, "intensity_multiplier": 1.0}));
         }
     }
     Ok(Value::Array(out))
@@ -846,8 +853,8 @@ fn get_chromatograms_impl(project: &mut Project, parameters: &Value) -> Result<V
         )
     };
     project.query_json(&format!(
-        "SELECT c.project_id, c.analysis, COALESCE(a.replicate, '') AS replicate, c.index, c.chromatogram_id, c.polarity, c.precursor_mz, c.activation_ce, c.product_mz, c.wavelength_nm, c.rt, c.raw_intensity, c.baseline, c.intensity FROM MASS_SPEC_CHROMATOGRAMS c JOIN MASS_SPEC_ANALYSES a ON a.project_id = c.project_id AND a.analysis = c.analysis WHERE c.project_id = {}{} ORDER BY c.analysis, c.chromatogram_id, c.rt",
-        sql(project.get_project_id()), filter
+        "SELECT c.analysis, COALESCE(a.replicate, '') AS replicate, c.index, c.chromatogram_id, c.polarity, c.precursor_mz, c.activation_ce, c.product_mz, c.wavelength_nm, c.rt, c.raw_intensity, c.baseline, c.intensity FROM MASS_SPEC_CHROMATOGRAMS c JOIN MASS_SPEC_ANALYSES a ON a.analysis = c.analysis WHERE 1=1{} ORDER BY c.analysis, c.chromatogram_id, c.rt",
+        filter
     ))
 }
 
@@ -876,8 +883,7 @@ fn get_raw_chromatograms_impl(project: &mut Project, parameters: &Value) -> Resu
         })
         .unwrap_or_default();
     let rows = project.query_json(&format!(
-                "SELECT analysis, file_path, analysis_index, COALESCE(replicate, '') AS replicate FROM MASS_SPEC_ANALYSES WHERE project_id = {} ORDER BY analysis",
-                sql(project.get_project_id())
+                "SELECT analysis, file_path, analysis_index, COALESCE(replicate, '') AS replicate FROM MASS_SPEC_ANALYSES ORDER BY analysis"
             ))?;
     let mut output = Vec::new();
     for row in rows.as_array().into_iter().flatten() {
@@ -905,7 +911,6 @@ fn get_raw_chromatograms_impl(project: &mut Project, parameters: &Value) -> Resu
         for (index, chromatogram) in selected.iter().zip(chromatograms.iter()) {
             for (rt, intensity) in chromatogram.time.iter().zip(&chromatogram.intensity) {
                 output.push(json!({
-                    "project_id": project.get_project_id(),
                     "analysis": analysis,
                     "replicate": replicate,
                     "index": index,
@@ -1063,12 +1068,14 @@ fn get_features_impl(project: &mut Project, p: &Value) -> Result<Value> {
             target_filters.push(format!("({})", matchers.join(" AND ")));
         }
     }
-    let mut query = format!(
-        "SELECT * FROM MASS_SPEC_NTA_FEATURES WHERE project_id = {}",
-        sql(project.get_project_id())
-    );
+    let include_filtered = p.get("filtered").and_then(Value::as_bool).unwrap_or(false);
+    let mut query = "SELECT * FROM MASS_SPEC_NTA_FEATURES".to_owned();
+    if !include_filtered {
+        query.push_str(" WHERE filtered = FALSE");
+    }
     if !target_filters.is_empty() {
-        query.push_str(&format!(" AND ({})", target_filters.join(" OR ")));
+        query.push_str(if include_filtered { " WHERE " } else { " AND " });
+        query.push_str(&format!("({})", target_filters.join(" OR ")));
     }
     query.push_str(" ORDER BY analysis, rt, feature");
     project.query_json(&query)
@@ -1236,10 +1243,7 @@ fn query_nta_table_impl(
             target_filters.push(format!("({})", matchers.join(" AND ")));
         }
     }
-    let mut query = format!(
-        "SELECT * FROM {table} WHERE project_id = {}",
-        sql(project.get_project_id())
-    );
+    let mut query = format!("SELECT * FROM {table} WHERE ");
     if !target_filters.is_empty() {
         query.push_str(&format!(" AND ({})", target_filters.join(" OR ")));
     }
@@ -1355,37 +1359,6 @@ fn ontology_parameters(id: &str) -> ParameterSchema {
             })
             .collect(),
     }
-}
-
-fn ontology_description(id: &str) -> String {
-    ontology_entry(id)["definition"]
-        .as_str()
-        .unwrap_or_default()
-        .into()
-}
-
-fn configure_method(mut method: Method, id: &str) -> Method {
-    let entry = ontology_entry(id);
-    method.cacheable = entry["cacheable"].as_bool().unwrap_or(false);
-    method.writes = entry["effects"]["writes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect();
-    method.required_methods = entry["required_methods"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect();
-    method.single_occurrence = entry["single_occurrence"].as_bool().unwrap_or(false);
-    if let Some(validator) = nta_validator(id) {
-        method = method.with_validator(validator);
-    }
-    method
 }
 
 fn ontology_result_schema(id: &str) -> Value {
@@ -1556,226 +1529,222 @@ fn data_parameters(operation: &str) -> ParameterSchema {
     }
 }
 
+fn operation_executor(id: &'static str) -> OperationExecutor {
+    Box::new(move |project, parameters| {
+        table_result(
+            id,
+            match id {
+                "mass_spec.add_analyses" => add_analyses(project, parameters),
+                "mass_spec.remove_analyses" => remove_analyses(project, parameters),
+                "mass_spec.get_analyses_info" => get_analyses_info(project),
+                "mass_spec.get_spectra_headers" => get_spectra_headers_impl(project, parameters),
+                "mass_spec.get_chromatograms_headers" => {
+                    get_chromatograms_headers_impl(project, parameters)
+                }
+                "mass_spec.get_spectra_tic" => get_spectra_tic_impl(project, parameters),
+                "mass_spec.get_raw_spectra" => get_raw_spectra_impl(project, parameters, None),
+                "mass_spec.get_raw_spectra_eic" => get_raw_spectra_eic_impl(project, parameters),
+                "mass_spec.get_raw_spectra_ms1" => Ok(merge_raw_spectra_rows(
+                    get_raw_spectra_impl(project, parameters, Some(1))?,
+                    target_number(parameters.get("mz_clust")).unwrap_or(0.003),
+                    target_number(parameters.get("presence")).unwrap_or(0.8),
+                )),
+                "mass_spec.get_raw_spectra_ms2" => Ok(merge_raw_spectra_rows(
+                    get_raw_spectra_impl(project, parameters, Some(2))?,
+                    target_number(parameters.get("mz_clust")).unwrap_or(0.005),
+                    target_number(parameters.get("presence")).unwrap_or(0.0),
+                )),
+                "mass_spec.get_chromatograms" => get_chromatograms_impl(project, parameters),
+                "mass_spec.get_raw_chromatograms" => {
+                    get_raw_chromatograms_impl(project, parameters)
+                }
+                "mass_spec.get_features" => get_features_impl(project, parameters),
+                "mass_spec.get_suspects" => get_suspects_impl(project, parameters),
+                "mass_spec.get_internal_standards" => {
+                    get_internal_standards_impl(project, parameters)
+                }
+                "mass_spec.get_transformation_products" => {
+                    get_transformation_products_impl(project, parameters)
+                }
+                "mass_spec.get_analysis_names" => get_analysis_column(project, "analysis"),
+                "mass_spec.get_replicate_names" => get_analysis_column(project, "replicate"),
+                "mass_spec.get_blank_names" => get_analysis_column(project, "blank"),
+                "mass_spec.get_concentrations" => get_analysis_column(project, "concentration"),
+                "mass_spec.set_replicate_names" => {
+                    update_values(project, parameters, "replicate_names", "replicate", false)
+                }
+                "mass_spec.set_blank_names" => {
+                    update_values(project, parameters, "blank_names", "blank", false)
+                }
+                "mass_spec.set_concentrations" => {
+                    update_values(project, parameters, "concentrations", "concentration", true)
+                }
+                _ => unreachable!("unlisted MassSpec operation: {id}"),
+            },
+        )
+    })
+}
+
+fn operation_bindings(ids: &'static [&'static str]) -> Vec<OperationBinding> {
+    ids.iter()
+        .map(|id| OperationBinding {
+            id,
+            executor: operation_executor(id),
+            validator: None,
+        })
+        .collect()
+}
+
 pub fn register_operations(registry: &mut OperationRegistry) -> Result<()> {
-    registry.register(Operation::new(
+    let mut methods = MethodRegistry::default();
+    let base = operation_bindings(&[
         "mass_spec.add_analyses",
-        "mass_spec.add_analyses",
-        ontology_description("mass_spec.add_analyses"),
-        "mass_spec",
-        ontology_parameters("mass_spec.add_analyses"),
-        Box::new(|project, parameters| {
-            table_result("mass_spec.add_analyses", add_analyses(project, parameters))
-        }),
-    ))?;
-    registry.register(Operation::new(
-        "mass_spec.remove_analyses",
-        "mass_spec.remove_analyses",
-        ontology_description("mass_spec.remove_analyses"),
-        "mass_spec",
-        ontology_parameters("mass_spec.remove_analyses"),
-        Box::new(remove_analyses),
-    ))?;
-    registry.register(Operation::new(
         "mass_spec.get_analyses_info",
-        "mass_spec.get_analyses_info",
-        ontology_description("mass_spec.get_analyses_info"),
-        "mass_spec",
-        ParameterSchema {
-            definitions: vec![],
-        },
-        Box::new(|project, _| {
-            table_result("mass_spec.get_analyses_info", get_analyses_info(project))
-        }),
-    ))?;
-    for id in [
-        "mass_spec.get_spectra_headers",
-        "mass_spec.get_chromatograms_headers",
-        "mass_spec.get_spectra_tic",
+        "mass_spec.get_analysis_names",
+        "mass_spec.get_blank_names",
+        "mass_spec.get_concentrations",
         "mass_spec.get_raw_spectra",
         "mass_spec.get_raw_spectra_eic",
         "mass_spec.get_raw_spectra_ms1",
         "mass_spec.get_raw_spectra_ms2",
+        "mass_spec.get_replicate_names",
+        "mass_spec.get_spectra_headers",
+        "mass_spec.get_spectra_tic",
+        "mass_spec.remove_analyses",
+        "mass_spec.set_blank_names",
+        "mass_spec.set_concentrations",
+        "mass_spec.set_replicate_names",
+    ]);
+    let chromatograms = operation_bindings(&[
         "mass_spec.get_chromatograms",
+        "mass_spec.get_chromatograms_headers",
         "mass_spec.get_raw_chromatograms",
+    ]);
+    let nta = operation_bindings(&[
         "mass_spec.get_features",
-        "mass_spec.get_suspects",
         "mass_spec.get_internal_standards",
+        "mass_spec.get_suspects",
         "mass_spec.get_transformation_products",
-    ] {
-        registry.register(Operation::new(
-            id,
-            id,
-            ontology_description(id),
-            "mass_spec",
-            ontology_parameters(id),
-            Box::new(move |project, parameters| {
-                table_result(
-                    id,
-                    match id {
-                        "mass_spec.get_spectra_headers" => {
-                            get_spectra_headers_impl(project, parameters)
-                        }
-                        "mass_spec.get_chromatograms_headers" => {
-                            get_chromatograms_headers_impl(project, parameters)
-                        }
-                        "mass_spec.get_spectra_tic" => get_spectra_tic_impl(project, parameters),
-                        "mass_spec.get_raw_spectra" => {
-                            get_raw_spectra_impl(project, parameters, None)
-                        }
-                        "mass_spec.get_raw_spectra_eic" => {
-                            get_raw_spectra_eic_impl(project, parameters)
-                        }
-                        "mass_spec.get_raw_spectra_ms1" => Ok(merge_raw_spectra_rows(
-                            get_raw_spectra_impl(project, parameters, Some(1))?,
-                            target_number(parameters.get("mz_clust")).unwrap_or(0.003),
-                            target_number(parameters.get("presence")).unwrap_or(0.8),
-                        )),
-                        "mass_spec.get_raw_spectra_ms2" => Ok(merge_raw_spectra_rows(
-                            get_raw_spectra_impl(project, parameters, Some(2))?,
-                            target_number(parameters.get("mz_clust")).unwrap_or(0.005),
-                            target_number(parameters.get("presence")).unwrap_or(0.0),
-                        )),
-                        "mass_spec.get_chromatograms" => {
-                            get_chromatograms_impl(project, parameters)
-                        }
-                        "mass_spec.get_raw_chromatograms" => {
-                            get_raw_chromatograms_impl(project, parameters)
-                        }
-                        "mass_spec.get_features" => get_features_impl(project, parameters),
-                        "mass_spec.get_suspects" => get_suspects_impl(project, parameters),
-                        "mass_spec.get_internal_standards" => {
-                            get_internal_standards_impl(project, parameters)
-                        }
-                        "mass_spec.get_transformation_products" => {
-                            get_transformation_products_impl(project, parameters)
-                        }
-                        _ => unreachable!(),
-                    },
-                )
-            }),
-        ))?;
+    ]);
+    register_module(
+        DomainModuleBinding {
+            module_id: "mass_spec.base",
+            domain_id: "mass_spec",
+            module_version: "1",
+            required_modules: vec![],
+            methods: vec![],
+            operations: base,
+            tables: vec![
+                "MASS_SPEC_ANALYSES".into(),
+                "MASS_SPEC_SPECTRA_HEADERS".into(),
+                "MASS_SPEC_CHROMATOGRAMS_HEADERS".into(),
+            ],
+            schema_binding: None,
+        },
+        &mut methods,
+        registry,
+        |entry| ontology_parameters(entry["canonical_id"].as_str().unwrap_or_default()),
+    )?;
+    register_module(
+        DomainModuleBinding {
+            module_id: "mass_spec.chromatograms",
+            domain_id: "mass_spec",
+            module_version: "1",
+            required_modules: vec!["mass_spec.base"],
+            methods: vec![],
+            operations: chromatograms,
+            tables: vec!["MASS_SPEC_CHROMATOGRAMS".into()],
+            schema_binding: None,
+        },
+        &mut methods,
+        registry,
+        |entry| ontology_parameters(entry["canonical_id"].as_str().unwrap_or_default()),
+    )?;
+    register_module(
+        DomainModuleBinding {
+            module_id: "mass_spec.nta",
+            domain_id: "mass_spec",
+            module_version: "1",
+            required_modules: vec!["mass_spec.base"],
+            methods: vec![],
+            operations: nta,
+            tables: vec![],
+            schema_binding: None,
+        },
+        &mut methods,
+        registry,
+        |entry| ontology_parameters(entry["canonical_id"].as_str().unwrap_or_default()),
+    )
+}
+
+/*
+ * The old implementation was intentionally removed rather than retained as
+ * a second registration path. The explicit lists above are the native module
+ * contract; the catalogue remains the validation source of truth.
+ */
+
+fn method_executor(id: &'static str) -> MethodExecutor {
+    Box::new(move |project, parameters| {
+        match id {
+        "mass_spec.load_chromatograms" => chromatograms_processing_methods::load_chromatograms(
+            project,
+            &chromatograms_processing_methods::LoadChromatogramsRequest {
+                analyses: string_list(parameters, "analysis_names"),
+                chromatogram_id_regex: string_list(parameters, "chromatogram_id_regex"),
+                ignore_case: parameters.get("ignore_case").and_then(Value::as_bool).unwrap_or(true),
+                invert: parameters.get("invert").and_then(Value::as_bool).unwrap_or(false),
+            },
+        ).map(|_| json!({"status": "finished", "info": "Chromatograms loaded."})),
+        "mass_spec.filter_chromatograms_retention_time" => chromatograms_processing_methods::filter_chromatograms_retention_time(
+            project,
+            &chromatograms_processing_methods::FilterChromatogramsRetentionTimeRequest {
+                analyses: string_list(parameters, "analysis_names"),
+                rtmin: number(parameters.get("rt_min").unwrap_or(&Value::Null)) as f64,
+                rtmax: number(parameters.get("rt_max").unwrap_or(&Value::Null)) as f64,
+            },
+        ).map(|_| json!({"status": "finished", "info": "Chromatograms filtered by retention time."})),
+        "mass_spec.find_features" => nta_processing_methods::find_features(project, parameters),
+        "mass_spec.load_features_ms1" => nta_processing_methods::load_features_ms1(project, parameters),
+        "mass_spec.load_features_ms2" => nta_processing_methods::load_features_ms2(project, parameters),
+        "mass_spec.subtract_blank" => nta_processing_methods::subtract_blank(project, parameters),
+        "mass_spec.filter_features" => nta_processing_methods::filter_features(project, parameters),
+        "mass_spec.filter_features_ms2" => nta_processing_methods::filter_features_ms2(project, parameters),
+        "mass_spec.group_features" => nta_processing_methods::group_features(project, parameters),
+        "mass_spec.fill_features" => nta_processing_methods::fill_features(project, parameters),
+        "mass_spec.create_components" => nta_processing_methods::create_components(project, parameters),
+        "mass_spec.annotate_components" => nta_processing_methods::annotate_components(project, parameters),
+        "mass_spec.suspect_screening" => nta_processing_methods::suspect_screening(project, parameters),
+        "mass_spec.find_internal_standards" => nta_processing_methods::find_internal_standards(project, parameters),
+        "mass_spec.filter_suspects" => nta_processing_methods::filter_suspects(project, parameters),
+        "mass_spec.filter_internal_standards" => nta_processing_methods::filter_internal_standards(project, parameters),
+        "mass_spec.correct_matrix_suppression" => nta_processing_methods::correct_matrix_suppression(project, parameters),
+        "mass_spec.assign_transformation_products" => nta_transformation_products::assign_transformation_products(project, parameters),
+        "mass_spec.metfrag_screening" => nta_metfrag::metfrag_screening(project, parameters),
+        _ => unreachable!("unlisted MassSpec method: {id}"),
     }
-    for (id, column) in [
-        ("mass_spec.get_analysis_names", "analysis"),
-        ("mass_spec.get_replicate_names", "replicate"),
-        ("mass_spec.get_blank_names", "blank"),
-        ("mass_spec.get_concentrations", "concentration"),
-    ] {
-        registry.register(Operation::new(
+    })
+}
+
+fn method_bindings(ids: &'static [&'static str]) -> Vec<MethodBinding> {
+    ids.iter()
+        .map(|id| MethodBinding {
             id,
-            id,
-            ontology_description(id),
-            "mass_spec",
-            ontology_parameters(id),
-            Box::new(move |project, _| get_analysis_column(project, column)),
-        ))?;
-    }
-    for (id, key, column, numeric) in [
-        (
-            "mass_spec.set_replicate_names",
-            "replicate_names",
-            "replicate",
-            false,
-        ),
-        ("mass_spec.set_blank_names", "blank_names", "blank", false),
-        (
-            "mass_spec.set_concentrations",
-            "concentrations",
-            "concentration",
-            true,
-        ),
-    ] {
-        registry.register(Operation::new(
-            id,
-            id,
-            ontology_description(id),
-            "mass_spec",
-            ontology_parameters(id),
-            Box::new(move |project, parameters| {
-                update_values(project, parameters, key, column, numeric)
-            }),
-        ))?;
-    }
-    Ok(())
+            executor: method_executor(id),
+            validator: nta_validator(id),
+        })
+        .collect()
 }
 
 pub fn register_methods(registry: &mut MethodRegistry) -> Result<()> {
-    for id in [
+    let mut operations = OperationRegistry::default();
+    let chromatograms = method_bindings(&[
         "mass_spec.load_chromatograms",
         "mass_spec.filter_chromatograms_retention_time",
-    ] {
-        registry.register(configure_method(Method::new(
-            id,
-            id,
-            ontology_description(id),
-            "mass_spec",
-            ontology_parameters(id),
-            Box::new(move |project, parameters| {
-                if id == "mass_spec.load_chromatograms" {
-                    processing_methods_chromatograms::load_chromatograms(
-                        project,
-                        &processing_methods_chromatograms::LoadChromatogramsRequest {
-                            analyses: string_list(parameters, "analysis_names"),
-                            chromatogram_id_regex: string_list(parameters, "chromatogram_id_regex"),
-                            ignore_case: parameters
-                                .get("ignore_case")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(true),
-                            invert: parameters
-                                .get("invert")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false),
-                        },
-                    )
-                    .map(|_| json!({"status": "finished", "info": "Chromatograms loaded."}))
-                } else {
-                    processing_methods_chromatograms::filter_chromatograms_retention_time(
-                        project,
-                        &processing_methods_chromatograms::FilterChromatogramsRetentionTimeRequest {
-                            analyses: string_list(parameters, "analysis_names"),
-                            rtmin: number(parameters.get("rt_min").unwrap_or(&Value::Null)) as f64,
-                            rtmax: number(parameters.get("rt_max").unwrap_or(&Value::Null)) as f64,
-                        },
-                    )
-                    .map(|_| json!({"status": "finished", "info": "Chromatograms filtered by retention time."}))
-                }
-            }),
-        ), id))?;
-    }
-    registry.register(configure_method(
-        Method::new(
-            "mass_spec.find_features",
-            "mass_spec.find_features",
-            ontology_description("mass_spec.find_features"),
-            "mass_spec",
-            ontology_parameters("mass_spec.find_features"),
-            Box::new(processing_methods_nta::find_features),
-        ),
+    ]);
+    let nta = method_bindings(&[
         "mass_spec.find_features",
-    ))?;
-    registry.register(configure_method(
-        Method::new(
-            "mass_spec.load_features_ms1",
-            "mass_spec.load_features_ms1",
-            ontology_description("mass_spec.load_features_ms1"),
-            "mass_spec",
-            ontology_parameters("mass_spec.load_features_ms1"),
-            Box::new(processing_methods_nta::load_features_ms1),
-        ),
         "mass_spec.load_features_ms1",
-    ))?;
-    registry.register(configure_method(
-        Method::new(
-            "mass_spec.load_features_ms2",
-            "mass_spec.load_features_ms2",
-            ontology_description("mass_spec.load_features_ms2"),
-            "mass_spec",
-            ontology_parameters("mass_spec.load_features_ms2"),
-            Box::new(processing_methods_nta::load_features_ms2),
-        ),
         "mass_spec.load_features_ms2",
-    ))?;
-    for id in [
         "mass_spec.subtract_blank",
         "mass_spec.filter_features",
         "mass_spec.filter_features_ms2",
@@ -1790,49 +1759,37 @@ pub fn register_methods(registry: &mut MethodRegistry) -> Result<()> {
         "mass_spec.correct_matrix_suppression",
         "mass_spec.assign_transformation_products",
         "mass_spec.metfrag_screening",
-    ] {
-        let executor: Box<dyn Fn(&mut Project, &Value) -> Result<Value> + Send + Sync> = match id {
-            "mass_spec.subtract_blank" => Box::new(processing_methods_nta::subtract_blank),
-            "mass_spec.filter_features" => Box::new(processing_methods_nta::filter_features),
-            "mass_spec.filter_features_ms2" => {
-                Box::new(processing_methods_nta::filter_features_ms2)
-            }
-            "mass_spec.group_features" => Box::new(processing_methods_nta::group_features),
-            "mass_spec.fill_features" => Box::new(processing_methods_nta::fill_features),
-            "mass_spec.create_components" => Box::new(processing_methods_nta::create_components),
-            "mass_spec.annotate_components" => {
-                Box::new(processing_methods_nta::annotate_components)
-            }
-            "mass_spec.suspect_screening" => Box::new(processing_methods_nta::suspect_screening),
-            "mass_spec.find_internal_standards" => {
-                Box::new(processing_methods_nta::find_internal_standards)
-            }
-            "mass_spec.filter_suspects" => Box::new(processing_methods_nta::filter_suspects),
-            "mass_spec.filter_internal_standards" => {
-                Box::new(processing_methods_nta::filter_internal_standards)
-            }
-            "mass_spec.correct_matrix_suppression" => {
-                Box::new(processing_methods_nta::correct_matrix_suppression)
-            }
-            "mass_spec.assign_transformation_products" => {
-                Box::new(nta_transformation_products::assign_transformation_products)
-            }
-            "mass_spec.metfrag_screening" => Box::new(nta_metfrag::metfrag_screening),
-            _ => unreachable!(),
-        };
-        registry.register(configure_method(
-            Method::new(
-                id,
-                id,
-                ontology_description(id),
-                "mass_spec",
-                ontology_parameters(id),
-                executor,
-            ),
-            id,
-        ))?;
-    }
-    Ok(())
+    ]);
+    register_module(
+        DomainModuleBinding {
+            module_id: "mass_spec.chromatograms",
+            domain_id: "mass_spec",
+            module_version: "1",
+            required_modules: vec!["mass_spec.base"],
+            methods: chromatograms,
+            operations: vec![],
+            tables: vec!["MASS_SPEC_CHROMATOGRAMS".into()],
+            schema_binding: None,
+        },
+        registry,
+        &mut operations,
+        |entry| ontology_parameters(entry["canonical_id"].as_str().unwrap_or_default()),
+    )?;
+    register_module(
+        DomainModuleBinding {
+            module_id: "mass_spec.nta",
+            domain_id: "mass_spec",
+            module_version: "1",
+            required_modules: vec!["mass_spec.base"],
+            methods: nta,
+            operations: vec![],
+            tables: vec![],
+            schema_binding: None,
+        },
+        registry,
+        &mut operations,
+        |entry| ontology_parameters(entry["canonical_id"].as_str().unwrap_or_default()),
+    )
 }
 
 fn invalid_message(id: &str, reason: impl std::fmt::Display) -> Error {

@@ -73,8 +73,7 @@ impl<'a> Session<'a> {
         if method == "tools/list" {
             let mut catalogue = tools().as_array().cloned().unwrap_or_default();
             // All exposed domain operations are advertised from the first
-            // tools/list. Operations are stateless and carry database_path and
-            // project_id, so discovery must not depend on a prior connect.
+            // tools/list. Operations are stateless and carry database_path, so discovery must not depend on a prior connect.
             // Methods remain session-scoped and are not tools.
             for definition in self.operations.list("") {
                 if let Some(entry) = catalogue::entries()
@@ -159,12 +158,8 @@ impl<'a> Session<'a> {
                     let database_path = args["database_path"]
                         .as_str()
                         .ok_or_else(|| "missing database_path".to_string())?;
-                    let project_id = args["project_id"]
-                        .as_str()
-                        .ok_or_else(|| "missing project_id".to_string())?;
                     let options = ProjectOptions {
                         database_path: database_path.into(),
-                        project_id: project_id.into(),
                         domain: self
                             .operations
                             .list("")
@@ -243,6 +238,11 @@ pub fn handle(request: &Value, _registry: &MethodRegistry) -> Value {
         "set_metadata" => api::set_metadata(args),
         "get_workflow" => api::get_workflow(args),
         "get_workflow_execution" => api::get_workflow_execution(args),
+        "create_workflow_execution" => api::create_workflow_execution(args),
+        "get_execution" => api::get_execution(args),
+        "list_executions" => api::list_executions(args),
+        "transition_execution" => api::transition_execution(args),
+        "cancel_execution" => api::cancel_execution(args),
         "set_workflow" => api::set_workflow(args, _registry),
         "add_method" => api::add_method(args, _registry),
         "remove_method" => api::remove_method(args, _registry),

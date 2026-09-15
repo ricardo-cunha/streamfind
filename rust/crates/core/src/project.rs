@@ -22,6 +22,32 @@ pub enum ErrorCode {
     Cancelled,
 }
 
+/// Durable workflow execution lifecycle states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionState {
+    Queued,
+    Running,
+    Cancelling,
+    Cancelled,
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+/// Return whether a workflow execution lifecycle transition is allowed.
+pub fn valid_execution_transition(from: ExecutionState, to: ExecutionState) -> bool {
+    matches!(
+        (from, to),
+        (ExecutionState::Queued, ExecutionState::Running)
+            | (ExecutionState::Queued, ExecutionState::Cancelled)
+            | (ExecutionState::Running, ExecutionState::Completed)
+            | (ExecutionState::Running, ExecutionState::Failed)
+            | (ExecutionState::Running, ExecutionState::Cancelling)
+            | (ExecutionState::Running, ExecutionState::Interrupted)
+            | (ExecutionState::Cancelling, ExecutionState::Cancelled)
+    )
+}
+
 #[derive(Debug)]
 pub struct Error {
     pub code: ErrorCode,
@@ -177,10 +203,10 @@ fn sql_literal(value: &Json) -> String {
     }
 }
 
-fn snapshot_tables(connection: &Connection, project_id: &str, tables: &[String]) -> Result<Json> {
+fn snapshot_tables(connection: &Connection, tables: &[String]) -> Result<Json> {
     let mut snapshots = serde_json::Map::new();
     for table in tables {
-        let filter = if connection.query_row("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = ?1 AND column_name = 'project_id'", [table], |row| row.get::<_, i64>(0))? > 0 { format!(" WHERE project_id = '{}'", project_id.replace('\'', "''")) } else { String::new() };
+        let filter = String::new();
         let mut statement = connection.prepare(&format!(
             "SELECT to_json(t) FROM {} t{}",
             quote_identifier(table),
@@ -200,7 +226,7 @@ fn snapshot_tables(connection: &Connection, project_id: &str, tables: &[String])
     Ok(Json::Object(snapshots))
 }
 
-fn restore_tables(connection: &Connection, project_id: &str, snapshots: &Json) -> Result<()> {
+fn restore_tables(connection: &Connection, snapshots: &Json) -> Result<()> {
     for (table, rows) in snapshots.as_object().ok_or_else(|| {
         Error::new(
             ErrorCode::SchemaMismatch,
@@ -211,19 +237,8 @@ fn restore_tables(connection: &Connection, project_id: &str, snapshots: &Json) -
         let columns: Vec<(String, String)> = schema
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<std::result::Result<_, _>>()?;
-        let delete = if columns.iter().any(|(name, _)| name == "project_id") {
-            format!(
-                "DELETE FROM {} WHERE project_id = ?1",
-                quote_identifier(table)
-            )
-        } else {
-            format!("DELETE FROM {}", quote_identifier(table))
-        };
-        if columns.iter().any(|(name, _)| name == "project_id") {
-            connection.execute(&delete, [project_id])?;
-        } else {
-            connection.execute(&delete, [])?;
-        }
+        let delete = format!("DELETE FROM {}", quote_identifier(table));
+        connection.execute(&delete, [])?;
         for row in rows.as_array().ok_or_else(|| {
             Error::new(
                 ErrorCode::SchemaMismatch,
@@ -249,7 +264,6 @@ fn restore_tables(connection: &Connection, project_id: &str, snapshots: &Json) -
 /// Options used to create or open a project database.
 pub struct ProjectOptions {
     pub database_path: PathBuf,
-    pub project_id: String,
     pub domain: String,
     pub create_if_missing: bool,
     pub read_only: bool,
@@ -258,7 +272,6 @@ pub struct ProjectOptions {
 #[derive(Debug, Clone)]
 /// Metadata loaded from the `PROJECT` table.
 pub struct ProjectInfo {
-    pub id: String,
     pub domain: String,
     pub metadata: Json,
     pub schema_version: i32,
@@ -696,6 +709,7 @@ pub struct MethodRegistry {
 }
 
 pub type OperationExecutor = Box<dyn Fn(&mut Project, &Json) -> Result<Json> + Send + Sync>;
+pub type OperationValidator = Box<dyn Fn(&Json) -> Result<()> + Send + Sync>;
 
 pub struct Operation {
     pub id: String,
@@ -704,6 +718,7 @@ pub struct Operation {
     pub domain: String,
     pub parameters: ParameterSchema,
     executor: OperationExecutor,
+    validator: Option<OperationValidator>,
 }
 
 impl Operation {
@@ -716,18 +731,11 @@ impl Operation {
         executor: OperationExecutor,
     ) -> Self {
         let mut parameters = parameters;
-        for (name, description, example) in [
-            (
-                "database_path",
-                "Filesystem path of the DuckDB project database.",
-                "/data/project.duckdb",
-            ),
-            (
-                "project_id",
-                "Logical project identifier within the database.",
-                "demo",
-            ),
-        ] {
+        for (name, description, example) in [(
+            "database_path",
+            "Filesystem path of the DuckDB project database.",
+            "/data/project.duckdb",
+        )] {
             if !parameters
                 .definitions
                 .iter()
@@ -753,13 +761,22 @@ impl Operation {
             domain: domain.into(),
             parameters,
             executor,
+            validator: None,
         }
+    }
+    pub fn with_validator(mut self, validator: OperationValidator) -> Self {
+        self.validator = Some(validator);
+        self
     }
     pub fn to_json(&self) -> Json {
         json!({"id": self.id, "name": self.name, "description": self.description, "domain": self.domain, "parameters": self.parameters.definitions.iter().map(|d| json!({"name": d.name, "description": d.description, "type": d.kind.to_json(), "default": d.default, "required": d.required, "example": d.example})).collect::<Vec<_>>()})
     }
     pub fn run(&self, project: &mut Project, values: &Json) -> Result<Json> {
-        (self.executor)(project, &self.parameters.resolve(values)?)
+        let resolved = self.parameters.resolve(values)?;
+        if let Some(validator) = &self.validator {
+            validator(&resolved)?;
+        }
+        (self.executor)(project, &resolved)
     }
 }
 
@@ -997,22 +1014,226 @@ pub struct Project {
     info: ProjectInfo,
 }
 
+/// Durable execution lifecycle operations scoped to one project.
+pub struct WorkflowExecutionManager<'a> {
+    project: &'a Project,
+}
+
+impl<'a> WorkflowExecutionManager<'a> {
+    pub fn new(project: &'a Project) -> Self {
+        Self { project }
+    }
+
+    pub fn create(&self, request: &Json) -> Result<Json> {
+        if let Some(status) = self
+            .project
+            .query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1")?
+            .as_array()
+            .and_then(|rows| rows.first())
+            .and_then(|row| row["status"].as_str())
+        {
+            if matches!(status, "queued" | "running" | "cancelling") {
+                return Err(Error::new(
+                    ErrorCode::InvalidArgument,
+                    "an active workflow execution already owns this project",
+                ));
+            }
+        }
+        let launch_snapshot = self.project.get_workflow()?.to_json().to_string();
+        let connection = self.project.connection()?;
+        let revision = request
+            .get("workflow_revision")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+
+        let progress = request
+            .get("progress")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        connection.execute("DELETE FROM WORKFLOW_EXECUTION", [])?;
+        connection.execute("INSERT INTO WORKFLOW_EXECUTION (domain_id, workflow_revision, launch_snapshot, status, progress) VALUES (?1, ?2, ?3, 'queued', ?4)", params![self.project.get_domain(), revision, launch_snapshot, progress.to_string()])?;
+        drop(connection);
+        self.current()
+    }
+
+    pub fn current(&self) -> Result<Json> {
+        let mut rows = self
+            .project
+            .query_json("SELECT domain_id, workflow_revision, status, progress, result_reference, error FROM WORKFLOW_EXECUTION LIMIT 1")?;
+        let row = rows
+            .as_array_mut()
+            .and_then(|rows| rows.pop())
+            .ok_or_else(|| {
+                Error::new(ErrorCode::InvalidArgument, "workflow execution not found")
+            })?;
+        Ok(row)
+    }
+
+    pub fn list(&self) -> Result<Json> {
+        let rows = self
+            .project
+            .query_json("SELECT domain_id, workflow_revision, status, progress, result_reference, error FROM WORKFLOW_EXECUTION")?;
+        Ok(rows)
+    }
+
+    pub fn transition(&self, state: ExecutionState) -> Result<Json> {
+        let row = self
+            .project
+            .query_json("SELECT * FROM WORKFLOW_EXECUTION")?
+            .as_array()
+            .and_then(|rows| rows.first())
+            .cloned()
+            .ok_or_else(|| {
+                Error::new(ErrorCode::InvalidArgument, "workflow execution not found")
+            })?;
+        let current = execution_state(row.get("status").and_then(Value::as_str).unwrap_or(""))?;
+        if !valid_execution_transition(current, state) {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "invalid execution transition",
+            ));
+        }
+        self.project.connection()?.execute("UPDATE WORKFLOW_EXECUTION SET status = ?1, completed_at = CASE WHEN ?1 IN ('completed', 'failed', 'cancelled', 'interrupted') THEN CURRENT_TIMESTAMP ELSE NULL END, updated_at = CURRENT_TIMESTAMP", params![execution_state_name(state)])?;
+        self.current()
+    }
+
+    pub fn cancel(&self) -> Result<Json> {
+        let current = execution_state(
+            self.current()?
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )?;
+        match current {
+            ExecutionState::Queued => self.transition(ExecutionState::Cancelled),
+            ExecutionState::Running => self.transition(ExecutionState::Cancelling),
+            _ => Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "execution cannot be cancelled",
+            )),
+        }
+    }
+
+    pub fn scheduler_tick(&self, worker_id: &str) -> Result<Json> {
+        if worker_id.is_empty() {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "worker_id must not be empty",
+            ));
+        }
+        self.project.connection()?.execute(
+            "UPDATE WORKFLOW_EXECUTION SET status = 'running', process_id = ?1, server_id = ?1, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE status = 'queued' AND (process_id IS NULL OR process_id = '')",
+            params![worker_id],
+        )?;
+        let row = self.current()?;
+        if row["status"] != "running" {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "stale or conflicting workflow worker claim",
+            ));
+        }
+        let owner: String = self.project.connection()?.query_row(
+            "SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if owner != worker_id {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "stale or conflicting workflow worker claim",
+            ));
+        }
+        Ok(row)
+    }
+
+    pub fn release_worker(&self, worker_id: &str, state: ExecutionState) -> Result<Json> {
+        if worker_id.is_empty()
+            || !matches!(
+                state,
+                ExecutionState::Completed
+                    | ExecutionState::Failed
+                    | ExecutionState::Cancelled
+                    | ExecutionState::Interrupted
+            )
+        {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "invalid workflow worker release",
+            ));
+        }
+        let target = execution_state_name(state);
+        self.project.connection()?.execute(
+            "UPDATE WORKFLOW_EXECUTION SET status = ?1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE process_id = ?2 AND status IN ('running', 'cancelling')",
+            params![target, worker_id],
+        )?;
+        let row = self.current()?;
+        let owner: String = self.project.connection()?.query_row(
+            "SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if row["status"] != target || owner != worker_id {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "stale workflow worker cannot release execution",
+            ));
+        }
+        Ok(row)
+    }
+
+    pub fn recover_interrupted(&self) -> Result<usize> {
+        let rows = self.list()?;
+        let count = rows
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter(|row| row.get("status").and_then(Value::as_str) == Some("running"))
+                    .count()
+            })
+            .unwrap_or(0);
+        self.project.connection()?.execute("UPDATE WORKFLOW_EXECUTION SET status = 'interrupted', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'", [])?;
+        Ok(count)
+    }
+}
+
+fn execution_state(value: &str) -> Result<ExecutionState> {
+    match value {
+        "queued" => Ok(ExecutionState::Queued),
+        "running" => Ok(ExecutionState::Running),
+        "cancelling" => Ok(ExecutionState::Cancelling),
+        "cancelled" => Ok(ExecutionState::Cancelled),
+        "completed" => Ok(ExecutionState::Completed),
+        "failed" => Ok(ExecutionState::Failed),
+        "interrupted" => Ok(ExecutionState::Interrupted),
+        _ => Err(Error::new(
+            ErrorCode::InvalidArgument,
+            format!("unknown execution state: {value}"),
+        )),
+    }
+}
+
+fn execution_state_name(state: ExecutionState) -> &'static str {
+    match state {
+        ExecutionState::Queued => "queued",
+        ExecutionState::Running => "running",
+        ExecutionState::Cancelling => "cancelling",
+        ExecutionState::Cancelled => "cancelled",
+        ExecutionState::Completed => "completed",
+        ExecutionState::Failed => "failed",
+        ExecutionState::Interrupted => "interrupted",
+    }
+}
+
 impl Project {
     /// Creates a new project database and initializes its schema.
     pub fn create(options: ProjectOptions) -> Result<Self> {
-        if options.database_path.exists() {
-            return Err(Error::new(
-                ErrorCode::ProjectAlreadyExists,
-                "database already exists",
-            ));
-        }
         if let Some(parent) = options.database_path.parent() {
             if !parent.as_os_str().is_empty() {
                 fs::create_dir_all(parent)
                     .map_err(|error| Error::new(ErrorCode::DatabaseError, error.to_string()))?;
             }
         }
-        let project = Self::initialize(options)?;
+        let project = Self::initialize(options, true)?;
         project.audit("create", "project", json!({}))?;
         Ok(project)
     }
@@ -1028,14 +1249,13 @@ impl Project {
                 "database does not exist",
             ));
         }
-        Self::initialize(options)
+        Self::initialize(options, false)
     }
 
-    fn initialize(options: ProjectOptions) -> Result<Self> {
+    fn initialize(options: ProjectOptions, creating: bool) -> Result<Self> {
         let mut project = Self {
             options,
             info: ProjectInfo {
-                id: String::new(),
                 domain: String::new(),
                 metadata: json!({}),
                 schema_version: 1,
@@ -1044,12 +1264,56 @@ impl Project {
             },
         };
         let connection = project.connection()?;
-        if !project.options.read_only {
-            connection.execute_batch(&format!("CREATE TABLE IF NOT EXISTS PROJECT (project_id VARCHAR NOT NULL PRIMARY KEY, domain VARCHAR, metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT 1, framework_version VARCHAR NOT NULL DEFAULT '{FRAMEWORK_VERSION}'); CREATE TABLE IF NOT EXISTS CACHE (project_id VARCHAR NOT NULL, name VARCHAR NOT NULL, description VARCHAR NOT NULL, hash VARCHAR NOT NULL, data BLOB NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(project_id, hash)); CREATE TABLE IF NOT EXISTS AUDIT_TRAIL (project_id VARCHAR NOT NULL, operation_type VARCHAR NOT NULL, object_type VARCHAR NOT NULL, operation_details JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION (project_id VARCHAR NOT NULL, workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL, method VARCHAR NOT NULL, parameter_hash VARCHAR NOT NULL, status VARCHAR NOT NULL, started_at TIMESTAMP, completed_at TIMESTAMP, error VARCHAR, cache_key VARCHAR NOT NULL, PRIMARY KEY(project_id, workflow_revision, step_index));"))?;
-            connection.execute("INSERT INTO PROJECT (project_id, domain, metadata, workflow) VALUES (?1, ?2, '{}', '[]') ON CONFLICT(project_id) DO NOTHING", params![project.options.project_id, project.options.domain])?;
+        let legacy_registry: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'PROJECTS'",
+            [],
+            |row| row.get(0),
+        )?;
+        if legacy_registry != 0 {
+            return Err(Error::new(
+                ErrorCode::SchemaMismatch,
+                "legacy PROJECTS registry is not supported; expected PROJECT",
+            ));
         }
-        let row = connection.query_row("SELECT project_id, COALESCE(domain, ''), COALESCE(metadata, '{}'), schema_version, framework_version, CAST(created_at AS VARCHAR) FROM PROJECT WHERE project_id = ?1", params![project.options.project_id], |row| Ok(ProjectInfo { id: row.get(0)?, domain: row.get(1)?, metadata: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_else(|_| json!({})), schema_version: row.get(3)?, framework_version: row.get(4)?, created_at: row.get(5)? }))?;
+        if !project.options.read_only {
+            connection.execute_batch(&format!("CREATE TABLE IF NOT EXISTS PROJECT (domain_id VARCHAR NOT NULL, metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT 1, framework_version VARCHAR NOT NULL DEFAULT '{FRAMEWORK_VERSION}'); CREATE TABLE IF NOT EXISTS CACHE (name VARCHAR NOT NULL, description VARCHAR NOT NULL, hash VARCHAR NOT NULL, data BLOB NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(hash)); CREATE TABLE IF NOT EXISTS AUDIT_TRAIL (operation_type VARCHAR NOT NULL, object_type VARCHAR NOT NULL, operation_details JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION (domain_id VARCHAR NOT NULL DEFAULT '', workflow_revision INTEGER NOT NULL, launch_snapshot JSON NOT NULL DEFAULT '{{}}', status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{{}}', result_reference VARCHAR, process_id VARCHAR, server_id VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, error VARCHAR, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION_STEP (workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL PRIMARY KEY, method VARCHAR NOT NULL, parameters JSON NOT NULL DEFAULT '{{}}', parameter_hash VARCHAR NOT NULL, cache_key VARCHAR NOT NULL, status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{{}}', result_reference VARCHAR, error_code VARCHAR, error_message VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);"))?;
+            let project_exists: i64 =
+                connection.query_row("SELECT COUNT(*) FROM PROJECT", [], |row| row.get(0))?;
+            if project_exists != 0 && creating {
+                return Err(Error::new(
+                    ErrorCode::ProjectAlreadyExists,
+                    "database already contains a project",
+                ));
+            }
+            if creating {
+                connection.execute(
+                    "INSERT INTO PROJECT (domain_id, metadata, workflow) VALUES (?1, '{}', '[]')",
+                    params![project.options.domain],
+                )?;
+            }
+        }
+        let project_count: i64 =
+            connection.query_row("SELECT COUNT(*) FROM PROJECT", [], |row| row.get(0))?;
+        if !creating && project_count != 1 {
+            return Err(Error::new(
+                ErrorCode::SchemaMismatch,
+                "project database must contain exactly one PROJECT row",
+            ));
+        }
+        let row = connection.query_row("SELECT COALESCE(domain_id, ''), COALESCE(metadata, '{}'), schema_version, framework_version, CAST(created_at AS VARCHAR) FROM PROJECT LIMIT 1", [], |row| Ok(ProjectInfo { domain: row.get(0)?, metadata: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_else(|_| json!({})), schema_version: row.get(2)?, framework_version: row.get(3)?, created_at: row.get(4)? }))?;
         project.info = row;
+        if !project.options.domain.is_empty() && project.info.domain != project.options.domain {
+            return Err(Error::new(
+                ErrorCode::SchemaMismatch,
+                "project domain mismatch",
+            ));
+        }
+        if !project.options.read_only && !creating {
+            connection.execute(
+                "UPDATE WORKFLOW_EXECUTION SET status = 'interrupted', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'",
+                [],
+            )?;
+        }
         Ok(project)
     }
 
@@ -1134,19 +1398,32 @@ impl Project {
     pub fn get_database_path(&self) -> &Path {
         &self.options.database_path
     }
-    pub fn get_project_id(&self) -> &str {
-        &self.options.project_id
-    }
     pub fn get_domain(&self) -> String {
         self.info.domain.clone()
     }
     pub fn validate(&self) -> Result<()> {
         let tables = self.list_tables()?;
-        for required in ["PROJECT", "CACHE", "AUDIT_TRAIL", "WORKFLOW_EXECUTION"] {
+        let expected_domain_tables = crate::catalogue::table_manifest(&self.info.domain)
+            .map_err(|error| Error::new(ErrorCode::SchemaMismatch, error.to_string()))?;
+        for required in [
+            "PROJECT",
+            "CACHE",
+            "AUDIT_TRAIL",
+            "WORKFLOW_EXECUTION",
+            "WORKFLOW_EXECUTION_STEP",
+        ] {
             if !tables.iter().any(|table| table == required) {
                 return Err(Error::new(
                     ErrorCode::SchemaMismatch,
                     format!("missing required table: {required}"),
+                ));
+            }
+        }
+        for (required, _) in expected_domain_tables {
+            if !tables.iter().any(|table| table == &required) {
+                return Err(Error::new(
+                    ErrorCode::SchemaMismatch,
+                    format!("missing expected domain table: {required}"),
                 ));
             }
         }
@@ -1179,39 +1456,41 @@ impl Project {
             ));
         }
         self.connection()?.execute(
-            "UPDATE PROJECT SET metadata = ?1 WHERE project_id = ?2",
-            params![metadata.to_string(), self.get_project_id()],
+            "UPDATE PROJECT SET metadata = ?1, updated_at = CURRENT_TIMESTAMP",
+            params![metadata.to_string()],
         )?;
         self.info.metadata = metadata;
         Ok(())
     }
     pub fn get_workflow(&self) -> Result<Workflow> {
-        let text: String = self.connection()?.query_row(
-            "SELECT workflow FROM PROJECT WHERE project_id = ?1",
-            params![self.get_project_id()],
-            |row| row.get(0),
-        )?;
+        let text: String =
+            self.connection()?
+                .query_row("SELECT workflow FROM PROJECT", [], |row| row.get(0))?;
         Workflow::from_json(
             &serde_json::from_str(&text)
                 .map_err(|error| Error::new(ErrorCode::SchemaMismatch, error.to_string()))?,
         )
     }
-    pub fn set_workflow(
-        &mut self,
-        mut workflow: Workflow,
-        registry: &MethodRegistry,
-    ) -> Result<()> {
-        let previous = self.get_workflow()?;
-        workflow.version = workflow.version.max(previous.version + 1);
+    pub fn set_workflow(&mut self, workflow: Workflow, registry: &MethodRegistry) -> Result<()> {
         workflow.validate(registry)?;
+        let execution = self.query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1")?;
+        let status = execution
+            .as_array()
+            .and_then(|rows| rows.first())
+            .and_then(|row| row["status"].as_str())
+            .unwrap_or_default();
+        if matches!(status, "queued" | "running" | "cancelling") {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "workflow mutation is blocked while an execution is active",
+            ));
+        }
+        let workflow_json = workflow.to_json_with_registry(registry)?;
         self.connection()?.execute(
-            "UPDATE PROJECT SET workflow = ?1 WHERE project_id = ?2",
-            params![
-                workflow.to_json_with_registry(registry)?.to_string(),
-                self.get_project_id()
-            ],
+            "UPDATE PROJECT SET workflow = ?1, updated_at = CURRENT_TIMESTAMP",
+            params![workflow_json.to_string()],
         )?;
-        Ok(())
+        self.audit("update", "workflow", workflow_json)
     }
     pub fn copy(&self, options: ProjectOptions) -> Result<Self> {
         let workflow = self.get_workflow()?.to_json();
@@ -1220,8 +1499,8 @@ impl Project {
         let mut destination = Self::create(destination_options)?;
         destination.set_metadata(self.info.metadata.clone())?;
         destination.connection()?.execute(
-            "UPDATE PROJECT SET workflow = ?1 WHERE project_id = ?2",
-            params![workflow.to_string(), destination.get_project_id()],
+            "UPDATE PROJECT SET workflow = ?1, updated_at = CURRENT_TIMESTAMP",
+            params![workflow.to_string()],
         )?;
         for entry in self.get_cache()? {
             let value = serde_json::from_slice(&entry.data)
@@ -1232,9 +1511,9 @@ impl Project {
     }
     pub fn get_cache(&self) -> Result<Vec<CacheEntry>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT name, description, hash, data, CAST(created_at AS VARCHAR) FROM CACHE WHERE project_id = ?1 ORDER BY created_at DESC")?;
+        let mut statement = connection.prepare("SELECT name, description, hash, data, CAST(created_at AS VARCHAR) FROM CACHE ORDER BY created_at DESC")?;
         let rows = statement
-            .query_map(params![self.get_project_id()], |row| {
+            .query_map([], |row| {
                 Ok(CacheEntry {
                     name: row.get(0)?,
                     description: row.get(1)?,
@@ -1250,7 +1529,7 @@ impl Project {
         Ok(self.get_cache()?.len())
     }
     pub fn get_cache_entry(&self, hash: &str) -> Result<Option<CacheEntry>> {
-        Ok(self.connection()?.query_row("SELECT name, description, hash, data, CAST(created_at AS VARCHAR) FROM CACHE WHERE project_id = ?1 AND hash = ?2", params![self.get_project_id(), hash], |row| Ok(CacheEntry { name: row.get(0)?, description: row.get(1)?, hash: row.get(2)?, data: row.get(3)?, created_at: row.get(4)? })).optional()?)
+        Ok(self.connection()?.query_row("SELECT name, description, hash, data, CAST(created_at AS VARCHAR) FROM CACHE WHERE hash = ?1", params![hash], |row| Ok(CacheEntry { name: row.get(0)?, description: row.get(1)?, hash: row.get(2)?, data: row.get(3)?, created_at: row.get(4)? })).optional()?)
     }
     pub fn set_cache(
         &mut self,
@@ -1259,21 +1538,18 @@ impl Project {
         hash: &str,
         value: &Json,
     ) -> Result<()> {
-        self.connection()?.execute("INSERT INTO CACHE (project_id, name, description, hash, data) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(project_id, hash) DO UPDATE SET name = excluded.name, description = excluded.description, data = excluded.data", params![self.get_project_id(), name, description, hash, value.to_string().into_bytes()])?;
+        self.connection()?.execute("INSERT INTO CACHE (name, description, hash, data) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(hash) DO UPDATE SET name = excluded.name, description = excluded.description, data = excluded.data", params![name, description, hash, value.to_string().into_bytes()])?;
         Ok(())
     }
     pub fn delete_cache(&mut self) -> Result<()> {
-        self.connection()?.execute(
-            "DELETE FROM CACHE WHERE project_id = ?1",
-            params![self.get_project_id()],
-        )?;
+        self.connection()?.execute("DELETE FROM CACHE", [])?;
         self.audit("delete", "cache", json!({}))
     }
     pub fn get_audit_trail(&self) -> Result<Vec<AuditEntry>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT operation_type, object_type, COALESCE(operation_details, '{}'), CAST(created_at AS VARCHAR) FROM AUDIT_TRAIL WHERE project_id = ?1 ORDER BY created_at ASC")?;
+        let mut statement = connection.prepare("SELECT operation_type, object_type, COALESCE(operation_details, '{}'), CAST(created_at AS VARCHAR) FROM AUDIT_TRAIL ORDER BY created_at ASC")?;
         let rows = statement
-            .query_map(params![self.get_project_id()], |row| {
+            .query_map([], |row| {
                 Ok(AuditEntry {
                     operation_type: row.get(0)?,
                     object_type: row.get(1)?,
@@ -1286,8 +1562,7 @@ impl Project {
         Ok(rows)
     }
     pub fn get_workflow_execution(&self) -> Result<Json> {
-        let project_id = self.get_project_id().replace('\'', "''");
-        self.query_json(&format!("SELECT project_id, workflow_revision, step_index, method, parameter_hash, status, started_at, completed_at, error, cache_key FROM WORKFLOW_EXECUTION WHERE project_id = '{project_id}' ORDER BY workflow_revision, step_index"))
+        self.query_json("SELECT workflow_revision, step_index, method, parameter_hash, status, started_at, completed_at, error_message AS error, cache_key FROM WORKFLOW_EXECUTION_STEP ORDER BY workflow_revision, step_index")
     }
     fn record_execution(
         &self,
@@ -1297,9 +1572,25 @@ impl Project {
         parameter_hash: &str,
         status: &str,
         cache_key: &str,
+        launch_snapshot: &str,
         error: Option<&str>,
     ) -> Result<()> {
-        self.connection()?.execute("INSERT INTO WORKFLOW_EXECUTION (project_id, workflow_revision, step_index, method, parameter_hash, status, started_at, completed_at, error, cache_key) VALUES (?1, ?2, ?3, ?4, ?5, ?6, CASE WHEN ?6 = 'running' THEN CURRENT_TIMESTAMP ELSE NULL END, CASE WHEN ?6 IN ('succeeded', 'failed') THEN CURRENT_TIMESTAMP ELSE NULL END, ?7, ?8) ON CONFLICT(project_id, workflow_revision, step_index) DO UPDATE SET status = excluded.status, started_at = COALESCE(WORKFLOW_EXECUTION.started_at, excluded.started_at), completed_at = excluded.completed_at, error = excluded.error, cache_key = excluded.cache_key", params![self.get_project_id(), revision, index as i64, method, parameter_hash, status, error, cache_key])?;
+        let has_parent = !self
+            .query_json("SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1")?
+            .as_array()
+            .is_none_or(Vec::is_empty);
+        if !has_parent {
+            self.connection()?.execute(
+                "INSERT INTO WORKFLOW_EXECUTION (workflow_revision, launch_snapshot, status, error) VALUES (?1, ?2, ?3, ?4)",
+                params![revision, launch_snapshot, status, error],
+            )?;
+        } else {
+            self.connection()?.execute(
+                "UPDATE WORKFLOW_EXECUTION SET workflow_revision = ?1, launch_snapshot = ?2, status = CASE WHEN process_id IS NULL OR process_id = '' THEN ?3 ELSE status END, error = ?4, updated_at = CURRENT_TIMESTAMP",
+                params![revision, launch_snapshot, status, error],
+            )?;
+        }
+        self.connection()?.execute("INSERT INTO WORKFLOW_EXECUTION_STEP (workflow_revision, step_index, method, parameters, parameter_hash, cache_key, status) VALUES (?1, ?2, ?3, '{}', ?4, ?5, ?6) ON CONFLICT(step_index) DO UPDATE SET workflow_revision = excluded.workflow_revision, method = excluded.method, parameter_hash = excluded.parameter_hash, cache_key = excluded.cache_key, status = excluded.status", params![revision, index as i64, method, parameter_hash, cache_key, status])?;
         Ok(())
     }
     pub fn run_method(
@@ -1309,12 +1600,52 @@ impl Project {
         registry: &MethodRegistry,
     ) -> Result<Json> {
         let method = registry.get(method_id)?;
-        let workflow = self.get_workflow()?;
+        let mut workflow = self.get_workflow()?;
         let resolved = method.resolve(parameters)?;
+        workflow.steps.push(WorkflowStep {
+            method: method_id.to_owned(),
+            parameters: resolved.clone(),
+            metadata: None,
+        });
+        self.set_workflow(workflow, registry)?;
+        let workflow = self.get_workflow()?;
         workflow.validate(registry)?;
-        let index = (0..workflow.steps.len())
-            .find(|index| self.connection().ok().and_then(|connection| connection.query_row("SELECT status FROM WORKFLOW_EXECUTION WHERE project_id = ?1 AND workflow_revision = ?2 AND step_index = ?3", params![self.get_project_id(), workflow.version, *index as i64], |row| row.get::<_, String>(0)).optional().ok().flatten()).as_deref() != Some("succeeded"))
-            .ok_or_else(|| Error::new(ErrorCode::WorkflowValidation, "workflow has no pending steps"))?;
+        let launch_snapshot = workflow.to_json_with_registry(registry)?.to_string();
+        let index = workflow.steps.len() - 1;
+        let preceding_step_matches = if index == 0 {
+            true
+        } else {
+            let parent_completed = self
+                .query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1")?
+                .as_array()
+                .is_some_and(|rows| rows.first().is_some_and(|row| row["status"] == "completed"));
+            if !parent_completed {
+                false
+            } else {
+                self.get_workflow_execution()?
+                    .as_array()
+                    .is_some_and(|rows| {
+                        rows.iter().any(|row| {
+                            row["workflow_revision"] == workflow.version
+                                && row["step_index"] == index - 1
+                                && row["method"] == workflow.steps[index - 1].method
+                                && row["status"] == "completed"
+                                && row["cache_key"]
+                                    .as_str()
+                                    .is_some_and(|value| !value.is_empty())
+                        })
+                    })
+            }
+        };
+        if !preceding_step_matches {
+            let execution = self.run_workflow(&workflow, registry, None, None)?;
+            return execution
+                .results
+                .as_array()
+                .and_then(|results| results.last())
+                .cloned()
+                .ok_or_else(|| Error::new(ErrorCode::WorkflowValidation, "workflow has no steps"));
+        }
         if workflow.steps[index].method != method_id {
             return Err(Error::new(
                 ErrorCode::WorkflowValidation,
@@ -1336,7 +1667,7 @@ impl Project {
                     rows.iter().find(|row| {
                         row["workflow_revision"] == workflow.version
                             && row["step_index"] == index - 1
-                            && row["status"] == "succeeded"
+                            && row["status"] == "completed"
                     })
                 })
                 .and_then(|row| row["cache_key"].as_str())
@@ -1346,7 +1677,7 @@ impl Project {
         if index > 0 && previous_hash == "initial" {
             return Err(Error::new(
                 ErrorCode::WorkflowValidation,
-                "previous workflow step has not succeeded",
+                "previous workflow step has not completed",
             ));
         }
         let parameter_hash = cache_key("parameters", method, &resolved);
@@ -1358,6 +1689,7 @@ impl Project {
             &parameter_hash,
             "running",
             &key,
+            &launch_snapshot,
             None,
         )?;
         self.audit(
@@ -1370,18 +1702,15 @@ impl Project {
                 let payload: Json = serde_json::from_slice(&entry.data)
                     .map_err(|error| Error::new(ErrorCode::SchemaMismatch, error.to_string()))?;
                 if !payload["result"].is_null() && payload["tables"].is_object() {
-                    restore_tables(
-                        &self.connection()?,
-                        self.get_project_id(),
-                        &payload["tables"],
-                    )?;
+                    restore_tables(&self.connection()?, &payload["tables"])?;
                     self.record_execution(
                         workflow.version,
                         index,
                         method_id,
                         &parameter_hash,
-                        "succeeded",
+                        "completed",
                         &key,
+                        &launch_snapshot,
                         None,
                     )?;
                     payload["result"].clone()
@@ -1393,8 +1722,7 @@ impl Project {
                 }
             } else {
                 let result = method.run(self, &resolved)?;
-                let snapshots =
-                    snapshot_tables(&self.connection()?, self.get_project_id(), &method.writes)?;
+                let snapshots = snapshot_tables(&self.connection()?, &method.writes)?;
                 self.set_cache(
                     &method.id,
                     "workflow result",
@@ -1406,8 +1734,9 @@ impl Project {
                     index,
                     method_id,
                     &parameter_hash,
-                    "succeeded",
+                    "completed",
                     &key,
+                    &launch_snapshot,
                     None,
                 )?;
                 result
@@ -1419,8 +1748,9 @@ impl Project {
                 index,
                 method_id,
                 &parameter_hash,
-                "succeeded",
+                "completed",
                 &key,
+                &launch_snapshot,
                 None,
             )?;
             result
@@ -1437,10 +1767,34 @@ impl Project {
         let operation = registry.get(operation_id)?;
         let mut input = parameters.clone();
         input["database_path"] = json!(self.get_database_path().to_string_lossy());
-        input["project_id"] = json!(self.info().id);
         operation.run(self, &input)
     }
     pub fn close(self) {}
+    pub fn run_worker(&mut self, worker_id: &str, registry: &MethodRegistry) -> Result<Json> {
+        WorkflowExecutionManager::new(self).scheduler_tick(worker_id)?;
+        let workflow = self.get_workflow()?;
+        let cancellation = CancellationToken::default();
+        let result = match self.run_workflow(&workflow, registry, Some(&cancellation), None) {
+            Ok(result) => result,
+            Err(error) => {
+                let _ = self.connection()?.execute(
+                    "UPDATE WORKFLOW_EXECUTION SET error = ?1, updated_at = CURRENT_TIMESTAMP",
+                    params![error.to_string()],
+                );
+                let _ = WorkflowExecutionManager::new(self)
+                    .release_worker(worker_id, ExecutionState::Failed);
+                return Err(error);
+            }
+        };
+        WorkflowExecutionManager::new(self).release_worker(
+            worker_id,
+            if result.cancelled {
+                ExecutionState::Cancelled
+            } else {
+                ExecutionState::Completed
+            },
+        )
+    }
     pub fn run_workflow(
         &mut self,
         workflow: &Workflow,
@@ -1449,6 +1803,9 @@ impl Project {
         progress: Option<&dyn Fn(&ProgressEvent)>,
     ) -> Result<ExecutionResult> {
         workflow.validate(registry)?;
+        let launch_snapshot = workflow.to_json_with_registry(registry)?.to_string();
+        self.connection()?
+            .execute("DELETE FROM WORKFLOW_EXECUTION_STEP", [])?;
         let mut results = Vec::new();
         let mut previous_hash = "initial".to_string();
         for (index, step) in workflow.steps.iter().enumerate() {
@@ -1457,6 +1814,19 @@ impl Project {
                     results: Json::Array(results),
                     cancelled: true,
                 });
+            }
+            if cancellation.is_some() {
+                let status: String = self.connection()?.query_row(
+                    "SELECT status FROM WORKFLOW_EXECUTION LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )?;
+                if status == "cancelling" {
+                    return Ok(ExecutionResult {
+                        results: Json::Array(results),
+                        cancelled: true,
+                    });
+                }
             }
             let method = registry.get(&step.method)?;
             let parameters = method.resolve(&step.parameters)?;
@@ -1469,6 +1839,7 @@ impl Project {
                 &parameter_hash,
                 "pending",
                 &key,
+                &launch_snapshot,
                 None,
             )?;
             if method.cacheable {
@@ -1479,11 +1850,7 @@ impl Project {
                     if payload.get("result").is_some()
                         && payload.get("tables").is_some_and(Json::is_object)
                     {
-                        restore_tables(
-                            &self.connection()?,
-                            self.get_project_id(),
-                            &payload["tables"],
-                        )?;
+                        restore_tables(&self.connection()?, &payload["tables"])?;
                         results.push(payload["result"].clone());
                         self.audit(
                             "cache_hit",
@@ -1495,11 +1862,16 @@ impl Project {
                             index,
                             &method.id,
                             &parameter_hash,
-                            "succeeded",
+                            "completed",
                             &key,
+                            &launch_snapshot,
                             None,
                         )?;
                         previous_hash = key;
+                        self.connection()?.execute(
+                            "UPDATE WORKFLOW_EXECUTION SET progress = ?1, updated_at = CURRENT_TIMESTAMP",
+                            params![json!({"completed": index + 1, "total": workflow.steps.len(), "current_step": index}).to_string()],
+                        )?;
                         continue;
                     }
                 }
@@ -1517,6 +1889,7 @@ impl Project {
                 &parameter_hash,
                 "running",
                 &key,
+                &launch_snapshot,
                 None,
             )?;
             let result = match method.run(self, &parameters) {
@@ -1529,14 +1902,14 @@ impl Project {
                         &parameter_hash,
                         "failed",
                         &key,
+                        &launch_snapshot,
                         Some(&error.to_string()),
                     )?;
                     return Err(error);
                 }
             };
             if method.cacheable {
-                let snapshots =
-                    snapshot_tables(&self.connection()?, self.get_project_id(), &method.writes)?;
+                let snapshots = snapshot_tables(&self.connection()?, &method.writes)?;
                 self.set_cache(
                     &method.id,
                     "workflow result",
@@ -1550,9 +1923,14 @@ impl Project {
                 index,
                 &method.id,
                 &parameter_hash,
-                "succeeded",
+                "completed",
                 &key,
+                &launch_snapshot,
                 None,
+            )?;
+            self.connection()?.execute(
+                "UPDATE WORKFLOW_EXECUTION SET progress = ?1, updated_at = CURRENT_TIMESTAMP",
+                params![json!({"completed": index + 1, "total": workflow.steps.len(), "current_step": index}).to_string()],
             )?;
             previous_hash = key.clone();
             if let Some(progress) = progress {
@@ -1577,7 +1955,7 @@ impl Project {
         if self.options.read_only {
             return Ok(());
         }
-        self.connection()?.execute("INSERT INTO AUDIT_TRAIL (project_id, operation_type, object_type, operation_details) VALUES (?1, ?2, ?3, ?4)", params![self.get_project_id(), operation, object, details.to_string()])?;
+        self.connection()?.execute("INSERT INTO AUDIT_TRAIL (operation_type, object_type, operation_details) VALUES (?1, ?2, ?3)", params![operation, object, details.to_string()])?;
         Ok(())
     }
 }

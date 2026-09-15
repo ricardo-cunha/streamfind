@@ -15,11 +15,11 @@ use serde_json::Value;
 use streamfind_rust_core::{Error, ErrorCode, Project, Result};
 
 use crate::nta::{NtaSuspectRow, ProjectNonTargetAnalysis};
-use crate::nta_utils::decode_floats_base64;
-use crate::processing_methods_nta::{
+use crate::nta_processing_methods::{
     finished, load_analysis_features, load_suspects, persist_suspects,
     persist_transformation_products,
 };
+use crate::nta_utils::decode_floats_base64;
 
 /// Mirrors `nta::api::NTA_TRANSFORMATION_PRODUCT_ROW`.
 #[derive(Debug, Clone, Default)]
@@ -728,7 +728,7 @@ fn analysis_index_of_group(data: &ProjectNonTargetAnalysis, feature_group: &str)
 }
 
 /// Convert an assignment row to a SUSPECT row for the SUSPECTS table. The
-/// SUSPECTS primary key is (project_id, analysis, feature); assignment rows
+/// SUSPECTS primary key is (analysis, feature); assignment rows
 /// have no underlying feature, so the product feature group (when resolved)
 /// or the transformation product name is used as the feature identifier —
 /// this keeps one row per product assignment while staying unique.

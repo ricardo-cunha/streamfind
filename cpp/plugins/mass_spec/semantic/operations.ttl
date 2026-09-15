@@ -1,0 +1,398 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfms:addAnalyses
+    a sf:Operation ;
+    sf:operationId "mass_spec.add_analyses" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Add mass spectrometry analyses" ;
+    skos:definition "Read one or more mass-spectrometry files and persist their analysis metadata, spectra, and chromatograms in the project. This is the normal ingestion operation after project creation." ;
+    sf:category "mass-spec-ingestion" ;
+    sf:invocationModel "stateless" ;
+    sf:requiresConnection false ;
+    sf:guidance "Call with analyses as an array of objects containing path and optional replicate_name/blank_name. After it succeeds, use get_analysis_names or get_analyses_info to verify ingestion before querying spectra." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysesParameter ;
+    sf:returns sfms:addAnalysesResult ;
+    sf:writes sfms:analysesTable ;
+    sf:mutatesProject true ;
+    sf:extensions "mzml,mzxml,wiff,lcd,txt,asc,raw,d,baf,tsf" .
+
+sfms:removeAnalyses
+    a sf:Operation ;
+    sf:operationId "mass_spec.remove_analyses" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Remove mass spectrometry analyses" ;
+    skos:definition "Remove persisted mass-spectrometry analyses by their canonical analysis names and delete their associated spectra/chromatogram data." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter ;
+    sf:returns sfms:removeAnalysesResult ;
+    sf:writes sfms:analysesTable ;
+    sf:mutatesProject true .
+
+sfms:getAnalysesInfo
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_analyses_info" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get mass spectrometry analysis information" ;
+    skos:definition "Return persisted mass-spectrometry analysis metadata, including analysis names, source paths, replicate/blank labels, and available counts." ;
+    sf:category "mass-spec-inspection" ;
+    sf:invocationModel "stateless" ;
+    sf:requiresConnection false ;
+    sf:guidance "Use after add_analyses to confirm the exact analysis names accepted by later analysis_names parameters." ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfms:getAnalysesInfoResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getAnalysisNames
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_analysis_names" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get mass spectrometry analysis names" ;
+    skos:definition "Return the canonical analysis names registered in the project. Names are normally the source file stem and are passed to analysis_names in later operations and methods." ;
+    sf:category "mass-spec-inspection" ;
+    sf:invocationModel "stateless" ;
+    sf:requiresConnection false ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfms:analysisNamesResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getReplicateNames
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_replicate_names" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get replicate names" ;
+    skos:definition "Return replicate labels in the same analysis order as get_analysis_names." ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfms:replicateNamesResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getBlankNames
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_blank_names" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get blank names" ;
+    skos:definition "Return blank-analysis labels in the same analysis order as get_analysis_names." ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfms:blankNamesResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getConcentrations
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_concentrations" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get concentrations" ;
+    skos:definition "Return analysis concentrations in the same analysis order as get_analysis_names." ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfms:concentrationsResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:setReplicateNames
+    a sf:Operation ;
+    sf:operationId "mass_spec.set_replicate_names" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Set replicate names" ;
+    skos:definition "Replace replicate labels for all persisted analyses; the array must have one value per analysis." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:replicateNamesParameter ;
+    sf:returns sfms:updatedResult ;
+    sf:writes sfms:analysesTable ;
+    sf:mutatesProject true .
+
+sfms:setBlankNames
+    a sf:Operation ;
+    sf:operationId "mass_spec.set_blank_names" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Set blank names" ;
+    skos:definition "Replace blank labels for all persisted analyses; the array must have one value per analysis." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:blankNamesParameter ;
+    sf:returns sfms:updatedResult ;
+    sf:writes sfms:analysesTable ;
+    sf:mutatesProject true .
+
+sfms:setConcentrations
+    a sf:Operation ;
+    sf:operationId "mass_spec.set_concentrations" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Set concentrations" ;
+    skos:definition "Replace analysis concentrations for all persisted analyses; the array must have one value per analysis." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:concentrationsParameter ;
+    sf:returns sfms:updatedResult ;
+    sf:writes sfms:analysesTable ;
+    sf:mutatesProject true .
+
+sfms:getSpectraHeaders
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_spectra_headers" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get spectra headers" ;
+    skos:definition "Read spectrum-header rows for selected analyses, including scan number, retention time, polarity, MS level, precursor information, and point counts. Use this lightweight inspection operation before requesting large point arrays." ;
+    sf:category "mass-spec-query" ;
+    sf:invocationModel "stateless" ;
+    sf:requiresConnection false ;
+    sf:guidance "Use analysis_names from get_analysis_names. An empty analysis_names array means all registered analyses; provide names to reduce work and response size." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter ;
+    sf:defaults "{\"analysis_names\":[]}" ;
+    sf:returns sfms:spectraHeadersResult ;
+    sf:reads sfms:spectraHeadersTable ;
+    sf:mutatesProject false .
+
+sfms:getChromatogramsHeaders
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_chromatograms_headers" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Get chromatogram headers" ;
+    skos:definition "Read chromatogram-header rows for selected analyses, including identifiers, retention-time ranges, polarity, and point counts." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter ;
+    sf:defaults "{\"analysis_names\":[]}" ;
+    sf:returns sfms:chromatogramsHeadersResult ;
+    sf:reads sfms:chromatogramsHeadersTable ;
+    sf:mutatesProject false .
+
+sfms:getSpectraTic
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_spectra_tic" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get spectra TIC" ;
+    skos:definition "Read total-ion-current values from spectrum headers using analysis, MS-level, and retention-time filters." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:levelsParameter,
+        sfms:rtMinParameter,
+        sfms:rtMaxParameter ;
+    sf:defaults "{\"analysis_names\":[],\"levels\":[]}" ;
+    sf:returns sfms:ticResult ;
+    sf:reads sfms:spectraHeadersTable ;
+    sf:mutatesProject false .
+
+sfms:getRawSpectra
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_raw_spectra" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get raw spectra" ;
+    skos:definition "Read flattened raw spectrum points. analysis_names selects analyses first; non-empty indices selects spectra and takes priority over targets; targets are used when indices are omitted or empty." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter,
+        sfms:levelsParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter,
+        sfms:chargeParameter ;
+    sf:defaults "{\"analysis_names\":[],\"indices\":[],\"levels\":[]}" ;
+    sf:returns sfms:spectraResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getRawSpectraEic
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_raw_spectra_eic" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get extracted ion chromatograms" ;
+    skos:definition "Read MS1 raw points grouped as extracted-ion chromatograms for independent target ranges. Each target must provide mass/mz bounds or a chemical structure; optional id, analysis, polarity, level, and retention-time fields narrow the result." ;
+    sf:category "mass-spec-query" ;
+    sf:invocationModel "stateless" ;
+    sf:requiresConnection false ;
+    sf:guidance "Use mz for a measured ion such as 275.23457, mass for a neutral mass, or SMILES/InChI when the exact mass should be derived. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Do not use get_available_methods to discover this operation; it is listed directly by tools/list." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter,
+        sfms:chargeParameter ;
+    sf:defaults "{\"analysis_names\":[]}" ;
+    sf:returns sfms:eicResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getRawSpectraMs1
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_raw_spectra_ms1" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get MS1 spectra" ;
+    skos:definition "Read MS1 raw spectrum points using independent target ranges and shared filters." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter,
+        sfms:chargeParameter,
+        sfms:mzClustParameter,
+        sfms:presenceParameter,
+        sfms:minIntensityMs1Parameter ;
+    sf:defaults "{\"analysis_names\":[],\"mz_clust\":0.003,\"presence\":0.8,\"min_intensity_ms1\":0.0}" ;
+    sf:returns sfms:ms1Result ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getRawSpectraMs2
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_raw_spectra_ms2" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get MS2 spectra" ;
+    skos:definition "Read MS2 raw spectrum points using independent target ranges and shared filters." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter,
+        sfms:chargeParameter,
+        sfms:isolationWindowParameter,
+        sfms:mzClustParameter,
+        sfms:presenceParameter,
+        sfms:minIntensityMs2Parameter ;
+    sf:defaults "{\"analysis_names\":[],\"isolation_window\":1.3,\"mz_clust\":0.005,\"presence\":0.0,\"min_intensity_ms2\":0.0}" ;
+    sf:returns sfms:ms2Result ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getChromatograms
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_chromatograms" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Get chromatograms" ;
+    skos:definition "Read persisted chromatogram arrays for selected analyses and zero-based chromatogram indices." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
+    sf:defaults "{\"analysis_names\":[],\"indices\":[]}" ;
+    sf:returns sfms:chromatogramsResult ;
+    sf:reads sfms:chromatogramsTable ;
+    sf:mutatesProject false .
+
+sfms:getRawChromatograms
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_raw_chromatograms" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Get raw chromatograms" ;
+    skos:definition "Read chromatogram point records directly from the selected mass spectrometry files." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
+    sf:returns sfms:chromatogramsResult ;
+    sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getFeatures
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Get NTA features" ;
+    skos:definition "Read persisted non-target-analysis features matching analysis, mass or m/z, retention time, and polarity targets." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter,
+        sfms:filteredParameter ;
+    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0,\"filtered\":false}" ;
+    sf:returns sfms:featuresResult ;
+    sf:reads sfms:ntaFeaturesTable ;
+    sf:mutatesProject false .
+
+sfms:getSuspects
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_suspects" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Get NTA suspects" ;
+    skos:definition "Read persisted non-target-analysis suspect-screening assignments matching analysis, mass or m/z, retention time, and polarity targets." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter ;
+    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0}" ;
+    sf:returns sfms:suspectsResult ;
+    sf:reads sfms:suspectsTable ;
+    sf:mutatesProject false .
+
+sfms:getInternalStandards
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_internal_standards" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Get NTA internal standards" ;
+    skos:definition "Read persisted non-target-analysis internal-standard assignments matching analysis, mass or m/z, retention time, and polarity targets." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:polarityParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter ;
+    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0}" ;
+    sf:returns sfms:internalStandardsResult ;
+    sf:reads sfms:internalStandardsTable ;
+    sf:mutatesProject false .
+
+sfms:getTransformationProducts
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_transformation_products" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Get NTA transformation products" ;
+    skos:definition "Read persisted non-target-analysis transformation-product assignments matching analysis, mass or m/z, and retention time targets." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:ppmParameter,
+        sfms:rtToleranceParameter ;
+    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0}" ;
+    sf:returns sfms:transformationProductsResult ;
+    sf:reads sfms:transformationProductsTable ;
+    sf:mutatesProject false .

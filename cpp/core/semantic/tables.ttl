@@ -1,0 +1,90 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfcore:projectTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project table" ;
+    skos:definition "Generic project identity, metadata, workflow, and framework state." ;
+    sf:tableName "PROJECT" ;
+    sf:hasColumn
+        sfcore:projectDomainColumn,
+        sfcore:projectMetadataColumn,
+        sfcore:projectWorkflowColumn,
+        sfcore:createdAtColumn,
+        sfcore:schemaVersionColumn,
+        sfcore:frameworkVersionColumn .
+
+sfcore:cacheTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache table" ;
+    skos:definition "Cached workflow results owned by a project." ;
+    sf:tableName "CACHE" ;
+    sf:hasColumn
+        sfcore:cacheNameColumn,
+        sfcore:cacheDescriptionColumn,
+        sfcore:cacheHashColumn,
+        sfcore:cacheDataColumn,
+        sfcore:createdAtColumn .
+
+sfcore:auditTrailTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Audit trail table" ;
+    skos:definition "Persisted project and workflow operation audit events." ;
+    sf:tableName "AUDIT_TRAIL" ;
+    sf:hasColumn
+        sfcore:operationTypeColumn,
+        sfcore:objectTypeColumn,
+        sfcore:operationDetailsColumn,
+        sfcore:createdAtColumn .
+
+sfcore:workflowExecutionTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution table" ;
+    skos:definition "Singleton persisted lifecycle state for the current workflow execution." ;
+    sf:tableName "WORKFLOW_EXECUTION" ;
+    sf:hasColumn
+        sfcore:executionDomainColumn,
+        sfcore:workflowRevisionColumn,
+        sfcore:launchSnapshotColumn,
+        sfcore:executionStatusColumn,
+        sfcore:executionProgressColumn,
+        sfcore:resultReferenceColumn,
+        sfcore:processIdColumn,
+        sfcore:serverIdColumn,
+        sfcore:startedAtColumn,
+        sfcore:completedAtColumn,
+        sfcore:executionErrorColumn,
+        sfcore:createdAtColumn,
+        sfcore:updatedAtColumn .
+
+sfcore:workflowExecutionStepTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution step table" ;
+    skos:definition "Durable child records for the latest workflow execution, including method state, cache identity, progress, and lifecycle timestamps." ;
+    sf:tableName "WORKFLOW_EXECUTION_STEP" ;
+    sf:hasColumn
+        sfcore:workflowRevisionColumn,
+        sfcore:stepIndexColumn,
+        sfcore:executionMethodColumn,
+        sfcore:executionParametersColumn,
+        sfcore:parameterHashColumn,
+        sfcore:cacheKeyColumn,
+        sfcore:executionStatusColumn,
+        sfcore:executionProgressColumn,
+        sfcore:resultReferenceColumn,
+        sfcore:stepErrorCodeColumn,
+        sfcore:stepErrorMessageColumn,
+        sfcore:startedAtColumn,
+        sfcore:completedAtColumn,
+        sfcore:updatedAtColumn .

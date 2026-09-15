@@ -4,17 +4,6 @@ version.workspace = true
 edition = "2021"
 autotests = false
 
-[features]
-# Direct reader-interface tests depend on local vendor fixtures and are not
-# part of the normal/distribution workspace test suite. Opt in explicitly:
-# cargo test -p streamfind-rust-mass-spec --features reader-interface-tests
-reader-interface-tests = []
-# NTA processing and query conformance tests consume the large external
-# example datasets and are not part of the normal/distribution test suite.
-# Opt in explicitly:
-# cargo test -p streamfind-rust-mass-spec --features nta-conformance-tests --tests
-nta-conformance-tests = []
-
 [dependencies]
 streamfind-rust-core = { path = "../core" }
 streamfind-rust-external = { path = "../external" }
@@ -24,141 +13,22 @@ cfb = "0.14"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 quick-xml = "0.38"
 regex = "1"
-
-duckdb = { version = "1.10504.0", features = ["bundled"] }
 zstd = "0.13"
+
+[target.'cfg(windows)'.dependencies]
+duckdb = { version = "1.10505.0" }
+
+[target.'cfg(not(windows))'.dependencies]
+duckdb = { version = "1.10505.0", features = ["bundled"] }
 
 [dev-dependencies]
 streamfind-rust-test-support = { path = "../test-support" }
 
-# Keep direct reader-interface tests available to reader developers, but out of
-# the default/distribution workspace test suite. Run them with:
-# cargo test -p streamfind-rust-mass-spec --features reader-interface-tests
 [[test]]
-name = "reader"
-path = "tests/reader.rs"
-required-features = ["reader-interface-tests"]
+name = "mass_spec_interface_smoke"
+path = "tests/mass_spec_interface_smoke.rs"
+
 
 [[test]]
-name = "reader_agilent"
-path = "tests/reader_agilent.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_agilent_public"
-path = "tests/reader_agilent_public.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_agilent_chemstation"
-path = "tests/reader_agilent_chemstation.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_agilent_wide"
-path = "tests/reader_agilent_wide.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_agilent_ims"
-path = "tests/reader_agilent_ims.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_agilent_ims_public"
-path = "tests/reader_agilent_ims_public.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_agilent_uv"
-path = "tests/reader_agilent_uv.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_bruker_baf"
-path = "tests/reader_bruker_baf.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_bruker_public"
-path = "tests/reader_bruker_public.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_bruker_tsf"
-path = "tests/reader_bruker_tsf.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_sciex"
-path = "tests/reader_sciex.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "reader_sciex_corpus"
-path = "tests/reader_sciex_corpus.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "project_bruker_parity"
-path = "tests/project_bruker_parity.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "project_mzml_mzxml_parity"
-path = "tests/project_mzml_mzxml_parity.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "project_indexed_persistence"
-path = "tests/project_indexed_persistence.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "project_agilent_parity"
-path = "tests/project_agilent_parity.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "processing_agilent_public"
-path = "tests/processing_agilent_public.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "smiles_targets"
-path = "tests/smiles_targets.rs"
-required-features = ["nta-conformance-tests"]
-
-[[test]]
-name = "processing_nta_ms"
-path = "tests/processing_nta_ms.rs"
-required-features = ["nta-conformance-tests"]
-
-[[test]]
-name = "processing_nta"
-path = "tests/processing_nta.rs"
-required-features = ["nta-conformance-tests"]
-
-[[test]]
-name = "nta_query_ops"
-path = "tests/nta_query_ops.rs"
-required-features = ["nta-conformance-tests"]
-
-[[test]]
-name = "processing_chromatograms"
-path = "tests/processing_chromatograms.rs"
-required-features = ["reader-interface-tests"]
-
-[[test]]
-name = "nta_last_two"
-path = "tests/nta_last_two.rs"
-required-features = ["nta-conformance-tests"]
-
-[[test]]
-name = "nta_conformance"
-path = "tests/nta_conformance.rs"
-required-features = ["nta-conformance-tests"]
-
-[[test]]
-name = "project"
-path = "tests/project.rs"
+name = "nta_interface_smoke"
+path = "tests/nta_interface_smoke.rs"

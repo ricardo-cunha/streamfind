@@ -9,10 +9,19 @@ use flate2::read::ZlibDecoder;
 use quick_xml::{events::Event, Reader as XmlReader};
 use std::{
     collections::BTreeSet,
-    fs,
+    env, fs,
     io::{self, Read},
     path::{Path, PathBuf},
 };
+
+fn trace_payload_decode(kind: &str, index: usize) {
+    if env::var("STREAMFIND_TRACE_PAYLOAD_DECODES")
+        .map(|value| !value.is_empty() && value != "0")
+        .unwrap_or(false)
+    {
+        eprintln!("STREAMFIND_PAYLOAD_DECODE kind={kind} index={index}");
+    }
+}
 
 #[derive(Debug)]
 pub enum ReaderError {
@@ -58,6 +67,7 @@ pub enum Format {
     AgilentChemStationD,
     BrukerTsf,
     BrukerBaf,
+    ThermoRaw,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -90,6 +100,7 @@ pub struct Spectrum {
 #[derive(Debug, Clone, Default)]
 pub struct Chromatogram {
     pub id: String,
+    pub array_length: i32,
     pub signal_type: String,
     pub chromatogram_type: String,
     pub detector: String,
@@ -121,6 +132,7 @@ pub struct Summary {
     pub start_rt: f32,
     pub end_rt: f32,
     pub has_ion_mobility: bool,
+    pub time_stamp: String,
 }
 
 fn convert_chromatogram_minutes_to_seconds(chromatograms: &mut [Chromatogram]) {
@@ -162,6 +174,8 @@ pub struct Reader {
     sciex_mrm_metadata: Option<crate::reader_sciex::MrmMetadata>,
     mzml_bytes: Option<Vec<u8>>,
     mzml_spectrum_offsets: Vec<(usize, usize)>,
+    mzml_arrays_loaded: bool,
+    thermo_metadata: Option<crate::reader_thermo::ThermoMetadata>,
 }
 
 impl Reader {
@@ -188,13 +202,15 @@ impl Reader {
             Format::BrukerTsf
         } else if bruker_baf {
             Format::BrukerBaf
+        } else if crate::reader_thermo::is_thermo_raw(&path, &bytes) {
+            Format::ThermoRaw
         } else {
             detect_format(&path, &bytes)?
         };
         let (mut spectra, mut chromatograms) = match format {
             Format::MzMl => (
                 parse_mzml_with_arrays(&bytes, false)?,
-                parse_mzml_chromatograms(&bytes)?,
+                parse_mzml_chromatograms(&bytes, Some(&[]))?,
             ),
             Format::MzXml => (parse_mzxml(&bytes)?, Vec::new()),
             Format::Asc => (Vec::new(), parse_asc(&bytes)),
@@ -204,6 +220,7 @@ impl Reader {
             Format::AgilentChemStationD => (Vec::new(), Vec::new()),
             Format::BrukerTsf => (Vec::new(), Vec::new()),
             Format::BrukerBaf => (Vec::new(), Vec::new()),
+            Format::ThermoRaw => (Vec::new(), Vec::new()),
         };
         let analysis_name = path
             .file_stem()
@@ -479,6 +496,52 @@ impl Reader {
         } else {
             None
         };
+        let thermo_metadata = if format == Format::ThermoRaw {
+            let metadata =
+                crate::reader_thermo::read_metadata(&path, &bytes).map_err(ReaderError::Invalid)?;
+            spectra = metadata
+                .scans
+                .iter()
+                .enumerate()
+                .map(|(index, scan)| Spectrum {
+                    index: index as i32,
+                    scan: scan.scan,
+                    array_length: scan.centroid_count as i32,
+                    level: scan.level,
+                    mode: scan.mode,
+                    polarity: scan.polarity,
+                    window_mz: if scan.level >= 2 {
+                        scan.precursor_mz as f32
+                    } else {
+                        0.0
+                    },
+                    window_mzlow: if scan.level >= 2 && scan.precursor_mz > 0.0 {
+                        (scan.precursor_mz - scan.isolation_width as f64 / 2.0) as f32
+                    } else {
+                        0.0
+                    },
+                    window_mzhigh: if scan.level >= 2 && scan.precursor_mz > 0.0 {
+                        (scan.precursor_mz + scan.isolation_width as f64 / 2.0) as f32
+                    } else {
+                        0.0
+                    },
+                    precursor_mz: scan.precursor_mz as f32,
+                    precursor_charge: scan.precursor_charge,
+                    collision_energy: scan.collision_energy,
+                    low_mz: scan.low_mz,
+                    high_mz: scan.high_mz,
+                    base_peak_mz: scan.base_peak_mz,
+                    base_peak_intensity: scan.base_peak_intensity,
+                    tic: scan.tic,
+                    retention_time: scan.retention_time,
+                    ..Default::default()
+                })
+                .collect();
+            chromatograms = metadata.chromatograms.clone();
+            Some(metadata)
+        } else {
+            None
+        };
         let mzml_spectrum_offsets = if format == Format::MzMl {
             mzml_spectrum_offsets(&bytes)?
         } else {
@@ -502,11 +565,19 @@ impl Reader {
             sciex_mrm_metadata,
             mzml_bytes,
             mzml_spectrum_offsets,
+            mzml_arrays_loaded: false,
+            thermo_metadata,
         })
     }
 
     pub fn format(&self) -> Format {
         self.format
+    }
+    /// Return the acquisition timestamp in the same RFC3339 representation as
+    /// the C++ reader. For Thermo RAW this is the audit-start FILETIME, which
+    /// records the acquisition instant in UTC.
+    pub fn get_time_stamp(&self) -> String {
+        self.summary().time_stamp
     }
     pub fn analysis_catalog(&self) -> &[Analysis] {
         &self.analysis_catalog
@@ -610,6 +681,28 @@ impl Reader {
                     .collect()
             });
         }
+        if self.format == Format::MzMl {
+            let bytes = self
+                .mzml_bytes
+                .as_deref()
+                .ok_or_else(|| ReaderError::Invalid("mzML bytes are not loaded".into()))?;
+            let decoded = parse_mzml_chromatograms(
+                bytes,
+                if indices.is_empty() {
+                    None
+                } else {
+                    Some(indices)
+                },
+            )?;
+            return Ok(if indices.is_empty() {
+                decoded
+            } else {
+                indices
+                    .iter()
+                    .filter_map(|index| decoded.get(*index).cloned())
+                    .collect()
+            });
+        }
         Ok(if indices.is_empty() {
             self.chromatograms.clone()
         } else {
@@ -624,7 +717,26 @@ impl Reader {
         self.spectra.get(index)
     }
 
+    pub fn load_mzml_spectrum_data(&mut self) -> Result<()> {
+        if self.format != Format::MzMl || self.mzml_arrays_loaded {
+            return Ok(());
+        }
+        let bytes = self
+            .mzml_bytes
+            .as_deref()
+            .ok_or_else(|| ReaderError::Invalid("mzML bytes are not loaded".into()))?;
+        self.spectra = parse_mzml_with_arrays(bytes, true)?;
+        self.mzml_arrays_loaded = true;
+        Ok(())
+    }
+
     pub fn spectrum_data(&self, index: usize) -> Result<Spectrum> {
+        trace_payload_decode("spectrum", index);
+        if self.mzml_arrays_loaded {
+            return self.spectra.get(index).cloned().ok_or_else(|| {
+                ReaderError::Invalid(format!("spectrum index is out of range: {index}"))
+            });
+        }
         if let Some(bytes) = &self.mzml_bytes {
             let (start, end) = self
                 .mzml_spectrum_offsets
@@ -827,6 +939,17 @@ impl Reader {
             }
             return Ok(spectrum);
         }
+        if let Some(metadata) = &self.thermo_metadata {
+            let scan = metadata.scans.get(index).ok_or_else(|| {
+                ReaderError::Invalid(format!("spectrum index is out of range: {index}"))
+            })?;
+            let spectrum = if scan.centroid_count > 0 {
+                crate::reader_thermo::read_spectrum(&self.path, scan, index)
+            } else {
+                crate::reader_thermo::read_profile_spectrum(&self.path, scan, index)
+            };
+            return spectrum.map_err(ReaderError::Invalid);
+        }
         if self.format != Format::AgilentMassHunterD {
             return self.spectra.get(index).cloned().ok_or_else(|| {
                 ReaderError::Invalid(format!("spectrum index is out of range: {index}"))
@@ -886,7 +1009,7 @@ impl Reader {
             .spectra
             .iter()
             .flat_map(|s| {
-                if self.format == Format::AgilentMassHunterD {
+                if self.format == Format::AgilentMassHunterD || self.format == Format::ThermoRaw {
                     vec![s.low_mz, s.high_mz]
                 } else {
                     s.mz.clone()
@@ -936,6 +1059,11 @@ impl Reader {
             start_rt: if start_rt.is_finite() { start_rt } else { 0.0 },
             end_rt,
             has_ion_mobility: self.spectra.iter().any(|s| s.mobility != 0.0),
+            time_stamp: self
+                .thermo_metadata
+                .as_ref()
+                .map(|metadata| metadata.time_stamp.clone())
+                .unwrap_or_default(),
         }
     }
 }
@@ -1041,6 +1169,7 @@ fn render_sciex_mrm_chromatograms(
             };
             traces.push(Chromatogram {
                 id: transition.name,
+                array_length: time.len() as i32,
                 signal_type: "MS".into(),
                 chromatogram_type: "SRM".into(),
                 detector: "SCIEX".into(),
@@ -1326,7 +1455,10 @@ fn mzml_spectrum_offsets(bytes: &[u8]) -> Result<Vec<(usize, usize)>> {
     Ok(offsets)
 }
 
-fn parse_mzml_chromatograms(bytes: &[u8]) -> Result<Vec<Chromatogram>> {
+fn parse_mzml_chromatograms(
+    bytes: &[u8],
+    decode_indices: Option<&[usize]>,
+) -> Result<Vec<Chromatogram>> {
     let mut xml = XmlReader::from_reader(bytes);
     xml.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -1334,16 +1466,32 @@ fn parse_mzml_chromatograms(bytes: &[u8]) -> Result<Vec<Chromatogram>> {
     let mut current: Option<Chromatogram> = None;
     let mut array: Option<BinaryArray> = None;
     let mut in_binary = false;
+    let mut decode_current = decode_indices.is_none();
     loop {
         match xml.read_event_into(&mut buf)? {
             Event::Start(e) if local(e.name().as_ref()) == b"chromatogram" => {
+                let index = out.len();
+                decode_current = decode_indices
+                    .map(|indices| indices.contains(&index))
+                    .unwrap_or(true);
+                let id = attr(&e, b"id").unwrap_or_default();
                 current = Some(Chromatogram {
-                    id: attr(&e, b"id").unwrap_or_default(),
-                    precursor_mz: id_value(&attr(&e, b"id").unwrap_or_default(), "Q1"),
-                    product_mz: id_value(&attr(&e, b"id").unwrap_or_default(), "Q3"),
-                    activation_ce: id_value(&attr(&e, b"id").unwrap_or_default(), "ce"),
-                    start_time: id_value(&attr(&e, b"id").unwrap_or_default(), "start"),
-                    end_time: id_value(&attr(&e, b"id").unwrap_or_default(), "end"),
+                    array_length: i32_attr(&e, b"defaultArrayLength"),
+                    id: id.clone(),
+                    signal_type: "MS".into(),
+                    chromatogram_type: if id.contains("TIC") {
+                        "TIC".into()
+                    } else {
+                        "MS Chromatogram".into()
+                    },
+                    detector: "MS".into(),
+                    channel: id.clone(),
+                    units: "counts".into(),
+                    precursor_mz: Some(0.0),
+                    product_mz: Some(0.0),
+                    activation_ce: id_value(&id, "ce"),
+                    start_time: id_value(&id, "start"),
+                    end_time: id_value(&id, "end"),
                     ..Default::default()
                 });
             }
@@ -1375,30 +1523,28 @@ fn parse_mzml_chromatograms(bytes: &[u8]) -> Result<Vec<Chromatogram>> {
                     if accession == "MS:1000515" || name.contains("intensity array") {
                         a.intensity = true;
                     }
-                } else if let Some(c) = current.as_mut() {
-                    if accession == "MS:1000235" || name.contains("total ion current") {
-                        c.signal_type = name.clone();
-                        c.chromatogram_type = "TIC".into();
-                    } else if name.contains("basepeak") || name.contains("base peak") {
-                        c.chromatogram_type = "BPC".into();
-                    }
                 }
             }
             Event::End(e) if local(e.name().as_ref()) == b"binary" => in_binary = false,
             Event::End(e) if local(e.name().as_ref()) == b"binaryDataArray" => {
                 if let Some(a) = array.take() {
                     if let Some(c) = current.as_mut() {
-                        let values = decode_array(&a)?;
-                        if a.mz {
-                            c.time = values;
-                        } else if a.intensity {
-                            c.intensity = values;
+                        if decode_current {
+                            let values = decode_array(&a)?;
+                            if a.mz {
+                                c.time = values;
+                            } else if a.intensity {
+                                c.intensity = values;
+                            }
                         }
                     }
                 }
             }
             Event::End(e) if local(e.name().as_ref()) == b"chromatogram" => {
                 if let Some(c) = current.take() {
+                    if decode_current {
+                        trace_payload_decode("chromatogram", out.len());
+                    }
                     out.push(c);
                 }
             }
@@ -1859,12 +2005,21 @@ fn read_sciex_analysis_catalog(path: &Path) -> Result<Vec<Analysis>> {
     }
     let count = source_numbers.len();
     let mut catalog = Vec::with_capacity(count);
+    let mut names = BTreeSet::new();
     for (index, source_number) in source_numbers.into_iter().enumerate() {
         let wanted = format!("SampleSubtree/Sample{source_number}/SampleDABE/DATA");
-        let name = read_lcd_stream(path, &wanted)?
+        let mut name = read_lcd_stream(path, &wanted)?
             .map(|bytes| first_utf16_string(&bytes))
             .filter(|name| !name.is_empty() && name != "none")
             .unwrap_or_else(|| format!("sample_{source_number}"));
+        if !names.insert(name.clone()) {
+            let base_name = name.clone();
+            name = format!("{base_name}_sample_{source_number}");
+            if !names.insert(name.clone()) {
+                name = format!("{base_name}_analysis_{index}");
+                names.insert(name.clone());
+            }
+        }
         catalog.push(Analysis {
             analysis_index: index,
             source_analysis_number: Some(source_number),

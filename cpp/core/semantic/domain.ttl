@@ -1,0 +1,10 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfcore:streamfind
+    a sf:Domain ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "streamfind" ;
+    skos:definition "Generic streamfind project contract." ;
+    sf:guidance "Project entry points: call create once to create a DuckDB-backed project with an immutable domain, then call describe to inspect its metadata, workflow, and schema. Use get_domain and get_metadata for focused inspection. Domain-prefixed operations in tools/list are stateless and require database_path on every call. The connect operation is only needed before workflow-method operations: call get_available_methods with a domain, add_method or set_workflow, validate_workflow, then run_workflow or run_method. get_available_methods lists workflow methods, not MCP operations." .

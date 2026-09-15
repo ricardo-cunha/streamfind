@@ -1,0 +1,16 @@
+{
+  "domain": "mass_spec",
+  "metadata": {"id": "conformance", "owner": "conformance", "version": 1},
+  "workflow": [],
+  "cache": {
+    "name": "fixture",
+    "description": "shared conformance value",
+    "hash": "fixture-hash",
+    "value": {"answer": 42}
+  },
+  "audit": {
+    "operation_type": "fixture",
+    "object_type": "conformance",
+    "details": {"source": "shared-fixture"}
+  }
+}

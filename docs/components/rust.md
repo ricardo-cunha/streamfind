@@ -4,6 +4,11 @@ The Rust backend provides a native project API, command-line interface, and MCP
 server. The current Windows x64 and Linux x86_64 packages are listed on
 [Releases](../releases.md).
 
+!!! warning "Development status"
+    This is a preserved preview backend from an earlier development phase.
+    Rust development is currently paused; new capabilities are implemented in
+    the C++ core and dynamic plugin framework first.
+
 !!! note "Compatibility"
     The native Rust package is a versioned preview release. It is suitable
     for applications and integration testing, but does not yet promise a stable

@@ -1,0 +1,56 @@
+{
+  "fixture_id": "execution_lifecycle",
+  "states": [
+    "queued",
+    "running",
+    "cancelling",
+    "cancelled",
+    "completed",
+    "failed",
+    "interrupted"
+  ],
+  "terminal_states": [
+    "cancelled",
+    "completed",
+    "failed",
+    "interrupted"
+  ],
+  "transitions": [
+    ["queued", "running"],
+    ["queued", "cancelled"],
+    ["running", "completed"],
+    ["running", "failed"],
+    ["running", "cancelling"],
+    ["cancelling", "cancelled"],
+    ["running", "interrupted"]
+  ],
+  "invalid_transitions": [
+    ["queued", "completed"],
+    ["queued", "failed"],
+    ["running", "cancelled"],
+    ["cancelling", "completed"],
+    ["completed", "running"],
+    ["failed", "running"],
+    ["cancelled", "running"],
+    ["interrupted", "running"]
+  ],
+  "required_fields": [
+    "domain_id",
+    "workflow_revision",
+    "status"
+  ],
+  "progress_fields": [
+    "completed",
+    "total",
+    "current_step_index",
+    "current_step_id",
+    "message"
+  ],
+  "cancellation": {
+    "queued": "cancelled",
+    "running": "cancelling",
+    "cancelling": "cancelled",
+    "terminal": "rejected"
+  },
+  "consumers": ["cpp", "rust"]
+}

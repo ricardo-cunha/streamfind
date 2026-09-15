@@ -1,19 +1,21 @@
 # Availability and compatibility
 
-streamfind currently offers native C++ and Rust preview releases alongside
-the preserved R package. Choose the interface that matches your application.
+streamfind currently offers an active native C++ preview release, a preserved
+Rust preview backend, and the preserved R package. Choose the interface that
+matches your application.
 
 ## Available interfaces
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
 | C++ backend | Version {{ streamfind_version }} project version; latest package is v0.1.0 for Windows x64 and Linux x86_64 | Native C++ applications and MCP clients |
-| Rust backend | Version {{ streamfind_version }} project version; latest package is v0.1.0 for Windows x64 and Linux x86_64 | Native Rust applications, CLI use, and MCP clients |
+| Rust backend | Preserved preview backend; development currently paused | Existing Rust applications, CLI use, and compatibility work |
 | C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
 | Rust MCP server | Included in the Rust packages | Applications or agents using the Rust implementation |
 | R package | Preserved and functional | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path currently |
 | Cogniflow integration | Separate future path | Not part of the native packages |
+| React frontend | Future interface using the C++ backend | Not released |
 
 See [Releases](releases.md) for package downloads and checksums.
 
@@ -78,6 +80,8 @@ Compatibility is based on native file structures and datasets validated by the
 project. Support for a vendor format, instrument family, acquisition mode, or
 calibration variant is not implied merely because a reader exists.
 
+SCIEX WIFF2 decryption is not implemented.
+
 See the root [`NOTICE.md`](https://github.com/ricardo-cunha/streamfind/blob/dev_refactoring/NOTICE.md)
 for the distribution notice and compatibility boundaries.
 
@@ -87,3 +91,8 @@ The [Python package](components/bindings-python.md) and
 [Cogniflow integration](components/cf-streamfind.md) pages describe the current
 availability of those future-facing assets without implying that they are part
 of the native release.
+
+The planned React frontend is also not released. It will use the C++ backend's
+public service boundary and will not contain a second persistence or domain
+processing implementation. New backend capabilities should therefore target the
+C++ core/plugin framework first.

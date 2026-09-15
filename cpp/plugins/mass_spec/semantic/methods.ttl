@@ -1,0 +1,452 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfms:loadChromatogramsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.load_chromatograms" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Load chromatograms" ;
+    skos:definition "Load selected chromatograms from persisted mass spectrometry analyses into MASS_SPEC_CHROMATOGRAMS." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:chromatogramIdRegexParameter,
+        sfms:ignoreCaseParameter,
+        sfms:invertParameter ;
+    sf:cacheable false ;
+    sf:requiredMethods () ;
+    sf:singleOccurrence true ;
+    sf:reads sfms:analysesTable ;
+    sf:writes sfms:chromatogramsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:filterChromatogramsRetentionTimeMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.filter_chromatograms_retention_time" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Filter chromatograms by retention time" ;
+    skos:definition "Keep chromatogram rows whose retention time is within the inclusive minimum and maximum window." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:rtMinParameter,
+        sfms:rtMaxParameter ;
+    sf:cacheable false ;
+    sf:requiredMethods () ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:chromatogramsTable ;
+    sf:writes sfms:chromatogramsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:findFeaturesMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.find_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Find mass spectrometry features" ;
+    skos:definition "Group MS1 centroid traces within retention-time windows and persist detected NTA features." ;
+    sf:hasParameter
+        sfms:rtWindowsMinParameter,
+        sfms:rtWindowsMaxParameter,
+        sfcore:analysisNamesParameter,
+        sfms:ppmThresholdParameter,
+        sfms:noiseThresholdParameter,
+        sfms:minSnrParameter,
+        sfms:minTracesParameter,
+        sfms:baselineWindowParameter,
+        sfms:maxFeatureWidthParameter,
+        sfms:baseQuantileParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods () ;
+    sf:singleOccurrence true ;
+    sf:reads sfms:analysesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:loadFeaturesMs1MassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.load_features_ms1" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Load MS1 spectra for features" ;
+    skos:definition "Resolve and cluster MS1 spectra for each persisted feature and store the joined MS1 spectrum on the feature row." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:filteredParameter,
+        sfms:rtWindowParameter,
+        sfms:mzWindowParameter,
+        sfms:minTracesIntensityParameter,
+        sfms:mzClustParameter,
+        sfms:presenceParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:loadFeaturesMs2MassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.load_features_ms2" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Load MS2 spectra for features" ;
+    skos:definition "Resolve and cluster MS2 spectra for each persisted feature using the precursor isolation window and store the joined MS2 spectrum on the feature row." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:filteredParameter,
+        sfms:minTracesIntensityParameter,
+        sfms:isolationWindowParameter,
+        sfms:mzClustParameter,
+        sfms:presenceParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:subtractBlankMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.subtract_blank" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Subtract blank features" ;
+    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:blankThresholdParameter,
+        sfms:rtExpandParameter,
+        sfms:mzExpandParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:filterFeaturesMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.filter_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Filter features" ;
+    skos:definition "Remove or flag features failing signal, shape, and quality criteria." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:minSnParameter,
+        sfms:minIntensityParameter,
+        sfms:minAreaParameter,
+        sfms:minWidthParameter,
+        sfms:maxWidthParameter,
+        sfms:maxPpmParameter,
+        sfms:minFwhmRtParameter,
+        sfms:maxFwhmRtParameter,
+        sfms:minFwhmMzParameter,
+        sfms:maxFwhmMzParameter,
+        sfms:minGaussianAParameter,
+        sfms:minGaussianMuParameter,
+        sfms:maxGaussianMuParameter,
+        sfms:minGaussianSigmaParameter,
+        sfms:maxGaussianSigmaParameter,
+        sfms:minGaussianR2Parameter,
+        sfms:maxJaggednessParameter,
+        sfms:minSharpnessParameter,
+        sfms:minAsymmetryParameter,
+        sfms:maxAsymmetryParameter,
+        sfms:maxModalityParameter,
+        sfms:minPlatesParameter,
+        sfms:onlyFilledParameter,
+        sfms:removeFilledParameter,
+        sfms:minSizeEicParameter,
+        sfms:minSizeMs1Parameter,
+        sfms:minSizeMs2Parameter,
+        sfms:minRelPresenceReplicateParameter,
+        sfms:removeIsotopesParameter,
+        sfms:removeAdductsParameter,
+        sfms:removeLossesParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:filterFeaturesMs2MassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.filter_features_ms2" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Filter feature MS2 spectra" ;
+    skos:definition "Clean feature MS2 spectra: remove blank contaminants, apply relative intensity and top-N limits." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:topParameter,
+        sfms:minIntensityMs2Parameter,
+        sfms:relMinIntensityParameter,
+        sfms:blankCleanParameter,
+        sfms:mzClustParameter,
+        sfms:blankPresenceThresholdParameter,
+        sfms:globalPresenceThresholdParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod sfms:loadFeaturesMs2MassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:groupFeaturesMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.group_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Group features" ;
+    skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and an alignment method." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:methodParameter,
+        sfms:rtDeviationParameter,
+        sfms:ppmParameter,
+        sfms:minSamplesParameter,
+        sfms:binSizeParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:fillFeaturesMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.fill_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Fill feature gaps" ;
+    skos:definition "Fill missing feature values across analyses by extracting and integrating EIC peaks in the expected windows." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:withinReplicateParameter,
+        sfms:filteredParameter,
+        sfms:rtExpandParameter,
+        sfms:mzExpandParameter,
+        sfms:maxPeakWidthParameter,
+        sfms:minTracesIntensityParameter,
+        sfms:minNumberTracesParameter,
+        sfms:minIntensityMs1Parameter,
+        sfms:rtApexDeviationParameter,
+        sfms:minSignalToNoiseRatioParameter,
+        sfms:minGaussianFitParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod sfms:groupFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:createComponentsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.create_components" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Create components" ;
+    skos:definition "Join correlated features into components based on EIC correlation within a retention-time window." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:rtWindowParameter,
+        sfms:minCorrelationParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:annotateComponentsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.annotate_components" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Annotate components" ;
+    skos:definition "Annotate feature components with isotopic, adduct, and fragment relationships." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:maxIsotopesParameter,
+        sfms:maxChargeParameter,
+        sfms:maxGapsParameter,
+        sfms:ppmParameter,
+        sfms:isotopeElementsParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:createComponentsMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:suspectScreeningMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.suspect_screening" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Screen suspect features" ;
+    skos:definition "Match detected features against a suspect list by mass, RT, and MS2 similarity and record candidate assignments." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:ppmParameter,
+        sfms:secParameter,
+        sfms:ppmMs2Parameter,
+        sfms:mzrMs2Parameter,
+        sfms:minCosineSimilarityParameter,
+        sfms:minSharedFragmentsParameter,
+        sfms:filteredParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:findInternalStandardsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.find_internal_standards" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Find internal standards" ;
+    skos:definition "Match detected features against internal-standard targets by mass, RT, and MS2 similarity." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:targetsParameter,
+        sfms:ppmParameter,
+        sfms:secParameter,
+        sfms:ppmMs2Parameter,
+        sfms:mzrMs2Parameter,
+        sfms:minCosineSimilarityParameter,
+        sfms:minSharedFragmentsParameter,
+        sfms:filteredParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:correctMatrixSuppressionMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.correct_matrix_suppression" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Correct matrix suppression" ;
+    skos:definition "Apply matrix/suppression correction factors derived from analysis intensity profiles." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:mpRtWindowParameter,
+        sfms:refBlankReplicateParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findInternalStandardsMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:writes sfms:ntaFeaturesTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:filterSuspectsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.filter_suspects" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Filter suspects" ;
+    skos:definition "Refine suspect-screening results by applying name, score, RT/mass error, identification-level, fragment, and cosine-similarity thresholds." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:namesParameter,
+        sfms:minScoreParameter,
+        sfms:maxErrorRtParameter,
+        sfms:maxErrorMassParameter,
+        sfms:idLevelsParameter,
+        sfms:minSharedFragmentsParameter,
+        sfms:minCosineSimilarityParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:suspectScreeningMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:writes sfms:suspectsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:filterInternalStandardsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.filter_internal_standards" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Filter internal standards" ;
+    skos:definition "Refine internal-standard matches by applying name, score, RT/mass error, identification-level, fragment, and cosine-similarity thresholds." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:namesParameter,
+        sfms:minScoreParameter,
+        sfms:maxErrorRtParameter,
+        sfms:maxErrorMassParameter,
+        sfms:idLevelsParameter,
+        sfms:minSharedFragmentsParameter,
+        sfms:minCosineSimilarityParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findInternalStandardsMassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:writes sfms:internalStandardsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+
+sfms:assignTransformationProductsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.assign_transformation_products" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Assign transformation products" ;
+    skos:definition "Assign plausible biotransformation products to suspected features using transformation-product candidates, scoring combinations by mass/MS2 cosine similarity and logP-based retention-time plausibility, and append the assignments to the suspect results." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:transformationProductsParameter,
+        sfms:chromatographicPhaseParameter,
+        sfms:mzrMs2Parameter ;
+    sf:cacheable true ;
+    sf:requiredMethods () ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:writes sfms:suspectsTable, sfms:transformationProductsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+
+
+sfms:metfragScreeningMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.metfrag_screening" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Screen features with MetFrag" ;
+    skos:definition "Run in-silico MetFrag fragmenter screening for detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit and never automatic: run 'streamfind-cli tools install java' and 'streamfind-cli tools install metfrag', then retry this method." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:databaseTypeParameter,
+        sfms:databaseParameter,
+        sfms:ppmParameter,
+        sfms:secParameter,
+        sfms:ppmMs2Parameter,
+        sfms:mzrMs2Parameter,
+        sfms:topNParameter,
+        sfms:scoreTypesParameter,
+        sfms:scoreWeightsParameter,
+        sfms:preProcessingCandidateFilterParameter,
+        sfms:postProcessingCandidateFilterParameter,
+        sfms:maximumTreeDepthParameter,
+        sfms:numberThreadsParameter,
+        sfms:useSmilesParameter,
+        sfms:filteredParameter,
+        sfms:debugParameter ;
+    sf:cacheable true ;
+    sf:requiredMethods ( sfms:findFeaturesMassSpecMethod sfms:loadFeaturesMs2MassSpecMethod ) ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:writes sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:returns sfcore:operationStatusResult .

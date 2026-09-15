@@ -494,7 +494,6 @@ impl NtaFeatures {
 /// Row view of one suspect hit (mirrors `nta::api::NTA_SUSPECT_ROW`).
 #[derive(Debug, Clone, Default)]
 pub struct NtaSuspectRow {
-    pub project_id: String,
     pub created_at: String,
     pub analysis: String,
     pub feature: String,
@@ -679,7 +678,6 @@ impl NtaSuspects {
 /// Row view of one internal-standard hit (mirrors `nta::api::NTA_INTERNAL_STANDARD_ROW`).
 #[derive(Debug, Clone, Default)]
 pub struct NtaInternalStandardRow {
-    pub project_id: String,
     pub created_at: String,
     pub analysis: String,
     pub feature: String,

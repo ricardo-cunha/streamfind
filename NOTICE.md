@@ -35,21 +35,22 @@ before redistributing vendor-format data or software.
 ## Third-party components
 
 The exact C++/vendored-library licence texts are kept alongside their owning
-vendor directories under `core/vendor/`. The Rust dependency inventory is provided under
+vendor directories under `cpp/vendor/`. The Rust dependency inventory is provided under
 `rust/LICENSES.md`. Component versions and inclusion can vary by backend and
 platform; the release manifest is authoritative for a particular archive.
 
 | Component | Version in the current native source/package | Licence | Source or retained notice |
 | --- | --- | --- | --- |
-| DuckDB C++ static package | v1.5.2 | MIT | `core/vendor/duckdb/LICENSE` |
-| DuckDB Rust crate/bundled backend | `duckdb` crate 1.10505.0; bundled backend requires separate verification | MIT metadata plus bundled upstream components | C++: `core/vendor/duckdb/LICENSE`; Rust: `rust/LICENSES.md` |
-| Open Babel | 3.2.0 | GPLv2 | `core/vendor/openbabel/openbabel-3-2-0/COPYING` |
-| Zstandard | 1.5.7 | BSD or GPLv2 | `core/vendor/zstd/LICENSE`, `core/vendor/zstd/COPYING` |
-| zlib | 1.3.2.1-motley | zlib licence | `core/vendor/zlib/zlib-develop/LICENSE` |
-| pugixml | 1.14 | MIT | `core/vendor/pugixml-1.14/LICENSE` |
-| simdutf | 7.3.4 | MIT | `core/vendor/simdutf/LICENSE` |
-| nlohmann JSON | 3.12.0 | MIT | `core/vendor/nlohmann/LICENSE` |
-| JSON Schema Validator | vendored version; see source README | MIT | `core/vendor/json-schema-validator/LICENSE` |
+| DuckDB C++ static package | v1.5.2 | MIT | `cpp/vendor/duckdb/LICENSE` |
+| DuckDB Rust crate/bundled backend | `duckdb` crate 1.10505.0; bundled backend requires separate verification | MIT metadata plus bundled upstream components | C++: `cpp/vendor/duckdb/LICENSE`; Rust: `rust/LICENSES.md` |
+| Open Babel | 3.2.0 | GPLv2 | `cpp/vendor/openbabel/openbabel-3-2-0/COPYING` |
+| Zstandard | 1.5.7 | BSD or GPLv2 | `cpp/vendor/zstd/LICENSE`, `cpp/vendor/zstd/COPYING` |
+| zlib | 1.3.2.1-motley | zlib licence | `cpp/vendor/zlib/zlib-develop/LICENSE` |
+| pugixml | 1.14 | MIT | `cpp/vendor/pugixml-1.14/LICENSE` |
+| simdutf | 7.3.4 | MIT | `cpp/vendor/simdutf/LICENSE` |
+| nlohmann JSON | 3.12.0 | MIT | `cpp/vendor/nlohmann/LICENSE` |
+| JSON Schema Validator | vendored version; see source README | MIT | `cpp/vendor/json-schema-validator/LICENSE` |
+| Apache Jena | 6.2.0 | Apache-2.0 | `cpp/vendor/apache-jena/LICENSE`, `cpp/vendor/apache-jena/NOTICE` |
 | Rust dependencies | see `rust/Cargo.lock` and release manifest | package-specific MIT/Apache-2.0 and other declared terms | `rust/LICENSES.md` |
 
 The project must keep the original copyright and licence terms for every
@@ -57,12 +58,26 @@ component when redistributing source or binaries. The presence of a component
 in this table does not by itself resolve the obligations of static linking,
 combined works, source-code offers, or downstream redistribution.
 
-## Native-reader development material
+## Native-reader process and format boundaries
 
-Native readers are independently implemented in C++ and Rust. Vendor SDKs,
-DLLs, debugger traces, paired conversion outputs, proprietary documentation,
-confidential traces, and restricted vendor sample files are development-only
-material and are not runtime dependencies or release contents.
+The native vendor readers are independently implemented in C++ and Rust from
+analysis of lawfully obtained data files, publicly available information, and
+observable program output. This describes the project's engineering process; it
+is not a legal opinion, warranty, or certification that every use is permitted
+under a particular vendor agreement or jurisdiction.
+
+Vendor SDKs, DLLs, debugger traces, paired conversion outputs, proprietary
+documentation, confidential traces, and restricted vendor sample files are
+development-only material. They are not runtime dependencies or release
+contents, and no vendor source code is incorporated into the native readers.
+
+SCIEX WIFF2 decryption is not implemented.
+
+The project does not claim that a file format, product name, or interoperability
+implementation is free from every contractual, trade-secret, copyright,
+trademark, or technological-protection obligation. Review the applicable
+licences, agreements, sample-data rights, and local law before redistributing
+vendor-format data or software.
 
 ## Release review
 
@@ -70,7 +85,7 @@ Before distributing a native archive, verify that it contains:
 
 - `NOTICE.md` and `LICENSE.md` at the package root;
 - the C++ attribution payload assembled from the vendor-specific licence files
-  kept beside their owning libraries under `core/vendor/`, or the Rust
+  kept beside their owning libraries under `cpp/vendor/`, or the Rust
   `LICENSES.md` dependency inventory;
 - only the runtime files and dependencies intended for that backend and platform.
 

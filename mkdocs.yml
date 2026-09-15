@@ -1,8 +1,9 @@
 site_name: streamfind
 site_description: >-
   streamfind is a DuckDB-backed workflow framework for analytical data
-  processing, spanning a semantic catalogue, independent C++ and Rust
-  backends, native MCP servers, and language bindings.
+  processing, centered on the active C++ plugin framework and semantic
+  catalogue, with a preserved Rust backend, native MCP servers, and language
+  bindings.
 site_url: https://streamfind.odea-project.org/
 repo_url: https://github.com/ricardo-cunha/streamfind
 edit_uri: edit/master/docs/

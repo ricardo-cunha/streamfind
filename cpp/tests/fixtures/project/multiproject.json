@@ -1,0 +1,22 @@
+{
+  "fixture_id": "separate_project_files",
+  "databases": [
+    {
+      "name": "project_mass_spec",
+      "domain_id": "mass_spec"
+    },
+    {
+      "name": "project_raman",
+      "domain_id": "raman"
+    }
+  ],
+  "assertions": [
+    "open_separate_database_files",
+    "reopen_preserves_each_domain",
+    "project_domain_is_immutable",
+    "database_a_cannot_read_database_b_rows",
+    "database_a_cannot_write_database_b_rows",
+    "cache_and_audit_rows_are_file_scoped"
+  ],
+  "consumers": ["cpp", "rust"]
+}

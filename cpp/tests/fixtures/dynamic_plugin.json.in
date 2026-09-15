@@ -1,0 +1,14 @@
+{
+  "plugin_id": "stage9.fixture",
+  "name": "Stage 9 dynamic fixture",
+  "version": "0.2.0",
+  "abi_version": { "major": 1, "minor": 0 },
+  "sdk_compatibility": { "minimum": "0.2.0", "maximum": "0.2.x" },
+  "library": {
+    "@STREAMFIND_DYNAMIC_PLATFORM@": "@STREAMFIND_DYNAMIC_LIBRARY@"
+  },
+  "domain": "stage9",
+  "semantic_catalogue": "catalogue.duckdb",
+  "static_composition": false,
+  "platforms": ["@STREAMFIND_DYNAMIC_PLATFORM@"]
+}

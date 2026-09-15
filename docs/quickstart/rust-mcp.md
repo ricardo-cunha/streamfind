@@ -4,6 +4,11 @@ The Rust MCP server is included in the
 [Windows x64 and Linux x86_64 Rust packages](../releases.md). It communicates
 with MCP clients using JSON-RPC messages over standard input/output.
 
+!!! warning "Preserved backend"
+    Rust development is currently paused. This quickstart documents the
+    preserved Rust package for existing compatibility work; new capabilities
+    target the C++ backend and its plugin framework.
+
 ## Package paths
 
 After extracting a release package, launch:

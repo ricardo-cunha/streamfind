@@ -5,6 +5,3 @@ edition = "2021"
 
 [lib]
 name = "streamfind_external"
-
-[dev-dependencies]
-streamfind-rust-test-support = { path = "../test-support" }

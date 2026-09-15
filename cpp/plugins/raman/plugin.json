@@ -1,0 +1,15 @@
+{
+  "plugin_id": "raman",
+  "name": "StreamFind Raman plugin",
+  "version": "0.2.0",
+  "abi_version": { "major": 1, "minor": 1 },
+  "sdk_compatibility": { "minimum": "0.2.0", "maximum": "0.2.x" },
+  "library": {
+    "windows-x86_64": "streamfind_raman.dll",
+    "linux-x86_64": "libstreamfind_raman.so"
+  },
+  "domain": "raman",
+  "semantic_catalogue": "catalogue.duckdb",
+  "static_composition": false,
+  "platforms": ["windows-x86_64", "linux-x86_64"]
+}
