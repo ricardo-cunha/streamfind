@@ -44,7 +44,7 @@ The C++ and Rust MCP servers expose the same catalogue-backed interface.
 2. Call `tools/list` to discover callable Operations.
 3. Use `create`, then `describe`, `get_domain`, or `get_metadata` for a new
    project.
-4. Use domain Operations with explicit `database_path` and `project_id`.
+4. Use stateless domain Operations with explicit `database_path`.
 5. Use `connect` only when running workflow Methods.
 6. Call `get_available_methods` to discover workflow Methods and their schemas.
 7. Build and validate a workflow, then run it with `run_workflow` or

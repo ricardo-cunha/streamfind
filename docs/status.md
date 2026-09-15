@@ -43,7 +43,8 @@ Both native servers use JSON-RPC over standard input/output.
 - `initialize` provides usage instructions.
 - `tools/list` exposes callable Operations, including domain Operations, without
   requiring a connected project.
-- Domain Operations require `database_path` and `project_id` in each request.
+- Domain Operations require `database_path` in each request; additional
+  parameters are operation-specific.
 - `get_available_methods` returns workflow Methods and their complete input
   schemas.
 - `connect` opens an existing project for workflow execution; it does not

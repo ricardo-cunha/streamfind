@@ -23,7 +23,8 @@ descriptions, and input schemas remain equivalent.
 ## Operations and Methods
 
 - **Operations** are callable project or domain actions. Domain Operations are
-  stateless and require `database_path` and `project_id`.
+  stateless and require `database_path`; additional parameters are
+  operation-specific.
 - **Methods** are workflow steps. Use `get_available_methods` to discover them
   and their schemas; Methods are not advertised as MCP tools.
 
