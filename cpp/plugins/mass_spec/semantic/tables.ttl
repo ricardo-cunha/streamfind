@@ -101,21 +101,48 @@ sfms:chromatogramsTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Mass spectrometry chromatograms table" ;
-    skos:definition "Persisted chromatogram point records for mass spectrometry analyses, including chromatogram metadata and intensities." ;
+    skos:prefLabel "Mass spectrometry chromatogram points table" ;
+    skos:definition "Persisted chromatogram point records for mass spectrometry analyses. Channel metadata lives in MASS_SPEC_CHROMATOGRAMS_HEADERS; join through analysis and index." ;
     sf:tableName "MASS_SPEC_CHROMATOGRAMS" ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:indexColumn,
-        sfms:chromatogramIdColumn,
-        sfms:polarityColumn,
-        sfms:precursorMzColumn,
-        sfms:activationCeColumn,
-        sfms:productMzColumn,
         sfms:rtColumn,
         sfms:rawIntensityColumn,
         sfms:baselineColumn,
         sfms:intensityColumn,
+        sfcore:createdAtColumn .
+
+sfms:chromatogramPeaksTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry chromatogram peaks table" ;
+    skos:definition "Persisted chromatographic peak records. Detector-independent: one row per detected peak within a chromatogram. Join to MASS_SPEC_CHROMATOGRAMS_HEADERS through analysis and chromatogram_index." ;
+    sf:tableName "MASS_SPEC_CHROMATOGRAM_PEAKS" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:chromatogramIndexColumn,
+        sfms:peakIdColumn,
+        sfms:rtColumn,
+        sfms:rtStartColumn,
+        sfms:rtEndColumn,
+        sfms:peakHeightColumn,
+        sfms:peakRawHeightColumn,
+        sfms:peakAreaColumn,
+        sfms:peakRawAreaColumn,
+        sfms:peakBaselineAreaColumn,
+        sfms:peakWidthColumn,
+        sfms:peakFwhmColumn,
+        sfms:peakSnrColumn,
+        sfms:peakAsymmetryColumn,
+        sfms:peakSharpnessColumn,
+        sfms:peakPlatesColumn,
+        sfms:peakNumberPointsColumn,
+        sfms:integrationAlgorithmColumn,
+        sfms:integrationStatusColumn,
+        sfms:manualOverrideColumn,
         sfcore:createdAtColumn .
 
 sfms:ntaFeaturesTable

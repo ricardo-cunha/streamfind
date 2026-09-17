@@ -2267,3 +2267,193 @@ sfms:tpAssignmentStatusColumn
     sf:columnName "assignment_status" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
+
+sfms:chromatogramIndexColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Chromatogram index" ;
+    skos:definition "Zero-based chromatogram index within the analysis, matching MASS_SPEC_CHROMATOGRAMS_HEADERS.index." ;
+    sf:columnName "chromatogram_index" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:peakIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak ID" ;
+    skos:definition "Sequential peak identifier within a chromatogram." ;
+    sf:columnName "peak_id" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:rtStartColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "RT start" ;
+    skos:definition "Retention time at the start of the chromatographic peak." ;
+    sf:columnName "rt_start" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rtEndColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "RT end" ;
+    skos:definition "Retention time at the end of the chromatographic peak." ;
+    sf:columnName "rt_end" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakHeightColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak height" ;
+    skos:definition "Maximum intensity of the chromatographic peak." ;
+    sf:columnName "height" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakRawHeightColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raw peak height" ;
+    skos:definition "Maximum raw intensity of the chromatographic peak before baseline correction." ;
+    sf:columnName "raw_height" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakAreaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak area" ;
+    skos:definition "Integrated area of the chromatographic peak." ;
+    sf:columnName "area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakRawAreaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raw peak area" ;
+    skos:definition "Integrated area of the chromatographic peak using raw intensity." ;
+    sf:columnName "raw_area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakBaselineAreaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Baseline area" ;
+    skos:definition "Area under the baseline within the peak boundaries." ;
+    sf:columnName "baseline_area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakWidthColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak width" ;
+    skos:definition "Retention-time width of the chromatographic peak." ;
+    sf:columnName "width" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakFwhmColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak FWHM" ;
+    skos:definition "Full width at half maximum of the chromatographic peak." ;
+    sf:columnName "fwhm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakSnrColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak S/N" ;
+    skos:definition "Signal-to-noise ratio of the chromatographic peak." ;
+    sf:columnName "snr" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakAsymmetryColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak asymmetry" ;
+    skos:definition "Asymmetry factor of the chromatographic peak." ;
+    sf:columnName "asymmetry" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakSharpnessColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak sharpness" ;
+    skos:definition "Sharpness metric of the chromatographic peak." ;
+    sf:columnName "sharpness" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakPlatesColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak plates" ;
+    skos:definition "Theoretical plate count of the chromatographic peak." ;
+    sf:columnName "plates" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:peakNumberPointsColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak point count" ;
+    skos:definition "Number of data points within the chromatographic peak boundaries." ;
+    sf:columnName "number_points" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:integrationAlgorithmColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Integration algorithm" ;
+    skos:definition "Identifier of the algorithm used for peak integration." ;
+    sf:columnName "integration_algorithm" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:integrationStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Integration status" ;
+    skos:definition "Status of the peak integration (e.g. integrated, manual, rejected)." ;
+    sf:columnName "integration_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:manualOverrideColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Manual override" ;
+    skos:definition "Whether the peak integration has been manually overridden." ;
+    sf:columnName "manual_override" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .

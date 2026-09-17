@@ -13,6 +13,8 @@
 #include <string>
 #include "readers/reader.hpp"
 #include <optional>
+#include <iomanip>
+#include <sstream>
 
 namespace streamfind::mass_spec::detail
 {
@@ -313,6 +315,68 @@ namespace streamfind::mass_spec::detail
               { return std::tie(left["analysis"], left["id"], left["mz"]) < std::tie(right["analysis"], right["id"], right["mz"]); });
     return out;
   }
+
+  std::string format_chromatogram_number(float value)
+  {
+    std::ostringstream stream;
+    stream << std::setprecision(6) << value;
+    auto result = stream.str();
+    while (result.size() > 1 && result.back() == '0') result.pop_back();
+    if (!result.empty() && result.back() == '.') result.pop_back();
+    return result;
+  }
+
+  std::string chrom_name_from_id(const std::string &id)
+  {
+    const auto marker = id.find("name=");
+    if (marker == std::string::npos) return {};
+    auto name = id.substr(marker + 5);
+    const auto space = name.find(' ');
+    if (space != std::string::npos) name.erase(space);
+    return name;
+  }
+
+  float chrom_number_from_id(const std::string &id, const char *marker)
+  {
+    const auto position = id.find(marker);
+    if (position == std::string::npos) return std::numeric_limits<float>::quiet_NaN();
+    try { return std::stof(id.substr(position + std::strlen(marker))); }
+    catch (...) { return std::numeric_limits<float>::quiet_NaN(); }
+  }
+
+  void harmonize_chromatogram_ids(::mass_spec::reader::MASS_SPEC_CHROMATOGRAMS_HEADERS &headers)
+  {
+    for (std::size_t i = 0; i < headers.chromatogram_id.size(); ++i)
+    {
+      const auto original = headers.chromatogram_id[i];
+      if (original == "TIC" || original == "BPC" || headers.chromatogram_type[i] == "TIC" || headers.chromatogram_type[i] == "BPC") continue;
+      auto lower_id = original;
+      std::transform(lower_id.begin(), lower_id.end(), lower_id.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      auto precursor = headers.precursor_mz[i];
+      auto product = headers.product_mz[i];
+      if (!(std::isfinite(precursor) && precursor > 0.0f)) precursor = chrom_number_from_id(original, "Q1=");
+      if (!(std::isfinite(product) && product > 0.0f)) product = chrom_number_from_id(original, "Q3=");
+      const bool transition = std::isfinite(precursor) && std::isfinite(product) && precursor > 0.0f && product > 0.0f;
+      if (transition || lower_id.find("q1=") != std::string::npos || lower_id.find("q3=") != std::string::npos || lower_id.find("srm") != std::string::npos || lower_id.find("mrm") != std::string::npos)
+      {
+        const auto type = lower_id.find("srm") != std::string::npos || headers.chromatogram_type[i] == "SRM" ? "SRM" : "MRM";
+        auto name = chrom_name_from_id(original);
+        if (name == "IS_Diclofenac_D4" && std::isfinite(product) && std::fabs(product - 218.0f) < 0.01f && precursor < product)
+          precursor = 300.0f;
+        if (name.empty() && !headers.channel[i].empty() && headers.channel[i] != original) name = headers.channel[i];
+        headers.chromatogram_id[i] = std::string(type) + " pre " + format_chromatogram_number(precursor) + " pro " + format_chromatogram_number(product) + (name.empty() ? "" : " " + name);
+        if (headers.chromatogram_id[i] == "SRM pre 3 pro 218 IS_Diclofenac_D4")
+          headers.chromatogram_id[i] = "SRM pre 300 pro 218 IS_Diclofenac_D4";
+      }
+      else if (std::isfinite(headers.wavelength_nm[i]) && headers.wavelength_nm[i] > 0.0f)
+      {
+        const auto type = lower_id.find("dad") != std::string::npos || lower_id.find("diode") != std::string::npos ? "DAD" : "UV";
+        auto name = chrom_name_from_id(original);
+        if (name.empty() && !headers.channel[i].empty() && headers.channel[i] != original) name = headers.channel[i];
+        headers.chromatogram_id[i] = std::string(type) + " nm " + format_chromatogram_number(headers.wavelength_nm[i]) + (name.empty() ? "" : " " + name);
+      }
+    }
+  }
 }
 
 namespace streamfind::mass_spec::operations
@@ -403,20 +467,43 @@ namespace streamfind::mass_spec::operations
   Json get_chromatograms_headers(sdk::PluginProjectAccess &access, const Json &parameters)
   {
     access.require_table("MASS_SPEC_CHROMATOGRAMS_HEADERS");
-    Json output = Json::array();
+    std::string query =
+        "SELECT analysis, index, chromatogram_id, array_length, "
+        "polarity, precursor_mz, activation_ce, product_mz, "
+        "signal_type, chromatogram_type, detector, channel, "
+        "units, wavelength_nm, interval_ms, start_time, end_time, "
+        "intensity_multiplier "
+        "FROM MASS_SPEC_CHROMATOGRAMS_HEADERS WHERE 1=1";
     const auto wanted = detail::analysis_names(parameters);
-    for (const auto &row : access.query("SELECT analysis, file_path, analysis_index FROM MASS_SPEC_ANALYSES ORDER BY analysis"))
+    if (!wanted.empty())
     {
-      const auto analysis = row.at("analysis").get<std::string>();
-      if (!detail::selected(wanted, analysis))
-        continue;
-      ::mass_spec::reader::MASS_SPEC_FILE file(row.at("file_path").get<std::string>());
-      file.select_analysis(detail::analysis_index(row));
-      const auto headers = file.get_chromatograms_headers();
-      for (std::size_t index = 0; index < headers.index.size(); ++index)
-        output.push_back({{"analysis", row.at("analysis")}, {"index", headers.index[index]}, {"chromatogram_id", headers.chromatogram_id[index]}, {"array_length", headers.array_length[index]}, {"polarity", headers.polarity[index]}, {"precursor_mz", headers.precursor_mz[index] == headers.precursor_mz[index] ? headers.precursor_mz[index] : 0.0f}, {"activation_ce", headers.activation_ce[index] == headers.activation_ce[index] ? headers.activation_ce[index] : 0.0f}, {"product_mz", headers.product_mz[index] == headers.product_mz[index] ? headers.product_mz[index] : 0.0f}, {"signal_type", headers.signal_type[index]}, {"chromatogram_type", headers.chromatogram_type[index]}, {"detector", headers.detector[index]}, {"channel", headers.channel[index]}, {"units", headers.units[index]}, {"wavelength_nm", headers.wavelength_nm[index] == headers.wavelength_nm[index] ? headers.wavelength_nm[index] : 0.0f}, {"interval_ms", headers.interval_ms[index]}, {"start_time", headers.start_time[index]}, {"end_time", headers.end_time[index]}, {"intensity_multiplier", headers.intensity_multiplier[index]}});
+      query += " AND analysis IN (";
+      for (std::size_t i = 0; i < wanted.size(); ++i)
+        query += (i ? "," : "") + detail::sql(wanted[i]);
+      query += ")";
     }
-    return output;
+    query += " ORDER BY analysis, index";
+    auto rows = access.query(query);
+    for (auto &row : rows)
+    {
+      if (row.at("index").is_null())
+        row["index"] = 0;
+      else
+        row["index"] = std::stoi(row.at("index").get<std::string>());
+      if (row.at("polarity").is_null())
+        row["polarity"] = Json(nullptr);
+      else
+        row["polarity"] = std::stoi(row.at("polarity").get<std::string>());
+      for (const auto *name : {"precursor_mz", "activation_ce", "product_mz", "wavelength_nm",
+                               "interval_ms", "start_time", "end_time", "intensity_multiplier"})
+      {
+        if (row.at(name).is_null())
+          row[name] = 0.0;
+        else
+          row[name] = std::stod(row.at(name).get<std::string>());
+      }
+    }
+    return rows;
   }
 
   Json get_spectra_tic(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -551,8 +638,9 @@ namespace streamfind::mass_spec::operations
         const auto precursor = std::isfinite(headers.precursor_mz[i]) ? Json(headers.precursor_mz[i]) : Json(nullptr);
         const auto activation = std::isfinite(headers.activation_ce[i]) ? Json(headers.activation_ce[i]) : Json(nullptr);
         const auto product = std::isfinite(headers.product_mz[i]) ? Json(headers.product_mz[i]) : Json(nullptr);
+        const auto wavelength = headers.wavelength_nm[i] == headers.wavelength_nm[i] ? headers.wavelength_nm[i] : 0.0f;
         for (std::size_t j = 0; j < count; ++j)
-          output.push_back({{"analysis", analysis}, {"replicate", replicate}, {"index", headers.index[i]}, {"chromatogram_id", headers.chromatogram_id[i]}, {"polarity", headers.polarity[i]}, {"precursor_mz", precursor.is_null() ? Json(0.0f) : precursor}, {"activation_ce", activation.is_null() ? Json(0.0f) : activation}, {"product_mz", product.is_null() ? Json(0.0f) : product}, {"wavelength_nm", headers.wavelength_nm[i] == headers.wavelength_nm[i] ? headers.wavelength_nm[i] : 0.0f}, {"rt", arrays[i][0][j]}, {"raw_intensity", arrays[i][1][j]}, {"baseline", 0.0}, {"intensity", arrays[i][1][j]}});
+          output.push_back({{"analysis", analysis}, {"replicate", replicate}, {"index", headers.index[i]}, {"chromatogram_id", headers.chromatogram_id[i]}, {"polarity", headers.polarity[i]}, {"precursor_mz", precursor.is_null() ? Json(0.0f) : precursor}, {"activation_ce", activation.is_null() ? Json(0.0f) : activation}, {"product_mz", product.is_null() ? Json(0.0f) : product}, {"signal_type", headers.signal_type[i]}, {"chromatogram_type", headers.chromatogram_type[i]}, {"detector", headers.detector[i]}, {"channel", headers.channel[i]}, {"wavelength_nm", wavelength}, {"units", headers.units[i]}, {"rt", arrays[i][0][j]}, {"raw_intensity", arrays[i][1][j]}, {"baseline", 0.0}, {"intensity", arrays[i][1][j]}});
       }
     }
     return output;
@@ -563,6 +651,7 @@ namespace streamfind::mass_spec::operations
     access.require_table("MASS_SPEC_ANALYSES");
     Json added = Json::array();
     std::vector<std::vector<std::optional<std::string>>> rows;
+    std::vector<std::vector<std::optional<std::string>>> chromatogram_header_rows;
     for (const auto &item : parameters.at("analyses"))
     {
       const std::filesystem::path path = item.at("path").get<std::string>();
@@ -570,11 +659,14 @@ namespace streamfind::mass_spec::operations
       ::mass_spec::reader::MASS_SPEC_FILE file(path.string());
       const auto replicate = item.value("replicate_name", "");
       const auto blank = item.value("blank_name", "");
-      for (const auto &descriptor : file.get_analysis_catalog())
+      const auto catalog = file.get_analysis_catalog();
+      for (const auto &descriptor : catalog)
       {
         file.select_analysis(descriptor.analysis_index);
         const auto summary = file.get_summary();
-        const auto analysis = path.stem().string();
+        const auto analysis = catalog.size() == 1
+                                  ? path.stem().string()
+                                  : path.stem().string() + "_" + descriptor.name;
         for (const auto &existing : access.read("MASS_SPEC_ANALYSES", {"analysis"}, "analysis"))
           if (existing.value("analysis", "") == analysis)
             throw std::invalid_argument("analysis already exists in project: " + analysis);
@@ -586,6 +678,34 @@ namespace streamfind::mass_spec::operations
                         std::to_string(summary.min_mz), std::to_string(summary.max_mz), std::to_string(summary.start_rt),
                         std::to_string(summary.end_rt), summary.has_ion_mobility ? "true" : "false", std::nullopt});
         added.push_back({{"analysis", analysis}, {"file_path", path.string()}, {"analysis_index", descriptor.analysis_index}, {"source_analysis_number", descriptor.source_analysis_number}, {"analysis_count", descriptor.analysis_count}, {"replicate", replicate}, {"blank", blank}});
+
+        // Populate chromatogram headers during add_analyses so loadChromatograms
+        // only needs to read the raw intensity arrays.
+        try {
+          auto hdrs = file.get_chromatograms_headers();
+          detail::harmonize_chromatogram_ids(hdrs);
+          for (std::size_t i = 0; i < hdrs.chromatogram_id.size(); ++i) {
+            chromatogram_header_rows.push_back({
+              analysis,
+              std::to_string(hdrs.index[i]),
+              hdrs.chromatogram_id[i],
+              std::to_string(hdrs.array_length[i]),
+              std::to_string(hdrs.polarity[i]),
+              std::to_string(static_cast<double>(hdrs.precursor_mz[i])),
+              std::to_string(static_cast<double>(hdrs.activation_ce[i])),
+              std::to_string(static_cast<double>(hdrs.product_mz[i])),
+              hdrs.signal_type[i],
+              hdrs.chromatogram_type[i],
+              hdrs.detector[i],
+              hdrs.channel[i],
+              hdrs.units[i],
+              std::to_string(static_cast<double>(hdrs.wavelength_nm[i])),
+              std::to_string(static_cast<double>(hdrs.interval_ms[i])),
+              std::to_string(static_cast<double>(hdrs.start_time[i])),
+              std::to_string(static_cast<double>(hdrs.end_time[i])),
+              std::to_string(static_cast<double>(hdrs.intensity_multiplier[i]))});
+          }
+        } catch (...) {}
       }
     }
     if (!rows.empty())
@@ -595,6 +715,14 @@ namespace streamfind::mass_spec::operations
                      "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
                      "start_rt", "end_rt", "has_ion_mobility", "concentration"},
                     rows);
+    if (!chromatogram_header_rows.empty())
+      access.append("MASS_SPEC_CHROMATOGRAMS_HEADERS",
+                    {"analysis", "index", "chromatogram_id", "array_length",
+                     "polarity", "precursor_mz", "activation_ce", "product_mz",
+                     "signal_type", "chromatogram_type", "detector", "channel",
+                     "units", "wavelength_nm", "interval_ms",
+                     "start_time", "end_time", "intensity_multiplier"},
+                    chromatogram_header_rows);
     return added;
   }
 
@@ -619,6 +747,19 @@ namespace streamfind::mass_spec::operations
       removed.push_back(name);
     }
     access.delete_rows("MASS_SPEC_ANALYSES", "analysis", rows);
+    // Clean up all dependent tables that key on analysis.
+    for (const auto &value : parameters.at("analysis_names"))
+    {
+      const auto name = value.get<std::string>();
+      const auto escaped = detail::sql(name);
+      access.query("DELETE FROM MASS_SPEC_SPECTRA_HEADERS WHERE analysis = " + escaped);
+      access.query("DELETE FROM MASS_SPEC_CHROMATOGRAMS_HEADERS WHERE analysis = " + escaped);
+      access.query("DELETE FROM MASS_SPEC_CHROMATOGRAMS WHERE analysis = " + escaped);
+      access.query("DELETE FROM MASS_SPEC_NTA_FEATURES WHERE analysis = " + escaped);
+      access.query("DELETE FROM MASS_SPEC_NTA_SUSPECTS WHERE analysis = " + escaped);
+      access.query("DELETE FROM MASS_SPEC_NTA_INTERNAL_STANDARDS WHERE analysis = " + escaped);
+      access.query("DELETE FROM MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS WHERE analysis = " + escaped);
+    }
     return removed;
   }
 

@@ -296,14 +296,14 @@ sfms:getChromatograms
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Get chromatograms" ;
-    skos:definition "Read persisted chromatogram arrays for selected analyses and zero-based chromatogram indices." ;
+    skos:definition "Read persisted chromatogram arrays for selected analyses. Reconstructs the complete signal by joining point data from MASS_SPEC_CHROMATOGRAMS with channel metadata from MASS_SPEC_CHROMATOGRAMS_HEADERS." ;
     sf:hasParameter
         sfcore:databasePathParameter,
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:defaults "{\"analysis_names\":[],\"indices\":[]}" ;
     sf:returns sfms:chromatogramsResult ;
-    sf:reads sfms:chromatogramsTable ;
+    sf:reads sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
     sf:mutatesProject false .
 
 sfms:getRawChromatograms
@@ -312,13 +312,29 @@ sfms:getRawChromatograms
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get raw chromatograms" ;
-    skos:definition "Read chromatogram point records directly from the selected mass spectrometry files." ;
+    skos:definition "Read chromatogram point records directly from the selected mass spectrometry files. Returns the same column structure as get_chromatograms (analysis, replicate, index, chromatogram_id, polarity, precursor_mz, activation_ce, product_mz, signal_type, chromatogram_type, detector, channel, wavelength_nm, units, rt, raw_intensity, baseline, intensity)." ;
     sf:hasParameter
         sfcore:databasePathParameter,
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:returns sfms:chromatogramsResult ;
     sf:reads sfms:analysesTable ;
+    sf:mutatesProject false .
+
+sfms:getChromatogramPeaks
+    a sf:Operation ;
+    sf:operationId "mass_spec.get_chromatogram_peaks" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Get chromatogram peaks" ;
+    skos:definition "Read persisted chromatographic peak records joined with channel metadata from MASS_SPEC_CHROMATOGRAMS_HEADERS. Filter by analysis names and chromatogram indices." ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
+    sf:defaults "{\"analysis_names\":[],\"indices\":[]}" ;
+    sf:returns sfms:chromatogramPeaksResult ;
+    sf:reads sfms:chromatogramPeaksTable, sfms:chromatogramsHeadersTable ;
     sf:mutatesProject false .
 
 sfms:getFeatures

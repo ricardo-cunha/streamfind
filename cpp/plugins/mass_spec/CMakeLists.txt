@@ -16,6 +16,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/nta.cpp
     src/operations/chromatograms.cpp
     src/methods/chromatograms_processing_methods.cpp
+    src/utils/chromatogram_peaks.cpp
 
     src/methods/nta_processing_methods.cpp
 
