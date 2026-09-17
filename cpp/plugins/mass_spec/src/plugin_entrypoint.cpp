@@ -71,6 +71,8 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.load_chromatograms", sdk::CapabilityKind::Method, &processing::load_chromatograms_with_access},
         {"mass_spec.filter_chromatograms_retention_time", sdk::CapabilityKind::Method, &processing::filter_chromatograms_retention_time_with_access},
         {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Method, &processing::find_chromatogram_peaks_with_access},
+        {"mass_spec.correct_chromatogram_baseline", sdk::CapabilityKind::Method, &processing::correct_chromatogram_baseline_with_access},
+        {"mass_spec.smooth_chromatograms", sdk::CapabilityKind::Method, &processing::smooth_chromatograms_with_access},
     };
     return registry;
 }

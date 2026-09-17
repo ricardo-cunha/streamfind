@@ -50,6 +50,19 @@ std::vector<double> rolling_min_baseline(
     const std::vector<double> &signal,
     int window = 50);
 
+/// Asymmetric least-squares baseline estimation (Boels & Eilers, 2005).
+/// Lambda controls smoothness; p is the asymmetry penalty (0..1).
+std::vector<double> als_baseline(
+    const std::vector<double> &signal,
+    double lambda = 1e6,
+    double p = 0.01,
+    int max_iterations = 10);
+
+/// Moving-average smoothing.
+std::vector<double> moving_average_smooth(
+    const std::vector<double> &signal,
+    int window = 5);
+
 /// Median absolute deviation — robust noise estimator.
 double median_absolute_deviation(const std::vector<double> &values);
 
