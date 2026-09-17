@@ -53,6 +53,7 @@ STREAMFIND_DOMAIN_API Json get_raw_spectra_ms1(sdk::PluginProjectAccess &, const
 STREAMFIND_DOMAIN_API Json get_raw_spectra_ms2(sdk::PluginProjectAccess &, const Json &);
 STREAMFIND_DOMAIN_API Json get_chromatograms(sdk::PluginProjectAccess &, const Json &);
 STREAMFIND_DOMAIN_API Json get_raw_chromatograms(sdk::PluginProjectAccess &, const Json &);
+STREAMFIND_DOMAIN_API Json get_chromatogram_peaks(sdk::PluginProjectAccess &, const Json &);
 }
 
 }

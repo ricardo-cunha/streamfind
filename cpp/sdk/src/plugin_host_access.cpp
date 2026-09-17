@@ -69,7 +69,8 @@ bool is_integer_column(std::string_view name) {
 
 bool is_boolean_column(std::string_view name) {
     return name == "filtered" || name == "filled" || name == "component_is_core" ||
-           name == "component_bridge_flag" || name == "has_ion_mobility";
+           name == "component_bridge_flag" || name == "has_ion_mobility" ||
+           name == "manual_override";
 }
 
 bool is_string_column(std::string_view name) {
@@ -80,7 +81,22 @@ bool is_string_column(std::string_view name) {
         "eic_baseline", "eic_smoothed", "ms1_mz", "ms1_intensity", "ms2_mz",
         "ms2_intensity", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
         "exp_ms2_mz", "exp_ms2_intensity", "annotation_category", "annotation_type", "correction",
-        "annotation_parent_feature", "annotation_element", "component_best_partner"};
+        "annotation_parent_feature", "annotation_element", "component_best_partner",
+        // Chromatogram header columns
+        "chromatogram_id", "signal_type", "chromatogram_type", "detector", "channel", "units",
+        "integration_algorithm", "integration_status", "component_bridge_flag",
+        // NTA annotation columns
+        "assignment_status", "assignment_score", "network_level",
+        // Transformation product columns
+        "tp_transformation", "tp_assignment_status", "tp_network_level",
+        // NTA suspects columns
+        "formula", "SMILES", "InChI", "InChIKey", "database_id",
+        "db_ms2_formula", "db_ms2_smiles", "exp_ms2_formula", "exp_ms2_smiles",
+        // Internal standards columns
+        "component_best_partner",
+        // NTA component columns
+        "component_best_partner",
+    };
     return names.find(name) != names.end();
 }
 
@@ -103,7 +119,11 @@ Json PluginHostAccess::query(const std::string &sql) {
     const auto order = sql.find(" ORDER BY", from == std::string::npos ? 0 : from + 6);
     if (from == std::string::npos || order == std::string::npos)
         throw std::runtime_error("unsupported plugin query shape");
-    const auto table = sql.substr(from + 6, order - (from + 6));
+    const auto table_start = from + 6;
+    const auto space_after_table = sql.find(' ', table_start);
+    const auto table_end = (space_after_table == std::string::npos || space_after_table >= order)
+                               ? order : space_after_table;
+    const auto table = sql.substr(table_start, table_end - table_start);
     std::vector<std::string> names;
     std::size_t begin = select.size();
     while (begin < from) {
@@ -111,6 +131,9 @@ Json PluginHostAccess::query(const std::string &sql) {
         const auto end = comma == std::string::npos || comma > from ? from : comma;
         auto name = sql.substr(begin, end - begin);
         if (!name.empty() && name.front() == ' ') name.erase(0, 1);
+        // Strip table alias prefix (e.g. "c.analysis" → "analysis").
+        if (const auto dot = name.find('.'); dot != std::string::npos)
+            name = name.substr(dot + 1);
         if (name.empty()) throw std::runtime_error("empty plugin query column");
         names.push_back(std::move(name));
         begin = end + 1;

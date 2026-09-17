@@ -9,7 +9,7 @@ sfms:loadChromatogramsMassSpecMethod
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Load chromatograms" ;
-    skos:definition "Load selected chromatograms from persisted mass spectrometry analyses into MASS_SPEC_CHROMATOGRAMS." ;
+    skos:definition "Load selected chromatograms from persisted mass spectrometry analyses. Channel metadata is persisted in MASS_SPEC_CHROMATOGRAMS_HEADERS and signal points in MASS_SPEC_CHROMATOGRAMS." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:chromatogramIdRegexParameter,
@@ -18,7 +18,7 @@ sfms:loadChromatogramsMassSpecMethod
     sf:cacheable false ;
     sf:singleOccurrence true ;
     sf:reads sfms:analysesTable ;
-    sf:writes sfms:chromatogramsTable ;
+    sf:writes sfms:chromatogramsHeadersTable, sfms:chromatogramsTable ;
     sf:returns sfcore:operationStatusResult .
 
 sfms:filterChromatogramsRetentionTimeMassSpecMethod
@@ -36,6 +36,29 @@ sfms:filterChromatogramsRetentionTimeMassSpecMethod
     sf:singleOccurrence false ;
     sf:reads sfms:chromatogramsTable ;
     sf:writes sfms:chromatogramsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:findChromatogramPeaksMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.find_chromatogram_peaks" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Find chromatogram peaks" ;
+    skos:definition "Detect and integrate chromatographic peaks from loaded signal data. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter,
+        sfms:mergeParameter,
+        sfms:mergeDistanceParameter,
+        sfms:minPeakHeightParameter,
+        sfms:minPeakDistanceParameter,
+        sfms:minPeakWidthParameter,
+        sfms:maxPeakWidthParameter,
+        sfms:minSnrParameter ;
+    sf:cacheable false ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
+    sf:writes sfms:chromatogramPeaksTable ;
     sf:returns sfcore:operationStatusResult .
 
 sfms:findFeaturesMassSpecMethod

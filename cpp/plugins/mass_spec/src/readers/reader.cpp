@@ -21,6 +21,8 @@
 #include <array>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <string_view>
 #include <sstream>
@@ -643,6 +645,22 @@ namespace mass_spec
         return cf;
       }
 
+      // A WIFF is an OLE compound document. Parsing its FAT, directory tree,
+      // and mini-stream once is substantially cheaper than repeating that
+      // work for every stream and every selected analysis.
+      const CompoundFile &cached_file(const std::string &file_path)
+      {
+        static std::mutex mutex;
+        static std::map<std::string, std::shared_ptr<CompoundFile>> cache;
+        std::lock_guard lock(mutex);
+        const auto found = cache.find(file_path);
+        if (found != cache.end())
+          return *found->second;
+        auto parsed = std::make_shared<CompoundFile>(open_file(file_path));
+        const auto [inserted, _] = cache.emplace(file_path, std::move(parsed));
+        return *inserted->second;
+      }
+
       bool is_compound_file(const std::string &file_path)
       {
         return has_signature(file_bytes(file_path));
@@ -650,7 +668,7 @@ namespace mass_spec
 
       std::vector<StreamInfo> list_streams(const std::string &file_path)
       {
-        const auto cf = open_file(file_path);
+        const auto &cf = cached_file(file_path);
         std::vector<std::pair<std::string, std::uint32_t>> paths;
         walk_streams(cf, cf.dirs.front().child, "", paths);
         std::vector<StreamInfo> out;
@@ -672,7 +690,7 @@ namespace mass_spec
 
       std::vector<std::uint8_t> read_stream(const std::string &file_path, const std::string &normalized_path)
       {
-        const auto cf = open_file(file_path);
+        const auto &cf = cached_file(file_path);
         std::vector<std::pair<std::string, std::uint32_t>> paths;
         walk_streams(cf, cf.dirs.front().child, "", paths);
         const std::string wanted = normalize_path(normalized_path);
@@ -1412,6 +1430,7 @@ namespace mass_spec
       struct ParsedArray
       {
         std::string name;
+        std::string unit;
         std::vector<float> values;
       };
 
@@ -1576,6 +1595,9 @@ namespace mass_spec
               (accession.empty() && name_contains(cv, "time array")))
           {
             out.name = "time array";
+            // Capture the unit from the same or associated cvParam
+            const std::string_view unit_accession = cv.attribute("unitAccession").as_string();
+            out.unit = std::string(unit_accession);
             break;
           }
         }
@@ -1976,7 +1998,19 @@ namespace mass_spec
             {
               ParsedArray arr = parse_array(bda);
               if (arr.name.find("time array") != std::string::npos)
+              {
+                // Convert time to seconds if needed
+                if (arr.unit == std::string(unit_minute))
+                {
+                  for (auto &value : arr.values) value *= 60.0f;
+                }
+                else if (arr.unit == std::string(unit_millisecond))
+                {
+                  for (auto &value : arr.values) value /= 1000.0f;
+                }
+                // unit_second (UO:0000010) or empty → already seconds
                 rt = std::move(arr.values);
+              }
               else if (arr.name.find("intensity array") != std::string::npos)
                 inten = std::move(arr.values);
             }

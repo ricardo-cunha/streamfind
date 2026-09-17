@@ -1228,3 +1228,53 @@ sfms:debugParameter
     sf:type "boolean" ;
     sf:required false ;
     sf:example false .
+
+sfms:mergeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Merge peaks" ;
+    skos:definition "Whether to merge nearby chromatographic peaks." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:example true .
+
+sfms:mergeDistanceParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Merge distance" ;
+    skos:definition "Maximum distance between peak apices for merging, in retention-time units." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:example 45.0 .
+
+sfms:minPeakHeightParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum peak height" ;
+    skos:definition "Minimum apex intensity for a chromatographic peak to be accepted." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:example 0.0 .
+
+sfms:minPeakDistanceParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum peak distance" ;
+    skos:definition "Minimum distance between adjacent peak apices, in retention-time units." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:example 10.0 .
+
+sfms:minPeakWidthParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum peak width" ;
+    skos:definition "Minimum chromatographic peak width in retention-time units." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:example 5.0 .

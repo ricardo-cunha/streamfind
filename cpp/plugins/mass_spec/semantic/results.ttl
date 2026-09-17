@@ -275,6 +275,47 @@ sfms:chromatogramsResult
         sfms:baselineColumn,
         sfms:intensityColumn .
 
+sfms:chromatogramPeaksResult
+    a sf:Result ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry chromatogram peaks" ;
+    skos:definition "Table of chromatographic peak records joined with channel metadata." ;
+    sf:type "table" ;
+    sf:hasProperty
+        sfms:analysisNameColumn,
+        sfms:chromatogramIndexColumn,
+        sfms:peakIdColumn,
+        sfms:chromatogramIdColumn,
+        sfms:signalTypeColumn,
+        sfms:chromatogramTypeColumn,
+        sfms:polarityColumn,
+        sfms:precursorMzColumn,
+        sfms:activationCeColumn,
+        sfms:productMzColumn,
+        sfms:detectorColumn,
+        sfms:channelColumn,
+        sfms:wavelengthNmColumn,
+        sfms:unitsColumn,
+        sfms:rtColumn,
+        sfms:rtStartColumn,
+        sfms:rtEndColumn,
+        sfms:peakHeightColumn,
+        sfms:peakRawHeightColumn,
+        sfms:peakAreaColumn,
+        sfms:peakRawAreaColumn,
+        sfms:peakBaselineAreaColumn,
+        sfms:peakWidthColumn,
+        sfms:peakFwhmColumn,
+        sfms:peakSnrColumn,
+        sfms:peakAsymmetryColumn,
+        sfms:peakSharpnessColumn,
+        sfms:peakPlatesColumn,
+        sfms:peakNumberPointsColumn,
+        sfms:integrationAlgorithmColumn,
+        sfms:integrationStatusColumn,
+        sfms:manualOverrideColumn .
+
 sfms:featuresResult
     a sf:Result ;
     sf:availableInDomain sfms:mass_spec ;

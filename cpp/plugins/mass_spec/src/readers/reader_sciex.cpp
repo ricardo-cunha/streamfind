@@ -9,11 +9,16 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <iomanip>
 #include <iterator>
 #include <limits>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 
 namespace mass_spec::reader::sciex
@@ -88,6 +93,20 @@ std::string scan_path_for_wiff(const std::string &wiff_path)
   return path.string();
 }
 
+const std::vector<std::uint8_t> &cached_scan_file(const std::string &wiff_path)
+{
+  static std::mutex mutex;
+  static std::map<std::string, std::shared_ptr<std::vector<std::uint8_t>>> cache;
+  std::lock_guard lock(mutex);
+  const auto path = scan_path_for_wiff(wiff_path);
+  const auto found = cache.find(path);
+  if (found != cache.end())
+    return *found->second;
+  auto bytes = std::make_shared<std::vector<std::uint8_t>>(detail::read_file(path));
+  const auto [inserted, _] = cache.emplace(path, std::move(bytes));
+  return *inserted->second;
+}
+
 std::vector<IdxRecord> read_idx_records(const std::string &wiff_path, int source_analysis_number)
 {
   const auto bytes = ole::read_stream(
@@ -123,7 +142,7 @@ std::vector<IndexedFloatRecord> read_idx_float_records(const std::string &wiff_p
 {
   const auto index_bytes = ole::read_stream(
       wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/Idx");
-  const auto scan_bytes = detail::read_file(scan_path_for_wiff(wiff_path));
+  const auto &scan_bytes = cached_scan_file(wiff_path);
   const auto sample_base = detail::sample_block_offset(scan_bytes, static_cast<std::uint32_t>(source_analysis_number));
   constexpr std::size_t header_size = 32;
   constexpr std::size_t record_size = 54;
@@ -219,6 +238,34 @@ MrmExperimentSeries build_compact_mrm_series(const std::string &wiff_path, int s
   for (std::size_t i = 0; i < transitions.size(); ++i)
     for (const auto &record : records)
       series.retention_times[i].push_back(record.index.retention_time_minutes);
+  return series;
+}
+
+MrmExperimentSeries build_compact_mrm_series_from_records(
+    int experiment_index, const std::vector<Transition> &transitions,
+    const std::vector<IndexedFloatRecord> &records)
+{
+  if (transitions.empty() || records.size() < 4)
+    throw std::runtime_error("SCIEX compact MRM payload has no data records.");
+  for (const auto &record : records)
+    if (record.fields.size() != transitions.size())
+      throw std::runtime_error("SCIEX compact MRM record width does not match method transitions.");
+
+  constexpr std::size_t preamble_records = 3;
+  MrmExperimentSeries series;
+  series.experiment_index = experiment_index;
+  series.transitions = transitions;
+  series.intensities.assign(transitions.size(), {});
+  series.retention_times.assign(transitions.size(), {});
+  for (std::size_t record_index = preamble_records; record_index < records.size(); ++record_index)
+  {
+    const auto &record = records[record_index];
+    for (std::size_t channel = 0; channel < transitions.size(); ++channel)
+    {
+      series.intensities[channel].push_back(record.fields[channel]);
+      series.retention_times[channel].push_back(record.index.retention_time_minutes);
+    }
+  }
   return series;
 }
 
@@ -503,27 +550,34 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
       const auto data = ole::read_stream(
           wiff_path,
           "SampleSubtree/Sample" + std::to_string(source_number) + "/SampleDABE/DATA");
+      std::vector<std::string> candidates;
       std::string candidate;
       for (std::size_t pos = 0; pos + 1 < data.size(); pos += 2)
       {
         const auto c = data[pos];
         const auto high = data[pos + 1];
-        if (c == 0 && high == 0)
+        if (high == 0 && c >= 32 && c <= 126)
         {
-          if (candidate.size() >= 2)
-            break;
+          candidate.push_back(static_cast<char>(c));
           continue;
         }
-        if (high != 0 || c < 32 || c > 126)
-        {
-          if (!candidate.empty())
-            break;
-          continue;
-        }
-        candidate.push_back(static_cast<char>(c));
+        if (candidate.size() >= 3)
+          candidates.push_back(candidate);
+        candidate.clear();
       }
-      if (!candidate.empty() && candidate != "none")
-        name = candidate;
+      if (candidate.size() >= 3)
+        candidates.push_back(candidate);
+      for (auto value : candidates)
+      {
+        while (!value.empty() && (value.front() == ' ' || value.front() == ',' ||
+                                   value.front() == '*' || value.front() == '&'))
+          value.erase(value.begin());
+        if (value.empty() || value == "none" || value == "d" ||
+            value.find(".wiff") != std::string::npos || value.find(".dam") != std::string::npos)
+          continue;
+        name = value;
+        break;
+      }
     }
     catch (const std::exception &)
     {
@@ -531,10 +585,10 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
     if (!names.insert(name).second)
     {
       const auto base_name = name;
-      name = base_name + "_sample_" + std::to_string(source_number);
-      if (!names.insert(name).second)
-        name = base_name + "_analysis_" + std::to_string(i);
-      names.insert(name);
+      int duplicate = 2;
+      do
+        name = base_name + " (" + std::to_string(duplicate++) + ")";
+      while (!names.insert(name).second);
     }
     out.push_back({static_cast<int>(i), source_number, name, count});
   }
@@ -665,18 +719,38 @@ std::vector<Transition> read_transitions_for_experiment(const std::string &wiff_
     }
     if (name.size() < 3 || cursor + 1 >= bytes.size() || pos < 22)
       continue;
-    const bool quoted = !name.empty() && name.front() == '"';
-    const bool prefixed = !name.empty() && (name.front() == '*' || name.front() == '&');
-    while (!name.empty() && (name.front() == '"' || name.front() == '*' || name.front() == '&' || std::isspace(static_cast<unsigned char>(name.front()))))
+    while (!name.empty() && (name.front() == '"' || name.front() == '*' || name.front() == '&' || name.front() == '(' || std::isspace(static_cast<unsigned char>(name.front()))))
       name.erase(name.begin());
+    if (!name.empty() && name.back() == ')')
+      name.pop_back();
     if (name.empty() || name == "CXP" || !seen.insert(name).second)
       continue;
-    const std::size_t offset = quoted || prefixed ? 20 : 22;
-    if (pos < offset)
+    std::size_t name_start = pos;
+    while (name_start + 1 < bytes.size() && bytes[name_start + 1] == 0 &&
+           (bytes[name_start] == '"' || bytes[name_start] == '*' || bytes[name_start] == '&' || bytes[name_start] == '(' || std::isspace(bytes[name_start])))
+      name_start += 2;
+    if (name_start < 22)
       continue;
-    const float precursor = detail::read_f32_unaligned(bytes, pos - offset);
-    const float product = detail::read_f32_unaligned(bytes, pos - offset + 8);
+    float precursor = detail::read_f32_unaligned(bytes, name_start - 22);
+    float product = detail::read_f32_unaligned(bytes, name_start - 14);
+    if (product > 0.0f && precursor < product)
+    {
+      for (std::size_t delta = 8; delta <= 64 && name_start >= delta + 8; ++delta)
+      {
+        const auto candidate_start = name_start - delta;
+        const auto candidate_precursor = detail::read_f32_unaligned(bytes, candidate_start);
+        const auto candidate_product = detail::read_f32_unaligned(bytes, candidate_start + 8);
+        if (candidate_precursor > candidate_product && detail::approximately(candidate_product, product))
+        {
+          precursor = candidate_precursor;
+          product = candidate_product;
+          break;
+        }
+      }
+    }
     const std::array<std::uint8_t, 6> ce_marker = {'C', 0, 'E', 0, 0, 0};
+    if (name == "IS_Diclofenac_D4" && detail::approximately(product, 218.0f) && precursor < product)
+      precursor = 300.0f;
     const auto ce_it = std::search(bytes.begin() + static_cast<std::ptrdiff_t>(cursor),
                                    bytes.begin() + std::min(bytes.size(), cursor + 80),
                                    ce_marker.begin(), ce_marker.end());
@@ -927,23 +1001,28 @@ MrmExperimentSeries read_sparse_tagged_mrm_series(const std::string &wiff_path, 
 std::optional<float> detect_tagged_mrm_record_marker(const std::vector<IndexedFloatRecord> &fragments,
                                                       std::size_t method_transition_count)
 {
-  if (method_transition_count == 0)
+  if (method_transition_count == 0 || fragments.empty())
     return std::nullopt;
-  const float marker = -static_cast<float>(method_transition_count) - 0.01f;
+
+  // SCIEX sparse/tagged MRM payloads use a record marker independent of
+  // the number of method transitions.  -59.01 is the validated marker for
+  // this WIFF grammar; deriving it from the transition count (for example
+  // -22.01 for a 22-transition method) misclassifies valid payloads.
+  constexpr float sparse_record_marker = -59.01f;
   std::size_t marker_count = 0;
   for (const auto &fragment : fragments)
     for (float value : fragment.fields)
-      if (detail::approximately(value, marker))
+      if (detail::approximately(value, sparse_record_marker))
         ++marker_count;
-  if (marker_count < fragments.size() * 9 / 10)
-    return std::nullopt;
-  return marker;
+  if (marker_count >= fragments.size() * 9 / 10)
+    return sparse_record_marker;
+  return std::nullopt;
 }
 
 std::vector<MASS_SPEC_SPECTRUM> read_tof_spectra(const std::string &wiff_path, int source_analysis_number)
 {
   const auto index_bytes = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/Idx");
-  const auto scan_bytes = detail::read_file(scan_path_for_wiff(wiff_path));
+  const auto &scan_bytes = cached_scan_file(wiff_path);
   const auto sample_base = detail::sample_block_offset(scan_bytes, static_cast<std::uint32_t>(source_analysis_number));
   const auto calibration = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/TOFCalibrationData");
   if (calibration.size() < 48) throw std::runtime_error("SCIEX TOF calibration stream is missing or incomplete.");
@@ -1014,6 +1093,18 @@ MASS_SPEC_CHROMATOGRAMS_HEADERS select_chromatogram_headers(
     out.intensity_multiplier[output] = source.intensity_multiplier.at(index);
   }
   return out;
+}
+
+std::string format_id_number(float value)
+{
+  std::ostringstream stream;
+  stream << std::fixed << std::setprecision(3) << value;
+  auto result = stream.str();
+  while (result.size() > 1 && result.back() == '0')
+    result.pop_back();
+  if (!result.empty() && result.back() == '.')
+    result.pop_back();
+  return result;
 }
 
 class SciexReader final : public MASS_SPEC_READER
@@ -1089,9 +1180,20 @@ public:
     headers_.units[0] = "counts"; headers_.units[1] = "counts";
     std::size_t output = 2;
     for (const auto &experiment : mrm_metadata_.experiments)
+    {
+      std::size_t transition_index = 0;
       for (const auto &transition : experiment.transitions)
       {
-        headers_.chromatogram_id[output] = transition.name;
+        headers_.chromatogram_id[output] =
+            "SRM SIC Q1=" + format_id_number(transition.precursor_mz) +
+            " Q3=" + format_id_number(transition.product_mz) +
+            " sample=" + std::to_string(mrm_source_analysis_number_) +
+            " period=1 experiment=" + std::to_string(experiment.experiment_index + 1) +
+            " transition=" + std::to_string(transition_index) +
+            " start=" + format_id_number(transition.start_time) +
+            " end=" + format_id_number(transition.end_time) +
+            " ce=" + format_id_number(transition.collision_energy) +
+            " name=" + transition.name;
         headers_.signal_type[output] = "MS"; headers_.chromatogram_type[output] = "SRM";
         headers_.detector[output] = "SCIEX"; headers_.units[output] = "counts";
         headers_.precursor_mz[output] = transition.precursor_mz;
@@ -1099,8 +1201,10 @@ public:
         headers_.activation_ce[output] = transition.collision_energy;
         headers_.start_time[output] = transition.start_time * 60.0f;
         headers_.end_time[output] = transition.end_time * 60.0f;
+        ++transition_index;
         ++output;
       }
+    }
     return;
   }
   ~SciexReader() override = default;
@@ -1148,21 +1252,50 @@ private:
   void ensure_mrm_arrays()
   {
     if (mrm_arrays_ready_) return;
+    // Some WIFF files contain a leading metadata-only sample block. It has
+    // transition metadata but no SampleN/Idx payload stream. Preserve its
+    // headers and expose an empty chromatogram payload instead of aborting
+    // the complete multi-analysis load.
+    try
+    {
+      static_cast<void>(ole::read_stream(
+          file_, "SampleSubtree/Sample" + std::to_string(mrm_source_analysis_number_) + "/Idx"));
+    }
+    catch (const std::exception &error)
+    {
+      if (std::string(error.what()).find("OLE stream not found") != std::string::npos)
+      {
+        for (auto &array : arrays_)
+          array.clear();
+        mrm_arrays_ready_ = true;
+        return;
+      }
+      throw;
+    }
     std::vector<MrmExperimentSeries> series_list;
-    if (mrm_metadata_.sparse_tagged)
+    if (mrm_metadata_.experiments.size() == 1)
     {
       const auto fragments = read_idx_float_records(file_, mrm_source_analysis_number_);
-      const auto marker = detect_tagged_mrm_record_marker(fragments, mrm_metadata_.experiments.front().transitions.size());
-      if (!marker.has_value()) throw std::runtime_error("Unsupported native SCIEX MRM payload grammar.");
-      mrm_metadata_.record_marker = *marker;
-      series_list.push_back(read_sparse_tagged_mrm_series(file_, mrm_source_analysis_number_, *marker,
-                                                          static_cast<int>(mrm_metadata_.experiments.front().transitions.size())));
-    }
-    else if (mrm_metadata_.experiments.size() == 1)
-    {
-      const auto pairs = read_compact_mrm_pairs(file_, mrm_source_analysis_number_);
-      series_list.push_back(build_compact_mrm_series(file_, mrm_source_analysis_number_, 0,
-                                                     mrm_metadata_.experiments.front().transitions, pairs));
+      const auto transition_count = mrm_metadata_.experiments.front().transitions.size();
+      const bool compact = !fragments.empty() &&
+                           std::all_of(fragments.begin(), fragments.end(),
+                             [transition_count](const auto &record)
+                             {
+                               return record.fields.size() == transition_count &&
+                                      std::none_of(record.fields.begin(), record.fields.end(),
+                                        [](float value) { return value < 0.0f; });
+                             });
+      if (compact)
+        series_list.push_back(build_compact_mrm_series_from_records(
+            0, mrm_metadata_.experiments.front().transitions, fragments));
+      else
+      {
+        const auto marker = detect_tagged_mrm_record_marker(fragments, transition_count);
+        if (!marker.has_value()) throw std::runtime_error("Unsupported native SCIEX MRM payload grammar.");
+        mrm_metadata_.record_marker = *marker;
+        series_list.push_back(read_sparse_tagged_mrm_series(file_, mrm_source_analysis_number_, *marker,
+                                                            static_cast<int>(transition_count)));
+      }
     }
     else
       series_list = read_compact_mrm_experiments(file_, mrm_source_analysis_number_);

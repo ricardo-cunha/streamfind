@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cctype>
+#include <iostream>
 #include <limits>
 
 #include <stdexcept>
@@ -165,9 +166,13 @@ streamfind_plugin_status plugin_read_batch(
             if (column.name == nullptr || column.name_size == 0)
                 return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
             const std::string name(column.name, column.name_size);
-            if (!detail::allowed_column(*context, table, name, false)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
+            // Strip table alias prefix for the allowed_column check.
+            std::string bare_name = name;
+            if (const auto dot = bare_name.find('.'); dot != std::string::npos)
+                bare_name = bare_name.substr(dot + 1);
+            if (!detail::allowed_column(*context, table, bare_name, false)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
             if (index != 0) sql += ", ";
-            sql += detail::quoted_identifier(column.name, column.name_size);
+            sql += detail::quoted_identifier(bare_name.data(), static_cast<uint32_t>(bare_name.size()));
         }
         sql += " FROM " + detail::quoted_identifier(table_name, table_name_size);
         if (limit != std::numeric_limits<uint64_t>::max()) sql += " LIMIT " + std::to_string(limit);

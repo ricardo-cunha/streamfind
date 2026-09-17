@@ -46,6 +46,7 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.get_raw_spectra_ms2", sdk::CapabilityKind::Operation, &operations::get_raw_spectra_ms2},
         {"mass_spec.get_chromatograms", sdk::CapabilityKind::Operation, &operations::get_chromatograms},
         {"mass_spec.get_raw_chromatograms", sdk::CapabilityKind::Operation, &operations::get_raw_chromatograms},
+        {"mass_spec.get_chromatogram_peaks", sdk::CapabilityKind::Operation, &operations::get_chromatogram_peaks},
         {"mass_spec.get_features", sdk::CapabilityKind::Operation, &operations::get_features},
         {"mass_spec.get_internal_standards", sdk::CapabilityKind::Operation, &operations::get_internal_standards},
         {"mass_spec.get_suspects", sdk::CapabilityKind::Operation, &operations::get_suspects},
@@ -69,6 +70,7 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.metfrag_screening", sdk::CapabilityKind::Method, &processing_methods::metfrag_screening_with_access},
         {"mass_spec.load_chromatograms", sdk::CapabilityKind::Method, &processing::load_chromatograms_with_access},
         {"mass_spec.filter_chromatograms_retention_time", sdk::CapabilityKind::Method, &processing::filter_chromatograms_retention_time_with_access},
+        {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Method, &processing::find_chromatogram_peaks_with_access},
     };
     return registry;
 }
