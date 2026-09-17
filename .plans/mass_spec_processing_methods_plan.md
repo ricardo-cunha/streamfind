@@ -902,6 +902,52 @@ Semantic read/write dependencies should enforce this through table contracts rat
 * Raw intensity remains preserved.
 * Preprocessing works independently of target quantification.
 
+## Phase 4 completion status
+
+**Completed.**
+
+### Implemented Methods
+
+| Method | Algorithms | Key Parameters |
+|--------|-----------|----------------|
+|  | none, rolling_min, als, moving_average | window_size, lambda, asymmetry_penalty, max_iterations |
+|  | none, moving_average, savitzky_golay | window_size, poly_order |
+
+### Data model
+
+
+
+ reads from  (processed signal), not .
+
+### Algorithms implemented
+
+* **rolling_min**: sliding-window minimum. Fast, robust for well-separated peaks. Window = half-width in data points.
+* **als**: asymmetric least-squares (Boels & Eilers 2005). First-difference D'D penalty with Thomas solver. Lambda auto-scaled by signal range². Better for drifting baselines.
+* **moving_average**: sliding-window arithmetic mean. Follows broad trends well. Best for smooth gradient elution profiles.
+* **savitzky_golay**: polynomial local regression. Preserves peak shape/height. Configurable window and polynomial order.
+* **moving_average (smoothing)**: simple filter but broadens peaks.
+
+### Bugs fixed during Phase 4
+
+1. **ALS D'D matrix**: incorrect second-difference coefficients  replaced with correct first-difference penalty .
+2. **ALS lambda scaling**: auto-scaled by signal range² so user-supplied value works across different signal magnitudes.
+3. **RT float precision**: string-based RT matching failed due to  precision artifacts ( vs ). Fixed with RT-tolerance matching.
+4. **Parameter name mismatch**: TTL parameter names (, , ) must match C++  calls.
+5. **Smoothing double-subtraction**: smoothing method was re-subtracting baseline from already-corrected intensity. Fixed to smooth the current intensity directly.
+6. **find_chromatogram_peaks read raw_intensity**: changed to read  so peak detection uses processed signal.
+
+### Semantic registration
+
+* 7 new parameters in  (baselineAlgorithm, smoothingAlgorithm, windowSize, polyOrder, lambda, asymmetryPenalty, maxIterations)
+* 2 new methods in  with rich descriptions
+* All parameters optional with sensible defaults
+* C++ entry point registered in 
+
+### Verified with
+
+* Agilent ChemStation .D (DAD): 108 channels, 22,680 points, baseline correction + smoothing + peak detection pipeline
+* All 11 C++ unit tests pass
+
 ---
 
 # PHASE 5 — Add the Targeted Quantification domain module

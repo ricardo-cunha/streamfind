@@ -9,9 +9,9 @@ sfms:loadChromatogramsMassSpecMethod
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Load chromatograms" ;
-    skos:definition "Load selected chromatograms from persisted mass spectrometry analyses. Channel metadata is persisted in MASS_SPEC_CHROMATOGRAMS_HEADERS and signal points in MASS_SPEC_CHROMATOGRAMS." ;
+    skos:definition "Read chromatogram signal arrays from the native reader and persist them as point rows in MASS_SPEC_CHROMATOGRAMS. Each point stores retention time and raw intensity. Channel metadata (chromatogram_id, precursor_mz, product_mz, wavelength, etc.) is read from the already-persisted MASS_SPEC_CHROMATOGRAMS_HEADERS table. Use chromatogram_id_regex to select specific channels (e.g. only MRM or only DAD wavelengths). The intensity column is initialised to raw_intensity and can be modified by subsequent baseline correction and smoothing steps." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
+        sfms:analysisNamesParameter,
         sfms:chromatogramIdRegexParameter,
         sfms:ignoreCaseParameter,
         sfms:invertParameter ;
@@ -27,9 +27,9 @@ sfms:filterChromatogramsRetentionTimeMassSpecMethod
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Filter chromatograms by retention time" ;
-    skos:definition "Keep chromatogram rows whose retention time is within the inclusive minimum and maximum window." ;
+    skos:definition "Remove chromatogram point rows whose retention time falls outside the inclusive [rt_min, rt_max] window. Operates on the point table only; header metadata is not affected. Use this to focus downstream processing on a specific retention-time range (e.g. to exclude solvent front or late-eluting compounds)." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
+        sfms:analysisNamesParameter,
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
     sf:cacheable false ;
@@ -44,9 +44,9 @@ sfms:findChromatogramPeaksMassSpecMethod
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Find chromatogram peaks" ;
-    skos:definition "Detect and integrate chromatographic peaks from loaded signal data. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
+    skos:definition "Detect and integrate chromatographic peaks from the processed chromatogram signal (intensity column). Expects the intensity column to reflect any prior baseline correction and smoothing applied via correct_chromatogram_baseline and smooth_chromatograms. The algorithm uses Savitzky-Golay smoothing and first-derivative zero-crossing detection to locate peak apices, then extends boundaries to the valley baseline using a running-minimum approach. Each peak is integrated via the trapezoidal rule and enriched with height, area, FWHM, signal-to-noise, asymmetry, tailing factor, and Gaussian R-squared metrics. Peaks are persisted in MASS_SPEC_CHROMATOGRAM_PEAKS and can be retrieved with mass_spec.get_chromatogram_peaks. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
+        sfms:analysisNamesParameter,
         sfms:indicesParameter,
         sfms:mergeParameter,
         sfms:mergeDistanceParameter,
@@ -59,6 +59,45 @@ sfms:findChromatogramPeaksMassSpecMethod
     sf:singleOccurrence false ;
     sf:reads sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
     sf:writes sfms:chromatogramPeaksTable ;
+    sf:returns sfcore:operationStatusResult .
+
+
+sfms:correctChromatogramBaselineMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.correct_chromatogram_baseline" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Correct chromatogram baseline" ;
+    skos:definition "Estimate the chromatographic baseline and subtract it from the signal. For each chromatogram the algorithm computes a baseline vector, stores it in the baseline column, and sets intensity = max(0, signal - baseline). The raw_intensity column is never modified, so the original data is always preserved. Rolling-minimum (rolling_min) is fast and works well for well-separated peaks; asymmetric least-squares (als) fits a smooth baseline that follows signal minima while rejecting peaks, which is better for drifting baselines or co-eluting compounds. This method reads and writes the MASS_SPEC_CHROMATOGRAMS table and can be chained with smooth_chromatograms before peak detection." ;
+    sf:hasParameter
+        sfms:analysisNamesParameter,
+        sfms:baselineAlgorithmParameter,
+        sfms:windowSizeParameter,
+        sfms:lambdaParameter,
+        sfms:asymmetryPenaltyParameter,
+        sfms:maxIterationsParameter ;
+    sf:cacheable false ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:chromatogramsTable ;
+    sf:writes sfms:chromatogramsTable ;
+    sf:returns sfcore:operationStatusResult .
+
+sfms:smoothChromatogramsMassSpecMethod
+    a sf:Method ;
+    sf:methodId "mass_spec.smooth_chromatograms" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:prefLabel "Smooth chromatograms" ;
+    skos:definition "Apply noise reduction to the chromatogram signal. The algorithm reads the current intensity column (which may already have baseline correction applied) and writes a smoothed version back. raw_intensity is never modified. Moving-average (moving_average) is the simplest filter but broadens peaks and reduces apparent peak height. Savitzky-Golay (savitzky_golay) fits a local polynomial and better preserves peak shape, height, and position; window_size and poly_order control the smoothing strength. This method is typically applied after baseline correction and before peak detection." ;
+    sf:hasParameter
+        sfms:analysisNamesParameter,
+        sfms:smoothingAlgorithmParameter,
+        sfms:windowSizeParameter,
+        sfms:polyOrderParameter ;
+    sf:cacheable false ;
+    sf:singleOccurrence false ;
+    sf:reads sfms:chromatogramsTable ;
+    sf:writes sfms:chromatogramsTable ;
     sf:returns sfcore:operationStatusResult .
 
 sfms:findFeaturesMassSpecMethod

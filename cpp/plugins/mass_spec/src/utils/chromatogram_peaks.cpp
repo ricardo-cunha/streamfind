@@ -91,18 +91,98 @@ void savitzky_golay_smooth(
 
 std::vector<double> rolling_min_baseline(
     const std::vector<double> &signal, int window) {
-    const std::size_t n = signal.size();
-    if (n == 0) return {};
-    std::vector<double> baseline(n);
+  const std::size_t n = signal.size();
+  if (n == 0) return {};
+  std::vector<double> baseline(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    std::size_t lo = (i >= static_cast<std::size_t>(window)) ? i - window : 0;
+    std::size_t hi = std::min(i + window, n - 1);
+    double mn = signal[lo];
+    for (std::size_t j = lo + 1; j <= hi; ++j)
+      if (signal[j] < mn) mn = signal[j];
+    baseline[i] = mn;
+  }
+  return baseline;
+}
+
+// ─── ALS baseline (Boels & Eilers, 2005) ──────────────────────────────────
+
+std::vector<double> als_baseline(
+    const std::vector<double> &signal,
+    double lambda,
+    double p,
+    int max_iterations) {
+  const std::size_t n = signal.size();
+  if (n == 0) return {};
+
+  std::vector<double> w(n, 1.0);
+  std::vector<double> baseline(n);
+
+  // Asymmetric least-squares baseline estimation (Boels & Eilers, 2005).
+  // Minimises: sum(w_i * (signal_i - z_i)^2) + lambda * sum((z_{i+1} - z_i)^2)
+  // D'D (second-difference penalty from first-difference D) is tridiagonal:
+  //   diagonal: [1, 2, 2, ..., 2, 1]
+  //   off-diagonal: [-1, -1, ..., -1]
+  // Weights: w = p when signal > baseline (small weight → baseline stays below),
+  //          w = (1-p) when signal <= baseline (large weight → baseline follows signal).
+  // Lambda is auto-scaled by the signal range² so the user-supplied value works
+  // across different signal magnitudes.
+
+  double s_min = signal[0], s_max = signal[0];
+  for (std::size_t i = 1; i < n; ++i) {
+    if (signal[i] < s_min) s_min = signal[i];
+    if (signal[i] > s_max) s_max = signal[i];
+  }
+  const double range = s_max - s_min;
+  const double scaled_lambda = lambda * range * range > 0.0 ? lambda / (range * range) : lambda;
+
+  for (int iter = 0; iter < max_iterations; ++iter) {
+    std::vector<double> diag(n), upper(n), lower(n), rhs(n);
     for (std::size_t i = 0; i < n; ++i) {
-        std::size_t lo = (i >= static_cast<std::size_t>(window)) ? i - window : 0;
-        std::size_t hi = std::min(i + window, n - 1);
-        double mn = signal[lo];
-        for (std::size_t j = lo + 1; j <= hi; ++j)
-            if (signal[j] < mn) mn = signal[j];
-        baseline[i] = mn;
+      double d = 2.0 * scaled_lambda;
+      if (i == 0 || i == n - 1) d = scaled_lambda;
+      diag[i] = d + w[i];
+      if (i + 1 < n) upper[i] = -scaled_lambda;
+      if (i > 0) lower[i] = -scaled_lambda;
+      rhs[i] = w[i] * signal[i];
     }
-    return baseline;
+    // Thomas algorithm.
+    std::vector<double> cp(n), dp(n);
+    cp[0] = upper[0] / diag[0];
+    dp[0] = rhs[0] / diag[0];
+    for (std::size_t i = 1; i < n; ++i) {
+      double denom = diag[i] - lower[i] * cp[i - 1];
+      if (std::abs(denom) < 1e-30) denom = 1e-30;
+      cp[i] = (i + 1 < n ? upper[i] : 0.0) / denom;
+      dp[i] = (rhs[i] - lower[i] * dp[i - 1]) / denom;
+    }
+    baseline[n - 1] = dp[n - 1];
+    for (int i = static_cast<int>(n) - 2; i >= 0; --i)
+      baseline[i] = dp[i] - cp[i] * baseline[i + 1];
+
+    for (std::size_t i = 0; i < n; ++i)
+      w[i] = (signal[i] > baseline[i]) ? p : (1.0 - p);
+  }
+  return baseline;
+}
+
+// ─── Moving-average smoothing ──────────────────────────────────────────────
+
+std::vector<double> moving_average_smooth(
+    const std::vector<double> &signal,
+    int window) {
+  const std::size_t n = signal.size();
+  if (n == 0 || window < 1) return signal;
+  std::vector<double> smoothed(n);
+  int half = window / 2;
+  for (std::size_t i = 0; i < n; ++i) {
+    std::size_t lo = (i >= static_cast<std::size_t>(half)) ? i - half : 0;
+    std::size_t hi = std::min(i + half, n - 1);
+    double sum = 0.0;
+    for (std::size_t j = lo; j <= hi; ++j) sum += signal[j];
+    smoothed[i] = sum / static_cast<double>(hi - lo + 1);
+  }
+  return smoothed;
 }
 
 // ─── Robust statistics ──────────────────────────────────────────────────────

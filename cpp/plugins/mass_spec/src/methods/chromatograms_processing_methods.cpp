@@ -268,7 +268,7 @@ Json find_chromatogram_peaks_with_access(
 
     // Load all chromatogram points grouped by analysis+index.
     std::string query =
-        "SELECT c.analysis, c.index, c.rt, c.raw_intensity "
+        "SELECT c.analysis, c.index, c.rt, c.intensity "
         "FROM MASS_SPEC_CHROMATOGRAMS c WHERE 1=1";
     if (!wanted_analyses.empty()) {
         query += " AND c.analysis IN (";
@@ -291,7 +291,7 @@ Json find_chromatogram_peaks_with_access(
         const auto analysis = row.at("analysis").get<std::string>();
         const int idx = std::stoi(row.at("index").get<std::string>());
         const double rt = std::stod(row.at("rt").get<std::string>());
-        const double intensity = std::stod(row.at("raw_intensity").get<std::string>());
+        const double intensity = std::stod(row.at("intensity").get<std::string>());
         auto &chrom = groups[std::make_pair(analysis, idx)];
         chrom.chromatogram_index = idx;
         chrom.rt.push_back(rt);
@@ -353,6 +353,212 @@ Json find_chromatogram_peaks_with_access(
 
     auto msg = "Found " + std::to_string(total_peaks) + " chromatographic peak(s).";
     return detail::status(msg.c_str());
+}
+
+Json correct_chromatogram_baseline_with_access(
+    sdk::PluginProjectAccess &access, const Json &parameters) {
+  access.require_table("MASS_SPEC_CHROMATOGRAMS");
+
+  const auto algorithm = parameters.value("baseline_algorithm", std::string("rolling_min"));
+  const auto wanted_analyses = parameters.value("analysis_names", Json::array());
+
+  // Algorithm-specific parameters.
+  const int rm_window = parameters.value("window_size", 50);
+  const double als_lambda = parameters.value("lambda", 1.0);
+  const double als_p = parameters.value("asymmetry_penalty", 0.01);
+  const int als_max_iter = parameters.value("max_iterations", 10);
+
+  if (algorithm != "none" && algorithm != "rolling_min" && algorithm != "als" && algorithm != "moving_average")
+    throw Error(ErrorCode::InvalidArgument,
+                "Unknown baseline algorithm: " + algorithm + ". Use none, rolling_min, als, or moving_average.");
+
+  // Load all chromatogram points grouped by analysis+index.
+  std::string query =
+      "SELECT c.analysis, c.index, c.rt, c.raw_intensity, c.intensity "
+      "FROM MASS_SPEC_CHROMATOGRAMS c WHERE 1=1";
+  if (!wanted_analyses.empty()) {
+    query += " AND c.analysis IN (";
+    for (std::size_t i = 0; i < wanted_analyses.size(); ++i)
+      query += (i ? "," : "") + ::streamfind::mass_spec::detail::sql(wanted_analyses[i].get<std::string>());
+    query += ")";
+  }
+  query += " ORDER BY c.analysis, c.index, c.rt";
+
+  // Group points by analysis+index.
+  struct ChromGroup {
+    std::vector<double> rt;
+    std::vector<double> intensity;
+    std::vector<std::pair<int, std::size_t>> point_offsets; // index, offset in master arrays
+  };
+  std::map<std::pair<std::string, int>, ChromGroup> groups;
+  for (const auto &row : access.query(query)) {
+    const auto analysis = row.at("analysis").get<std::string>();
+    const int idx = std::stoi(row.at("index").get<std::string>());
+    const double rt = std::stod(row.at("rt").get<std::string>());
+    const double intensity = std::stod(row.at("intensity").get<std::string>());
+    auto &g = groups[std::make_pair(analysis, idx)];
+    g.rt.push_back(rt);
+    g.intensity.push_back(intensity);
+  }
+
+  if (groups.empty())
+    return detail::status("No chromatograms loaded for baseline correction.");
+
+  // Load existing rows to update baseline and intensity in place.
+  auto rows = detail::existing_points(access);
+  // Build a positional index: (analysis, index) -> sorted list of (row_idx, rt_str).
+  std::map<std::pair<std::string, int>, std::vector<std::pair<std::size_t, std::string>>> row_idx;
+  for (std::size_t i = 0; i < rows.size(); ++i) {
+    if (rows[i].size() >= 3 && rows[i][0] && rows[i][1] && rows[i][2])
+      row_idx[{*rows[i][0], std::stoi(*rows[i][1])}].push_back({i, *rows[i][2]});
+  }
+
+  int processed = 0;
+  for (auto &[key, chrom] : groups) {
+    const auto &intensity = chrom.intensity;
+    const std::size_t n = intensity.size();
+    if (n < 3) continue;
+
+    std::vector<double> baseline(n, 0.0);
+
+    if (algorithm == "rolling_min") {
+      baseline = ::streamfind::mass_spec::detail::rolling_min_baseline(intensity, rm_window);
+    } else if (algorithm == "moving_average") {
+      baseline = ::streamfind::mass_spec::detail::moving_average_smooth(intensity, rm_window);
+    } else if (algorithm == "als") {
+      baseline = ::streamfind::mass_spec::detail::als_baseline(
+          intensity, als_lambda, als_p, als_max_iter);
+    }
+
+    // Update rows by matching RT with tolerance (float precision safe).
+    auto rit = row_idx.find(key);
+    if (rit == row_idx.end()) continue;
+    const auto &rlist = rit->second;
+    std::size_t ri = 0;
+    for (std::size_t i = 0; i < n && ri < rlist.size(); ++i) {
+      const double target_rt = chrom.rt[i];
+      // Advance until RT matches within tolerance.
+      while (ri < rlist.size() - 1 && std::abs(std::stod(rlist[ri].second) - target_rt) > 0.01)
+        ++ri;
+      if (ri < rlist.size() && std::abs(std::stod(rlist[ri].second) - target_rt) <= 0.01) {
+        auto &row = rows[rlist[ri].first];
+        if (row.size() >= 6) {
+          row[4] = detail::number_cell(static_cast<float>(baseline[i]));
+          double corrected = chrom.intensity[i] - baseline[i];
+          if (corrected < 0.0) corrected = 0.0;
+          row[5] = detail::number_cell(static_cast<float>(corrected));
+        }
+        ++ri;
+      }
+    }
+    ++processed;
+  }
+
+  access.clear_table("MASS_SPEC_CHROMATOGRAMS");
+  if (!rows.empty())
+    access.append("MASS_SPEC_CHROMATOGRAMS", detail::point_columns(), rows);
+
+  auto msg = "Baseline corrected (" + algorithm + ") for " + std::to_string(processed) + " chromatogram(s).";
+  return detail::status(msg.c_str());
+}
+
+Json smooth_chromatograms_with_access(
+    sdk::PluginProjectAccess &access, const Json &parameters) {
+  access.require_table("MASS_SPEC_CHROMATOGRAMS");
+
+  const auto algorithm = parameters.value("smoothing_algorithm", std::string("savitzky_golay"));
+  const auto wanted_analyses = parameters.value("analysis_names", Json::array());
+
+  // Algorithm-specific parameters.
+  const int window = parameters.value("window_size", 11);
+  const int poly_order = parameters.value("poly_order", 2);
+
+  if (algorithm != "none" && algorithm != "moving_average" && algorithm != "savitzky_golay")
+    throw Error(ErrorCode::InvalidArgument,
+                "Unknown smoothing algorithm: " + algorithm + ". Use none, moving_average, or savitzky_golay.");
+
+  // Load all chromatogram points grouped by analysis+index.
+  std::string query =
+      "SELECT c.analysis, c.index, c.rt, c.raw_intensity, c.intensity "
+      "FROM MASS_SPEC_CHROMATOGRAMS c WHERE 1=1";
+  if (!wanted_analyses.empty()) {
+    query += " AND c.analysis IN (";
+    for (std::size_t i = 0; i < wanted_analyses.size(); ++i)
+      query += (i ? "," : "") + ::streamfind::mass_spec::detail::sql(wanted_analyses[i].get<std::string>());
+    query += ")";
+  }
+  query += " ORDER BY c.analysis, c.index, c.rt";
+
+  struct ChromGroup {
+    std::vector<double> rt;
+    std::vector<double> intensity;
+  };
+  std::map<std::pair<std::string, int>, ChromGroup> groups;
+  for (const auto &row : access.query(query)) {
+    const auto analysis = row.at("analysis").get<std::string>();
+    const int idx = std::stoi(row.at("index").get<std::string>());
+    const double rt = std::stod(row.at("rt").get<std::string>());
+    const double intensity = std::stod(row.at("intensity").get<std::string>());
+    auto &g = groups[std::make_pair(analysis, idx)];
+    g.rt.push_back(rt);
+    g.intensity.push_back(intensity);
+  }
+
+  if (groups.empty())
+    return detail::status("No chromatograms loaded for smoothing.");
+
+  auto rows = detail::existing_points(access);
+  std::map<std::pair<std::string, int>, std::vector<std::pair<std::size_t, std::string>>> row_idx;
+  for (std::size_t i = 0; i < rows.size(); ++i) {
+    if (rows[i].size() >= 3 && rows[i][0] && rows[i][1] && rows[i][2])
+      row_idx[{*rows[i][0], std::stoi(*rows[i][1])}].push_back({i, *rows[i][2]});
+  }
+
+  int processed = 0;
+  for (auto &[key, chrom] : groups) {
+    const auto &intensity = chrom.intensity;
+    const std::size_t n = intensity.size();
+    if (n < 3) continue;
+
+    std::vector<double> smoothed(n);
+
+    if (algorithm == "moving_average") {
+      smoothed = ::streamfind::mass_spec::detail::moving_average_smooth(intensity, window);
+    } else if (algorithm == "savitzky_golay") {
+      std::vector<double> d1, d2;
+      int sg_window = std::min(window, static_cast<int>(n) | 1);
+      if (sg_window < 5) sg_window = 5;
+      if (sg_window % 2 == 0) ++sg_window;
+      ::streamfind::mass_spec::detail::savitzky_golay_smooth(
+          intensity, smoothed, d1, d2, sg_window, poly_order);
+    }
+
+    // Update intensity by RT-tolerance matching.
+    auto rit = row_idx.find(key);
+    if (rit == row_idx.end()) continue;
+    const auto &rlist = rit->second;
+    std::size_t ri = 0;
+    for (std::size_t i = 0; i < n && ri < rlist.size(); ++i) {
+      const double target_rt = chrom.rt[i];
+      while (ri < rlist.size() - 1 && std::abs(std::stod(rlist[ri].second) - target_rt) > 0.01)
+        ++ri;
+      if (ri < rlist.size() && std::abs(std::stod(rlist[ri].second) - target_rt) <= 0.01) {
+        auto &row = rows[rlist[ri].first];
+        if (row.size() >= 6) {
+          row[5] = detail::number_cell(static_cast<float>(smoothed[i]));
+        }
+        ++ri;
+      }
+    }
+    ++processed;
+  }
+
+  access.clear_table("MASS_SPEC_CHROMATOGRAMS");
+  if (!rows.empty())
+    access.append("MASS_SPEC_CHROMATOGRAMS", detail::point_columns(), rows);
+
+  auto msg = "Smoothed (" + algorithm + ") " + std::to_string(processed) + " chromatogram(s).";
+  return detail::status(msg.c_str());
 }
 
 }  // namespace streamfind::mass_spec::processing
