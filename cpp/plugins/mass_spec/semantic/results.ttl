@@ -3,28 +3,6 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfms:addAnalysesResult
-    a sf:Result ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Added mass spectrometry analyses" ;
-    skos:definition "Table of analysis records persisted by add_analyses." ;
-    sf:type "table" ;
-    sf:hasProperty
-        sfms:analysisNameColumn,
-        sfms:filePathColumn,
-        sfms:replicateNameColumn,
-        sfms:blankNameColumn .
-
-sfms:removeAnalysesResult
-    a sf:Result ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Removed mass spectrometry analyses" ;
-    skos:definition "Array of analysis names removed from the project." ;
-    sf:type "array" ;
-    sf:items sfms:analysisNameColumn .
-
 sfms:getAnalysesInfoResult
     a sf:Result ;
     sf:availableInDomain sfms:mass_spec ;
@@ -76,15 +54,6 @@ sfms:concentrationsResult
     skos:definition "Concentrations ordered as stored in the analyses table." ;
     sf:type "array" ;
     sf:items sfms:concentrationColumn .
-
-sfms:updatedResult
-    a sf:Result ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Updated mass spectrometry analyses" ;
-    skos:definition "Number of analysis rows updated by a metadata operation." ;
-    sf:type "object" ;
-    sf:hasProperty sfms:updatedField .
 
 sfms:spectraHeadersResult
     a sf:Result ;
@@ -263,13 +232,18 @@ sfms:chromatogramsResult
     sf:type "table" ;
     sf:hasProperty
         sfms:analysisNameColumn,
-        sfms:replicateNameColumn,
         sfms:indexColumn,
         sfms:chromatogramIdColumn,
         sfms:polarityColumn,
         sfms:precursorMzColumn,
         sfms:activationCeColumn,
         sfms:productMzColumn,
+        sfms:signalTypeColumn,
+        sfms:chromatogramTypeColumn,
+        sfms:detectorColumn,
+        sfms:channelColumn,
+        sfms:wavelengthNmColumn,
+        sfms:unitsColumn,
         sfms:rtColumn,
         sfms:rawIntensityColumn,
         sfms:baselineColumn,

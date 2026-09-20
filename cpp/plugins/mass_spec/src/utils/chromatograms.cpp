@@ -1,11 +1,12 @@
-#include "utils/chromatogram_peaks.hpp"
+#include "utils/chromatograms.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <vector>
 
-namespace streamfind::mass_spec::detail {
+namespace streamfind::mass_spec::chromatograms::utils
+{
 // ─── Savitzky-Golay smoothing ───────────────────────────────────────────────
 
 static std::vector<std::vector<double>> sg_coefficients(int window, int poly_order) {
@@ -91,18 +92,18 @@ void savitzky_golay_smooth(
 
 std::vector<double> rolling_min_baseline(
     const std::vector<double> &signal, int window) {
-  const std::size_t n = signal.size();
-  if (n == 0) return {};
-  std::vector<double> baseline(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    std::size_t lo = (i >= static_cast<std::size_t>(window)) ? i - window : 0;
-    std::size_t hi = std::min(i + window, n - 1);
-    double mn = signal[lo];
-    for (std::size_t j = lo + 1; j <= hi; ++j)
-      if (signal[j] < mn) mn = signal[j];
-    baseline[i] = mn;
-  }
-  return baseline;
+    const std::size_t n = signal.size();
+    if (n == 0) return {};
+    std::vector<double> baseline(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        std::size_t lo = (i >= static_cast<std::size_t>(window)) ? i - window : 0;
+        std::size_t hi = std::min(i + window, n - 1);
+        double mn = signal[lo];
+        for (std::size_t j = lo + 1; j <= hi; ++j)
+            if (signal[j] < mn) mn = signal[j];
+        baseline[i] = mn;
+    }
+    return baseline;
 }
 
 // ─── ALS baseline (Boels & Eilers, 2005) ──────────────────────────────────
@@ -713,4 +714,109 @@ std::vector<Peak> find_peaks(
     return peaks;
 }
 
-}  // namespace streamfind::mass_spec::detail
+
+
+const std::vector<std::string> &header_columns()
+{
+    static const std::vector<std::string> columns = {"analysis", "index", "chromatogram_id", "polarity", "precursor_mz", "activation_ce", "product_mz", "signal_type", "chromatogram_type", "detector", "channel", "wavelength_nm", "units"};
+    return columns;
+}
+
+const std::vector<std::string> &point_columns()
+{
+    static const std::vector<std::string> columns = {"analysis", "index", "rt", "raw_intensity", "baseline", "intensity"};
+    return columns;
+}
+
+const std::vector<std::string> &peak_columns()
+{
+    static const std::vector<std::string> columns = {"analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end", "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm", "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm", "integration_status", "manual_override"};
+    return columns;
+}
+
+std::string text(const nlohmann::json &row, const char *column)
+{
+    const auto it = row.find(column);
+    if (it == row.end() || it->is_null()) return {};
+    return it->is_string() ? it->get<std::string>() : it->dump();
+}
+
+double real(const nlohmann::json &row, const char *column)
+{
+    const auto it = row.find(column);
+    if (it == row.end() || it->is_null()) return 0.0;
+    return it->is_number() ? it->get<double>() : std::stod(it->get<std::string>());
+}
+
+int integer(const nlohmann::json &row, const char *column)
+{
+    const auto it = row.find(column);
+    if (it == row.end() || it->is_null()) return 0;
+    return it->is_number() ? it->get<int>() : std::stoi(it->get<std::string>());
+}
+
+bool boolean(const nlohmann::json &row, const char *column)
+{
+    const auto it = row.find(column);
+    if (it == row.end() || it->is_null()) return false;
+    if (it->is_boolean()) return it->get<bool>();
+    return text(row, column) == "true" || text(row, column) == "1";
+}
+
+HeaderMap make_header_map(const nlohmann::json &rows)
+{
+    HeaderMap result;
+    for (const auto &row : rows)
+    {
+        HeaderInfo info;
+        info.chromatogram_id = text(row, "chromatogram_id");
+        info.polarity = integer(row, "polarity");
+        info.precursor_mz = real(row, "precursor_mz");
+        info.activation_ce = real(row, "activation_ce");
+        info.product_mz = real(row, "product_mz");
+        info.signal_type = text(row, "signal_type");
+        info.chromatogram_type = text(row, "chromatogram_type");
+        info.detector = text(row, "detector");
+        info.channel = text(row, "channel");
+        info.wavelength_nm = real(row, "wavelength_nm");
+        info.units = text(row, "units");
+        result[{text(row, "analysis"), integer(row, "index")}] = std::move(info);
+    }
+    return result;
+}
+
+void append_header_fields(nlohmann::json &row, const HeaderInfo &header)
+{
+    row["chromatogram_id"] = header.chromatogram_id;
+    row["polarity"] = header.polarity;
+    row["precursor_mz"] = header.precursor_mz;
+    row["activation_ce"] = header.activation_ce;
+    row["product_mz"] = header.product_mz;
+    row["signal_type"] = header.signal_type;
+    row["chromatogram_type"] = header.chromatogram_type;
+    row["detector"] = header.detector;
+    row["channel"] = header.channel;
+    row["wavelength_nm"] = header.wavelength_nm;
+    row["units"] = header.units;
+}
+
+bool selected_analysis(const nlohmann::json &parameters, const nlohmann::json &row)
+{
+    const auto wanted = parameters.value("analysis_names", nlohmann::json::array());
+    if (wanted.empty()) return true;
+    const auto name = text(row, "analysis");
+    for (const auto &value : wanted)
+        if (value.get<std::string>() == name) return true;
+    return false;
+}
+
+bool selected_index(const nlohmann::json &parameters, int index)
+{
+    const auto wanted = parameters.value("indices", nlohmann::json::array());
+    if (wanted.empty()) return true;
+    for (const auto &value : wanted)
+        if (value.get<int>() == index) return true;
+    return false;
+}
+
+}

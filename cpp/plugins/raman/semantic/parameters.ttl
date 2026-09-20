@@ -1,0 +1,16 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfram:analysesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Analyses" ;
+    skos:definition "Raman analysis files to add to the project." ;
+    sf:type "array" ;
+    sf:required true ;
+    sf:items sfcore:analysisFileParameter ;
+    sf:example "[{\"path\":\"data/sample.asc\"}]" ;
+    sf:extensions "asc,sif" .

@@ -9,10 +9,26 @@
     {
       "name": "default",
       "displayName": "Default standalone core configuration",
-      "generator": "Visual Studio 18 2026",
-      "architecture": "x64",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/../tmp/build/core-default",
       "cacheVariables": {
+        "STREAMFIND_BUILD_TESTS": "ON",
+        "STREAMFIND_BUILD_SHARED": "OFF"
+      }
+    },
+    {
+      "name": "mingw-ucrt64",
+      "displayName": "Windows MinGW-w64 UCRT64 GCC configuration",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../tmp/build/mingw-ucrt64",
+      "environment": {
+        "MSYSTEM": "UCRT64",
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "C:/msys64/ucrt64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/msys64/ucrt64/bin/ninja.exe",
         "STREAMFIND_BUILD_TESTS": "ON",
         "STREAMFIND_BUILD_SHARED": "OFF"
       }
@@ -21,10 +37,15 @@
   "buildPresets": [
     {
       "name": "default",
-      "configurePreset": "default",
-      "nativeToolOptions": [
-        "-p:MSBuildWarningsAsMessages=MSB8029"
-      ]
+      "configurePreset": "default"
+    },
+    {
+      "name": "mingw-ucrt64",
+      "configurePreset": "mingw-ucrt64",
+      "environment": {
+        "MSYSTEM": "UCRT64",
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      }
     }
   ]
 }

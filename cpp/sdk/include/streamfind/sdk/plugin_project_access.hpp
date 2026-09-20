@@ -1,10 +1,14 @@
 #pragma once
 
 #include <optional>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "streamfind/export.hpp"
+#include "streamfind/plugin_abi.h"
 #include "streamfind/project.hpp"
 
 namespace streamfind::sdk {
@@ -31,6 +35,17 @@ public:
         const std::string &table_name,
         const std::vector<std::string> &column_names,
         const std::vector<std::vector<std::optional<std::string>>> &rows) = 0;
+    virtual void emit_table_rows(
+        const std::string &output_contract_id,
+        const std::vector<std::string> &column_names,
+        const std::vector<std::string> &column_types,
+        const nlohmann::json &rows) = 0;
+    virtual void emit_table_batch(
+        const std::string &output_contract_id,
+        const std::vector<streamfind_plugin_batch_column> &columns,
+        std::uint64_t row_count) = 0;
+    virtual void emit_result(const std::string &output_contract_id,
+                             const std::string &payload) = 0;
     virtual void update_composite(
         const std::string &table_name,
         const std::vector<std::string> &key_columns,

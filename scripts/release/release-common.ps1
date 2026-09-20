@@ -26,6 +26,8 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
 function Assert-CppDistributionPayload([string]$PackageRoot) {
     Assert-DistributionPayload $PackageRoot
     $required = @(
+        'bin/streamfind.exe',
+        'bin/streamfind_service.exe',
         'bin/streamfind_mcp.exe',
         'bin/streamfind_cli.exe',
         'bin/duckdb.dll',
@@ -39,6 +41,9 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
             throw "C++ distribution payload is missing $relative"
         }
+    }
+    if (-not (Test-Path (Join-Path $PackageRoot 'share/streamfind/app/index.html'))) {
+        throw 'C++ distribution payload is missing the packaged frontend application'
     }
     $pluginRoot = Join-Path $PackageRoot 'share/streamfind/plugins'
     $pluginDirectories = @(Get-ChildItem -Path $pluginRoot -Directory)

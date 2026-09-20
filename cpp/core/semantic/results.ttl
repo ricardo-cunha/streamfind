@@ -2,6 +2,14 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+sfcore:operationSuccessSignal
+    a sf:Result ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation success signal" ;
+    skos:definition "Boolean result emitted for every operation to indicate whether it completed successfully." ;
+    sf:type "boolean" .
+
 sfcore:operationStatusResult
     a sf:Result ;
     sf:availableInDomain sfcore:streamfind ;

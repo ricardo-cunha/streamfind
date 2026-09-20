@@ -11,14 +11,27 @@ param(
 
 $root = $Script:REPO_ROOT
 $env:STREAMFIND_PACKAGE_VERSION = $Version
-$buildDir = Join-Path $root 'tmp\build\release-cpp'
+$buildDir = Join-Path $root 'tmp\build
+elease-cpp'
+$frontendDir = Join-Path $root 'frontend'
+$frontendDist = Join-Path $frontendDir 'dist'
 $cmake = Get-CMake
 $ninja = Get-Ninja
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $buildDir
 Invoke-VcvarsAll x64
+Write-ReleaseLog "Building frontend application..."
+Push-Location $frontendDir
+try {
+    & npm.cmd run build
+    if ($LASTEXITCODE -ne 0) { throw "Frontend build failed ($LASTEXITCODE)" }
+} finally {
+    Pop-Location
+}
+if (-not (Test-Path (Join-Path $frontendDist 'index.html'))) { throw 'Frontend build did not produce dist/index.html' }
 Write-ReleaseLog "Building C++ backend ($Config)..."
 & $cmake -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_BUILD_TYPE=$Config" `
-    -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF "-B $buildDir" "-S $(Join-Path $root 'cpp')"
+    -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF "-DSTREAMFIND_APP_DIR=$frontendDist" `
+    "-B $buildDir" "-S $(Join-Path $root 'cpp')"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
 & $cmake --build $buildDir --config $Config -j 8
 if ($LASTEXITCODE -ne 0) { throw "CMake build failed ($LASTEXITCODE)" }

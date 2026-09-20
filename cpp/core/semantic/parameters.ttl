@@ -85,6 +85,76 @@ sfcore:destinationDatabasePathParameter
     sf:required true ;
     sf:example "/data/copied.duckdb" .
 
+sfcore:operationIdParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow operation instance ID" ;
+    skos:definition "Unique identifier for one operation instance in the backend workflow graph." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:example "add_analyses_1" .
+
+sfcore:operationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation identifier" ;
+    skos:definition "Canonical catalogue identifier of the operation to add to the workflow." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:example "mass_spec.add_analyses" .
+
+sfcore:sourceOperationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source operation instance" ;
+    skos:definition "Workflow operation instance that publishes the connected output." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:example "add_analyses_1" .
+
+sfcore:sourcePortParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source output port" ;
+    skos:definition "Semantic output contract published by the source operation." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:example "sfms:analysesTable" .
+
+sfcore:targetOperationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Target operation instance" ;
+    skos:definition "Workflow operation instance that consumes the connected input." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:example "remove_analyses_1" .
+
+sfcore:targetPortParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Target input port" ;
+    skos:definition "Semantic input contract consumed by the target operation." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:example "sfms:analysesTable" .
+
+sfcore:outputPortParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Output contract" ;
+    skos:definition "Semantic output contract to locate in the artifact inventory." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:example "sfms:analysesTable" .
+
 
 sfcore:analysesParameter
     a sf:Parameter ;

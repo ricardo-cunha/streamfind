@@ -9,7 +9,7 @@
 #include <map>
 #include <cstddef>
 
-namespace nta { namespace api { struct NTA_FEATURE_ROW; struct NTA_FEATURES; } class PROJECT_NON_TARGET_ANALYSIS; }
+namespace nta { namespace utils { struct NTA_FEATURE_ROW; } namespace api { struct NTA_FEATURES; } class PROJECT_NON_TARGET_ANALYSIS; }
 
 namespace nta {
 namespace alignment {

@@ -13,27 +13,13 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/readers/reader_sciex.cpp
     src/readers/reader_thermo.cpp
     src/operations/base.cpp
-    src/operations/nta.cpp
-    src/operations/chromatograms.cpp
-    src/methods/chromatograms_processing_methods.cpp
-    src/utils/chromatogram_peaks.cpp
+    src/operations/chromatograms/operations.cpp
+    src/operations/nta/operations.cpp
+    src/operations/nta/nta_deconvolution.cpp
 
-    src/methods/nta_processing_methods.cpp
-
-    src/methods/nta_deconvolution.cpp
+    src/utils/base.cpp
+    src/utils/chromatograms.cpp
     src/utils/nta.cpp
-    src/methods/nta_annotation.cpp
-    src/methods/nta_componentization.cpp
-    src/methods/nta_blank_subtraction.cpp
-    src/methods/nta_filters.cpp
-    src/methods/nta_gap_filling.cpp
-    src/methods/nta_alignment.cpp
-    src/methods/nta_suspect_screening.cpp
-    src/methods/nta_assign_transformation_products.cpp
-    src/methods/nta_metfrag_runner.cpp
-    src/methods/nta_correction_algorithms.cpp
-    src/utils/openbabel_adapter.cpp
-    src/utils/openbabel_c_api.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"
     src/plugin_entrypoint.cpp)
 streamfind_configure_cpp_library(streamfind_mass_spec_plugin mass_spec
@@ -54,6 +40,9 @@ if(UNIX)
 endif()
 
 set_target_properties(streamfind_mass_spec_plugin PROPERTIES OUTPUT_NAME "streamfind_mass_spec")
+if(WIN32)
+    set_target_properties(streamfind_mass_spec_plugin PROPERTIES PREFIX "")
+endif()
 add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"

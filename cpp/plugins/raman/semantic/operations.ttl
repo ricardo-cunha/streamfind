@@ -7,23 +7,17 @@ sfram:ramanAddAnalyses
     a sf:Operation ;
     sf:operationId "raman.add_analyses" ;
     sf:availableInDomain sfram:raman ;
-    sf:mutatesProject false ;
+    sf:projectEntry true ;
     skos:prefLabel "Add Raman analyses" ;
     skos:definition "Add Raman analysis files to a project." ;
-    sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:analysesParameter ;
-    sf:extensions "asc,sif" ;
-    sf:returns sfcore:operationStatusResult .
+    sf:hasParameter sfram:analysesParameter ;
+    sf:hasOutputPort sfcore:operationStatusResult, sfcore:operationSuccessSignal .
 
 sfram:ramanRemoveAnalyses
     a sf:Operation ;
     sf:operationId "raman.remove_analyses" ;
     sf:availableInDomain sfram:raman ;
-    sf:mutatesProject false ;
     skos:prefLabel "Remove Raman analyses" ;
     skos:definition "Remove Raman analysis files from a project." ;
-    sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:analysisNamesParameter ;
-    sf:returns sfcore:operationStatusResult .
+    sf:hasParameter sfcore:analysisNamesParameter ;
+    sf:hasOutputPort sfcore:operationStatusResult, sfcore:operationSuccessSignal .

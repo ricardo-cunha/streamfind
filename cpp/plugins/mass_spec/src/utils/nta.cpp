@@ -2,11 +2,13 @@
 #include "readers/reader.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <limits>
 #include <numeric>
 
-namespace nta::utils
+namespace streamfind::mass_spec::nta::utils
 {
     std::ofstream debug_log;
     void init_debug_log(const std::string &name, const std::string &header)
@@ -238,4 +240,103 @@ namespace nta::utils
         return std::max(1, n);
     }
     float calculate_theoretical_plates(float rt, float width) { return width && rt ? 5.54f * std::pow(rt / width, 2) : 0; }
+
+    std::string utc_now()
+    {
+        const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        std::tm utc{};
+#ifdef _WIN32
+        gmtime_s(&utc, &now);
+#else
+        gmtime_r(&now, &utc);
+#endif
+        char buffer[20]{};
+        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &utc);
+        return buffer;
+    }
+
+    std::string text(const nlohmann::json &row, const char *column)
+    {
+        const auto it = row.find(column);
+        if (it == row.end() || it->is_null()) return {};
+        return it->is_string() ? it->get<std::string>() : it->dump();
+    }
+
+    int integer(const nlohmann::json &row, const char *column)
+    {
+        const auto it = row.find(column);
+        if (it == row.end() || it->is_null()) return 0;
+        if (it->is_boolean()) return it->get<bool>() ? 1 : 0;
+        if (it->is_number_integer()) return it->get<int>();
+        if (it->is_number()) return static_cast<int>(it->get<double>());
+        const auto value = it->get<std::string>();
+        return value.empty() ? 0 : std::stoi(value);
+    }
+
+    double real(const nlohmann::json &row, const char *column)
+    {
+        const auto value = text(row, column);
+        return value.empty() ? 0.0 : std::stod(value);
+    }
+
+    const std::vector<std::string> &feature_columns()
+    {
+        static const std::vector<std::string> columns = {
+            "analysis", "feature", "feature_component", "feature_group", "adduct", "rt", "mz", "mass", "intensity", "noise", "sn", "area", "trace_count",
+            "rtmin", "rtmax", "width", "mzmin", "mzmax", "ppm", "fwhm_rt", "fwhm_mz", "gaussian_A", "gaussian_mu", "gaussian_sigma", "gaussian_r2",
+            "jaggedness", "sharpness", "asymmetry", "modality", "plates", "polarity", "filtered", "filter", "filled", "correction", "eic_size", "eic_rt",
+            "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
+            "annotation_category", "annotation_type", "annotation_parent_feature", "annotation_element", "annotation_mass_error_da", "annotation_mass_error_ppm",
+            "annotation_rt_error", "annotation_rel_intensity", "annotation_expected_rel_intensity_min", "annotation_expected_rel_intensity_max", "annotation_score",
+            "component_size", "component_rt_center", "component_rt_spread", "component_density", "component_mean_correlation", "component_best_partner",
+            "component_max_correlation", "component_mean_correlation_to_component", "component_membership_score", "component_is_core", "component_bridge_flag", "created_at"};
+        return columns;
+    }
+
+    const std::vector<std::string> &feature_types()
+    {
+        static const std::vector<std::string> types = {
+            "string", "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "integer",
+            "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
+            "integer", "real", "integer", "boolean", "string", "boolean", "real", "integer", "string", "string", "string", "string", "string",
+            "integer", "string", "string", "integer", "string", "string", "string", "string", "string", "string", "real", "real", "real", "real",
+            "real", "real", "real", "real", "real", "real", "real", "real", "string", "real", "real", "real", "boolean", "boolean", "timestamp"};
+        return types;
+    }
+
+    nlohmann::json feature_row(const NTA_FEATURE_ROW &r)
+    {
+        return nlohmann::json{{"analysis", r.analysis}, {"feature", r.feature}, {"feature_component", r.feature_component}, {"feature_group", r.feature_group}, {"adduct", r.adduct},
+            {"rt", r.rt}, {"mz", r.mz}, {"mass", r.mass}, {"intensity", r.intensity}, {"noise", r.noise}, {"sn", r.sn}, {"area", r.area}, {"trace_count", r.eic_size},
+            {"rtmin", r.rtmin}, {"rtmax", r.rtmax}, {"width", r.width}, {"mzmin", r.mzmin}, {"mzmax", r.mzmax}, {"ppm", r.ppm}, {"fwhm_rt", r.fwhm_rt}, {"fwhm_mz", r.fwhm_mz},
+            {"gaussian_A", r.gaussian_A}, {"gaussian_mu", r.gaussian_mu}, {"gaussian_sigma", r.gaussian_sigma}, {"gaussian_r2", r.gaussian_r2}, {"jaggedness", r.jaggedness},
+            {"sharpness", r.sharpness}, {"asymmetry", r.asymmetry}, {"modality", r.modality}, {"plates", r.plates}, {"polarity", r.polarity}, {"filtered", r.filtered}, {"filter", r.filter},
+            {"filled", r.filled}, {"correction", r.correction}, {"eic_size", r.eic_size}, {"eic_rt", r.eic_rt}, {"eic_mz", r.eic_mz}, {"eic_intensity", r.eic_intensity},
+            {"eic_baseline", r.eic_baseline}, {"eic_smoothed", r.eic_smoothed}, {"ms1_size", r.ms1_size}, {"ms1_mz", r.ms1_mz}, {"ms1_intensity", r.ms1_intensity},
+            {"ms2_size", r.ms2_size}, {"ms2_mz", r.ms2_mz}, {"ms2_intensity", r.ms2_intensity}, {"annotation_category", r.annotation_category}, {"annotation_type", r.annotation_type},
+            {"annotation_parent_feature", r.annotation_parent_feature}, {"annotation_element", r.annotation_element}, {"annotation_mass_error_da", r.annotation_mass_error_da},
+            {"annotation_mass_error_ppm", r.annotation_mass_error_ppm}, {"annotation_rt_error", r.annotation_rt_error}, {"annotation_rel_intensity", r.annotation_rel_intensity},
+            {"annotation_expected_rel_intensity_min", r.annotation_expected_rel_intensity_min}, {"annotation_expected_rel_intensity_max", r.annotation_expected_rel_intensity_max},
+            {"annotation_score", r.annotation_score}, {"component_size", r.component_size}, {"component_rt_center", r.component_rt_center}, {"component_rt_spread", r.component_rt_spread},
+            {"component_density", r.component_density}, {"component_mean_correlation", r.component_mean_correlation}, {"component_best_partner", r.component_best_partner},
+            {"component_max_correlation", r.component_max_correlation}, {"component_mean_correlation_to_component", r.component_mean_correlation_to_component},
+            {"component_membership_score", r.component_membership_score}, {"component_is_core", r.component_is_core}, {"component_bridge_flag", r.component_bridge_flag}, {"created_at", utc_now()}};
+    }
+
+    const std::vector<std::string> &suspects_columns()
+    {
+        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        return columns;
+    }
+    const std::vector<std::string> &internal_standards_columns()
+    {
+        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        return columns;
+    }
+    const std::vector<std::string> &transformation_products_columns()
+    {
+        static const std::vector<std::string> columns = {"analysis", "feature_group", "precursor_feature_group", "main_precursor_feature_group", "assignment_rank", "name", "formula", "mass", "smiles", "inchi", "inchikey", "xlogp", "transformation", "precursor_name", "precursor_formula", "precursor_mass", "precursor_smiles", "precursor_inchi", "precursor_inchikey", "precursor_xlogp", "main_precursor_name", "main_precursor_formula", "main_precursor_mass", "main_precursor_smiles", "main_precursor_inchi", "main_precursor_inchikey", "main_precursor_xlogp", "cosine_similarity", "main_precursor_cosine_similarity", "rt_plausibility", "main_precursor_rt_plausibility", "assignment_score", "network_level", "assignment_status", "created_at"};
+        return columns;
+    }
+
 }

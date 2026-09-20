@@ -240,24 +240,43 @@ private:
 };
 
 struct STREAMFIND_CORE_API OperationDefinition {
-    std::string id, name, description, domain;
+    struct Port {
+        std::string id;
+        std::string semantic_contract;
+        std::string cardinality{"one"};
+        std::vector<std::string> representations;
+        bool optional{false};
+
+        Json to_json() const;
+        static Port from_json(const Json &value);
+    };
+
+    std::string id, name, description, domain, version{"1"};
+    bool project_entry{false};
+    bool cacheable{false};
     ParameterSchema parameters;
+    std::vector<Port> input_ports;
+    std::vector<Port> output_ports;
 };
-using OperationExecutor = std::function<Json(Project &, const Json &)>;
+using WorkflowOperationExecutor = std::function<Json(
+    Project &, const Json &, const std::string &, const Json &)>;
 using OperationValidator = std::function<void(const Json &)>;
 
 class STREAMFIND_CORE_API Operation {
 public:
-    Operation(OperationDefinition definition, OperationExecutor executor = {},
+    Operation(OperationDefinition definition,
+              WorkflowOperationExecutor executor = {},
               OperationValidator validator = {});
     const OperationDefinition &definition() const noexcept;
     Json to_json() const;
     Json resolve_parameters(const Json &value) const;
-    Json run(Project &project, const Json &value) const;
+    Json run_workflow(Project &project, const Json &value,
+                      const std::string &operation_instance,
+                      const Json &inputs) const;
 private:
     OperationDefinition definition_;
-    OperationExecutor executor_;
     OperationValidator validator_;
+    WorkflowOperationExecutor executor_;
 };
 
 class STREAMFIND_CORE_API OperationRegistry {
@@ -285,7 +304,29 @@ struct STREAMFIND_CORE_API WorkflowStep {
     static WorkflowStep from_json(const Json &value);
 };
 
-/** @brief Ordered, versioned method workflow owned by a Project. */
+/** @brief One operation instance in a persisted workflow graph. */
+struct STREAMFIND_CORE_API WorkflowOperation {
+    std::string id;
+    std::string operation;
+    ParameterValues parameters;
+    Json inputs{Json::object()};
+
+    Json to_json() const;
+    static WorkflowOperation from_json(const Json &value);
+};
+
+/** @brief One typed output-port to input-port workflow connection. */
+struct STREAMFIND_CORE_API WorkflowConnection {
+    std::string source_operation;
+    std::string source_port;
+    std::string target_operation;
+    std::string target_port;
+
+    Json to_json() const;
+    static WorkflowConnection from_json(const Json &value);
+};
+
+/** @brief Versioned workflow graph owned by a Project. */
 class STREAMFIND_CORE_API Workflow {
 public:
     /// Display name of the workflow.
@@ -296,6 +337,10 @@ public:
     std::string domain;
     /// Ordered method invocations.
     std::vector<WorkflowStep> steps;
+    /// Operation instances forming the backend execution graph.
+    std::vector<WorkflowOperation> operations;
+    /// Explicit typed-port dataflow connections.
+    std::vector<WorkflowConnection> connections;
 
     /** @brief Validate method ids, ordering, domains, occurrences, and values. */
     void validate(const MethodRegistry &registry) const;
@@ -494,6 +539,12 @@ public:
     std::vector<AuditEntry> get_audit_trail() const;
     /** @brief Return persisted execution rows for every workflow step. */
     Json get_workflow_execution() const;
+    /** @brief Return immutable table and structured result artifacts published by workflows. */
+    Json get_artifact_inventory() const;
+    /** @brief Resolve graph connections for one operation to published input artifacts. */
+    Json resolve_workflow_inputs(const std::string &operation_id) const;
+    /** @brief Execute the persisted operation graph in topological order. */
+    Json run_operation_graph(const OperationRegistry &registry);
 
     /** @brief Execute the persisted workflow using a method registry. */
     ExecutionResult run_workflow(const MethodRegistry &registry = methods(),
@@ -506,7 +557,7 @@ public:
     Json run_method(const std::string &method_id, const Json &parameters,
                     const MethodRegistry &registry = methods());
     Json run_operation(const std::string &operation_id, const Json &parameters,
-                       const OperationRegistry &registry) const;
+                       const OperationRegistry &registry);
     /** @brief Mark the Project closed; subsequent operations fail. */
     void close() noexcept;
 

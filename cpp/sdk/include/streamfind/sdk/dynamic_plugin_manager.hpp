@@ -14,6 +14,7 @@ namespace streamfind::sdk {
 struct STREAMFIND_SDK_API DynamicPluginLoadResult {
     bool loaded{false};
     std::string diagnostics;
+    std::string runtime_diagnostics;
     PluginManifest manifest;
     std::unique_ptr<DynamicLibrary> library;
     streamfind_plugin_descriptor descriptor{};

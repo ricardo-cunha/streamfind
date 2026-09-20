@@ -1288,7 +1288,7 @@ sfms:analysisNamesParameter
     sf:type "array" ;
     sf:required false ;
     sf:items sfcore:stringItemParameter ;
-    sf:example "[sample1]" .
+    sf:example "[\"sample1\"]" .
 
 sfms:baselineAlgorithmParameter
     a sf:Parameter ;
@@ -1298,6 +1298,7 @@ sfms:baselineAlgorithmParameter
     skos:definition "Algorithm used to estimate the chromatographic baseline before peak detection. Supported values: none (no correction), rolling_min (sliding-window minimum, fast and robust for well-separated peaks, controlled by window_size), als (asymmetric least-squares, fits a smooth baseline that hugs signal minima while ignoring peaks, controlled by lambda and asymmetry_penalty, better for drifting baselines or overlapping peaks), moving_average (sliding-window arithmetic mean, follows broad trends well, controlled by window_size, best for smooth gradient elution profiles without sharp peaks)." ;
     sf:type "string" ;
     sf:required false ;
+    sf:defaultRequired true ;
     sf:default "rolling_min" ;
     sf:example "rolling_min" .
 
@@ -1309,6 +1310,7 @@ sfms:smoothingAlgorithmParameter
     skos:definition "Algorithm used to reduce high-frequency noise in the processed chromatogram signal. Supported values: none (no smoothing), moving_average (sliding-window arithmetic mean, removes noise but broadens peaks, controlled by window_size), savitzky_golay (polynomial local regression, preserves peak shape and height better than moving average, controlled by window_size and poly_order)." ;
     sf:type "string" ;
     sf:required false ;
+    sf:defaultRequired true ;
     sf:default "savitzky_golay" ;
     sf:example "savitzky_golay" .
 
@@ -1330,6 +1332,7 @@ sfms:polyOrderParameter
     skos:definition "Order of the local polynomial used by Savitzky-Golay smoothing. Must be less than window_size. A value of 2 (quadratic) preserves peak heights well and is the most common choice. Higher orders (3-5) follow the signal more closely but remove less noise. Typical range: 2-3." ;
     sf:type "integer" ;
     sf:required false ;
+    sf:defaultRequired true ;
     sf:default 2 ;
     sf:example 2 .
 
@@ -1341,6 +1344,7 @@ sfms:lambdaParameter
     skos:definition "Smoothness penalty (lambda) for asymmetric least-squares baseline correction. Lambda is auto-scaled by the signal range squared, so this value controls relative smoothness. A larger value produces a smoother baseline that follows broad trends; a smaller value allows the baseline to follow rapid changes. Typical range: 0.1-10. Default 1.0 works well for most chromatographic data. Only used when baseline_algorithm is als." ;
     sf:type "real" ;
     sf:required false ;
+    sf:defaultRequired true ;
     sf:default 1.0 ;
     sf:example 1.0 .
 
@@ -1352,6 +1356,7 @@ sfms:asymmetryPenaltyParameter
     skos:definition "Asymmetry weight (p) for ALS baseline correction. Controls how aggressively the baseline avoids peaks: a smaller value places more weight below peaks, producing a lower baseline; a larger value (closer to 0.5) treats the signal more symmetrically. Typical range: 0.001-0.1. Default 0.01 works well for most chromatographic data. Only used when baseline_algorithm is als." ;
     sf:type "real" ;
     sf:required false ;
+    sf:defaultRequired true ;
     sf:default 0.01 ;
     sf:example 0.01 .
 
@@ -1363,5 +1368,20 @@ sfms:maxIterationsParameter
     skos:definition "Maximum number of iterations for the asymmetric least-squares baseline algorithm. More iterations give a more converged baseline but take longer. Typical range: 5-20. Default 10 is sufficient for most chromatograms. Only used when baseline_algorithm is als." ;
     sf:type "integer" ;
     sf:required false ;
+    sf:defaultRequired true ;
     sf:default 10 ;
     sf:example 10 .
+
+sfms:analysesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Analyses" ;
+    skos:definition "Editable table of mass-spectrometry source paths and optional replicate and blank labels." ;
+    sf:type "table" ;
+    sf:required true ;
+    sf:hasProperty
+        sfms:massSpecDataFilePathColumn,
+        sfms:replicateNameColumn,
+        sfms:blankNameColumn ;
+    sf:example "[{\"file_path\":\"data/sample.mzML\",\"replicate\":\"r1\",\"blank\":\"\"}]" .

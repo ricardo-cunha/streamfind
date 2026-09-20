@@ -9,6 +9,9 @@ target_include_directories(streamfind_sensors_plugin PRIVATE
     $<INSTALL_INTERFACE:include>
 )
 set_target_properties(streamfind_sensors_plugin PROPERTIES OUTPUT_NAME "streamfind_sensors")
+if(WIN32)
+    set_target_properties(streamfind_sensors_plugin PROPERTIES PREFIX "")
+endif()
 target_include_directories(streamfind_sensors_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../core/include")

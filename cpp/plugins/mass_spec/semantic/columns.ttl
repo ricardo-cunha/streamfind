@@ -78,9 +78,20 @@ sfms:filePathColumn
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File path" ;
-    skos:definition "Source file path." ;
+    skos:definition "Source file path persisted in a mass-spectrometry result table." ;
     sf:columnName "file_path" ;
     sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:massSpecDataFilePathColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass-spectrometry data path" ;
+    skos:definition "Mass-spectrometry data file or vendor directory path accepted by an analysis input table." ;
+    sf:columnName "file_path" ;
+    sf:type "path" ;
+    sf:extensions ".mzml,.mzxml,.wiff,.lcd,.txt,.asc,.raw,.d,.baf,.tsf" ;
     sf:storageType "VARCHAR" .
 
 sfms:fileDirColumn

@@ -7,7 +7,7 @@
 #include "methods/nta_metfrag_runner.hpp"
 #include "methods/nta_processing_methods.hpp"
 #include "utils/openbabel_adapter.hpp"
-#include "operations/operations.hpp"
+#include "operations/base.hpp"
 
 #include <algorithm>
 #include <cctype>

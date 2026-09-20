@@ -1,8 +1,9 @@
 #include "streamfind/sdk/plugin_host_access.hpp"
 #include "streamfind/sdk/capability_registry.hpp"
-#include "methods/nta_processing_methods.hpp"
-#include "methods/chromatograms_processing_methods.hpp"
-#include "operations/operations.hpp"
+#include "operations/base.hpp"
+#include "operations/chromatograms/operations.hpp"
+#include "operations/nta/nta_deconvolution.hpp"
+#include "operations/nta/operations.hpp"
 #include "streamfind/plugin_abi.h"
 
 #include <algorithm>
@@ -27,52 +28,36 @@ void report_error(const streamfind_plugin_host_api *host, const std::string &mes
 
 const sdk::CapabilityRegistry &capabilities() {
     static const sdk::CapabilityRegistry registry{
-        {"mass_spec.add_analyses", sdk::CapabilityKind::Operation, &operations::add_analyses},
-        {"mass_spec.get_analyses_info", sdk::CapabilityKind::Operation, &operations::get_analyses_info},
-        {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &operations::remove_analyses},
-        {"mass_spec.get_analysis_names", sdk::CapabilityKind::Operation, &operations::get_analysis_names},
-        {"mass_spec.get_replicate_names", sdk::CapabilityKind::Operation, &operations::get_replicate_names},
-        {"mass_spec.get_blank_names", sdk::CapabilityKind::Operation, &operations::get_blank_names},
-        {"mass_spec.get_concentrations", sdk::CapabilityKind::Operation, &operations::get_concentrations},
-        {"mass_spec.set_replicate_names", sdk::CapabilityKind::Operation, &operations::set_replicate_names},
-        {"mass_spec.set_blank_names", sdk::CapabilityKind::Operation, &operations::set_blank_names},
-        {"mass_spec.set_concentrations", sdk::CapabilityKind::Operation, &operations::set_concentrations},
-        {"mass_spec.get_spectra_headers", sdk::CapabilityKind::Operation, &operations::get_spectra_headers},
-        {"mass_spec.get_chromatograms_headers", sdk::CapabilityKind::Operation, &operations::get_chromatograms_headers},
-        {"mass_spec.get_spectra_tic", sdk::CapabilityKind::Operation, &operations::get_spectra_tic},
-        {"mass_spec.get_raw_spectra", sdk::CapabilityKind::Operation, &operations::get_raw_spectra},
-        {"mass_spec.get_raw_spectra_eic", sdk::CapabilityKind::Operation, &operations::get_raw_spectra_eic},
-        {"mass_spec.get_raw_spectra_ms1", sdk::CapabilityKind::Operation, &operations::get_raw_spectra_ms1},
-        {"mass_spec.get_raw_spectra_ms2", sdk::CapabilityKind::Operation, &operations::get_raw_spectra_ms2},
-        {"mass_spec.get_chromatograms", sdk::CapabilityKind::Operation, &operations::get_chromatograms},
-        {"mass_spec.get_raw_chromatograms", sdk::CapabilityKind::Operation, &operations::get_raw_chromatograms},
-        {"mass_spec.get_chromatogram_peaks", sdk::CapabilityKind::Operation, &operations::get_chromatogram_peaks},
-        {"mass_spec.get_features", sdk::CapabilityKind::Operation, &operations::get_features},
-        {"mass_spec.get_internal_standards", sdk::CapabilityKind::Operation, &operations::get_internal_standards},
-        {"mass_spec.get_suspects", sdk::CapabilityKind::Operation, &operations::get_suspects},
-        {"mass_spec.get_transformation_products", sdk::CapabilityKind::Operation, &operations::get_transformation_products},
-        {"mass_spec.find_features", sdk::CapabilityKind::Method, &processing_methods::find_features_with_access},
-        {"mass_spec.load_features_ms1", sdk::CapabilityKind::Method, &processing_methods::load_features_ms1_with_access},
-        {"mass_spec.load_features_ms2", sdk::CapabilityKind::Method, &processing_methods::load_features_ms2_with_access},
-        {"mass_spec.subtract_blank", sdk::CapabilityKind::Method, &processing_methods::subtract_blank_with_access},
-        {"mass_spec.filter_features", sdk::CapabilityKind::Method, &processing_methods::filter_features_with_access},
-        {"mass_spec.filter_features_ms2", sdk::CapabilityKind::Method, &processing_methods::filter_features_ms2_with_access},
-        {"mass_spec.group_features", sdk::CapabilityKind::Method, &processing_methods::group_features_with_access},
-        {"mass_spec.fill_features", sdk::CapabilityKind::Method, &processing_methods::fill_features_with_access},
-        {"mass_spec.create_components", sdk::CapabilityKind::Method, &processing_methods::create_components_with_access},
-        {"mass_spec.annotate_components", sdk::CapabilityKind::Method, &processing_methods::annotate_components_with_access},
-        {"mass_spec.suspect_screening", sdk::CapabilityKind::Method, &processing_methods::suspect_screening_with_access},
-        {"mass_spec.filter_suspects", sdk::CapabilityKind::Method, &processing_methods::filter_suspects_with_access},
-        {"mass_spec.find_internal_standards", sdk::CapabilityKind::Method, &processing_methods::find_internal_standards_with_access},
-        {"mass_spec.filter_internal_standards", sdk::CapabilityKind::Method, &processing_methods::filter_internal_standards_with_access},
-        {"mass_spec.correct_matrix_suppression", sdk::CapabilityKind::Method, &processing_methods::correct_matrix_suppression_with_access},
-        {"mass_spec.assign_transformation_products", sdk::CapabilityKind::Method, &processing_methods::assign_transformation_products_with_access},
-        {"mass_spec.metfrag_screening", sdk::CapabilityKind::Method, &processing_methods::metfrag_screening_with_access},
-        {"mass_spec.load_chromatograms", sdk::CapabilityKind::Method, &processing::load_chromatograms_with_access},
-        {"mass_spec.filter_chromatograms_retention_time", sdk::CapabilityKind::Method, &processing::filter_chromatograms_retention_time_with_access},
-        {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Method, &processing::find_chromatogram_peaks_with_access},
-        {"mass_spec.correct_chromatogram_baseline", sdk::CapabilityKind::Method, &processing::correct_chromatogram_baseline_with_access},
-        {"mass_spec.smooth_chromatograms", sdk::CapabilityKind::Method, &processing::smooth_chromatograms_with_access},
+        {"mass_spec.add_analyses", sdk::CapabilityKind::Operation, &base::add_analyses},
+        {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &base::remove_analyses},
+        {"mass_spec.get_analyses_info", sdk::CapabilityKind::Operation, &base::get_analyses_info},
+        {"mass_spec.get_analysis_names", sdk::CapabilityKind::Operation, &base::get_analysis_names},
+        {"mass_spec.get_replicate_names", sdk::CapabilityKind::Operation, &base::get_replicate_names},
+        {"mass_spec.get_blank_names", sdk::CapabilityKind::Operation, &base::get_blank_names},
+        {"mass_spec.get_concentrations", sdk::CapabilityKind::Operation, &base::get_concentrations},
+        {"mass_spec.set_replicate_names", sdk::CapabilityKind::Operation, &base::set_replicate_names},
+        {"mass_spec.set_blank_names", sdk::CapabilityKind::Operation, &base::set_blank_names},
+        {"mass_spec.set_concentrations", sdk::CapabilityKind::Operation, &base::set_concentrations},
+        {"mass_spec.get_spectra_headers", sdk::CapabilityKind::Operation, &base::get_spectra_headers},
+        {"mass_spec.get_chromatograms_headers", sdk::CapabilityKind::Operation, &base::get_chromatograms_headers},
+        {"mass_spec.get_spectra_tic", sdk::CapabilityKind::Operation, &base::get_spectra_tic},
+        {"mass_spec.get_raw_spectra", sdk::CapabilityKind::Operation, &base::get_raw_spectra},
+        {"mass_spec.get_raw_spectra_eic", sdk::CapabilityKind::Operation, &base::get_raw_spectra_eic},
+        {"mass_spec.get_raw_spectra_ms1", sdk::CapabilityKind::Operation, &base::get_raw_spectra_ms1},
+        {"mass_spec.get_raw_spectra_ms2", sdk::CapabilityKind::Operation, &base::get_raw_spectra_ms2},
+        {"mass_spec.get_raw_chromatograms", sdk::CapabilityKind::Operation, &base::get_raw_chromatograms},
+        {"mass_spec.get_chromatograms", sdk::CapabilityKind::Operation, &chromatograms::get_chromatograms},
+        {"mass_spec.get_chromatogram_peaks", sdk::CapabilityKind::Operation, &chromatograms::get_chromatogram_peaks},
+        {"mass_spec.load_chromatograms", sdk::CapabilityKind::Operation, &chromatograms::load_chromatograms},
+        {"mass_spec.filter_chromatograms_retention_time", sdk::CapabilityKind::Operation, &chromatograms::filter_chromatograms_retention_time},
+        {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Operation, &chromatograms::find_chromatogram_peaks},
+        {"mass_spec.correct_chromatogram_baseline", sdk::CapabilityKind::Operation, &chromatograms::correct_chromatogram_baseline},
+        {"mass_spec.smooth_chromatograms", sdk::CapabilityKind::Operation, &chromatograms::smooth_chromatograms},
+        {"mass_spec.find_features", sdk::CapabilityKind::Operation, &nta::deconvolution::find_features},
+        {"mass_spec.get_features", sdk::CapabilityKind::Operation, &nta::get_features},
+        {"mass_spec.get_suspects", sdk::CapabilityKind::Operation, &nta::get_suspects},
+        {"mass_spec.get_internal_standards", sdk::CapabilityKind::Operation, &nta::get_internal_standards},
+        {"mass_spec.get_transformation_products", sdk::CapabilityKind::Operation, &nta::get_transformation_products},
     };
     return registry;
 }
@@ -92,7 +77,9 @@ streamfind_plugin_status invoke(
         const auto *binding = capabilities().find(capability);
         if (binding == nullptr)
             return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
-        response = binding->handler(access, parameters);
+        auto operation_parameters = parameters;
+        operation_parameters["_inputs"] = request.value("inputs", Json::object());
+        response = binding->handler(access, operation_parameters);
         const auto text = response.dump();
         auto *buffer = static_cast<char *>(host->allocate(text.size(), alignof(char), host->user_data));
         if (buffer == nullptr) return STREAMFIND_PLUGIN_ERROR;

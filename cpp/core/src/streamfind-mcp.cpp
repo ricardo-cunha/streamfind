@@ -79,6 +79,8 @@ public:
             loaded->host.clear_table = &sdk::plugin_clear_table;
             loaded->host.read_batch = &sdk::plugin_read_batch;
             loaded->host.append_batch = &sdk::plugin_append_batch;
+            loaded->host.emit_table_batch = &sdk::plugin_emit_table_batch;
+            loaded->host.emit_result = &sdk::plugin_emit_result;
             loaded->host.update_batch = &sdk::plugin_update_batch;
             loaded->host.update_composite_batch = &sdk::plugin_update_composite_batch;
             loaded->host.delete_batch = &sdk::plugin_delete_batch;

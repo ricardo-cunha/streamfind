@@ -3,7 +3,7 @@
 
 #include "methods/nta_suspect_screening.hpp"
 #include "utils/openbabel_adapter.hpp"
-#include "operations/operations.hpp"
+#include "operations/base.hpp"
 #include "methods/nta_processing_methods.hpp"
 #include <unordered_map>
 #include <unordered_set>

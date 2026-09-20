@@ -10,7 +10,9 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -248,6 +250,12 @@ namespace streamfind
             query(connection,
                   "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION_STEP (workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL PRIMARY KEY, method VARCHAR NOT NULL, parameters JSON NOT NULL DEFAULT '{}', parameter_hash VARCHAR NOT NULL, cache_key VARCHAR NOT NULL, status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, error_code VARCHAR, error_message VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
                   "create WORKFLOW_EXECUTION_STEP table");
+            query(connection,
+                  "CREATE TABLE IF NOT EXISTS ARTIFACT_INVENTORY (artifact_id VARCHAR PRIMARY KEY, contract_id VARCHAR NOT NULL, representation VARCHAR NOT NULL, physical_table VARCHAR, payload JSON, producer_operation VARCHAR NOT NULL, producer_instance VARCHAR NOT NULL, workflow_revision INTEGER NOT NULL, status VARCHAR NOT NULL DEFAULT 'published', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+                  "create ARTIFACT_INVENTORY table");
+            query(connection,
+                  "CREATE TABLE IF NOT EXISTS ARTIFACT_LINEAGE (artifact_id VARCHAR NOT NULL, source_artifact_id VARCHAR NOT NULL, source_port_id VARCHAR, target_port_id VARCHAR, PRIMARY KEY (artifact_id, source_artifact_id, source_port_id, target_port_id))",
+                  "create ARTIFACT_LINEAGE table");
         }
 
         std::string now_string()
@@ -903,10 +911,37 @@ namespace streamfind
         return output;
     }
 
-    Operation::Operation(OperationDefinition definition, OperationExecutor executor,
+    Json OperationDefinition::Port::to_json() const
+    {
+        return {{"id", id},
+                {"semantic_contract", semantic_contract},
+                {"cardinality", cardinality},
+                {"representations", representations},
+                {"optional", optional}};
+    }
+
+    OperationDefinition::Port OperationDefinition::Port::from_json(const Json &value)
+    {
+        if (!value.is_object() || value.value("id", "").empty())
+            throw Error(ErrorCode::SchemaMismatch, "Operation port requires a non-empty id");
+        Port port;
+        port.id = value.at("id").get<std::string>();
+        port.semantic_contract = value.value("semantic_contract", "");
+        port.cardinality = value.value("cardinality", "one");
+        port.representations = value.value("representations", std::vector<std::string>{});
+        port.optional = value.value("optional", false);
+        if (port.semantic_contract.empty())
+            throw Error(ErrorCode::SchemaMismatch, "Operation port requires semantic_contract: " + port.id);
+        if (port.cardinality != "one" && port.cardinality != "many")
+            throw Error(ErrorCode::SchemaMismatch, "Invalid operation port cardinality: " + port.id);
+        return port;
+    }
+
+    Operation::Operation(OperationDefinition definition,
+                         WorkflowOperationExecutor executor,
                          OperationValidator validator)
-        : definition_(std::move(definition)), executor_(std::move(executor)),
-          validator_(std::move(validator))
+        : definition_(std::move(definition)), validator_(std::move(validator)),
+          executor_(std::move(executor))
     {
         if (definition_.id.empty())
             throw Error(ErrorCode::InvalidArgument, "Operation id must not be empty");
@@ -914,29 +949,42 @@ namespace streamfind
     const OperationDefinition &Operation::definition() const noexcept { return definition_; }
     Json Operation::to_json() const
     {
-        return {{"id", definition_.id}, {"name", definition_.name}, {"description", definition_.description}, {"domain", definition_.domain}, {"parameters", definition_.parameters.to_json()}};
+        Json input_ports = Json::array();
+        for (const auto &port : definition_.input_ports)
+            input_ports.push_back(port.to_json());
+        Json output_ports = Json::array();
+        for (const auto &port : definition_.output_ports)
+            output_ports.push_back(port.to_json());
+        return {{"id", definition_.id},
+                {"name", definition_.name},
+                {"description", definition_.description},
+                {"domain", definition_.domain},
+                {"version", definition_.version},
+                {"project_entry", definition_.project_entry},
+                {"cacheable", definition_.cacheable},
+                {"parameters", definition_.parameters.to_json()},
+                {"input_ports", input_ports},
+                {"output_ports", output_ports}};
     }
     Json Operation::resolve_parameters(const Json &value) const { return definition_.parameters.resolve_and_validate(value); }
-    Json Operation::run(Project &project, const Json &value) const
+    Json Operation::run_workflow(Project &project, const Json &value,
+                                 const std::string &operation_instance,
+                                 const Json &inputs) const
     {
         if (!executor_)
-            throw Error(ErrorCode::MethodExecution, "Operation has no implementation: " + definition_.id);
-        try
-        {
+            throw Error(ErrorCode::MethodExecution, "Operation has no workflow implementation: " + definition_.id);
+        try {
             const auto resolved = resolve_parameters(value);
-            if (validator_)
-                validator_(resolved);
-            return executor_(project, resolved);
-        }
-        catch (const Error &)
-        {
+            if (validator_) validator_(resolved);
+            return executor_(project, resolved, operation_instance, inputs);
+        } catch (const Error &) {
             throw;
-        }
-        catch (const std::exception &error)
-        {
-            throw Error(ErrorCode::MethodExecution, definition_.id + ": " + error.what());
+        } catch (const std::exception &error) {
+            throw Error(ErrorCode::MethodExecution,
+                        definition_.id + ": " + error.what());
         }
     }
+
     void OperationRegistry::register_operation(Operation operation)
     {
         if (find(operation.definition().id))
@@ -981,6 +1029,50 @@ namespace streamfind
         return step;
     }
 
+    Json WorkflowOperation::to_json() const
+    {
+        return {{"id", id}, {"operation", operation},
+                {"parameters", parameters.to_json()}, {"inputs", inputs}};
+    }
+
+    WorkflowOperation WorkflowOperation::from_json(const Json &value)
+    {
+        if (!value.is_object() || value.value("id", "").empty() ||
+            value.value("operation", "").empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow operation requires id and operation");
+        WorkflowOperation output;
+        output.id = value.at("id").get<std::string>();
+        output.operation = value.at("operation").get<std::string>();
+        output.parameters = ParameterValues::from_json(value.value("parameters", Json::object()));
+        output.inputs = value.value("inputs", Json::object());
+        if (!output.inputs.is_object())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow operation inputs must be an object: " + output.id);
+        return output;
+    }
+
+    Json WorkflowConnection::to_json() const
+    {
+        return {{"source_operation", source_operation}, {"source_port", source_port},
+                {"target_operation", target_operation}, {"target_port", target_port}};
+    }
+
+    WorkflowConnection WorkflowConnection::from_json(const Json &value)
+    {
+        if (!value.is_object())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow connection must be an object");
+        WorkflowConnection output{
+            value.value("source_operation", ""), value.value("source_port", ""),
+            value.value("target_operation", ""), value.value("target_port", "")};
+        if (output.source_operation.empty() || output.source_port.empty() ||
+            output.target_operation.empty() || output.target_port.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow connection requires source and target operation ports");
+        return output;
+    }
+
     void Workflow::validate(const MethodRegistry &registry) const
     {
         validate(registry, {});
@@ -989,6 +1081,40 @@ namespace streamfind
     void Workflow::validate(const MethodRegistry &registry,
                             const std::function<bool(std::string_view)> &has_table) const
     {
+        if (!operations.empty() || !connections.empty()) {
+            std::set<std::string> operation_ids;
+            for (const auto &operation : operations) {
+                if (operation.id.empty() || operation.operation.empty() ||
+                    !operation_ids.insert(operation.id).second)
+                    throw Error(ErrorCode::WorkflowValidation,
+                                "Workflow operation ids must be unique and non-empty");
+            }
+            std::set<std::pair<std::string, std::string>> bindings;
+            std::map<std::string, std::vector<std::string>> outgoing;
+            std::map<std::string, std::size_t> indegree;
+            for (const auto &operation : operations) indegree[operation.id] = 0;
+            for (const auto &connection : connections) {
+                if (!operation_ids.contains(connection.source_operation) ||
+                    !operation_ids.contains(connection.target_operation) ||
+                    !bindings.insert({connection.target_operation, connection.target_port}).second)
+                    throw Error(ErrorCode::WorkflowValidation,
+                                "Workflow connection references an unknown operation or duplicate input port");
+                outgoing[connection.source_operation].push_back(connection.target_operation);
+                ++indegree[connection.target_operation];
+            }
+            std::vector<std::string> ready;
+            for (const auto &[id, degree] : indegree) if (degree == 0) ready.push_back(id);
+            std::size_t visited = 0;
+            for (std::size_t index = 0; index < ready.size(); ++index) {
+                ++visited;
+                for (const auto &target : outgoing[ready[index]])
+                    if (--indegree[target] == 0) ready.push_back(target);
+            }
+            if (visited != operations.size())
+                throw Error(ErrorCode::WorkflowValidation,
+                            "Workflow operation connections contain a cycle");
+            return;
+        }
         std::unordered_map<std::string, std::size_t> counts;
         std::vector<std::string> available;
         const auto available_table = [&](const std::string &table) {
@@ -1048,6 +1174,15 @@ namespace streamfind
 
     Json Workflow::to_json() const
     {
+        if (!operations.empty() || !connections.empty()) {
+            Json output = {{"name", name}, {"version", version}, {"domain", domain},
+                           {"operations", Json::array()}, {"connections", Json::array()}};
+            for (const auto &operation : operations)
+                output["operations"].push_back(operation.to_json());
+            for (const auto &connection : connections)
+                output["connections"].push_back(connection.to_json());
+            return output;
+        }
         Json serialized_steps = Json::array();
         for (const auto &step : steps)
             serialized_steps.push_back(step.to_json());
@@ -1060,6 +1195,8 @@ namespace streamfind
 
     Json Workflow::to_json(const MethodRegistry &registry) const
     {
+        if (!operations.empty() || !connections.empty())
+            return to_json();
         Json serialized = Json::object({{"name", name},
                                         {"version", version},
                                         {"domain", domain},
@@ -1092,6 +1229,10 @@ namespace streamfind
         workflow.name = value.value("name", "");
         workflow.version = value.value("version", 1);
         workflow.domain = value.value("domain", "");
+        for (const auto &item : value.value("operations", Json::array()))
+            workflow.operations.push_back(WorkflowOperation::from_json(item));
+        for (const auto &item : value.value("connections", Json::array()))
+            workflow.connections.push_back(WorkflowConnection::from_json(item));
         for (const auto &item : value.value("steps", Json::array()))
         {
             workflow.steps.push_back(WorkflowStep::from_json(item));
@@ -1565,6 +1706,77 @@ namespace streamfind
         return query_json("SELECT workflow_revision, step_index, method, parameter_hash, status, started_at, completed_at, error_message AS error, cache_key FROM WORKFLOW_EXECUTION_STEP ORDER BY workflow_revision, step_index");
     }
 
+    Json Project::get_artifact_inventory() const
+    {
+        return query_json("SELECT artifact_id, contract_id, representation, physical_table, payload, producer_operation, producer_instance, workflow_revision, status, created_at FROM ARTIFACT_INVENTORY ORDER BY created_at, artifact_id");
+    }
+
+    Json Project::resolve_workflow_inputs(const std::string &operation_id) const
+    {
+        if (operation_id.empty())
+            throw Error(ErrorCode::InvalidArgument, "operation_id is required");
+        const auto workflow = get_workflow();
+        const auto inventory = get_artifact_inventory();
+        Json resolved = Json::object();
+        for (const auto &connection : workflow.connections) {
+            if (connection.target_operation != operation_id) continue;
+            const Json *selected = nullptr;
+            for (const auto &artifact : inventory) {
+                if (artifact.value("producer_instance", "") == connection.source_operation &&
+                    artifact.value("contract_id", "") == connection.source_port &&
+                    artifact.value("status", "") == "published") {
+                    selected = &artifact;
+                }
+            }
+            if (selected == nullptr)
+                throw Error(ErrorCode::WorkflowValidation,
+                            "No published artifact for connection " +
+                            connection.source_operation + "." + connection.source_port);
+            resolved[connection.target_port] = *selected;
+        }
+        return resolved;
+    }
+
+    Json Project::run_operation_graph(const OperationRegistry &registry)
+    {
+        const auto workflow = get_workflow();
+        workflow.validate(methods());
+        std::map<std::string, const WorkflowOperation *> by_id;
+        std::map<std::string, std::size_t> indegree;
+        std::map<std::string, std::vector<std::string>> outgoing;
+        for (const auto &operation : workflow.operations) {
+            by_id.emplace(operation.id, &operation);
+            indegree[operation.id] = 0;
+        }
+        for (const auto &connection : workflow.connections) {
+            outgoing[connection.source_operation].push_back(connection.target_operation);
+            ++indegree[connection.target_operation];
+        }
+        std::vector<std::string> ready;
+        for (const auto &[id, degree] : indegree) if (degree == 0) ready.push_back(id);
+        Json executions = Json::array();
+        for (std::size_t index = 0; index < ready.size(); ++index) {
+            const auto &operation_id = ready[index];
+            const auto &operation = *by_id.at(operation_id);
+            const auto *executor = registry.find(operation.operation);
+            if (!executor)
+                throw Error(ErrorCode::WorkflowValidation,
+                            "Unknown workflow operation: " + operation.operation);
+            const auto inputs = resolve_workflow_inputs(operation_id);
+            const auto result = executor->run_workflow(
+                *this, operation.parameters.values, operation.id, inputs);
+            executions.push_back({{"operation_id", operation.id},
+                                  {"operation", operation.operation},
+                                  {"inputs", inputs}, {"result", result}});
+            for (const auto &target : outgoing[operation_id])
+                if (--indegree[target] == 0) ready.push_back(target);
+        }
+        if (executions.size() != workflow.operations.size())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow operation graph could not be scheduled");
+        return {{"status", "completed"}, {"operations", executions}};
+    }
+
     ExecutionResult Project::run_workflow(const MethodRegistry &registry, CancellationToken *cancellation, ProgressCallback progress)
     {
         Workflow current = get_workflow();
@@ -1834,14 +2046,12 @@ namespace streamfind
     }
 
     Json Project::run_operation(const std::string &operation_id, const Json &parameters,
-                                const OperationRegistry &registry) const
+                                const OperationRegistry &registry)
     {
         const Operation *operation = registry.find(operation_id);
         if (!operation)
             throw Error(ErrorCode::InvalidArgument, "Unknown operation: " + operation_id);
-        Json input = parameters;
-        input["database_path"] = get_database_path().string();
-        const Json result = operation->run(const_cast<Project &>(*this), input);
+        const Json result = operation->run_workflow(*this, parameters, operation_id, Json::object());
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
