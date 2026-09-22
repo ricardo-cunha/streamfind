@@ -25,11 +25,18 @@ public:
     ProjectSessionDto create(const std::string &session_id, const ProjectOptions &options);
     ProjectSessionDto open(const std::string &session_id, const ProjectOptions &options);
     ProjectSessionDto close(const std::string &session_id);
+    Json workflow_definition(const std::string &session_id) const;
+    Json validate_workflow(const std::string &session_id, const Json &definition) const;
+    Json save_workflow(const std::string &session_id, const Json &definition);
+    Json clear_workflow_history(const std::string &session_id);
     Json workflow_snapshot(const std::string &session_id) const;
+    Json artifact_inventory(const std::string &session_id) const;
+    Json artifact_data(const std::string &session_id, const Json &request) const;
     std::string set_workflow_state(const std::string &session_id, const std::string &state);
     std::string start_workflow(const std::string &session_id);
     std::string cancel_workflow(const std::string &session_id);
-    Json run_operation(const std::string &session_id, const std::string &operation_id, const Json &parameters);
+    Json run_operation(const std::string &session_id, const std::string &operation_id,
+                       const Json &parameters, const std::string &operation_instance = {});
     std::vector<ProjectSessionDto> list() const;
     bool contains(const std::string &session_id) const;
 

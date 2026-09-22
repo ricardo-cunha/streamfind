@@ -22,6 +22,7 @@ struct SessionDto {
 struct ProjectSessionDto {
     std::string session_id;
     std::string database_path;
+    std::uintmax_t database_size_bytes{0};
     std::string domain;
     Json metadata{Json::object()};
 };
@@ -33,6 +34,7 @@ inline void to_json(Json &json, const SessionDto &value) {
 
 inline void to_json(Json &json, const ProjectSessionDto &value) {
     json = Json{{"session_id", value.session_id}, {"database_path", value.database_path},
+                {"database_size_bytes", value.database_size_bytes},
                 {"domain", value.domain}, {"metadata", value.metadata}};
 }
 
@@ -71,7 +73,7 @@ inline Json capabilities_json() {
                 {"operations", projected_entries},
                 {"methods", methods},
                 {"domains", std::vector<std::string>(domains.begin(), domains.end())},
-                {"endpoints", Json::array({ "/session", "/capabilities", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow/state", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/pause", "/projects/<session_id>/workflow/cancel", "/events" })}};
+                {"endpoints", Json::array({ "/session", "/capabilities", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/pause", "/projects/<session_id>/workflow/cancel", "/events" })}};
 }
 
 inline Json project_initialization_json(const std::string &domain) {

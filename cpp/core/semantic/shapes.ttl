@@ -38,7 +38,6 @@ sfcore:OperationShape
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:category ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path sf:guidance ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path sf:defaults ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:sparql [ sh:message "Operation identifiers must be unique." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:operationId ?id .
                 ?other a sf:Operation ; sf:operationId ?id .
                 FILTER (?other != $this)
@@ -132,6 +131,7 @@ sfcore:ParameterShape
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:required ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path sf:default ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path sf:defaultRequired ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:example ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path sf:units ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
@@ -252,7 +252,7 @@ sfcore:ColumnShape
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 0 ] ;
     sh:property [ sh:path sf:storageType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:sparql [ sh:message "Every column must be referenced by a table, table result, or table parameter." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { FILTER NOT EXISTS { ?table sf:hasColumn $this . } FILTER NOT EXISTS { ?result sf:type "table" ; sf:hasProperty $this . } FILTER NOT EXISTS { ?parameter sf:type "table" ; sf:hasProperty $this . } } """ ] .
+    sh:sparql [ sh:message "Every column must be referenced by a persisted table, table result, or array parameter." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { FILTER NOT EXISTS { ?table sf:hasColumn $this . } FILTER NOT EXISTS { ?result sf:type "table" ; sf:hasProperty $this . } FILTER NOT EXISTS { ?parameter sf:items $this . } } """ ] .
 
 sfcore:FieldShape
     a sh:NodeShape ;

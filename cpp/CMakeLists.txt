@@ -96,6 +96,7 @@ set(STREAMFIND_CORE_SOURCES
     core/src/catalogue.cpp
     core/src/catalogue_binding.cpp
     core/src/project_table_store.cpp
+    core/src/operations/operations.cpp
     core/src/plugin_loader.cpp
     core/src/plugin_configuration.cpp
 )

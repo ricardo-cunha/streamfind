@@ -141,6 +141,24 @@ Json Session::handle(const Json &request) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }
     }
+    if (name == "validate_workflow" || name == "set_workflow") {
+        try {
+            const auto arguments = request.at("params").value("arguments", Json::object());
+            if (!arguments.contains("database_path") || !arguments.contains("workflow"))
+                throw Error(ErrorCode::InvalidArgument, "Workflow validation requires database_path and workflow");
+            ProjectOptions options;
+            options.database_path = arguments.at("database_path").get<std::string>();
+            auto project = Project::open(options);
+            auto workflow = Workflow::from_json(arguments.at("workflow"));
+            workflow.domain = workflow.domain.empty() ? project.get_domain() : workflow.domain;
+            workflow.validate(operations_);
+            if (name == "set_workflow") project.set_workflow(workflow, operations_);
+            const Json result = {{"valid", true}, {"workflow", workflow.to_json()}};
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
+        } catch (const Error &error) {
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
+        }
+    }
     if (!command) return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32602}, {"message", "Unknown MCP tool"}}}};
     try {
         Json result = api::run(api::command_from_string(command), request.at("params").value("arguments", Json::object()), registry_);

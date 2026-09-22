@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 #include "streamfind/catalogue.hpp"
+#include "streamfind/core_operations.hpp"
 #include "streamfind/mcp.hpp"
 #include "streamfind/plugin_configuration.hpp"
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
@@ -47,6 +48,7 @@ public:
         if (!core_path) throw std::runtime_error("installed core catalogue not found");
         auto merged = catalogue::load_document(*core_path);
         if (!merged) throw std::runtime_error("installed core catalogue could not be loaded");
+        core_operations::register_operations(merged->at("entries"), operations);
         std::set<std::string> loaded_ids;
         for (const auto &plugin_id : configuration.configuration.enabled_plugins) {
             std::filesystem::path package_root;

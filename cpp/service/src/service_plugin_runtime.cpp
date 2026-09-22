@@ -1,6 +1,7 @@
 #include "streamfind/service/service_plugin_runtime.hpp"
 
 #include "streamfind/catalogue.hpp"
+#include "streamfind/core_operations.hpp"
 #include "streamfind/plugin_configuration.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
 
@@ -30,6 +31,7 @@ void ServicePluginRuntime::load(const std::filesystem::path &configuration_path,
     if (!core_path) throw std::runtime_error("installed core catalogue not found");
     auto merged = catalogue::load_document(*core_path);
     if (!merged) throw std::runtime_error("installed core catalogue could not be loaded");
+    core_operations::register_operations(merged->at("entries"), operations);
     for (const auto &plugin_id : configuration.configuration.enabled_plugins) {
         std::filesystem::path package_root;
         for (const auto &root : configuration.configuration.plugin_roots) {

@@ -28,7 +28,8 @@ void report_error(const streamfind_plugin_host_api *host, const std::string &mes
 
 const sdk::CapabilityRegistry &capabilities() {
     static const sdk::CapabilityRegistry registry{
-        {"mass_spec.add_analyses", sdk::CapabilityKind::Operation, &base::add_analyses},
+        {"mass_spec.read_mass_spec_files", sdk::CapabilityKind::Operation, &base::read_mass_spec_files},
+
         {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &base::remove_analyses},
         {"mass_spec.get_analyses_info", sdk::CapabilityKind::Operation, &base::get_analyses_info},
         {"mass_spec.get_analysis_names", sdk::CapabilityKind::Operation, &base::get_analysis_names},

@@ -231,13 +231,13 @@ Json parameter_schema(const Graph &graph, const std::string &resource) {
     }
     const auto example = value(graph, resource, std::string(sf) + "example"); if (!example.empty()) result["examples"] = Json::array({literal_json(example)});
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = parameter_schema(graph, item);
-    Json properties = Json::object(); Json required = Json::array();
+    Json properties = Json::object(); Json required = Json::array(); Json property_order = Json::array();
     for (const auto &property : values(graph, resource, std::string(sf) + "hasProperty")) {
         const auto name = value(graph, property, std::string(sf) + "propertyName").empty() ? value(graph, property, std::string(sf) + "columnName") : value(graph, property, std::string(sf) + "propertyName");
-        const auto key = name.empty() ? wire_name(local(property)) : name; properties[key] = parameter_schema(graph, property);
+        const auto key = name.empty() ? wire_name(local(property)) : name; properties[key] = parameter_schema(graph, property); property_order.push_back(key);
         if (boolean(graph, property, std::string(sf) + "required")) required.push_back(key);
     }
-    if (!properties.empty()) { result["properties"] = properties; if (!required.empty()) result["required"] = required; result["additionalProperties"] = false; }
+    if (!properties.empty()) { result["properties"] = properties; result["x-streamfind-property-order"] = property_order; if (!required.empty()) result["required"] = required; result["additionalProperties"] = false; }
     return result;
 }
 Json extension_values(const Graph &graph, const std::string &resource, const std::string &predicate) {
@@ -323,8 +323,7 @@ Json project(const Graph &graph, const std::string &domain) {
         Json next = Json::array(); for (const auto &item : values(graph, subject, std::string(sf) + "nextOperation")) next.push_back(value(graph, item, std::string(sf) + "operationId").empty() ? item : value(graph, item, std::string(sf) + "operationId"));
         entry["interface"] = {{"category", category.empty() ? (kind == std::string("method") ? "workflow-method" : "domain-operation") : category}, {"guidance", guidance}, {"next_operations", next}};
         const auto domain_resource = value(graph, subject, std::string(sf) + "availableInDomain"); entry["interface_guidance"] = value(graph, domain_resource, std::string(sf) + "guidance");
-        Json defaults = Json::object(); const auto defaults_raw = value(graph, subject, std::string(sf) + "defaults"); if (!defaults_raw.empty()) defaults = literal_json(defaults_raw);
-        Json parameters = Json::array(); for (const auto &parameter : values(graph, subject, std::string(sf) + "hasParameter")) { const auto parameter_extensions = extensions(graph, parameter); const auto directory_extensions = extension_values(graph, parameter, std::string(sf) + "directoryExtensions"); Json item = {{"name", wire_name(resource_name(parameter))}, {"type", value(graph, parameter, std::string(sf) + "type")}, {"required", boolean(graph, parameter, std::string(sf) + "required")}, {"constraints", Json::object()}, {"items", nullptr}, {"extensions", parameter_extensions}, {"schema", parameter_schema(graph, parameter)}, {"example", nullptr}, {"description", value(graph, parameter, std::string(skos) + "definition")}, {"default", nullptr}}; const auto declared_default = value(graph, parameter, std::string(sf) + "default"); if (!declared_default.empty()) { item["default"] = literal_json(declared_default); item["schema"]["default"] = literal_json(declared_default); } const auto path_kind = value(graph, parameter, std::string(sf) + "pathKind"); if (!path_kind.empty()) item["path_kind"] = path_kind; if (!parameter_extensions.empty()) item["schema"]["x-streamfind-file-extensions"] = parameter_extensions; if (!path_kind.empty()) item["schema"]["x-streamfind-path-kind"] = path_kind; if (!directory_extensions.empty()) item["directory_extensions"] = directory_extensions; const auto constraint = value(graph, parameter, std::string(sf) + "constraints"); if (!constraint.empty()) item["constraints"] = constraint; const auto item_ref = value(graph, parameter, std::string(sf) + "items"); if (!item_ref.empty()) item["items"] = resource_name(item_ref); const auto example = value(graph, parameter, std::string(sf) + "example"); if (!example.empty()) item["example"] = literal_json(example); if (defaults.is_object() && defaults.contains(item["name"])) { item["default"] = defaults[item["name"]]; item["schema"]["default"] = defaults[item["name"]]; } parameters.push_back(item); }
+        Json parameters = Json::array(); for (const auto &parameter : values(graph, subject, std::string(sf) + "hasParameter")) { const auto parameter_extensions = extensions(graph, parameter); const auto directory_extensions = extension_values(graph, parameter, std::string(sf) + "directoryExtensions"); Json item = {{"name", wire_name(resource_name(parameter))}, {"type", value(graph, parameter, std::string(sf) + "type")}, {"required", boolean(graph, parameter, std::string(sf) + "required")}, {"constraints", Json::object()}, {"items", nullptr}, {"extensions", parameter_extensions}, {"schema", parameter_schema(graph, parameter)}, {"example", nullptr}, {"description", value(graph, parameter, std::string(skos) + "definition")}, {"default", nullptr}}; const auto declared_default = value(graph, parameter, std::string(sf) + "default"); if (!declared_default.empty()) { item["default"] = literal_json(declared_default); item["schema"]["default"] = literal_json(declared_default); } const auto path_kind = value(graph, parameter, std::string(sf) + "pathKind"); if (!path_kind.empty()) item["path_kind"] = path_kind; if (!parameter_extensions.empty()) item["schema"]["x-streamfind-file-extensions"] = parameter_extensions; if (!path_kind.empty()) item["schema"]["x-streamfind-path-kind"] = path_kind; if (!directory_extensions.empty()) item["directory_extensions"] = directory_extensions; const auto constraint = value(graph, parameter, std::string(sf) + "constraints"); if (!constraint.empty()) item["constraints"] = constraint; const auto item_ref = value(graph, parameter, std::string(sf) + "items"); if (!item_ref.empty()) item["items"] = resource_name(item_ref); const auto example = value(graph, parameter, std::string(sf) + "example"); if (!example.empty()) item["example"] = literal_json(example); parameters.push_back(item); }
         entry["parameters"] = parameters; Json input = {{"type", "object"}, {"title", entry["label"]}, {"description", entry["definition"]}, {"properties", Json::object()}, {"required", Json::array()}}; for (const auto &parameter : parameters) { input["properties"][parameter["name"]] = mcp_schema(parameter["schema"]); if (parameter["required"]) input["required"].push_back(parameter["name"]); } if (std::string(kind) == "operation" || std::string(kind) == "command") entry["mcp"] = {{"name", canonical}, {"input_schema", input}};
         if (std::string(kind) == "method") entry.erase("mcp");
         Json reads = Json::array();
@@ -349,18 +348,20 @@ Json project(const Graph &graph, const std::string &domain) {
         entry["operation_version"] = value(graph, subject, std::string(sf) + "operationVersion");
         if (entry["operation_version"].get<std::string>().empty()) entry["operation_version"] = "1";
         entry["input_ports"] = Json::array();
+        const auto optional_input_ports = values(graph, subject, std::string(sf) + "optionalInputPort");
         for (const auto &port : values(graph, subject, std::string(sf) + "hasInputPort")) {
             const auto contract = local(port);
+            const bool optional = std::any_of(optional_input_ports.begin(), optional_input_ports.end(), [&](const auto &candidate) { return local(candidate) == contract; });
             const auto table_name = value(graph, port, std::string(sf) + "tableName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
             const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "table" ? "tabular_value" : (value_type == "boolean" ? "boolean" : "structured_value"));
             entry["input_ports"].push_back({{"id", contract},
-                                            {"semantic_contract", contract},
-                                            {"data_kind", data_kind},
-                                            {"schema", result_schema(graph, port)},
-                                            {"cardinality", "one"},
-                                            {"representations", Json::array({table_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
-                                            {"optional", false}});
+                                                {"semantic_contract", contract},
+                                                {"data_kind", data_kind},
+                                                {"schema", result_schema(graph, port)},
+                                                {"cardinality", "one"},
+                                                {"representations", Json::array({table_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
+                                                {"optional", optional}});
         }
         entry["output_ports"] = Json::array();
         bool has_success_signal = false;

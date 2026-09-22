@@ -149,6 +149,13 @@ sf:hasInputPort
     skos:prefLabel "has input port" ;
     skos:definition "Associates an operation with a reusable artifact contract accepted as input." .
 
+sf:optionalInputPort
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range sf:ArtifactContract ;
+    skos:prefLabel "optional input port" ;
+    skos:definition "Marks an input artifact contract that may be omitted when the operation has an alternate source or fallback behavior." .
+
 sf:hasOutputPort
     a rdf:Property ;
     rdfs:domain sf:Operation ;
@@ -335,13 +342,6 @@ sf:default
     rdfs:range rdfs:Literal ;
     skos:prefLabel "default" ;
     skos:definition "Value used when a parameter is not explicitly supplied." .
-
-sf:defaults
-    a rdf:Property ;
-    rdfs:domain sf:Operation ;
-    rdfs:range rdfs:Literal ;
-    skos:prefLabel "parameter defaults" ;
-    skos:definition "JSON object containing operation-specific default parameter values." .
 
 sf:extensions
     a rdf:Property ;

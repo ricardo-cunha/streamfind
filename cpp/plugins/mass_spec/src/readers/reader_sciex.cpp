@@ -539,7 +539,7 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
   const auto blocks = read_scan_blocks(wiff_path);
   std::vector<MASS_SPEC_ANALYSIS> out;
   out.reserve(blocks.size());
-  const int count = static_cast<int>(blocks.size());
+
   std::set<std::string> names;
   for (std::size_t i = 0; i < blocks.size(); ++i)
   {
@@ -590,7 +590,7 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
         name = base_name + " (" + std::to_string(duplicate++) + ")";
       while (!names.insert(name).second);
     }
-    out.push_back({static_cast<int>(i), source_number, name, count});
+    out.push_back({static_cast<int>(i), source_number, name});
   }
   return out;
 }

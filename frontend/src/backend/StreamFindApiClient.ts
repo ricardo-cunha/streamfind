@@ -4,7 +4,8 @@ import type {
   StreamFindEvent,
   ProjectSession,
   WorkflowStateResponse,
-  WorkflowValidationResponse,
+  WorkflowDefinition,
+  WorkflowDefinitionResponse,
   JsonValue,
 } from './protocol';
 
@@ -14,6 +15,42 @@ export type ServiceState = 'disconnected' | 'connecting' | 'initializing' | 'rea
 export type ServiceControlAction = 'start' | 'stop' | 'restart';
 export type SessionResponse = ServiceSession;
 export type CapabilitiesResponse = ServiceCapabilities;
+export type FileSystemEntry = {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+};
+export type ArtifactRecord = {
+  artifact_id: string;
+  contract_id: string;
+  representation: 'json' | 'table' | string;
+  physical_table?: string | null;
+  payload?: JsonValue | null;
+  row_count?: number;
+  columns?: Array<{ name: string; type: string }>;
+  producer_operation: string;
+  producer_instance: string;
+  workflow_revision: number;
+  status: string;
+  created_at?: string;
+};
+export type ArtifactDataRequest = {
+  artifact_id: string;
+  offset?: number;
+  limit?: number;
+  search?: string;
+  sort_column?: string;
+  descending?: boolean;
+};
+export type ArtifactDataResponse = {
+  artifact_id: string;
+  columns: Array<{ name: string; type: string }>;
+  rows: Array<Record<string, string | null>>;
+  offset: number;
+  limit: number;
+  total_rows: number;
+};
 
 type EventHandler = (event: StreamFindEvent) => void;
 
@@ -24,6 +61,7 @@ export class StreamFindApiClient {
   private reconnectTimer: number | null = null;
   private reconnectAttempt = 0;
   private closed = false;
+  private connectionGeneration = 0;
   private readonly eventHandlers = new Set<EventHandler>();
 
   constructor(private readonly baseUrl = defaultBaseUrl) {}
@@ -34,18 +72,21 @@ export class StreamFindApiClient {
 
   async connect(onState: (state: ServiceState) => void): Promise<SessionResponse> {
     this.closed = false;
+    const generation = ++this.connectionGeneration;
     onState('connecting');
     try {
       onState('initializing');
       const response = await fetch(`${this.baseUrl}/session`);
+      if (generation !== this.connectionGeneration) throw new Error('stale service connection attempt');
       if (!response.ok) throw new Error(`Session request failed (${response.status})`);
       const session = (await response.json()) as SessionResponse;
       await this.capabilities();
-      await this.openEvents(onState);
+      await this.openEvents(onState, generation);
       this.reconnectAttempt = 0;
       onState('ready');
       return session;
     } catch (error) {
+      if (generation !== this.connectionGeneration) throw error;
       onState('failed');
       this.scheduleReconnect(onState);
       throw error;
@@ -71,14 +112,32 @@ export class StreamFindApiClient {
     return response.json() as Promise<ProjectSession>;
   }
 
-  async runOperation(sessionId: string, operationId: string, parameters: Record<string, unknown>): Promise<JsonValue> {
+  async runOperation(
+    sessionId: string,
+    operationId: string,
+    parameters: Record<string, unknown>,
+    operationInstance?: string,
+  ): Promise<JsonValue> {
     const response = await fetch(
       `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationId)}`,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(parameters) },
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ parameters, operation_instance: operationInstance || operationId }),
+      },
     );
     if (!response.ok) throw new Error(`Operation request failed (${response.status})`);
     const result = (await response.json()) as { result: JsonValue };
     return result.result;
+  }
+
+  async clearWorkflowHistory(sessionId: string): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/history/clear`, {
+      method: 'POST',
+    });
+    const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
+    if (!response.ok) throw new Error(result.error || `Workflow history clear request failed (${response.status})`);
+    return result;
   }
 
   async workflowState(sessionId: string): Promise<WorkflowStateResponse> {
@@ -87,8 +146,48 @@ export class StreamFindApiClient {
     return response.json() as Promise<WorkflowStateResponse>;
   }
 
-  async validateWorkflow(sessionId: string): Promise<WorkflowValidationResponse> {
-    return this.workflowAction<WorkflowValidationResponse>(sessionId, 'validate');
+  async artifacts(sessionId: string): Promise<ArtifactRecord[]> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts`);
+    if (!response.ok) throw new Error(`Artifact inventory request failed (${response.status})`);
+    const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
+    return result.artifacts || [];
+  }
+
+  async artifactData(sessionId: string, request: ArtifactDataRequest): Promise<ArtifactDataResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) throw new Error(`Artifact data request failed (${response.status})`);
+    return (await response.json()) as ArtifactDataResponse;
+  }
+
+  async workflowDefinition(sessionId: string): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow`);
+    if (!response.ok) throw new Error(`Workflow definition request failed (${response.status})`);
+    return response.json() as Promise<WorkflowDefinitionResponse>;
+  }
+
+  async validateWorkflow(sessionId: string, workflow: WorkflowDefinition): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/validate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(workflow),
+    });
+    if (!response.ok) throw new Error(`Workflow validation request failed (${response.status})`);
+    return response.json() as Promise<WorkflowDefinitionResponse>;
+  }
+
+  async saveWorkflow(sessionId: string, workflow: WorkflowDefinition): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(workflow),
+    });
+    const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
+    if (!response.ok) throw new Error(result.error || `Workflow save request failed (${response.status})`);
+    return result;
   }
 
   async runWorkflow(sessionId: string): Promise<WorkflowStateResponse> {
@@ -145,6 +244,18 @@ export class StreamFindApiClient {
     return result.paths;
   }
 
+  async browseFileSystem(path = ''): Promise<{ path: string; entries: FileSystemEntry[] }> {
+    const response = await fetch(`${this.baseUrl}/projects/file-picker/browse`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const result = (await response.json()) as { path?: string; entries?: FileSystemEntry[]; error?: string };
+    if (!response.ok || typeof result.path !== 'string' || !result.entries)
+      throw new Error(result.error || `Filesystem browse failed (${response.status})`);
+    return { path: result.path, entries: result.entries };
+  }
+
   async pickPaths(extensions: string[]): Promise<string[]> {
     const response = await fetch(`${this.baseUrl}/projects/file-picker/paths`, {
       method: 'POST',
@@ -179,6 +290,7 @@ export class StreamFindApiClient {
   }
   disconnect(): void {
     this.closed = true;
+    this.connectionGeneration += 1;
     if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.socket?.close();
@@ -194,20 +306,28 @@ export class StreamFindApiClient {
     }, delay);
   }
 
-  private openEvents(onState: (state: ServiceState) => void): Promise<void> {
+  private openEvents(onState: (state: ServiceState) => void, generation: number): Promise<void> {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(this.baseUrl.replace(/^http/, 'ws') + '/events');
       this.socket = socket;
-      socket.onopen = () => resolve();
+      socket.onopen = () => {
+        if (generation !== this.connectionGeneration) {
+          socket.close();
+          reject(new Error('stale event connection attempt'));
+          return;
+        }
+        resolve();
+      };
       socket.onerror = () => reject(new Error('Event channel connection failed'));
       socket.onclose = () => {
-        this.socket = null;
-        if (!this.closed) {
+        if (this.socket === socket) this.socket = null;
+        if (!this.closed && generation === this.connectionGeneration) {
           onState('reconnecting');
           this.scheduleReconnect(onState);
         }
       };
       socket.onmessage = (message) => {
+        if (generation !== this.connectionGeneration) return;
         try {
           this.eventHandlers.forEach((handler) => handler(JSON.parse(message.data) as StreamFindEvent));
         } catch {

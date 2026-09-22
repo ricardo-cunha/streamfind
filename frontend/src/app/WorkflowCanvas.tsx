@@ -6,10 +6,20 @@ export default function WorkflowCanvas({
   project,
   capabilities,
   client,
+  onProjectHub,
 }: {
   project: ProjectSession;
   capabilities: ServiceCapabilities;
   client: StreamFindApiClient;
+  onProjectHub: () => void;
 }) {
-  return <CanvasShell project={project} capabilities={capabilities} surface="workflow" client={client} />;
+  return (
+    <CanvasShell
+      project={project}
+      capabilities={capabilities}
+      surface="workflow"
+      client={client}
+      onProjectHub={onProjectHub}
+    />
+  );
 }

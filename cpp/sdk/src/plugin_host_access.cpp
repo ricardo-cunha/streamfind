@@ -248,10 +248,19 @@ void PluginHostAccess::emit_table_rows(
     for (std::size_t column = 0; column < column_names.size(); ++column) {
         for (const auto &row : rows) {
             const auto &value = row.at(column_names[column]);
-            if (column_types[column] == "integer") integers[column].push_back(value.is_null() ? 0 : value.get<int64_t>());
-            else if (column_types[column] == "real") reals[column].push_back(value.is_null() ? 0.0 : value.get<double>());
-            else if (column_types[column] == "boolean") booleans[column].push_back(value.is_null() ? 0 : (value.get<bool>() ? 1 : 0));
-            else strings[column].push_back(value.is_null() ? std::string{} : value.get<std::string>());
+            if (column_types[column] == "integer") {
+                if (value.is_null()) integers[column].push_back(0);
+                else if (value.is_number()) integers[column].push_back(value.get<int64_t>());
+                else integers[column].push_back(std::stoll(value.get<std::string>()));
+            } else if (column_types[column] == "real") {
+                if (value.is_null()) reals[column].push_back(0.0);
+                else if (value.is_number()) reals[column].push_back(value.get<double>());
+                else reals[column].push_back(std::stod(value.get<std::string>()));
+            } else if (column_types[column] == "boolean") {
+                if (value.is_null()) booleans[column].push_back(0);
+                else if (value.is_boolean()) booleans[column].push_back(value.get<bool>() ? 1 : 0);
+                else booleans[column].push_back(value.get<std::string>() == "true" ? 1 : 0);
+            } else strings[column].push_back(value.is_null() ? std::string{} : value.get<std::string>());
         }
         auto &descriptor = columns[column];
         descriptor.name = column_names[column].data();

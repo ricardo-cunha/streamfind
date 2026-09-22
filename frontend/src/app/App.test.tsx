@@ -85,7 +85,7 @@ describe('application shell', () => {
       vi.advanceTimersByTime(220);
       await Promise.resolve();
     });
-    expect(screen.getByText('Create project')).toBeInTheDocument();
+    expect(screen.getByText('Create workflow')).toBeInTheDocument();
   }
 
   it('keeps the splash gate visible before the workspace and fades into Project Hub', async () => {
@@ -103,13 +103,13 @@ describe('application shell', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText('Create project')).toBeInTheDocument();
+    expect(screen.getByText('Create workflow')).toBeInTheDocument();
   });
 
   it('renders fixed project actions and discovered project cards', async () => {
     await showWorkspace();
 
-    expect(screen.getByText('Open project')).toBeInTheDocument();
+    expect(screen.getByText('Open workflow')).toBeInTheDocument();
     expect(screen.getByText('path-test')).toBeInTheDocument();
     expect(screen.getByText('tmp/projects/path-test.duckdb')).toBeInTheDocument();
   });
@@ -118,7 +118,7 @@ describe('application shell', () => {
     window.location.hash = '#/workflow';
     await showWorkspace();
 
-    expect(screen.getByText('Create project')).toBeInTheDocument();
+    expect(screen.getByText('Create workflow')).toBeInTheDocument();
     expect(screen.queryByText('Project workspace')).not.toBeInTheDocument();
   });
 
@@ -129,7 +129,7 @@ describe('application shell', () => {
     });
 
     expect(window.location.hash).toBe('#/project/path-test-a/workflow');
-    expect(screen.getByText('Workflow canvas')).toBeInTheDocument();
+    expect(screen.getByText('Workflow terminal')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect from path-test' })).not.toBeInTheDocument();
 
     cleanup();
@@ -145,7 +145,7 @@ describe('application shell', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText('Workflow canvas')).toBeInTheDocument();
+    expect(screen.getByText('Workflow terminal')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect from path-test' })).not.toBeInTheDocument();
   });
 

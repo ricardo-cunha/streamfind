@@ -11,6 +11,7 @@ sfram:analysesParameter
     skos:definition "Raman analysis files to add to the project." ;
     sf:type "array" ;
     sf:required true ;
+    sf:default "[]" ;
     sf:items sfcore:analysisFileParameter ;
     sf:example "[{\"path\":\"data/sample.asc\"}]" ;
     sf:extensions "asc,sif" .

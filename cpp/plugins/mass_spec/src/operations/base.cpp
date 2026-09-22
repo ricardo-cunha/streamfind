@@ -10,11 +10,12 @@
 #include <cmath>
 #include <map>
 #include <optional>
+#include <regex>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <tuple>
-#include <unordered_set>
+
 #include <utility>
 #include <vector>
 #include <limits>
@@ -93,15 +94,26 @@ namespace streamfind::mass_spec::base
 
     } // namespace
 
-    Json add_analyses(sdk::PluginProjectAccess &access, const Json &parameters)
+    Json read_mass_spec_files(sdk::PluginProjectAccess &access, const Json &parameters)
     {
+        const auto source_paths_it = parameters.find("source_paths");
+        if (source_paths_it == parameters.end() || !source_paths_it->is_array())
+            throw std::invalid_argument("source_paths must be an array of strings");
+        std::vector<std::string> source_paths;
+        source_paths.reserve(source_paths_it->size());
+        for (const auto &source_path : *source_paths_it)
+        {
+            if (!source_path.is_string() || source_path.get<std::string>().empty())
+                throw std::invalid_argument("source_paths must contain non-empty strings");
+            source_paths.push_back(source_path.get<std::string>());
+        }
         const std::vector<std::string> analysis_columns = {
-            "analysis", "analysis_index", "source_analysis_number", "analysis_count", "replicate", "blank",
+            "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
             "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
             "start_rt", "end_rt", "has_ion_mobility", "concentration", "created_at"};
         const std::vector<std::string> analysis_types = {
-            "string", "integer", "integer", "integer", "string", "string", "string", "string", "string", "string",
+            "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
             "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "timestamp"};
         const std::vector<std::string> spectra_columns = {
             "analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
@@ -123,12 +135,12 @@ namespace streamfind::mass_spec::base
         std::vector<StringRow> chromatogram_rows;
         Json added = Json::array();
 
-        for (const auto &item : parameters.at("analyses"))
+        for (const auto &source_path_value : source_paths)
         {
-            const std::filesystem::path path = item.at("file_path").get<std::string>();
+            const std::filesystem::path path = source_path_value;
             ::mass_spec::reader::MASS_SPEC_FILE file(path.string());
-            const auto replicate = item.value("replicate", std::string{});
-            const auto blank = item.value("blank", std::string{});
+            const std::string replicate;
+            const std::string blank;
             const auto catalog = file.get_analysis_catalog();
             for (const auto &descriptor : catalog)
             {
@@ -138,14 +150,14 @@ namespace streamfind::mass_spec::base
                                           ? path.stem().string()
                                           : path.stem().string() + "_" + descriptor.name;
                 analysis_rows.push_back({analysis, std::to_string(descriptor.analysis_index),
-                                         std::to_string(descriptor.source_analysis_number), std::to_string(descriptor.analysis_count),
+                                         std::to_string(descriptor.source_analysis_number),
                                          replicate, blank, path.filename().string(), path.string(), path.parent_path().string(),
                                          lower(path.extension().string()), summary.format, "MS", summary.time_stamp,
                                          std::to_string(summary.number_spectra), std::to_string(summary.number_chromatograms),
                                          std::to_string(summary.number_spectra_binary_arrays), std::to_string(summary.min_mz),
                                          std::to_string(summary.max_mz), std::to_string(summary.start_rt), std::to_string(summary.end_rt),
                                          summary.has_ion_mobility ? "true" : "false", std::nullopt, utc_now()});
-                added.push_back({{"analysis", analysis}, {"file_path", path.string()}, {"analysis_index", descriptor.analysis_index}, {"source_analysis_number", descriptor.source_analysis_number}, {"analysis_count", descriptor.analysis_count}, {"replicate", replicate}, {"blank", blank}});
+                added.push_back({{"analysis", analysis}, {"file_path", path.string()}, {"analysis_index", descriptor.analysis_index}, {"source_analysis_number", descriptor.source_analysis_number}, {"replicate", replicate}, {"blank", blank}});
 
                 const auto spectra = file.get_spectra_headers();
                 for (std::size_t index = 0; index < spectra.index.size(); ++index)
@@ -187,22 +199,41 @@ namespace streamfind::mass_spec::base
         return added;
     }
 
+
     Json remove_analyses(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         const auto &inputs = parameters.at("_inputs");
         const auto &analyses_input = inputs.at("analysesTable");
         const auto physical_table = analyses_input.at("physical_table").get<std::string>();
         const std::vector<std::string> columns = {
-            "analysis", "analysis_index", "source_analysis_number", "analysis_count", "replicate", "blank",
+            "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
             "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
             "start_rt", "end_rt", "has_ion_mobility", "concentration", "created_at"};
         const std::vector<std::string> types = {
-            "string", "integer", "integer", "integer", "string", "string", "string", "string", "string", "string",
+            "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
             "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "timestamp"};
-        std::unordered_set<std::string> names;
-        for (const auto &name : parameters.at("analysis_names"))
-            names.insert(name.get<std::string>());
+        std::vector<std::regex> patterns;
+        std::vector<std::string> literal_patterns;
+        for (const auto &pattern_value : parameters.at("analysis_names"))
+        {
+            const auto pattern = pattern_value.get<std::string>();
+            if (pattern.empty())
+                throw std::invalid_argument("analysis_names regex patterns must not be empty");
+            if (pattern.find_first_of(R"(\^$.*+?()[]{}|)") == std::string::npos)
+            {
+                literal_patterns.push_back(pattern);
+                continue;
+            }
+            try
+            {
+                patterns.emplace_back(pattern, std::regex::ECMAScript);
+            }
+            catch (const std::regex_error &error)
+            {
+                throw std::invalid_argument("invalid analysis_names regex pattern: " + pattern + " (" + error.what() + ")");
+            }
+        }
 
         const auto source_rows = access.read(physical_table, columns, "analysis");
         std::vector<StringRow> retained_rows;
@@ -210,7 +241,11 @@ namespace streamfind::mass_spec::base
         for (const auto &source_row : source_rows)
         {
             const auto analysis = source_row.value("analysis", std::string{});
-            if (names.contains(analysis))
+            const bool matches_literal = std::find(literal_patterns.begin(), literal_patterns.end(), analysis) != literal_patterns.end();
+            const bool matches_regex = std::any_of(patterns.begin(), patterns.end(), [&](const auto &pattern) {
+                return std::regex_search(analysis, pattern);
+            });
+            if (matches_literal || matches_regex)
             {
                 removed.push_back(analysis);
                 continue;
@@ -238,12 +273,12 @@ namespace streamfind::mass_spec::base
 
 
         const std::vector<std::string> analysis_columns = {
-            "analysis", "analysis_index", "source_analysis_number", "analysis_count", "replicate", "blank",
+            "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
             "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
             "start_rt", "end_rt", "has_ion_mobility", "concentration", "created_at"};
         const std::vector<std::string> analysis_types = {
-            "string", "integer", "integer", "integer", "string", "string", "string", "string", "string", "string",
+            "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
             "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "timestamp"};
 
         Json emit_analysis_copy(sdk::PluginProjectAccess &access, const Json &parameters,
@@ -310,7 +345,7 @@ namespace streamfind::mass_spec::base
     Json get_analyses_info(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         return base::utils::input_rows(access, parameters, "analysesTable",
-                          {"analysis", "analysis_index", "source_analysis_number", "analysis_count", "replicate", "blank",
+                          {"analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
                            "file_path", "format", "number_spectra", "number_chromatograms"},
                           "analysis");
     }

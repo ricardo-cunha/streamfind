@@ -5,7 +5,6 @@ export type AppNotification = {
   kind: NotificationKind;
   message: string;
   createdAt: number;
-  read: boolean;
 };
 
 type Listener = (notification: AppNotification) => void;
@@ -26,20 +25,12 @@ export function notifyApp(input: { kind: NotificationKind; message: string }): A
     kind: input.kind,
     message: input.message,
     createdAt: Date.now(),
-    read: false,
   };
   history.unshift(notification);
   if (history.length > 100) history.pop();
   listeners.forEach((listener) => listener(notification));
   publishHistory();
   return notification;
-}
-
-export function markAllNotificationsRead(): void {
-  history.forEach((notification) => {
-    notification.read = true;
-  });
-  publishHistory();
 }
 
 export function subscribeAppNotifications(listener: Listener): () => void {

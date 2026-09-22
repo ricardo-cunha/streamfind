@@ -10,7 +10,8 @@ namespace streamfind::mass_spec
 
     namespace base
     {
-        STREAMFIND_DOMAIN_API Json add_analyses(sdk::PluginProjectAccess &, const Json &);
+        STREAMFIND_DOMAIN_API Json read_mass_spec_files(sdk::PluginProjectAccess &, const Json &);
+
         STREAMFIND_DOMAIN_API Json remove_analyses(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_analyses_info(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_analysis_names(sdk::PluginProjectAccess &, const Json &);

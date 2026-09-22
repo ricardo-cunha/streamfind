@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  markAllNotificationsRead,
-  subscribeAppNotificationHistory,
-  subscribeAppNotifications,
-  type AppNotification,
-} from './notifications';
+import { subscribeAppNotificationHistory, subscribeAppNotifications, type AppNotification } from './notifications';
 
 function iconFor(kind: AppNotification['kind']): string {
   return kind === 'success'
@@ -21,18 +16,14 @@ function formatTime(value: number): string {
 }
 
 export function NotificationBell({ onOpen }: { onOpen: () => void }) {
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  useEffect(() => subscribeAppNotificationHistory(setNotifications), []);
-  const unreadCount = notifications.filter((notification) => !notification.read).length;
   return (
     <button
       className="sf-notification-button"
       onClick={onOpen}
-      aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
-      title="Notifications"
+      aria-label="Open notification log"
+      title="Notification log"
     >
       <i className="fa-solid fa-bell" />
-      {unreadCount > 0 ? <span className="sf-notification-badge">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
     </button>
   );
 }
@@ -67,43 +58,36 @@ export function NotificationToasts() {
 
 export function NotificationsPane({ onClose }: { onClose: () => void }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeAppNotificationHistory(setNotifications);
-    markAllNotificationsRead();
-    return unsubscribe;
-  }, []);
+  useEffect(() => subscribeAppNotificationHistory(setNotifications), []);
   return (
     <div
-      className="sf-notifications-backdrop"
+      className="sf-side-pane-backdrop sf-notifications-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <aside className="sf-notifications-pane" aria-label="Notifications">
+      <aside className="sf-side-pane sf-notifications-pane" aria-label="Notification log">
         <div className="sf-notifications-heading">
-          <h2>Notifications</h2>
+          <h2>Notification log</h2>
           <button className="sf-icon-button sf-close-button" onClick={onClose} aria-label="Close notifications">
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
         <div className="sf-notifications-actions">
           <span>
-            {notifications.length} {notifications.length === 1 ? 'message' : 'messages'}
+            {notifications.length} {notifications.length === 1 ? 'entry' : 'entries'}
           </span>
         </div>
         {notifications.length === 0 ? (
           <div className="sf-notifications-empty">
             <i className="fa-regular fa-bell-slash" />
             <strong>No notifications</strong>
-            <span>Application activity will appear here.</span>
+            <span>Application activity will be recorded here.</span>
           </div>
         ) : (
           <div className="sf-notification-list">
             {notifications.map((notification) => (
-              <article
-                key={notification.id}
-                className={`sf-notification-item ${notification.read ? 'read' : 'unread'}`}
-              >
+              <article key={notification.id} className="sf-notification-item">
                 <i className={`fa-solid ${iconFor(notification.kind)}`} />
                 <div>
                   <p>{notification.message}</p>

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { markAllNotificationsRead, notifyApp, subscribeAppNotificationHistory } from './notifications';
+import { notifyApp, subscribeAppNotificationHistory } from './notifications';
 
 describe('application notifications', () => {
-  it('publishes a new unread notification to history', () => {
+  it('publishes a new notification to the history log', () => {
     let latest: ReturnType<typeof notifyApp>[] = [];
     const unsubscribe = subscribeAppNotificationHistory((history) => {
       latest = history;
@@ -14,21 +14,7 @@ describe('application notifications', () => {
       id: notification.id,
       kind: 'success',
       message: 'Project opened.',
-      read: false,
     });
-    unsubscribe();
-  });
-
-  it('marks the notification history as read when requested', () => {
-    let latest: ReturnType<typeof notifyApp>[] = [];
-    const unsubscribe = subscribeAppNotificationHistory((history) => {
-      latest = history;
-    });
-
-    notifyApp({ kind: 'info', message: 'Canvas ready.' });
-    markAllNotificationsRead();
-
-    expect(latest.every((notification) => notification.read)).toBe(true);
     unsubscribe();
   });
 });

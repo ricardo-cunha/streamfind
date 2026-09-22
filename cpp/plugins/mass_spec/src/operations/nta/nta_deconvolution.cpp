@@ -2240,6 +2240,43 @@ namespace streamfind::mass_spec::nta::deconvolution
   {
     const auto physical_table = parameters.at("_inputs").at("analysesTable").at("physical_table").get<std::string>();
     const auto rows = access.read(physical_table, {"analysis", "file_path", "analysis_index"}, "analysis");
+    std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_headers;
+    const auto inputs = parameters.value("_inputs", Json::object());
+    const auto spectra_input = inputs.find("spectraHeadersTable");
+    if (spectra_input != inputs.end() && spectra_input->is_object())
+    {
+      const auto header_rows = access.read(
+          spectra_input->at("physical_table").get<std::string>(),
+          {"analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
+           "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
+           "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"},
+          "analysis");
+      for (const auto &row : header_rows)
+      {
+        auto &header = persisted_headers[streamfind::mass_spec::nta::utils::text(row, "analysis")];
+        header.index.push_back(streamfind::mass_spec::nta::utils::integer(row, "index"));
+        header.scan.push_back(streamfind::mass_spec::nta::utils::integer(row, "scan"));
+        header.array_length.push_back(streamfind::mass_spec::nta::utils::integer(row, "array_length"));
+        header.level.push_back(streamfind::mass_spec::nta::utils::integer(row, "level"));
+        header.mode.push_back(streamfind::mass_spec::nta::utils::integer(row, "mode"));
+        header.polarity.push_back(streamfind::mass_spec::nta::utils::integer(row, "polarity"));
+        header.configuration.push_back(streamfind::mass_spec::nta::utils::integer(row, "configuration"));
+        header.lowmz.push_back(streamfind::mass_spec::nta::utils::real(row, "lowmz"));
+        header.highmz.push_back(streamfind::mass_spec::nta::utils::real(row, "highmz"));
+        header.bpmz.push_back(streamfind::mass_spec::nta::utils::real(row, "bpmz"));
+        header.bpint.push_back(streamfind::mass_spec::nta::utils::real(row, "bpint"));
+        header.tic.push_back(streamfind::mass_spec::nta::utils::real(row, "tic"));
+        header.rt.push_back(streamfind::mass_spec::nta::utils::real(row, "rt"));
+        header.mobility.push_back(streamfind::mass_spec::nta::utils::real(row, "mobility"));
+        header.window_mz.push_back(streamfind::mass_spec::nta::utils::real(row, "window_mz"));
+        header.window_mzlow.push_back(streamfind::mass_spec::nta::utils::real(row, "window_mzlow"));
+        header.window_mzhigh.push_back(streamfind::mass_spec::nta::utils::real(row, "window_mzhigh"));
+        header.precursor_mz.push_back(streamfind::mass_spec::nta::utils::real(row, "precursor_mz"));
+        header.precursor_intensity.push_back(streamfind::mass_spec::nta::utils::real(row, "precursor_intensity"));
+        header.precursor_charge.push_back(streamfind::mass_spec::nta::utils::integer(row, "precursor_charge"));
+        header.activation_ce.push_back(streamfind::mass_spec::nta::utils::real(row, "activation_ce"));
+      }
+    }
     const auto wanted = parameters.value("analysis_names", Json::array());
     FeatureInput input;
     for (const auto &row : rows)
@@ -2253,7 +2290,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       input.names.push_back(name);
       input.paths.push_back(streamfind::mass_spec::nta::utils::text(row, "file_path"));
       input.analysis_indices.push_back(index);
-      input.headers.push_back(file.get_spectra_headers());
+      const auto persisted = persisted_headers.find(name);
+      input.headers.push_back(persisted == persisted_headers.end() ? file.get_spectra_headers() : persisted->second);
     }
     input.buffers.resize(input.names.size());
 

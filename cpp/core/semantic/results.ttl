@@ -64,6 +64,15 @@ sfcore:metadataResult
     sf:type "table" ;
     sf:hasProperty sfcore:projectMetadataColumn .
 
+sfcore:selectedPathsResult
+    a sf:Result ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected files and folders" ;
+    skos:definition "The selected paths in their original order." ;
+    sf:type "array" ;
+    sf:items sfcore:filePathColumn .
+
 sfcore:workflowResult
     a sf:Result ;
     sf:availableInDomain sfcore:streamfind ;

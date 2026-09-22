@@ -2,7 +2,8 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 
 export type StreamFindEvent = {
   type: string;
-  project?: string;
+  project?: string | JsonValue;
+  operation_id?: string;
   execution_id?: string;
   timestamp?: string;
   payload?: JsonValue;
@@ -18,6 +19,7 @@ export type ServiceSession = {
 export type ProjectSession = {
   session_id: string;
   database_path: string;
+  database_size_bytes: number;
   domain: string;
   metadata: Record<string, JsonValue>;
   initialization?: ProjectInitialization;
@@ -46,6 +48,42 @@ export type WorkflowStateResponse = {
 };
 
 export type WorkflowValidationResponse = WorkflowStateResponse & { valid: boolean };
+
+export type WorkflowPosition = { x: number; y: number };
+
+export type WorkflowOperationDefinition = {
+  id: string;
+  operation: string;
+  parameters: Record<string, JsonValue>;
+  inputs?: Record<string, JsonValue>;
+  position?: WorkflowPosition;
+};
+
+export type WorkflowConnectionDefinition = {
+  source_operation: string;
+  source_port: string;
+  target_operation: string;
+  target_port: string;
+};
+
+/** Portable workflow definition. Runtime execution data is persisted separately by the service. */
+export type WorkflowDefinition = {
+  schema_version: 1;
+  workflow_id?: string;
+  name?: string;
+  version: number;
+  domain: string;
+  operations: WorkflowOperationDefinition[];
+  connections: WorkflowConnectionDefinition[];
+};
+
+export type WorkflowDiagnostic = { message: string };
+
+export type WorkflowDefinitionResponse = {
+  workflow: WorkflowDefinition;
+  valid: boolean;
+  diagnostics: WorkflowDiagnostic[];
+};
 
 /** JSON Schema subset used for parameters, table inputs, and result contracts. */
 export type JsonSchema = {

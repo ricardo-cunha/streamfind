@@ -5,3 +5,13 @@
 # Core project-management capabilities are API commands in commands.ttl.
 
 # Workflow data-processing operations are declared by their owning domain.
+
+sfcore:selectPaths
+    a sf:Operation ;
+    sf:operationId "streamfind.select_paths" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:prefLabel "Select files and folders" ;
+    skos:definition "Publish a user-provided JSON array of files and vendor directories for connection to a workflow input." ;
+    sf:category "workflow-input" ;
+    sf:hasParameter sfcore:pathsParameter ;
+    sf:hasOutputPort sfcore:selectedPathsResult, sfcore:operationSuccessSignal .

@@ -3,17 +3,17 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfms:addAnalyses
+sfms:readMassSpecFiles
     a sf:Operation ;
-    sf:operationId "mass_spec.add_analyses" ;
+    sf:operationId "mass_spec.read_mass_spec_files" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
-    skos:prefLabel "Add mass spectrometry analyses" ;
-    skos:definition "Read one or more mass-spectrometry files and persist their analysis metadata, spectra, and chromatograms in the project. This is the normal ingestion operation after project creation." ;
+    skos:prefLabel "Read mass spectrometry files" ;
+    skos:definition "Read one or more mass-spectrometry files or vendor directories, discover their logical analyses, and persist analysis, spectra-header, and chromatogram-header metadata." ;
     sf:category "mass-spec-ingestion" ;
     sf:projectEntry true ;
-    sf:guidance "Provide analyses as an editable table with file_path, replicate, and blank columns. The file_path column accepts supported mass-spectrometry files and vendor directories such as Agilent/MassHunter .d folders." ;
-    sf:hasParameter sfms:analysesParameter ;
+    sf:guidance "Provide an array of supported mass-spectrometry file or vendor-directory paths. Replicate and blank labels are initially empty and can be assigned by subsequent operations." ;
+    sf:hasParameter sfms:sourcePathsParameter ;
     sf:hasOutputPort sfms:analysesTable, sfms:spectraHeadersTable, sfms:chromatogramsHeadersTable, sfcore:operationSuccessSignal .
 
 sfms:removeAnalyses
@@ -22,7 +22,8 @@ sfms:removeAnalyses
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Remove mass spectrometry analyses" ;
-    skos:definition "Read an analyses table artifact, exclude rows whose canonical analysis names are requested, and publish the reduced analyses table as a new artifact." ;
+    skos:definition "Read the analyses table and remove every analysis whose name matches at least one ECMAScript regular-expression pattern." ;
+    sf:guidance "Provide analysis_names as exact names or regex patterns. Plain strings match one exact analysis name. Use ^prefix for a prefix batch or suffix$ for a suffix batch. Regex matching uses ECMAScript syntax, is case-sensitive, and uses regex search.\n\nExamples:\n[\"sample_exact\"]\nRemoves one exact analysis.\n\n[\"^QC_\"]\nRemoves all analyses beginning with QC_.\n\n[\"_blank$\"]\nRemoves all analyses ending with _blank." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:analysesTable, sfcore:operationSuccessSignal .
@@ -35,7 +36,7 @@ sfms:getAnalysesInfo
     skos:prefLabel "Get mass spectrometry analysis information" ;
     skos:definition "Return persisted mass-spectrometry analysis metadata, including analysis names, source paths, replicate/blank labels, and available counts." ;
     sf:category "mass-spec-inspection" ;
-    sf:guidance "Use after add_analyses to confirm the exact analysis names accepted by later analysis_names parameters." ;
+    sf:guidance "Use after read_mass_spec_files to confirm the exact analysis names accepted by later analysis_names parameters." ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:getAnalysesInfoResult, sfcore:operationSuccessSignal .
 
@@ -123,7 +124,6 @@ sfms:getSpectraHeaders
     sf:category "mass-spec-query" ;
     sf:guidance "Use analysis_names from get_analysis_names. An empty analysis_names array means all registered analyses; provide names to reduce work and response size." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:defaults "{\"analysis_names\":[]}" ;
     sf:hasInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:spectraHeadersResult, sfcore:operationSuccessSignal .
 
@@ -135,7 +135,6 @@ sfms:getChromatogramsHeaders
     skos:prefLabel "Get chromatogram headers" ;
     skos:definition "Read chromatogram-header rows for selected analyses, including identifiers, retention-time ranges, polarity, and point counts." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:defaults "{\"analysis_names\":[]}" ;
     sf:hasInputPort sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramsHeadersResult, sfcore:operationSuccessSignal .
 
@@ -151,7 +150,6 @@ sfms:getSpectraTic
         sfms:levelsParameter,
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
-    sf:defaults "{\"analysis_names\":[],\"levels\":[]}" ;
     sf:hasInputPort sfms:spectraHeadersTable, sfms:analysesTable ;
     sf:hasOutputPort sfms:ticResult, sfcore:operationSuccessSignal .
 
@@ -171,7 +169,6 @@ sfms:getRawSpectra
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:chargeParameter ;
-    sf:defaults "{\"analysis_names\":[],\"indices\":[],\"levels\":[]}" ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:spectraResult, sfcore:operationSuccessSignal .
 
@@ -191,7 +188,6 @@ sfms:getRawSpectraEic
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:chargeParameter ;
-    sf:defaults "{\"analysis_names\":[]}" ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:eicResult, sfcore:operationSuccessSignal .
 
@@ -212,7 +208,6 @@ sfms:getRawSpectraMs1
         sfms:mzClustParameter,
         sfms:presenceParameter,
         sfms:minIntensityMs1Parameter ;
-    sf:defaults "{\"analysis_names\":[],\"mz_clust\":0.003,\"presence\":0.8,\"min_intensity_ms1\":0.0}" ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:ms1Result, sfcore:operationSuccessSignal .
 
@@ -234,7 +229,6 @@ sfms:getRawSpectraMs2
         sfms:mzClustParameter,
         sfms:presenceParameter,
         sfms:minIntensityMs2Parameter ;
-    sf:defaults "{\"analysis_names\":[],\"isolation_window\":1.3,\"mz_clust\":0.005,\"presence\":0.0,\"min_intensity_ms2\":0.0}" ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:ms2Result, sfcore:operationSuccessSignal .
 
@@ -248,7 +242,6 @@ sfms:getChromatograms
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:defaults "{\"analysis_names\":[],\"indices\":[]}" ;
     sf:hasInputPort sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramsResult, sfcore:operationSuccessSignal .
 
@@ -275,7 +268,6 @@ sfms:getChromatogramPeaks
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:defaults "{\"analysis_names\":[],\"indices\":[]}" ;
     sf:hasInputPort sfms:chromatogramPeaksTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramPeaksResult, sfcore:operationSuccessSignal .
 
@@ -293,7 +285,6 @@ sfms:getFeatures
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:filteredParameter ;
-    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0,\"filtered\":false}" ;
     sf:hasInputPort sfms:ntaFeaturesTable ;
     sf:hasOutputPort sfms:featuresResult, sfcore:operationSuccessSignal .
 
@@ -310,7 +301,6 @@ sfms:getSuspects
         sfms:polarityParameter,
         sfms:ppmParameter,
         sfms:rtToleranceParameter ;
-    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0}" ;
     sf:hasInputPort sfms:suspectsTable ;
     sf:hasOutputPort sfms:suspectsResult, sfcore:operationSuccessSignal .
 
@@ -327,7 +317,6 @@ sfms:getInternalStandards
         sfms:polarityParameter,
         sfms:ppmParameter,
         sfms:rtToleranceParameter ;
-    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0,\"rt_tolerance\":60.0}" ;
     sf:hasInputPort sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsResult, sfcore:operationSuccessSignal .
 
@@ -342,7 +331,6 @@ sfms:getTransformationProducts
         sfcore:analysisNamesParameter,
         sfms:targetsParameter,
         sfms:ppmParameter ;
-    sf:defaults "{\"analysis_names\":[],\"ppm\":20.0}" ;
     sf:hasInputPort sfms:transformationProductsTable ;
     sf:hasOutputPort sfms:transformationProductsResult, sfcore:operationSuccessSignal .
 
@@ -358,7 +346,6 @@ sfms:loadChromatograms
         sfms:chromatogramIdRegexParameter,
         sfms:ignoreCaseParameter,
         sfms:invertParameter ;
-    sf:defaults "{\"analysis_names\":[],\"chromatogram_id_regex\":[],\"ignore_case\":true,\"invert\":false}" ;
     sf:cacheable false ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:chromatogramsHeadersTable, sfms:chromatogramsTable, sfcore:operationSuccessSignal .
@@ -375,7 +362,6 @@ sfms:filterChromatogramsRetentionTime
         sfms:analysisNamesParameter,
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
-    sf:defaults "{\"analysis_names\":[],\"rt_min\":0.0,\"rt_max\":1800.0}" ;
     sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
@@ -398,7 +384,6 @@ sfms:findChromatogramPeaks
         sfms:minPeakWidthParameter,
         sfms:maxPeakWidthParameter,
         sfms:minSnrParameter ;
-    sf:defaults "{\"analysis_names\":[],\"indices\":[],\"merge\":true,\"merge_distance\":45.0,\"min_peak_height\":0.0,\"min_peak_distance\":10.0,\"min_peak_width\":5.0,\"max_peak_width\":120.0,\"min_snr\":10.0}" ;
     sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
@@ -418,7 +403,6 @@ sfms:correctChromatogramBaseline
         sfms:lambdaParameter,
         sfms:asymmetryPenaltyParameter,
         sfms:maxIterationsParameter ;
-    sf:defaults "{\"analysis_names\":[],\"baseline_algorithm\":\"rolling_min\",\"window_size\":50,\"lambda\":1.0,\"asymmetry_penalty\":0.01,\"max_iterations\":10}" ;
     sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
@@ -436,7 +420,6 @@ sfms:smoothChromatograms
         sfms:smoothingAlgorithmParameter,
         sfms:windowSizeParameter,
         sfms:polyOrderParameter ;
-    sf:defaults "{\"analysis_names\":[],\"smoothing_algorithm\":\"savitzky_golay\",\"window_size\":11,\"poly_order\":2}" ;
     sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
@@ -461,7 +444,8 @@ sfms:findFeatures
         sfms:maxFeatureWidthParameter,
         sfms:baseQuantileParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
 
 

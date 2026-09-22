@@ -23,6 +23,17 @@ sfcore:projectMetadataColumn
     sf:type "string" ;
     sf:storageType "JSON" .
 
+sfcore:filePathColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "File path" ;
+    skos:definition "A filesystem file or directory path selected as workflow input." ;
+    sf:columnName "path" ;
+    sf:type "string" ;
+    sf:pathKind "file-or-directory" ;
+    sf:storageType "VARCHAR" .
+
 sfcore:projectWorkflowColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;

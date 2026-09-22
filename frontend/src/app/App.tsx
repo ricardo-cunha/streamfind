@@ -2,14 +2,9 @@ import { Component, type ErrorInfo, type FormEvent, type ReactNode, useEffect, u
 import logo from '../assets/streamfind.png';
 
 import WorkflowCanvas from './WorkflowCanvas';
-import { NotificationBell, NotificationToasts, NotificationsPane } from './NotificationCenter';
-import {
-  StreamFindApiClient,
-  type ProjectSession,
-  type ServiceControlAction,
-  type ServiceState,
-} from '../backend/StreamFindApiClient';
-import type { ServiceCapabilities } from '../backend/protocol';
+import { NotificationToasts } from './NotificationCenter';
+import { StreamFindApiClient, type ProjectSession, type ServiceState } from '../backend/StreamFindApiClient';
+import type { ServiceCapabilities, WorkflowState } from '../backend/protocol';
 import { notifyApp } from './notifications';
 
 type ThemeMode = 'light' | 'dark';
@@ -18,6 +13,12 @@ type Style = 'classic' | 'studio' | 'chrome';
 type RouteKey = 'projects' | 'workflow' | 'results' | 'data' | 'runs' | 'provenance';
 type ParsedRoute = { route: RouteKey; sessionId?: string };
 type NavItem = { key: RouteKey; label: string; icon: string; hint: string };
+type WorkflowSummary = {
+  operationCount: number;
+  revision: number;
+  state: WorkflowState;
+  artifactCount: number;
+};
 
 function projectNameFromPath(databasePath: string): string {
   return (
@@ -194,13 +195,20 @@ function projectFileName(project: ProjectSession): string {
       ?.replace(/\.[^.]+$/, '') || project.session_id
   );
 }
+function formatDatabaseSize(bytes: number): string {
+  const megabytes = bytes / (1024 * 1024);
+  if (megabytes >= 1000) return `size: ${(megabytes / 1024).toFixed(2)} Gb`;
+  return `size: ${megabytes.toFixed(2)} Mb`;
+}
 function ProjectCard({
   project,
+  summary,
   onPreview,
   onOpenWorkflow,
   onClose,
 }: {
   project: ProjectSession;
+  summary?: WorkflowSummary;
   onPreview: (project: ProjectSession) => void;
   onOpenWorkflow: (project: ProjectSession) => void;
   onClose: (project: ProjectSession) => void;
@@ -210,6 +218,20 @@ function ProjectCard({
       <div>
         <strong>{projectFileName(project)}</strong>
         <span>{project.domain}</span>
+        <div className="sf-workflow-summary">
+          {summary ? (
+            <>
+              <span>
+                {summary.operationCount} operations · Revision {summary.revision}
+              </span>
+              <span>Run: {summary.state}</span>
+              <span>Artifacts: {summary.artifactCount} published</span>
+            </>
+          ) : (
+            <span>Loading workflow summary…</span>
+          )}
+        </div>
+        <span className="sf-workflow-size">{formatDatabaseSize(project.database_size_bytes)}</span>
         <code>{project.database_path}</code>
       </div>
       <div className="sf-project-actions">
@@ -286,14 +308,16 @@ function ProjectWorkspace({
   project,
   capabilities,
   client,
+  onProjectHub,
 }: {
   project: ProjectSession;
   capabilities: ServiceCapabilities;
   client: StreamFindApiClient;
+  onProjectHub: () => void;
 }) {
   return (
     <div className="sf-page sf-project-workspace">
-      <WorkflowCanvas project={project} capabilities={capabilities} client={client} />
+      <WorkflowCanvas project={project} capabilities={capabilities} client={client} onProjectHub={onProjectHub} />
     </div>
   );
 }
@@ -323,6 +347,15 @@ function ProjectHub({
   const [domain, setDomain] = useState('core');
   const [domains, setDomains] = useState(['core']);
   const [submitting, setSubmitting] = useState(false);
+  const [summaries, setSummaries] = useState<Record<string, WorkflowSummary>>({});
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMode(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
 
   useEffect(() => {
     client
@@ -336,6 +369,41 @@ function ProjectHub({
       })
       .catch(() => undefined);
   }, [client]);
+  useEffect(() => {
+    let active = true;
+    if (!client) return undefined;
+    Promise.all(
+      projects.map(async (project) => {
+        try {
+          const [workflow, state, artifacts] = await Promise.all([
+            client.workflowDefinition(project.session_id),
+            client.workflowState(project.session_id),
+            client.artifacts(project.session_id),
+          ]);
+          return [
+            project.session_id,
+            {
+              operationCount: workflow.workflow.operations.length,
+              revision: workflow.workflow.version,
+              state: state.state,
+              artifactCount: artifacts.filter((artifact) => artifact.status === 'published').length,
+            },
+          ] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((entries) => {
+      if (active) {
+        setSummaries(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, WorkflowSummary] => entry !== null)),
+        );
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [client, projects]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!client || !mode) return;
@@ -374,8 +442,7 @@ function ProjectHub({
           <span className="sf-card-icon">
             <i className="fa-solid fa-folder-plus" />
           </span>
-          <strong>Create project</strong>
-          <span>Select a project name, database path, and discovered domain.</span>
+          <strong>Create workflow</strong>
         </button>
         <button
           className="sf-card action-card"
@@ -408,13 +475,13 @@ function ProjectHub({
           <span className="sf-card-icon">
             <i className="fa-solid fa-folder-open" />
           </span>
-          <strong>Open project</strong>
-          <span>Connect to an existing streamfind DuckDB project.</span>
+          <strong>Open workflow</strong>
         </button>
         {projects.map((project) => (
           <ProjectCard
             key={project.session_id}
             project={project}
+            summary={summaries[project.session_id]}
             onPreview={onPreview}
             onOpenWorkflow={onOpenWorkflow}
             onClose={onCloseProject}
@@ -547,12 +614,12 @@ function SettingsPane({
 }) {
   return (
     <div
-      className="sf-settings-backdrop"
+      className="sf-side-pane-backdrop sf-settings-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <aside className="sf-settings-pane" aria-label="Color and style settings">
+      <aside className="sf-side-pane sf-settings-pane" aria-label="Color and style settings">
         <div className="sf-settings-heading">
           <h2>Settings</h2>
           <button className="sf-icon-button sf-close-button" onClick={onClose} aria-label="Close settings">
@@ -616,35 +683,32 @@ function SettingsPane({
 function BackendStatusPane({
   state,
   onClose,
-  onControl,
-  busy,
   endpoint,
 }: {
   state: ServiceState;
   onClose: () => void;
-  onControl: (action: ServiceControlAction) => void;
-  busy: boolean;
   endpoint: string;
 }) {
   const details =
     state === 'ready'
-      ? 'Connected and receiving project events.'
+      ? 'The app and backend services are available.'
       : state === 'reconnecting'
-        ? 'Connection lost. Reconnecting automatically.'
+        ? 'The app is running, but the backend connection is being restored automatically.'
         : state === 'failed'
-          ? 'The service could not be reached.'
-          : 'Establishing the service connection.';
+          ? 'The app is running, but the backend service could not be reached.'
+          : 'The app is running while the backend connection is being established.';
   return (
     <div
-      className="sf-backend-backdrop"
+      className="sf-side-pane-backdrop sf-backend-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <aside className="sf-backend-pane" aria-label="Backend communication details">
+      <aside className="sf-side-pane sf-backend-pane" aria-label="Application and backend health">
         <div className="sf-backend-heading">
           <div>
-            <h2>Backend</h2>
+            <h2>System health</h2>
+            <p className="sf-health-intro">This status checks the app server and its backend connection.</p>
           </div>
           <button className="sf-icon-button sf-close-button" onClick={onClose} aria-label="Close backend details">
             <i className="fa-solid fa-xmark" />
@@ -652,31 +716,22 @@ function BackendStatusPane({
         </div>
         <div className="sf-backend-state">
           <span className={`sf-connection-dot ${state}`} />
-          <strong>{state}</strong>
+          <strong>{state === 'ready' ? 'healthy' : state}</strong>
         </div>
         <p>{details}</p>
-        <div className="sf-backend-controls" aria-label="Service controls">
-          {state === 'ready' ? (
-            <>
-              <button onClick={() => onControl('stop')} disabled={busy}>
-                Stop
-              </button>
-              <button onClick={() => onControl('restart')} disabled={busy}>
-                Restart
-              </button>
-            </>
-          ) : (
-            <>
-              <button onClick={() => onControl('start')} disabled={busy}>
-                Start
-              </button>
-              <button onClick={() => onControl('restart')} disabled={busy}>
-                Restart
-              </button>
-            </>
-          )}
-        </div>
         <dl>
+          <div>
+            <dt>App server</dt>
+            <dd>
+              <span className="sf-health-check">running</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Backend server</dt>
+            <dd>
+              <span className={`sf-health-check ${state}`}>{state === 'ready' ? 'connected' : state}</span>
+            </dd>
+          </div>
           <div>
             <dt>Endpoint</dt>
             <dd>{endpoint.replace(/^https?:\/\//, '')}</dd>
@@ -702,12 +757,20 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
   const [palette, setPalette] = useState<Palette>(
     () => (localStorage.getItem('streamfind.palette') as Palette) || 'streamfind',
   );
-  const [style, setStyle] = useState<Style>(() => (localStorage.getItem('streamfind.style') as Style) || 'studio');
+  const [style, setStyle] = useState<Style>(() => (localStorage.getItem('streamfind.style') as Style) || 'classic');
   const [collapsed, setCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [backendOpen, setBackendOpen] = useState(false);
-  const [serviceAction, setServiceAction] = useState<ServiceControlAction | null>(null);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSettingsOpen(false);
+      setBackendOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
   const [projects, setProjects] = useState<ProjectSession[]>([]);
   const [capabilities, setCapabilities] = useState<ServiceCapabilities>({
     protocol_version: '1.0',
@@ -774,6 +837,17 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+  useEffect(() => {
+    if (!settingsOpen && !backendOpen && !previewProject) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (backendOpen) setBackendOpen(false);
+      else if (settingsOpen) setSettingsOpen(false);
+      else setPreviewProject(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [backendOpen, previewProject, settingsOpen]);
   const visibleNavItems = projectOpen ? navItems : navItems.filter((item) => item.key === 'projects');
   const activeItem = useMemo(
     () => navItems.find((item) => item.key === effectiveRoute) ?? navItems[0],
@@ -806,17 +880,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
       notifyApp({ kind: 'error', message: error instanceof Error ? error.message : 'Project disconnect failed.' });
     }
   };
-  const controlService = async (action: ServiceControlAction) => {
-    setServiceAction(action);
-    try {
-      await client.controlService(action);
-      notifyApp({ kind: 'info', message: `Service ${action} requested.` });
-    } catch (error) {
-      notifyApp({ kind: 'error', message: error instanceof Error ? error.message : `Service ${action} failed.` });
-    } finally {
-      setServiceAction(null);
-    }
-  };
+
   return (
     <div className={`sf-shell ${collapsed ? 'collapsed' : ''}`}>
       <aside className="sf-sidebar">
@@ -857,7 +921,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
             <div className="sf-topbar-brand">
               {activeProject ? (
                 <>
-                  <strong>Workflow | {projectFileName(activeProject)}</strong>
+                  <strong>{projectFileName(activeProject)}</strong>
                   <span>{activeProject.domain}</span>
                 </>
               ) : (
@@ -869,19 +933,15 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
             </div>
           </div>
           <div className="sf-topbar-actions">
-            <button className="sf-home-button" onClick={closeProject} aria-label="Project Hub" title="Project Hub">
-              <i className="fa-solid fa-house" />
-            </button>
             <button
               className="sf-backend-button"
               onClick={() => setBackendOpen(true)}
-              aria-label={`Backend ${serviceState}`}
-              title="Backend communication"
+              aria-label={`System health: ${serviceState}`}
+              title="System health: app and backend"
             >
               <span className={`sf-connection-dot ${serviceState}`} />
-              <i className="fa-solid fa-server" />
+              <i className="fa-solid fa-heart-pulse" />
             </button>
-            <NotificationBell onOpen={() => setNotificationsOpen(true)} />
             <button
               className="sf-icon-button sf-settings-icon"
               onClick={() => setSettingsOpen(true)}
@@ -894,7 +954,12 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
         <div className="sf-content">
           <ErrorBoundary>
             {activeProject ? (
-              <ProjectWorkspace project={activeProject} capabilities={capabilities} client={client} />
+              <ProjectWorkspace
+                project={activeProject}
+                capabilities={capabilities}
+                client={client}
+                onProjectHub={closeProject}
+              />
             ) : effectiveRoute === 'projects' ? (
               <ProjectHub
                 serviceState={serviceState}
@@ -919,7 +984,6 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
       {previewProject ? (
         <ProjectPreview project={previewProject} onOpenWorkflow={openProject} onClose={() => setPreviewProject(null)} />
       ) : null}
-      {notificationsOpen ? <NotificationsPane onClose={() => setNotificationsOpen(false)} /> : null}
       {settingsOpen ? (
         <SettingsPane
           mode={theme}
@@ -932,13 +996,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
         />
       ) : null}
       {backendOpen ? (
-        <BackendStatusPane
-          state={serviceState}
-          onClose={() => setBackendOpen(false)}
-          onControl={controlService}
-          endpoint={client.endpoint()}
-          busy={serviceAction !== null}
-        />
+        <BackendStatusPane state={serviceState} onClose={() => setBackendOpen(false)} endpoint={client.endpoint()} />
       ) : null}
       <NotificationToasts />
     </div>

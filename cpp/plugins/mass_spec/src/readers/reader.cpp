@@ -3930,7 +3930,7 @@ namespace mass_spec
       if (format == "SciexWIFF")
         analysis_catalog = sciex::read_analysis_catalog(file);
       else
-        analysis_catalog.push_back({0, 0, file_name, 1});
+        analysis_catalog.push_back({0, 0, file_name});
       ms = create_reader(file);
     }
 

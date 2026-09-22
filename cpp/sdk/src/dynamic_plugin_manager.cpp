@@ -75,6 +75,7 @@ Json invoke_dynamic(
     if (plugin.plugin.invoke == nullptr || plugin.plugin.release_buffer == nullptr) {
         throw Error(ErrorCode::MethodExecution, "dynamic plugin has no JSON invocation contract");
     }
+    const auto workflow_revision = project.get_workflow().version;
     Json request = {{"capability_id", capability_id}, {"parameters", parameters},
                     {"inputs", input_artifacts}};
     Json response;
@@ -82,16 +83,17 @@ Json invoke_dynamic(
     std::vector<std::string> transaction_tables = owned_tables;
     if (input_artifacts.is_object()) {
         for (const auto &item : input_artifacts.items()) {
+            if (!item.value().is_object()) continue;
             const auto table = item.value().value("physical_table", std::string{});
             if (!table.empty() && std::find(transaction_tables.begin(), transaction_tables.end(), table) == transaction_tables.end())
                 transaction_tables.push_back(table);
         }
     }
-    const auto manifest = (!owned_tables.empty() && !plugin.manifest.domain.empty())
+    const auto manifest = !plugin.manifest.domain.empty()
         ? catalogue::table_manifest_json(plugin.manifest.domain, "")
         : std::optional<Json>{};
 
-    if (!owned_tables.empty() && !plugin.manifest.domain.empty())
+    if (manifest && !owned_tables.empty())
         ProjectTableStore::install_manifest_schema(project, plugin.manifest.domain, "");
     ProjectTableStore::transaction(project, transaction_tables, [&](ProjectTableStore &tables) {
         PluginDataServiceContext context;
@@ -134,6 +136,7 @@ Json invoke_dynamic(
         }
         if (manifest && input_artifacts.is_object()) {
             for (const auto &[target_port, artifact] : input_artifacts.items()) {
+                if (!artifact.is_object()) continue;
                 const auto physical_table = artifact.value("physical_table", std::string{});
                 const auto contract = artifact.value("contract_id", std::string{});
                 if (physical_table.empty() || contract.empty()) continue;
@@ -163,7 +166,7 @@ Json invoke_dynamic(
                 if (table.value("resource_id", std::string{}) != contract) continue;
                 const auto columns = table.value("columns", Json::array());
                 const auto allocation = tables.allocate_table_artifact(
-                    contract, capability_id, producer_instance, 0, columns);
+                    contract, capability_id, producer_instance, workflow_revision, columns);
                 tables.append_artifact_lineage(allocation.first, lineage_inputs);
                 context.output_tables[contract] = allocation.second;
                 context.allowed_tables.push_back(allocation.second);
@@ -197,7 +200,7 @@ Json invoke_dynamic(
                 static_cast<uint32_t>(output->second.size()), columns, column_count,
                 row_count, user_data);
         };
-        context.emit_result = [&emitted_results, &tables, &capability_id, &producer_instance, &lineage_inputs](
+        context.emit_result = [&emitted_results, &tables, &capability_id, &producer_instance, &lineage_inputs, workflow_revision](
             void *, const char *contract, uint32_t contract_size,
             const char *payload, uint64_t payload_size, void *) -> streamfind_plugin_status {
             if (contract == nullptr || contract_size == 0 || payload == nullptr)
@@ -206,9 +209,9 @@ Json invoke_dynamic(
             if (parsed.is_discarded()) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             const auto contract_id = std::string(contract, contract_size);
             const auto artifact_id = tables.publish_result_artifact(
-                contract_id, parsed.dump(), capability_id, producer_instance, 0);
+                contract_id, parsed.dump(), capability_id, producer_instance, workflow_revision);
             tables.append_artifact_lineage(artifact_id, lineage_inputs);
-            emitted_results[contract_id] = {{"artifact_id", artifact_id}, {"payload", parsed}};
+            emitted_results[contract_id] = Json{{"artifact_id", artifact_id}, {"payload", parsed}};
             return STREAMFIND_PLUGIN_OK;
         };
         streamfind_plugin_buffer buffer{};

@@ -1,9 +1,19 @@
 #include "streamfind/service/project_runtime_manager.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <system_error>
 
 namespace streamfind::service {
+
+namespace detail {
+
+Json workflow_without_positions(Json workflow) {
+    for (auto &operation : workflow["operations"]) operation.erase("position");
+    return workflow;
+}
+
+}  // namespace detail
 
 std::filesystem::path ProjectRuntimeManager::canonical_database_path(const std::filesystem::path &path) {
     std::error_code error;
@@ -22,8 +32,11 @@ void ProjectRuntimeManager::ensure_database_is_not_open(const std::filesystem::p
 
 ProjectSessionDto ProjectRuntimeManager::describe(const std::string &session_id,
                                                    const Project &project) const {
+    std::error_code error;
+    const auto size = std::filesystem::file_size(project.get_database_path(), error);
     return ProjectSessionDto{session_id,
                              project.get_database_path().string(),
+                             error ? 0 : size,
                              project.get_domain(),
                              project.get_metadata()};
 }
@@ -76,6 +89,60 @@ ProjectSessionDto ProjectRuntimeManager::close(const std::string &session_id) {
     return result;
 }
 
+Json ProjectRuntimeManager::workflow_definition(const std::string &session_id) const {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    const auto workflow = iterator->second->get_workflow();
+    Json diagnostics = Json::array();
+    try {
+        workflow.validate(*operations_);
+    } catch (const std::exception &error) {
+        diagnostics.push_back(Json{{"message", error.what()}});
+    }
+    return Json{{"session_id", session_id}, {"state", diagnostics.empty() ? "validated" : "failed"},
+                {"workflow", workflow.to_json()}, {"valid", diagnostics.empty()}, {"diagnostics", diagnostics}};
+}
+
+Json ProjectRuntimeManager::validate_workflow(const std::string &session_id, const Json &definition) const {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    auto workflow = Workflow::from_json(definition);
+    if (workflow.domain.empty()) workflow.domain = iterator->second->get_domain();
+    Json diagnostics = Json::array();
+    try {
+        workflow.validate(*operations_);
+    } catch (const std::exception &error) {
+        diagnostics.push_back(Json{{"message", error.what()}});
+    }
+    return Json{{"session_id", session_id}, {"state", diagnostics.empty() ? "validated" : "failed"},
+                {"workflow", workflow.to_json()}, {"valid", diagnostics.empty()}, {"diagnostics", diagnostics}};
+}
+
+Json ProjectRuntimeManager::save_workflow(const std::string &session_id, const Json &definition) {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    auto workflow = Workflow::from_json(definition);
+    const auto current = iterator->second->get_workflow();
+    if (workflow.domain.empty()) workflow.domain = iterator->second->get_domain();
+    if (workflow.workflow_id.empty()) workflow.workflow_id = current.workflow_id.empty() ? "workflow" : current.workflow_id;
+    const bool layout_only = detail::workflow_without_positions(workflow.to_json()) ==
+                             detail::workflow_without_positions(current.to_json());
+    workflow.version = layout_only ? current.version : std::max(current.version + 1, workflow.version);
+    iterator->second->set_workflow(workflow, *operations_);
+    return Json{{"workflow", workflow.to_json()}, {"valid", true}, {"diagnostics", Json::array()}};
+}
+
+Json ProjectRuntimeManager::clear_workflow_history(const std::string &session_id) {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    iterator->second->clear_workflow_history();
+    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+}
+
 Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) const {
     std::lock_guard lock(mutex_);
     if (projects_.find(session_id) == projects_.end()) throw std::invalid_argument("project session not found");
@@ -83,6 +150,87 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
     return Json{{"session_id", session_id},
                 {"state", state == workflow_states_.end() ? kWorkflowIdle : state->second},
                 {"progress", workflow_progress_.contains(session_id) ? workflow_progress_.at(session_id) : Json{{"completed", 0}, {"total", 0}, {"current_step", 0}}}};
+}
+
+Json ProjectRuntimeManager::artifact_inventory(const std::string &session_id) const {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    auto artifacts = iterator->second->get_artifact_inventory();
+    for (auto &artifact : artifacts) {
+        const auto table = artifact.contains("physical_table") &&
+                                   artifact.at("physical_table").is_string()
+                               ? artifact.at("physical_table").get<std::string>()
+                               : std::string{};
+        if (artifact.value("representation", std::string{}) != "table" || table.empty()) continue;
+        std::string quoted = "\"";
+        for (const char character : table) quoted += character == '\"' ? "\"\"" : std::string(1, character);
+        quoted += "\"";
+        try {
+            const auto count = iterator->second->query_json("SELECT COUNT(*) AS row_count FROM " + quoted);
+            if (!count.empty()) {
+                const auto row_count = count.front().value("row_count", std::string{"0"});
+                artifact["row_count"] = row_count.empty() ? 0 : std::stoull(row_count);
+            }
+            const auto columns = iterator->second->query_json("DESCRIBE " + quoted);
+            artifact["columns"] = Json::array();
+            for (const auto &column : columns)
+                artifact["columns"].push_back({{"name", column.value("column_name", "")}, {"type", column.value("column_type", "")}});
+        } catch (...) {
+            artifact["columns"] = Json::array();
+        }
+    }
+    return artifacts;
+}
+
+Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const Json &request) const {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    const auto artifact_id = request.value("artifact_id", std::string{});
+    if (artifact_id.empty()) throw std::invalid_argument("artifact_id is required");
+    const auto quote = [](const std::string &value) {
+        std::string output = "'";
+        for (const char character : value) output += character == '\'' ? "''" : std::string(1, character);
+        return output + "'";
+    };
+    const auto metadata = iterator->second->query_json(
+        "SELECT physical_table, representation FROM ARTIFACT_INVENTORY WHERE artifact_id = " + quote(artifact_id));
+    if (metadata.empty()) throw std::invalid_argument("artifact not found");
+    if (metadata.front().value("representation", std::string{}) != "table")
+        throw std::invalid_argument("artifact is not a table");
+    const auto table = metadata.front().value("physical_table", std::string{});
+    if (table.empty()) throw std::invalid_argument("artifact has no physical table");
+    std::string quoted_table = "\"";
+    for (const char character : table) quoted_table += character == '"' ? "\"\"" : std::string(1, character);
+    quoted_table += "\"";
+    const auto description = iterator->second->query_json("DESCRIBE " + quoted_table);
+    std::vector<std::string> columns;
+    for (const auto &column : description) columns.push_back(column.value("column_name", std::string{}));
+    const auto search = request.value("search", std::string{});
+    std::string where;
+    if (!search.empty()) {
+        std::string escaped;
+        for (const char character : search) escaped += character == '\'' ? "''" : std::string(1, character);
+        for (const auto &column : columns) {
+            if (!where.empty()) where += " OR ";
+            where += "CAST(\"" + column + "\" AS VARCHAR) ILIKE '%" + escaped + "%'";
+        }
+        where = " WHERE " + where;
+    }
+    const auto sort = request.value("sort_column", std::string{});
+    const bool valid_sort = std::find(columns.begin(), columns.end(), sort) != columns.end();
+    const auto order = valid_sort ? (" ORDER BY \"" + sort + "\" " + (request.value("descending", false) ? "DESC" : "ASC")) : std::string{};
+    const auto limit = std::clamp(request.value("limit", 100), 1, 1000);
+    const auto offset = std::max(0, request.value("offset", 0));
+    const auto total = iterator->second->query_json("SELECT COUNT(*) AS row_count FROM " + quoted_table + where);
+    const auto rows = iterator->second->query_json("SELECT * FROM " + quoted_table + where + order +
+                                                   " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset));
+    Json column_json = Json::array();
+    for (const auto &column : description)
+        column_json.push_back({{"name", column.value("column_name", std::string{})}, {"type", column.value("column_type", std::string{})}});
+    return {{"artifact_id", artifact_id}, {"columns", column_json}, {"rows", rows},
+            {"offset", offset}, {"limit", limit}, {"total_rows", total.empty() ? 0 : std::stoull(total.front().value("row_count", std::string{"0"}))}};
 }
 
 std::string ProjectRuntimeManager::set_workflow_state(const std::string &session_id, const std::string &state) {
@@ -146,15 +294,19 @@ std::string ProjectRuntimeManager::cancel_workflow(const std::string &session_id
 
 Json ProjectRuntimeManager::run_operation(const std::string &session_id,
                                           const std::string &operation_id,
-                                          const Json &parameters) {
+                                          const Json &parameters,
+                                          const std::string &operation_instance) {
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     const auto operation = operations_->find(operation_id);
     if (!operation) throw std::invalid_argument("operation not found: " + operation_id);
-    if (operation->definition().domain != iterator->second->get_domain())
+    const auto &operation_domain = operation->definition().domain;
+    const auto &project_domain = iterator->second->get_domain();
+    if (!operation_domain.empty() && operation_domain != project_domain &&
+        operation_domain != "streamfind")
         throw std::invalid_argument("operation is not available in the project domain");
-    return iterator->second->run_operation(operation_id, parameters, *operations_);
+    return iterator->second->run_operation(operation_id, parameters, *operations_, operation_instance);
 }
 
 std::vector<ProjectSessionDto> ProjectRuntimeManager::list() const {

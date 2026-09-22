@@ -143,6 +143,39 @@ std::vector<std::string> pick_paths(const std::vector<std::string> &extensions) 
 }
 #endif
 
+Json browse_file_system(const std::string &requested_path) {
+#ifdef _WIN32
+    if (requested_path.empty()) {
+        Json entries = Json::array();
+        const auto drives = GetLogicalDrives();
+        for (unsigned int index = 0; index < 26; ++index) {
+            if ((drives & (1u << index)) == 0) continue;
+            const std::string drive{static_cast<char>('A' + index), ':', '\\'};
+            entries.push_back(Json{{"name", drive}, {"path", drive}, {"isDirectory", true}});
+        }
+        return Json{{"path", ""}, {"entries", std::move(entries)}};
+    }
+#endif
+    const auto root = requested_path.empty() ? std::filesystem::current_path() : std::filesystem::path(requested_path);
+    if (!std::filesystem::exists(root) || !std::filesystem::is_directory(root))
+        throw std::invalid_argument("filesystem browse path is not a directory");
+    Json entries = Json::array();
+    for (const auto &entry : std::filesystem::directory_iterator(root)) {
+        const auto status = entry.symlink_status();
+        if (std::filesystem::is_symlink(status)) continue;
+        const bool directory = std::filesystem::is_directory(status);
+        Json item{{"name", entry.path().filename().string()},
+                  {"path", entry.path().string()},
+                  {"isDirectory", directory}};
+        if (!directory && std::filesystem::is_regular_file(status)) item["size"] = std::filesystem::file_size(entry.path());
+        entries.push_back(std::move(item));
+    }
+    std::sort(entries.begin(), entries.end(), [](const Json &left, const Json &right) {
+        if (left.at("isDirectory") != right.at("isDirectory")) return left.at("isDirectory").get<bool>();
+        return left.at("name").get<std::string>() < right.at("name").get<std::string>();
+    });
+    return Json{{"path", root.string()}, {"entries", std::move(entries)}};
+}
 void close_socket(std::intptr_t socket) {
 #ifdef _WIN32
     closesocket(static_cast<SOCKET>(socket));
@@ -403,6 +436,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
 #else
                 detail::send_http(socket, 501, Json{{"error", "native file picker is only available on Windows"}});
 #endif
+            } else if (method == "POST" && path == "/projects/file-picker/browse") {
+                const auto input = Json::parse(body);
+                detail::send_http(socket, 200, detail::browse_file_system(input.value("path", std::string{})));
             } else if (method == "POST" && path == "/projects/file-picker/folders") {
 #ifdef _WIN32
                 detail::send_http(socket, 200, Json{{"paths", detail::pick_folders()}});
@@ -425,28 +461,57 @@ void ServiceServer::handle_client(std::intptr_t socket) {
 #else
                 detail::send_http(socket, 501, Json{{"error", "native file picker is only available on Windows"}});
 #endif
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/workflow");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.workflow_definition(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/history/clear")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/workflow/history/clear");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.clear_workflow_history(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/workflow");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.save_workflow(session_id, Json::parse(body)));
             } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/state");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.workflow_snapshot(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/data")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/data");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.artifact_data(session_id, Json::parse(body)));
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, Json{{"artifacts", projects_.artifact_inventory(session_id)}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/validate")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/validate");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                const auto state = projects_.set_workflow_state(session_id, "validated");
-                detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}, {"valid", true}});
+                const auto validation = projects_.validate_workflow(session_id, Json::parse(body));
+                detail::send_http(socket, 200, validation);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/run")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/run");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto state = projects_.start_workflow(session_id);
+                events_.publish(Json{{"type", "workflow.started"}, {"project", session_id},
+                                     {"payload", Json{{"message", "Workflow execution started."}}}});
                 detail::send_http(socket, 202, Json{{"session_id", session_id}, {"state", state}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/cancel")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/cancel");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto state = projects_.cancel_workflow(session_id);
+                events_.publish(Json{{"type", "workflow.cancelled"}, {"project", session_id},
+                                     {"payload", Json{{"message", "Workflow cancellation requested."}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/pause")) {
                 detail::send_http(socket, 501, Json{{"error", "workflow pause is not supported by the current execution engine"}});
@@ -456,7 +521,26 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto marker_position = path.find(marker, prefix.size());
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), marker_position - prefix.size()));
                 const auto operation_id = detail::percent_decode(path.substr(marker_position + marker.size()));
-                const auto result = projects_.run_operation(session_id, operation_id, Json::parse(body));
+                events_.publish(Json{{"type", "operation.started"}, {"project", session_id},
+                                     {"operation_id", operation_id},
+                                     {"payload", Json{{"message", "Operation execution started."}}}});
+                const auto request = Json::parse(body);
+                const auto parameters = request.contains("parameters")
+                    ? request.at("parameters")
+                    : request;
+                const auto operation_instance = request.value("operation_instance", operation_id);
+                Json result;
+                try {
+                    result = projects_.run_operation(session_id, operation_id, parameters, operation_instance);
+                } catch (const std::exception &error) {
+                    events_.publish(Json{{"type", "operation.failed"}, {"project", session_id},
+                                         {"operation_id", operation_id},
+                                         {"payload", Json{{"message", error.what()}}}});
+                    throw;
+                }
+                events_.publish(Json{{"type", "operation.completed"}, {"project", session_id},
+                                     {"operation_id", operation_id},
+                                     {"payload", Json{{"message", "Operation execution completed."}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"operation_id", operation_id}, {"result", result}});
             } else if (method == "DELETE" && path.rfind("/projects/", 0) == 0) {
                 const auto session_id = detail::percent_decode(path.substr(std::string("/projects/").size()));
