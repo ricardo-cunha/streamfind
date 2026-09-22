@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 #include "streamfind/catalogue.hpp"
+#include "streamfind/core_operations.hpp"
 #include "streamfind/mcp.hpp"
 #include "streamfind/plugin_configuration.hpp"
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
@@ -47,6 +48,7 @@ public:
         if (!core_path) throw std::runtime_error("installed core catalogue not found");
         auto merged = catalogue::load_document(*core_path);
         if (!merged) throw std::runtime_error("installed core catalogue could not be loaded");
+        core_operations::register_operations(merged->at("entries"), operations);
         std::set<std::string> loaded_ids;
         for (const auto &plugin_id : configuration.configuration.enabled_plugins) {
             std::filesystem::path package_root;
@@ -79,6 +81,8 @@ public:
             loaded->host.clear_table = &sdk::plugin_clear_table;
             loaded->host.read_batch = &sdk::plugin_read_batch;
             loaded->host.append_batch = &sdk::plugin_append_batch;
+            loaded->host.emit_table_batch = &sdk::plugin_emit_table_batch;
+            loaded->host.emit_result = &sdk::plugin_emit_result;
             loaded->host.update_batch = &sdk::plugin_update_batch;
             loaded->host.update_composite_batch = &sdk::plugin_update_composite_batch;
             loaded->host.delete_batch = &sdk::plugin_delete_batch;

@@ -1,0 +1,42 @@
+{
+  "name": "streamfind-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:ui": "vite --host 127.0.0.1",
+    "dev:backend": "node scripts/start-dev.mjs --backend-only",
+    "start": "node scripts/start-dev.mjs",
+    "build": "tsc -b && vite build",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.mjs\" \"index.html\" \"vite.config.ts\" \"eslint.config.js\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.mjs\" \"index.html\" \"vite.config.ts\" \"eslint.config.js\"",
+    "lint": "eslint .",
+    "browser:smoke": "node scripts/browser-smoke.mjs",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.63.0",
+    "prettier": "^3.9.7",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.1"
+  }
+}

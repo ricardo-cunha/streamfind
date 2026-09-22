@@ -34,6 +34,11 @@ enum class ProjectCommand {
     get_cache_size,
     get_audit_trail,
     close,
+    add_operation,
+    connect_operations,
+    get_artifact_inventory,
+    request_artifact,
+    resolve_operation_inputs,
 };
 
 /** @brief Convert a command name to a ProjectCommand. */

@@ -539,7 +539,7 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
   const auto blocks = read_scan_blocks(wiff_path);
   std::vector<MASS_SPEC_ANALYSIS> out;
   out.reserve(blocks.size());
-  const int count = static_cast<int>(blocks.size());
+
   std::set<std::string> names;
   for (std::size_t i = 0; i < blocks.size(); ++i)
   {
@@ -590,7 +590,7 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
         name = base_name + " (" + std::to_string(duplicate++) + ")";
       while (!names.insert(name).second);
     }
-    out.push_back({static_cast<int>(i), source_number, name, count});
+    out.push_back({static_cast<int>(i), source_number, name});
   }
   return out;
 }
@@ -1005,17 +1005,29 @@ std::optional<float> detect_tagged_mrm_record_marker(const std::vector<IndexedFl
     return std::nullopt;
 
   // SCIEX sparse/tagged MRM payloads use a record marker independent of
-  // the number of method transitions.  -59.01 is the validated marker for
-  // this WIFF grammar; deriving it from the transition count (for example
-  // -22.01 for a 22-transition method) misclassifies valid payloads.
-  constexpr float sparse_record_marker = -59.01f;
-  std::size_t marker_count = 0;
-  for (const auto &fragment : fragments)
-    for (float value : fragment.fields)
-      if (detail::approximately(value, sparse_record_marker))
-        ++marker_count;
-  if (marker_count >= fragments.size() * 9 / 10)
-    return sparse_record_marker;
+  // the number of method transitions.  The WIFF corpus contains both the
+  // -59.01 Mix1 grammar and the -33.01 grammar used by the wastewater-style
+  // scheduled acquisitions.  Do not derive the marker from the transition
+  // count (for example -22.01 for a 22-transition method): that confuses a
+  // channel skip marker with the beginning of a payload record.
+  constexpr std::array<float, 2> sparse_record_markers = {-59.01f, -33.01f};
+  std::size_t best_count = 0;
+  float best_marker = 0.0f;
+  for (const auto marker : sparse_record_markers)
+  {
+    std::size_t marker_count = 0;
+    for (const auto &fragment : fragments)
+      for (float value : fragment.fields)
+        if (detail::approximately(value, marker))
+          ++marker_count;
+    if (marker_count > best_count)
+    {
+      best_count = marker_count;
+      best_marker = marker;
+    }
+  }
+  if (best_count >= fragments.size() * 9 / 10)
+    return best_marker;
   return std::nullopt;
 }
 

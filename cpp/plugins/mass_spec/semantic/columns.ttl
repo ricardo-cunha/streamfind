@@ -33,16 +33,6 @@ sfms:sourceAnalysisNumberColumn
     sf:type "integer" ;
     sf:storageType "INTEGER" .
 
-sfms:analysisCountColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Analysis count" ;
-    skos:definition "Number of logical analyses contained in the physical source file." ;
-    sf:columnName "analysis_count" ;
-    sf:type "integer" ;
-    sf:storageType "INTEGER" .
-
 sfms:replicateNameColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
@@ -78,9 +68,11 @@ sfms:filePathColumn
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File path" ;
-    skos:definition "Source file path." ;
+    skos:definition "Source file path persisted in a mass-spectrometry result table." ;
     sf:columnName "file_path" ;
     sf:type "string" ;
+    sf:pathKind "file-or-directory" ;
+    sf:extensions ".mzml,.mzxml,.wiff,.lcd,.txt,.asc,.raw,.d,.baf,.tsf" ;
     sf:storageType "VARCHAR" .
 
 sfms:fileDirColumn

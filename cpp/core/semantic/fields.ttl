@@ -21,6 +21,7 @@ sfcore:infoField
     sf:propertyName "info" ;
     sf:type "string" .
 
+
 sfcore:validField
     a sf:Field ;
     sf:availableInDomain sfcore:streamfind ;
@@ -134,7 +135,7 @@ sfcore:analysisFilePathField
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis file path" ;
-    skos:definition "Filesystem path of the analysis file." ;
+    skos:definition "Filesystem path of the analysis file or vendor directory." ;
     sf:propertyName "path" ;
     sf:type "string" ;
     sf:required true ;

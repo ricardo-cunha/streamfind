@@ -1,5 +1,5 @@
 #include "methods/nta_componentization.hpp"
-#include "operations/operations.hpp"
+#include "operations/base.hpp"
 #include "methods/nta_processing_methods.hpp"
 #include <iomanip>
 #include <algorithm>

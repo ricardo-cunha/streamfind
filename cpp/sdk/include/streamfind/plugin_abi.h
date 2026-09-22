@@ -14,7 +14,7 @@ extern "C" {
 
 enum {
     STREAMFIND_PLUGIN_ABI_MAJOR = 1,
-    STREAMFIND_PLUGIN_ABI_MINOR = 1,
+    STREAMFIND_PLUGIN_ABI_MINOR = 2,
 };
 
 typedef int32_t streamfind_plugin_status;
@@ -112,6 +112,23 @@ typedef streamfind_plugin_status (*streamfind_plugin_append_batch_fn)(
     uint64_t row_count,
     void *user_data);
 
+typedef streamfind_plugin_status (*streamfind_plugin_emit_table_batch_fn)(
+    void *execution_context,
+    const char *output_contract_id,
+    uint32_t output_contract_id_size,
+    const streamfind_plugin_batch_column *columns,
+    uint32_t column_count,
+    uint64_t row_count,
+    void *user_data);
+
+typedef streamfind_plugin_status (*streamfind_plugin_emit_result_fn)(
+    void *execution_context,
+    const char *output_contract_id,
+    uint32_t output_contract_id_size,
+    const char *payload,
+    uint64_t payload_size,
+    void *user_data);
+
 typedef streamfind_plugin_status (*streamfind_plugin_update_batch_fn)(
     void *execution_context,
     const char *table_name,
@@ -195,6 +212,8 @@ struct streamfind_plugin_host_api {
     streamfind_plugin_report_progress_fn report_progress;
     streamfind_plugin_is_cancelled_fn is_cancelled;
     void *user_data;
+    streamfind_plugin_emit_table_batch_fn emit_table_batch;
+    streamfind_plugin_emit_result_fn emit_result;
 };
 
 struct streamfind_plugin_api {

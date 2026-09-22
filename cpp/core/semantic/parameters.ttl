@@ -10,6 +10,7 @@ sfcore:databasePathParameter
     skos:definition "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create." ;
     sf:type "string" ;
     sf:required true ;
+    sf:default "" ;
     sf:example "/data/project.duckdb" .
 
 sfcore:workerIdParameter
@@ -20,6 +21,7 @@ sfcore:workerIdParameter
     skos:definition "External worker identity used to claim and release one project workflow execution." ;
     sf:type "string" ;
     sf:required false ;
+    sf:default "" ;
     sf:example "frontend-worker-1" .
 
 
@@ -31,6 +33,7 @@ sfcore:domainParameter
     skos:definition "Immutable domain assigned to a project at creation time. Use the domain value reported by get_domain when selecting workflow methods." ;
     sf:type "string" ;
     sf:required true ;
+    sf:default "" ;
     sf:constraints "mass_spec|raman|sensors|streamfind" ;
     sf:example "mass_spec" .
 
@@ -42,6 +45,7 @@ sfcore:metadataParameter
     skos:definition "JSON object containing project-owned metadata. Metadata is user-owned and may contain arbitrary JSON keys." ;
     sf:type "object" ;
     sf:required true ;
+    sf:default "{}" ;
     sf:example "{}" .
 
 sfcore:workflowParameter
@@ -52,6 +56,7 @@ sfcore:workflowParameter
     skos:definition "Ordered array of workflow method objects. Each object must identify a registered method and may contain that method's validated parameters." ;
     sf:type "array" ;
     sf:required true ;
+    sf:default "[]" ;
     sf:items sfcore:methodField ;
     sf:example "[]" .
 
@@ -63,6 +68,7 @@ sfcore:methodParameter
     skos:definition "Stable canonical identifier of a registered workflow method, for example mass_spec.find_features. Obtain valid method identifiers and their parameters from get_available_methods(domain)." ;
     sf:type "string" ;
     sf:required true ;
+    sf:default "" ;
     sf:example "mass_spec.get_raw_spectra" .
 
 sfcore:parametersParameter
@@ -73,7 +79,20 @@ sfcore:parametersParameter
     skos:definition "JSON object containing method-specific parameter values. Use the selected method's parameter definitions from get_available_methods; unknown keys are rejected." ;
     sf:type "object" ;
     sf:required false ;
+    sf:default "{}" ;
     sf:example "{}" .
+
+sfcore:pathsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Paths" ;
+    skos:definition "Files and vendor directories selected for a workflow input." ;
+    sf:type "array" ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:items sfcore:filePathColumn ;
+    sf:example "[\"data/sample.wiff\",\"data/batch.d\"]" .
 
 sfcore:destinationDatabasePathParameter
     a sf:Parameter ;
@@ -83,7 +102,85 @@ sfcore:destinationDatabasePathParameter
     skos:definition "Filesystem path for the copied DuckDB project database." ;
     sf:type "string" ;
     sf:required true ;
+    sf:default "" ;
     sf:example "/data/copied.duckdb" .
+
+sfcore:operationIdParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow operation instance ID" ;
+    skos:definition "Unique identifier for one operation instance in the backend workflow graph." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "add_analyses_1" .
+
+sfcore:operationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation identifier" ;
+    skos:definition "Canonical catalogue identifier of the operation to add to the workflow." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "mass_spec.read_mass_spec_files" .
+
+sfcore:sourceOperationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source operation instance" ;
+    skos:definition "Workflow operation instance that publishes the connected output." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "add_analyses_1" .
+
+sfcore:sourcePortParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source output port" ;
+    skos:definition "Semantic output contract published by the source operation." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "sfms:analysesTable" .
+
+sfcore:targetOperationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Target operation instance" ;
+    skos:definition "Workflow operation instance that consumes the connected input." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "remove_analyses_1" .
+
+sfcore:targetPortParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Target input port" ;
+    skos:definition "Semantic input contract consumed by the target operation." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "sfms:analysesTable" .
+
+sfcore:outputPortParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Output contract" ;
+    skos:definition "Semantic output contract to locate in the artifact inventory." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "sfms:analysesTable" .
 
 
 sfcore:analysesParameter
@@ -94,6 +191,7 @@ sfcore:analysesParameter
     skos:definition "Array of analysis file records." ;
     sf:type "array" ;
     sf:required true ;
+    sf:default "[]" ;
     sf:example "[{\"path\":\"data/sample.mzML\",\"replicate_name\":\"r1\"}]" ;
     sf:items sfcore:analysisFileParameter .
 
@@ -105,6 +203,7 @@ sfcore:analysisFileParameter
     skos:definition "One analysis file and optional replicate and blank labels." ;
     sf:type "object" ;
     sf:required true ;
+    sf:default "{}" ;
     sf:example "{\"path\":\"data/sample.mzML\",\"replicate_name\":\"r1\"}" ;
     sf:hasProperty
         sfcore:analysisFilePathField,
@@ -119,6 +218,8 @@ sfcore:analysisNamesParameter
     skos:definition "Array of analysis file names without filename extensions." ;
     sf:type "array" ;
     sf:required true ;
+    sf:defaultRequired true ;
+    sf:default "[]" ;
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"sample\",\"blank\"]" .
 
@@ -130,6 +231,7 @@ sfcore:replicateNamesParameter
     skos:definition "Replicate labels ordered by analysis name." ;
     sf:type "array" ;
     sf:required true ;
+    sf:default "[]" ;
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"r1\",\"r2\"]" .
 
@@ -141,6 +243,7 @@ sfcore:blankNamesParameter
     skos:definition "Blank labels ordered by analysis name." ;
     sf:type "array" ;
     sf:required true ;
+    sf:default "[]" ;
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"blank\",\"blank\"]" .
 
@@ -152,6 +255,7 @@ sfcore:concentrationsParameter
     skos:definition "Analysis concentrations ordered by analysis name." ;
     sf:type "array" ;
     sf:required true ;
+    sf:default "[]" ;
     sf:items sfcore:realItemParameter ;
     sf:example "[1.0,2.0]" .
 
@@ -163,6 +267,7 @@ sfcore:stringItemParameter
     skos:definition "One string value in a string array parameter." ;
     sf:type "string" ;
     sf:required true ;
+    sf:default "" ;
     sf:example "sample" .
 
 sfcore:integerItemParameter
@@ -173,6 +278,7 @@ sfcore:integerItemParameter
     skos:definition "One integer value in an integer array parameter." ;
     sf:type "integer" ;
     sf:required true ;
+    sf:default 0 ;
     sf:example 1 .
 
 sfcore:realItemParameter
@@ -183,4 +289,5 @@ sfcore:realItemParameter
     skos:definition "One real value in a real array parameter." ;
     sf:type "real" ;
     sf:required true ;
+    sf:default 0.0 ;
     sf:example 1.0 .

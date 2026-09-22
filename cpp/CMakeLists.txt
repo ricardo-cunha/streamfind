@@ -7,10 +7,20 @@ if(NOT STREAMFIND_PROJECT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "rust/Cargo.toml workspace package version is missing or invalid")
 endif()
 project(streamfind_cpp VERSION ${STREAMFIND_PROJECT_VERSION} LANGUAGES C CXX)
+if(WIN32)
+    enable_language(RC)
+endif()
 include(CMakePackageConfigHelpers)
 
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
 option(STREAMFIND_BUILD_SHARED "Build shared native libraries" OFF)
+option(STREAMFIND_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
+set(STREAMFIND_APP_DIR "" CACHE PATH "Built frontend directory to package")
+set(STREAMFIND_MINGW_RUNTIME_DIR "C:/msys64/ucrt64/bin" CACHE PATH "MinGW UCRT runtime directory to package on Windows")
+if(MSVC AND STREAMFIND_STATIC_MSVC_RUNTIME)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        CACHE STRING "MSVC runtime library" FORCE)
+endif()
 if(STREAMFIND_BUILD_SHARED)
     set(STREAMFIND_CPP_LIBRARY_TYPE SHARED)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -89,6 +99,7 @@ set(STREAMFIND_CORE_SOURCES
     core/src/catalogue.cpp
     core/src/catalogue_binding.cpp
     core/src/project_table_store.cpp
+    core/src/operations/operations.cpp
     core/src/plugin_loader.cpp
     core/src/plugin_configuration.cpp
 )
@@ -282,19 +293,52 @@ add_dependencies(streamfind_cli streamfind_aggregate_catalogue streamfind_cpp_sd
     streamfind_plugins)
 target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
 
+add_executable(streamfind_service
+    service/src/streamfind-service.cpp
+    service/src/service_server.cpp
+    service/src/service_plugin_runtime.cpp
+    service/src/project_runtime_manager.cpp)
+add_dependencies(streamfind_service streamfind_aggregate_catalogue streamfind_cpp_sdk
+    streamfind_plugins)
+target_link_libraries(streamfind_service PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
+target_include_directories(streamfind_service PRIVATE service/include)
+if(WIN32)
+    target_link_libraries(streamfind_service PRIVATE ws2_32 comdlg32 shell32 ole32)
+endif()
+set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+
+add_executable(streamfind_service_host
+    service/src/streamfind-service-host.cpp)
+if(WIN32)
+    target_sources(streamfind_service_host PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind.rc")
+endif()
+add_dependencies(streamfind_service_host streamfind_service)
+if(WIN32)
+    target_link_libraries(streamfind_service_host PRIVATE ws2_32 shell32)
+endif()
+set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind)
+
 # Runtime dependencies: the exes link vendored DuckDB, OpenBabel, zstd, inchi
 # and zlib as static libraries on both platforms, so the only runtime
 # dependency shipped next to the binaries is the DuckDB DLL on Windows
 # (installed explicitly above from STREAMFIND_DUCKDB_RUNTIME). No dependency
 # scan is needed — system DLLs/SOs are the OS's responsibility.
 install(
-    TARGETS streamfind_mcp streamfind_cli
+    TARGETS streamfind_mcp streamfind_cli streamfind_service streamfind_service_host
     EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION bin
 )
-
-
-# CPack configuration: set variables BEFORE include(CPack) so they reach the
+if(STREAMFIND_APP_DIR AND EXISTS "${STREAMFIND_APP_DIR}")
+    install(DIRECTORY "${STREAMFIND_APP_DIR}/" DESTINATION share/streamfind/app)
+endif()
+if(WIN32 AND EXISTS "${STREAMFIND_MINGW_RUNTIME_DIR}")
+    foreach(_runtime_dll IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+        if(EXISTS "${STREAMFIND_MINGW_RUNTIME_DIR}/${_runtime_dll}")
+            install(FILES "${STREAMFIND_MINGW_RUNTIME_DIR}/${_runtime_dll}" DESTINATION bin)
+        endif()
+    endforeach()
+endif()
 # cached defaults CPack::Configure writes into CPackConfig.cmake.
 set(CPACK_PACKAGE_NAME "streamfind-core-cpp")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
@@ -312,4 +356,13 @@ add_custom_command(TARGET streamfind_mcp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_mcp>"
+)
+add_custom_command(TARGET streamfind_service POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
+        "$<TARGET_FILE_DIR:streamfind_service>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${STREAMFIND_DUCKDB_RUNTIME}"
+        "$<TARGET_FILE_DIR:streamfind_service>"
+    COMMENT "Staging streamfind_service runtime dependencies"
 )

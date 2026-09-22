@@ -1,7 +1,10 @@
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 
 #include <atomic>
+
 #include <cstring>
+#include <optional>
+#include <fstream>
 #include <set>
 
 #include "streamfind/project_table_store.hpp"
@@ -53,15 +56,6 @@ std::vector<std::string> entry_tables(const Json &entry) {
             }
         }
     }
-    const auto domain = entry.value("domain", std::string{});
-    if (!domain.empty()) {
-        if (const auto manifest = catalogue::table_manifest_json(domain, "")) {
-            for (const auto &table : *manifest) {
-                const auto name = table.value("table_name", std::string{});
-                if (!name.empty()) unique.insert(name);
-            }
-        }
-    }
     return {unique.begin(), unique.end()};
 }
 
@@ -70,27 +64,54 @@ Json invoke_dynamic(
     Project &project,
     const std::string &capability_id,
     const Json &parameters,
-    const std::vector<std::string> &owned_tables) {
+    const std::vector<std::string> &owned_tables,
+    const Json &output_ports,
+    const std::string &workflow_instance,
+    const Json &input_artifacts) {
+    if (workflow_instance.empty()) {
+        throw Error(ErrorCode::MethodExecution,
+                    "workflow operation invocation requires an operation instance id");
+    }
     if (plugin.plugin.invoke == nullptr || plugin.plugin.release_buffer == nullptr) {
         throw Error(ErrorCode::MethodExecution, "dynamic plugin has no JSON invocation contract");
     }
-    Json request = {{"capability_id", capability_id}, {"parameters", parameters}};
+    const auto workflow_revision = project.get_workflow().version;
+    Json request = {{"capability_id", capability_id}, {"parameters", parameters},
+                    {"inputs", input_artifacts}};
     Json response;
-    if (!owned_tables.empty() && !plugin.manifest.domain.empty() && plugin.plugin.module_id != nullptr)
-        ProjectTableStore::install_manifest_schema(project, plugin.manifest.domain, "");
-    ProjectTableStore::transaction(project, owned_tables, [&](ProjectTableStore &tables) {
-        if (!owned_tables.empty() && !plugin.manifest.domain.empty() && plugin.plugin.module_id != nullptr) {
-            tables.require_installed_manifest(plugin.manifest.domain, plugin.plugin.module_id, 1);
+    Json emitted_results = Json::object();
+    std::vector<std::string> transaction_tables = owned_tables;
+    if (input_artifacts.is_object()) {
+        for (const auto &item : input_artifacts.items()) {
+            if (!item.value().is_object()) continue;
+            const auto table = item.value().value("physical_table", std::string{});
+            if (!table.empty() && std::find(transaction_tables.begin(), transaction_tables.end(), table) == transaction_tables.end())
+                transaction_tables.push_back(table);
         }
+    }
+    const auto manifest = !plugin.manifest.domain.empty()
+        ? catalogue::table_manifest_json(plugin.manifest.domain, "")
+        : std::optional<Json>{};
+
+    if (manifest && !owned_tables.empty())
+        ProjectTableStore::install_manifest_schema(project, plugin.manifest.domain, "");
+    ProjectTableStore::transaction(project, transaction_tables, [&](ProjectTableStore &tables) {
         PluginDataServiceContext context;
         std::atomic_bool cancelled{false};
+        const auto producer_instance = workflow_instance;
+        std::vector<std::tuple<std::string, std::string, std::string>> lineage_inputs;
+        if (input_artifacts.is_object()) {
+            for (const auto &[target_port, artifact] : input_artifacts.items()) {
+                if (!artifact.is_object()) continue;
+                lineage_inputs.emplace_back(
+                    artifact.value("artifact_id", ""),
+                    artifact.value("contract_id", ""), target_port);
+            }
+        }
         context.tables = &tables;
         context.cancelled = &cancelled;
-        context.allowed_tables = owned_tables;
-        if (!owned_tables.empty() && !plugin.manifest.domain.empty() && plugin.plugin.module_id != nullptr) {
-            const auto manifest = catalogue::table_manifest_json(
-                plugin.manifest.domain, "");
-            if (!manifest) throw Error(ErrorCode::SchemaMismatch, "dynamic table manifest unavailable");
+        context.allowed_tables = transaction_tables;
+        if (manifest) {
             for (const auto &table : *manifest) {
                 const auto table_name = table.value("table_name", std::string{});
                 if (std::find(owned_tables.begin(), owned_tables.end(), table_name) == owned_tables.end()) continue;
@@ -99,16 +120,108 @@ Json invoke_dynamic(
                     if (column_name.empty()) continue;
                     context.readable_columns[table_name].insert(column_name);
                     context.writable_columns[table_name].insert(column_name);
+                    const auto semantic_type = column.value("type", std::string{"string"});
+                    const auto type = semantic_type == "integer"
+                        ? STREAMFIND_PLUGIN_COLUMN_INT64
+                        : semantic_type == "boolean"
+                        ? STREAMFIND_PLUGIN_COLUMN_BOOL
+                        : semantic_type == "real"
+                        ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
+                        : semantic_type == "timestamp"
+                        ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
+                        : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                    context.column_types[table_name][column_name] = type;
                 }
             }
         }
+        if (manifest && input_artifacts.is_object()) {
+            for (const auto &[target_port, artifact] : input_artifacts.items()) {
+                if (!artifact.is_object()) continue;
+                const auto physical_table = artifact.value("physical_table", std::string{});
+                const auto contract = artifact.value("contract_id", std::string{});
+                if (physical_table.empty() || contract.empty()) continue;
+                for (const auto &table : *manifest) {
+                    if (table.value("resource_id", std::string{}) != contract) continue;
+                    for (const auto &column : table.value("columns", Json::array())) {
+                        const auto name = column.value("name", std::string{});
+                        if (name.empty()) continue;
+                        context.readable_columns[physical_table].insert(name);
+                        context.column_types[physical_table][name] =
+                            column.value("type", std::string{}) == "integer"
+                                ? STREAMFIND_PLUGIN_COLUMN_INT64
+                                : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                    }
+                    break;
+                }
+            }
+        }
+        for (const auto &port : output_ports) {
+            if (!port.is_object()) continue;
+            const auto contract = port.value("semantic_contract", std::string{});
+            const auto representations = port.value("representations", Json::array());
+            if (contract.empty() || !representations.is_array() ||
+                std::find(representations.begin(), representations.end(), "table") == representations.end() || !manifest)
+                continue;
+            for (const auto &table : *manifest) {
+                if (table.value("resource_id", std::string{}) != contract) continue;
+                const auto columns = table.value("columns", Json::array());
+                const auto allocation = tables.allocate_table_artifact(
+                    contract, capability_id, producer_instance, workflow_revision, columns);
+                tables.append_artifact_lineage(allocation.first, lineage_inputs);
+                context.output_tables[contract] = allocation.second;
+                context.allowed_tables.push_back(allocation.second);
+                for (const auto &column : columns) {
+                    const auto name = column.value("name", std::string{});
+                    if (name.empty()) continue;
+                    context.writable_columns[allocation.second].insert(name);
+                    const auto type = column.value("type", std::string{"string"});
+                    context.column_types[allocation.second][name] = type == "integer"
+                        ? STREAMFIND_PLUGIN_COLUMN_INT64
+                        : type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
+                        : type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
+                        : type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
+                        : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                }
+                break;
+            }
+        }
+        context.emit_table_batch = [&context](
+            void *execution_context, const char *contract, uint32_t contract_size,
+            const streamfind_plugin_batch_column *columns, uint32_t column_count,
+            uint64_t row_count, void *user_data) -> streamfind_plugin_status {
+            if (contract == nullptr || contract_size == 0)
+                return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+            const std::string contract_id(contract, contract_size);
+            const auto output = context.output_tables.find(contract_id);
+            if (output == context.output_tables.end() || output->second.empty())
+                return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+            return plugin_append_batch(
+                execution_context, output->second.data(),
+                static_cast<uint32_t>(output->second.size()), columns, column_count,
+                row_count, user_data);
+        };
+        context.emit_result = [&emitted_results, &tables, &capability_id, &producer_instance, &lineage_inputs, workflow_revision](
+            void *, const char *contract, uint32_t contract_size,
+            const char *payload, uint64_t payload_size, void *) -> streamfind_plugin_status {
+            if (contract == nullptr || contract_size == 0 || payload == nullptr)
+                return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+            const auto parsed = Json::parse(payload, payload + payload_size, nullptr, false);
+            if (parsed.is_discarded()) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+            const auto contract_id = std::string(contract, contract_size);
+            const auto artifact_id = tables.publish_result_artifact(
+                contract_id, parsed.dump(), capability_id, producer_instance, workflow_revision);
+            tables.append_artifact_lineage(artifact_id, lineage_inputs);
+            emitted_results[contract_id] = Json{{"artifact_id", artifact_id}, {"payload", parsed}};
+            return STREAMFIND_PLUGIN_OK;
+        };
         streamfind_plugin_buffer buffer{};
         const auto text = request.dump();
         const auto status = plugin.plugin.invoke(
             &context, text.data(), static_cast<uint32_t>(text.size()), &buffer, plugin.plugin.user_data);
         if (status != STREAMFIND_PLUGIN_OK) {
             throw Error(ErrorCode::MethodExecution,
-                        "dynamic plugin invocation failed with status " + std::to_string(status));
+                            "dynamic plugin invocation failed with status " + std::to_string(status) +
+                            (plugin.runtime_diagnostics.empty() ? std::string{} : ": " + plugin.runtime_diagnostics));
         }
         if ((buffer.data == nullptr) != (buffer.size == 0)) {
             plugin.plugin.release_buffer(&buffer, plugin.plugin.user_data);
@@ -123,6 +236,8 @@ Json invoke_dynamic(
                         std::string("dynamic plugin returned invalid JSON: ") + error.what());
         }
         plugin.plugin.release_buffer(&buffer, plugin.plugin.user_data);
+        if (!emitted_results.empty())
+            response["emitted_results"] = std::move(emitted_results);
     });
     return response;
 }
@@ -278,33 +393,29 @@ void register_dynamic_plugin_capabilities(
             throw Error(ErrorCode::InvalidArgument, "dynamic catalogue entry has no canonical_id");
         }
         const auto tables = detail::entry_tables(entry);
-        if (entry.value("kind", std::string{}) == "method") {
-            auto definition_document = entry;
-            definition_document["id"] = id;
-            definition_document["parameters"] = parameter_schema(entry);
-            const auto effects = entry.contains("effects") && entry.at("effects").is_object()
-                                     ? entry.at("effects")
-                                     : Json::object();
-            definition_document["writes"] = effects.value("writes", Json::array());
-            auto definition = Method::definition_from_json(definition_document);
-            methods.register_method(Method(
-                std::move(definition),
-                [&plugin, id, tables](Project &project, const Json &parameters) {
-                    return detail::invoke_dynamic(plugin, project, id, parameters, tables);
-                }));
-        } else if (entry.value("kind", std::string{}) == "operation") {
+        if (entry.value("kind", std::string{}) == "operation") {
             OperationDefinition definition;
             definition.id = id;
             definition.name = entry.value("label", id);
             definition.description = entry.value("definition", "");
             definition.domain = entry.value("domain", "");
+            definition.version = entry.value("operation_version", "1");
+            definition.project_entry = entry.value("project_entry", false);
+            definition.cacheable = entry.value("cacheable", false);
             definition.parameters = ParameterSchema::from_json(
                 parameter_schema(entry));
+            for (const auto &port : entry.value("input_ports", Json::array()))
+                definition.input_ports.push_back(OperationDefinition::Port::from_json(port));
+            for (const auto &port : entry.value("output_ports", Json::array()))
+                definition.output_ports.push_back(OperationDefinition::Port::from_json(port));
             operations.register_operation(Operation(
                 std::move(definition),
-                [&plugin, id, tables](Project &project, const Json &parameters) {
-                    return detail::invoke_dynamic(plugin, project, id, parameters, tables);
-                }));
+                [&plugin, id, tables, output_ports = entry.value("output_ports", Json::array())](
+                    Project &project, const Json &parameters,
+                    const std::string &operation_instance, const Json &input_artifacts) {
+                    return detail::invoke_dynamic(plugin, project, id, parameters, tables,
+                                                  output_ports, operation_instance, input_artifacts);
+                }, {}));
         }
     }
 }

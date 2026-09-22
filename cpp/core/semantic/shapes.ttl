@@ -7,42 +7,44 @@
 
 sfcore:SemanticEntryShape
     a sh:NodeShape ;
-    sh:targetClass sf:Operation, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:Parameter, sf:Result, sf:Error, sf:Table, sf:Field, sf:Column ;
+    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:Parameter, sf:Result, sf:Error, sf:Table, sf:Field, sf:Column ;
     sh:property [ sh:path skos:prefLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path skos:definition ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
+
+sfcore:ApiCommandShape
+    a sh:NodeShape ;
+    sh:targetClass sf:ApiCommand ;
+    sh:property [ sh:path sf:commandId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
+    sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:Result ] ;
+    sh:property [ sh:path sf:mutatesProject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path sf:category ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path sf:guidance ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
 sfcore:OperationShape
     a sh:NodeShape ;
     sh:targetClass sf:Operation ;
     sh:property [ sh:path sf:operationId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:operationVersion ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:projectEntry ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path sf:cacheable ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
-    sh:property [ sh:path sf:returns ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Result ] ;
+    sh:property [ sh:path sf:hasInputPort ; sh:class sf:ArtifactContract ] ;
+    sh:property [ sh:path sf:hasOutputPort ; sh:class sf:ArtifactContract ] ;
+    sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:Result ] ;
     sh:property [ sh:path sf:reads ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
-    sh:property [ sh:path sf:mutatesProject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:category ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path sf:invocationModel ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "stateless" "session" "workflow" ) ] ;
-    sh:property [ sh:path sf:requiresConnection ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:guidance ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path sf:nextOperation ; sh:class sf:Operation ] ;
-    sh:property [ sh:path sf:defaults ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:sparql [ sh:message "Operation identifiers must be unique." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:operationId ?id .
                 ?other a sf:Operation ; sf:operationId ?id .
                 FILTER (?other != $this)
             }
         """
     ] ;
-    sh:sparql [
-        sh:message "Mutating operations must declare at least one written table." ;
-        sh:select """
-            PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this
-            WHERE {
-                $this sf:mutatesProject true .
-                FILTER NOT EXISTS { $this sf:writes ?table . }
-            }
-        """
-    ] ;
+
     sh:sparql [
         sh:message "Read-only operations must not declare written tables." ;
         sh:select """
@@ -52,6 +54,14 @@ sfcore:OperationShape
             }
         """
     ] .
+
+sfcore:WorkflowConnectionShape
+    a sh:NodeShape ;
+    sh:targetClass sf:WorkflowConnection ;
+    sh:property [ sh:path sf:sourceNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:sourcePortId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:targetNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:targetPortId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
 sfcore:DomainModuleShape
     a sh:NodeShape ;
@@ -119,13 +129,15 @@ sfcore:ParameterShape
     a sh:NodeShape ;
     sh:targetClass sf:Parameter ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
-    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" ) ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:required ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path sf:default ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path sf:defaultRequired ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:example ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path sf:units ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path sf:nullable ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
-    sh:property [ sh:path sf:hasProperty ; sh:class sf:Field ] ;
+    sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
     sh:sparql [ sh:message "Array parameters must declare exactly one sf:items schema." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:type "array" .
                 { FILTER NOT EXISTS { $this sf:items ?items . } }
                 UNION
@@ -140,6 +152,16 @@ sfcore:ParameterShape
             WHERE {
                 $this sf:type ?type ; sf:items ?items .
                 FILTER (?type != "array")
+            }
+        """
+    ] ;
+    sh:sparql [
+        sh:message "Parameters marked sf:defaultRequired true must declare sf:default." ;
+        sh:select """
+            PREFIX sf: <https://streamfind.dev/vocabulary#>
+            SELECT $this WHERE {
+                $this sf:defaultRequired true .
+                FILTER NOT EXISTS { $this sf:default ?default }
             }
         """
     ] .
@@ -159,7 +181,7 @@ sfcore:ResultShape
     sh:targetClass sf:Result ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" ) ] ;
-    sh:property [ sh:path sf:hasProperty ; sh:class sf:Field ] ;
+    sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
     sh:sparql [ sh:message "Array results must declare exactly one sf:items schema." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:type "array" .
                 FILTER NOT EXISTS { $this sf:items ?items . }
@@ -227,20 +249,20 @@ sfcore:ColumnShape
     sh:targetClass sf:Column ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:columnName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Za-z][A-Za-z0-9_]*$" ] ;
-    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" ) ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 0 ] ;
     sh:property [ sh:path sf:storageType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:sparql [ sh:message "Every column must be referenced by a persisted table or table result." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { FILTER NOT EXISTS { ?table sf:hasColumn $this . } FILTER NOT EXISTS { ?result sf:type "table" ; sf:hasProperty $this . } } """ ] .
+    sh:sparql [ sh:message "Every column must be referenced by a persisted table, table result, or array parameter." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { FILTER NOT EXISTS { ?table sf:hasColumn $this . } FILTER NOT EXISTS { ?result sf:type "table" ; sf:hasProperty $this . } FILTER NOT EXISTS { ?parameter sf:items $this . } } """ ] .
 
 sfcore:FieldShape
     a sh:NodeShape ;
     sh:targetClass sf:Field ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
-    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" ) ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:required ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:example ; sh:maxCount 1 ] ;
-    sh:property [ sh:path sf:hasProperty ; sh:class sf:Field ] ;
+    sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
     sh:sparql [ sh:message "Logical fields must declare exactly one JSON property name." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { FILTER NOT EXISTS { $this a sf:Column . } { FILTER NOT EXISTS { $this sf:propertyName ?name . } } UNION { $this sf:propertyName ?name1, ?name2 . FILTER (?name1 != ?name2) } } """ ] ;
     sh:sparql [ sh:message "Logical fields must not declare physical column metadata." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { FILTER NOT EXISTS { $this a sf:Column . } { $this sf:columnName ?value } UNION { $this sf:storageType ?value } } """ ] ;

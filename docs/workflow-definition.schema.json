@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamfind.dev/schema/workflow-definition.schema.json",
+  "title": "streamfind portable workflow definition",
+  "description": "A reusable, versioned workflow graph. Runtime execution records, artifact inventory, and physical table locations are intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workflow_id", "version", "domain", "operations", "connections"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "workflow_id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "domain": { "type": "string", "minLength": 1 },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    },
+    "connections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/connection" }
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "operation", "parameters"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "operation": { "type": "string", "minLength": 1 },
+        "parameters": { "type": "object" },
+        "inputs": {
+          "type": "object",
+          "description": "Optional explicit input selections; dataflow dependencies remain in connections.",
+          "additionalProperties": true
+        },
+        "position": {
+          "type": "object",
+          "description": "Optional canvas-only presentation metadata. Omit it for API/MCP-created workflows.",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_operation", "source_port", "target_operation", "target_port"],
+      "properties": {
+        "source_operation": { "type": "string", "minLength": 1 },
+        "source_port": { "type": "string", "minLength": 1 },
+        "target_operation": { "type": "string", "minLength": 1 },
+        "target_port": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

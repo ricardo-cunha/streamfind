@@ -26,24 +26,43 @@ Json tools() {
 }
 
 const char *command(const std::string &name) {
-    static const std::array<std::string, 30> commands = {
+    static const std::array<std::string, 35> commands = {
         "create", "describe", "validate", "get_domain", "get_metadata",
         "set_metadata", "get_workflow", "get_workflow_execution", "create_workflow_execution", "get_execution", "list_executions", "transition_execution", "cancel_execution", "set_workflow", "add_method", "remove_method", "validate_workflow",
         "run_workflow", "get_cache", "get_cache_size", "delete_cache",
         "get_audit_trail", "get_available_methods", "run_method", "copy", "close",
+        "add_operation", "connect_operations", "get_artifact_inventory",
+        "request_artifact", "resolve_operation_inputs",
 
     };
     return std::find(commands.begin(), commands.end(), name) == commands.end() ? nullptr : name.c_str();
 }
 
 std::string interface_guidance() {
-    if (const auto entries = streamfind::catalogue::entries_json()) {
-        for (const auto &entry : *entries) {
-            const auto guidance = entry.value("interface_guidance", "");
-            if (!guidance.empty()) return guidance;
-        }
-    }
-    return "Start with create, then describe the project. Domain operations are stateless and require database_path; connect is only needed for workflow methods.";
+    return
+        "StreamFind is a workflow-centric data-processing framework. A project is a "
+        "DuckDB-backed workspace with a domain, ontology-defined operations, immutable "
+        "artifacts, workflow revisions, and execution history. Build processing workflows "
+        "as an acyclic graph of operation instances: each operation has a unique instance "
+        "id, parameters, typed input/output ports, and an operationSuccessSignal. Connect "
+        "output ports to input ports or compatible parameters explicitly with "
+        "source_operation, source_port, target_operation, and target_port. Use the "
+        "target_port form parameter:<parameter_name> when a preceding result should "
+        "supply a dynamic parameter value; this is useful for selectors, branching, "
+        "loops, thresholds, and other generic control/dataflow operations. The runtime "
+        "merges that artifact payload into the target operation parameters and validates "
+        "the resulting parameter object. Do not infer dependencies from operation order "
+        "or create next-operation edges.\n\n"
+        "Recommended agent workflow: call tools/list to discover callable MCP tools and "
+        "schemas; create or describe a project; inspect domain operations and their ontology "
+        "guidance; use add_operation and connect_operations (or set_workflow for an atomic "
+        "graph replacement); call validate_workflow; call get_workflow to confirm the saved "
+        "graph; call run_workflow; then inspect the returned operation results, get_artifact_inventory, "
+        "request_artifact, and resolve_operation_inputs. Table outputs are immutable published "
+        "artifacts identified by workflow revision, producer operation instance, and output "
+        "contract. Use the artifact inventory rather than execution text as proof that an "
+        "output is available to downstream operations. Stateless domain operations require "
+        "database_path. connect is only needed for legacy workflow methods and session context.";
 }
 
 std::string tool_description(const Json &entry, const std::string &fallback) {
@@ -81,10 +100,14 @@ Json Session::handle(const Json &request) {
                     }
                 }
                 if (entry) {
+                    const auto mcp = entry->value("mcp", Json::object());
+                    const auto input_schema = mcp.value(
+                        "input_schema",
+                        Json{{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}});
                     catalogue.push_back(Json{
                         {"name", entry->value("canonical_id", definition.id)},
                         {"description", detail::tool_description(*entry, definition.description)},
-                        {"inputSchema", entry->at("mcp").at("input_schema")},
+                        {"inputSchema", input_schema},
                         {"annotations", {{"title", entry->value("label", definition.name)},
                                           {"readOnlyHint", !entry->at("effects").value("mutates_project", false)},
                                           {"destructiveHint", entry->at("effects").value("mutates_project", false)}}},
@@ -125,7 +148,10 @@ Json Session::handle(const Json &request) {
             options.database_path = arguments.at("database_path").get<std::string>();
             options.domain = operation->definition().domain;
             auto project = Project::open(options);
-            const Json result = project.run_operation(name, arguments, operations_);
+            Json parameters = arguments;
+            parameters.erase("database_path");
+            parameters.erase("domain");
+            const Json result = project.run_operation(name, parameters, operations_);
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
         } catch (const Error &error) { return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}}; }
     }
@@ -137,6 +163,41 @@ Json Session::handle(const Json &request) {
         try {
             const Json result = api::run(api::ProjectCommand::run_method, arguments, registry_);
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
+        } catch (const Error &error) {
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
+        }
+    }
+    if (name == "validate_workflow" || name == "set_workflow") {
+        try {
+            const auto arguments = request.at("params").value("arguments", Json::object());
+            if (!arguments.contains("database_path") || !arguments.contains("workflow"))
+                throw Error(ErrorCode::InvalidArgument, "Workflow validation requires database_path and workflow");
+            ProjectOptions options;
+            options.database_path = arguments.at("database_path").get<std::string>();
+            auto project = Project::open(options);
+            auto workflow = Workflow::from_json(arguments.at("workflow"));
+            workflow.domain = workflow.domain.empty() ? project.get_domain() : workflow.domain;
+            workflow.validate(operations_);
+            if (name == "set_workflow") project.set_workflow(workflow, operations_);
+            const Json result = {{"valid", true}, {"workflow", workflow.to_json()}};
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
+        } catch (const Error &error) {
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
+        }
+    }
+    if (name == "run_workflow") {
+        try {
+            const auto arguments = request.at("params").value("arguments", Json::object());
+            if (!arguments.contains("database_path"))
+                throw Error(ErrorCode::InvalidArgument, "Workflow execution requires database_path");
+            ProjectOptions options;
+            options.database_path = arguments.at("database_path").get<std::string>();
+            auto project = Project::open(options);
+            const auto workflow = project.get_workflow();
+            if (!workflow.operations.empty() || !workflow.connections.empty()) {
+                const Json result = project.run_operation_graph(operations_);
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
+            }
         } catch (const Error &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }

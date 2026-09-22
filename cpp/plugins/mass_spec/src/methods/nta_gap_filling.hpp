@@ -13,7 +13,8 @@
 namespace nta
 {
   // Forward declaration
-  namespace api { struct NTA_FEATURE_ROW; struct NTA_FEATURES; }
+  namespace utils { struct NTA_FEATURE_ROW; }
+  namespace api { struct NTA_FEATURES; }
   class PROJECT_NON_TARGET_ANALYSIS;
 
   namespace gap_filling

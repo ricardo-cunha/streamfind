@@ -2,6 +2,14 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+sfcore:operationSuccessSignal
+    a sf:Result ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation success signal" ;
+    skos:definition "Boolean result emitted for every operation to indicate whether it completed successfully." ;
+    sf:type "boolean" .
+
 sfcore:operationStatusResult
     a sf:Result ;
     sf:availableInDomain sfcore:streamfind ;
@@ -55,6 +63,15 @@ sfcore:metadataResult
     skos:definition "The project metadata JSON object." ;
     sf:type "table" ;
     sf:hasProperty sfcore:projectMetadataColumn .
+
+sfcore:selectedPathsResult
+    a sf:Result ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected files and folders" ;
+    skos:definition "The selected paths in their original order." ;
+    sf:type "array" ;
+    sf:items sfcore:filePathColumn .
 
 sfcore:workflowResult
     a sf:Result ;

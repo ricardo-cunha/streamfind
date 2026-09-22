@@ -2,7 +2,7 @@
 // Feature blank subtraction implementations for PROJECT_NON_TARGET_ANALYSIS
 
 #include "methods/nta_blank_subtraction.hpp"
-#include "operations/operations.hpp"
+#include "operations/base.hpp"
 #include "methods/nta_processing_methods.hpp"
 #include <unordered_map>
 #include <algorithm>

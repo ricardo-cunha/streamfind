@@ -117,7 +117,12 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "delete_cache") return ProjectCommand::delete_cache;
     if (name == "get_cache_size") return ProjectCommand::get_cache_size;
     if (name == "get_audit_trail") return ProjectCommand::get_audit_trail;
-        if (name == "close") return ProjectCommand::close;
+    if (name == "close") return ProjectCommand::close;
+    if (name == "add_operation") return ProjectCommand::add_operation;
+    if (name == "connect_operations") return ProjectCommand::connect_operations;
+    if (name == "get_artifact_inventory") return ProjectCommand::get_artifact_inventory;
+    if (name == "request_artifact") return ProjectCommand::request_artifact;
+    if (name == "resolve_operation_inputs") return ProjectCommand::resolve_operation_inputs;
 
     throw Error(ErrorCode::InvalidArgument, "Unknown Project command: " + std::string(name));
 }
@@ -233,6 +238,49 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         project.set_workflow(std::move(workflow), registry);
         return detail::workflow_table(project.get_workflow(), registry);
     }
+    case ProjectCommand::add_operation: {
+        if (!request.contains("operation_id") || !request.contains("operation"))
+            throw Error(ErrorCode::InvalidArgument, "Request requires operation_id and operation");
+        auto project = Project::open(detail::options_from_request(request));
+        auto workflow = project.get_workflow();
+        WorkflowOperation operation;
+        operation.id = request.at("operation_id").get<std::string>();
+        operation.operation = request.at("operation").get<std::string>();
+        operation.parameters = ParameterValues::from_json(request.value("parameters", Json::object()));
+        for (const auto &existing : workflow.operations)
+            if (existing.id == operation.id)
+                throw Error(ErrorCode::InvalidArgument, "Workflow operation id already exists: " + operation.id);
+        workflow.operations.push_back(std::move(operation));
+        project.set_workflow(std::move(workflow), registry);
+        return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
+    }
+    case ProjectCommand::connect_operations: {
+        auto project = Project::open(detail::options_from_request(request));
+        auto workflow = project.get_workflow();
+        workflow.connections.push_back(WorkflowConnection::from_json(request));
+        project.set_workflow(std::move(workflow), registry);
+        return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
+    }
+    case ProjectCommand::get_artifact_inventory:
+        return Project::open(detail::options_from_request(request, true)).get_artifact_inventory();
+    case ProjectCommand::request_artifact: {
+        auto project = Project::open(detail::options_from_request(request, true));
+        Json result = Json::array();
+        for (const auto &artifact : project.get_artifact_inventory()) {
+            if (request.contains("artifact_id") && artifact.value("artifact_id", "") != request.at("artifact_id").get<std::string>()) continue;
+            if (request.contains("operation") && artifact.value("producer_operation", "") != request.at("operation").get<std::string>()) continue;
+            if (request.contains("output_port") && artifact.value("contract_id", "") != request.at("output_port").get<std::string>()) continue;
+            result.push_back(artifact);
+        }
+        return result;
+    }
+    case ProjectCommand::resolve_operation_inputs: {
+        if (!request.contains("operation_id"))
+            throw Error(ErrorCode::InvalidArgument, "Request requires operation_id");
+        auto project = Project::open(detail::options_from_request(request, true));
+        return project.resolve_workflow_inputs(request.at("operation_id").get<std::string>());
+    }
+
     case ProjectCommand::run_workflow: {
         auto project = Project::open(detail::options_from_request(request));
         const Json result = request.contains("worker_id")

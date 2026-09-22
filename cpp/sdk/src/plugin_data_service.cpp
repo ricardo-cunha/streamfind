@@ -306,6 +306,48 @@ streamfind_plugin_status plugin_append_batch(
     }
 }
 
+streamfind_plugin_status plugin_emit_table_batch(
+    void *execution_context,
+    const char *output_contract_id,
+    uint32_t output_contract_id_size,
+    const streamfind_plugin_batch_column *columns,
+    uint32_t column_count,
+    uint64_t row_count,
+    void *) {
+    if (execution_context == nullptr || output_contract_id == nullptr ||
+        output_contract_id_size == 0 || columns == nullptr || column_count == 0)
+        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    auto *context = detail::context_from(execution_context);
+    if (!context->emit_table_batch)
+        return STREAMFIND_PLUGIN_NOT_ALLOWED;
+    for (uint32_t index = 0; index < column_count; ++index) {
+        if (columns[index].name == nullptr || columns[index].name_size == 0 ||
+            columns[index].row_count != row_count)
+            return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    }
+    return context->emit_table_batch(
+        execution_context, output_contract_id, output_contract_id_size,
+        columns, column_count, row_count, nullptr);
+}
+
+streamfind_plugin_status plugin_emit_result(
+    void *execution_context,
+    const char *output_contract_id,
+    uint32_t output_contract_id_size,
+    const char *payload,
+    uint64_t payload_size,
+    void *) {
+    if (execution_context == nullptr || output_contract_id == nullptr ||
+        output_contract_id_size == 0 || payload == nullptr)
+        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    auto *context = detail::context_from(execution_context);
+    if (!context->emit_result)
+        return STREAMFIND_PLUGIN_NOT_ALLOWED;
+    return context->emit_result(
+        execution_context, output_contract_id, output_contract_id_size,
+        payload, payload_size, nullptr);
+}
+
 streamfind_plugin_status plugin_update_batch(
     void *execution_context, const char *table_name, uint32_t table_name_size,
     const char *key_column, uint32_t key_column_size,
