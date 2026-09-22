@@ -7,6 +7,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 #include "streamfind/catalogue.hpp"
 #include "streamfind/core_operations.hpp"
 #include "streamfind/mcp.hpp"
@@ -15,6 +20,32 @@
 #include "streamfind/sdk/plugin_data_service.hpp"
 
 namespace streamfind::mcp::detail {
+
+std::filesystem::path executable_path(int argc, char **argv) {
+#if defined(_WIN32)
+    std::vector<wchar_t> buffer(512);
+    for (;;) {
+        const auto length = GetModuleFileNameW(nullptr, buffer.data(),
+                                                static_cast<DWORD>(buffer.size()));
+        if (length == 0) break;
+        if (length < buffer.size() - 1)
+            return std::filesystem::path(std::wstring(buffer.data(), length));
+        buffer.resize(buffer.size() * 2);
+    }
+#elif defined(__linux__)
+    std::vector<char> buffer(512);
+    for (;;) {
+        const auto length = readlink("/proc/self/exe", buffer.data(), buffer.size());
+        if (length <= 0) break;
+        if (static_cast<std::size_t>(length) < buffer.size())
+            return std::filesystem::path(std::string(buffer.data(), static_cast<std::size_t>(length)));
+        buffer.resize(buffer.size() * 2);
+    }
+#endif
+    if (argc > 0 && argv != nullptr && argv[0] != nullptr)
+        return std::filesystem::absolute(std::filesystem::path(argv[0]));
+    return std::filesystem::current_path() / "streamfind_mcp";
+}
 
 namespace host_callbacks {
 
@@ -147,10 +178,8 @@ int main(int argc, char **argv) {
     streamfind::OperationRegistry operations;
     std::unique_ptr<streamfind::mcp::detail::DynamicPluginRuntime> dynamic_plugins;
     try {
-        const auto executable_path = argc > 0
-                                         ? std::filesystem::absolute(argv[0])
-                                         : std::filesystem::current_path() / "streamfind_mcp";
-        const auto configuration_path = executable_path.parent_path() / "streamfind.json";
+        const auto executable = streamfind::mcp::detail::executable_path(argc, argv);
+        const auto configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");
         dynamic_plugins = std::make_unique<streamfind::mcp::detail::DynamicPluginRuntime>();
