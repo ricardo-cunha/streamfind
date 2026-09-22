@@ -36,7 +36,7 @@ try {
         throw "Packaged tools/list failed: $($tools.error.message)"
     }
     $toolNames = @($tools.result.tools | ForEach-Object { $_.name })
-    foreach ($requiredTool in @('create', 'mass_spec.add_analyses', 'mass_spec.get_analysis_names')) {
+    foreach ($requiredTool in @('create', 'describe', 'mass_spec.read_mass_spec_files')) {
         if ($toolNames -notcontains $requiredTool) {
             throw "Packaged MCP did not advertise required tool: $requiredTool"
         }
@@ -46,14 +46,46 @@ try {
         database_path = $database
         domain = 'mass_spec'
     } | Out-Null
-    $names = Invoke-McpTool $process 4 'mass_spec.get_analysis_names' @{
+    $description = Invoke-McpTool $process 4 'describe' @{
         database_path = $database
     }
-    if ($null -eq $names) {
-        throw 'Packaged MassSpec analysis-name operation returned no result'
+    if ($null -eq $description) {
+        throw 'Packaged project describe operation returned no result'
     }
 
-    Write-Host ("Packaged MCP smoke passed: startup, tools/list, create, and mass_spec.get_analysis_names ({0} tools)." -f $toolNames.Count)
+    Invoke-McpTool $process 5 'add_operation' @{
+        database_path = $database
+        operation_id = 'read-1'
+        operation = 'mass_spec.read_mass_spec_files'
+        parameters = @{ source_paths = @('fixture.mzML') }
+    } | Out-Null
+    Invoke-McpTool $process 6 'add_operation' @{
+        database_path = $database
+        operation_id = 'find-1'
+        operation = 'mass_spec.find_features'
+        parameters = @{}
+    } | Out-Null
+    Invoke-McpTool $process 7 'connect_operations' @{
+        database_path = $database
+        source_operation = 'read-1'
+        source_port = 'analysesTable'
+        target_operation = 'find-1'
+        target_port = 'analysesTable'
+    } | Out-Null
+    $workflow = Invoke-McpTool $process 8 'get_workflow' @{ database_path = $database }
+    $validation = Invoke-McpTool $process 9 'validate_workflow' @{
+        database_path = $database
+        workflow = $workflow
+    }
+    if (-not $validation.valid) {
+        throw 'Packaged workflow construction validation returned invalid'
+    }
+    $inventory = Invoke-McpTool $process 10 'get_artifact_inventory' @{ database_path = $database }
+    if ([int]$inventory.Count -ne 0) {
+        throw 'Newly constructed workflow unexpectedly has artifacts'
+    }
+
+    Write-Host ("Packaged MCP smoke passed: startup, tools/list, create, describe, workflow construction, and validation ({0} tools)." -f $toolNames.Count)
 } finally {
     if ($null -ne $process) {
         Stop-StreamfindMcp $process

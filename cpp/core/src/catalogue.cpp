@@ -437,10 +437,14 @@ std::optional<Json> tools_json() {
         const auto model = entry.at("interface").value("invocation_model", "");
         if (!model.empty()) description += " Invocation model: " + model + ".";
         const bool read_only = !entry.at("effects").value("mutates_project", false);
+        const auto mcp = entry.value("mcp", Json::object());
+        const auto input_schema = mcp.value(
+            "input_schema",
+            Json{{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}});
         tools.push_back(Json{
-                            {"name", entry.at("mcp").at("name")},
+                            {"name", mcp.value("name", entry.value("canonical_id", ""))},
                             {"description", description},
-                            {"inputSchema", entry.at("mcp").at("input_schema")},
+                            {"inputSchema", input_schema},
                             {"annotations", {{"title", entry.value("label", "")},
                                               {"readOnlyHint", read_only},
                                               {"destructiveHint", !read_only}}},

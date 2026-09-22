@@ -7,6 +7,9 @@ if(NOT STREAMFIND_PROJECT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "rust/Cargo.toml workspace package version is missing or invalid")
 endif()
 project(streamfind_cpp VERSION ${STREAMFIND_PROJECT_VERSION} LANGUAGES C CXX)
+if(WIN32)
+    enable_language(RC)
+endif()
 include(CMakePackageConfigHelpers)
 
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
@@ -306,6 +309,10 @@ set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD
 
 add_executable(streamfind_service_host
     service/src/streamfind-service-host.cpp)
+if(WIN32)
+    target_sources(streamfind_service_host PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind.rc")
+endif()
 add_dependencies(streamfind_service_host streamfind_service)
 if(WIN32)
     target_link_libraries(streamfind_service_host PRIVATE ws2_32 shell32)

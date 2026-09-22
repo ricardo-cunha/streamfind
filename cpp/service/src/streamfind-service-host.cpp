@@ -100,7 +100,7 @@ bool backend_reachable(std::uint16_t port) {
 }
 }
 
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+int main() {
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return 1;
     try {

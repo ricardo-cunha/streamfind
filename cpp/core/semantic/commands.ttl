@@ -341,6 +341,8 @@ sfcore:addOperation
     sf:commandId "add_operation" ;
     skos:prefLabel "Add an operation to the workflow" ;
     skos:definition "Add a uniquely identified workflow operation with its parameters to the backend operation graph." ;
+    sf:category "workflow-construction" ;
+    sf:guidance "Use one unique operation_id per node instance. The operation value must be a canonical ontology operation id from tools/list, such as mass_spec.find_features. Parameters belong to this node instance; input artifacts are supplied only through explicit port connections." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -355,6 +357,8 @@ sfcore:connectOperations
     sf:commandId "connect_operations" ;
     skos:prefLabel "Connect workflow operation ports" ;
     skos:definition "Create an explicit typed-port connection from one workflow operation output to another operation input." ;
+    sf:category "workflow-construction" ;
+    sf:guidance "Connect a declared output port to a compatible declared input port or parameter. Use the exact operation instance ids and semantic port ids from the operation definitions. For dynamic parameter binding, set target_port to parameter:<parameter_name>; the published output payload is merged into that parameter before validation and execution. A target port accepts at most one connection; use validate_workflow before execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -370,6 +374,8 @@ sfcore:getArtifactInventory
     sf:commandId "get_artifact_inventory" ;
     skos:prefLabel "Read the artifact inventory" ;
     skos:definition "Return immutable table and structured-result artifacts published by workflow operations." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Use after run_workflow to verify that declared outputs are published. Match artifacts by contract_id, producer_instance, producer_operation, workflow_revision, and status; do not infer availability from the textual run response." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
     sf:mutatesProject false .
@@ -380,6 +386,8 @@ sfcore:requestArtifact
     sf:commandId "request_artifact" ;
     skos:prefLabel "Request an operation output artifact" ;
     skos:definition "Find a published artifact by operation output contract or artifact identifier for AI and application consumers." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Request a specific published output after checking the inventory. Use output_port with the semantic contract id, and use the returned physical_table and artifact_id when inspecting a table output." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -392,6 +400,8 @@ sfcore:resolveOperationInputs
     sf:commandId "resolve_operation_inputs" ;
     skos:prefLabel "Resolve operation input artifacts" ;
     skos:definition "Resolve each explicit workflow connection for an operation to the published immutable input artifact and physical table." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Use before executing or diagnosing a downstream node to confirm that every explicit connection resolves to a current published artifact from the expected producer instance." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,

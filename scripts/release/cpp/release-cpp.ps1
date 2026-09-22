@@ -11,8 +11,7 @@ param(
 
 $root = $Script:REPO_ROOT
 $env:STREAMFIND_PACKAGE_VERSION = $Version
-$buildDir = Join-Path $root 'tmp\build
-elease-cpp'
+$buildDir = Join-Path $root 'tmp\build\release-cpp'
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'
 $cmake = Get-CMake

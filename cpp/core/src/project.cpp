@@ -1999,6 +1999,13 @@ namespace streamfind
     {
         const auto workflow = get_workflow();
         workflow.validate(registry);
+        const std::string launch_snapshot = workflow.to_json().dump();
+        {
+            std::lock_guard lock(impl_->mutex);
+            ensure_active(*impl_);
+            Connection connection(*impl_);
+            query(connection.get(), "DELETE FROM WORKFLOW_EXECUTION_STEP", "reset graph execution steps");
+        }
         std::map<std::string, const WorkflowOperation *> by_id;
         std::map<std::string, std::size_t> indegree;
         std::map<std::string, std::vector<std::string>> outgoing;
@@ -2021,8 +2028,24 @@ namespace streamfind
                 throw Error(ErrorCode::WorkflowValidation,
                             "Unknown workflow operation: " + operation.operation);
             const auto inputs = resolve_workflow_inputs(operation_id);
+            const auto parameter_hash = detail::hash_text(operation.parameters.values.dump());
+            const auto cache_key = detail::hash_text(operation.id + "\n" + operation.operation + "\n" + operation.parameters.values.dump());
+            {
+                std::lock_guard lock(impl_->mutex);
+                ensure_active(*impl_);
+                Connection connection(*impl_);
+                execution_row(connection.get(), workflow.version, index, operation.operation,
+                              parameter_hash, "running", cache_key, launch_snapshot);
+            }
             const auto result = executor->run_workflow(
                 *this, operation.parameters.values, operation.id, inputs);
+            {
+                std::lock_guard lock(impl_->mutex);
+                ensure_active(*impl_);
+                Connection connection(*impl_);
+                execution_row(connection.get(), workflow.version, index, operation.operation,
+                              parameter_hash, "completed", cache_key, launch_snapshot);
+            }
             executions.push_back({{"operation_id", operation.id},
                                   {"operation", operation.operation},
                                   {"inputs", inputs}, {"result", result}});
