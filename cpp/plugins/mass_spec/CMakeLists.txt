@@ -22,6 +22,24 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/utils/nta.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"
     src/plugin_entrypoint.cpp)
+
+add_library(streamfind_openbabel_runtime SHARED
+    src/utils/openbabel_c_api.cpp)
+set_target_properties(streamfind_openbabel_runtime PROPERTIES
+    OUTPUT_NAME "openbabel_streamfind"
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON)
+target_compile_definitions(streamfind_openbabel_runtime PRIVATE
+    streamfind_OPENBABEL_BUILD_DLL
+    NOMINMAX)
+target_include_directories(streamfind_openbabel_runtime PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/pugixml-1.14/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/openbabel/openbabel-3-2-0/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf"
+)
+target_link_libraries(streamfind_openbabel_runtime PRIVATE streamfind::openbabel)
+
 streamfind_configure_cpp_library(streamfind_mass_spec_plugin mass_spec
     BUILD_DEFINE STREAMFIND_DOMAIN_BUILDING_SHARED
     USING_DEFINE STREAMFIND_DOMAIN_USING_SHARED)
@@ -79,6 +97,10 @@ install(
     RUNTIME DESTINATION bin
 )
 install(TARGETS streamfind_mass_spec_plugin
+    RUNTIME DESTINATION share/streamfind/plugins/mass_spec
+    LIBRARY DESTINATION share/streamfind/plugins/mass_spec
+    ARCHIVE DESTINATION lib)
+install(TARGETS streamfind_openbabel_runtime
     RUNTIME DESTINATION share/streamfind/plugins/mass_spec
     LIBRARY DESTINATION share/streamfind/plugins/mass_spec
     ARCHIVE DESTINATION lib)

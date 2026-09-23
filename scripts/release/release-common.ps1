@@ -76,6 +76,10 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
                 throw "C++ distribution plugin payload is missing $requiredPluginFile in $domain"
             }
         }
+        if ($domain -eq 'mass_spec' -and
+            -not (Test-Path (Join-Path $pluginDirectory.FullName 'openbabel_streamfind.dll'))) {
+            throw 'C++ distribution mass_spec plugin payload is missing openbabel_streamfind.dll'
+        }
     }
 }
 

@@ -120,6 +120,7 @@ namespace sf::obabel
     const std::vector<std::wstring> candidates = {
         env_data,
         dll_dir + L"\\openbabel\\data",
+        dll_dir_grandparent + L"\\openbabel\\data",
         module_parent.empty() ? L"" : module_parent + L"\\extdata\\openbabel\\data",
         module_parent.empty() ? L"" : module_parent + L"\\core\\external\\openbabel\\openbabel-3-2-0\\data",
         cwd.empty() ? L"" : cwd + L"\\src\\core\\external\\openbabel\\openbabel-3-2-0\\data"};

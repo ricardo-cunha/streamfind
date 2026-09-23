@@ -117,6 +117,7 @@ namespace streamfind::obabel_detail
 
       const std::vector<std::wstring> candidates = {
           env_data,
+          parent2.empty() ? L"" : parent2 + L"\\openbabel\\data",
           parent1.empty() ? L"" : parent1 + L"\\extdata\\openbabel\\data",
           parent1.empty() ? L"" : parent1 + L"\\core\\external\\openbabel\\openbabel-3-2-0\\data",
           source_root.empty() ? L"" : source_root + L"\\openbabel-3-2-0\\data",
@@ -157,6 +158,7 @@ namespace streamfind::obabel_detail
 
     const std::vector<std::wstring> candidates = {
         env_streamfind != nullptr ? widen_path(env_streamfind) : L"",
+        parent2.empty() ? L"" : parent2 + L"\\openbabel\\data",
         parent1.empty() ? L"" : parent1 + L"\\extdata\\openbabel\\data",
         parent1.empty() ? L"" : parent1 + L"\\core\\external\\openbabel\\openbabel-3-2-0\\data",
         source_root.empty() ? L"" : source_root + L"\\openbabel-3-2-0\\data",
