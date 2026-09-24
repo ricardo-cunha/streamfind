@@ -1,11 +1,12 @@
+#include "operations/nta/nta_assign_transformation_products.hpp"
 // nta_assign_transformation_products.cpp
 // AssignTransformationProducts algorithm port.
 // Ported operation-faithfully from bindings/r/src/core/nta/nta_assign_transformation_products.cpp:
 // scoring formulas, tolerances, ranking, and filters are copied verbatim; only the
 // plumbing (model structs, JSON marshalling, persistence) is adapted.
 
-#include "methods/nta_assign_transformation_products.hpp"
-#include "methods/nta_processing_methods.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
 #include "readers/reader.hpp"
 
 #include <algorithm>
@@ -15,16 +16,16 @@
 #include <sstream>
 #include <unordered_map>
 
-namespace nta::assign_transformation_products
+namespace streamfind::mass_spec::nta::assign_transformation_products
 {
   struct NORMALIZED_ROW
   {
-    nta::api::NTA_TRANSFORMATION_PRODUCT_ROW row;
+    ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW row;
   };
 
   struct CANDIDATE
   {
-    nta::api::NTA_TRANSFORMATION_PRODUCT_ROW row;
+    ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW row;
     double score = -std::numeric_limits<double>::infinity();
   };
 
@@ -108,8 +109,8 @@ namespace nta::assign_transformation_products
   {
     std::vector<double> out;
     if (encoded.empty()) return out;
-    const std::string raw = mass_spec::reader::utils::decode_base64(encoded);
-    const auto fv = mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
+    const std::string raw = ::mass_spec::reader::utils::decode_base64(encoded);
+    const auto fv = ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
     out.reserve(fv.size());
     for (float f : fv) out.push_back(static_cast<double>(f));
     return out;
@@ -294,7 +295,7 @@ namespace nta::assign_transformation_products
            1.5 * delta_score;
   }
 
-  NORMALIZED_ROW normalize_row(const nta::api::NTA_TRANSFORMATION_PRODUCT_ROW &input)
+  NORMALIZED_ROW normalize_row(const ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW &input)
   {
     NORMALIZED_ROW out;
     out.row = input;
@@ -321,13 +322,13 @@ namespace nta::assign_transformation_products
     return out;
   }
 
-  nta::api::NTA_TRANSFORMATION_PRODUCTS assign_transformation_products_impl(
-      const std::vector<nta::api::NTA_SUSPECT_ROW> &suspects,
-      const std::vector<nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> &tp_rows,
+  ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCTS assign_transformation_products_impl(
+      const std::vector<::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW> &suspects,
+      const std::vector<::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> &tp_rows,
       const std::string &chromatographic_phase,
       double mzrMS2)
   {
-    nta::api::NTA_TRANSFORMATION_PRODUCTS out;
+    ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCTS out;
     if (tp_rows.empty()) return out;
 
     const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -526,4 +527,39 @@ namespace nta::assign_transformation_products
     return out;
   }
 
-} // namespace nta::assign_transformation_products
+} // namespace streamfind::mass_spec::nta::assign_transformation_products
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::assign_transformation_products
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        // R defaults (catalogue carries no defaults; the executor mirrors the R method).
+        const std::string phase = parameters.value("chromatographic_phase", std::string("reverse_phase"));
+        const double mzr_ms2 = parameters.value("mzr_ms2", 0.008);
+        if (phase != "reverse_phase" && phase != "hilic")
+            throw Error(ErrorCode::InvalidArgument, "invalid assign_transformation_products parameters: chromatographic_phase must be reverse_phase or hilic");
+        if (mzr_ms2 < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid assign_transformation_products parameters: mzr_ms2 must be >= 0");
+
+        // Operate on the current suspects buffer (from suspect_screening): load the
+        // per-analysis features/analyses plus the persisted suspects, run the
+        // algorithm over the combined suspect rows, append the combination-scored
+        // rows back into the suspect buffers, and persist through the suspects path.
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        utils::detail::load_suspects(access, data, parameters);
+        const auto tp_rows = utils::detail::parse_transformation_products(parameters);
+
+        std::vector<::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW> suspects;
+        for (const auto &buffer : data.suspect_buffers())
+            for (int i = 0; i < buffer.size(); ++i)
+                suspects.push_back(buffer.get_suspect(i));
+
+        const auto products = ::streamfind::mass_spec::nta::assign_transformation_products::assign_transformation_products_impl(
+            suspects, tp_rows, phase, mzr_ms2);
+        utils::detail::append_transformation_products_to_suspects(data, products);
+        utils::detail::emit_transformation_products(access, data, products);
+        utils::detail::emit_suspects(access, data);
+        return Json{{"status", "finished"}, {"info", "Transformation products assigned."}};
+    }
+}

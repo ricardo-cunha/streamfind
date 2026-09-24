@@ -1,7 +1,9 @@
 // nta_alignment.h
-// Feature alignment and grouping functions for PROJECT_NON_TARGET_ANALYSIS
+// Feature alignment and grouping functions for NtaProjectData
 
 #ifndef NTA_ALIGNMENT_H
+#include "utils/nta.hpp"
+
 #define NTA_ALIGNMENT_H
 
 #include <vector>
@@ -9,9 +11,9 @@
 #include <map>
 #include <cstddef>
 
-namespace nta { namespace utils { struct NTA_FEATURE_ROW; } namespace api { struct NTA_FEATURES; } class PROJECT_NON_TARGET_ANALYSIS; }
+namespace streamfind::mass_spec::nta { namespace utils { struct NTA_FEATURE_ROW; } namespace api { struct NTA_FEATURES; } class NtaProjectData; }
 
-namespace nta {
+namespace streamfind::mass_spec::nta {
 namespace alignment {
 
 // Struct to hold internal standard information
@@ -74,11 +76,11 @@ float interpolate_rt_shift(
   const std::vector<float> &anchor_shifts
 );
 
-// Forward declaration for PROJECT_NON_TARGET_ANALYSIS (already declared above)
+// Forward declaration for NtaProjectData (already declared above)
 
-// Implementation function for PROJECT_NON_TARGET_ANALYSIS::group_features
+// Implementation function for NtaProjectData::group_features
 void group_features_impl(
-  nta::PROJECT_NON_TARGET_ANALYSIS &nta_data,
+  ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
   const std::string &method,
   float rt_deviation,
   float ppm_threshold,
@@ -89,6 +91,8 @@ void group_features_impl(
 );
 
 } // namespace alignment
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif // NTA_ALIGNMENT_H
+
+namespace streamfind::mass_spec::nta::group_features { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

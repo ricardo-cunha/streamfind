@@ -11,14 +11,14 @@ param(
 
 $root = $Script:REPO_ROOT
 $env:STREAMFIND_PACKAGE_VERSION = $Version
-$buildDir = Join-Path $root 'tmp\build\release-cpp'
+$buildDir = Join-Path $root 'tmp\build\mingw-release-cpp'
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'
-$cmake = Get-CMake
-$ninja = Get-Ninja
+$toolchain = Initialize-MinGWUcrt64
+$cmake = $toolchain.CMake
+$ninja = $toolchain.Ninja
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $buildDir
-Invoke-VcvarsAll x64
-Write-ReleaseLog "Building frontend application..."
+Write-Log "Building frontend application..."
 Push-Location $frontendDir
 try {
     & npm.cmd run build
@@ -28,8 +28,12 @@ try {
 }
 if (-not (Test-Path (Join-Path $frontendDist 'index.html'))) { throw 'Frontend build did not produce dist/index.html' }
 Write-ReleaseLog "Building C++ backend ($Config)..."
-& $cmake -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_BUILD_TYPE=$Config" `
-    -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF "-DSTREAMFIND_APP_DIR=$frontendDist" `
+& $cmake -G Ninja "-DCMAKE_MAKE_PROGRAM=$ninja" `
+    "-DCMAKE_C_COMPILER=$($toolchain.CCompiler)" `
+    "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)" "-DCMAKE_BUILD_TYPE=$Config" `
+    "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)" `
+    -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF `
+    "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
 & $cmake --build $buildDir --config $Config -j 8
@@ -52,11 +56,25 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $verifyDir
 Expand-Archive -Path $built.FullName -DestinationPath $verifyDir
 $packageRoot = Get-ChildItem -Path $verifyDir -Directory | Select-Object -First 1
 if (-not $packageRoot) { throw 'C++ archive has no top-level package directory' }
-Assert-CppDistributionPayload $packageRoot.FullName
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts\release\cpp\test-packaged-mcp.ps1') `
+Assert-CppDistributionPayload $packageRoot.FullName -RequireSdk
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/release/cpp/test-packaged-mcp.ps1') `
     -PackageRoot $packageRoot.FullName
 if ($LASTEXITCODE -ne 0) { throw "Packaged C++ MCP smoke test failed ($LASTEXITCODE)" }
-Move-Item $built.FullName (Join-Path $Script:RELEASE_OUTPUT $built.Name) -Force
+
+$sdkArchive = Join-Path $Script:RELEASE_OUTPUT "streamfind-sdk-cpp-$Version-Windows-x86_64.zip"
+Move-Item $built.FullName $sdkArchive -Force
+$runtimeVerifyDir = Join-Path $root 'tmp\build\package-verify\cpp-runtime'
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $runtimeVerifyDir
+New-Item -ItemType Directory -Force -Path $runtimeVerifyDir | Out-Null
+$runtimeRoot = Join-Path $runtimeVerifyDir $packageRoot.Name
+Copy-Item -Recurse $packageRoot.FullName $runtimeRoot
+Remove-Item -Recurse -Force (Join-Path $runtimeRoot 'sdk')
+Assert-CppDistributionPayload $runtimeRoot
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/release/cpp/test-packaged-mcp.ps1') `
+    -PackageRoot $runtimeRoot
+if ($LASTEXITCODE -ne 0) { throw "Packaged runtime MCP smoke test failed ($LASTEXITCODE)" }
+$runtimeArchive = Join-Path $Script:RELEASE_OUTPUT "streamfind-core-cpp-$Version-Windows-x86_64.zip"
+Compress-Archive -Path $runtimeRoot -DestinationPath $runtimeArchive -Force
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $cpackDir
 Write-ReleaseChecksums
-Write-ReleaseLog "C++ archive written to $Script:RELEASE_OUTPUT"
+Write-ReleaseLog "C++ runtime and SDK archives written to $Script:RELEASE_OUTPUT"

@@ -3,6 +3,7 @@
 #include <optional>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -55,6 +56,7 @@ public:
         const std::string &table_name,
         const std::string &key_column,
         const std::vector<std::vector<std::optional<std::string>>> &rows) = 0;
+    virtual void report_progress(double fraction, std::string_view message) = 0;
 };
 
 }  // namespace streamfind::sdk

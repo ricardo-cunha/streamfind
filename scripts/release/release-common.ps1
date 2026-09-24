@@ -23,29 +23,42 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
     }
 }
 
-function Assert-CppDistributionPayload([string]$PackageRoot) {
+function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk) {
     Assert-DistributionPayload $PackageRoot
     $required = @(
         'bin/streamfind.exe',
         'bin/streamfind_service.exe',
         'bin/streamfind_mcp.exe',
         'bin/streamfind_cli.exe',
-        'bin/duckdb.dll',
-        'share/streamfind/catalogue.duckdb',
-        'share/streamfind/core/catalogue.duckdb',
-        'lib/cmake/streamfind/streamfindConfig.cmake',
-        'lib/cmake/streamfind/streamfind-cpp-targets.cmake',
-        'include/streamfind/sdk/catalogue_builder.hpp'
+        'bin/streamfind.json',
+        'plugins/mass_spec/plugin.json',
+        'plugins/mass_spec/catalogue.duckdb',
+        'plugins/mass_spec/streamfind_mass_spec.dll',
+        'plugins/mass_spec/ontology/operations.ttl',
+        'plugins/raman/plugin.json',
+        'plugins/raman/catalogue.duckdb',
+        'plugins/raman/streamfind_raman.dll',
+        'plugins/sensors/plugin.json',
+        'plugins/sensors/catalogue.duckdb',
+        'plugins/sensors/streamfind_sensors.dll',
+        'core/catalogue.duckdb',
+        'core/ontology/operations.ttl',
+        'core/vendors/openbabel/openbabel_streamfind.dll',
+        'core/vendors/duckdb/duckdb.dll',
+        'core/vendors/openbabel/data/logp.txt',
+        'app/index.html'
     )
     foreach ($relative in $required) {
         if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
             throw "C++ distribution payload is missing $relative"
         }
     }
-    if (-not (Test-Path (Join-Path $PackageRoot 'share/streamfind/app/index.html'))) {
-        throw 'C++ distribution payload is missing the packaged frontend application'
+    $binVendorFiles = @(Get-ChildItem -Path (Join-Path $PackageRoot 'bin') -File |
+        Where-Object { $_.Name -match '(?i)^(duckdb|libgcc|libstdc\+\+|libwinpthread).*\.dll$' })
+    if ($binVendorFiles.Count -ne 0) {
+        throw "Vendor runtime DLLs must not be installed directly under bin: $($binVendorFiles.Name -join ', ')"
     }
-    $pluginRoot = Join-Path $PackageRoot 'share/streamfind/plugins'
+    $pluginRoot = Join-Path $PackageRoot 'plugins'
     $pluginDirectories = @(Get-ChildItem -Path $pluginRoot -Directory)
     if ($pluginDirectories.Count -eq 0) {
         throw "C++ distribution contains no plugins under $pluginRoot"
@@ -68,17 +81,30 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         if ($manifest.abi_version.minor -lt 0) { throw "Plugin manifest ABI minor is invalid: $manifestPath" }
         if ($manifest.semantic_catalogue -ne 'catalogue.duckdb') { throw "Plugin manifest catalogue mismatch: $manifestPath" }
         $libraryName = $manifest.library.'windows-x86_64'
-        if (-not $libraryName) {
-            throw "Plugin manifest Windows library is missing: $manifestPath"
-        }
-        foreach ($requiredPluginFile in @('catalogue.duckdb', $libraryName)) {
+        if (-not $libraryName) { throw "Plugin manifest Windows library is missing: $manifestPath" }
+        foreach ($requiredPluginFile in @('catalogue.duckdb', $libraryName, 'ontology')) {
             if (-not (Test-Path (Join-Path $pluginDirectory.FullName $requiredPluginFile))) {
                 throw "C++ distribution plugin payload is missing $requiredPluginFile in $domain"
             }
         }
-        if ($domain -eq 'mass_spec' -and
-            -not (Test-Path (Join-Path $pluginDirectory.FullName 'openbabel_streamfind.dll'))) {
-            throw 'C++ distribution mass_spec plugin payload is missing openbabel_streamfind.dll'
+    }
+    if ($RequireSdk) {
+        foreach ($relative in @(
+            'sdk/bin/streamfind_sdk_catalogue.exe',
+            'sdk/bin/streamfind_sdk_plugin_validator.exe',
+            'sdk/include/streamfind/sdk/catalogue_builder.hpp',
+            'sdk/cmake/streamfind/streamfindConfig.cmake',
+            'sdk/cmake/streamfind/streamfind-cpp-targets.cmake',
+            'sdk/tools/jena/bat/arq.bat')) {
+            if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
+                throw "C++ SDK distribution payload is missing $relative"
+            }
+        }
+        $sdkLibraryCandidates = @(
+            (Join-Path $PackageRoot 'sdk/lib/streamfind_cpp_sdk.lib'),
+            (Join-Path $PackageRoot 'sdk/lib/libstreamfind_cpp_sdk.a'))
+        if (-not ($sdkLibraryCandidates | Where-Object { Test-Path $_ })) {
+            throw "C++ SDK distribution payload is missing the SDK library archive"
         }
     }
 }

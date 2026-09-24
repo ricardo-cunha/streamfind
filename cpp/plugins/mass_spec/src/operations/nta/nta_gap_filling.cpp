@@ -1,10 +1,13 @@
+#include "operations/nta/nta_deconvolution.hpp"
+#include "operations/nta/nta_gap_filling.hpp"
 // nta_gap_filling.cpp
 // Feature gap filling implementations for NTA_DATA
 // This file contains the logic for identifying and filling missing features across analyses
 
-#include "methods/nta_gap_filling.hpp"
-#include "methods/nta_processing_methods.hpp"
-#include "methods/nta_deconvolution.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -17,8 +20,8 @@
 #include <sstream>
 
 // MARK: analyze_feature_groups
-std::vector<nta::gap_filling::FEATURE_GROUP_INFO> nta::gap_filling::analyze_feature_groups(
-    const std::vector<nta::api::NTA_FEATURES> &features,
+std::vector<::streamfind::mass_spec::nta::gap_filling::FEATURE_GROUP_INFO> streamfind::mass_spec::nta::gap_filling::analyze_feature_groups(
+    const std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURES> &features,
     const std::vector<std::string> &analyses,
     const std::vector<std::string> &replicates,
     bool withinReplicate,
@@ -169,9 +172,9 @@ std::vector<nta::gap_filling::FEATURE_GROUP_INFO> nta::gap_filling::analyze_feat
 }
 
 // MARK: extract_eic_for_gap_filling
-nta::gap_filling::EIC_DATA nta::gap_filling::extract_eic_for_gap_filling(
-    mass_spec::reader::MS_FILE &ana,
-    const mass_spec::reader::MS_SPECTRA_HEADERS &headers,
+::streamfind::mass_spec::nta::gap_filling::EIC_DATA streamfind::mass_spec::nta::gap_filling::extract_eic_for_gap_filling(
+    ::mass_spec::reader::MS_FILE &ana,
+    const ::mass_spec::reader::MS_SPECTRA_HEADERS &headers,
     float target_mz,
     float target_rt,
     float mzExpand,
@@ -236,7 +239,7 @@ nta::gap_filling::EIC_DATA nta::gap_filling::extract_eic_for_gap_filling(
 }
 
 // MARK: pick_peak_from_eic
-nta::gap_filling::FILLED_FEATURE_INFO nta::gap_filling::pick_peak_from_eic(
+::streamfind::mass_spec::nta::gap_filling::FILLED_FEATURE_INFO streamfind::mass_spec::nta::gap_filling::pick_peak_from_eic(
     const EIC_DATA &eic_data,
     const std::string &analysis,
     const std::string &feature_group,
@@ -290,8 +293,8 @@ nta::gap_filling::FILLED_FEATURE_INFO nta::gap_filling::pick_peak_from_eic(
   std::vector<float> sorted_intensity = eic_data.intensity;
   std::vector<float> sorted_noise = eic_data.noise;
 
-  auto sort_indices = nta::utils::get_sort_indices_float(sorted_rt);
-  nta::utils::reorder_multiple_vectors(sort_indices, sorted_rt, sorted_mz, sorted_intensity, sorted_noise);
+  auto sort_indices = ::streamfind::mass_spec::nta::utils::get_sort_indices_float(sorted_rt);
+  ::streamfind::mass_spec::nta::utils::reorder_multiple_vectors(sort_indices, sorted_rt, sorted_mz, sorted_intensity, sorted_noise);
 
   // Aggregate intensity by RT (sum intensities at same RT) and keep max m/z
   std::map<float, float> rt_intensity_map;
@@ -339,7 +342,7 @@ nta::gap_filling::FILLED_FEATURE_INFO nta::gap_filling::pick_peak_from_eic(
   if (unique_rt.size() >= 5)
   {
     // Use window=3 and order=1 (linear) for minimal smoothing that preserves peak shape
-    smoothed = nta::utils::smooth_intensity_savitzky_golay(unique_intensity, 3, 1);
+    smoothed = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(unique_intensity, 3, 1);
     if (debug)
     {
       DEBUG_LOG("  Applied light smoothing (window=3, order=1) for " << unique_rt.size() << " points" << std::endl);
@@ -476,24 +479,24 @@ nta::gap_filling::FILLED_FEATURE_INFO nta::gap_filling::pick_peak_from_eic(
   }
 
   // Calculate FWHM (both RT and m/z) - do this before Gaussian fit as it's more reliable
-  float fwhm = nta::deconvolution::calculate_fwhm_rt(peak_rt, peak_intensity);
-  auto [fwhm_rt_calc, fwhm_mz_calc, mean_mz_fwhm] = nta::deconvolution::calculate_fwhm_combined(
+  float fwhm = ::streamfind::mass_spec::nta::deconvolution::calculate_fwhm_rt(peak_rt, peak_intensity);
+  auto [fwhm_rt_calc, fwhm_mz_calc, mean_mz_fwhm] = ::streamfind::mass_spec::nta::deconvolution::calculate_fwhm_combined(
       peak_rt, peak_mz, peak_intensity);
 
   // Calculate average m/z in peak window
   float avg_mz = std::accumulate(peak_mz.begin(), peak_mz.end(), 0.0f) / peak_mz.size();
 
   // Calculate quality metrics using raw vectors (before encoding)
-  float peak_area_val = nta::utils::calculate_area(peak_rt, peak_intensity);
-  float jaggedness_val = nta::utils::calculate_jaggedness(peak_intensity);
-  float sharpness_val = nta::utils::calculate_sharpness(peak_rt, peak_intensity, peak_area_val);
-  float asymmetry_val = nta::utils::calculate_asymmetry(peak_rt, peak_intensity);
+  float peak_area_val = ::streamfind::mass_spec::nta::utils::calculate_area(peak_rt, peak_intensity);
+  float jaggedness_val = ::streamfind::mass_spec::nta::utils::calculate_jaggedness(peak_intensity);
+  float sharpness_val = ::streamfind::mass_spec::nta::utils::calculate_sharpness(peak_rt, peak_intensity, peak_area_val);
+  float asymmetry_val = ::streamfind::mass_spec::nta::utils::calculate_asymmetry(peak_rt, peak_intensity);
   // For modality, use smoothed data if we smoothed earlier
   std::vector<float> smoothed_for_modality = (peak_rt.size() >= 5)
-      ? nta::utils::smooth_intensity_savitzky_golay(peak_intensity, 3, 1)
+      ? ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(peak_intensity, 3, 1)
       : peak_intensity;
-  float modality_val = nta::utils::calculate_modality(smoothed_for_modality, 0.1f);
-  float plates_val = nta::utils::calculate_theoretical_plates(apex_rt, fwhm);
+  float modality_val = ::streamfind::mass_spec::nta::utils::calculate_modality(smoothed_for_modality, 0.1f);
+  float plates_val = ::streamfind::mass_spec::nta::utils::calculate_theoretical_plates(apex_rt, fwhm);
 
   // Fit Gaussian - provide initial values for optimization
   float gaussian_baseline = std::min(peak_intensity.front(), peak_intensity.back());
@@ -502,10 +505,10 @@ nta::gap_filling::FILLED_FEATURE_INFO nta::gap_filling::pick_peak_from_eic(
   float gaussian_sigma = fwhm / 2.355f; // FWHM = 2.355 * sigma for Gaussian
   if (gaussian_sigma <= 0) gaussian_sigma = (peak_rt.back() - peak_rt.front()) / 4.0f;
 
-  nta::utils::fit_gaussian(peak_rt, peak_intensity, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline);
+  ::streamfind::mass_spec::nta::utils::fit_gaussian(peak_rt, peak_intensity, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline);
 
   // Calculate R² for the fit
-  float gaussian_r2 = nta::utils::calculate_gaussian_rsquared(
+  float gaussian_r2 = ::streamfind::mass_spec::nta::utils::calculate_gaussian_rsquared(
       peak_rt, peak_intensity, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline);
 
   if (debug)
@@ -576,18 +579,18 @@ nta::gap_filling::FILLED_FEATURE_INFO nta::gap_filling::pick_peak_from_eic(
   filled_feature.eic_size = peak_rt.size();
 
   // Encode EIC data
-  filled_feature.eic_rt = nta::utils::encode_floats_base64(peak_rt, 4);
-  filled_feature.eic_mz = nta::utils::encode_floats_base64(peak_mz, 4);
-  filled_feature.eic_intensity = nta::utils::encode_floats_base64(peak_intensity, 4);
-  filled_feature.eic_baseline = nta::utils::encode_floats_base64(peak_baseline, 4);
-  filled_feature.eic_smoothed = nta::utils::encode_floats_base64(peak_intensity, 4);
+  filled_feature.eic_rt = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_rt, 4);
+  filled_feature.eic_mz = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_mz, 4);
+  filled_feature.eic_intensity = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_intensity, 4);
+  filled_feature.eic_baseline = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_baseline, 4);
+  filled_feature.eic_smoothed = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_intensity, 4);
 
   return filled_feature;
 }
 
 // MARK: fill_features_impl
-void nta::gap_filling::fill_features_impl(
-  nta::PROJECT_NON_TARGET_ANALYSIS &nta_data,
+void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
+  ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
     bool withinReplicate,
     bool filtered,
     float rtExpand,
@@ -606,7 +609,7 @@ void nta::gap_filling::fill_features_impl(
   if (debug)
   {
     std::string log_file = "log/gap_filling_debug_" + debugFG + ".log";
-    nta::utils::init_debug_log(log_file, "=== Gap Filling Debug Log for Feature Group: " + debugFG + " ===");
+    ::streamfind::mass_spec::nta::utils::init_debug_log(log_file, "=== Gap Filling Debug Log for Feature Group: " + debugFG + " ===");
     DEBUG_LOG("\n=== Parameters ===" << std::endl);
     DEBUG_LOG("  rtExpand: " << rtExpand << std::endl);
     DEBUG_LOG("  mzExpand: " << mzExpand << std::endl);
@@ -756,14 +759,14 @@ void nta::gap_filling::fill_features_impl(
     std::cerr << "  Processing " << gaps.size() << " gaps in analysis: " << analysis_name << std::endl;
 
     // Open MS file once per analysis
-    mass_spec::reader::MS_FILE ana(file_path);
+    ::mass_spec::reader::MS_FILE ana(file_path);
 
     // Get headers for first gap (all gaps in same file share same headers)
     const auto headers = nta_data.spectra_headers_at(gaps[0].analysis_idx);
 
 
     // Build MS_TARGETS for all gaps in this file, but skip those already present as filtered features
-    mass_spec::spectra::MS_TARGETS targets;
+    ::mass_spec::spectra::MS_TARGETS targets;
     std::vector<size_t> valid_gap_indices;
     targets.resize_all(gaps.size()); // Will shrink later if needed
 
@@ -771,7 +774,7 @@ void nta::gap_filling::fill_features_impl(
     {
       const auto &gap = gaps[i];
       const auto &ranges = group_ranges_map[gap.feature_group];
-      nta::api::NTA_FEATURES &analysis_features = feature_buffers[gap.analysis_idx];
+      ::streamfind::mass_spec::nta::api::NTA_FEATURES &analysis_features = feature_buffers[gap.analysis_idx];
       bool found_filtered_feature = false;
 
       for (int j = 0; j < analysis_features.size(); ++j)
@@ -825,7 +828,7 @@ void nta::gap_filling::fill_features_impl(
 
     // Shrink targets to only valid gaps
     if (valid_gap_indices.size() < gaps.size()) {
-      mass_spec::spectra::MS_TARGETS shrunk_targets;
+      ::mass_spec::spectra::MS_TARGETS shrunk_targets;
       shrunk_targets.resize_all(valid_gap_indices.size());
       for (size_t k = 0; k < valid_gap_indices.size(); ++k) {
         size_t i = valid_gap_indices[k];
@@ -848,7 +851,7 @@ void nta::gap_filling::fill_features_impl(
     }
 
     // Extract all EICs in one batch call (uses OpenMP internally)
-    mass_spec::spectra::MS_TARGETS_SPECTRA all_eics = ana.get_spectra_targets(targets, headers, minTracesIntensity, 0);
+    ::mass_spec::spectra::MS_TARGETS_SPECTRA all_eics = ana.get_spectra_targets(targets, headers, minTracesIntensity, 0);
 
     // Process each gap using extracted EICs
     for (const auto &gap : gaps)
@@ -878,7 +881,7 @@ void nta::gap_filling::fill_features_impl(
       // ...existing code...
 
       // Get EIC for this specific target
-      mass_spec::spectra::MS_TARGETS_SPECTRA eic_spec = all_eics[gap.target_id];
+      ::mass_spec::spectra::MS_TARGETS_SPECTRA eic_spec = all_eics[gap.target_id];
 
       if (is_debug_fg)
       {
@@ -965,7 +968,7 @@ void nta::gap_filling::fill_features_impl(
       }
 
       // Create FEATURE from FILLED_FEATURE_INFO
-      nta::api::NTA_FEATURE_ROW new_feature;
+      ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW new_feature;
       new_feature.analysis = filled_feature.analysis;
 
       // Increment filled feature count for this analysis
@@ -1047,6 +1050,36 @@ void nta::gap_filling::fill_features_impl(
     DEBUG_LOG("\n=== Gap Filling Complete ===" << std::endl);
     DEBUG_LOG("Total gaps processed: " << total_gaps << std::endl);
     DEBUG_LOG("Gaps filled: " << filled_gaps << std::endl);
-    nta::utils::close_debug_log();
+    ::streamfind::mass_spec::nta::utils::close_debug_log();
   }
+}
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::fill_features
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const bool within_replicate = parameters.value("within_replicate", false);
+        const bool filtered = parameters.value("filtered", false);
+        const float rt_expand = parameters.value("rt_expand", 10.0);
+        const float mz_expand = parameters.value("mz_expand", 0.01);
+        const float max_peak_width = parameters.value("max_peak_width", 30.0);
+        const float min_traces_intensity = parameters.value("min_traces_intensity", 1000.0);
+        const int min_number_traces = parameters.value("min_number_traces", 5);
+        const float min_intensity_ms1 = parameters.value("min_intensity", parameters.value("min_intensity_ms1", 5000.0));
+        const float rt_apex_deviation = parameters.value("rt_apex_deviation", 5.0);
+        const float min_signal_to_noise_ratio = parameters.value("min_signal_to_noise_ratio", 3.0);
+        const float min_gaussian_fit = parameters.value("min_gaussian_fit", 0.2);
+        if (rt_expand < 0 || mz_expand < 0 || max_peak_width <= 0 || min_traces_intensity < 0 ||
+            min_number_traces < 1 || min_intensity_ms1 < 0 || rt_apex_deviation < 0 ||
+            min_signal_to_noise_ratio < 0 || min_gaussian_fit < 0 || min_gaussian_fit > 1)
+            throw Error(ErrorCode::InvalidArgument, "invalid gap filling parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(data, within_replicate, filtered, rt_expand, mz_expand,
+                                             max_peak_width, min_traces_intensity, min_number_traces, min_intensity_ms1,
+                                             rt_apex_deviation, min_signal_to_noise_ratio, min_gaussian_fit);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Feature gaps filled."}};
+    }
 }

@@ -1,12 +1,13 @@
-#include "methods/nta_annotation.hpp"
-#include "methods/nta_processing_methods.hpp"
+#include "operations/nta/nta_annotation.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <limits>
 #include <cctype>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
   namespace annotation
   {
@@ -286,7 +287,7 @@ namespace nta
         return false;
       }
 
-      double neutral_mass_from_base_ion(const nta::api::NTA_FEATURE_ROW &ft)
+      double neutral_mass_from_base_ion(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft)
       {
         constexpr double proton = 1.007276;
         if (ft.polarity == 1)
@@ -580,7 +581,7 @@ namespace nta
     }
 
     // MARK: ISOTOPE_CHAIN Implementation
-    ISOTOPE_CHAIN::ISOTOPE_CHAIN(const int &z, const nta::api::NTA_FEATURE_ROW &mono_ion, float mono_mzr)
+    ISOTOPE_CHAIN::ISOTOPE_CHAIN(const int &z, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &mono_ion, float mono_mzr)
     {
       chain.resize(1);
       candidate_indices.resize(1);
@@ -700,7 +701,7 @@ namespace nta
         return chain[i1].mz < chain[i2].mz;
       });
 
-      std::vector<nta::api::NTA_FEATURE_ROW> chain_sorted;
+      std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> chain_sorted;
       std::vector<int> indices_sorted;
 
       for (size_t i = 0; i < chain.size(); i++)
@@ -747,8 +748,8 @@ namespace nta
       return max_mzr;
     }
 
-    void CANDIDATE_CHAIN::find_isotopic_candidates(const nta::api::NTA_FEATURE_ROW &ft,
-                                                    const nta::api::NTA_FEATURES &fts,
+    void CANDIDATE_CHAIN::find_isotopic_candidates(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft,
+                                                    const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts,
                                                     const int &ft_index,
                                                     const int &maxIsotopes,
                                                     const std::vector<int> *component_indices,
@@ -816,7 +817,7 @@ namespace nta
       bool is_Mplus = false;
       float mzr = this->get_max_mzr(ppm);
       const int number_candidates = chain.size();
-      const nta::api::NTA_FEATURE_ROW &mono_ion = chain[0];
+      const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &mono_ion = chain[0];
 
       if (debug)
       {
@@ -896,7 +897,7 @@ namespace nta
 
           for (int candidate_idx = 1; candidate_idx < number_candidates; ++candidate_idx)
           {
-              const nta::api::NTA_FEATURE_ROW &candidate = chain[candidate_idx];
+              const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &candidate = chain[candidate_idx];
             const float mz = candidate.mz;
             const float rt = candidate.rt;
             const float intensity = candidate.intensity;
@@ -1149,7 +1150,7 @@ namespace nta
           for (size_t i = 1; i < sel_iso_chain.chain.size(); i++)
           {
             const int candidate_idx = sel_iso_chain.candidate_indices[i];
-            nta::api::NTA_FEATURE_ROW &temp_candidate = chain[candidate_idx];
+            ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &temp_candidate = chain[candidate_idx];
             isotope_theoretical_mass_distance[candidate_idx] = sel_iso_chain.theoretical_mass_distance[i];
             isotope_theoretical_abundance_min[candidate_idx] = sel_iso_chain.theoretical_abundance_min[i];
             isotope_theoretical_abundance_max[candidate_idx] = sel_iso_chain.theoretical_abundance_max[i];
@@ -1163,8 +1164,8 @@ namespace nta
       }
     }
 
-    void CANDIDATE_CHAIN::find_adduct_candidates(const nta::api::NTA_FEATURE_ROW &ft,
-                            const nta::api::NTA_FEATURES &fts,
+    void CANDIDATE_CHAIN::find_adduct_candidates(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft,
+                            const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts,
                             const int &ft_index,
                             const std::vector<int> *component_indices)
     {
@@ -1271,8 +1272,8 @@ namespace nta
       }
     }
 
-    void CANDIDATE_CHAIN::find_fragment_candidates(const nta::api::NTA_FEATURE_ROW &ft,
-                            const nta::api::NTA_FEATURES &fts,
+    void CANDIDATE_CHAIN::find_fragment_candidates(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft,
+                            const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts,
                             const int &ft_index,
                             const std::vector<int> *component_indices)
     {
@@ -1359,7 +1360,7 @@ namespace nta
 
     // MARK: annotate_components_impl
     void annotate_components_impl(
-      nta::PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
         int maxIsotopes,
         int maxCharge,
         int maxGaps,
@@ -1394,7 +1395,7 @@ namespace nta
 
       for (int a = 0; a < number_analyses; a++)
       {
-        nta::api::NTA_FEATURES &fts = feature_buffers[a];
+        ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
         const int number_features = fts.size();
         if (number_features == 0)
           continue;
@@ -1406,7 +1407,7 @@ namespace nta
         std::unordered_map<std::string, std::vector<int>> component_groups;
         for (int f = 0; f < number_features; f++)
         {
-          nta::api::NTA_FEATURE_ROW ft = fts.get_feature(f);
+          ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW ft = fts.get_feature(f);
           if (!ft.feature_component.empty())
             component_groups[ft.feature_component].push_back(f);
         }
@@ -1434,7 +1435,7 @@ namespace nta
             header << "=== Component Annotation Debug Log ===" << std::endl
                    << "Analysis: " << debugAnalysis << std::endl
                    << "Component: " << debugComponent << std::endl;
-            nta::utils::init_debug_log(log_filename.str(), header.str());
+            ::streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), header.str());
           }
 
           for (int idx : component_indices)
@@ -1846,3 +1847,26 @@ namespace nta
 
   } // namespace annotation
 } // namespace nta
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::annotate_components
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const int max_isotopes = parameters.value("max_isotopes", 5);
+        const int max_charge = parameters.value("max_charge", 1);
+        const int max_gaps = parameters.value("max_gaps", 1);
+        const float ppm = parameters.value("ppm", 10.0);
+        std::vector<std::string> isotope_elements;
+        const auto isotope_elements_param = parameters.value("isotope_elements", Json::array({Json("C:1-60"), Json("N:0-10"), Json("O:0-20"), Json("S:0-4"), Json("Cl:0-6"), Json("Br:0-4")}));
+        for (const auto &v : isotope_elements_param)
+            isotope_elements.push_back(v.get<std::string>());
+        if (max_isotopes < 1 || max_charge < 1 || max_gaps < 0 || ppm < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid annotation parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::annotation::annotate_components_impl(data, max_isotopes, max_charge, max_gaps, ppm, isotope_elements);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Components annotated."}};
+    }
+}

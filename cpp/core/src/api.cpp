@@ -247,6 +247,12 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         operation.id = request.at("operation_id").get<std::string>();
         operation.operation = request.at("operation").get<std::string>();
         operation.parameters = ParameterValues::from_json(request.value("parameters", Json::object()));
+        operation.inputs = request.value("inputs", Json::object());
+        operation.position = request.value("position", Json::object());
+        if (!operation.inputs.is_object())
+            throw Error(ErrorCode::InvalidArgument, "Request inputs must be an object");
+        if (!operation.position.is_object())
+            throw Error(ErrorCode::InvalidArgument, "Request position must be an object");
         for (const auto &existing : workflow.operations)
             if (existing.id == operation.id)
                 throw Error(ErrorCode::InvalidArgument, "Workflow operation id already exists: " + operation.id);

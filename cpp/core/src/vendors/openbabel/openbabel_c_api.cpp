@@ -1,4 +1,4 @@
-#include "utils/openbabel/streamfind_openbabel_api.h"
+#include "api/streamfind_openbabel_api.h"
 
 #include <algorithm>
 #include <cmath>
@@ -117,11 +117,7 @@ namespace streamfind::obabel_detail
 
       const std::vector<std::wstring> candidates = {
           env_data,
-          parent2.empty() ? L"" : parent2 + L"\\openbabel\\data",
-          parent1.empty() ? L"" : parent1 + L"\\extdata\\openbabel\\data",
-          parent1.empty() ? L"" : parent1 + L"\\core\\external\\openbabel\\openbabel-3-2-0\\data",
-          source_root.empty() ? L"" : source_root + L"\\openbabel-3-2-0\\data",
-          cwd.empty() ? L"" : cwd + L"\\src\\core\\external\\openbabel\\openbabel-3-2-0\\data"};
+          module_dir + L"\\data"};
 
       for (const auto &candidate : candidates)
       {
@@ -158,11 +154,7 @@ namespace streamfind::obabel_detail
 
     const std::vector<std::wstring> candidates = {
         env_streamfind != nullptr ? widen_path(env_streamfind) : L"",
-        parent2.empty() ? L"" : parent2 + L"\\openbabel\\data",
-        parent1.empty() ? L"" : parent1 + L"\\extdata\\openbabel\\data",
-        parent1.empty() ? L"" : parent1 + L"\\core\\external\\openbabel\\openbabel-3-2-0\\data",
-        source_root.empty() ? L"" : source_root + L"\\openbabel-3-2-0\\data",
-        cwd.empty() ? L"" : cwd + L"\\src\\core\\external\\openbabel\\openbabel-3-2-0\\data"};
+        module_dir + L"\\data"};
 
     std::ostringstream oss;
     oss << "module_path=" << narrow_path(module_path) << "\n";

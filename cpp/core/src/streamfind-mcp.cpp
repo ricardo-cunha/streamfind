@@ -18,6 +18,7 @@
 #include "streamfind/plugin_configuration.hpp"
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
+#include "streamfind/vendor_runtime.hpp"
 
 namespace streamfind::mcp::detail {
 
@@ -173,6 +174,7 @@ private:
 }  // namespace streamfind::mcp::detail
 
 int main(int argc, char **argv) {
+    streamfind::configure_vendor_runtime_paths();
     std::string line;
     streamfind::MethodRegistry registry;
     streamfind::OperationRegistry operations;

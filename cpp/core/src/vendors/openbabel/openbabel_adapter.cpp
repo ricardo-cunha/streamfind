@@ -1,6 +1,6 @@
-#include "utils/openbabel_adapter.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
 
-#include "utils/openbabel/streamfind_openbabel_api.h"
+#include "api/streamfind_openbabel_api.h"
 
 #include <string>
 #include <filesystem>
@@ -10,7 +10,7 @@
 #include <vector>
 #endif
 
-namespace sf::obabel
+namespace streamfind::core::vendors::openbabel
 {
 #ifdef _WIN32
   std::string narrow_path(const std::wstring &path)
@@ -89,41 +89,24 @@ namespace sf::obabel
            (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
   }
 
-  std::wstring current_working_directory()
-  {
-    DWORD size = GetCurrentDirectoryW(0, nullptr);
-    if (size == 0)
-      return L"";
-    std::vector<wchar_t> buffer(size, L'\0');
-    DWORD written = GetCurrentDirectoryW(size, buffer.data());
-    if (written == 0 || written >= size)
-      return L"";
-    return std::wstring(buffer.data(), written);
-  }
 
   std::wstring find_openbabel_data_dir(
       const std::wstring &dll_path,
-      const std::wstring &module_dir,
-      const std::wstring &cwd)
+      const std::wstring &module_dir)
   {
     const std::wstring dll_dir = parent_directory(dll_path);
-    const std::wstring dll_dir_parent = parent_directory(dll_dir);
-    const std::wstring dll_dir_grandparent = parent_directory(dll_dir_parent);
-    const std::wstring dll_dir_root = parent_directory(dll_dir_grandparent);
-    const std::wstring dll_dir_top = parent_directory(dll_dir_root);
-
     wchar_t env_buffer[32767];
     const DWORD env_size = GetEnvironmentVariableW(L"STREAMFIND_OPENBABEL_DATA", env_buffer, 32767);
     const std::wstring env_data = env_size > 0 ? std::wstring(env_buffer, env_size) : L"";
     const std::wstring module_parent = parent_directory(module_dir);
+    const std::wstring module_grandparent = parent_directory(module_parent);
 
     const std::vector<std::wstring> candidates = {
         env_data,
-        dll_dir + L"\\openbabel\\data",
-        dll_dir_grandparent + L"\\openbabel\\data",
-        module_parent.empty() ? L"" : module_parent + L"\\extdata\\openbabel\\data",
-        module_parent.empty() ? L"" : module_parent + L"\\core\\external\\openbabel\\openbabel-3-2-0\\data",
-        cwd.empty() ? L"" : cwd + L"\\src\\core\\external\\openbabel\\openbabel-3-2-0\\data"};
+        dll_dir + L"\\data",
+        module_dir + L"\\core\\vendors\\openbabel\\data",
+        module_parent + L"\\core\\vendors\\openbabel\\data",
+        module_grandparent + L"\\core\\vendors\\openbabel\\data"};
 
     for (const auto &candidate : candidates)
     {
@@ -137,10 +120,9 @@ namespace sf::obabel
   bool configure_openbabel_data_dir(
       const std::wstring &dll_path,
       const std::wstring &module_dir,
-      const std::wstring &cwd,
       std::string &error)
   {
-    const std::wstring data_dir = find_openbabel_data_dir(dll_path, module_dir, cwd);
+    const std::wstring data_dir = find_openbabel_data_dir(dll_path, module_dir);
     if (data_dir.empty())
     {
       error = "Could not locate Open Babel data directory relative to " +
@@ -190,14 +172,13 @@ namespace sf::obabel
     }
 
     const std::wstring module_dir = parent_directory(std::wstring(module_path.data(), path_size));
-    const std::wstring cwd = current_working_directory();
     const std::wstring module_parent = parent_directory(module_dir);
+    const std::wstring module_grandparent = parent_directory(module_parent);
     const std::vector<std::wstring> dll_candidates = {
-        module_dir + L"\\openbabel_streamfind.dll",
-        module_parent.empty() ? L"" : module_parent + L"\\openbabel_streamfind.dll",
-        module_dir + L"\\core\\external\\openbabel\\build\\windows\\bin\\openbabel_streamfind.dll",
-        cwd.empty() ? L"" : cwd + L"\\inst\\libs\\openbabel_streamfind.dll",
-        cwd.empty() ? L"" : cwd + L"\\src\\core\\external\\openbabel\\build\\windows\\bin\\openbabel_streamfind.dll"};
+        module_dir + L"\\core\\vendors\\openbabel\\openbabel_streamfind.dll",
+        module_parent + L"\\core\\vendors\\openbabel\\openbabel_streamfind.dll",
+        module_grandparent + L"\\core\\vendors\\openbabel\\openbabel_streamfind.dll",
+        module_dir + L"\\openbabel_streamfind.dll"};
 
     std::wstring loaded_path;
     for (const auto &dll_path : dll_candidates)
@@ -219,7 +200,7 @@ namespace sf::obabel
       return api;
     }
 
-    if (!configure_openbabel_data_dir(loaded_path, module_dir, cwd, api.error))
+    if (!configure_openbabel_data_dir(loaded_path, module_dir, api.error))
     {
       FreeLibrary(api.module);
       api.module = nullptr;
@@ -419,4 +400,4 @@ namespace sf::obabel
     return std::string(buffer.data());
 #endif
   }
-} // namespace sf::obabel
+} // namespace streamfind::core::vendors::openbabel

@@ -1,12 +1,14 @@
 #ifndef NTA_CORRECTION_ALGORITHMS_H
+#include "utils/nta.hpp"
+
 #define NTA_CORRECTION_ALGORITHMS_H
 
 #include <string>
 #include <vector>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
-  class PROJECT_NON_TARGET_ANALYSIS;
+  class NtaProjectData;
 
   namespace correction_algorithms
   {
@@ -34,16 +36,18 @@ namespace nta
     };
 
     std::vector<TIC_MATRIX_SUPPRESSION_ROW> get_matrix_suppression_impl(
-      const PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      const NtaProjectData &nta_data,
       const std::vector<std::string> &analyses,
       float rtWindow,
       const std::string &refBlankReplicate = "");
 
     void correct_matrix_suppression_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
       float mpRtWindow,
       const std::string &refBlankReplicate = "");
   } // namespace correction_algorithms
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif // NTA_CORRECTION_ALGORITHMS_H
+
+namespace streamfind::mass_spec::nta::correct_matrix_suppression { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

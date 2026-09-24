@@ -1,8 +1,9 @@
+#include "operations/nta/nta_alignment.hpp"
 // nta_alignment.cpp
 // Implementation of feature alignment and grouping functions
 
-#include "methods/nta_alignment.hpp"
-#include "methods/nta_processing_methods.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -14,7 +15,7 @@
 #include <numeric>
 #include <limits>
 
-namespace nta {
+namespace streamfind::mass_spec::nta {
 namespace alignment {
 
 // Helper function to interpolate RT shift at a given RT
@@ -420,7 +421,7 @@ void group_features(
 
 // MARK: group_features_impl
 void group_features_impl(
-  nta::PROJECT_NON_TARGET_ANALYSIS &nta_data,
+  ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
     const std::string &method,
     float rt_deviation,
     float ppm_threshold,
@@ -462,7 +463,7 @@ void group_features_impl(
 
   for (size_t a = 0; a < analysis_names.size(); ++a)
   {
-    const nta::api::NTA_FEATURES &fts_i = feature_buffers[a];
+    const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts_i = feature_buffers[a];
     for (int i = 0; i < fts_i.size(); ++i)
     {
       AlignmentFeature af;
@@ -498,7 +499,7 @@ void group_features_impl(
 
     for (size_t a = 0; a < internal_standard_buffers.size(); ++a)
     {
-      const nta::api::NTA_INTERNAL_STANDARDS &istd_data = internal_standard_buffers[a];
+      const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS &istd_data = internal_standard_buffers[a];
       for (int i = 0; i < istd_data.size(); ++i)
       {
         istd_rts_by_name[istd_data.name[i]].push_back(istd_data.exp_rt[i]);
@@ -521,7 +522,7 @@ void group_features_impl(
     // Create alignment::InternalStandard vector with calculated shifts
     for (size_t a = 0; a < internal_standard_buffers.size(); ++a)
     {
-      const nta::api::NTA_INTERNAL_STANDARDS &istd_data = internal_standard_buffers[a];
+      const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS &istd_data = internal_standard_buffers[a];
       for (int i = 0; i < istd_data.size(); ++i)
       {
         InternalStandard istd;
@@ -781,7 +782,7 @@ void group_features_impl(
     {
       if (analysis_names[a] == af.analysis)
       {
-        nta::api::NTA_FEATURES &fts_i = feature_buffers[a];
+        ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts_i = feature_buffers[a];
         for (int i = 0; i < fts_i.size(); ++i)
         {
           if (fts_i.feature[i] == af.feature)
@@ -816,3 +817,25 @@ void group_features_impl(
 
 } // namespace alignment
 } // namespace nta
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::group_features
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const auto method = parameters.value("method", std::string("internal_standards"));
+        const float rt_deviation = parameters.value("rt_deviation", 5.0);
+        const float ppm = parameters.value("ppm", 10.0);
+        const int min_samples = parameters.value("min_samples", 1);
+        const float bin_size = parameters.value("bin_size", 5.0);
+        if (method.empty() || rt_deviation < 0 || ppm < 0 || min_samples < 1 || bin_size <= 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid feature grouping parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        if (method == "internal_standards")
+            utils::detail::load_internal_standards(access, data, parameters);
+        ::streamfind::mass_spec::nta::alignment::group_features_impl(data, method, rt_deviation, ppm, min_samples, bin_size);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Features grouped."}};
+    }
+}

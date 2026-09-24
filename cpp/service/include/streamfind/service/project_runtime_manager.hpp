@@ -11,6 +11,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <functional>
 
 namespace streamfind::service {
 
@@ -39,6 +40,7 @@ public:
                        const Json &parameters, const std::string &operation_instance = {});
     std::vector<ProjectSessionDto> list() const;
     bool contains(const std::string &session_id) const;
+    void set_operation_log_callback(std::function<void(const std::string &, std::string_view)> callback);
 
 private:
     ProjectSessionDto describe(const std::string &session_id, const Project &project) const;
@@ -52,6 +54,7 @@ private:
     std::unordered_map<std::string, Json> workflow_progress_;
     MethodRegistry *methods_;
     OperationRegistry *operations_;
+    std::function<void(const std::string &, std::string_view)> operation_log_callback_;
 };
 
 }  // namespace streamfind::service

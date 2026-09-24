@@ -232,6 +232,7 @@ sfms:chromatogramsResult
     sf:type "table" ;
     sf:hasProperty
         sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
         sfms:indexColumn,
         sfms:chromatogramIdColumn,
         sfms:polarityColumn,
@@ -258,6 +259,7 @@ sfms:chromatogramPeaksResult
     sf:type "table" ;
     sf:hasProperty
         sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
         sfms:chromatogramIndexColumn,
         sfms:peakIdColumn,
         sfms:chromatogramIdColumn,

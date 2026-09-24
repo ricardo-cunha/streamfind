@@ -1,40 +1,24 @@
 // nta_suspect_screening
-// Suspect screening for PROJECT_NON_TARGET_ANALYSIS
+// Suspect screening for NtaProjectData
 
 #ifndef NTA_SUSPECT_SCREENING_H
+#include "utils/nta.hpp"
+
 #define NTA_SUSPECT_SCREENING_H
 
 #include <string>
 #include <vector>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
-  class PROJECT_NON_TARGET_ANALYSIS;
+  class NtaProjectData;
 
   namespace suspect_screening
   {
-    struct SuspectQuery
-    {
-      std::string name;
-      bool has_mass = false;
-      double mass = 0.0;
-      double rt = 0.0;
-      std::string formula;
-      std::string SMILES;
-      std::string InChI;
-      std::string InChIKey;
-      double score = 0.0;
-      bool has_xLogP = false;
-      double xLogP = 0.0;
-      std::string database_id;
-      std::vector<double> fragments_mz_pos;
-      std::vector<double> fragments_intensity_pos;
-      std::vector<double> fragments_mz_neg;
-      std::vector<double> fragments_intensity_neg;
-    };
+    using SuspectQuery = ::streamfind::mass_spec::nta::SuspectQuery;
 
     void suspect_screening_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
         const std::vector<SuspectQuery> &suspects,
         double ppm,
@@ -46,7 +30,7 @@ namespace nta
         bool filtered);
 
     void find_internal_standards_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
         const std::vector<SuspectQuery> &suspects,
         double ppm,
@@ -57,6 +41,10 @@ namespace nta
         int minSharedFragments,
         bool filtered);
   } // namespace suspect_screening
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif // NTA_SUSPECT_SCREENING_H
+
+namespace streamfind::mass_spec::nta::suspect_screening { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+
+namespace streamfind::mass_spec::nta::find_internal_standards { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

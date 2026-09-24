@@ -47,6 +47,10 @@ ProjectSessionDto ProjectRuntimeManager::create(const std::string &session_id,
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
     ensure_database_is_not_open(options.database_path);
     auto project = std::make_unique<Project>(Project::create(options));
+    if (operation_log_callback_)
+        project->set_operation_log_callback([this, session_id](std::string_view message) {
+            operation_log_callback_(session_id, message);
+        });
     const auto result = describe(session_id, *project);
     projects_.emplace(session_id, std::move(project));
     workflow_states_[session_id] = kWorkflowIdle;
@@ -59,6 +63,10 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
     ensure_database_is_not_open(options.database_path);
     auto project = std::make_unique<Project>(Project::open(options));
+    if (operation_log_callback_)
+        project->set_operation_log_callback([this, session_id](std::string_view message) {
+            operation_log_callback_(session_id, message);
+        });
     const auto result = describe(session_id, *project);
     projects_.emplace(session_id, std::move(project));
     workflow_states_[session_id] = kWorkflowIdle;
@@ -244,12 +252,19 @@ std::string ProjectRuntimeManager::set_workflow_state(const std::string &session
 
 std::string ProjectRuntimeManager::start_workflow(const std::string &session_id) {
     Project *project = nullptr;
+    std::thread completed_worker;
     {
         std::lock_guard lock(mutex_);
         const auto iterator = projects_.find(session_id);
         if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-        if (const auto worker = workflow_workers_.find(session_id); worker != workflow_workers_.end() && worker->second.joinable())
-            throw std::invalid_argument("workflow is already running");
+        if (const auto worker = workflow_workers_.find(session_id); worker != workflow_workers_.end() && worker->second.joinable()) {
+            const auto state = workflow_states_.find(session_id);
+            if (state != workflow_states_.end() &&
+                (state->second == "queued" || state->second == "running" || state->second == "cancelling"))
+                throw std::invalid_argument("workflow is already running");
+            completed_worker = std::move(worker->second);
+            workflow_workers_.erase(worker);
+        }
         workflow_states_[session_id] = "queued";
         workflow_progress_[session_id] = Json{{"completed", 0}, {"total", 0}, {"current_step", 0}};
         auto cancellation = std::make_shared<CancellationToken>();
@@ -279,6 +294,7 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
             }
         });
     }
+    if (completed_worker.joinable()) completed_worker.join();
     return "queued";
 }
 
@@ -320,6 +336,12 @@ std::vector<ProjectSessionDto> ProjectRuntimeManager::list() const {
 bool ProjectRuntimeManager::contains(const std::string &session_id) const {
     std::lock_guard lock(mutex_);
     return projects_.contains(session_id);
+}
+
+void ProjectRuntimeManager::set_operation_log_callback(
+    std::function<void(const std::string &, std::string_view)> callback) {
+    std::lock_guard lock(mutex_);
+    operation_log_callback_ = std::move(callback);
 }
 
 }  // namespace streamfind::service

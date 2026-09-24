@@ -362,6 +362,15 @@ void PluginHostAccess::delete_rows(
                                  std::to_string(status));
 }
 
+void PluginHostAccess::report_progress(double fraction, std::string_view message) {
+    if (host_.report_progress == nullptr)
+        return;
+    const auto status = host_.report_progress(
+        execution_context_, fraction, message.data(), static_cast<uint32_t>(message.size()), nullptr);
+    if (status != STREAMFIND_PLUGIN_OK)
+        throw std::runtime_error("plugin progress reporting failed");
+}
+
 void PluginHostAccess::require_table(const std::string &table_name) {
     uint8_t exists = 0;
     const auto status = host_.has_table(

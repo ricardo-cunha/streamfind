@@ -25,13 +25,9 @@ param(
 
 . "$PSScriptRoot\..\build-common.ps1"
 Start-ScriptLog 'build-cpp'
-$cmake   = Get-CMake
-$ninja   = Get-Ninja
 $buildDir = Join-Path $Script:TMP_BUILD 'core-default'
 $srcDir   = Join-Path $Script:REPO_ROOT 'cpp'
 
-Write-Log "cmake : $cmake"
-Write-Log "ninja : $ninja"
 Write-Log "build : $buildDir"
 Write-Log "source: $srcDir"
 
@@ -40,14 +36,21 @@ if ($Clean -and (Test-Path $buildDir)) {
     Remove-Item -Recurse -Force $buildDir
 }
 
-# Ninja targets need the MSVC environment (cl.exe, link.exe, rc.exe).
-Invoke-VcvarsAll x64
+$toolchain = Initialize-MinGWUcrt64
+$cmake = $toolchain.CMake
+$ninja = $toolchain.Ninja
+Write-Log "MinGW root: $($toolchain.Root)"
+Write-Log "C compiler: $($toolchain.CCompiler)"
+Write-Log "C++ compiler: $($toolchain.CxxCompiler)"
 
 $configureArgs = @(
     '-G', 'Ninja',
     '-Wno-dev',
     "-DCMAKE_MAKE_PROGRAM=$ninja",
+    "-DCMAKE_C_COMPILER=$($toolchain.CCompiler)",
+    "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)",
     "-DCMAKE_BUILD_TYPE=$Config",
+    "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)",
     '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
     '-DSTREAMFIND_BUILD_TESTS=ON',
     '-DSTREAMFIND_BUILD_SHARED=OFF',

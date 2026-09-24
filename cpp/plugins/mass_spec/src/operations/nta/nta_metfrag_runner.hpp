@@ -2,20 +2,22 @@
 //
 // Invokes MetFragCL (JAR or native executable) per feature, parses
 // the CSV output, computes cosine similarity for explained peaks,
-// and populates nta::PROJECT_NON_TARGET_ANALYSIS::suspects.
+// and populates ::streamfind::mass_spec::nta::NtaProjectData::suspects.
 //
 // Ported operation-faithfully from bindings/r/src/core/nta/nta_metfrag_runner.cpp.
 
 #ifndef STREAMFIND_NTA_METFRAG_RUNNER_HPP
+#include "utils/nta.hpp"
+
 #define STREAMFIND_NTA_METFRAG_RUNNER_HPP
 
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
-  class PROJECT_NON_TARGET_ANALYSIS;
+  class NtaProjectData;
 
   namespace metfrag_runner
   {
@@ -60,11 +62,12 @@ namespace nta
      * @param params       MetFrag runner configuration.
      */
     void metfrag_screening_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
         const MetFragParams &params);
 
   } // namespace metfrag_runner
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif // STREAMFIND_NTA_METFRAG_RUNNER_HPP
+namespace streamfind::mass_spec::nta::metfrag_screening { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

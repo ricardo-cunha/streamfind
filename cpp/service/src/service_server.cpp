@@ -333,6 +333,10 @@ void EventBroker::publish(const Json &event) {
 ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
     const std::filesystem::path &application_root)
     : port_(port), application_root_(application_root), projects_(methods_, operations_) {
+    projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view message) {
+        events_.publish(Json{{"type", "operation.log"}, {"project", session_id},
+                             {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}});
+    });
 #ifdef _WIN32
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) throw std::runtime_error("Winsock initialization failed");
@@ -359,7 +363,16 @@ void ServiceServer::handle_client(std::intptr_t socket) {
 #endif
             if (count <= 0) break;
             request.append(buffer.data(), static_cast<std::size_t>(count));
-            if (request.find("\r\n\r\n") != std::string::npos) break;
+            const auto header_end = request.find("\x0d\x0a\x0d\x0a");
+            if (header_end == std::string::npos) continue;
+            std::size_t content_length = 0;
+            const auto content_length_text = detail::header_value(
+                request.substr(0, header_end), "Content-Length");
+            if (!content_length_text.empty()) {
+                try { content_length = std::stoull(content_length_text); }
+                catch (...) { throw std::runtime_error("invalid Content-Length header"); }
+            }
+            if (request.size() >= header_end + 4 + content_length) break;
         }
         const auto separator = request.find("\r\n\r\n");
         if (separator == std::string::npos) throw std::runtime_error("invalid HTTP request");
@@ -374,11 +387,15 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             const auto origin = detail::header_value(headers, "Origin");
             const auto local_origin = std::string("http://127.0.0.1:") + std::to_string(port_);
             const auto branded_origin = std::string("http://streamfind.localhost:") + std::to_string(port_);
+            const auto is_loopback_origin = origin.rfind("http://127.0.0.1:", 0) == 0 ||
+                origin.rfind("http://localhost:", 0) == 0 ||
+                origin.rfind("http://streamfind.localhost:", 0) == 0;
             if (host != std::string("127.0.0.1:") + std::to_string(port_) && host != std::string("streamfind.localhost:") + std::to_string(port_)) {
                 detail::send_http(socket, 403, Json{{"error", "invalid StreamFind host"}});
                 return;
             }
-            if (!origin.empty() && origin != local_origin && origin != branded_origin) {
+            if (!origin.empty() && origin != local_origin && origin != branded_origin &&
+                !is_loopback_origin) {
                 detail::send_http(socket, 403, Json{{"error", "invalid StreamFind origin"}});
                 return;
             }

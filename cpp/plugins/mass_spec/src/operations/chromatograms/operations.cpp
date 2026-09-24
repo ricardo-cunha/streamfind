@@ -39,6 +39,21 @@ namespace streamfind::mass_spec::chromatograms
             "real", "real", "real", "real", "real", "real", "real", "real", "integer",
             "string", "string", "boolean", "timestamp"};
 
+        Json analysis_name_parameters(const Json &parameters, const Json &analyses)
+        {
+            auto result = parameters;
+            const auto wanted = parameters.value("analysis_names", Json::array());
+            Json names = Json::array();
+            for (const auto &value : wanted)
+            {
+                if (value.is_string()) names.push_back(value);
+                else if (value.is_number_integer() && value.get<std::size_t>() < analyses.size())
+                    names.push_back(analyses[value.get<std::size_t>()].value("analysis", std::string{}));
+            }
+            result["analysis_names"] = std::move(names);
+            return result;
+        }
+
         std::string utc_now()
         {
             const auto now = std::chrono::system_clock::now();
@@ -302,18 +317,24 @@ namespace streamfind::mass_spec::chromatograms
 
     Json get_chromatograms(sdk::PluginProjectAccess &access, const Json &parameters)
     {
+        const auto analyses = base::utils::input_rows(access, parameters, "analysesTable", {"analysis", "replicate"}, "analysis");
+        std::map<std::string, std::string> replicates;
+        for (const auto &analysis : analyses)
+            replicates[utils::text(analysis, "analysis")] = utils::text(analysis, "replicate");
+        const auto selection_parameters = analysis_name_parameters(parameters, analyses);
         const auto headers = base::utils::input_rows(access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis");
         const auto points = base::utils::input_rows(access, parameters, "chromatogramsTable", utils::point_columns(), "analysis");
         const auto header_map = utils::make_header_map(headers);
         Json output = Json::array();
         for (const auto &point : points)
         {
-            if (!selected(parameters, point))
+            if (!selected(selection_parameters, point))
                 continue;
             Json row = point;
             const auto it = header_map.find({utils::text(point, "analysis"), utils::integer(point, "index")});
             if (it != header_map.end())
                 utils::append_header_fields(row, it->second);
+            row["replicate"] = replicates[utils::text(point, "analysis")];
             output.push_back(std::move(row));
         }
         return output;
@@ -321,18 +342,24 @@ namespace streamfind::mass_spec::chromatograms
 
     Json get_chromatogram_peaks(sdk::PluginProjectAccess &access, const Json &parameters)
     {
+        const auto analyses = base::utils::input_rows(access, parameters, "analysesTable", {"analysis", "replicate"}, "analysis");
+        std::map<std::string, std::string> replicates;
+        for (const auto &analysis : analyses)
+            replicates[utils::text(analysis, "analysis")] = utils::text(analysis, "replicate");
+        const auto selection_parameters = analysis_name_parameters(parameters, analyses);
         const auto headers = base::utils::input_rows(access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis");
         const auto peaks = base::utils::input_rows(access, parameters, "chromatogramPeaksTable", utils::peak_columns(), "analysis");
         const auto header_map = utils::make_header_map(headers);
         Json output = Json::array();
         for (const auto &peak : peaks)
         {
-            if (!utils::selected_analysis(parameters, peak) || !utils::selected_index(parameters, utils::integer(peak, "chromatogram_index")))
+            if (!utils::selected_analysis(selection_parameters, peak) || !utils::selected_index(parameters, utils::integer(peak, "chromatogram_index")))
                 continue;
             Json row = peak;
             const auto it = header_map.find({utils::text(peak, "analysis"), utils::integer(peak, "chromatogram_index")});
             if (it != header_map.end())
                 utils::append_header_fields(row, it->second);
+            row["replicate"] = replicates[utils::text(peak, "analysis")];
             output.push_back(std::move(row));
         }
         return output;

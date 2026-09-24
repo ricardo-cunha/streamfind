@@ -94,6 +94,34 @@ namespace streamfind::mass_spec::base
 
     } // namespace
 
+    int analysis_index(const Json &row)
+    {
+        const auto value = row.find("analysis_index");
+        if (value == row.end() || value->is_null()) return 0;
+        if (value->is_number_integer()) return value->get<int>();
+        return std::stoi(value->get<std::string>());
+    }
+
+    int json_integer(const Json &row, const char *key)
+    {
+        const auto value = row.find(key);
+        if (value == row.end() || value->is_null()) return 0;
+        return value->is_number() ? value->get<int>() : std::stoi(value->get<std::string>());
+    }
+
+    double json_real(const Json &row, const char *key)
+    {
+        const auto value = row.find(key);
+        if (value == row.end() || value->is_null()) return 0.0;
+        return value->is_number() ? value->get<double>() : std::stod(value->get<std::string>());
+    }
+
+    Json json_value_or_zero(const Json &row, const char *key)
+    {
+        const auto value = row.find(key);
+        return value == row.end() || value->is_null() ? Json(0) : *value;
+    }
+
     Json read_mass_spec_files(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         const auto source_paths_it = parameters.find("source_paths");
@@ -312,10 +340,16 @@ namespace streamfind::mass_spec::base
             return Json{{"updated", output.size()}};
         }
 
+        bool selected(const Json &wanted, const std::string &name, int index = 0);
+
+        Json selected_analysis_rows(sdk::PluginProjectAccess &access, const Json &parameters,
+                                    const std::vector<std::string> &columns = analysis_columns,
+                                    bool filter_indices = false);
+
         Json analysis_value_rows(sdk::PluginProjectAccess &access, const Json &parameters, const char *column,
                                  bool numeric)
         {
-            const auto rows = base::utils::input_rows(access, parameters, "analysesTable", {column}, "analysis");
+            const auto rows = selected_analysis_rows(access, parameters, {column}, true);
             Json result = Json::array();
             for (const auto &row : rows)
             {
@@ -325,9 +359,27 @@ namespace streamfind::mass_spec::base
             return result;
         }
 
-        Json selected_analysis_rows(sdk::PluginProjectAccess &access, const Json &parameters)
+        Json selected_analysis_rows(sdk::PluginProjectAccess &access, const Json &parameters,
+                                    const std::vector<std::string> &columns, bool filter_indices)
         {
-            return base::utils::input_rows(access, parameters, "analysesTable", analysis_columns, "analysis");
+            const auto rows = base::utils::input_rows(access, parameters, "analysesTable", columns, "analysis");
+            const auto wanted_names = parameters.value("analysis_names", Json::array());
+            const auto wanted_indices = filter_indices ? parameters.value("indices", Json::array()) : Json::array();
+            Json selected_rows = Json::array();
+            for (std::size_t row_index = 0; row_index < rows.size(); ++row_index)
+            {
+                const auto name = rows[row_index].value("analysis", std::string{});
+                if (!selected(wanted_names, name, static_cast<int>(row_index)))
+                    continue;
+                const auto data_index = rows[row_index].contains("index")
+                    ? json_integer(rows[row_index], "index")
+                    : static_cast<int>(row_index);
+                if (!wanted_indices.empty() &&
+                    std::find(wanted_indices.begin(), wanted_indices.end(), data_index) == wanted_indices.end())
+                    continue;
+                selected_rows.push_back(rows[row_index]);
+            }
+            return selected_rows;
         }
 
         Json analysis_names(const Json &parameters)
@@ -335,19 +387,36 @@ namespace streamfind::mass_spec::base
             return parameters.value("analysis_names", Json::array());
         }
 
-        bool selected(const Json &wanted, const std::string &name)
+        std::map<std::string, int> analysis_row_indices(sdk::PluginProjectAccess &access, const Json &parameters)
         {
-            return wanted.empty() || std::find(wanted.begin(), wanted.end(), name) != wanted.end();
+            const auto rows = base::utils::input_rows(access, parameters, "analysesTable", {"analysis"}, "analysis");
+            std::map<std::string, int> result;
+            for (std::size_t index = 0; index < rows.size(); ++index)
+                result[rows[index].value("analysis", std::string{})] = static_cast<int>(index);
+            return result;
+        }
+
+        bool selected(const Json &wanted, const std::string &name, int index)
+                {
+                    if (wanted.empty())
+                return true;
+            for (const auto &value : wanted)
+            {
+                if (value.is_string() && value.get<std::string>() == name)
+                    return true;
+                if (value.is_number_integer() && value.get<int>() == index)
+                    return true;
+            }
+            return false;
         }
 
     } // namespace
 
     Json get_analyses_info(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        return base::utils::input_rows(access, parameters, "analysesTable",
+        return selected_analysis_rows(access, parameters,
                           {"analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
-                           "file_path", "format", "number_spectra", "number_chromatograms"},
-                          "analysis");
+                           "file_path", "format", "number_spectra", "number_chromatograms"}, true);
     }
 
     Json get_analysis_names(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -396,9 +465,12 @@ namespace streamfind::mass_spec::base
                                       "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"},
                                      "analysis");
         const auto wanted = analysis_names(parameters);
+        const auto analysis_indices = analysis_row_indices(access, parameters);
+        const auto indices = parameters.value("indices", Json::array());
         Json result = Json::array();
         for (auto row : rows)
-            if (selected(wanted, row.value("analysis", std::string{})))
+            if (selected(wanted, row.value("analysis", std::string{}), analysis_indices.at(row.value("analysis", std::string{}))) &&
+                (indices.empty() || std::find(indices.begin(), indices.end(), json_integer(row, "index")) != indices.end()))
                 result.push_back(std::move(row));
         return result;
     }
@@ -410,9 +482,12 @@ namespace streamfind::mass_spec::base
                                       "signal_type", "chromatogram_type", "detector", "channel", "units", "wavelength_nm", "interval_ms", "start_time", "end_time", "intensity_multiplier"},
                                      "analysis");
         const auto wanted = analysis_names(parameters);
+        const auto analysis_indices = analysis_row_indices(access, parameters);
+        const auto indices = parameters.value("indices", Json::array());
         Json result = Json::array();
         for (auto row : rows)
-            if (selected(wanted, row.value("analysis", std::string{})))
+            if (selected(wanted, row.value("analysis", std::string{}), analysis_indices.at(row.value("analysis", std::string{}))) &&
+                (indices.empty() || std::find(indices.begin(), indices.end(), json_integer(row, "index")) != indices.end()))
                 result.push_back(std::move(row));
         return result;
     }
@@ -428,14 +503,14 @@ namespace streamfind::mass_spec::base
         Json result = Json::array();
         for (const auto &header : headers)
         {
-            const auto level = std::stoi(header.value("level", "0"));
-            const auto rt = std::stod(header.value("rt", "0"));
+            const auto level = json_integer(header, "level");
+            const auto rt = json_real(header, "rt");
             if ((!levels.empty() && std::find(levels.begin(), levels.end(), level) == levels.end()) ||
                 (parameters.contains("rt_min") && rt < parameters.at("rt_min").get<double>()) ||
                 (parameters.contains("rt_max") && rt > parameters.at("rt_max").get<double>()))
                 continue;
             const auto analysis = header.value("analysis", std::string{});
-            result.push_back({{"analysis", analysis}, {"replicate", replicates[analysis]}, {"polarity", header.value("polarity", "0")}, {"level", level}, {"rt", rt}, {"mobility", header.value("mobility", "0")}, {"tic", header.value("tic", "0")}, {"bpmz", header.value("bpmz", "0")}, {"bpint", header.value("bpint", "0")}});
+            result.push_back({{"analysis", analysis}, {"replicate", replicates[analysis]}, {"polarity", json_value_or_zero(header, "polarity")}, {"level", level}, {"rt", rt}, {"mobility", json_value_or_zero(header, "mobility")}, {"tic", json_value_or_zero(header, "tic")}, {"bpmz", json_value_or_zero(header, "bpmz")}, {"bpint", json_value_or_zero(header, "bpint")}});
         }
         return result;
     }
@@ -450,10 +525,9 @@ namespace streamfind::mass_spec::base
         for (const auto &row : analyses)
         {
             const auto analysis = row.value("analysis", std::string{});
-            if (!selected(analysis_names(parameters), analysis))
-                continue;
+
             ::mass_spec::reader::MASS_SPEC_FILE file(row.at("file_path").get<std::string>());
-            file.select_analysis(std::stoi(row.value("analysis_index", "0")));
+            file.select_analysis(analysis_index(row));
             std::vector<int> selected_indices;
             for (const auto &value : indices)
                 selected_indices.push_back(value.get<int>());
@@ -515,10 +589,9 @@ namespace streamfind::mass_spec::base
         for (const auto &row : analyses)
         {
             const auto analysis = row.value("analysis", std::string{});
-            if (!selected(analysis_names(parameters), analysis))
-                continue;
+
             ::mass_spec::reader::MASS_SPEC_FILE file(row.at("file_path").get<std::string>());
-            file.select_analysis(std::stoi(row.value("analysis_index", "0")));
+            file.select_analysis(analysis_index(row));
             std::vector<int> selected_indices;
             for (const auto &value : indices)
                 selected_indices.push_back(value.get<int>());

@@ -1,8 +1,10 @@
 // nta_gap_filling.h
-// Feature gap filling declarations for PROJECT_NON_TARGET_ANALYSIS
+// Feature gap filling declarations for NtaProjectData
 // This file contains structures and functions for filling missing features across analyses
 
 #ifndef NTA_GAP_FILLING_H
+#include "utils/nta.hpp"
+
 #define NTA_GAP_FILLING_H
 
 #include <vector>
@@ -10,12 +12,12 @@
 #include <unordered_map>
 #include "readers/reader.hpp"
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
   // Forward declaration
   namespace utils { struct NTA_FEATURE_ROW; }
   namespace api { struct NTA_FEATURES; }
-  class PROJECT_NON_TARGET_ANALYSIS;
+  class NtaProjectData;
 
   namespace gap_filling
   {
@@ -99,8 +101,8 @@ namespace nta
 
     // Extract EIC for a specific m/z and RT window
     EIC_DATA extract_eic_for_gap_filling(
-        mass_spec::reader::MS_FILE &ana,
-        const mass_spec::reader::MS_SPECTRA_HEADERS &headers,
+        ::mass_spec::reader::MS_FILE &ana,
+        const ::mass_spec::reader::MS_SPECTRA_HEADERS &headers,
         float target_mz,
         float target_rt,
         float mzExpand,
@@ -127,7 +129,7 @@ namespace nta
 
     // Main implementation function
     void fill_features_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         bool withinReplicate,
         bool filtered,
         float rtExpand,
@@ -142,6 +144,8 @@ namespace nta
         std::string debugFG = "");
 
   } // namespace gap_filling
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif // NTA_GAP_FILLING_H
+
+namespace streamfind::mass_spec::nta::fill_features { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

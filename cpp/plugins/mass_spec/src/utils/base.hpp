@@ -13,6 +13,7 @@ struct TargetRange
 {
     std::string id;
     std::vector<std::string> analyses;
+    std::vector<int> analysis_indices;
     std::vector<int> polarities;
     std::vector<int> levels;
     bool has_mass = false;

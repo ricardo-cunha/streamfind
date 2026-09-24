@@ -46,6 +46,7 @@ set_target_properties(streamfind_stage9_fixture PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stage9-plugin"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stage9-plugin")
 if(WIN32)
+    set_target_properties(streamfind_stage9_fixture PROPERTIES PREFIX "")
     set(STREAMFIND_DYNAMIC_PLATFORM "windows-x86_64")
     set(STREAMFIND_DYNAMIC_LIBRARY "streamfind_stage9_fixture.dll")
 else()
@@ -107,7 +108,7 @@ target_include_directories(streamfind_dependency_smoke PRIVATE
 )
 if(MSVC)
     target_link_options(streamfind_dependency_smoke PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:streamfind_openbabel>")
-elseif(UNIX)
+elseif(UNIX OR MINGW)
     target_link_options(streamfind_dependency_smoke PRIVATE
         "-Wl,--whole-archive"
         "$<TARGET_FILE:streamfind_openbabel>"

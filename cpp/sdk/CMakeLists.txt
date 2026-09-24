@@ -21,7 +21,7 @@ target_include_directories(streamfind_cpp_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>
-        $<INSTALL_INTERFACE:include>
+        $<INSTALL_INTERFACE:sdk/include>
 )
 
 add_executable(streamfind_sdk_catalogue tools/streamfind-sdk-catalogue.cpp)
@@ -39,14 +39,15 @@ add_executable(streamfind_sdk_plugin_validator
 target_link_libraries(streamfind_sdk_plugin_validator PRIVATE streamfind::cpp_sdk)
 target_compile_features(streamfind_sdk_plugin_validator PRIVATE cxx_std_20)
 
-install(TARGETS streamfind_sdk_catalogue RUNTIME DESTINATION bin)
+install(TARGETS streamfind_sdk_catalogue streamfind_sdk_plugin_validator
+    RUNTIME DESTINATION sdk/bin)
 
 install(
     TARGETS streamfind_cpp_sdk
     EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
+    ARCHIVE DESTINATION sdk/lib
+    LIBRARY DESTINATION sdk/lib
+    RUNTIME DESTINATION sdk/bin
 )
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/apache-jena/"
-    DESTINATION share/streamfind/tools/jena)
+    DESTINATION sdk/tools/jena)

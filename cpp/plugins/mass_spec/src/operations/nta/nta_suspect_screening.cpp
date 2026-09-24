@@ -1,17 +1,19 @@
+#include "operations/nta/nta_suspect_screening.hpp"
 // suspect_screening.cpp
 // Suspect screening implementations for NTA_DATA
 
-#include "methods/nta_suspect_screening.hpp"
-#include "utils/openbabel_adapter.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
 #include "operations/base.hpp"
-#include "methods/nta_processing_methods.hpp"
+#include "utils/nta.hpp"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
   namespace suspect_screening
   {
@@ -39,21 +41,21 @@ namespace nta
       tmp.reserve(input.size());
       for (double v : input)
         tmp.push_back(static_cast<float>(v));
-      std::string enc = mass_spec::reader::utils::encode_little_endian_from_float(tmp, 4);
-      return mass_spec::reader::utils::encode_base64(enc);
+      std::string enc = ::mass_spec::reader::utils::encode_little_endian_from_float(tmp, 4);
+      return ::mass_spec::reader::utils::encode_base64(enc);
     }
 
     std::vector<float> decode_floats(const std::string &encoded)
     {
       if (encoded.empty())
         return {};
-      std::string decoded = mass_spec::reader::utils::decode_base64(encoded);
-      return mass_spec::reader::utils::decode_little_endian_to_float(decoded, 4);
+      std::string decoded = ::mass_spec::reader::utils::decode_base64(encoded);
+      return ::mass_spec::reader::utils::decode_little_endian_to_float(decoded, 4);
     }
 
     std::vector<SuspectQuery> normalize_suspects(const std::vector<SuspectQuery> &suspects)
     {
-      if (!sf::obabel::openbabel_available())
+      if (!streamfind::core::vendors::openbabel::openbabel_available())
         return suspects;
 
       std::vector<SuspectQuery> normalized = suspects;
@@ -62,8 +64,8 @@ namespace nta
         if (sus.SMILES.empty() && sus.InChI.empty())
           continue;
 
-        const sf::obabel::NormalizedStructure structure =
-          sf::obabel::normalize_structure(sus.SMILES, sus.InChI);
+        const streamfind::core::vendors::openbabel::NormalizedStructure structure =
+          streamfind::core::vendors::openbabel::normalize_structure(sus.SMILES, sus.InChI);
         if (!structure.ok)
           continue;
 
@@ -128,7 +130,7 @@ namespace nta
     }
 
     void screening_impl(
-        PROJECT_NON_TARGET_ANALYSIS &nta_data,
+        NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
         const std::vector<SuspectQuery> &suspects,
         double ppm,
@@ -187,7 +189,7 @@ namespace nta
         if (!analyses_set.empty() && analyses_set.find(analysis) == analyses_set.end())
           continue;
 
-        const nta::api::NTA_FEATURES &fts = feature_buffers[a];
+        const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
         for (int i = 0; i < fts.size(); ++i)
         {
           if (!filtered && fts.filtered[i])
@@ -234,7 +236,7 @@ namespace nta
         if (!sus)
           continue;
 
-        const nta::api::NTA_FEATURES &fts = feature_buffers[ref.analysis_idx];
+        const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[ref.analysis_idx];
         const int i = ref.feature_idx;
         const size_t idx = static_cast<size_t>(i);
 
@@ -428,7 +430,7 @@ namespace nta
     }
 
     void suspect_screening_impl(
-        PROJECT_NON_TARGET_ANALYSIS &nta_data,
+        NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
         const std::vector<SuspectQuery> &suspects,
         double ppm,
@@ -443,7 +445,7 @@ namespace nta
     }
 
     void find_internal_standards_impl(
-        PROJECT_NON_TARGET_ANALYSIS &nta_data,
+        NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
         const std::vector<SuspectQuery> &suspects,
         double ppm,
@@ -458,3 +460,55 @@ namespace nta
     }
   } // namespace suspect_screening
 } // namespace nta
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::suspect_screening
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const double ppm = parameters.value("ppm", 5.0);
+        const double sec = parameters.value("sec", 10.0);
+        const double ppm_ms2 = parameters.value("ppm_ms2", 10.0);
+        const double mzr_ms2 = parameters.value("mzr_ms2", 0.008);
+        const double min_cosine_similarity = parameters.value("min_cosine_similarity", 0.7);
+        const int min_shared_fragments = parameters.value("min_shared_fragments", 3);
+        const bool filtered = parameters.value("filtered", true);
+        if (ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0 || min_cosine_similarity < 0 ||
+            min_cosine_similarity > 1 || min_shared_fragments < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid suspect screening parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        const auto suspects = utils::detail::parse_suspect_targets(parameters);
+        ::streamfind::mass_spec::nta::suspect_screening::suspect_screening_impl(data, data.analysis_names(), suspects,
+                                                       ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, filtered);
+        utils::detail::emit_features(access, data);
+        utils::detail::emit_suspects(access, data);
+        return Json{{"status", "finished"}, {"info", "Suspect screening completed."}};
+    }
+}
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::find_internal_standards
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const double ppm = parameters.value("ppm", 5.0);
+        const double sec = parameters.value("sec", 10.0);
+        const double ppm_ms2 = parameters.value("ppm_ms2", 10.0);
+        const double mzr_ms2 = parameters.value("mzr_ms2", 0.008);
+        const double min_cosine_similarity = parameters.value("min_cosine_similarity", 0.7);
+        const int min_shared_fragments = parameters.value("min_shared_fragments", 3);
+        const bool filtered = parameters.value("filtered", true);
+        if (ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0 || min_cosine_similarity < 0 ||
+            min_cosine_similarity > 1 || min_shared_fragments < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid internal standard parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        const auto suspects = utils::detail::parse_suspect_targets(parameters);
+        ::streamfind::mass_spec::nta::suspect_screening::find_internal_standards_impl(data, data.analysis_names(), suspects,
+                                                             ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, filtered);
+        utils::detail::emit_features(access, data);
+        utils::detail::emit_internal_standards(access, data);
+        return Json{{"status", "finished"}, {"info", "Internal standards found."}};
+    }
+}

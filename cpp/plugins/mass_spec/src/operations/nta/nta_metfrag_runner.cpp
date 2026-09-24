@@ -4,10 +4,12 @@
 // CSV-format constants, candidate score normalization, and filters are copied
 // verbatim; only the plumbing (model structs, tool resolution, persistence) is adapted.
 
-#include "methods/nta_metfrag_runner.hpp"
-#include "methods/nta_processing_methods.hpp"
-#include "utils/openbabel_adapter.hpp"
+#include "operations/nta/nta_metfrag_runner.hpp"
+#include "utils/nta.hpp"
+#include "utils/tools_resolver.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
 #include "operations/base.hpp"
+#include "utils/nta.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -35,7 +37,7 @@ extern char **environ;
 
 namespace fs = std::filesystem;
 
-namespace nta::metfrag_runner
+namespace streamfind::mass_spec::nta::metfrag_runner
 {
   const std::vector<std::string> kSupportedMetFragDatabaseTypes = {
     "KEGG",
@@ -68,8 +70,8 @@ namespace nta::metfrag_runner
     std::vector<double> out;
     if (encoded.empty())
       return out;
-    std::string raw        = mass_spec::reader::utils::decode_base64(encoded);
-    std::vector<float> fv  = mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
+    std::string raw        = ::mass_spec::reader::utils::decode_base64(encoded);
+    std::vector<float> fv  = ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
     out.reserve(fv.size());
     for (float f : fv)
       out.push_back(static_cast<double>(f));
@@ -473,11 +475,11 @@ namespace nta::metfrag_runner
   {
     if (smiles.empty() && inchi.empty())
       return false;
-    if (!sf::obabel::openbabel_available())
+    if (!streamfind::core::vendors::openbabel::openbabel_available())
       return false;
 
-    const sf::obabel::NormalizedStructure normalized =
-        sf::obabel::normalize_structure(smiles, inchi);
+    const streamfind::core::vendors::openbabel::NormalizedStructure normalized =
+        streamfind::core::vendors::openbabel::normalize_structure(smiles, inchi);
     if (!normalized.ok)
       return false;
 
@@ -1059,7 +1061,7 @@ namespace nta::metfrag_runner
   }
 
   void metfrag_screening_impl(
-    PROJECT_NON_TARGET_ANALYSIS &nta_data,
+    NtaProjectData &nta_data,
     const std::vector<std::string> &analyses_sel,
     const MetFragParams &p)
   {
@@ -1093,7 +1095,7 @@ namespace nta::metfrag_runner
 
     // Reset suspects for all analyses.
     for (size_t ai = 0; ai < n_ana; ++ai)
-      suspect_buffers[ai] = nta::api::NTA_SUSPECTS();
+      suspect_buffers[ai] = ::streamfind::mass_spec::nta::api::NTA_SUSPECTS();
 
     for (size_t ai = 0; ai < n_ana; ++ai)
     {
@@ -1103,7 +1105,7 @@ namespace nta::metfrag_runner
           std::find(analyses_sel.begin(), analyses_sel.end(), ana) == analyses_sel.end())
         continue;
 
-      nta::api::NTA_FEATURES &feats = feature_buffers[ai];
+      ::streamfind::mass_spec::nta::api::NTA_FEATURES &feats = feature_buffers[ai];
       const int n_feat = feats.size();
 
       std::cerr << ai + 1 << "/" << n_ana
@@ -1183,8 +1185,8 @@ namespace nta::metfrag_runner
           db_intf.reserve(db_int.size());
           for (const double value : db_int)
             db_intf.push_back(static_cast<float>(value));
-          std::string db_ms2_mz_enc  = nta::utils::encode_floats_base64(db_mzf);
-          std::string db_ms2_int_enc = nta::utils::encode_floats_base64(db_intf);
+          std::string db_ms2_mz_enc  = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_mzf);
+          std::string db_ms2_int_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_intf);
 
           // Cosine similarity between explained peaks and experimental MS2.
           int shared = 0;
@@ -1221,7 +1223,7 @@ namespace nta::metfrag_runner
           else if (rt_match)              id_level = 3;
 
           // Populate SUSPECT.
-          nta::api::NTA_SUSPECT_ROW s;
+          ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW s;
           s.analysis           = ana;
           s.feature            = feats.feature[fi];
           s.candidate_rank     = rank;
@@ -1279,4 +1281,89 @@ namespace nta::metfrag_runner
     } // analyses
   }
 
-} // namespace nta::metfrag_runner
+} // namespace streamfind::mass_spec::nta::metfrag_runner
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::metfrag_screening
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        // Tool resolution is discovery-only. Installation must be an explicit user action.
+        const auto tool = ::streamfind::mass_spec::tools::resolve_metfrag();
+        if (!tool)
+            throw Error(ErrorCode::MethodExecution,
+                        "MetFrag screening requires Java 21 and MetFragCL. Install them explicitly with "
+                        "streamfind-cli tools install java and streamfind-cli tools install metfrag, then retry. "
+                        "Expected managed locations are %USERPROFILE%\\.streamfind\\tools on Windows "
+                        "or $HOME/.streamfind/tools on Linux/macOS.");
+
+        const std::string database_type = utils::detail::normalize_metfrag_database_type(
+            parameters.value("database_type", std::string("PubChem")));
+        // R method defaults.
+        const double ppm = parameters.value("ppm", 5.0);
+        const double sec = parameters.value("sec", 10.0);
+        const double ppm_ms2 = parameters.value("ppm_ms2", 10.0);
+        const double mzr_ms2 = parameters.value("mzr_ms2", 0.008);
+        const int top_n = parameters.value("top_n", 5);
+        std::vector<std::string> score_types;
+        for (const auto &v : parameters.value("score_types", Json::array({Json("FragmenterScore")})))
+            score_types.push_back(v.get<std::string>());
+        std::vector<double> score_weights;
+        for (const auto &v : parameters.value("score_weights", Json::array({Json(1.0)})))
+            score_weights.push_back(v.get<double>());
+        std::vector<std::string> pre_processing_candidate_filter;
+        for (const auto &v : parameters.value("pre_processing_candidate_filter",
+                                              Json::array({Json("UnconnectedCompoundFilter"), Json("IsotopeFilter")})))
+            pre_processing_candidate_filter.push_back(v.get<std::string>());
+        std::vector<std::string> post_processing_candidate_filter;
+        for (const auto &v : parameters.value("post_processing_candidate_filter", Json::array({Json("InChIKeyFilter")})))
+            post_processing_candidate_filter.push_back(v.get<std::string>());
+        const int maximum_tree_depth = parameters.value("maximum_tree_depth", 3);
+        const int number_threads = parameters.value("number_threads", 1);
+        const bool use_smiles = parameters.value("use_smiles", true);
+        const bool filtered = parameters.value("filtered", false);
+        // `debug` is accepted for schema parity; the runner keeps the inspectable
+        // PSV output for features with candidates regardless (R never forwards it).
+
+        if (ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: ppm, sec, ppm_ms2, and mzr_ms2 must be >= 0");
+        if (top_n < 1)
+            throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: top_n must be >= 1");
+        if (maximum_tree_depth < 1)
+            throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: maximum_tree_depth must be >= 1");
+        if (number_threads < 1)
+            throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: number_threads must be >= 1");
+        if (score_types.size() != score_weights.size())
+            throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
+
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::metfrag_runner::MetFragParams p;
+        p.metfrag_path = tool->second; // MetFragCL.jar
+        p.java_path = tool->first;     // java executable
+        p.database_type = database_type;
+        p.ppm = ppm;
+        p.sec = sec;
+        p.ppmMS2 = ppm_ms2;
+        p.mzrMS2 = mzr_ms2;
+        p.top_n = top_n;
+        p.score_types = std::move(score_types);
+        p.score_weights = std::move(score_weights);
+        p.pre_processing_candidate_filter = std::move(pre_processing_candidate_filter);
+        p.post_processing_candidate_filter = std::move(post_processing_candidate_filter);
+        p.candidate_writer = {"CSV", "FragmentSmilesPSV"};
+        p.maximum_tree_depth = maximum_tree_depth;
+        p.number_threads = number_threads;
+        p.use_smiles = use_smiles;
+        p.filtered = filtered;
+        p.run_dir = ::streamfind::mass_spec::nta::metfrag_runner::resolve_run_dir(p);
+        if (p.database_type == "LocalCSV")
+        {
+            std::filesystem::create_directories(p.run_dir);
+            p.database_path = utils::detail::write_local_metfrag_database(
+                parameters.value("database", Json::array()), p.run_dir);
+        }
+        ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(data, data.analysis_names(), p);
+        utils::detail::emit_suspects(access, data);
+        return Json{{"status", "finished"}, {"info", "MetFrag screening completed."}};
+    }
+}

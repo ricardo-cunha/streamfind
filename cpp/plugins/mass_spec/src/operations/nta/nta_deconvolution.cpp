@@ -30,14 +30,14 @@ namespace streamfind::mass_spec::nta::deconvolution
       min_val = max_val = signal_noise_ratio = 0.0f;
       return;
     }
-    mean = streamfind::mass_spec::nta::utils::mean(input_data);
-    std_dev = streamfind::mass_spec::nta::utils::standard_deviation(input_data, mean);
+    mean = ::streamfind::mass_spec::nta::utils::mean(input_data);
+    std_dev = ::streamfind::mass_spec::nta::utils::standard_deviation(input_data, mean);
     coefficient_variation = (mean != 0.0f) ? std_dev / mean : 0.0f;
     auto [min_it, max_it] = std::minmax_element(input_data.begin(), input_data.end());
     min_val = *min_it;
     max_val = *max_it;
-    float q25_val = streamfind::mass_spec::nta::utils::quantile(input_data, 0.25f);
-    float q90_val = streamfind::mass_spec::nta::utils::quantile(input_data, 0.90f);
+    float q25_val = ::streamfind::mass_spec::nta::utils::quantile(input_data, 0.25f);
+    float q90_val = ::streamfind::mass_spec::nta::utils::quantile(input_data, 0.90f);
     signal_noise_ratio = (q25_val != 0.0f) ? q90_val / q25_val : 0.0f;
   };
 
@@ -127,7 +127,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     {
       if (!bin_data[bin_idx].empty())
       {
-        float quantile_val = streamfind::mass_spec::nta::utils::quantile(bin_data[bin_idx], params.quantile);
+        float quantile_val = ::streamfind::mass_spec::nta::utils::quantile(bin_data[bin_idx], params.quantile);
         float adjusted_threshold = quantile_val * params.threshold_multiplier;
         bin_quantiles[bin_idx] = std::max(adjusted_threshold, noise_threshold);
       }
@@ -154,7 +154,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     {
       thresholds[i] = (mz_values[i] * ppmThreshold) / 1e6f;
     }
-    return streamfind::mass_spec::nta::utils::cluster_by_threshold_float(mz_values, thresholds);
+    return ::streamfind::mass_spec::nta::utils::cluster_by_threshold_float(mz_values, thresholds);
   };
 
   // MARK: filter_and_cluster
@@ -167,7 +167,7 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::vector<float> &final_intensity,
       std::vector<float> &final_noise)
   {
-    auto valid_indices = streamfind::mass_spec::nta::utils::filter_above_threshold(raw_intensity, raw_noise);
+    auto valid_indices = ::streamfind::mass_spec::nta::utils::filter_above_threshold(raw_intensity, raw_noise);
     if (valid_indices.empty())
       return;
 
@@ -184,8 +184,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       filtered_noise.push_back(raw_noise[idx]);
     }
 
-    auto sort_indices = streamfind::mass_spec::nta::utils::get_sort_indices_float(filtered_mz);
-    streamfind::mass_spec::nta::utils::reorder_multiple_vectors(sort_indices, filtered_mz, filtered_intensity, filtered_noise);
+    auto sort_indices = ::streamfind::mass_spec::nta::utils::get_sort_indices_float(filtered_mz);
+    ::streamfind::mass_spec::nta::utils::reorder_multiple_vectors(sort_indices, filtered_mz, filtered_intensity, filtered_noise);
     auto clusters = cluster_by_mz(filtered_mz, ppmThreshold);
 
     // Aggregate by cluster (keep max intensity per cluster)
@@ -274,11 +274,11 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::ostringstream header;
       header << "=== Denoising Debug Log for Spectrum " << spectrumIdx
              << " (RT=" << rt << "s) ===" << std::endl;
-      streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), header.str());
+      ::streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), header.str());
 
       // Calculate noise level statistics for debug output
-      float noise_mean = streamfind::mass_spec::nta::utils::mean(raw_noise);
-      float noise_stddev = streamfind::mass_spec::nta::utils::standard_deviation(raw_noise, noise_mean);
+      float noise_mean = ::streamfind::mass_spec::nta::utils::mean(raw_noise);
+      float noise_stddev = ::streamfind::mass_spec::nta::utils::standard_deviation(raw_noise, noise_mean);
       int zeros_removed = raw_n_traces - static_cast<int>(non_zero_intensities.size());
       float max_quantile = std::max(0.30f, baseQuantile * 1.2f);
 
@@ -334,7 +334,7 @@ namespace streamfind::mass_spec::nta::deconvolution
                 << "Denoising summary: " << raw_n_traces << " -> " << final_mz.size()
                 << " traces (" << std::setprecision(1) << reduction_percent << "% reduction)" << std::endl);
 
-      streamfind::mass_spec::nta::utils::close_debug_log();
+      ::streamfind::mass_spec::nta::utils::close_debug_log();
     }
 
     // Add to output vectors
@@ -393,8 +393,8 @@ namespace streamfind::mass_spec::nta::deconvolution
     if (rt.empty())
       return;
 
-    auto indices = streamfind::mass_spec::nta::utils::get_sort_indices_float(rt);
-    streamfind::mass_spec::nta::utils::reorder_multiple_vectors(indices, rt, mz, intensity, noise, cluster);
+    auto indices = ::streamfind::mass_spec::nta::utils::get_sort_indices_float(rt);
+    ::streamfind::mass_spec::nta::utils::reorder_multiple_vectors(indices, rt, mz, intensity, noise, cluster);
   };
 
   // MARK: cluster_spectra_by_mz
@@ -415,7 +415,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     if (n == 0)
       return;
 
-    auto mz_indices = streamfind::mass_spec::nta::utils::get_sort_indices_float(spec_mz);
+    auto mz_indices = ::streamfind::mass_spec::nta::utils::get_sort_indices_float(spec_mz);
     std::vector<float> sorted_mz(n);
     for (size_t i = 0; i < n; ++i)
     {
@@ -1006,7 +1006,7 @@ namespace streamfind::mass_spec::nta::deconvolution
   };
 
   // MARK: process_polarity_clusters
-  std::vector<::nta::api::NTA_FEATURE_ROW> process_polarity_clusters(
+  std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> process_polarity_clusters(
       const std::vector<float> &clust_rt,
       const std::vector<float> &clust_mz,
       const std::vector<float> &clust_intensity,
@@ -1030,7 +1030,7 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::ostringstream header;
       header << "=== Peak Detection Debug Log (m/z = " << std::fixed << std::setprecision(4)
              << debugMZ << ") ===\n";
-      streamfind::mass_spec::nta::utils::init_debug_log(filename, header.str());
+      ::streamfind::mass_spec::nta::utils::init_debug_log(filename, header.str());
     }
 
     std::map<int, std::vector<int>> cluster_indices;
@@ -1039,7 +1039,7 @@ namespace streamfind::mass_spec::nta::deconvolution
       cluster_indices[clust_cluster[i]].push_back(static_cast<int>(i));
     }
 
-    std::vector<::nta::api::NTA_FEATURE_ROW> polarity_features;
+    std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> polarity_features;
 
     for (const auto &[cluster_id, indices] : cluster_indices)
     {
@@ -1159,12 +1159,12 @@ namespace streamfind::mass_spec::nta::deconvolution
         DEBUG_LOG("      baseline_window_size: " << baseline_window_size << " points" << std::endl);
       }
 
-      auto baseline = streamfind::mass_spec::nta::utils::calculate_baseline(cluster_intensity, baseline_window_size);
+      auto baseline = ::streamfind::mass_spec::nta::utils::calculate_baseline(cluster_intensity, baseline_window_size);
       // Use gentle smoothing for derivatives (window_size=2 means averaging 3 points: [i-1, i, i+1])
       // This reduces noise while preserving sharp peaks
 
-      auto smoothed_intensity = streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 4, 2);
-      // auto smoothed_intensity = streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
+      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 4, 2);
+      // auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
 
       // DEBUG: Log smoothed and baseline data for inspection
       if (cluster_matches_debug_mz)
@@ -1189,7 +1189,7 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
 
       std::vector<float> first_derivative, second_derivative;
-      streamfind::mass_spec::nta::utils::calculate_derivatives(smoothed_intensity, first_derivative, second_derivative);
+      ::streamfind::mass_spec::nta::utils::calculate_derivatives(smoothed_intensity, first_derivative, second_derivative);
       auto candidates = find_peak_candidates(first_derivative, smoothed_intensity, 0);
 
       if (cluster_matches_debug_mz)
@@ -1754,8 +1754,8 @@ namespace streamfind::mass_spec::nta::deconvolution
           gaussian_sigma = (fit_rt.back() - fit_rt.front()) / 4.0f;
 
         // Optimize Gaussian parameters (with baseline)
-        streamfind::mass_spec::nta::utils::fit_gaussian(fit_rt, fit_smoothed, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline);
-        float gaussian_r2 = streamfind::mass_spec::nta::utils::calculate_gaussian_rsquared(
+        ::streamfind::mass_spec::nta::utils::fit_gaussian(fit_rt, fit_smoothed, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline);
+        float gaussian_r2 = ::streamfind::mass_spec::nta::utils::calculate_gaussian_rsquared(
             fit_rt, fit_smoothed, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline);
 
         if (cluster_matches_debug_mz)
@@ -1773,14 +1773,14 @@ namespace streamfind::mass_spec::nta::deconvolution
           // Print fitted values vs actual in horizontal format for easy plotting
           DEBUG_LOG("          Fitted vs Actual intensities:" << std::endl);
           float ss_total = 0.0f, ss_residual = 0.0f;
-          float mean_y = streamfind::mass_spec::nta::utils::mean(fit_smoothed);
+          float mean_y = ::streamfind::mass_spec::nta::utils::mean(fit_smoothed);
 
           // Calculate all predictions and errors first
           std::vector<float> predictions;
           std::vector<float> errors;
           for (size_t i = 0; i < fit_rt.size(); ++i)
           {
-            float pred = streamfind::mass_spec::nta::utils::gaussian_function_with_baseline(gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline, fit_rt[i]);
+            float pred = ::streamfind::mass_spec::nta::utils::gaussian_function_with_baseline(gaussian_A, gaussian_mu, gaussian_sigma, gaussian_baseline, fit_rt[i]);
             float residual = fit_smoothed[i] - pred;
             predictions.push_back(pred);
             errors.push_back(residual);
@@ -1837,12 +1837,12 @@ namespace streamfind::mass_spec::nta::deconvolution
         std::string fit_type = "Gaussian";
 
         // Calculate quality metrics
-        float peak_area_val = streamfind::mass_spec::nta::utils::calculate_area(peak_rt, peak_intensity);
-        float jaggedness = streamfind::mass_spec::nta::utils::calculate_jaggedness(peak_intensity);
-        float sharpness = streamfind::mass_spec::nta::utils::calculate_sharpness(peak_rt, peak_intensity, peak_area_val);
-        float asymmetry = streamfind::mass_spec::nta::utils::calculate_asymmetry(peak_rt, peak_intensity);
-        int modality = streamfind::mass_spec::nta::utils::calculate_modality(peak_smoothed, 0.1f); // 10% prominence threshold
-        float plates = streamfind::mass_spec::nta::utils::calculate_theoretical_plates(rt_at_max, fwhm_rt_val);
+        float peak_area_val = ::streamfind::mass_spec::nta::utils::calculate_area(peak_rt, peak_intensity);
+        float jaggedness = ::streamfind::mass_spec::nta::utils::calculate_jaggedness(peak_intensity);
+        float sharpness = ::streamfind::mass_spec::nta::utils::calculate_sharpness(peak_rt, peak_intensity, peak_area_val);
+        float asymmetry = ::streamfind::mass_spec::nta::utils::calculate_asymmetry(peak_rt, peak_intensity);
+        int modality = ::streamfind::mass_spec::nta::utils::calculate_modality(peak_smoothed, 0.1f); // 10% prominence threshold
+        float plates = ::streamfind::mass_spec::nta::utils::calculate_theoretical_plates(rt_at_max, fwhm_rt_val);
 
         if (cluster_matches_debug_mz)
         {
@@ -1892,7 +1892,7 @@ namespace streamfind::mass_spec::nta::deconvolution
         }
 
         // Create FEATURE structure
-        ::nta::api::NTA_FEATURE_ROW feature;
+        ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW feature;
 
         // Basic identification with polarity-specific naming
         std::string polarity_suffix = (polarity_sign > 0) ? "POS" : "NEG";
@@ -2015,7 +2015,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     }
 
     // Close debug log at the end of processing to allow new log files to be created
-    streamfind::mass_spec::nta::utils::close_debug_log();
+    ::streamfind::mass_spec::nta::utils::close_debug_log();
 
     return polarity_features;
   };
@@ -2038,7 +2038,7 @@ namespace streamfind::mass_spec::nta::deconvolution
   {
     if (rtWindowsMin.size() != rtWindowsMax.size())
     {
-      std::cerr << "Error: rtWindowsMin and rtWindowsMax must have the same length!" << std::endl;
+      input.report("Error: rtWindowsMin and rtWindowsMax must have the same length!");
       return;
     }
 
@@ -2048,8 +2048,8 @@ namespace streamfind::mass_spec::nta::deconvolution
 
     for (size_t a = 0; a < analysis_names.size(); ++a)
     {
-      std::cerr << std::endl;
-      std::cerr << a + 1 << "/" << analysis_names.size() << " Processing analysis " << analysis_names[a] << std::endl;
+      input.report(std::to_string(a + 1) + "/" + std::to_string(analysis_names.size()) +
+                   " Processing analysis " + analysis_names[a]);
 
       // Only enable debugging for matching analysis
       float current_debugMZ = (debugAnalysis.empty() || debugAnalysis == analysis_names[a]) ? debugMZ : 0.0f;
@@ -2097,7 +2097,7 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::vector<float> spec_pos_rt, spec_pos_mz, spec_pos_intensity, spec_pos_noise;
       std::vector<float> spec_neg_rt, spec_neg_mz, spec_neg_intensity, spec_neg_noise;
 
-      std::cerr << "  1/5 Denoising " << idx_load.size() << " spectra" << std::endl;
+      input.report("  1/5 Denoising " + std::to_string(idx_load.size()) + " spectra");
 
       size_t total_raw_points = 0;
       size_t total_clean_points = 0;
@@ -2148,10 +2148,10 @@ namespace streamfind::mass_spec::nta::deconvolution
               baseQuantile);
         }
         if ((i + 1) % 100 == 0 || i + 1 == idx_load.size())
-          std::cerr << "      Denoised " << i + 1 << "/" << idx_load.size() << " spectra" << std::endl;
+          input.report("      Denoised " + std::to_string(i + 1) + "/" + std::to_string(idx_load.size()) + " spectra");
       }
 
-      std::cerr << "      Polarity distribution: " << pos_count << " positive, " << neg_count << " negative spectra" << std::endl;
+      input.report("      Polarity distribution: " + std::to_string(pos_count) + " positive, " + std::to_string(neg_count) + " negative spectra");
 
       // Show denoising statistics
       float denoising_efficiency = total_raw_points > 0 ? (1.0f - static_cast<float>(total_clean_points) / static_cast<float>(total_raw_points)) * 100.0f : 0.0f;
@@ -2161,7 +2161,7 @@ namespace streamfind::mass_spec::nta::deconvolution
                 << "% noise removed, baseQuantile=" << baseQuantile << ")" << std::endl;
 
       // Process positive and negative polarities separately
-      std::vector<::nta::api::NTA_FEATURE_ROW> pos_features, neg_features;
+      std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> pos_features, neg_features;
 
       // Process positive polarity
       if (spec_pos_rt.size() > 0)
@@ -2212,34 +2212,37 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
 
       // Combine features from both polarities
-      std::vector<::nta::api::NTA_FEATURE_ROW> all_features;
+      std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> all_features;
       all_features.reserve(pos_features.size() + neg_features.size());
       all_features.insert(all_features.end(), pos_features.begin(), pos_features.end());
       all_features.insert(all_features.end(), neg_features.begin(), neg_features.end());
 
-      std::cerr << "  4/5 Found " << all_features.size() << " total features ("
-                << pos_features.size() << " positive, " << neg_features.size() << " negative)" << std::endl;
+      input.report("  4/5 Found " + std::to_string(all_features.size()) + " total features (" +
+                   std::to_string(pos_features.size()) + " positive, " +
+                   std::to_string(neg_features.size()) + " negative)");
 
-      feature_buffers[a] = ::nta::api::NTA_FEATURES();
+      feature_buffers[a] = ::streamfind::mass_spec::nta::api::NTA_FEATURES();
       feature_buffers[a].analysis = analysis_names[a];
 
       for (const auto &feature : all_features)
       {
-        feature_buffers[a].append_feature(feature);
+        auto enriched = feature;
+        enriched.replicate = a < input.replicate_names.size() ? input.replicate_names[a] : std::string{};
+        enriched.blank = a < input.blank_names.size() ? input.blank_names[a] : std::string{};
+
+        feature_buffers[a].append_feature(enriched);
       }
 
-      std::cerr << "  5/5 Processing complete" << std::endl;
+      input.report("  5/5 Processing complete");
     }
 
-    std::cerr << " " << std::endl;
-    std::cerr << " Completed!" << std::endl;
-    std::cerr << " " << std::endl;
+    input.report("Completed!");
   };
 
   Json find_features(sdk::PluginProjectAccess &access, const Json &parameters)
   {
     const auto physical_table = parameters.at("_inputs").at("analysesTable").at("physical_table").get<std::string>();
-    const auto rows = access.read(physical_table, {"analysis", "file_path", "analysis_index"}, "analysis");
+    const auto rows = access.read(physical_table, {"analysis", "file_path", "analysis_index", "replicate", "blank"}, "analysis");
     std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_headers;
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto spectra_input = inputs.find("spectraHeadersTable");
@@ -2253,43 +2256,47 @@ namespace streamfind::mass_spec::nta::deconvolution
           "analysis");
       for (const auto &row : header_rows)
       {
-        auto &header = persisted_headers[streamfind::mass_spec::nta::utils::text(row, "analysis")];
-        header.index.push_back(streamfind::mass_spec::nta::utils::integer(row, "index"));
-        header.scan.push_back(streamfind::mass_spec::nta::utils::integer(row, "scan"));
-        header.array_length.push_back(streamfind::mass_spec::nta::utils::integer(row, "array_length"));
-        header.level.push_back(streamfind::mass_spec::nta::utils::integer(row, "level"));
-        header.mode.push_back(streamfind::mass_spec::nta::utils::integer(row, "mode"));
-        header.polarity.push_back(streamfind::mass_spec::nta::utils::integer(row, "polarity"));
-        header.configuration.push_back(streamfind::mass_spec::nta::utils::integer(row, "configuration"));
-        header.lowmz.push_back(streamfind::mass_spec::nta::utils::real(row, "lowmz"));
-        header.highmz.push_back(streamfind::mass_spec::nta::utils::real(row, "highmz"));
-        header.bpmz.push_back(streamfind::mass_spec::nta::utils::real(row, "bpmz"));
-        header.bpint.push_back(streamfind::mass_spec::nta::utils::real(row, "bpint"));
-        header.tic.push_back(streamfind::mass_spec::nta::utils::real(row, "tic"));
-        header.rt.push_back(streamfind::mass_spec::nta::utils::real(row, "rt"));
-        header.mobility.push_back(streamfind::mass_spec::nta::utils::real(row, "mobility"));
-        header.window_mz.push_back(streamfind::mass_spec::nta::utils::real(row, "window_mz"));
-        header.window_mzlow.push_back(streamfind::mass_spec::nta::utils::real(row, "window_mzlow"));
-        header.window_mzhigh.push_back(streamfind::mass_spec::nta::utils::real(row, "window_mzhigh"));
-        header.precursor_mz.push_back(streamfind::mass_spec::nta::utils::real(row, "precursor_mz"));
-        header.precursor_intensity.push_back(streamfind::mass_spec::nta::utils::real(row, "precursor_intensity"));
-        header.precursor_charge.push_back(streamfind::mass_spec::nta::utils::integer(row, "precursor_charge"));
-        header.activation_ce.push_back(streamfind::mass_spec::nta::utils::real(row, "activation_ce"));
+        auto &header = persisted_headers[::streamfind::mass_spec::nta::utils::text(row, "analysis")];
+        header.index.push_back(::streamfind::mass_spec::nta::utils::integer(row, "index"));
+        header.scan.push_back(::streamfind::mass_spec::nta::utils::integer(row, "scan"));
+        header.array_length.push_back(::streamfind::mass_spec::nta::utils::integer(row, "array_length"));
+        header.level.push_back(::streamfind::mass_spec::nta::utils::integer(row, "level"));
+        header.mode.push_back(::streamfind::mass_spec::nta::utils::integer(row, "mode"));
+        header.polarity.push_back(::streamfind::mass_spec::nta::utils::integer(row, "polarity"));
+        header.configuration.push_back(::streamfind::mass_spec::nta::utils::integer(row, "configuration"));
+        header.lowmz.push_back(::streamfind::mass_spec::nta::utils::real(row, "lowmz"));
+        header.highmz.push_back(::streamfind::mass_spec::nta::utils::real(row, "highmz"));
+        header.bpmz.push_back(::streamfind::mass_spec::nta::utils::real(row, "bpmz"));
+        header.bpint.push_back(::streamfind::mass_spec::nta::utils::real(row, "bpint"));
+        header.tic.push_back(::streamfind::mass_spec::nta::utils::real(row, "tic"));
+        header.rt.push_back(::streamfind::mass_spec::nta::utils::real(row, "rt"));
+        header.mobility.push_back(::streamfind::mass_spec::nta::utils::real(row, "mobility"));
+        header.window_mz.push_back(::streamfind::mass_spec::nta::utils::real(row, "window_mz"));
+        header.window_mzlow.push_back(::streamfind::mass_spec::nta::utils::real(row, "window_mzlow"));
+        header.window_mzhigh.push_back(::streamfind::mass_spec::nta::utils::real(row, "window_mzhigh"));
+        header.precursor_mz.push_back(::streamfind::mass_spec::nta::utils::real(row, "precursor_mz"));
+        header.precursor_intensity.push_back(::streamfind::mass_spec::nta::utils::real(row, "precursor_intensity"));
+        header.precursor_charge.push_back(::streamfind::mass_spec::nta::utils::integer(row, "precursor_charge"));
+        header.activation_ce.push_back(::streamfind::mass_spec::nta::utils::real(row, "activation_ce"));
       }
     }
     const auto wanted = parameters.value("analysis_names", Json::array());
     FeatureInput input;
+    input.log = [&access](std::string_view message) { access.report_progress(0.0, message); };
     for (const auto &row : rows)
     {
-      const auto name = streamfind::mass_spec::nta::utils::text(row, "analysis");
+      const auto name = ::streamfind::mass_spec::nta::utils::text(row, "analysis");
       if (!wanted.empty() && std::find(wanted.begin(), wanted.end(), name) == wanted.end())
         continue;
-      ::mass_spec::reader::MASS_SPEC_FILE file(streamfind::mass_spec::nta::utils::text(row, "file_path"));
-      const int index = streamfind::mass_spec::nta::utils::integer(row, "analysis_index");
+      ::mass_spec::reader::MASS_SPEC_FILE file(::streamfind::mass_spec::nta::utils::text(row, "file_path"));
+      const int index = ::streamfind::mass_spec::nta::utils::integer(row, "analysis_index");
       file.select_analysis(index);
       input.names.push_back(name);
-      input.paths.push_back(streamfind::mass_spec::nta::utils::text(row, "file_path"));
+      input.paths.push_back(::streamfind::mass_spec::nta::utils::text(row, "file_path"));
       input.analysis_indices.push_back(index);
+      input.replicate_names.push_back(::streamfind::mass_spec::nta::utils::text(row, "replicate"));
+      input.blank_names.push_back(::streamfind::mass_spec::nta::utils::text(row, "blank"));
+
       const auto persisted = persisted_headers.find(name);
       input.headers.push_back(persisted == persisted_headers.end() ? file.get_spectra_headers() : persisted->second);
     }
@@ -2311,8 +2318,8 @@ namespace streamfind::mass_spec::nta::deconvolution
     Json output = Json::array();
     for (const auto &buffer : input.buffers)
       for (int index = 0; index < buffer.size(); ++index)
-        output.push_back(streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(index)));
-    access.emit_table_rows("ntaFeaturesTable", streamfind::mass_spec::nta::utils::feature_columns(), streamfind::mass_spec::nta::utils::feature_types(), output);
+        output.push_back(::streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(index)));
+    access.emit_table_rows("ntaFeaturesTable", ::streamfind::mass_spec::nta::utils::feature_columns(), ::streamfind::mass_spec::nta::utils::feature_types(), output);
     return Json{{"status", "finished"}, {"features", output.size()}};
   }
 }

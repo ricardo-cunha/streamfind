@@ -1,20 +1,22 @@
 // nta_filters.h
-// Filtering for PROJECT_NON_TARGET_ANALYSIS structures
+// Filtering for NtaProjectData structures
 
 #ifndef NTA_FILTERS_H
+#include "utils/nta.hpp"
+
 #define NTA_FILTERS_H
 
 #include <vector>
 #include <string>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
-  class PROJECT_NON_TARGET_ANALYSIS;
+  class NtaProjectData;
 
   namespace filter_features
   {
     void filter_features_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         double minSN,
         double minIntensity,
         double minArea,
@@ -56,7 +58,7 @@ namespace nta
   namespace filter_suspects
   {
     void filter_suspects_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         const std::vector<std::string> &names,
         double minScore,
         double maxErrorRT,
@@ -69,7 +71,7 @@ namespace nta
   namespace filter_internal_standards
   {
     void filter_internal_standards_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         const std::vector<std::string> &names,
         double minScore,
         double maxErrorRT,
@@ -88,7 +90,7 @@ namespace nta
     //   3. Keep only top-N peaks (if top > 0), apply minIntensity and relMinIntensity thresholds.
     // All encoded peak lists are updated in-place (ms2_mz, ms2_intensity, ms2_size).
     void filter_features_ms2_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
         int top,                        // 0 = no limit
         float minIntensity,             // NaN = no limit
         float relMinIntensity,          // NaN = no limit
@@ -97,6 +99,14 @@ namespace nta
         float blankPresenceThreshold,
         float globalPresenceThreshold);
   } // namespace filter_features_ms2
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif // NTA_FILTERS_H
+
+namespace streamfind::mass_spec::nta::filter_features { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+
+namespace streamfind::mass_spec::nta::filter_features_ms2 { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+
+namespace streamfind::mass_spec::nta::filter_suspects { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+
+namespace streamfind::mass_spec::nta::filter_internal_standards { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

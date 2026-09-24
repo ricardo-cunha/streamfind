@@ -154,6 +154,8 @@ sfms:ntaFeaturesTable
     sf:tableName "MASS_SPEC_NTA_FEATURES" ;
     sf:hasColumn
         sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:blankNameColumn,
         sfms:ntaFeatureIdColumn,
         sfms:ntaFeatureComponentColumn,
         sfms:ntaFeatureGroupColumn,

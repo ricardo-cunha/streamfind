@@ -1,4 +1,5 @@
 #include "streamfind/service/service_server.hpp"
+#include "streamfind/vendor_runtime.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -6,6 +7,7 @@
 #include <string>
 
 int main(int argc, char **argv) {
+    streamfind::configure_vendor_runtime_paths();
     std::uint16_t port = 8787;
     if (argc > 1) {
         const auto parsed = std::strtoul(argv[1], nullptr, 10);
@@ -19,7 +21,7 @@ int main(int argc, char **argv) {
         const auto executable_path = argc > 0
                                          ? std::filesystem::absolute(argv[0])
                                          : std::filesystem::current_path() / "streamfind_service";
-        const auto application_root = executable_path.parent_path().parent_path() / "share" / "streamfind" / "app";
+        const auto application_root = executable_path.parent_path().parent_path() / "app";
         streamfind::service::ServiceServer server(port, executable_path.parent_path() / "streamfind.json", application_root);
         std::cout << "streamfind_service listening on port " << port << '\n' << std::flush;
         server.run();

@@ -61,14 +61,13 @@ std::optional<std::string> binary_relative() {
     return std::nullopt;
 }
 
-/// Release/install layout: <prefix>/bin/<exe> + <prefix>/share/streamfind/.
+/// Release/install layout: <prefix>/bin/<exe> + <prefix>/core/.
 /// Resolving relative to the executable makes unpacked release archives
 /// relocatable (no compile-time prefix dependency).
 std::optional<std::string> binary_relative_share() {
-    const auto candidate = executable_dir().parent_path() / "share" / "streamfind" / "catalogue.duckdb";
+    const auto candidate = executable_dir().parent_path() / "core" / "catalogue.duckdb";
     if (std::filesystem::exists(candidate)) return candidate.string();
-    const auto core_candidate = executable_dir().parent_path() / "share" / "streamfind" /
-                                "core" / "catalogue.duckdb";
+    const auto core_candidate = executable_dir().parent_path() / "core" / "core-catalogue.duckdb";
     if (std::filesystem::exists(core_candidate)) return core_candidate.string();
     return std::nullopt;
 }
@@ -332,7 +331,7 @@ std::optional<std::string> find_core_path() {
         return std::string(value);
     const auto executable = detail::executable_dir();
     const std::vector<std::filesystem::path> candidates = {
-        executable / "core" / "catalogue.duckdb",
+        executable.parent_path() / "core" / "core-catalogue.duckdb",
         executable / "semantic_catalogue" / "core" / "catalogue.duckdb",
         executable.parent_path() / "semantic_catalogue" / "core" / "catalogue.duckdb",
         executable.parent_path() / "share" / "streamfind" / "core" / "catalogue.duckdb",
@@ -376,7 +375,7 @@ const Catalogue &catalogue() {
         if (!path) {
             result.error =
                 "catalogue.duckdb not found; searched STREAMFIND_CATALOGUE, the executable directory, "
-                "and the install data directory (share/streamfind). Ensure the runtime knowledge base "
+                "and the install data directory (core). Ensure the runtime knowledge base "
                 "is installed alongside the binaries.";
             return result;
         }

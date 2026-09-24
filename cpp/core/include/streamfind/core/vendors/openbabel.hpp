@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace sf::obabel
+namespace streamfind::core::vendors::openbabel
 {
   struct NormalizedStructure
   {
@@ -58,6 +58,6 @@ namespace sf::obabel
 
   std::string debug_runtime();
 
-} // namespace sf::obabel
+} // namespace streamfind::core::vendors::openbabel
 
 #endif // streamfind_OPENBABEL_ADAPTER_H

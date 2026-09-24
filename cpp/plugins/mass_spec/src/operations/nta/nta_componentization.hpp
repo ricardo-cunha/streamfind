@@ -1,16 +1,18 @@
 #ifndef NTA_COMPONENTIZATION_H
+#include "utils/nta.hpp"
+
 #define NTA_COMPONENTIZATION_H
 
 #include <vector>
 #include <string>
 
-namespace nta {
+namespace streamfind::mass_spec::nta {
   struct FEATURE;
   struct FEATURES;
-  class PROJECT_NON_TARGET_ANALYSIS;
+  class NtaProjectData;
 }
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
   namespace componentization
   {
@@ -32,13 +34,15 @@ namespace nta
 
     // Main implementation function
     void create_components_impl(
-      nta::PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
         const std::vector<float> &rtWindow,
         float minCorrelation = 0.8f,
         float debugRT = 0.0f,
         const std::string &debugAnalysis = "");
 
   } // namespace componentization
-} // namespace nta
+} // namespace streamfind::mass_spec::nta
 
 #endif
+
+namespace streamfind::mass_spec::nta::create_components { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

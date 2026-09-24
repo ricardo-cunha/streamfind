@@ -1,8 +1,9 @@
+#include "operations/nta/nta_filters.hpp"
 // nta_filters.cpp
 // Filtering implementations for NTA_DATA
 
-#include "methods/nta_filters.hpp"
-#include "methods/nta_processing_methods.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
 #include <unordered_map>
 #include <unordered_set>
 #include <cmath>
@@ -10,9 +11,9 @@
 #include <optional>
 #include <functional>
 
-namespace nta::filter_features
+namespace streamfind::mass_spec::nta::filter_features
 {
-  namespace streamfind::nta_filter_detail
+  namespace streamfind::mass_spec::nta::filter_detail
   {
     struct FilterParams
     {
@@ -70,10 +71,10 @@ namespace nta::filter_features
     }
   }
 
-  using namespace streamfind::nta_filter_detail;
+  using namespace streamfind::mass_spec::nta::filter_detail;
 
   void filter_features_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
       double minSN,
       double minIntensity,
       double minArea,
@@ -176,7 +177,7 @@ namespace nta::filter_features
       {
         const std::string &analysis = analysis_names[a];
         const std::string &replicate = replicate_names[a];
-        const nta::api::NTA_FEATURES &fts = feature_buffers[a];
+        const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
 
         for (int i = 0; i < fts.size(); ++i)
         {
@@ -210,11 +211,11 @@ namespace nta::filter_features
       }
     }
 
-    auto apply_filter = [&](const std::string &name, const std::function<bool(const nta::api::NTA_FEATURES &, int, const std::string &replicate)> &predicate) {
+    auto apply_filter = [&](const std::string &name, const std::function<bool(const ::streamfind::mass_spec::nta::api::NTA_FEATURES &, int, const std::string &replicate)> &predicate) {
       int updated = 0;
       for (size_t a = 0; a < analysis_names.size(); ++a)
       {
-        nta::api::NTA_FEATURES &fts = feature_buffers[a];
+        ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
         const std::string &replicate = replicate_names[a];
         for (int i = 0; i < fts.size(); ++i)
         {
@@ -237,7 +238,7 @@ namespace nta::filter_features
     if (params.minSN.has_value())
     {
       float v = params.minSN.value();
-      apply_filter("minSN", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minSN", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.sn[i]) && fts.sn[i] < v;
       });
     }
@@ -245,7 +246,7 @@ namespace nta::filter_features
     if (params.minIntensity.has_value())
     {
       float v = params.minIntensity.value();
-      apply_filter("minIntensity", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minIntensity", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.intensity[i]) && fts.intensity[i] < v;
       });
     }
@@ -253,7 +254,7 @@ namespace nta::filter_features
     if (params.minArea.has_value())
     {
       float v = params.minArea.value();
-      apply_filter("minArea", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minArea", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.area[i]) && fts.area[i] < v;
       });
     }
@@ -261,7 +262,7 @@ namespace nta::filter_features
     if (params.minWidth.has_value())
     {
       float v = params.minWidth.value();
-      apply_filter("minWidth", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minWidth", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.width[i]) && fts.width[i] < v;
       });
     }
@@ -269,7 +270,7 @@ namespace nta::filter_features
     if (params.maxWidth.has_value())
     {
       float v = params.maxWidth.value();
-      apply_filter("maxWidth", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxWidth", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.width[i]) && fts.width[i] > v;
       });
     }
@@ -277,7 +278,7 @@ namespace nta::filter_features
     if (params.maxPPM.has_value())
     {
       float v = params.maxPPM.value();
-      apply_filter("maxPPM", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxPPM", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.ppm[i]) && fts.ppm[i] > v;
       });
     }
@@ -285,7 +286,7 @@ namespace nta::filter_features
     if (params.minFwhmRT.has_value())
     {
       float v = params.minFwhmRT.value();
-      apply_filter("minFwhmRT", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minFwhmRT", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.fwhm_rt[i]) && fts.fwhm_rt[i] < v;
       });
     }
@@ -293,7 +294,7 @@ namespace nta::filter_features
     if (params.maxFwhmRT.has_value())
     {
       float v = params.maxFwhmRT.value();
-      apply_filter("maxFwhmRT", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxFwhmRT", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.fwhm_rt[i]) && fts.fwhm_rt[i] > v;
       });
     }
@@ -301,7 +302,7 @@ namespace nta::filter_features
     if (params.minFwhmMZ.has_value())
     {
       float v = params.minFwhmMZ.value();
-      apply_filter("minFwhmMZ", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minFwhmMZ", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.fwhm_mz[i]) && fts.fwhm_mz[i] < v;
       });
     }
@@ -309,7 +310,7 @@ namespace nta::filter_features
     if (params.maxFwhmMZ.has_value())
     {
       float v = params.maxFwhmMZ.value();
-      apply_filter("maxFwhmMZ", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxFwhmMZ", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.fwhm_mz[i]) && fts.fwhm_mz[i] > v;
       });
     }
@@ -317,7 +318,7 @@ namespace nta::filter_features
     if (params.minGaussianA.has_value())
     {
       float v = params.minGaussianA.value();
-      apply_filter("minGaussianA", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minGaussianA", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.gaussian_A[i]) && fts.gaussian_A[i] < v;
       });
     }
@@ -325,7 +326,7 @@ namespace nta::filter_features
     if (params.minGaussianMu.has_value())
     {
       float v = params.minGaussianMu.value();
-      apply_filter("minGaussianMu", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minGaussianMu", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.gaussian_mu[i]) && fts.gaussian_mu[i] < v;
       });
     }
@@ -333,7 +334,7 @@ namespace nta::filter_features
     if (params.maxGaussianMu.has_value())
     {
       float v = params.maxGaussianMu.value();
-      apply_filter("maxGaussianMu", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxGaussianMu", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.gaussian_mu[i]) && fts.gaussian_mu[i] > v;
       });
     }
@@ -341,7 +342,7 @@ namespace nta::filter_features
     if (params.minGaussianSigma.has_value())
     {
       float v = params.minGaussianSigma.value();
-      apply_filter("minGaussianSigma", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minGaussianSigma", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.gaussian_sigma[i]) && fts.gaussian_sigma[i] < v;
       });
     }
@@ -349,7 +350,7 @@ namespace nta::filter_features
     if (params.maxGaussianSigma.has_value())
     {
       float v = params.maxGaussianSigma.value();
-      apply_filter("maxGaussianSigma", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxGaussianSigma", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.gaussian_sigma[i]) && fts.gaussian_sigma[i] > v;
       });
     }
@@ -357,7 +358,7 @@ namespace nta::filter_features
     if (params.minGaussianR2.has_value())
     {
       float v = params.minGaussianR2.value();
-      apply_filter("minGaussianR2", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minGaussianR2", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.gaussian_r2[i]) && fts.gaussian_r2[i] < v;
       });
     }
@@ -365,7 +366,7 @@ namespace nta::filter_features
     if (params.maxJaggedness.has_value())
     {
       float v = params.maxJaggedness.value();
-      apply_filter("maxJaggedness", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxJaggedness", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.jaggedness[i]) && fts.jaggedness[i] > v;
       });
     }
@@ -373,7 +374,7 @@ namespace nta::filter_features
     if (params.minSharpness.has_value())
     {
       float v = params.minSharpness.value();
-      apply_filter("minSharpness", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minSharpness", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.sharpness[i]) && fts.sharpness[i] < v;
       });
     }
@@ -381,7 +382,7 @@ namespace nta::filter_features
     if (params.minAsymmetry.has_value())
     {
       float v = params.minAsymmetry.value();
-      apply_filter("minAsymmetry", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minAsymmetry", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.asymmetry[i]) && fts.asymmetry[i] < v;
       });
     }
@@ -389,7 +390,7 @@ namespace nta::filter_features
     if (params.maxAsymmetry.has_value())
     {
       float v = params.maxAsymmetry.value();
-      apply_filter("maxAsymmetry", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxAsymmetry", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.asymmetry[i]) && fts.asymmetry[i] > v;
       });
     }
@@ -397,7 +398,7 @@ namespace nta::filter_features
     if (params.maxModality.has_value())
     {
       int v = params.maxModality.value();
-      apply_filter("maxModality", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("maxModality", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.modality[i] > v;
       });
     }
@@ -405,7 +406,7 @@ namespace nta::filter_features
     if (params.minPlates.has_value())
     {
       float v = params.minPlates.value();
-      apply_filter("minPlates", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minPlates", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return !is_nan(fts.plates[i]) && fts.plates[i] < v;
       });
     }
@@ -415,13 +416,13 @@ namespace nta::filter_features
       bool onlyFilled = params.onlyFilled.value();
       if (onlyFilled)
       {
-        apply_filter("onlyFilled", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+        apply_filter("onlyFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
           return !fts.filled[i];
         });
       }
       else
       {
-        apply_filter("notFilled", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+        apply_filter("notFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
           return fts.filled[i];
         });
       }
@@ -429,7 +430,7 @@ namespace nta::filter_features
 
     if (params.removeFilled)
     {
-      apply_filter("removeFilled", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("removeFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.filled[i];
       });
     }
@@ -437,7 +438,7 @@ namespace nta::filter_features
     if (params.minSizeEIC.has_value())
     {
       int v = params.minSizeEIC.value();
-      apply_filter("minSizeEIC", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minSizeEIC", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.eic_size[i] < v;
       });
     }
@@ -445,7 +446,7 @@ namespace nta::filter_features
     if (params.minSizeMS1.has_value())
     {
       int v = params.minSizeMS1.value();
-      apply_filter("minSizeMS1", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minSizeMS1", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.ms1_size[i] < v;
       });
     }
@@ -453,7 +454,7 @@ namespace nta::filter_features
     if (params.minSizeMS2.has_value())
     {
       int v = params.minSizeMS2.value();
-      apply_filter("minSizeMS2", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("minSizeMS2", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.ms2_size[i] < v;
       });
     }
@@ -463,7 +464,7 @@ namespace nta::filter_features
       float v = params.minRelPresenceReplicate.value();
       if (v > 0.0f)
       {
-        apply_filter("minRelPresenceReplicate", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &replicate) {
+        apply_filter("minRelPresenceReplicate", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &replicate) {
           const std::string &fg = fts.feature_group[i];
           if (fg.empty())
             return false;
@@ -475,32 +476,32 @@ namespace nta::filter_features
 
     if (params.removeIsotopes)
     {
-      apply_filter("removeIsotopes", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("removeIsotopes", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.annotation_category[i] == "isotope";
       });
     }
 
     if (params.removeAdducts)
     {
-      apply_filter("removeAdducts", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("removeAdducts", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.annotation_category[i] == "adduct";
       });
     }
 
     if (params.removeLosses)
     {
-      apply_filter("removeLosses", [&](const nta::api::NTA_FEATURES &fts, int i, const std::string &) {
+      apply_filter("removeLosses", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
         return fts.annotation_category[i] == "loss";
       });
     }
   }
-} // namespace nta::filter_features
+} // namespace streamfind::mass_spec::nta::filter_features
 
 // MARK: filter_suspects
-namespace nta::filter_suspects
+namespace streamfind::mass_spec::nta::filter_suspects
 {
   void filter_suspects_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
       const std::vector<std::string> &names,
       double minScore,
       double maxErrorRT,
@@ -512,7 +513,7 @@ namespace nta::filter_suspects
     auto &suspect_buffers = nta_data.suspect_buffers();
     for (size_t a = 0; a < suspect_buffers.size(); ++a)
     {
-      nta::api::NTA_SUSPECTS &sus = suspect_buffers[a];
+      ::streamfind::mass_spec::nta::api::NTA_SUSPECTS &sus = suspect_buffers[a];
       if (sus.size() == 0)
         continue;
 
@@ -589,12 +590,12 @@ namespace nta::filter_suspects
       }
 
       // Create filtered suspects
-      nta::api::NTA_SUSPECTS filtered;
+      ::streamfind::mass_spec::nta::api::NTA_SUSPECTS filtered;
       for (int i = 0; i < sus.size(); ++i)
       {
         if (keep[i])
         {
-          nta::api::NTA_SUSPECT_ROW s;
+          ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW s;
           s.analysis = sus.analysis[i];
           s.feature = sus.feature[i];
           s.candidate_rank = sus.candidate_rank[i];
@@ -633,13 +634,13 @@ namespace nta::filter_suspects
       suspect_buffers[a] = filtered;
     }
   }
-} // namespace nta::filter_suspects
+} // namespace streamfind::mass_spec::nta::filter_suspects
 
 // MARK: filter_internal_standards
-namespace nta::filter_internal_standards
+namespace streamfind::mass_spec::nta::filter_internal_standards
 {
   void filter_internal_standards_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
       const std::vector<std::string> &names,
       double minScore,
       double maxErrorRT,
@@ -651,7 +652,7 @@ namespace nta::filter_internal_standards
     auto &internal_standard_buffers = nta_data.internal_standard_buffers();
     for (size_t a = 0; a < internal_standard_buffers.size(); ++a)
     {
-      nta::api::NTA_INTERNAL_STANDARDS &istd = internal_standard_buffers[a];
+      ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS &istd = internal_standard_buffers[a];
       if (istd.size() == 0)
         continue;
 
@@ -728,12 +729,12 @@ namespace nta::filter_internal_standards
       }
 
       // Create filtered internal standards
-      nta::api::NTA_INTERNAL_STANDARDS filtered;
+      ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS filtered;
       for (int i = 0; i < istd.size(); ++i)
       {
         if (keep[i])
         {
-          nta::api::NTA_INTERNAL_STANDARD_ROW is;
+          ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW is;
           is.analysis = istd.analysis[i];
           is.feature = istd.feature[i];
           is.candidate_rank = istd.candidate_rank[i];
@@ -772,10 +773,10 @@ namespace nta::filter_internal_standards
       internal_standard_buffers[a] = filtered;
     }
   }
-} // namespace nta::filter_internal_standards
+} // namespace streamfind::mass_spec::nta::filter_internal_standards
 
 // MARK: filter_features_ms2
-namespace nta::filter_features_ms2
+namespace streamfind::mass_spec::nta::filter_features_ms2
 {
   namespace streamfind::nta_filter_ms2_detail
   {
@@ -785,10 +786,10 @@ namespace nta::filter_features_ms2
     {
       if (encoded.empty())
         return {};
-      std::string raw = mass_spec::reader::utils::decode_base64(encoded);
+      std::string raw = ::mass_spec::reader::utils::decode_base64(encoded);
       if (raw.empty())
         return {};
-      return mass_spec::reader::utils::decode_little_endian_to_float(raw, 4); // 4 bytes = float32
+      return ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4); // 4 bytes = float32
     }
 
     // Cluster a flat list of (mz, intensity) pairs from multiple features/analyses.
@@ -929,7 +930,7 @@ namespace nta::filter_features_ms2
   using namespace streamfind::nta_filter_ms2_detail;
 
   void filter_features_ms2_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
       int top,
       float minIntensity,
       float relMinIntensity,
@@ -976,7 +977,7 @@ namespace nta::filter_features_ms2
         if (blank_analyses_set.find(ana) == blank_analyses_set.end())
           continue;
 
-        const nta::api::NTA_FEATURES &fts = feature_buffers[a];
+        const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
         for (int i = 0; i < fts.size(); ++i)
         {
           if (fts.ms2_size[i] <= 0 || fts.ms2_mz[i].empty())
@@ -1005,7 +1006,7 @@ namespace nta::filter_features_ms2
           std::vector<float> global_all_mz;
           for (size_t a = 0; a < analysis_names.size(); ++a)
           {
-            const nta::api::NTA_FEATURES &fts = feature_buffers[a];
+            const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
             for (int i = 0; i < fts.size(); ++i)
             {
               if (fts.ms2_size[i] <= 0 || fts.ms2_mz[i].empty())
@@ -1040,7 +1041,7 @@ namespace nta::filter_features_ms2
 
     for (size_t a = 0; a < analysis_names.size(); ++a)
     {
-      nta::api::NTA_FEATURES &fts = feature_buffers[a];
+      ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
       for (int i = 0; i < fts.size(); ++i)
       {
         if (fts.ms2_size[i] <= 0 || fts.ms2_mz[i].empty())
@@ -1072,10 +1073,188 @@ namespace nta::filter_features_ms2
         apply_spectrum_filters(mz, intensity, top, minIntensity, relMinIntensity);
 
         // Re-encode and update FEATURES
-        fts.ms2_mz[i] = nta::utils::encode_floats_base64(mz);
-        fts.ms2_intensity[i] = nta::utils::encode_floats_base64(intensity);
+        fts.ms2_mz[i] = ::streamfind::mass_spec::nta::utils::encode_floats_base64(mz);
+        fts.ms2_intensity[i] = ::streamfind::mass_spec::nta::utils::encode_floats_base64(intensity);
         fts.ms2_size[i] = static_cast<int>(mz.size());
       }
     }
   }
-} // namespace nta::filter_features_ms2
+} // namespace streamfind::mass_spec::nta::filter_features_ms2
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::filter_features
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        // Optional numeric filters: null/absent (R NA) disable the filter via NaN.
+        auto opt_real = [&](const char *key) -> double
+        {
+            auto it = parameters.find(key);
+            if (it == parameters.end() || it->is_null())
+                return std::numeric_limits<double>::quiet_NaN();
+            return it->get<double>();
+        };
+        auto opt_int = [&](const char *key) -> int
+        {
+            auto it = parameters.find(key);
+            if (it == parameters.end() || it->is_null())
+                return 0;
+            return it->get<int>();
+        };
+        auto has = [&](const char *key) -> bool
+        {
+            auto it = parameters.find(key);
+            return it != parameters.end() && !it->is_null();
+        };
+
+        const double minSN = opt_real("min_sn");
+        const double minIntensity = opt_real("min_intensity");
+        const double minArea = opt_real("min_area");
+        const double minWidth = opt_real("min_width");
+        const double maxWidth = opt_real("max_width");
+        const double maxPPM = opt_real("max_ppm");
+        const double minFwhmRT = opt_real("min_fwhm_rt");
+        const double maxFwhmRT = opt_real("max_fwhm_rt");
+        const double minFwhmMZ = opt_real("min_fwhm_mz");
+        const double maxFwhmMZ = opt_real("max_fwhm_mz");
+        const double minGaussianA = opt_real("min_gaussian_a");
+        const double minGaussianMu = opt_real("min_gaussian_mu");
+        const double maxGaussianMu = opt_real("max_gaussian_mu");
+        const double minGaussianSigma = opt_real("min_gaussian_sigma");
+        const double maxGaussianSigma = opt_real("max_gaussian_sigma");
+        const double minGaussianR2 = opt_real("min_gaussian_r2");
+        const double maxJaggedness = opt_real("max_jaggedness");
+        const double minSharpness = opt_real("min_sharpness");
+        const double minAsymmetry = opt_real("min_asymmetry");
+        const double maxAsymmetry = opt_real("max_asymmetry");
+        const double minPlates = opt_real("min_plates");
+        const double minRelPresenceReplicate = opt_real("min_rel_presence_replicate");
+        const int maxModality = opt_int("max_modality");
+        const bool hasMaxModality = has("max_modality");
+        const int minSizeEIC = opt_int("min_size_eic");
+        const bool hasMinSizeEIC = has("min_size_eic");
+        const int minSizeMS1 = opt_int("min_size_ms1");
+        const bool hasMinSizeMS1 = has("min_size_ms1");
+        const int minSizeMS2 = opt_int("min_size_ms2");
+        const bool hasMinSizeMS2 = has("min_size_ms2");
+
+        // only_filled is tri-state: true=keep only filled, false=keep only non-filled,
+        // null/absent=disabled (matches R onlyFilled=NA).
+        bool hasOnlyFilled = false, onlyFilledValue = false;
+        if (auto it = parameters.find("only_filled"); it != parameters.end() && !it->is_null())
+        {
+            hasOnlyFilled = true;
+            onlyFilledValue = it->get<bool>();
+        }
+        const bool removeFilled = parameters.value("remove_filled", false);
+        const bool removeIsotopes = parameters.value("remove_isotopes", false);
+        const bool removeAdducts = parameters.value("remove_adducts", false);
+        const bool removeLosses = parameters.value("remove_losses", false);
+
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::filter_features::filter_features_impl(
+            data,
+            minSN, minIntensity, minArea, minWidth, maxWidth, maxPPM,
+            minFwhmRT, maxFwhmRT, minFwhmMZ, maxFwhmMZ,
+            minGaussianA, minGaussianMu, maxGaussianMu, minGaussianSigma, maxGaussianSigma, minGaussianR2,
+            maxJaggedness, minSharpness, minAsymmetry, maxAsymmetry,
+            maxModality, hasMaxModality, minPlates,
+            hasOnlyFilled, onlyFilledValue, removeFilled,
+            minSizeEIC, hasMinSizeEIC, minSizeMS1, hasMinSizeMS1, minSizeMS2, hasMinSizeMS2,
+            minRelPresenceReplicate,
+            removeIsotopes, removeAdducts, removeLosses);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Features filtered."}};
+    }
+}
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::filter_features_ms2
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const int top = parameters.value("top", 0);
+        const float min_intensity_ms2 = parameters.value("min_intensity_ms2", NAN);
+        const float rel_min_intensity = parameters.value("rel_min_intensity", NAN);
+        const bool blank_clean = parameters.value("blank_clean", false);
+        const float mz_clust = parameters.value("mz_clust", 0.005);
+        const float blank_presence_threshold = parameters.value("blank_presence_threshold", 0.8);
+        const float global_presence_threshold = parameters.value("global_presence_threshold", 0.1);
+        if (top < 0 || mz_clust < 0 || blank_presence_threshold < 0 || blank_presence_threshold > 1 ||
+            global_presence_threshold < 0 || global_presence_threshold > 1)
+            throw Error(ErrorCode::InvalidArgument, "invalid MS2 feature filtering parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::filter_features_ms2::filter_features_ms2_impl(data, top, min_intensity_ms2, rel_min_intensity,
+                                                           blank_clean, mz_clust, blank_presence_threshold, global_presence_threshold);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "MS2 peak lists filtered."}};
+    }
+}
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::filter_suspects
+{
+using Json = nlohmann::json;
+    Json run(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        std::vector<std::string> names;
+        for (const auto &v : parameters.value("names", Json::array()))
+            names.push_back(v.get<std::string>());
+        auto opt_real = [&](const char *key) -> double
+        {
+            auto it = parameters.find(key);
+            return (it != parameters.end() && !it->is_null()) ? it->get<double>() : std::numeric_limits<double>::quiet_NaN();
+        };
+        const double min_score = opt_real("min_score");
+        const double max_error_rt = opt_real("max_error_rt");
+        const double max_error_mass = opt_real("max_error_mass");
+        std::vector<int> id_levels;
+        for (const auto &v : parameters.value("id_levels", Json::array()))
+            id_levels.push_back(v.get<int>());
+        const int min_shared_fragments = parameters.value("min_shared_fragments", 0);
+        const double min_cosine_similarity = opt_real("min_cosine_similarity");
+        if (min_shared_fragments < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid suspect filtering parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        utils::detail::load_suspects(access, data, parameters);
+        ::streamfind::mass_spec::nta::filter_suspects::filter_suspects_impl(data, names, min_score, max_error_rt, max_error_mass,
+                                                   id_levels, min_shared_fragments, min_cosine_similarity);
+        utils::detail::emit_suspects(access, data);
+        return Json{{"status", "finished"}, {"info", "Suspects filtered."}};
+    }
+}
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::filter_internal_standards
+{
+using Json = nlohmann::json;
+    Json run(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        std::vector<std::string> names;
+        for (const auto &v : parameters.value("names", Json::array()))
+            names.push_back(v.get<std::string>());
+        auto opt_real = [&](const char *key) -> double
+        {
+            auto it = parameters.find(key);
+            return (it != parameters.end() && !it->is_null()) ? it->get<double>() : std::numeric_limits<double>::quiet_NaN();
+        };
+        const double min_score = opt_real("min_score");
+        const double max_error_rt = opt_real("max_error_rt");
+        const double max_error_mass = opt_real("max_error_mass");
+        std::vector<int> id_levels;
+        for (const auto &v : parameters.value("id_levels", Json::array()))
+            id_levels.push_back(v.get<int>());
+        const int min_shared_fragments = parameters.value("min_shared_fragments", 0);
+        const double min_cosine_similarity = opt_real("min_cosine_similarity");
+        if (min_shared_fragments < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid internal standard filtering parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        utils::detail::load_internal_standards(access, data, parameters);
+        ::streamfind::mass_spec::nta::filter_internal_standards::filter_internal_standards_impl(data, names, min_score, max_error_rt, max_error_mass,
+                                                                       id_levels, min_shared_fragments, min_cosine_similarity);
+        utils::detail::emit_internal_standards(access, data);
+        return Json{{"status", "finished"}, {"info", "Internal standards filtered."}};
+    }
+}

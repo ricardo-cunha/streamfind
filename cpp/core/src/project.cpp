@@ -743,7 +743,15 @@ namespace streamfind
         {
             if (!resolved.contains(definition.name))
                 continue;
-            definition.type.validate(resolved.at(definition.name));
+            try
+            {
+                definition.type.validate(resolved.at(definition.name));
+            }
+            catch (const std::exception &error)
+            {
+                throw Error(ErrorCode::WorkflowValidation,
+                            "Invalid parameter '" + definition.name + "': " + error.what());
+            }
         }
         return resolved;
     }
@@ -929,6 +937,7 @@ namespace streamfind
         return {{"id", id},
                 {"semantic_contract", semantic_contract},
                 {"cardinality", cardinality},
+                {"data_kind", data_kind},
                 {"representations", representations},
                 {"optional", optional}};
     }
@@ -941,6 +950,7 @@ namespace streamfind
         port.id = value.at("id").get<std::string>();
         port.semantic_contract = value.value("semantic_contract", "");
         port.cardinality = value.value("cardinality", "one");
+        port.data_kind = value.value("data_kind", "");
         port.representations = value.value("representations", std::vector<std::string>{});
         port.optional = value.value("optional", false);
         if (port.semantic_contract.empty())
@@ -997,7 +1007,7 @@ namespace streamfind
             const auto result = executor_(project, resolved, operation_instance, inputs);
             const auto inventory = project.get_artifact_inventory();
             for (const auto &port : definition_.output_ports) {
-                const bool is_table = std::find(port.representations.begin(), port.representations.end(), "table") != port.representations.end();
+                const bool is_table = port.data_kind == "duckdb_table";
                 if (port.semantic_contract.empty()) continue;
                 const bool already_published = std::any_of(inventory.begin(), inventory.end(), [&](const Json &artifact) {
                     return artifact.value("producer_instance", "") == operation_instance &&
@@ -1393,6 +1403,7 @@ namespace streamfind
         ProjectInfo info;
         mutable std::mutex mutex;
         bool closed{false};
+        Project::OperationLogCallback operation_log_callback;
     };
 
     class Connection
@@ -1959,6 +1970,8 @@ namespace streamfind
             if (connection.target_operation != operation_id) continue;
             const Json *selected = nullptr;
             int selected_revision = -1;
+            std::string selected_created_at;
+            std::string selected_artifact_id;
             for (const auto &artifact : inventory) {
                 const auto contract = artifact.value("contract_id", "");
                 const bool port_matches = contract == connection.source_port ||
@@ -1970,12 +1983,21 @@ namespace streamfind
                     const auto revision_text = artifact.value("workflow_revision", "");
                     int revision = -1;
                     try { revision = std::stoi(revision_text); } catch (...) { continue; }
-                    if (revision > workflow.version || revision < selected_revision)
+                    if (revision > workflow.version)
                         continue;
-                    if (revision == selected_revision && selected != nullptr)
+                    const auto created_at = artifact.value("created_at", "");
+                    const auto artifact_id = artifact.value("artifact_id", "");
+                    const bool older_revision = revision < selected_revision;
+                    const bool same_revision_older = revision == selected_revision &&
+                        selected != nullptr &&
+                        (created_at < selected_created_at ||
+                         (created_at == selected_created_at && artifact_id <= selected_artifact_id));
+                    if (older_revision || same_revision_older)
                         continue;
                     selected = &artifact;
                     selected_revision = revision;
+                    selected_created_at = created_at;
+                    selected_artifact_id = artifact_id;
                 }
             }
             if (selected == nullptr)
@@ -2362,6 +2384,22 @@ namespace streamfind
         Connection connection(*impl_);
         audit(connection.get(), "complete", "operation", Json{{"operation", operation_id}});
         return result;
+    }
+
+    void Project::set_operation_log_callback(OperationLogCallback callback)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->operation_log_callback = std::move(callback);
+    }
+
+    void Project::log_operation(std::string_view message) const
+    {
+        OperationLogCallback callback;
+        {
+            std::lock_guard lock(impl_->mutex);
+            callback = impl_->operation_log_callback;
+        }
+        if (callback) callback(message);
     }
 
     void Project::close() noexcept

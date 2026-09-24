@@ -244,6 +244,7 @@ struct STREAMFIND_CORE_API OperationDefinition {
         std::string id;
         std::string semantic_contract;
         std::string cardinality{"one"};
+        std::string data_kind;
         std::vector<std::string> representations;
         bool optional{false};
 
@@ -477,6 +478,7 @@ struct STREAMFIND_CORE_API AuditEntry {
 /** @brief RAII handle for a DuckDB-backed streamfind Project. */
 class STREAMFIND_CORE_API Project {
 public:
+    using OperationLogCallback = std::function<void(std::string_view)>;
     /** @internal Implementation state shared by the Project handle. */
     struct Impl;
     /** @internal Construct from initialized implementation state. */
@@ -577,6 +579,8 @@ public:
     Json run_operation(const std::string &operation_id, const Json &parameters,
                        const OperationRegistry &registry,
                        const std::string &operation_instance = {});
+    void set_operation_log_callback(OperationLogCallback callback);
+    void log_operation(std::string_view message) const;
     /** @brief Mark the Project closed; subsequent operations fail. */
     void close() noexcept;
 

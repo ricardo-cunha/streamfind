@@ -140,7 +140,7 @@ function capabilityTemplates(capabilities: ServiceCapabilities, projectDomain: s
     )
     .map((capability: BackendCapability) => ({
       id: capability.canonical_id,
-      kind: capability.kind,
+      kind: 'operation' as const,
       title: capability.label,
       description: capability.definition,
       icon: capability.kind === 'operation' ? 'fa-solid fa-bolt' : 'fa-solid fa-gears',
@@ -181,15 +181,7 @@ function schemaOntologyDetails(schema: JsonSchema | undefined): string[] {
 }
 
 function portOntologyDetails(port: NodePort): string[] {
-  const details = [`type: ${port.schema ? schemaTypeLabel(port.schema) : port.dataKind || 'value'}`];
-  const schemaColumns = port.schema?.properties ? Object.entries(port.schema.properties) : [];
-  const columns =
-    port.table?.columns || schemaColumns.map(([name, schema]) => ({ name, primitive_type: schema.type || 'value' }));
-  if (columns.length) {
-    details.push('columns:');
-    details.push(...columns.map((column) => `  · ${column.name}: ${column.primitive_type}`));
-  }
-  return details;
+  return [`type: ${port.schema ? schemaTypeLabel(port.schema) : port.dataKind || 'value'}`];
 }
 
 function parameterOntologyDetails(parameter: CapabilityParameter): string[] {
@@ -207,6 +199,10 @@ function parameterOntologyDetails(parameter: CapabilityParameter): string[] {
   if (parameter.directory_extensions?.length)
     details.push(`directory extensions: ${parameter.directory_extensions.join(', ')}`);
   return Array.from(new Set(details));
+}
+
+function ontologyPortTerm(port: NodePort): string {
+  return port.table?.table_name || port.results?.[0]?.canonical_id || port.semanticContract || port.id;
 }
 
 function tableRowsToWireValue(value: unknown): unknown {
@@ -324,6 +320,7 @@ type NodePort = {
   required?: boolean;
   description?: string;
   table?: CapabilityPort['table'];
+  results?: CapabilityPort['results'];
   semanticContract?: string;
   dataKind?: CapabilityPort['data_kind'];
   schema?: JsonSchema;
@@ -465,6 +462,7 @@ function nodePorts(capability: BackendCapability | undefined): { inputs: NodePor
     required: port.required ?? port.optional !== true,
     description: port.schema?.description,
     table: port.table,
+    results: port.results,
     semanticContract: port.semantic_contract,
     dataKind: port.data_kind,
     schema: port.schema,
@@ -477,6 +475,7 @@ function nodePorts(capability: BackendCapability | undefined): { inputs: NodePor
       label: port.label || port.id,
       description: port.schema?.description,
       table: port.table,
+      results: port.results,
       semanticContract: port.semantic_contract,
       dataKind: port.data_kind,
       schema: port.schema,
@@ -607,12 +606,14 @@ export default function CanvasShell({
   surface,
   client,
   onProjectHub,
+  onOpenOntologyWiki,
 }: {
   project: ProjectSession;
   capabilities: ServiceCapabilities;
   surface: 'workflow' | 'explorer';
   client?: StreamFindApiClient;
   onProjectHub?: () => void;
+  onOpenOntologyWiki?: (term?: string) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const workflowFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2786,7 +2787,17 @@ export default function CanvasShell({
               <h3>Inputs</h3>
               {nodePorts(documentationCapability).inputs.map((port) => (
                 <div className="sf-info-row" key={port.id}>
-                  <strong>{port.label}</strong>
+                  {ontologyPortTerm(port) && onOpenOntologyWiki ? (
+                    <button
+                      type="button"
+                      className="sf-ontology-term-link"
+                      onClick={() => onOpenOntologyWiki(ontologyPortTerm(port))}
+                    >
+                      {port.label}
+                    </button>
+                  ) : (
+                    <strong>{port.label}</strong>
+                  )}
                   <span>
                     {port.required ? 'required' : 'optional'}
                     {port.description ? (
@@ -2809,7 +2820,17 @@ export default function CanvasShell({
               <h3>Outputs</h3>
               {nodePorts(documentationCapability).outputs.map((port) => (
                 <div className="sf-info-row" key={port.id}>
-                  <strong>{port.label}</strong>
+                  {ontologyPortTerm(port) && onOpenOntologyWiki ? (
+                    <button
+                      type="button"
+                      className="sf-ontology-term-link"
+                      onClick={() => onOpenOntologyWiki(ontologyPortTerm(port))}
+                    >
+                      {port.label}
+                    </button>
+                  ) : (
+                    <strong>{port.label}</strong>
+                  )}
                   <span>
                     {port.description || 'value'}
                     {portOntologyDetails(port).map((detail) => (
@@ -2828,7 +2849,17 @@ export default function CanvasShell({
                 .filter((parameter) => parameter.name !== 'database_path')
                 .map((parameter) => (
                   <div className="sf-info-row" key={parameter.name}>
-                    <strong>{parameter.label || parameter.name}</strong>
+                    {onOpenOntologyWiki ? (
+                      <button
+                        type="button"
+                        className="sf-ontology-term-link"
+                        onClick={() => onOpenOntologyWiki(parameter.name)}
+                      >
+                        {parameter.label || parameter.name}
+                      </button>
+                    ) : (
+                      <strong>{parameter.label || parameter.name}</strong>
+                    )}
                     <span>
                       {parameter.description || parameter.schema.type || 'value'}
                       <br />

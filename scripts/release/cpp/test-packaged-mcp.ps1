@@ -8,10 +8,10 @@ param(
 
 $packageRoot = (Resolve-Path $PackageRoot -ErrorAction Stop).Path
 $executable = Join-Path $packageRoot 'bin\streamfind_mcp.exe'
-$catalogue = Join-Path $packageRoot 'share\streamfind\catalogue.duckdb'
+$catalogue = Join-Path $packageRoot 'core\catalogue.duckdb'
 $database = Join-Path $packageRoot '..\..\projects\packaged-mcp-smoke.duckdb'
 
-foreach ($path in @($executable, $catalogue, (Join-Path $packageRoot 'bin\streamfind.json'))) {
+foreach ($path in @($executable, $catalogue, (Join-Path $packageRoot 'bin\streamfind.json'), (Join-Path $packageRoot 'plugins\mass_spec\streamfind_mass_spec.dll'))) {
     if (-not (Test-Path $path -PathType Leaf)) {
         throw "Packaged MCP prerequisite is missing: $path"
     }
@@ -20,7 +20,9 @@ foreach ($path in @($executable, $catalogue, (Join-Path $packageRoot 'bin\stream
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $previousCatalogue = $env:STREAMFIND_CATALOGUE
+$previousPath = $env:PATH
 $env:STREAMFIND_CATALOGUE = $null
+$env:PATH = "$(Join-Path $packageRoot 'core\vendors\mingw');$(Join-Path $packageRoot 'core\vendors\duckdb');$previousPath"
 $process = $null
 try {
     $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
@@ -58,12 +60,14 @@ try {
         operation_id = 'read-1'
         operation = 'mass_spec.read_mass_spec_files'
         parameters = @{ source_paths = @('fixture.mzML') }
+        inputs = @{}
     } | Out-Null
     Invoke-McpTool $process 6 'add_operation' @{
         database_path = $database
         operation_id = 'find-1'
         operation = 'mass_spec.find_features'
         parameters = @{}
+        inputs = @{}
     } | Out-Null
     Invoke-McpTool $process 7 'connect_operations' @{
         database_path = $database
@@ -96,4 +100,5 @@ try {
     } else {
         $env:STREAMFIND_CATALOGUE = $previousCatalogue
     }
+    $env:PATH = $previousPath
 }

@@ -253,6 +253,15 @@ export type OperationCapability = BackendCapabilityBase & {
   single_occurrence?: never;
 };
 
+/** Control-plane API commands are not workflow/data-processing operations. */
+export type ApiCommandCapability = BackendCapabilityBase & {
+  kind: 'command';
+  mcp?: { name: string; input_schema: JsonSchema };
+  method_schema?: JsonSchema;
+  cacheable?: never;
+  single_occurrence?: never;
+};
+
 export type MethodCapability = BackendCapabilityBase & {
   kind: 'method';
   method_schema?: JsonSchema;
@@ -261,7 +270,7 @@ export type MethodCapability = BackendCapabilityBase & {
   mcp?: never;
 };
 
-export type BackendCapability = OperationCapability | MethodCapability;
+export type BackendCapability = OperationCapability | ApiCommandCapability | MethodCapability;
 
 export function isOperationCapability(capability: BackendCapability): capability is OperationCapability {
   return capability.kind === 'operation';

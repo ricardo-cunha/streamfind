@@ -346,6 +346,245 @@ button:active {
   background: transparent;
   color: var(--sf-accent);
 }
+.sf-ontology-wiki-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sf-text-secondary);
+  font-size: 0.9rem;
+}
+.sf-ontology-wiki-button:hover,
+.sf-ontology-term-link:hover {
+  border: 0;
+  background: transparent;
+  color: var(--sf-accent);
+}
+.sf-ontology-term-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sf-text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--sf-accent) 45%, transparent);
+  text-underline-offset: 2px;
+}
+.sf-ontology-wiki-layer {
+  position: absolute;
+  inset: 46px 0 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  padding: 5px;
+  background: color-mix(in srgb, var(--sf-bg) 92%, transparent);
+}
+.sf-ontology-wiki {
+  width: 95%;
+  height: 95%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius);
+  background: var(--sf-surface);
+  box-shadow: var(--sf-shadow);
+}
+.sf-ontology-wiki-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--sf-border);
+}
+.sf-ontology-wiki-header h1,
+.sf-ontology-wiki-entry h2 {
+  margin: 3px 0 0;
+}
+.sf-ontology-wiki-header h1 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.sf-ontology-wiki-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.sf-ontology-wiki-header-actions .sf-icon-button {
+  width: 34px;
+  height: 34px;
+  padding: 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.sf-ontology-wiki-header-actions .sf-icon-button:hover,
+.sf-ontology-wiki-header-actions .sf-icon-button:focus-visible {
+  border: 0;
+  background: transparent;
+  color: var(--sf-accent);
+}
+.sf-ontology-wiki-header-actions .sf-icon-button:disabled {
+  cursor: default;
+  color: var(--sf-text-muted);
+  opacity: 0.55;
+}
+.sf-ontology-wiki-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(190px, 25%) minmax(0, 1fr);
+}
+.sf-ontology-wiki-index {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  border-right: 1px solid var(--sf-border);
+}
+.sf-ontology-wiki-index input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius);
+  color: var(--sf-text);
+  background: var(--sf-surface-raised);
+}
+.sf-ontology-wiki-count {
+  margin: 4px 2px 8px;
+  color: var(--sf-text-muted);
+  font-size: 0.72rem;
+}
+.sf-ontology-wiki-index button {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--sf-radius);
+  color: var(--sf-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.sf-ontology-wiki-index button:hover,
+.sf-ontology-wiki-index button.active {
+  color: var(--sf-text);
+  background: var(--sf-surface-hover);
+}
+.sf-ontology-entry-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+.sf-ontology-entry-link:hover {
+  color: var(--sf-accent);
+  text-decoration: none;
+}
+.sf-ontology-detail-link {
+  display: inline;
+  padding: 0;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}
+.sf-ontology-detail-link:hover,
+.sf-ontology-columns .sf-ontology-detail-link:hover {
+  color: inherit;
+  background: transparent;
+  text-decoration: none;
+}
+.sf-ontology-wiki-index small {
+  overflow: hidden;
+  color: var(--sf-text-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sf-ontology-wiki-entry {
+  min-width: 0;
+  overflow: auto;
+  padding: 18px 24px 28px;
+}
+.sf-ontology-wiki-entry > code {
+  color: var(--sf-accent);
+  font-size: 0.78rem;
+}
+.sf-ontology-wiki-entry section {
+  margin-top: 18px;
+}
+.sf-ontology-wiki-entry h3 {
+  margin-bottom: 8px;
+}
+.sf-ontology-type {
+  color: var(--sf-text-muted);
+  font-size: 0.8rem;
+}
+.sf-ontology-columns {
+  display: grid;
+  gap: 8px;
+  padding-left: 0;
+  list-style: none;
+}
+.sf-ontology-columns li {
+  display: grid;
+  gap: 2px;
+  padding: 2px 0;
+  border-left: 0;
+  background: transparent;
+}
+.sf-ontology-columns li span,
+.sf-ontology-detail span,
+.sf-ontology-detail small {
+  color: var(--sf-text-secondary);
+  font-size: 0.78rem;
+}
+.sf-ontology-columns ul {
+  margin: 5px 0 0;
+  padding-left: 14px;
+  list-style: none;
+}
+.sf-ontology-detail {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sf-border);
+}
+.sf-ontology-usage-list {
+  display: grid;
+  gap: 3px;
+  margin: 5px 0 0;
+  padding-left: 18px;
+  color: var(--sf-text-secondary);
+}
+@media (max-width: 720px) {
+  .sf-ontology-wiki {
+    width: 100%;
+    height: 100%;
+  }
+  .sf-ontology-wiki-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 38% minmax(0, 1fr);
+  }
+  .sf-ontology-wiki-index {
+    border-right: 0;
+    border-bottom: 1px solid var(--sf-border);
+  }
+}
 .sf-content {
   flex: 1 1 auto;
   min-height: 0;

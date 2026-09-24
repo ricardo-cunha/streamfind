@@ -7,11 +7,13 @@ export default function WorkflowCanvas({
   capabilities,
   client,
   onProjectHub,
+  onOpenOntologyWiki,
 }: {
   project: ProjectSession;
   capabilities: ServiceCapabilities;
   client: StreamFindApiClient;
   onProjectHub: () => void;
+  onOpenOntologyWiki?: (term?: string) => void;
 }) {
   return (
     <CanvasShell
@@ -20,6 +22,7 @@ export default function WorkflowCanvas({
       surface="workflow"
       client={client}
       onProjectHub={onProjectHub}
+      onOpenOntologyWiki={onOpenOntologyWiki}
     />
   );
 }

@@ -72,7 +72,12 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
         const auto &source = sources[index];
         TargetRange target;
         target.id = source.value("id", "target" + std::to_string(index));
-        target.analyses = source.value("analyses", parameters.value("analysis_names", nlohmann::json::array())).get<std::vector<std::string>>();
+        const auto analyses = source.value("analyses", parameters.value("analysis_names", nlohmann::json::array()));
+        for (const auto &analysis : analyses)
+        {
+            if (analysis.is_string()) target.analyses.push_back(analysis.get<std::string>());
+            else if (analysis.is_number_integer()) target.analysis_indices.push_back(analysis.get<int>());
+        }
         const auto polarity = source.value("polarity", parameters.value("polarity", nlohmann::json::array({0})));
         target.polarities = polarity.is_array() ? polarity.get<std::vector<int>>() : std::vector<int>{polarity.get<int>()};
         target.levels = source.value("levels", parameters.value("levels", nlohmann::json::array())).get<std::vector<int>>();
@@ -127,7 +132,9 @@ nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::js
 {
     const auto targets = normalize_targets(parameters);
     nlohmann::json result = nlohmann::json::array();
-    for (const auto &row : rows)
+    for (std::size_t row_index = 0; row_index < rows.size(); ++row_index)
+    {
+        const auto &row = rows[row_index];
         for (const auto &target : targets)
         {
             const auto analysis = row_text(row, "analysis");
@@ -135,7 +142,9 @@ nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::js
             const double mass = mass_column == nullptr ? 0.0 : row_real(row, mass_column);
             const double mz = mz_column == nullptr ? 0.0 : row_real(row, mz_column);
             const double rt = rt_column == nullptr ? 0.0 : row_real(row, rt_column);
-            const bool analysis_ok = target.analyses.empty() || std::find(target.analyses.begin(), target.analyses.end(), analysis) != target.analyses.end();
+            const bool analysis_ok = (target.analyses.empty() && target.analysis_indices.empty()) ||
+                                     std::find(target.analyses.begin(), target.analyses.end(), analysis) != target.analyses.end() ||
+                                     std::find(target.analysis_indices.begin(), target.analysis_indices.end(), static_cast<int>(row_index)) != target.analysis_indices.end();
             const bool polarity_ok = target.polarities.empty() || std::find(target.polarities.begin(), target.polarities.end(), 0) != target.polarities.end() ||
                                      std::find(target.polarities.begin(), target.polarities.end(), polarity) != target.polarities.end();
             if (analysis_ok && polarity_ok && (mass_column == nullptr || !target.has_mass || (mass >= target.mass_min && mass <= target.mass_max)) &&
@@ -145,6 +154,7 @@ nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::js
                 break;
             }
         }
+    }
     return result;
 }
 

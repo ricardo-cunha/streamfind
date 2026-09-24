@@ -4,7 +4,17 @@ import logo from '../assets/streamfind.png';
 import WorkflowCanvas from './WorkflowCanvas';
 import { NotificationToasts } from './NotificationCenter';
 import { StreamFindApiClient, type ProjectSession, type ServiceState } from '../backend/StreamFindApiClient';
-import type { ServiceCapabilities, WorkflowState } from '../backend/protocol';
+import type {
+  BackendCapability,
+  CapabilityPort,
+  CapabilityParameter,
+  DomainResultContract,
+  JsonSchema,
+  ServiceCapabilities,
+  TableColumnContract,
+  TableContract,
+  WorkflowState,
+} from '../backend/protocol';
 import { notifyApp } from './notifications';
 
 type ThemeMode = 'light' | 'dark';
@@ -107,6 +117,512 @@ function navigateHash(key: RouteKey, sessionId?: string): void {
   window.history.pushState({}, '', path);
   window.dispatchEvent(new Event('hashchange'));
 }
+type OntologyEntry = {
+  id: string;
+  label: string;
+  kind: 'table' | 'operation' | 'api-command' | 'method' | 'parameter' | 'field' | 'result';
+  definition: string;
+  table?: TableContract;
+  capability?: BackendCapability;
+  column?: TableColumnContract;
+  parentId?: string;
+  result?: DomainResultContract;
+  parameter?: CapabilityParameter;
+  usages?: string[];
+  dataKind?: string;
+};
+
+function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
+  const entries = new Map<string, OntologyEntry>();
+  const schemaColumn = (name: string, schema: JsonSchema, required: boolean): TableColumnContract => {
+    const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+    const primitiveType =
+      type === 'number'
+        ? 'double'
+        : type === 'boolean'
+          ? 'boolean'
+          : type === 'integer'
+            ? 'integer'
+            : type === 'array'
+              ? 'list'
+              : type === 'object'
+                ? 'struct'
+                : type === 'string'
+                  ? 'varchar'
+                  : 'unknown';
+    const column: TableColumnContract = {
+      name,
+      primitive_type: primitiveType,
+      duckdb_type: primitiveType,
+      nullable: !required,
+      description: schema.description,
+    };
+    if (type === 'array' && schema.items) {
+      column.element = schemaColumn('element', schema.items, true);
+    }
+    if (type === 'object' && schema.properties) {
+      column.fields = Object.entries(schema.properties).map(([fieldName, fieldSchema]) =>
+        schemaColumn(fieldName, fieldSchema as JsonSchema, (schema.required || []).includes(fieldName)),
+      );
+    }
+    return column;
+  };
+  const tableFromPort = (port: CapabilityPort): TableContract | undefined => {
+    if (port.table) return port.table;
+    if (!['duckdb_table', 'tabular_value'].includes(port.data_kind || '') || !port.schema?.properties) return undefined;
+    const required = new Set(port.schema.required || []);
+    return {
+      table_name: port.id,
+      description: port.schema.description,
+      columns: Object.entries(port.schema.properties).map(([name, schema]) =>
+        schemaColumn(name, schema as JsonSchema, required.has(name)),
+      ),
+    };
+  };
+  const addTable = (table: TableContract | undefined) => {
+    if (!table?.table_name) return;
+    const existing = entries.get(table.table_name);
+    if (existing?.table) {
+      const columns = new Map(existing.table.columns.map((column) => [column.name, column]));
+      table.columns.forEach((column) => columns.set(column.name, { ...columns.get(column.name), ...column }));
+      existing.table = { ...existing.table, ...table, columns: [...columns.values()] };
+      if (!existing.definition || existing.definition === 'Ontology table contract.')
+        existing.definition = table.description || existing.definition;
+      return;
+    }
+    entries.set(table.table_name, {
+      id: table.table_name,
+      label: table.table_name,
+      kind: 'table',
+      definition: table.description || 'Ontology table contract.',
+      table: { ...table, columns: table.columns || [] },
+    });
+  };
+  const addTableContracts = (value: string[] | TableContract[] | undefined) => {
+    if (Array.isArray(value)) value.filter((item): item is TableContract => typeof item !== 'string').forEach(addTable);
+  };
+  capabilities.tables?.forEach(addTable);
+  capabilities.operations.forEach((capability) => {
+    addTableContracts(capability.effects.reads);
+    addTableContracts(capability.effects.writes);
+    addTableContracts(capability.effects.conditional_reads);
+    capability.result.tables?.forEach(addTable);
+    (capability.inputs || capability.input_ports || capability.canvas?.input_ports || []).forEach((port) =>
+      addTable(tableFromPort(port)),
+    );
+    (capability.outputs || capability.output_ports || []).forEach((port) => addTable(tableFromPort(port)));
+    if (capability.kind === 'operation' && capability.canvas?.node_kind === 'operation')
+      capability.canvas.output_results.forEach((result) => addTable(result.table));
+  });
+  const tableEntries = [...entries.values()];
+  const fieldEntriesByName = new Map<string, OntologyEntry>();
+  tableEntries.forEach((entry) => {
+    (entry.table?.columns || []).forEach((column) => {
+      if (!fieldEntriesByName.has(column.name)) {
+        fieldEntriesByName.set(column.name, {
+          id: column.name,
+          label: column.name,
+          kind: 'field',
+          definition: column.description || `Shared table field: ${column.name}.`,
+          column,
+        });
+      }
+    });
+  });
+  const fieldEntries = [...fieldEntriesByName.values()];
+  const operationEntries = capabilities.operations.map((capability) => ({
+    id: capability.canonical_id,
+    label: capability.label,
+    kind:
+      capability.kind === 'command'
+        ? ('api-command' as const)
+        : capability.kind === 'method'
+          ? ('method' as const)
+          : ('operation' as const),
+    definition: capability.definition,
+    capability,
+  }));
+  const parameterMap = new Map<string, OntologyEntry>();
+  capabilities.operations.forEach((capability) => {
+    capability.parameters.forEach((parameter) => {
+      const existing = parameterMap.get(parameter.name);
+      if (existing) {
+        existing.usages = [...(existing.usages || []), capability.label];
+      } else {
+        parameterMap.set(parameter.name, {
+          id: parameter.name,
+          label: parameter.label || parameter.name,
+          kind: 'parameter',
+          definition: parameter.description || 'Ontology parameter.',
+          parameter,
+          usages: [capability.label],
+        });
+      }
+    });
+  });
+  const parameterEntries = [...parameterMap.values()];
+  const portEntries = new Map<string, OntologyEntry>();
+  capabilities.operations.forEach((capability) => {
+    const ports = [
+      ...(capability.inputs || capability.input_ports || capability.canvas?.input_ports || []),
+      ...(capability.outputs || capability.output_ports || []),
+      ...(capability.kind === 'operation' && capability.canvas?.node_kind === 'operation'
+        ? capability.canvas.output_results.map((result) => ({
+            id: result.canonical_id,
+            label: result.label,
+            direction: 'output' as const,
+            semantic_contract: result.canonical_id,
+            table: result.table,
+            schema: result.schema,
+          }))
+        : []),
+    ];
+    ports.forEach((port) => {
+      const resultId = 'results' in port ? port.results?.[0]?.canonical_id : undefined;
+      const id = port.table?.table_name || resultId || port.semantic_contract || port.id;
+      const table = tableFromPort(port);
+      const dataKind = 'data_kind' in port ? port.data_kind : undefined;
+      if (!portEntries.has(id) && !entries.has(id)) {
+        portEntries.set(id, {
+          id,
+          label: port.table?.table_name || port.label || id,
+          kind: 'result',
+          definition: port.table?.description || port.schema?.description || 'Ontology port contract.',
+          table,
+          dataKind: dataKind || 'value',
+        });
+      }
+    });
+  });
+  const resultMap = new Map<string, OntologyEntry>();
+  capabilities.operations.forEach((capability) => {
+    const results = [
+      ...(capability.result.domain_results || []),
+      ...(capability.inputs || []).flatMap((port) => port.results || []),
+      ...(capability.outputs || []).flatMap((port) => port.results || []),
+    ];
+    results.forEach((result) => {
+      if (!resultMap.has(result.canonical_id)) {
+        resultMap.set(result.canonical_id, {
+          id: result.canonical_id,
+          label: result.label,
+          kind: 'result',
+          definition: result.definition,
+          table: result.table,
+          result,
+          parentId: capability.canonical_id,
+        });
+      }
+    });
+  });
+  return [
+    ...tableEntries,
+    ...operationEntries,
+    ...parameterEntries,
+    ...resultMap.values(),
+    ...portEntries.values(),
+    ...fieldEntries,
+  ];
+}
+
+function columnType(column: TableColumnContract): string {
+  return column.duckdb_type || column.primitive_type || 'value';
+}
+
+function OntologyTermLink({
+  term,
+  onOpenTerm,
+  children,
+}: {
+  term: string;
+  onOpenTerm: (term: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" className="sf-ontology-entry-link sf-ontology-detail-link" onClick={() => onOpenTerm(term)}>
+      {children}
+    </button>
+  );
+}
+
+function OntologyColumn({
+  column,
+  depth = 0,
+  parentId,
+  onOpenTerm,
+}: {
+  column: TableColumnContract;
+  depth?: number;
+  parentId?: string;
+  onOpenTerm: (term: string) => void;
+}) {
+  return (
+    <li style={{ marginLeft: depth * 14 }}>
+      <strong>
+        <OntologyTermLink term={column.name} onOpenTerm={onOpenTerm}>
+          {column.name}
+        </OntologyTermLink>
+      </strong>
+      <span>
+        {columnType(column)} · {column.nullable === false ? 'required' : 'nullable'}
+        {column.description ? ` · ${column.description}` : ''}
+      </span>
+      {column.element ? (
+        <ul>
+          <OntologyColumn column={column.element} depth={depth + 1} parentId={parentId} onOpenTerm={onOpenTerm} />
+        </ul>
+      ) : null}
+      {column.fields?.length ? (
+        <ul>
+          {column.fields.map((field) => (
+            <OntologyColumn
+              key={field.name}
+              column={field}
+              depth={depth + 1}
+              parentId={parentId}
+              onOpenTerm={onOpenTerm}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function OntologyCapabilityDetails({
+  capability,
+  onOpenTerm,
+}: {
+  capability: BackendCapability;
+  onOpenTerm: (term: string) => void;
+}) {
+  const inputs: CapabilityPort[] = capability.inputs || capability.input_ports || capability.canvas?.input_ports || [];
+  const canvasOutputs =
+    capability.kind === 'operation' && capability.canvas?.node_kind === 'operation'
+      ? capability.canvas.output_results
+      : [];
+  const outputs: CapabilityPort[] =
+    capability.outputs ||
+    capability.output_ports ||
+    canvasOutputs.map((result) => ({
+      id: result.canonical_id,
+      label: result.label,
+      direction: 'output',
+      table: result.table,
+      schema: result.schema,
+    }));
+  const portLabel = (port: CapabilityPort) => port.table?.table_name || port.label || port.id;
+  const portTerm = (port: CapabilityPort) =>
+    port.table?.table_name || port.results?.[0]?.canonical_id || port.semantic_contract || port.id;
+  return (
+    <>
+      {capability.parameters.length ? (
+        <section>
+          <h3>Parameters</h3>
+          {capability.parameters.map((parameter) => (
+            <div className="sf-ontology-detail" key={parameter.name}>
+              <strong>
+                <OntologyTermLink term={parameter.name} onOpenTerm={onOpenTerm}>
+                  {parameter.label || parameter.name}
+                </OntologyTermLink>
+              </strong>
+              <span>{parameter.description || 'No definition.'}</span>
+              <small>
+                type:{' '}
+                {Array.isArray(parameter.schema.type)
+                  ? parameter.schema.type.join(' | ')
+                  : parameter.schema.type || 'value'}
+                {parameter.default !== undefined ? ` · default: ${JSON.stringify(parameter.default)}` : ''}
+              </small>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {inputs.length ? (
+        <section>
+          <h3>Inputs</h3>
+          {inputs.map((port) => (
+            <div className="sf-ontology-detail" key={port.id}>
+              <strong>
+                <OntologyTermLink term={portTerm(port)} onOpenTerm={onOpenTerm}>
+                  {portLabel(port)}
+                </OntologyTermLink>
+              </strong>
+              <span>{port.table?.description || port.schema?.description || port.id}</span>
+              <small>
+                type: {port.data_kind || 'value'}
+                {port.table ? ` · ${port.table.table_name}` : ''}
+              </small>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {outputs.length ? (
+        <section>
+          <h3>Outputs</h3>
+          {outputs.map((port) => (
+            <div className="sf-ontology-detail" key={port.id}>
+              <strong>
+                <OntologyTermLink term={portTerm(port)} onOpenTerm={onOpenTerm}>
+                  {portLabel(port)}
+                </OntologyTermLink>
+              </strong>
+              <span>{port.table?.description || port.schema?.description || port.id}</span>
+              <small>
+                type: {port.data_kind || 'value'}
+                {port.table ? ` · ${port.table.table_name}` : ''}
+              </small>
+            </div>
+          ))}
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function OntologyWiki({
+  capabilities,
+  initialTerm,
+  onClose,
+}: {
+  capabilities: ServiceCapabilities;
+  initialTerm?: string;
+  onClose: () => void;
+}) {
+  const entries = useMemo(() => ontologyEntries(capabilities), [capabilities]);
+  const [query, setQuery] = useState(initialTerm || '');
+  const [selectedId, setSelectedId] = useState(initialTerm || entries[0]?.id || '');
+  const [history, setHistory] = useState<string[]>([]);
+  const selectTerm = (term: string) => {
+    if (term === selectedId) return;
+    if (selectedId) setHistory((items) => [...items, selectedId]);
+    setSelectedId(term);
+  };
+  const goBack = () => {
+    const previous = history.at(-1);
+    if (!previous) return;
+    setHistory((items) => items.slice(0, -1));
+    setSelectedId(previous);
+  };
+  const filtered = entries.filter((entry) =>
+    `${entry.id} ${entry.label} ${entry.definition}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const selected = entries.find((entry) => entry.id === selectedId) || filtered[0] || entries[0];
+  return (
+    <section className="sf-ontology-wiki" aria-label="Ontology wiki">
+      <header className="sf-ontology-wiki-header">
+        <div>
+          <h1>Search the streamfind glossary</h1>
+        </div>
+        <div className="sf-ontology-wiki-header-actions">
+          <button
+            type="button"
+            className="sf-icon-button"
+            aria-label="Go back in ontology wiki"
+            onClick={goBack}
+            disabled={!history.length}
+          >
+            <i className="fa-solid fa-arrow-left" />
+          </button>
+          <button type="button" className="sf-icon-button" aria-label="Close ontology wiki" onClick={onClose}>
+            <i className="fa-solid fa-xmark" />
+          </button>
+        </div>
+      </header>
+      <div className="sf-ontology-wiki-body">
+        <aside className="sf-ontology-wiki-index">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search ontology terms"
+            aria-label="Search ontology terms"
+          />
+          <div className="sf-ontology-wiki-count">{filtered.length} terms</div>
+          {filtered.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className={`sf-ontology-entry-link ${entry.id === selected?.id ? 'active' : ''}`}
+              onClick={() => selectTerm(entry.id)}
+            >
+              <strong>{entry.label}</strong>
+              <small>
+                {entry.kind} · {entry.id}
+              </small>
+            </button>
+          ))}
+        </aside>
+        <article className="sf-ontology-wiki-entry">
+          {selected ? (
+            <>
+              <span className="sf-eyebrow">{selected.kind}</span>
+              <h2>{selected.label}</h2>
+              <code>{selected.id}</code>
+              <p>{selected.definition}</p>
+              {selected.kind === 'result' && !selected.table ? (
+                <div className="sf-ontology-type">type: {selected.dataKind || 'value'}</div>
+              ) : null}
+              {selected.column ? (
+                <section>
+                  <h3>Field definition</h3>
+                  <div className="sf-ontology-type">
+                    type: {columnType(selected.column)} · {selected.column.nullable === false ? 'required' : 'nullable'}
+                  </div>
+                </section>
+              ) : null}
+              {selected.table ? (
+                <section>
+                  <h3>Table contract</h3>
+                  <div className="sf-ontology-type">type: {selected.dataKind || 'table'}</div>
+                  <ul className="sf-ontology-columns">
+                    {selected.table.columns.map((column) => (
+                      <OntologyColumn
+                        key={column.name}
+                        column={column}
+                        parentId={selected.id}
+                        onOpenTerm={selectTerm}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {selected.parameter ? (
+                <section>
+                  <h3>Parameter contract</h3>
+                  <div className="sf-ontology-type">
+                    type:{' '}
+                    {Array.isArray(selected.parameter.schema.type)
+                      ? selected.parameter.schema.type.join(' | ')
+                      : selected.parameter.schema.type || 'value'}
+                  </div>
+                  {selected.parameter.default !== undefined ? (
+                    <div className="sf-ontology-type">default: {JSON.stringify(selected.parameter.default)}</div>
+                  ) : null}
+                  {selected.usages?.length ? (
+                    <div className="sf-ontology-type">
+                      <strong>Used by</strong>
+                      <ul className="sf-ontology-usage-list">
+                        {selected.usages.map((usage) => (
+                          <li key={usage}>{usage}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+              {selected.capability ? (
+                <OntologyCapabilityDetails capability={selected.capability} onOpenTerm={selectTerm} />
+              ) : null}
+            </>
+          ) : (
+            <p>No ontology terms match the search.</p>
+          )}
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function ErrorFallback({ error }: { error: Error }) {
   return (
     <div className="sf-error">
@@ -309,15 +825,23 @@ function ProjectWorkspace({
   capabilities,
   client,
   onProjectHub,
+  onOpenOntologyWiki,
 }: {
   project: ProjectSession;
   capabilities: ServiceCapabilities;
   client: StreamFindApiClient;
   onProjectHub: () => void;
+  onOpenOntologyWiki?: (term?: string) => void;
 }) {
   return (
     <div className="sf-page sf-project-workspace">
-      <WorkflowCanvas project={project} capabilities={capabilities} client={client} onProjectHub={onProjectHub} />
+      <WorkflowCanvas
+        project={project}
+        capabilities={capabilities}
+        client={client}
+        onProjectHub={onProjectHub}
+        onOpenOntologyWiki={onOpenOntologyWiki}
+      />
     </div>
   );
 }
@@ -761,12 +1285,14 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
   const [collapsed, setCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [backendOpen, setBackendOpen] = useState(false);
+  const [ontologyWikiTerm, setOntologyWikiTerm] = useState<string | null>(null);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setSettingsOpen(false);
       setBackendOpen(false);
+      setOntologyWikiTerm(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
@@ -934,6 +1460,14 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
           </div>
           <div className="sf-topbar-actions">
             <button
+              className="sf-icon-button sf-ontology-wiki-button"
+              onClick={() => setOntologyWikiTerm('')}
+              aria-label="Open ontology wiki"
+              title="Open ontology wiki"
+            >
+              <i className="fa-solid fa-book-open" />
+            </button>
+            <button
               className="sf-backend-button"
               onClick={() => setBackendOpen(true)}
               aria-label={`System health: ${serviceState}`}
@@ -959,6 +1493,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
                 capabilities={capabilities}
                 client={client}
                 onProjectHub={closeProject}
+                onOpenOntologyWiki={(term) => setOntologyWikiTerm(term || '')}
               />
             ) : effectiveRoute === 'projects' ? (
               <ProjectHub
@@ -980,6 +1515,15 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
             )}
           </ErrorBoundary>
         </div>
+        {ontologyWikiTerm !== null ? (
+          <div className="sf-ontology-wiki-layer">
+            <OntologyWiki
+              capabilities={capabilities}
+              initialTerm={ontologyWikiTerm}
+              onClose={() => setOntologyWikiTerm(null)}
+            />
+          </div>
+        ) : null}
       </main>
       {previewProject ? (
         <ProjectPreview project={previewProject} onOpenWorkflow={openProject} onClose={() => setPreviewProject(null)} />

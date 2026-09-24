@@ -1,16 +1,17 @@
+#include "operations/nta/nta_blank_subtraction.hpp"
 // nta_blank_subtraction.cpp
-// Feature blank subtraction implementations for PROJECT_NON_TARGET_ANALYSIS
+// Feature blank subtraction implementations for NtaProjectData
 
-#include "methods/nta_blank_subtraction.hpp"
+#include "utils/nta.hpp"
+#include "utils/nta.hpp"
 #include "operations/base.hpp"
-#include "methods/nta_processing_methods.hpp"
 #include <unordered_map>
 #include <algorithm>
 
-namespace nta::blank_subtraction
+namespace streamfind::mass_spec::nta::blank_subtraction
 {
   void subtract_blank_impl(
-      PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      NtaProjectData &nta_data,
       float blankThreshold,
       float rtExpand,
       float mzExpand,
@@ -34,7 +35,7 @@ namespace nta::blank_subtraction
 
     for (size_t a = 0; a < analysis_names.size(); ++a)
     {
-      nta::api::NTA_FEATURES &fts = feature_buffers[a];
+      ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[a];
       const int n_features = fts.size();
       if (n_features == 0)
         continue;
@@ -52,7 +53,7 @@ namespace nta::blank_subtraction
         continue;
 
       // Build targets for this analysis' features
-      mass_spec::spectra::MS_TARGETS targets;
+      ::mass_spec::spectra::MS_TARGETS targets;
       targets.resize_all(n_features);
 
       std::unordered_map<std::string, std::vector<int>> id_to_indices;
@@ -90,9 +91,9 @@ namespace nta::blank_subtraction
         if (blank_idx >= file_paths.size())
           continue;
 
-        mass_spec::reader::MS_FILE ana(file_paths[blank_idx]);
+        ::mass_spec::reader::MS_FILE ana(file_paths[blank_idx]);
         const auto headers = nta_data.spectra_headers_at(blank_idx);
-        mass_spec::spectra::MS_TARGETS_SPECTRA eics = ana.get_spectra_targets(targets, headers, minTracesIntensity, 0.0f);
+        ::mass_spec::spectra::MS_TARGETS_SPECTRA eics = ana.get_spectra_targets(targets, headers, minTracesIntensity, 0.0f);
 
         std::unordered_map<std::string, float> max_by_id;
         max_by_id.reserve(id_to_indices.size());
@@ -137,4 +138,23 @@ namespace nta::blank_subtraction
       }
     }
   }
-} // namespace nta::blank_subtraction
+} // namespace streamfind::mass_spec::nta::blank_subtraction
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::subtract_blank
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const float blank_threshold = parameters.value("blank_threshold", 5.0);
+        const float rt_expand = parameters.value("rt_expand", 10.0);
+        const float mz_expand = parameters.value("mz_expand", 0.005);
+        const float min_traces_intensity = parameters.value("min_traces_intensity", 0.0);
+        if (blank_threshold < 0 || rt_expand < 0 || mz_expand < 0 || min_traces_intensity < 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid blank subtraction parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::blank_subtraction::subtract_blank_impl(data, blank_threshold, rt_expand, mz_expand, min_traces_intensity);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Blank subtraction completed."}};
+    }
+}

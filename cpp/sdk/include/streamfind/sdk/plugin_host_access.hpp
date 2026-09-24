@@ -35,6 +35,7 @@ public:
         const std::vector<std::vector<std::optional<std::string>>> &rows) override;
     void delete_rows(const std::string &table_name, const std::string &key_column,
                      const std::vector<std::vector<std::optional<std::string>>> &rows) override;
+    void report_progress(double fraction, std::string_view message) override;
     void require_table(const std::string &table_name) override;
 
 private:

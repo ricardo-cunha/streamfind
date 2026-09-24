@@ -39,9 +39,15 @@ DynamicLibrary::LoadResult DynamicLibrary::load(const std::filesystem::path &pat
 
 #if defined(_WIN32)
     const auto native_path = path.wstring();
-    HMODULE module = LoadLibraryW(native_path.c_str());
+    HMODULE module = LoadLibraryExW(
+        native_path.c_str(), nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+        LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+        LOAD_LIBRARY_SEARCH_USER_DIRS);
     if (module == nullptr) {
-        result.diagnostics = "LoadLibraryW failed for " + path.string();
+        const auto error = GetLastError();
+        result.diagnostics = "LoadLibraryW failed for " + path.string() +
+            " (Windows error " + std::to_string(error) + ")";
         return result;
     }
     result.library = std::unique_ptr<DynamicLibrary>(

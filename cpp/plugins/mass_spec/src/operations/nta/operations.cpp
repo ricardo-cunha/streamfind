@@ -1,4 +1,17 @@
 #include "operations/nta/operations.hpp"
+#include "operations/nta/nta_load_features_ms1.hpp"
+#include "operations/nta/nta_load_features_ms2.hpp"
+#include "operations/nta/nta_blank_subtraction.hpp"
+#include "operations/nta/nta_filters.hpp"
+#include "operations/nta/nta_alignment.hpp"
+#include "operations/nta/nta_gap_filling.hpp"
+#include "operations/nta/nta_componentization.hpp"
+#include "operations/nta/nta_annotation.hpp"
+#include "operations/nta/nta_suspect_screening.hpp"
+#include "operations/nta/nta_correction_algorithms.hpp"
+#include "operations/nta/nta_assign_transformation_products.hpp"
+#include "operations/nta/nta_metfrag_runner.hpp"
+
 
 #include "utils/base.hpp"
 #include "utils/nta.hpp"

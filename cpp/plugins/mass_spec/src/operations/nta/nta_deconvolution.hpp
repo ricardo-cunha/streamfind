@@ -5,11 +5,12 @@
 #ifndef NTA_DECONVOLUTION_HPP
 #define NTA_DECONVOLUTION_HPP
 
-#include "methods/nta_processing_methods.hpp"
+#include "utils/nta.hpp"
 #include "streamfind/sdk/plugin_project_access.hpp"
 
 #include <vector>
 #include <string>
+#include <functional>
 #include <cstddef>
 #include <algorithm>
 #include <tuple>
@@ -168,7 +169,7 @@ namespace streamfind::mass_spec::nta
         const std::vector<float> &mz,
         const std::vector<float> &intensity);
 
-    std::vector<::nta::api::NTA_FEATURE_ROW> process_polarity_clusters(
+    std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> process_polarity_clusters(
         const std::vector<float> &clust_rt,
         const std::vector<float> &clust_mz,
         const std::vector<float> &clust_intensity,
@@ -191,13 +192,17 @@ namespace streamfind::mass_spec::nta
       std::vector<std::string> paths;
       std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
       std::vector<int> analysis_indices;
-      std::vector<::nta::api::NTA_FEATURES> buffers;
+      std::vector<std::string> replicate_names;
+      std::vector<std::string> blank_names;
+      std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURES> buffers;
+      std::function<void(std::string_view)> log;
 
       const std::vector<std::string> &analysis_names() const { return names; }
       const std::vector<std::string> &file_paths() const { return paths; }
       const auto &spectra_headers_at(std::size_t index) const { return headers.at(index); }
       int analysis_index_at(std::size_t index) const { return analysis_indices.at(index); }
       auto &feature_buffers() { return buffers; }
+      void report(std::string_view message) const { if (log) log(message); }
     };
 
     void find_features(

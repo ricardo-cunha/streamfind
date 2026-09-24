@@ -6,12 +6,60 @@
 #include <optional>
 #include <fstream>
 #include <set>
+#include <iostream>
+#include <mutex>
+#include <streambuf>
 
 #include "streamfind/project_table_store.hpp"
 #include "streamfind/catalogue.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
 
 namespace streamfind::sdk::detail {
+
+class OperationLogStreambuf final : public std::streambuf {
+public:
+    explicit OperationLogStreambuf(std::function<void(std::string_view)> callback)
+        : callback_(std::move(callback)) {}
+    ~OperationLogStreambuf() override { if (!buffer_.empty()) callback_(buffer_); }
+
+protected:
+    int_type overflow(int_type character) override {
+        if (character == traits_type::eof()) return traits_type::not_eof(character);
+        buffer_.push_back(static_cast<char>(character));
+        if (character == '\n') flush_line();
+        return character;
+    }
+    std::streamsize xsputn(const char *data, std::streamsize size) override {
+        buffer_.append(data, static_cast<std::size_t>(size));
+        std::size_t newline;
+        while ((newline = buffer_.find('\n')) != std::string::npos) {
+            callback_(std::string_view(buffer_).substr(0, newline));
+            buffer_.erase(0, newline + 1);
+        }
+        return size;
+    }
+
+private:
+    void flush_line() {
+        if (!buffer_.empty() && buffer_.back() == '\n') buffer_.pop_back();
+        if (!buffer_.empty()) callback_(buffer_);
+        buffer_.clear();
+    }
+    std::function<void(std::string_view)> callback_;
+    std::string buffer_;
+};
+
+std::mutex operation_log_stream_mutex;
+
+class ScopedCerrRedirect final {
+public:
+    explicit ScopedCerrRedirect(std::streambuf *replacement)
+        : previous_(std::cerr.rdbuf(replacement)) {}
+    ~ScopedCerrRedirect() { std::cerr.rdbuf(previous_); }
+
+private:
+    std::streambuf *previous_;
+};
 
 std::string dynamic_platform_tag() {
 #if defined(_WIN32)
@@ -110,6 +158,9 @@ Json invoke_dynamic(
         }
         context.tables = &tables;
         context.cancelled = &cancelled;
+        context.progress = [&project](double, std::string_view message) {
+            if (!message.empty()) project.log_operation(message);
+        };
         context.allowed_tables = transaction_tables;
         if (manifest) {
             for (const auto &table : *manifest) {
@@ -216,6 +267,11 @@ Json invoke_dynamic(
         };
         streamfind_plugin_buffer buffer{};
         const auto text = request.dump();
+        std::lock_guard log_lock(detail::operation_log_stream_mutex);
+        detail::OperationLogStreambuf log_stream([&project](std::string_view message) {
+            project.log_operation(message);
+        });
+        detail::ScopedCerrRedirect cerr_redirect(&log_stream);
         const auto status = plugin.plugin.invoke(
             &context, text.data(), static_cast<uint32_t>(text.size()), &buffer, plugin.plugin.user_data);
         if (status != STREAMFIND_PLUGIN_OK) {

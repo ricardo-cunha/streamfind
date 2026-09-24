@@ -1,6 +1,6 @@
-#include "methods/nta_componentization.hpp"
+#include "operations/nta/nta_componentization.hpp"
+#include "utils/nta.hpp"
 #include "operations/base.hpp"
-#include "methods/nta_processing_methods.hpp"
 #include <iomanip>
 #include <algorithm>
 #include <fstream>
@@ -9,7 +9,7 @@
 #include <numeric>
 #include <limits>
 
-namespace nta
+namespace streamfind::mass_spec::nta
 {
   namespace componentization
   {
@@ -17,8 +17,8 @@ namespace nta
     std::vector<float> decode_eic_base64(const std::string &base64_str) {
       if (base64_str.empty()) return std::vector<float>();
       try {
-        std::string decoded = mass_spec::reader::utils::decode_base64(base64_str);
-        return mass_spec::reader::utils::decode_little_endian_to_float(decoded, 4);
+        std::string decoded = ::mass_spec::reader::utils::decode_base64(base64_str);
+        return ::mass_spec::reader::utils::decode_little_endian_to_float(decoded, 4);
       } catch (...) {
         return std::vector<float>();
       }
@@ -88,23 +88,22 @@ namespace nta
       aligned1.reserve(rt1.size());
       aligned2.reserve(rt1.size());
 
+      size_t closest_hint = 0;
       for (size_t i = 0; i < rt1.size(); ++i) {
         const float rt_val = rt1[i];
 
         // Skip if outside overlap range
         if (rt_val < overlap_start || rt_val > overlap_end) continue;
 
-        // Find closest RT in EIC2
-        size_t best_idx = 0;
-        float min_diff = std::abs(rt2[0] - rt_val);
-
-        for (size_t j = 1; j < rt2.size(); ++j) {
-          const float diff = std::abs(rt2[j] - rt_val);
-          if (diff < min_diff) {
-            min_diff = diff;
-            best_idx = j;
-          }
+        // EIC retention times are ordered. Advance a monotonic cursor rather
+        // than rescanning the complete second EIC for every point.
+        while (closest_hint + 1 < rt2.size() &&
+               std::abs(rt2[closest_hint + 1] - rt_val) <=
+                 std::abs(rt2[closest_hint] - rt_val)) {
+          ++closest_hint;
         }
+        const size_t best_idx = closest_hint;
+        const float min_diff = std::abs(rt2[best_idx] - rt_val);
 
         // Only include if RT values are reasonably close (within 0.5 seconds)
         if (min_diff <= 0.5f) {
@@ -118,7 +117,7 @@ namespace nta
 
     // MARK: create_components_impl
     void create_components_impl(
-      nta::PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
         const std::vector<float> &rtWindow,
         float minCorrelation,
         float debugRT,
@@ -132,7 +131,7 @@ namespace nta
         std::ostringstream log_filename;
         log_filename << "log/debug_log_create_components_"
                      << std::fixed << std::setprecision(2) << debugRT << ".log";
-        utils::init_debug_log(log_filename.str(), "=== Component Creation Debug Log ===\n");
+        ::streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), "=== Component Creation Debug Log ===\n");
       }
 
       bool debug_triggered = false;
@@ -141,7 +140,7 @@ namespace nta
 
       for (size_t i = 0; i < feature_buffers.size(); ++i)
       {
-        nta::api::NTA_FEATURES &fts = feature_buffers[i];
+        ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[i];
         const int n = fts.size();
 
         if (n == 0)
@@ -165,7 +164,7 @@ namespace nta
         std::map<int, std::vector<int>> polarity_groups;
         for (int j = 0; j < n; ++j)
         {
-          const nta::api::NTA_FEATURE_ROW &ft = fts.get_feature(j);
+          const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft = fts.get_feature(j);
           polarity_groups[ft.polarity].push_back(j);
         }
 
@@ -203,7 +202,7 @@ namespace nta
           sorted_features.reserve(feature_indices.size());
 
           for (int j : feature_indices) {
-            nta::api::NTA_FEATURE_ROW ft = fts.get_feature(j);
+            ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW ft = fts.get_feature(j);
             FeatureIntensity fi;
             fi.idx = j;
             fi.rt = static_cast<float>(ft.rt);
@@ -221,7 +220,7 @@ namespace nta
           feature_eics.reserve(sorted_features.size());
 
           for (const auto &sf : sorted_features) {
-            const nta::api::NTA_FEATURE_ROW &ft = fts.get_feature(sf.idx);
+            const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft = fts.get_feature(sf.idx);
             FeatureEIC feic;
             feic.idx = sf.idx;
             feic.rt = static_cast<float>(ft.rt);
@@ -359,7 +358,7 @@ namespace nta
 
               for (const int member : component.members) {
                 const auto &feic = feature_eics[member];
-                const nta::api::NTA_FEATURE_ROW &ft = fts.get_feature(feic.idx);
+                const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft = fts.get_feature(feic.idx);
                 DEBUG_LOG("  " << ft.feature
                           << ": RT=" << ft.rt
                           << ", mz=" << ft.mz
@@ -454,7 +453,7 @@ namespace nta
             for (int mi = 0; mi < member_count; ++mi) {
               const int member = component.members[mi];
               const int feature_idx = feature_eics[member].idx;
-              nta::api::NTA_FEATURE_ROW ft = fts.get_feature(feature_idx);
+              ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW ft = fts.get_feature(feature_idx);
               float feature_corr_sum = 0.0f;
               int feature_corr_count = 0;
               float feature_max_corr = 0.0f;
@@ -495,9 +494,31 @@ namespace nta
       }
 
       if (debug_mode) {
-        utils::close_debug_log();
+        ::streamfind::mass_spec::nta::utils::close_debug_log();
       }
     }
 
   } // namespace componentization
 } // namespace nta
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::create_components
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const float min_correlation = parameters.value("min_correlation", 0.8);
+        std::vector<float> rt_window;
+        const auto rt_window_param = parameters.value("rt_window", Json::array());
+        for (const auto &v : rt_window_param)
+            rt_window.push_back(v.get<float>());
+        if (rt_window.empty())
+            rt_window = {0.0f, 0.0f};
+        if (min_correlation < 0 || min_correlation > 1)
+            throw Error(ErrorCode::InvalidArgument, "invalid componentization parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        ::streamfind::mass_spec::nta::componentization::create_components_impl(data, rt_window, min_correlation);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Components created."}};
+    }
+}

@@ -23,7 +23,7 @@ sfms:removeAnalyses
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Remove mass spectrometry analyses" ;
     skos:definition "Read the analyses table and remove every analysis whose name matches at least one ECMAScript regular-expression pattern." ;
-    sf:guidance "Provide analysis_names as exact names or regex patterns. Plain strings match one exact analysis name. Use ^prefix for a prefix batch or suffix$ for a suffix batch. Regex matching uses ECMAScript syntax, is case-sensitive, and uses regex search.\n\nExamples:\n[\"sample_exact\"]\nRemoves one exact analysis.\n\n[\"^QC_\"]\nRemoves all analyses beginning with QC_.\n\n[\"_blank$\"]\nRemoves all analyses ending with _blank." ;
+    sf:guidance "Provide analysis_names as exact names or regex patterns. Plain strings match one exact analysis name. Use ^prefix for a prefix batch, suffix$ for a suffix batch, or .*middle.* for text occurring anywhere in the name. Regex matching uses ECMAScript syntax, is case-sensitive, and uses regex search.\n\nExamples:\n[\"sample_exact\"]\nRemoves one exact analysis.\n\n[\"^QC_\"]\nRemoves all analyses beginning with QC_.\n\n[\"_blank$\"]\nRemoves all analyses ending with _blank.\n\n[\".*blank.*\"]\nRemoves all analyses containing blank anywhere in the name; because matching uses regex search, [\"blank\"] is equivalent." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:analysesTable, sfcore:operationSuccessSignal .
@@ -37,6 +37,9 @@ sfms:getAnalysesInfo
     skos:definition "Return persisted mass-spectrometry analysis metadata, including analysis names, source paths, replicate/blank labels, and available counts." ;
     sf:category "mass-spec-inspection" ;
     sf:guidance "Use after read_mass_spec_files to confirm the exact analysis names accepted by later analysis_names parameters." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:getAnalysesInfoResult, sfcore:operationSuccessSignal .
 
@@ -48,6 +51,9 @@ sfms:getAnalysisNames
     skos:prefLabel "Get mass spectrometry analysis names" ;
     skos:definition "Return the canonical analysis names registered in the project. Names are normally the source file stem and are passed to analysis_names in later operations and methods." ;
     sf:category "mass-spec-inspection" ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:analysisNamesResult, sfcore:operationSuccessSignal .
 
@@ -58,6 +64,9 @@ sfms:getReplicateNames
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get replicate names" ;
     skos:definition "Return replicate labels in the same analysis order as get_analysis_names." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:replicateNamesResult, sfcore:operationSuccessSignal .
 
@@ -68,6 +77,9 @@ sfms:getBlankNames
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get blank names" ;
     skos:definition "Return blank-analysis labels in the same analysis order as get_analysis_names." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:blankNamesResult, sfcore:operationSuccessSignal .
 
@@ -78,6 +90,9 @@ sfms:getConcentrations
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get concentrations" ;
     skos:definition "Return analysis concentrations in the same analysis order as get_analysis_names." ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:concentrationsResult, sfcore:operationSuccessSignal .
 
@@ -123,8 +138,10 @@ sfms:getSpectraHeaders
     skos:definition "Read spectrum-header rows for selected analyses, including scan number, retention time, polarity, MS level, precursor information, and point counts. Use this lightweight inspection operation before requesting large point arrays." ;
     sf:category "mass-spec-query" ;
     sf:guidance "Use analysis_names from get_analysis_names. An empty analysis_names array means all registered analyses; provide names to reduce work and response size." ;
-    sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:hasInputPort sfms:spectraHeadersTable ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:spectraHeadersResult, sfcore:operationSuccessSignal .
 
 sfms:getChromatogramsHeaders
@@ -134,8 +151,10 @@ sfms:getChromatogramsHeaders
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Get chromatogram headers" ;
     skos:definition "Read chromatogram-header rows for selected analyses, including identifiers, retention-time ranges, polarity, and point counts." ;
-    sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:hasInputPort sfms:chromatogramsHeadersTable ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:indicesParameter ;
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramsHeadersResult, sfcore:operationSuccessSignal .
 
 sfms:getSpectraTic
@@ -147,10 +166,11 @@ sfms:getSpectraTic
     skos:definition "Read total-ion-current values from spectrum headers using analysis, MS-level, and retention-time filters." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
+        sfms:indicesParameter,
         sfms:levelsParameter,
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
-    sf:hasInputPort sfms:spectraHeadersTable, sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:ticResult, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectra
@@ -169,7 +189,7 @@ sfms:getRawSpectra
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:chargeParameter ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:spectraResult, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectraEic
@@ -188,7 +208,7 @@ sfms:getRawSpectraEic
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:chargeParameter ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:eicResult, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectraMs1
@@ -208,7 +228,7 @@ sfms:getRawSpectraMs1
         sfms:mzClustParameter,
         sfms:presenceParameter,
         sfms:minIntensityMs1Parameter ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:ms1Result, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectraMs2
@@ -229,7 +249,7 @@ sfms:getRawSpectraMs2
         sfms:mzClustParameter,
         sfms:presenceParameter,
         sfms:minIntensityMs2Parameter ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:ms2Result, sfcore:operationSuccessSignal .
 
 sfms:getChromatograms
@@ -242,7 +262,7 @@ sfms:getChromatograms
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:hasInputPort sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramsResult, sfcore:operationSuccessSignal .
 
 sfms:getRawChromatograms
@@ -255,7 +275,7 @@ sfms:getRawChromatograms
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramsResult, sfcore:operationSuccessSignal .
 
 sfms:getChromatogramPeaks
@@ -268,7 +288,7 @@ sfms:getChromatogramPeaks
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:hasInputPort sfms:chromatogramPeaksTable, sfms:chromatogramsHeadersTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable, sfms:chromatogramPeaksTable ;
     sf:hasOutputPort sfms:chromatogramPeaksResult, sfcore:operationSuccessSignal .
 
 sfms:getFeatures
@@ -431,7 +451,9 @@ sfms:findFeatures
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find mass spectrometry features" ;
-    skos:definition "Group MS1 centroid traces within retention-time windows and persist detected NTA features." ;
+    skos:definition "Detect chromatographic MS1 features from the selected analyses. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
+    sf:category "nta-feature-detection" ;
+    sf:guidance "Connect analysesTable. Connect spectraHeadersTable only when persisted headers are available; otherwise headers are read directly from the source files. rt_windows_min and rt_windows_max must be arrays of equal length. An empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfms:rtWindowsMinParameter,
         sfms:rtWindowsMaxParameter,
@@ -444,7 +466,7 @@ sfms:findFeatures
         sfms:maxFeatureWidthParameter,
         sfms:baseQuantileParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
+    sf:hasInputPort sfms:analysesTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
 
@@ -455,7 +477,9 @@ sfms:loadFeaturesMs1
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Load MS1 spectra for features" ;
-    skos:definition "Resolve and cluster MS1 spectra for each persisted feature and store the joined MS1 spectrum on the feature row." ;
+    skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
+    sf:category "nta-spectrum-loading" ;
+    sf:guidance "Run after find_features. The operation reads source files and the persisted feature table; filtered controls whether already-filtered features are skipped. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:filteredParameter,
@@ -475,7 +499,9 @@ sfms:loadFeaturesMs2
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Load MS2 spectra for features" ;
-    skos:definition "Resolve and cluster MS2 spectra for each persisted feature using the precursor isolation window and store the joined MS2 spectrum on the feature row." ;
+    skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
+    sf:category "nta-spectrum-loading" ;
+    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads source files and the persisted feature table; it updates ms2_size, ms2_mz, and ms2_intensity without requiring a separate spectraHeadersTable input." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:filteredParameter,
@@ -501,7 +527,7 @@ sfms:subtractBlank
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:hasInputPort sfms:ntaFeaturesTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
 
 
@@ -567,7 +593,7 @@ sfms:filterFeaturesMs2
         sfms:blankPresenceThresholdParameter,
         sfms:globalPresenceThresholdParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:hasInputPort sfms:ntaFeaturesTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
 
 
@@ -586,7 +612,7 @@ sfms:groupFeatures
         sfms:minSamplesParameter,
         sfms:binSizeParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
 
 
@@ -656,7 +682,9 @@ sfms:suspectScreening
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Screen suspect features" ;
-    skos:definition "Match detected features against a suspect list by mass, RT, and MS2 similarity and record candidate assignments." ;
+    skos:definition "Match detected features against suspect targets by accurate mass, retention time, and optional MS2 similarity, persist candidate assignments, and attach the best assignments to the feature records." ;
+    sf:category "nta-identification" ;
+    sf:guidance "Run after load_features_ms2 when MS2 assignment is required. Each target should provide a name, mass or formula, optional retention time, and optional MS2 reference peaks. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; an empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:targetsParameter,
@@ -706,7 +734,7 @@ sfms:correctMatrixSuppression
         sfms:mpRtWindowParameter,
         sfms:refBlankReplicateParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
 
 
@@ -765,7 +793,7 @@ sfms:assignTransformationProducts
         sfms:chromatographicPhaseParameter,
         sfms:mzrMs2Parameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:hasInputPort sfms:ntaFeaturesTable, sfms:suspectsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfms:transformationProductsTable, sfcore:operationSuccessSignal .
 
 
@@ -796,5 +824,5 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable ;
+    sf:hasInputPort sfms:ntaFeaturesTable ;
     sf:hasOutputPort sfms:ntaFeaturesTable, sfms:suspectsTable, sfcore:operationSuccessSignal .

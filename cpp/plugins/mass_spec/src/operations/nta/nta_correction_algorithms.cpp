@@ -1,6 +1,5 @@
-#include "methods/nta_correction_algorithms.hpp"
-
-#include "methods/nta_processing_methods.hpp"
+#include "operations/nta/nta_correction_algorithms.hpp"
+#include "utils/nta.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,7 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace nta::correction_algorithms
+namespace streamfind::mass_spec::nta::correction_algorithms
 {
   namespace streamfind::nta_correction_detail
   {
@@ -43,7 +42,7 @@ namespace nta::correction_algorithms
     }
 
     BlankLookup resolve_blank_indices(
-      const PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      const NtaProjectData &nta_data,
       const std::string &refBlankReplicate)
     {
       const auto &analysis_names = nta_data.analysis_names();
@@ -104,7 +103,7 @@ namespace nta::correction_algorithms
       return out;
     }
 
-    Profile build_tic_profile(const PROJECT_NON_TARGET_ANALYSIS &nta_data, std::size_t analysis_index)
+    Profile build_tic_profile(const NtaProjectData &nta_data, std::size_t analysis_index)
     {
       Profile profile;
       const auto headers = nta_data.spectra_headers_at(analysis_index);
@@ -168,7 +167,7 @@ namespace nta::correction_algorithms
     }
 
     std::unordered_map<std::string, Profile> build_matrix_profiles(
-      const PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      const NtaProjectData &nta_data,
       const std::vector<std::string> &analyses,
       float rtWindow,
       const std::string &refBlankReplicate)
@@ -252,7 +251,7 @@ namespace nta::correction_algorithms
     }
 
     std::vector<SupportPoint> build_internal_standard_support(
-      const PROJECT_NON_TARGET_ANALYSIS &nta_data,
+      const NtaProjectData &nta_data,
       const std::unordered_map<std::string, Profile> &matrix_profiles,
       float rtWindow,
       const std::string &refBlankReplicate)
@@ -523,7 +522,7 @@ namespace nta::correction_algorithms
   using namespace streamfind::nta_correction_detail;
 
   std::vector<TIC_MATRIX_SUPPRESSION_ROW> get_matrix_suppression_impl(
-    const PROJECT_NON_TARGET_ANALYSIS &nta_data,
+    const NtaProjectData &nta_data,
     const std::vector<std::string> &analyses,
     float rtWindow,
     const std::string &refBlankReplicate)
@@ -545,7 +544,7 @@ namespace nta::correction_algorithms
   }
 
   void correct_matrix_suppression_impl(
-    PROJECT_NON_TARGET_ANALYSIS &nta_data,
+    NtaProjectData &nta_data,
     float mpRtWindow,
     const std::string &refBlankReplicate)
   {
@@ -593,4 +592,24 @@ namespace nta::correction_algorithms
       }
     }
   }
-} // namespace nta::correction_algorithms
+} // namespace streamfind::mass_spec::nta::correction_algorithms
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::correct_matrix_suppression
+{
+using Json = nlohmann::json;
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const float mp_rt_window = parameters.value("mp_rt_window", 10.0);
+        std::string ref_blank_replicate = parameters.value("ref_blank_replicate", std::string(""));
+        if (ref_blank_replicate == "NA" || ref_blank_replicate == "NA_character_")
+            ref_blank_replicate.clear();
+        if (mp_rt_window <= 0)
+            throw Error(ErrorCode::InvalidArgument, "invalid matrix suppression correction parameters");
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        utils::detail::load_internal_standards(access, data, parameters);
+        ::streamfind::mass_spec::nta::correction_algorithms::correct_matrix_suppression_impl(data, mp_rt_window, ref_blank_replicate);
+        utils::detail::emit_features(access, data);
+        return Json{{"status", "finished"}, {"info", "Matrix suppression corrected."}};
+    }
+}
