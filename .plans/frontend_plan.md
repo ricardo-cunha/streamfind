@@ -102,8 +102,11 @@ add_analyses(parameters: files, replicates, blanks)
        filtered ntaFeaturesTable               featuresResult (memory/JSON)
                     │                                │
                     ▼                                ▼
-             count_table_rows                 plot_features (frontend view)
-             numericValue (memory/JSON)
+             count_table_rows                 plot_features(parameters)
+             numericValue (memory/JSON)                 │
+                                                        ▼
+                                             visualizationSpec
+                                           (sfvis:VisualizationSpec)
 
 import_suspects(parameters: file/database)
   └── suspectsResult (memory/JSON or table according to size/contract)
