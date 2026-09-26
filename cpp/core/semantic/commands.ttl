@@ -7,13 +7,11 @@ sfcore:create
     skos:inScheme sfcore:scheme ;
     sf:commandId "create" ;
     skos:prefLabel "Create a project" ;
-    skos:definition "Create a new persisted DuckDB project and assign its immutable domain. This is the normal first project-management operation; after it succeeds, call describe to inspect the created project." ;
+    skos:definition "Create a new persisted DuckDB project without assigning a project-level domain. This is the normal first project-management operation; after it succeeds, call describe to inspect the created project." ;
     sf:category "project-management" ;
     sf:guidance "Use create once for a new database. Then use describe to inspect it. Do not call create to open an existing project; use describe or connect instead." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:domainParameter ;
+    sf:hasParameter sfcore:databasePathParameter ;
     sf:returns sfcore:projectDescriptorResult ;
     sf:mutatesProject true .
 
@@ -22,7 +20,7 @@ sfcore:describe
     skos:inScheme sfcore:scheme ;
     sf:commandId "describe" ;
     skos:prefLabel "Describe a project" ;
-    skos:definition "Inspect a persisted project's identity, immutable domain, metadata, workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work." ;
+    skos:definition "Inspect a persisted project's identity, derived domains, metadata, workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work." ;
     sf:category "project-management" ;
     sf:guidance "Call describe with the same database_path used by create. If the project does not exist, do not guess metadata; create it or correct the path." ;
     sf:availableInDomain sfcore:streamfind ;
@@ -41,16 +39,16 @@ sfcore:validate
     sf:returns sfcore:validationResult ;
     sf:mutatesProject false .
 
-sfcore:getDomain
+sfcore:getDomains
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
-    sf:commandId "get_domain" ;
-    skos:prefLabel "Read the project domain" ;
-    skos:definition "Read the immutable domain assigned to a persisted project. Use this to confirm which domain-specific operations and workflow methods apply." ;
+    sf:commandId "get_project_domains" ;
+    skos:prefLabel "Read project domains" ;
+    skos:definition "Read the domains represented by operations in the persisted project workflow." ;
     sf:category "project-management" ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:domainResult ;
+    sf:returns sfcore:domainsResult ;
     sf:mutatesProject false .
 
 sfcore:getMetadata
@@ -70,7 +68,7 @@ sfcore:setMetadata
     skos:inScheme sfcore:scheme ;
     sf:commandId "set_metadata" ;
     skos:prefLabel "Set project metadata" ;
-    skos:definition "Replace the user-defined metadata stored for a project. This changes metadata only; it does not change the immutable domain or analyses." ;
+    skos:definition "Replace the user-defined metadata stored for a project. This changes metadata only and does not change persisted workflow operations or analyses." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -160,7 +158,7 @@ sfcore:setWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "set_workflow" ;
     skos:prefLabel "Set the project workflow" ;
-    skos:definition "Validate and replace a project's ordered workflow. Method identifiers, domain compatibility, dependency ordering, and parameters are checked before persistence." ;
+    skos:definition "Validate and replace a project's ordered workflow. Operation identifiers, dependency ordering, semantic connections, and parameters are checked before persistence." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -202,7 +200,7 @@ sfcore:validateWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "validate_workflow" ;
     skos:prefLabel "Validate a workflow" ;
-    skos:definition "Validate workflow method identifiers, ordering dependencies, project-domain compatibility, occurrence rules, and method parameter values without executing the workflow." ;
+    skos:definition "Validate workflow operation identifiers, ordering dependencies, semantic connections, occurrence rules, and parameter values without executing the workflow." ;
     sf:category "workflow-planning" ;
     sf:guidance "Use after assembling a workflow and before run_workflow. Fix the returned validation message before executing." ;
     sf:availableInDomain sfcore:streamfind ;
@@ -215,7 +213,7 @@ sfcore:runWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "run_workflow" ;
     skos:prefLabel "Run the project workflow" ;
-    skos:definition "Execute the persisted workflow for a project in order, using the connected project's domain and cached results where valid." ;
+    skos:definition "Execute the persisted workflow for a project in order, using each operation's domain/module implementation and cached results where valid." ;
     sf:category "workflow-execution" ;
     sf:guidance "Connect to the project first, inspect or validate the workflow, then call run_workflow. For one-step execution use run_method with a connected session." ;
     sf:availableInDomain sfcore:streamfind ;
@@ -255,7 +253,7 @@ sfcore:deleteCache
     skos:definition "Delete all cache entries stored for a project." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:operationStatusResult ;
+    sf:returns sfcore:apiCommandStatusResult ;
     sf:mutatesProject true .
 
 sfcore:getAuditTrail
@@ -287,7 +285,7 @@ sfcore:runMethod
     skos:inScheme sfcore:scheme ;
     sf:commandId "run_method" ;
     skos:prefLabel "Run a planned workflow method" ;
-    skos:definition "Execute one selected workflow method for a connected project. The method must be registered for the project domain and its parameters are validated before execution." ;
+    skos:definition "Execute one selected workflow method for a connected project. The method must be registered for its requested domain and its parameters are validated before execution." ;
     sf:category "workflow-execution" ;
     sf:guidance "Connect first, discover methods with get_available_methods, and use the method's input schema. Use run_workflow instead when the whole persisted workflow should execute." ;
     sf:availableInDomain sfcore:streamfind ;
@@ -319,7 +317,7 @@ sfcore:close
     skos:definition "Clear the connected project context used for workflow methods. This does not delete the project and does not remove stateless operation tools." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:operationStatusResult ;
+    sf:returns sfcore:apiCommandStatusResult ;
     sf:mutatesProject false .
 
 sfcore:connect
@@ -327,12 +325,12 @@ sfcore:connect
     skos:inScheme sfcore:scheme ;
     sf:commandId "connect" ;
     skos:prefLabel "Connect an MCP session to a project" ;
-    skos:definition "Open an existing project and bind its immutable domain to the MCP session for workflow-method operations. Domain operations remain discoverable and callable without connect; connect establishes the context used by add_method, validate_workflow, run_method, and run_workflow." ;
+    skos:definition "Open an existing project and bind its session state for workflow-method operations. Domain operations remain discoverable and callable without connect; connect establishes the context used by add_method, validate_workflow, run_method, and run_workflow." ;
     sf:category "session-management" ;
     sf:guidance "Call connect only after create or describe confirms the project. It does not add operation tools to tools/list. Use it when planning or executing workflow methods; close clears that session context." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:operationStatusResult ;
+    sf:returns sfcore:apiCommandStatusResult ;
     sf:mutatesProject false .
 
 sfcore:addOperation
@@ -407,3 +405,171 @@ sfcore:resolveOperationInputs
         sfcore:databasePathParameter,
         sfcore:operationIdParameter ;
     sf:mutatesProject false .
+
+sfcore:projectDescriptorResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project descriptor" ;
+    skos:definition "Project identity, derived domains, metadata, workflow, table list, and cache summary." ;
+    sf:type "table" ;
+    sf:hasProperty
+        sfcore:projectMetadataColumn,
+        sfcore:schemaVersionColumn,
+        sfcore:frameworkVersionColumn,
+        sfcore:createdAtColumn,
+        sfcore:projectWorkflowColumn .
+
+sfcore:validationResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Validation result" ;
+    skos:definition "Whether validation succeeded and an explanatory message." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:validField,
+        sfcore:infoField .
+
+sfcore:domainsResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project domains result" ;
+    skos:definition "The domains represented by persisted workflow operations." ;
+    sf:type "array" ;
+    sf:items sfcore:domainField .
+
+sfcore:metadataResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project metadata result" ;
+    skos:definition "The project metadata JSON object." ;
+    sf:type "table" ;
+    sf:hasProperty sfcore:projectMetadataColumn .
+
+sfcore:workflowResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow result" ;
+    skos:definition "The ordered workflow method objects." ;
+    sf:type "array" ;
+    sf:items sfcore:methodField .
+
+sfcore:cacheEntriesResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache entries result" ;
+    skos:definition "The project's cache entries." ;
+    sf:type "array" ;
+    sf:items sfcore:cacheEntryResult .
+
+sfcore:cacheEntryResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache entry" ;
+    skos:definition "One cached workflow result entry." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:cacheNameColumn,
+        sfcore:cacheDescriptionColumn,
+        sfcore:cacheHashColumn,
+        sfcore:createdAtColumn .
+
+sfcore:cacheSizeResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache size result" ;
+    skos:definition "The number of cache entries." ;
+    sf:type "integer" .
+
+sfcore:auditEntriesResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Audit trail result" ;
+    skos:definition "The project's ordered audit events." ;
+    sf:type "array" ;
+    sf:items sfcore:auditEntryResult .
+
+sfcore:auditEntryResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Audit entry" ;
+    skos:definition "One persisted project audit event." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:operationTypeColumn,
+        sfcore:objectTypeColumn,
+        sfcore:operationDetailsColumn,
+        sfcore:createdAtColumn .
+
+sfcore:methodsResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Available methods result" ;
+    skos:definition "Definitions of workflow methods registered for a domain." ;
+    sf:type "array" ;
+    sf:items sfcore:methodDefinitionResult .
+
+sfcore:methodDefinitionResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Method definition" ;
+    skos:definition "One workflow method definition available to a domain, including its complete method-specific input schema and execution metadata." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:methodIdField,
+        sfcore:methodNameField,
+        sfcore:methodDescriptionField,
+        sfcore:methodDomainField,
+        sfcore:methodInputSchemaField,
+        sfcore:methodCacheableField,
+        sfcore:methodSingleOccurrenceField,
+        sfcore:methodWritesField .
+
+sfcore:workflowExecutionResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution result" ;
+    skos:definition "Workflow results, cancellation state, and the persisted workflow." ;
+    sf:type "object" .
+
+sfcore:workflowExecutionEntriesResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution entries" ;
+    skos:definition "Execution status for workflow steps." ;
+    sf:type "table" ;
+    sf:hasProperty
+        sfcore:workflowRevisionColumn,
+        sfcore:stepIndexColumn,
+        sfcore:executionMethodColumn,
+        sfcore:parameterHashColumn,
+        sfcore:executionStatusColumn,
+        sfcore:startedAtColumn,
+        sfcore:completedAtColumn,
+        sfcore:executionErrorColumn,
+        sfcore:cacheKeyColumn .
+
+sfcore:apiCommandStatusResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "API command status" ;
+    skos:definition "Control-plane status response returned by a project-management API command." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:statusField,
+        sfcore:infoField,
+        sfcore:updatedField .

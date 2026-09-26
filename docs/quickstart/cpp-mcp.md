@@ -32,7 +32,7 @@ Example requests, one JSON object per line:
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create","arguments":{"database_path":"demo.duckdb","domain":"mass_spec"}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"mass_spec.get_analyses_info","arguments":{"database_path":"demo.duckdb"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"mass_spec.get_analyses","arguments":{"database_path":"demo.duckdb"}}}
 ```
 
 Direct domain Operations are stateless. Include `database_path` on every

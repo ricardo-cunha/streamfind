@@ -35,7 +35,6 @@
     ["interrupted", "running"]
   ],
   "required_fields": [
-    "domain_id",
     "workflow_revision",
     "status"
   ],

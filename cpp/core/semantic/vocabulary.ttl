@@ -46,7 +46,7 @@ sf:Project
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Project" ;
-    skos:definition "A persisted streamfind workspace with an immutable domain." .
+    skos:definition "A persisted streamfind workspace whose workflow operations may span domains." .
 
 sf:Workflow
     a rdfs:Class ;
@@ -56,7 +56,7 @@ sf:Workflow
 
 sf:Parameter
     a rdfs:Class ;
-    rdfs:subClassOf sf:Result ;
+    rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Parameter" ;
     skos:definition "A named input accepted by an operation or workflow method." .
 
@@ -66,17 +66,41 @@ sf:Fixture
     skos:prefLabel "Fixture" ;
     skos:definition "A backend-neutral example used to verify a semantic contract." .
 
-sf:Result
+sf:OperationResult
     a rdfs:Class ;
     rdfs:subClassOf sf:ArtifactContract ;
-    skos:prefLabel "Result" ;
-    skos:definition "The structured value returned by a streamfind capability." .
+    skos:prefLabel "Operation result" ;
+    skos:definition "A JSON artifact emitted by a workflow operation and persisted in the project artifact inventory." .
 
 sf:Table
     a rdfs:Class ;
     rdfs:subClassOf sf:ArtifactContract ;
     skos:prefLabel "DuckDB table artifact" ;
     skos:definition "A physical DuckDB table persisted in the project database and exchanged through workflow artifact ports." .
+
+sf:PrimitiveType
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Primitive type" ;
+    skos:definition "An extensible scalar value type used as the atomic unit of semantic fields and table cells." .
+
+sf:SemanticType
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Semantic type" ;
+    skos:definition "A domain-level meaning composed over a primitive representation without changing its wire or storage type." .
+
+sf:ArrayType
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Array type" ;
+    skos:definition "A homogeneous list type whose elements use one declared primitive or semantic type." .
+
+sf:ApiCommandResult
+    a rdfs:Class ;
+    rdfs:subClassOf sf:ArtifactContract ;
+    skos:prefLabel "API command result" ;
+    skos:definition "A control-plane response schema returned by an API command; it is not a workflow data result or persisted domain table." .
 
 sf:TabularValue
     a rdfs:Class ;
@@ -319,6 +343,13 @@ sf:items
     skos:prefLabel "items" ;
     skos:definition "Schema of the items contained in an array parameter." .
 
+sf:tableContract
+    a rdf:Property ;
+    rdfs:domain sf:Parameter ;
+    rdfs:range sf:Table ;
+    skos:prefLabel "table contract" ;
+    skos:definition "Canonical table schema accepted by a table-valued parameter." .
+
     sf:hasProperty a rdf:Property ;
     rdfs:range sf:Field ;
     skos:prefLabel "has property" ;
@@ -368,6 +399,55 @@ sf:tableName
     skos:prefLabel "table name" ;
     skos:definition "DuckDB table name." .
 
+sf:dataKind
+    a rdf:Property ;
+    rdfs:domain sf:ArtifactContract ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "data kind" ;
+    skos:definition "Runtime representation kind of an artifact contract. Persisted table contracts use the value duckdb_table." .
+
+sf:valueType
+    a rdf:Property ;
+    rdfs:domain sf:Column ;
+    rdfs:range skos:Concept ;
+    skos:prefLabel "value type" ;
+    skos:definition "The type of one cell in a column; row-wise repetition is supplied by the table." .
+
+sf:primitiveType
+    a rdf:Property ;
+    rdfs:domain sf:SemanticType ;
+    rdfs:range sf:PrimitiveType ;
+    skos:prefLabel "primitive type" ;
+    skos:definition "Atomic representation used by a domain semantic type." .
+
+sf:elementType
+    a rdf:Property ;
+    rdfs:domain sf:ArrayType ;
+    rdfs:range skos:Concept ;
+    skos:prefLabel "element type" ;
+    skos:definition "Type of each element in a homogeneous array." .
+
+sf:wireType
+    a rdf:Property ;
+    rdfs:domain sf:PrimitiveType ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "wire type" ;
+    skos:definition "Portable JSON or binary encoding label for a primitive type." .
+
+sf:duckdbType
+    a rdf:Property ;
+    rdfs:domain sf:PrimitiveType ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "DuckDB type" ;
+    skos:definition "DuckDB storage mapping for a primitive type." .
+
+sf:editorKind
+    a rdf:Property ;
+    rdfs:domain sf:PrimitiveType ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "editor kind" ;
+    skos:definition "Frontend editor capability associated with a primitive type." .
+
 sf:reads
     a rdf:Property ;
     rdfs:range sf:Table ;
@@ -409,7 +489,7 @@ sf:hasWorkflow
 
 sf:returns
     a rdf:Property ;
-    rdfs:range sf:Result ;
+    rdfs:range sf:ArtifactContract ;
     skos:prefLabel "returns" ;
     skos:definition "Associates a capability with its result semantics." .
 

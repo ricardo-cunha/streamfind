@@ -7,7 +7,7 @@
 
 sfcore:SemanticEntryShape
     a sh:NodeShape ;
-    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:Parameter, sf:Result, sf:Error, sf:Table, sf:Field, sf:Column ;
+    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:Parameter, sf:OperationResult, sf:Error, sf:Table, sf:Field, sf:Column, sf:PrimitiveType, sf:SemanticType, sf:ArrayType, sf:ApiCommandResult ;
     sh:property [ sh:path skos:prefLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path skos:definition ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
@@ -17,7 +17,7 @@ sfcore:ApiCommandShape
     sh:property [ sh:path sf:commandId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
-    sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:Result ] ;
+    sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:ApiCommandResult ] ;
     sh:property [ sh:path sf:mutatesProject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:category ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path sf:guidance ; sh:maxCount 1 ; sh:datatype xsd:string ] .
@@ -33,7 +33,7 @@ sfcore:OperationShape
     sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
     sh:property [ sh:path sf:hasInputPort ; sh:class sf:ArtifactContract ] ;
     sh:property [ sh:path sf:hasOutputPort ; sh:class sf:ArtifactContract ] ;
-    sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:Result ] ;
+    sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:OperationResult ] ;
     sh:property [ sh:path sf:reads ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:category ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
@@ -78,7 +78,7 @@ sfcore:MethodShape
     sh:property [ sh:path sf:hasParameter ; sh:minCount 1 ; sh:class sf:Parameter ] ;
     sh:property [ sh:path sf:reads ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
-    sh:property [ sh:path sf:returns ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Result ] ;
+    sh:property [ sh:path sf:returns ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:OperationResult ] ;
     sh:sparql [ sh:message "Method identifiers must be unique." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:methodId ?id .
                 ?other a sf:Method ; sf:methodId ?id .
                 FILTER (?other != $this)
@@ -136,6 +136,7 @@ sfcore:ParameterShape
     sh:property [ sh:path sf:example ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path sf:units ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path sf:nullable ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path sf:tableContract ; sh:maxCount 1 ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
     sh:sparql [ sh:message "Array parameters must declare exactly one sf:items schema." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:type "array" .
@@ -152,6 +153,28 @@ sfcore:ParameterShape
             WHERE {
                 $this sf:type ?type ; sf:items ?items .
                 FILTER (?type != "array")
+            }
+        """
+    ] ;
+    sh:sparql [
+        sh:message "Table parameters must reference exactly one canonical table contract." ;
+        sh:select """
+            PREFIX sf: <https://streamfind.dev/vocabulary#>
+            SELECT $this WHERE {
+                $this sf:type "table" .
+                { FILTER NOT EXISTS { $this sf:tableContract ?table . } }
+                UNION
+                { $this sf:tableContract ?table1, ?table2 . FILTER (?table1 != ?table2) }
+            }
+        """
+    ] ;
+    sh:sparql [
+        sh:message "Only table parameters may declare sf:tableContract." ;
+        sh:select """
+            PREFIX sf: <https://streamfind.dev/vocabulary#>
+            SELECT $this WHERE {
+                $this sf:tableContract ?table ; sf:type ?type .
+                FILTER (?type != "table")
             }
         """
     ] ;
@@ -176,10 +199,19 @@ sfcore:ErrorShape
     sh:targetClass sf:Error ;
     sh:property [ sh:path sf:errorCode ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
-sfcore:ResultShape
+sfcore:ApiCommandResultShape
     a sh:NodeShape ;
-    sh:targetClass sf:Result ;
+    sh:targetClass sf:ApiCommandResult ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" ) ] ;
+    sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
+    sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+sfcore:OperationResultShape
+    a sh:NodeShape ;
+    sh:targetClass sf:OperationResult ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:dataKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "json" ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" ) ] ;
     sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
@@ -224,6 +256,7 @@ sfcore:TableShape
     sh:targetClass sf:Table ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:tableName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Z][A-Z0-9_]*$" ] ;
+    sh:property [ sh:path sf:dataKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "duckdb_table" ] ;
     sh:property [ sh:path sf:hasColumn ; sh:minCount 1 ; sh:class sf:Column ] ;
     sh:sparql [ sh:message "Table names must be unique." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:tableName ?name .
                 ?other a sf:Table ; sf:tableName ?name .
@@ -271,6 +304,13 @@ sfcore:FieldShape
             }
         """
     ] .
+
+sfcore:PrimitiveTypeShape
+    a sh:NodeShape ;
+    sh:targetClass sf:PrimitiveType ;
+    sh:property [ sh:path sf:wireType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:duckdbType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:editorKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
 sfcore:OperationStatusFieldShape
     a sh:NodeShape ;

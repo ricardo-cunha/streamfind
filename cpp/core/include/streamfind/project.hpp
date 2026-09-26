@@ -322,6 +322,7 @@ struct STREAMFIND_CORE_API WorkflowOperation {
 struct STREAMFIND_CORE_API WorkflowConnection {
     std::string source_operation;
     std::string source_port;
+    std::string source_artifact_id;
     std::string target_operation;
     std::string target_port;
 
@@ -340,8 +341,6 @@ public:
     std::string name;
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
-    /// Domain this workflow belongs to.
-    std::string domain;
     /// Ordered method invocations.
     std::vector<WorkflowStep> steps;
     /// Operation instances forming the backend execution graph.
@@ -360,7 +359,7 @@ public:
     Json to_json() const;
     /** @brief Export ordered method metadata with configured parameter values. */
     Json to_json(const MethodRegistry &registry) const;
-    /** @brief Parse a workflow object or legacy ordered array from JSON. */
+    /** @brief Parse a canonical workflow object from JSON. */
     static Workflow from_json(const Json &value);
 };
 
@@ -435,16 +434,14 @@ private:
 struct STREAMFIND_CORE_API ProjectOptions {
     /// DuckDB file to create or open.
     std::filesystem::path database_path;
-    /// Domain assigned once when a project is created.
-    std::string domain;
     /// Project-owned metadata initialized on creation.
     Json metadata{Json::object()};
 };
 
 /** @brief Persisted identity and metadata for an open Project. */
 struct STREAMFIND_CORE_API ProjectInfo {
-    /// Domain selected for the project.
-    std::string domain;
+    /// Domains represented by persisted workflow operations.
+    std::vector<std::string> domains;
     /// Project-owned metadata.
     Json metadata{Json::object()};
     int schema_version{1};
@@ -503,8 +500,8 @@ public:
 
     /** @brief Replace project metadata. */
     void set_metadata(Json metadata);
-    /** @brief Return the project domain. */
-    std::string get_domain() const;
+    /** @brief Return domains represented by persisted workflow operations. */
+    std::vector<std::string> get_domains() const;
     /** @brief Validate the project schema and persisted row state. */
     void validate() const;
     Workflow get_workflow() const;

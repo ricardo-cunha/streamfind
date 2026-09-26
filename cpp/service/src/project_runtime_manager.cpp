@@ -37,7 +37,7 @@ ProjectSessionDto ProjectRuntimeManager::describe(const std::string &session_id,
     return ProjectSessionDto{session_id,
                              project.get_database_path().string(),
                              error ? 0 : size,
-                             project.get_domain(),
+                             project.get_domains(),
                              project.get_metadata()};
 }
 
@@ -117,7 +117,6 @@ Json ProjectRuntimeManager::validate_workflow(const std::string &session_id, con
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     auto workflow = Workflow::from_json(definition);
-    if (workflow.domain.empty()) workflow.domain = iterator->second->get_domain();
     Json diagnostics = Json::array();
     try {
         workflow.validate(*operations_);
@@ -134,7 +133,6 @@ Json ProjectRuntimeManager::save_workflow(const std::string &session_id, const J
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     auto workflow = Workflow::from_json(definition);
     const auto current = iterator->second->get_workflow();
-    if (workflow.domain.empty()) workflow.domain = iterator->second->get_domain();
     if (workflow.workflow_id.empty()) workflow.workflow_id = current.workflow_id.empty() ? "workflow" : current.workflow_id;
     const bool layout_only = detail::workflow_without_positions(workflow.to_json()) ==
                              detail::workflow_without_positions(current.to_json());
@@ -184,8 +182,8 @@ Json ProjectRuntimeManager::artifact_inventory(const std::string &session_id) co
             artifact["columns"] = Json::array();
             for (const auto &column : columns)
                 artifact["columns"].push_back({{"name", column.value("column_name", "")}, {"type", column.value("column_type", "")}});
-        } catch (...) {
-            artifact["columns"] = Json::array();
+        } catch (const std::exception &error) {
+            throw std::runtime_error("artifact inventory inspection failed for " + table + ": " + error.what());
         }
     }
     return artifacts;
@@ -317,11 +315,6 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     const auto operation = operations_->find(operation_id);
     if (!operation) throw std::invalid_argument("operation not found: " + operation_id);
-    const auto &operation_domain = operation->definition().domain;
-    const auto &project_domain = iterator->second->get_domain();
-    if (!operation_domain.empty() && operation_domain != project_domain &&
-        operation_domain != "streamfind")
-        throw std::invalid_argument("operation is not available in the project domain");
     return iterator->second->run_operation(operation_id, parameters, *operations_, operation_instance);
 }
 

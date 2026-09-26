@@ -72,7 +72,7 @@ try {
     if ($expectedCount -lt 1) {
         throw "Expected at least one parsed $Vendor analysis, received $expectedCount"
     }
-    $info = Invoke-McpTool $process 4 'mass_spec.get_analyses_info' @{
+    $info = Invoke-McpTool $process 4 'mass_spec.get_analyses' @{
         database_path = $database
     }
     if ([int]$info.row_count -ne $expectedCount) {

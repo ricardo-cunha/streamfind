@@ -91,7 +91,7 @@ Canonical `Project` methods:
 ```text
 get_metadata() / set_metadata(Json)
 get_database_path()
-get_domain()
+get_domains()
 validate()
 get_workflow() / set_workflow(Workflow)
 copy(ProjectOptions)
@@ -124,7 +124,7 @@ Canonical commands are:
 ```text
 create, describe, validate
 get_metadata, set_metadata
-get_domain
+get_project_domains
 get_workflow, set_workflow, validate_workflow, run_workflow
 get_methods, run_method
 copy

@@ -22,7 +22,7 @@ enum class ProjectCommand {
     remove_method,
     validate_workflow,
     validate,
-    get_domain,
+    get_project_domains,
     get_available_methods,
     run_method,
     copy,

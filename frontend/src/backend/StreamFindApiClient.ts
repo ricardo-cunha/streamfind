@@ -7,6 +7,11 @@ import type {
   WorkflowDefinition,
   WorkflowDefinitionResponse,
   JsonValue,
+  CapabilityIndexResponse,
+  CapabilityModulesResponse,
+  CapabilityOperationSummary,
+  CapabilityOperationsRequest,
+  BackendCapability,
 } from './protocol';
 
 export type { ProjectSession, ServiceCapabilities } from './protocol';
@@ -80,7 +85,7 @@ export class StreamFindApiClient {
       if (generation !== this.connectionGeneration) throw new Error('stale service connection attempt');
       if (!response.ok) throw new Error(`Session request failed (${response.status})`);
       const session = (await response.json()) as SessionResponse;
-      await this.capabilities();
+      await this.capabilitiesIndex();
       await this.openEvents(onState, generation);
       this.reconnectAttempt = 0;
       onState('ready');
@@ -97,6 +102,41 @@ export class StreamFindApiClient {
     const response = await fetch(`${this.baseUrl}/capabilities`);
     if (!response.ok) throw new Error(`Capabilities request failed (${response.status})`);
     return response.json() as Promise<CapabilitiesResponse>;
+  }
+
+  async capabilitiesIndex(): Promise<CapabilityIndexResponse> {
+    const response = await fetch(`${this.baseUrl}/capabilities/index`);
+    if (!response.ok) throw new Error(`Capabilities index request failed (${response.status})`);
+    return response.json() as Promise<CapabilityIndexResponse>;
+  }
+
+  async capabilityModules(domain: string): Promise<CapabilityModulesResponse> {
+    const response = await fetch(`${this.baseUrl}/capabilities/domains/${encodeURIComponent(domain)}/modules`);
+    if (!response.ok) throw new Error(`Capability module request failed (${response.status})`);
+    return response.json() as Promise<CapabilityModulesResponse>;
+  }
+
+  async capabilityOperations(
+    options: CapabilityOperationsRequest & { includeSchema: true },
+  ): Promise<BackendCapability[]>;
+  async capabilityOperations(
+    options: CapabilityOperationsRequest & { includeSchema?: false },
+  ): Promise<CapabilityOperationSummary[]>;
+  async capabilityOperations(options: CapabilityOperationsRequest): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
+    const query = new URLSearchParams({ domain: options.domain });
+    if (options.module) query.set('module', options.module);
+    if (options.search) query.set('search', options.search);
+    if (options.includeSchema) query.set('include_schema', 'true');
+    const response = await fetch(`${this.baseUrl}/capabilities/operations?${query.toString()}`);
+    if (!response.ok) throw new Error(`Capability operations request failed (${response.status})`);
+    const result = (await response.json()) as { operations: CapabilityOperationSummary[] | BackendCapability[] };
+    return result.operations;
+  }
+
+  async capabilityOperation(canonicalId: string): Promise<BackendCapability> {
+    const response = await fetch(`${this.baseUrl}/capabilities/operations/${encodeURIComponent(canonicalId)}`);
+    if (!response.ok) throw new Error(`Capability operation request failed (${response.status})`);
+    return response.json() as Promise<BackendCapability>;
   }
 
   async projects(): Promise<ProjectSession[]> {
@@ -270,7 +310,6 @@ export class StreamFindApiClient {
   async createProject(input: {
     session_id: string;
     database_path: string;
-    domain: string;
     metadata?: Record<string, unknown>;
     mode?: 'create' | 'open';
   }): Promise<ProjectSession> {

@@ -13,7 +13,7 @@ namespace streamfind::mass_spec
         STREAMFIND_DOMAIN_API Json read_mass_spec_files(sdk::PluginProjectAccess &, const Json &);
 
         STREAMFIND_DOMAIN_API Json remove_analyses(sdk::PluginProjectAccess &, const Json &);
-        STREAMFIND_DOMAIN_API Json get_analyses_info(sdk::PluginProjectAccess &, const Json &);
+        STREAMFIND_DOMAIN_API Json get_analyses(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_analysis_names(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_replicate_names(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_blank_names(sdk::PluginProjectAccess &, const Json &);

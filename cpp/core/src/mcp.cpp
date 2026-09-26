@@ -4,6 +4,8 @@
 #include "streamfind/version.hpp"
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <set>
 
 namespace streamfind::mcp {
 
@@ -18,16 +20,59 @@ Json tool(const char *name, const char *description, Json properties, Json requi
             {"inputSchema", {{"type", "object"}, {"properties", properties}, {"required", required}}}};
 }
 
+bool is_executable_operation(const Json &entry) {
+    return entry.value("kind", "") == "operation" && entry.value("exposed", false) &&
+           entry.value("executable", false);
+}
+
+std::string lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return value;
+}
+
+bool matches_search(const Json &entry, const std::string &search) {
+    if (search.empty()) return true;
+    const auto query = lower(search);
+    for (const auto &field : {"canonical_id", "label", "definition", "module_id"})
+        if (lower(entry.value(field, "")).find(query) != std::string::npos) return true;
+    return false;
+}
+
+Json operation_summary(const Json &entry) {
+    return Json{{"canonical_id", entry.value("canonical_id", "")},
+                {"label", entry.value("label", "")},
+                {"domain", entry.value("domain", "")},
+                {"module_id", entry.value("module_id", "")},
+                {"definition", entry.value("definition", "")}};
+}
+
 Json tools() {
-    // Catalogue-backed tool definitions; on a catalogue miss degrade to a
-    // minimal toolset (the registry-derived tools are appended by tools/list).
+    // Keep the initial MCP surface stable and small. Domain operations are
+    // discovered through the query tools below and invoked through
+    // run_operation rather than being registered as one tool per operation.
     const auto catalogue = streamfind::catalogue::tools_json();
-    return catalogue ? *catalogue : Json::array();
+    Json result = catalogue ? *catalogue : Json::array();
+    result.push_back(tool("get_domains", "List domains that provide exposed operations.", Json::object(), Json::array()));
+    result.push_back(tool("get_modules", "List operation modules available in a domain.",
+                          Json{{"domain", {{"type", "string"}}}}, Json::array({"domain"})));
+    result.push_back(tool("get_operations", "List exposed executable operations for a domain and optional module, with optional search.",
+                          Json{{"domain", {{"type", "string"}}}, {"module", {{"type", "string"}}},
+                               {"search", {{"type", "string"}}}},
+                          Json::array({"domain"})));
+    result.push_back(tool("get_operation", "Return the full catalogue definition for one operation.",
+                          Json{{"operation", {{"type", "string"}}}}, Json::array({"operation"})));
+    result.push_back(tool("run_operation", "Run one canonical domain operation against a project database.",
+                          Json{{"operation", {{"type", "string"}}},
+                               {"database_path", {{"type", "string"}}},
+                               {"arguments", {{"type", "object"}}}},
+                          Json::array({"operation", "database_path"})));
+    return result;
 }
 
 const char *command(const std::string &name) {
     static const std::array<std::string, 35> commands = {
-        "create", "describe", "validate", "get_domain", "get_metadata",
+        "create", "describe", "validate", "get_project_domains", "get_metadata",
         "set_metadata", "get_workflow", "get_workflow_execution", "create_workflow_execution", "get_execution", "list_executions", "transition_execution", "cancel_execution", "set_workflow", "add_method", "remove_method", "validate_workflow",
         "run_workflow", "get_cache", "get_cache_size", "delete_cache",
         "get_audit_trail", "get_available_methods", "run_method", "copy", "close",
@@ -41,7 +86,7 @@ const char *command(const std::string &name) {
 std::string interface_guidance() {
     return
         "StreamFind is a workflow-centric data-processing framework. A project is a "
-        "DuckDB-backed workspace with a domain, ontology-defined operations, immutable "
+        "DuckDB-backed workspace with derived domains, ontology-defined operations, immutable "
         "artifacts, workflow revisions, and execution history. Build processing workflows "
         "as an acyclic graph of operation instances: each operation has a unique instance "
         "id, parameters, typed input/output ports, and an operationSuccessSignal. Connect "
@@ -62,7 +107,7 @@ std::string interface_guidance() {
         "artifacts identified by workflow revision, producer operation instance, and output "
         "contract. Use the artifact inventory rather than execution text as proof that an "
         "output is available to downstream operations. Stateless domain operations require "
-        "database_path. connect is only needed for legacy workflow methods and session context.";
+        "database_path. connect is only needed for workflow methods that require session context.";
 }
 
 std::string tool_description(const Json &entry, const std::string &fallback) {
@@ -83,43 +128,6 @@ Json Session::handle(const Json &request) {
     if (method == "initialize") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"protocolVersion", "2025-03-26"}, {"capabilities", {{"tools", Json::object()}}}, {"serverInfo", {{"name", "streamfind-cpp"}, {"version", std::string(streamfind::version())}}}, {"instructions", detail::interface_guidance()}}}};
     if (method == "tools/list") {
             auto catalogue = detail::tools();
-            // Methods (kind='method') are NEVER tools: they are referenced by the
-            // workflow operations and discovered via get_available_methods.
-            // All exposed domain operations are always advertised. They are
-            // stateless and carry database_path, so discovery and
-            // invocation do not depend on connect.
-            const auto entries = streamfind::catalogue::entries_json();
-            for (const auto &definition : operations_.list("")) {
-                const Json *entry = nullptr;
-                if (entries) {
-                    for (const auto &candidate : *entries) {
-                        if (candidate.value("canonical_id", "") == definition.id) {
-                            entry = &candidate;
-                            break;
-                        }
-                    }
-                }
-                if (entry) {
-                    const auto mcp = entry->value("mcp", Json::object());
-                    const auto input_schema = mcp.value(
-                        "input_schema",
-                        Json{{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}});
-                    catalogue.push_back(Json{
-                        {"name", entry->value("canonical_id", definition.id)},
-                        {"description", detail::tool_description(*entry, definition.description)},
-                        {"inputSchema", input_schema},
-                        {"annotations", {{"title", entry->value("label", definition.name)},
-                                          {"readOnlyHint", !entry->at("effects").value("mutates_project", false)},
-                                          {"destructiveHint", entry->at("effects").value("mutates_project", false)}}},
-                        {"_meta", {{"streamfind", entry->at("interface")}}},
-                        {"effects", entry->value("effects", Json::array())},
-                    });
-                } else {
-                    // Keep the registered-operation intersection guard: a registry
-                    // entry without a catalogue entry is not advertised.
-                    continue;
-                }
-            }
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", catalogue}}}};
         }
     if (method != "tools/call") return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32601}, {"message", "Unsupported MCP method"}}}};
@@ -127,11 +135,50 @@ Json Session::handle(const Json &request) {
     if (name == "connect") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto domain = api::run(api::ProjectCommand::get_domain, arguments, registry_).get<std::string>();
-            domain_ = domain;
-                        project_ = arguments;
+            ProjectOptions options;
+            options.database_path = arguments.at("database_path").get<std::string>();
+            Project::open(options);
+            project_ = arguments;
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", Json{{{"status", "finished"}, {"info", "Project connected successfully."}}}.dump()}}})}}}};
         } catch (const Error &error) {
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
+        }
+    }
+    if (name == "get_domains" || name == "get_modules" || name == "get_operations" || name == "get_operation" || name == "run_operation") {
+        const auto arguments = request.at("params").value("arguments", Json::object());
+        const auto entries = streamfind::catalogue::entries_json();
+        try {
+            if (name == "run_operation") {
+                const auto operation_id = arguments.at("operation").get<std::string>();
+                if (!operations_.find(operation_id)) throw Error(ErrorCode::InvalidArgument, "operation not found: " + operation_id);
+                ProjectOptions options;
+                options.database_path = arguments.at("database_path").get<std::string>();
+                const auto operation_arguments = arguments.value("arguments", Json::object());
+                const auto result = Project::open(options).run_operation(operation_id, operation_arguments, operations_);
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
+            }
+            Json result = Json::array();
+            std::set<std::string> values;
+            if (entries) for (const auto &entry : *entries) {
+                if (!detail::is_executable_operation(entry)) continue;
+                const auto domain = entry.value("domain", "");
+                if (name != "get_domains" && name != "get_operation" && domain != arguments.value("domain", "")) continue;
+                if (name == "get_domains") values.insert(domain);
+                else if (name == "get_modules") values.insert(entry.value("module_id", ""));
+                else if (name == "get_operations" &&
+                         (arguments.value("module", "").empty() || entry.value("module_id", "") == arguments.value("module", "")) &&
+                         detail::matches_search(entry, arguments.value("search", "")))
+                    result.push_back(detail::operation_summary(entry));
+                else if (name == "get_operation" && entry.value("canonical_id", "") == arguments.value("operation", ""))
+                    result.push_back(entry);
+            }
+            if (name == "get_domains" || name == "get_modules")
+                for (const auto &value : values) result.push_back(value);
+            if (name == "get_operation" && result.empty())
+                throw Error(ErrorCode::InvalidArgument,
+                            "operation not found: " + arguments.value("operation", ""));
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
+        } catch (const std::exception &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }
     }
@@ -146,7 +193,6 @@ Json Session::handle(const Json &request) {
             }
             ProjectOptions options;
             options.database_path = arguments.at("database_path").get<std::string>();
-            options.domain = operation->definition().domain;
             auto project = Project::open(options);
             Json parameters = arguments;
             parameters.erase("database_path");
@@ -155,7 +201,7 @@ Json Session::handle(const Json &request) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
         } catch (const Error &error) { return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}}; }
     }
-    if (!command && dynamic && !domain_.empty() && dynamic->definition().domain == domain_) {
+    if (!command && dynamic) {
         if (project_.empty()) return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32000}, {"message", "No project connected"}}}};
         Json arguments = project_;
         arguments["method"] = name;
@@ -176,7 +222,6 @@ Json Session::handle(const Json &request) {
             options.database_path = arguments.at("database_path").get<std::string>();
             auto project = Project::open(options);
             auto workflow = Workflow::from_json(arguments.at("workflow"));
-            workflow.domain = workflow.domain.empty() ? project.get_domain() : workflow.domain;
             workflow.validate(operations_);
             if (name == "set_workflow") project.set_workflow(workflow, operations_);
             const Json result = {{"valid", true}, {"workflow", workflow.to_json()}};
@@ -220,7 +265,7 @@ Json Session::handle(const Json &request) {
         }
         if (name == "close") {
                             project_ = Json::object();
-                            domain_.clear();
+
                         }
         return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"content", Json::array({{{"type", "text"}, {"text", result.dump()}}})}}}};
     } catch (const Error &error) {

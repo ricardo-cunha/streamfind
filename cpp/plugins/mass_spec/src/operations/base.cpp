@@ -412,7 +412,7 @@ namespace streamfind::mass_spec::base
 
     } // namespace
 
-    Json get_analyses_info(sdk::PluginProjectAccess &access, const Json &parameters)
+    Json get_analyses(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         return selected_analysis_rows(access, parameters,
                           {"analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
@@ -519,6 +519,8 @@ namespace streamfind::mass_spec::base
     {
         const auto analyses = selected_analysis_rows(access, parameters);
         const auto targets = base::utils::normalize_targets(parameters);
+        const auto requested_targets = parameters.value("targets", Json::array());
+        const bool has_requested_targets = requested_targets.is_array() && !requested_targets.empty();
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();
         Json result = Json::array();
@@ -545,14 +547,14 @@ namespace streamfind::mass_spec::base
                     if ((!requested_levels.empty() && std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end()) ||
                         spectra[i][1][j] < minimum_intensity)
                         continue;
-                    Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"id", analysis + ":" + std::to_string(headers.index[i])}, {"polarity", headers.polarity[i]}, {"level", headers.level[i]}, {"precursor_mz", headers.precursor_mz[i]}, {"activation_ce", headers.activation_ce[i]}, {"rt", headers.rt[i]}, {"mobility", headers.mobility[i]}, {"mz", mz}, {"intensity", spectra[i][1][j]}};
+                    Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"name", std::string{}}, {"polarity", headers.polarity[i]}, {"level", headers.level[i]}, {"precursor_mz", headers.precursor_mz[i]}, {"activation_ce", headers.activation_ce[i]}, {"rt", headers.rt[i]}, {"mobility", headers.mobility[i]}, {"mz", mz}, {"intensity", spectra[i][1][j]}};
                     if (indexed)
                         result.push_back(std::move(point));
                     else
                         for (const auto &target : targets)
                             if (base::utils::target_matches(target, analysis, headers.polarity[i], headers.level[i], headers.rt[i], mz))
                             {
-                                point["target_id"] = target.id;
+                                if (has_requested_targets) point["name"] = target.id;
                                 result.push_back(point);
                             }
                 }

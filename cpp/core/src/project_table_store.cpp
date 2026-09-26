@@ -24,6 +24,7 @@ std::string manifest_sql_type(const Json &column) {
     if (type == "boolean") return "BOOLEAN";
     if (type == "timestamp") return "TIMESTAMP";
     if (type == "binary") return "BLOB";
+    if (type == "object" || type == "array") return "JSON";
     if (type == "decimal") {
         const auto width = column.value("precision", 18);
         const auto scale = column.value("scale", 3);
@@ -376,6 +377,7 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
                 : expected == "real" ? (actual == "DOUBLE" || actual == "FLOAT" || actual == "DECIMAL")
                 : expected == "boolean" ? actual == "BOOLEAN"
                 : expected == "timestamp" ? actual.find("TIMESTAMP") != std::string::npos
+                : expected == "array" || expected == "object" ? actual == "JSON"
                 : true;
             if (!compatible)
                 throw Error(ErrorCode::SchemaMismatch, "incompatible type for " + column + " in domain table " +

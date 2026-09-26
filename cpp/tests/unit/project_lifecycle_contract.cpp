@@ -12,7 +12,7 @@ int run() {
     std::error_code error;
     std::filesystem::remove(path, error);
 
-    auto project = streamfind::Project::create({path, "test", {{"owner", "test"}}});
+    auto project = streamfind::Project::create({path, {{"owner", "test"}}});
     int table_runs = 0;
     int tail_runs = 0;
     streamfind::MethodRegistry registry;
@@ -59,7 +59,7 @@ int run() {
     }
     const auto copy_path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-copy.duckdb";
     std::filesystem::remove(copy_path, error);
-    auto copied = project.copy({copy_path, "test", {}});
+    auto copied = project.copy({copy_path, {}});
     if (copied.get_metadata().at("owner") != "test") {
         std::cerr << "project copy failed\n";
         return 1;
@@ -67,18 +67,18 @@ int run() {
     copied.close();
     std::filesystem::remove(copy_path, error);
     streamfind::Workflow table_workflow;
-    table_workflow.domain = "test";
+
     table_workflow.steps.push_back({"test.table", streamfind::ParameterValues{streamfind::Json::object()}});
     project.set_workflow(table_workflow, registry);
     project.run_workflow(registry);
     const auto launch_snapshot = streamfind::Json::parse(project.query_json("SELECT launch_snapshot FROM WORKFLOW_EXECUTION").at(0).at("launch_snapshot").get<std::string>());
-    if (launch_snapshot.at("domain") != "test" || launch_snapshot.at("steps").size() != 1 || launch_snapshot.at("steps").at(0).at("id") != "test.table") {
+    if (launch_snapshot.at("steps").size() != 1 || launch_snapshot.at("steps").at(0).at("id") != "test.table") {
         std::cerr << "workflow launch snapshot was not persisted\n";
         return 1;
     }
     project.execute_sql("UPDATE WORKFLOW_EXECUTION SET status = 'running'");
     project.close();
-    project = streamfind::Project::open({path, "test", {}});
+    project = streamfind::Project::open({path, {}});
     if (streamfind::WorkflowExecutionManager(project).current().at("status") != "interrupted") {
         std::cerr << "workflow restart did not reconcile the active parent\n";
         return 1;
@@ -135,8 +135,8 @@ int run() {
         return 1;
     }
     project.close();
-    auto reopened = streamfind::Project::open({path, "test", {}});
-    if (reopened.get_domain() != "test" ||
+    auto reopened = streamfind::Project::open({path, {}});
+    if (!reopened.get_domains().empty() ||
         reopened.get_metadata().at("owner") != "test") {
         std::cerr << "project reopen failed\n";
         return 1;
@@ -144,6 +144,24 @@ int run() {
     reopened.validate();
     reopened.close();
     std::filesystem::remove(path, error);
+
+    const auto old_version_path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-old-version.duckdb";
+    std::filesystem::remove(old_version_path, error);
+    auto old_version = streamfind::Project::create({old_version_path, {}});
+    old_version.execute_sql("UPDATE PROJECT SET schema_version = 1");
+    old_version.close();
+    bool old_version_rejected = false;
+    try {
+        auto rejected = streamfind::Project::open({old_version_path, {}});
+        rejected.close();
+    } catch (const streamfind::Error &caught) {
+        old_version_rejected = caught.code() == streamfind::ErrorCode::SchemaMismatch;
+    }
+    if (!old_version_rejected) {
+        std::cerr << "old project schema version was accepted\n";
+        return 1;
+    }
+    std::filesystem::remove(old_version_path, error);
     return 0;
 }
 

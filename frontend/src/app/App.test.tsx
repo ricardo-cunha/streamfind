@@ -5,7 +5,8 @@ import App from './App';
 const project = {
   session_id: 'path-test-a',
   database_path: 'tmp/projects/path-test.duckdb',
-  domain: 'core',
+  database_size_bytes: 0,
+  domains: ['core'],
   metadata: {},
 };
 

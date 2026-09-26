@@ -16,7 +16,7 @@ private:
     const MethodRegistry &registry_;
     const OperationRegistry &operations_;
     Json project_{Json::object()};
-    std::string domain_;
+
 };
 
 /** @brief Handle one MCP JSON-RPC request. */

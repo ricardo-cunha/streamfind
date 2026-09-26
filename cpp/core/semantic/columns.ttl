@@ -3,16 +3,6 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 
-sfcore:projectDomainColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Domain" ;
-    skos:definition "Immutable project domain." ;
-    sf:columnName "domain" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
 sfcore:projectMetadataColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;
@@ -174,16 +164,6 @@ sfcore:stepIndexColumn
     sf:columnName "step_index" ;
     sf:type "integer" ;
     sf:storageType "INTEGER" .
-
-sfcore:executionDomainColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Domain ID" ;
-    skos:definition "Immutable project domain associated with the execution." ;
-    sf:columnName "domain_id" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
 
 sfcore:launchSnapshotColumn
     a sf:Column ;

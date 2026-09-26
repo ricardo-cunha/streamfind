@@ -90,7 +90,7 @@ def requests_for(database: Path, fixture: Path) -> list[dict]:
         {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create", "arguments": create_arguments}},
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "mass_spec.add_analyses", "arguments": {**common, "analyses": [{"path": str(fixture)}]}}},
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "mass_spec.get_analysis_names", "arguments": common}},
-        {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "mass_spec.get_analyses_info", "arguments": common}},
+        {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "mass_spec.get_analyses", "arguments": common}},
         {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "mass_spec.get_spectra_headers", "arguments": {**common, "analysis_names": [selected]}}},
         # Keep corpus validation bounded: headers and persistence are exhaustive;
         # payload parity samples one public index from each family.

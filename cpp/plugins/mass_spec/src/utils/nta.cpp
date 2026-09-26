@@ -293,7 +293,7 @@ namespace streamfind::mass_spec::nta::utils
     const std::vector<std::string> &feature_columns()
     {
         static const std::vector<std::string> columns = {
-            "analysis", "replicate", "blank", "feature", "feature_component", "feature_group", "adduct", "rt", "mz", "mass", "intensity", "noise", "sn", "area", "trace_count",
+            "analysis", "replicate", "blank", "name", "feature", "feature_component", "feature_group", "adduct", "rt", "mz", "mass", "intensity", "noise", "sn", "area", "trace_count",
             "rtmin", "rtmax", "width", "mzmin", "mzmax", "ppm", "fwhm_rt", "fwhm_mz", "gaussian_A", "gaussian_mu", "gaussian_sigma", "gaussian_r2",
             "jaggedness", "sharpness", "asymmetry", "modality", "plates", "polarity", "filtered", "filter", "filled", "correction", "eic_size", "eic_rt",
             "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
@@ -307,7 +307,7 @@ namespace streamfind::mass_spec::nta::utils
     const std::vector<std::string> &feature_types()
     {
         static const std::vector<std::string> types = {
-            "string", "string", "string", "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "integer",
+            "string", "string", "string", "string", "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "integer",
             "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
             "integer", "real", "integer", "boolean", "string", "boolean", "real", "integer", "string", "string", "string", "string", "string",
             "integer", "string", "string", "integer", "string", "string", "string", "string", "string", "string", "real", "real", "real", "real",
@@ -317,7 +317,7 @@ namespace streamfind::mass_spec::nta::utils
 
     nlohmann::json feature_row(const NTA_FEATURE_ROW &r)
     {
-        return nlohmann::json{{"analysis", r.analysis}, {"replicate", r.replicate}, {"blank", r.blank}, {"feature", r.feature}, {"feature_component", r.feature_component}, {"feature_group", r.feature_group}, {"adduct", r.adduct},
+        return nlohmann::json{{"analysis", r.analysis}, {"replicate", r.replicate}, {"blank", r.blank}, {"name", std::string{}}, {"feature", r.feature}, {"feature_component", r.feature_component}, {"feature_group", r.feature_group}, {"adduct", r.adduct},
             {"rt", r.rt}, {"mz", r.mz}, {"mass", r.mass}, {"intensity", r.intensity}, {"noise", r.noise}, {"sn", r.sn}, {"area", r.area}, {"trace_count", r.eic_size},
             {"rtmin", r.rtmin}, {"rtmax", r.rtmax}, {"width", r.width}, {"mzmin", r.mzmin}, {"mzmax", r.mzmax}, {"ppm", r.ppm}, {"fwhm_rt", r.fwhm_rt}, {"fwhm_mz", r.fwhm_mz},
             {"gaussian_A", r.gaussian_A}, {"gaussian_mu", r.gaussian_mu}, {"gaussian_sigma", r.gaussian_sigma}, {"gaussian_r2", r.gaussian_r2}, {"jaggedness", r.jaggedness},
@@ -557,11 +557,11 @@ namespace streamfind::mass_spec::nta::utils::detail
             }
             else
             {
-                // Components and annotation consume only ntaFeaturesTable.
+                // Components and annotation consume only featuresTable.
                 // Derive their analysis context from that bound artifact.
                 std::set<std::string> seen_names;
                 int feature_analysis_index = 0;
-                for (const auto &row : access.query("SELECT analysis FROM " + input_table(parameters, "ntaFeaturesTable") + " ORDER BY analysis"))
+                for (const auto &row : access.query("SELECT analysis FROM " + input_table(parameters, "featuresTable") + " ORDER BY analysis"))
                 {
                     const auto name = row.at("analysis").get<std::string>();
                     if (!seen_names.insert(name).second) continue;
@@ -599,7 +599,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 auto v = s(row, col);
                 return v == "true" || v == "TRUE" || v == "1";
             };
-            for (const auto &row : access.query("SELECT analysis, replicate, blank, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM " + input_table(parameters, "ntaFeaturesTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis, replicate, blank, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM " + input_table(parameters, "featuresTable") + " ORDER BY analysis"))
             {
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
@@ -692,15 +692,15 @@ namespace streamfind::mass_spec::nta::utils::detail
             return data;
         }
 
-        // Map the JSON `targets` array (suspects/internal standards) into SuspectQuery objects.
+        // Map the JSON `suspect_targets` array into SuspectQuery objects.
         std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(const Json &parameters)
         {
             std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> out;
-            const auto targets = parameters.value("targets", Json::array());
+            const auto targets = parameters.value("suspect_targets", Json::array());
             for (const auto &t : targets)
             {
                 ::streamfind::mass_spec::nta::suspect_screening::SuspectQuery q;
-                q.name = t.value("id", t.value("name", ""));
+                q.name = t.value("name", "");
                 if (t.contains("mass"))
                 {
                     q.has_mass = true;
@@ -876,7 +876,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             for (const auto &buffer : data.feature_buffers())
                 for (int fi = 0; fi < buffer.size(); ++fi)
                     rows.push_back(::streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(fi)));
-            access.emit_table_rows("ntaFeaturesTable", ::streamfind::mass_spec::nta::utils::feature_columns(),
+            access.emit_table_rows("featuresTable", ::streamfind::mass_spec::nta::utils::feature_columns(),
                                    ::streamfind::mass_spec::nta::utils::feature_types(), rows);
         }
 

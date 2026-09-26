@@ -17,7 +17,6 @@
     }
   },
   "result_fields": [
-    "domain_id",
     "workflow_revision",
     "status",
     "progress",

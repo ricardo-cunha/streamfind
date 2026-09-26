@@ -244,10 +244,16 @@ void PluginHostAccess::emit_table_rows(
     std::vector<std::vector<double>> reals(column_names.size());
     std::vector<std::vector<uint8_t>> booleans(column_names.size());
     std::vector<std::vector<streamfind_plugin_string_view>> views(column_names.size());
+    std::vector<std::vector<uint8_t>> validity(
+        column_names.size(), std::vector<uint8_t>((rows.size() + 7) / 8, 0));
     std::vector<streamfind_plugin_batch_column> columns(column_names.size());
     for (std::size_t column = 0; column < column_names.size(); ++column) {
-        for (const auto &row : rows) {
+        for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
+            const auto &row = rows[row_index];
             const auto &value = row.at(column_names[column]);
+            if (!value.is_null())
+                validity[column][row_index / 8] |=
+                    static_cast<uint8_t>(1u << (row_index % 8));
             if (column_types[column] == "integer") {
                 if (value.is_null()) integers[column].push_back(0);
                 else if (value.is_number()) integers[column].push_back(value.get<int64_t>());
@@ -260,14 +266,31 @@ void PluginHostAccess::emit_table_rows(
                 if (value.is_null()) booleans[column].push_back(0);
                 else if (value.is_boolean()) booleans[column].push_back(value.get<bool>() ? 1 : 0);
                 else booleans[column].push_back(value.get<std::string>() == "true" ? 1 : 0);
-            } else strings[column].push_back(value.is_null() ? std::string{} : value.get<std::string>());
+            } else if (value.is_null()) {
+                strings[column].push_back(std::string{});
+            } else if (value.is_string()) {
+                strings[column].push_back(value.get<std::string>());
+            } else {
+                // JSON semantic columns are carried as UTF-8 through the plugin ABI;
+                // dump structured values instead of calling get<string>(), which
+                // throws for arrays and objects and would prevent table emission.
+                strings[column].push_back(value.dump());
+            }
+            if ((column_types[column] == "array" || column_types[column] == "object") &&
+                !value.is_null()) {
+                const auto parsed = Json::parse(strings[column].back(), nullptr, false);
+                const bool expected_array = column_types[column] == "array";
+                if (parsed.is_discarded() ||
+                    (expected_array ? !parsed.is_array() : !parsed.is_object()))
+                    throw std::invalid_argument("invalid JSON value for " + column_names[column]);
+            }
         }
         auto &descriptor = columns[column];
         descriptor.name = column_names[column].data();
         descriptor.name_size = static_cast<uint32_t>(column_names[column].size());
         descriptor.flags = 0;
         descriptor.row_count = rows.size();
-        descriptor.validity_bitmap = nullptr;
+        descriptor.validity_bitmap = validity[column].data();
         if (column_types[column] == "integer") {
             descriptor.type = STREAMFIND_PLUGIN_COLUMN_INT64;
             descriptor.data = integers[column].data();

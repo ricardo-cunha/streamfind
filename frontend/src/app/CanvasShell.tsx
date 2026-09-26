@@ -44,7 +44,14 @@ type CanvasNode = {
   executionState?: 'idle' | 'running' | 'completed' | 'failed';
   executionMessage?: string;
 };
-type CanvasEdge = { id: string; source: string; sourcePort: string; target: string; targetPort: string };
+type CanvasEdge = {
+  id: string;
+  source: string;
+  sourcePort: string;
+  sourceArtifactId?: string;
+  target: string;
+  targetPort: string;
+};
 type Point = { x: number; y: number };
 type Interaction = {
   type: 'node' | 'pan';
@@ -79,7 +86,6 @@ function workflowFingerprint(workflow: WorkflowDefinition): string {
     canonicalWorkflowValue({
       schema_version: workflow.schema_version,
       workflow_id: workflow.workflow_id || 'workflow',
-      domain: workflow.domain,
       operations: workflow.operations,
       connections: workflow.connections,
     }),
@@ -87,7 +93,6 @@ function workflowFingerprint(workflow: WorkflowDefinition): string {
 }
 
 function canvasWorkflow(
-  project: ProjectSession,
   nodes: CanvasNode[],
   edges: CanvasEdge[],
   capabilities: ServiceCapabilities,
@@ -107,6 +112,7 @@ function canvasWorkflow(
   const connections: WorkflowConnectionDefinition[] = edges.map((edge) => ({
     source_operation: edge.source,
     source_port: edge.sourcePort,
+    ...(edge.sourceArtifactId ? { source_artifact_id: edge.sourceArtifactId } : {}),
     target_operation: edge.target,
     target_port: edge.targetPort,
   }));
@@ -115,7 +121,6 @@ function canvasWorkflow(
     workflow_id: 'workflow',
     name: 'Workflow',
     version: revision,
-    domain: project.domain,
     operations,
     connections,
   };
@@ -130,14 +135,13 @@ type NodeTemplate = {
   outputsToCanvas: boolean;
   capabilityId?: string;
   projectEntry?: boolean;
+  domain?: string;
+  module?: string;
 };
 
-function capabilityTemplates(capabilities: ServiceCapabilities, projectDomain: string): NodeTemplate[] {
+function capabilityTemplates(capabilities: ServiceCapabilities): NodeTemplate[] {
   const backend = capabilities.operations
-    .filter(
-      (capability) =>
-        (capability.domain === projectDomain || capability.domain === 'streamfind') && capability.kind === 'operation',
-    )
+    .filter((capability) => capability.kind === 'operation')
     .map((capability: BackendCapability) => ({
       id: capability.canonical_id,
       kind: 'operation' as const,
@@ -147,6 +151,8 @@ function capabilityTemplates(capabilities: ServiceCapabilities, projectDomain: s
       outputsToCanvas: capability.kind === 'operation',
       capabilityId: capability.canonical_id,
       projectEntry: capability.project_entry === true,
+      domain: capability.domain,
+      module: capability.module_id,
     }));
   return backend;
 }
@@ -202,7 +208,7 @@ function parameterOntologyDetails(parameter: CapabilityParameter): string[] {
 }
 
 function ontologyPortTerm(port: NodePort): string {
-  return port.table?.table_name || port.results?.[0]?.canonical_id || port.semanticContract || port.id;
+  return port.table?.table_name || port.semanticContract || port.id;
 }
 
 function tableRowsToWireValue(value: unknown): unknown {
@@ -310,8 +316,159 @@ function schemaPropertyOrder(schema: JsonSchema): string[] {
   ];
 }
 
+function validateInlineTableRows(parameter: CapabilityParameter, rows: Record<string, unknown>[]): string | null {
+  const properties = parameter.schema.properties || {};
+  const allowed = new Set(Object.keys(properties));
+  const required = new Set(parameter.schema.required || []);
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const unknown = Object.keys(row).find((name) => !allowed.has(name));
+    if (unknown) return `Row ${rowIndex + 1}: unknown column “${unknown}”.`;
+    for (const name of required) {
+      if (row[name] === undefined || row[name] === null || row[name] === '')
+        return `Row ${rowIndex + 1}: required column “${name}” is empty.`;
+    }
+    for (const [name, value] of Object.entries(row)) {
+      if (value === '' || value === null || value === undefined) continue;
+      const declared = properties[name]?.type;
+      const types = Array.isArray(declared) ? declared : [declared];
+      if (types.includes('number') && Number.isNaN(Number(value)))
+        return `Row ${rowIndex + 1}: “${name}” must be a number.`;
+      if (types.includes('integer') && (!Number.isInteger(Number(value)) || Number.isNaN(Number(value))))
+        return `Row ${rowIndex + 1}: “${name}” must be an integer.`;
+      if (types.includes('boolean') && value !== true && value !== false && value !== 'true' && value !== 'false')
+        return `Row ${rowIndex + 1}: “${name}” must be boolean.`;
+    }
+  }
+  return null;
+}
+
+function normalizeInlineTableRows(parameter: CapabilityParameter, rows: Record<string, unknown>[]) {
+  const properties = parameter.schema.properties || {};
+  return rows.map((row) =>
+    Object.fromEntries(
+      Object.entries(row).map(([name, value]) => {
+        const type = properties[name]?.type;
+        if (type === 'number' || type === 'integer') return [name, Number(value)];
+        if (type === 'boolean' && (value === 'true' || value === 'false')) return [name, value === 'true'];
+        return [name, value];
+      }),
+    ),
+  );
+}
+
+function parseCsvRows(text: string, columns: string[]): { rows?: Record<string, unknown>[]; error?: string } {
+  const records = text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const cells: string[] = [];
+      let cell = '';
+      let quoted = false;
+      for (let index = 0; index < line.length; index += 1) {
+        const character = line[index];
+        if (character === '"' && line[index + 1] === '"') {
+          cell += '"';
+          index += 1;
+        } else if (character === '"') quoted = !quoted;
+        else if (character === ',' && !quoted) {
+          cells.push(cell.trim());
+          cell = '';
+        } else cell += character;
+      }
+      cells.push(cell.trim());
+      return cells;
+    });
+  if (!records.length) return { error: 'CSV is empty.' };
+  const headers = records[0];
+  const unknown = headers.find((header) => !columns.includes(header));
+  if (unknown) return { error: `CSV contains unknown column “${unknown}”.` };
+  const missing = columns.find((column) => !headers.includes(column));
+  if (missing) return { error: `CSV is missing declared column “${missing}”.` };
+  return {
+    rows: records
+      .slice(1)
+      .map((cells) => Object.fromEntries(columns.map((column) => [column, cells[headers.indexOf(column)] ?? '']))),
+  };
+}
+
 function isJsonParameter(parameter: CapabilityParameter): boolean {
-  return parameter.schema.type === 'object' || (parameter.schema.type === 'array' && !isFileListParameter(parameter));
+  return parameter.schema.type === 'table' ||
+    parameter.schema.type === 'object' ||
+    (parameter.schema.type === 'array' && !isFileListParameter(parameter));
+}
+
+function validateJsonValue(value: unknown, schema: JsonSchema, path = 'value'): string | null {
+  const declared = Array.isArray(schema.type) ? schema.type : [schema.type];
+  if (!declared.length || declared.includes(undefined)) return null;
+  const matches = (type: string): string | null => {
+    if (type === 'table') {
+      if (!Array.isArray(value)) return `${path} must be an array of table rows.`;
+      for (let index = 0; index < value.length; index += 1) {
+        const row = value[index];
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return `${path}[${index}] must be an object.`;
+        const properties = schema.properties || {};
+        for (const required of schema.required || []) {
+          if (!(required in row)) return `${path}[${index}] is missing required column “${required}”.`;
+        }
+        for (const [name, item] of Object.entries(row)) {
+          if (properties[name]) {
+            const error = validateJsonValue(item, properties[name] as JsonSchema, `${path}[${index}].${name}`);
+            if (error) return error;
+          } else if (schema.additionalProperties === false) {
+            return `${path}[${index}] contains unknown column “${name}”.`;
+          }
+        }
+      }
+      return null;
+    }
+    if (type === 'array') {
+      if (!Array.isArray(value)) return `${path} must be an array.`;
+      if (!schema.items) return null;
+      for (let index = 0; index < value.length; index += 1) {
+        const error = validateJsonValue(value[index], schema.items, `${path}[${index}]`);
+        if (error) return error;
+      }
+      return null;
+    }
+    if (type === 'object') {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return `${path} must be an object.`;
+      const object = value as Record<string, unknown>;
+      for (const required of schema.required || []) {
+        if (!(required in object)) return `${path} is missing required property “${required}”.`;
+      }
+      for (const [name, item] of Object.entries(object)) {
+        if (schema.properties?.[name]) {
+          const error = validateJsonValue(item, schema.properties[name] as JsonSchema, `${path}.${name}`);
+          if (error) return error;
+        } else if (schema.additionalProperties === false) {
+          return `${path} contains unknown property “${name}”.`;
+        }
+      }
+      return null;
+    }
+    if (type === 'string' || type === 'path') return typeof value === 'string' ? null : `${path} must be a string.`;
+    if (type === 'boolean') return typeof value === 'boolean' ? null : `${path} must be boolean.`;
+    if (type === 'integer') return Number.isInteger(value) ? null : `${path} must be an integer.`;
+    if (type === 'number' || type === 'real' || type === 'float' || type === 'double')
+      return typeof value === 'number' && Number.isFinite(value) ? null : `${path} must be a finite number.`;
+    if (type === 'null') return value === null ? null : `${path} must be null.`;
+    return null;
+  };
+  for (const type of declared) {
+    const error = matches(type || 'value');
+    if (!error) return null;
+  }
+  return `Invalid ${schemaTypeLabel(schema)} at ${path}.`;
+}
+
+function scalarInputValue(parameter: CapabilityParameter, raw: string): unknown {
+  const type = Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type;
+  if (type === 'integer') return raw === '' ? '' : Number.parseInt(raw, 10);
+  if (type === 'number' || type === 'real' || type === 'float' || type === 'double')
+    return raw === '' ? '' : Number.parseFloat(raw);
+  if (type === 'boolean') return raw === 'true';
+  return raw;
 }
 
 type NodePort = {
@@ -320,7 +477,7 @@ type NodePort = {
   required?: boolean;
   description?: string;
   table?: CapabilityPort['table'];
-  results?: CapabilityPort['results'];
+
   semanticContract?: string;
   dataKind?: CapabilityPort['data_kind'];
   schema?: JsonSchema;
@@ -339,7 +496,7 @@ function portTypeKey(port: CapabilityPort | NodePort): string {
   if (port.schema?.type) {
     const schemaType = Array.isArray(port.schema.type) ? port.schema.type.join('|') : port.schema.type;
     if (schemaType === 'array' || schemaType === 'object') return 'structured_value';
-    if (schemaType === 'table') return 'tabular_value';
+    if (schemaType === 'table') return 'table';
     return schemaType;
   }
   return 'unknown';
@@ -347,8 +504,9 @@ function portTypeKey(port: CapabilityPort | NodePort): string {
 
 function parameterTypeKey(parameter: CapabilityParameter): string {
   const type = Array.isArray(parameter.schema.type) ? parameter.schema.type.join('|') : parameter.schema.type;
-  if (type === 'array' || type === 'object') return 'structured_value';
-  if (type === 'table') return 'tabular_value';
+  if (type === 'table') return 'table';
+  if (type === 'array') return schemaTypeLabel(parameter.schema);
+  if (type === 'object') return 'object';
   return type || 'unknown';
 }
 
@@ -378,11 +536,17 @@ function schemaShape(schema: JsonSchema | undefined): string {
 
 function typeIcon(typeKey: string): string {
   const type = typeKey.toLowerCase();
-  if (type.includes('duckdb_table')) return 'fa-solid fa-database';
-  if (type.includes('tabular_value')) return 'fa-solid fa-table';
+  if (type.includes('duckdb_table') || type === 'table') return 'fa-solid fa-table';
+  if (type.startsWith('array<')) {
+    if (type.includes('integer') || type.includes('number') || type.includes('real') || type.includes('double'))
+      return 'fa-solid fa-list-ol';
+    if (type.includes('boolean')) return 'fa-solid fa-list-check';
+    if (type.includes('string') || type.includes('varchar')) return 'fa-solid fa-list';
+    return 'fa-solid fa-layer-group';
+  }
   if (type.includes('json') || type.includes('object') || type.includes('array') || type.includes('structured_value'))
     return 'fa-solid fa-code';
-  if (type.includes('table') || type.includes('result')) return 'fa-solid fa-database';
+  if (type.includes('table') || type.includes('result')) return 'fa-solid fa-table';
   if (type.includes('path') || type.includes('file')) return 'fa-solid fa-file';
   if (type.includes('bool')) return 'fa-solid fa-toggle-on';
   if (type.includes('int') || type.includes('real') || type.includes('float') || type.includes('double'))
@@ -393,8 +557,14 @@ function typeIcon(typeKey: string): string {
 
 function typeClass(typeKey: string): string {
   const type = typeKey.toLowerCase();
-  if (type.includes('duckdb_table')) return 'sf-port-type-duckdb-table';
-  if (type.includes('tabular_value')) return 'sf-port-type-tabular-value';
+  if (type.includes('duckdb_table') || type === 'table') return 'sf-port-type-table';
+  if (type.startsWith('array<')) {
+    if (type.includes('integer') || type.includes('number') || type.includes('real') || type.includes('double'))
+      return 'sf-port-type-array-number';
+    if (type.includes('boolean')) return 'sf-port-type-array-boolean';
+    if (type.includes('string') || type.includes('varchar')) return 'sf-port-type-array-string';
+    return 'sf-port-type-array-structured';
+  }
   if (type.includes('json') || type.includes('object') || type.includes('array') || type.includes('structured_value'))
     return 'sf-port-type-json';
   if (type.includes('table') || type.includes('result')) return 'sf-port-type-table';
@@ -455,14 +625,13 @@ function nodePorts(capability: BackendCapability | undefined): { inputs: NodePor
   const canvas = capability?.canvas;
   const inputPorts = canvas?.input_ports || capability?.input_ports || capability?.inputs || [];
   const outputPorts = capability?.output_ports || capability?.outputs || [];
-  const outputResults = canvas?.node_kind === 'operation' ? canvas.output_results : [];
+
   const inputs = inputPorts.map((port: CapabilityPort) => ({
     id: port.id,
     label: port.label || port.id,
     required: port.required ?? port.optional !== true,
     description: port.schema?.description,
     table: port.table,
-    results: port.results,
     semanticContract: port.semantic_contract,
     dataKind: port.data_kind,
     schema: port.schema,
@@ -475,32 +644,12 @@ function nodePorts(capability: BackendCapability | undefined): { inputs: NodePor
       label: port.label || port.id,
       description: port.schema?.description,
       table: port.table,
-      results: port.results,
       semanticContract: port.semantic_contract,
       dataKind: port.data_kind,
       schema: port.schema,
       representations: port.representations,
       typeKey: portTypeKey(port),
     })),
-    ...outputResults
-      .filter(
-        (result) =>
-          !outputPorts.some(
-            (port: CapabilityPort) => port.id === result.canonical_id || port.semantic_contract === result.canonical_id,
-          ),
-      )
-      .map((result) => ({
-        id: result.canonical_id,
-        label: result.label,
-        description: result.definition,
-        table: result.table,
-        semanticContract: result.canonical_id,
-        dataKind: (result.schema?.type === 'array' || result.schema?.type === 'object'
-          ? 'structured_value'
-          : undefined) as CapabilityPort['data_kind'],
-        schema: result.schema,
-        typeKey: portTypeKey({ schema: result.schema } as CapabilityPort),
-      })),
   ];
   return { inputs, outputs };
 }
@@ -508,7 +657,7 @@ function nodePorts(capability: BackendCapability | undefined): { inputs: NodePor
 function portMatchesParameter(sourcePort: NodePort, parameter: CapabilityParameter): boolean {
   const parameterKind =
     parameter.schema.type === 'table'
-      ? 'tabular_value'
+      ? 'table'
       : parameter.schema.type === 'object' || parameter.schema.type === 'array'
         ? 'structured_value'
         : parameter.schema.type;
@@ -622,10 +771,19 @@ export default function CanvasShell({
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
+  const [worldSize, setWorldSize] = useState({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
   const viewportRef = useRef({ offset, scale });
   useEffect(() => {
     viewportRef.current = { offset, scale };
   }, [offset, scale]);
+  const canvasWorldSize = useMemo(() => {
+    const requiredWidth = Math.max(CANVAS_WORLD_WIDTH, ...nodes.map((node) => node.x + NODE_WIDTH + 800));
+    const requiredHeight = Math.max(CANVAS_WORLD_HEIGHT, ...nodes.map((node) => node.y + NODE_HEIGHT + 600));
+    return {
+      width: Math.max(worldSize.width, requiredWidth),
+      height: Math.max(worldSize.height, requiredHeight),
+    };
+  }, [nodes, worldSize]);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [connection, setConnection] = useState<ConnectionDraft | null>(null);
   const pendingConnectionRef = useRef<{
@@ -647,7 +805,10 @@ export default function CanvasShell({
     nodeId: string;
     parameter: CapabilityParameter;
     rows: Record<string, unknown>[];
+    returnToJsonEditor?: boolean;
+    error?: string | null;
   } | null>(null);
+  const [csvPreview, setCsvPreview] = useState<{ rows: Record<string, unknown>[]; error?: string } | null>(null);
   const [jsonEditorText, setJsonEditorText] = useState('');
   const [jsonEditorError, setJsonEditorError] = useState<string | null>(null);
   const [gridVisible, setGridVisible] = useState(false);
@@ -663,6 +824,8 @@ export default function CanvasShell({
   const lastStatusRef = useRef<{ message: string; timestamp: number } | null>(null);
   const recentEventRef = useRef<Map<string, number>>(new Map());
   const [paletteSearch, setPaletteSearch] = useState('');
+  const [paletteDomain, setPaletteDomain] = useState('');
+  const [paletteModule, setPaletteModule] = useState('');
   const [anchorCenters, setAnchorCenters] = useState<Record<string, Point>>({});
   const [expandedParameters, setExpandedParameters] = useState<Record<string, boolean>>({});
   const [status, setStatusState] = useState(
@@ -792,13 +955,10 @@ export default function CanvasShell({
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [artifactViewer, jsonEditor, pathWizard, picker, pickerCapabilityId, selectedNodeId, tableEditor]);
-  const nodeTemplates = useMemo(
-    () => capabilityTemplates(capabilities, project.domain),
-    [capabilities, project.domain],
-  );
+  const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
-    () => canvasWorkflow(project, nodes, edges, capabilities, workflowRevision),
-    [capabilities, edges, nodes, project, workflowRevision],
+    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision),
+    [capabilities, edges, nodes, workflowRevision],
   );
   const currentWorkflowFingerprint = useMemo(() => workflowFingerprint(currentWorkflow), [currentWorkflow]);
 
@@ -983,6 +1143,7 @@ export default function CanvasShell({
           id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
           source: connection.source_operation,
           sourcePort: connection.source_port,
+          sourceArtifactId: connection.source_artifact_id,
           target: connection.target_operation,
           targetPort: connection.target_port,
         }));
@@ -1117,12 +1278,7 @@ export default function CanvasShell({
     setWorkflowBusy(true);
     try {
       const parsed = JSON.parse(await file.text()) as Partial<WorkflowDefinition>;
-      if (
-        parsed.schema_version !== 1 ||
-        parsed.domain !== project.domain ||
-        !Array.isArray(parsed.operations) ||
-        !Array.isArray(parsed.connections)
-      ) {
+      if (parsed.schema_version !== 1 || !Array.isArray(parsed.operations) || !Array.isArray(parsed.connections)) {
         throw new Error('The selected file is not a compatible StreamFind workflow schema.');
       }
       const imported: WorkflowDefinition = {
@@ -1130,7 +1286,6 @@ export default function CanvasShell({
         workflow_id: parsed.workflow_id,
         name: parsed.name,
         version: workflowRevision,
-        domain: project.domain,
         operations: parsed.operations,
         connections: parsed.connections,
       };
@@ -1163,6 +1318,7 @@ export default function CanvasShell({
         id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
         source: connection.source_operation,
         sourcePort: connection.source_port,
+        sourceArtifactId: connection.source_artifact_id,
         target: connection.target_operation,
         targetPort: connection.target_port,
       }));
@@ -1587,19 +1743,44 @@ export default function CanvasShell({
       return false;
     });
   }, [capabilities.operations, nodeMap, nodeTemplates, picker]);
+  const paletteDomains = useMemo(
+    () =>
+      [
+        ...new Set(
+          availableTemplates.map((template) => template.domain).filter((domain): domain is string => Boolean(domain)),
+        ),
+      ].sort(),
+    [availableTemplates],
+  );
+  const paletteModules = useMemo(
+    () =>
+      [
+        ...new Set(
+          availableTemplates
+            .filter((template) => !paletteDomain || template.domain === paletteDomain)
+            .map((template) => template.module)
+            .filter((module): module is string => Boolean(module)),
+        ),
+      ].sort(),
+    [availableTemplates, paletteDomain],
+  );
   const filteredTemplates = useMemo(() => {
-    if (!paletteSearch.trim()) return availableTemplates;
+    const categorized = availableTemplates.filter(
+      (template) =>
+        (!paletteDomain || template.domain === paletteDomain) && (!paletteModule || template.module === paletteModule),
+    );
+    if (!paletteSearch.trim()) return categorized;
     let expression: RegExp;
     try {
       expression = new RegExp(paletteSearch, 'i');
     } catch {
       return [];
     }
-    return availableTemplates.filter((template) => {
+    return categorized.filter((template) => {
       const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
       return expression.test(JSON.stringify(capability || template));
     });
-  }, [availableTemplates, capabilities.operations, paletteSearch]);
+  }, [availableTemplates, capabilities.operations, paletteDomain, paletteModule, paletteSearch]);
   const arrangeNodes = () => {
     if (!nodes.length) return;
     const indegree = new Map(nodes.map((node) => [node.id, 0]));
@@ -1628,18 +1809,27 @@ export default function CanvasShell({
     );
     const arranged = nodes.map((node) => ({ ...node }));
     const byId = new Map(arranged.map((node) => [node.id, node]));
-    Array.from(groups.keys())
-      .sort((a, b) => a - b)
-      .forEach((stage) => {
+    const stages = Array.from(groups.keys()).sort((a, b) => a - b);
+    const maxStage = stages[stages.length - 1] || 0;
+    const largestColumn = Math.max(...stages.map((stage) => groups.get(stage)?.length || 0), 1);
+    const layoutWidth = Math.max(CANVAS_WORLD_WIDTH, (maxStage + 1) * 360 + NODE_WIDTH + 800);
+    const layoutHeight = Math.max(CANVAS_WORLD_HEIGHT, largestColumn * 190 + 600);
+    const centerX = layoutWidth / 2;
+    const centerY = layoutHeight / 2;
+    stages.forEach((stage) => {
         const column = groups.get(stage) || [];
         column.sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
         column.forEach((node, row) => {
           const target = byId.get(node.id);
           if (!target) return;
-          target.x = 2600 + stage * 360;
-          target.y = 2000 + (row - (column.length - 1) / 2) * 190;
+          target.x = centerX + (stage - maxStage / 2) * 360 - NODE_WIDTH / 2;
+          target.y = centerY + (row - (column.length - 1) / 2) * 190 - NODE_HEIGHT / 2;
         });
       });
+    setWorldSize((current) => ({
+      width: Math.max(current.width, layoutWidth),
+      height: Math.max(current.height, layoutHeight),
+    }));
     setNodes(arranged);
     setScale(1);
     const minX = Math.min(...arranged.map((node) => node.x));
@@ -1671,7 +1861,11 @@ export default function CanvasShell({
   const openJsonEditor = (node: CanvasNode, parameter: CapabilityParameter) => {
     setJsonEditor({ nodeId: node.id, parameter });
     setJsonEditorText(
-      JSON.stringify(node.parameters?.[parameter.name] ?? (parameter.schema.type === 'array' ? [] : {}), null, 2),
+      JSON.stringify(
+        node.parameters?.[parameter.name] ?? (parameter.schema.type === 'array' || parameter.schema.type === 'table' ? [] : {}),
+        null,
+        2,
+      ),
     );
     setJsonEditorError(null);
   };
@@ -1686,12 +1880,36 @@ export default function CanvasShell({
   const saveJsonEditor = () => {
     if (!jsonEditor) return;
     try {
-      updateNodeParameter(jsonEditor.nodeId, jsonEditor.parameter.name, JSON.parse(jsonEditorText));
+      const parsed = JSON.parse(jsonEditorText);
+      const validationError = validateJsonValue(parsed, jsonEditor.parameter.schema);
+      if (validationError) {
+        setJsonEditorError(validationError);
+        return;
+      }
+      updateNodeParameter(jsonEditor.nodeId, jsonEditor.parameter.name, parsed);
       setJsonEditor(null);
       setJsonEditorError(null);
     } catch (error) {
       setJsonEditorError(error instanceof Error ? error.message : 'Invalid JSON.');
     }
+  };
+  const importJsonCsv = async (file: File) => {
+    if (!jsonEditor) return;
+    const schema = jsonEditor.parameter.schema;
+    const itemSchema = schema.items;
+    const rowSchema = schema.properties ? schema : itemSchema;
+    const columns = rowSchema?.properties ? schemaPropertyOrder(rowSchema) : [];
+    if (!columns.length) {
+      setJsonEditorError('CSV import requires an array of structured rows with declared columns.');
+      return;
+    }
+    const parsed = parseCsvRows(await file.text(), columns);
+    if (parsed.error || !parsed.rows) {
+      setJsonEditorError(parsed.error || 'CSV could not be parsed.');
+      return;
+    }
+    setJsonEditorText(JSON.stringify(parsed.rows, null, 2));
+    setJsonEditorError(null);
   };
   const addSelectedPaths = async (node: CanvasNode, parameter: CapabilityParameter, folders: boolean) => {
     if (!client) return;
@@ -1717,18 +1935,26 @@ export default function CanvasShell({
       setStatus(error instanceof Error ? error.message : 'Path selection failed.');
     }
   };
-  const openTableEditor = (node: CanvasNode, parameter: CapabilityParameter) => {
-    const value = node.parameters?.[parameter.name];
-    const rows = Array.isArray(value)
-      ? value.filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
-      : [];
-    setTableEditor({ nodeId: node.id, parameter, rows });
+  const openTableEditorFromJsonEditor = () => {
+    if (!jsonEditor) return;
+    try {
+      const parsed = JSON.parse(jsonEditorText);
+      if (!Array.isArray(parsed)) throw new Error('Table JSON must be an array of rows.');
+      const rows = parsed.filter(
+        (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
+      );
+      if (rows.length !== parsed.length) throw new Error('Every table row must be a JSON object.');
+      setTableEditor({ nodeId: jsonEditor.nodeId, parameter: jsonEditor.parameter, rows, returnToJsonEditor: true, error: null });
+      setJsonEditor(null);
+    } catch (error) {
+      setJsonEditorError(error instanceof Error ? error.message : 'Invalid table JSON.');
+    }
   };
   const updateTableCell = (rowIndex: number, columnName: string, value: string) => {
     setTableEditor((current) => {
       if (!current) return current;
       const rows = current.rows.map((row, index) => (index === rowIndex ? { ...row, [columnName]: value } : row));
-      return { ...current, rows };
+      return { ...current, rows, error: null };
     });
   };
   const chooseTableColumnPaths = async (columnName: string, schema: JsonSchema, folders = false) => {
@@ -1757,8 +1983,31 @@ export default function CanvasShell({
   };
   const saveTableEditor = () => {
     if (!tableEditor) return;
-    updateNodeParameter(tableEditor.nodeId, tableEditor.parameter.name, tableEditor.rows);
+    const error = validateInlineTableRows(tableEditor.parameter, tableEditor.rows);
+    if (error) {
+      setTableEditor((current) => (current ? { ...current, error } : current));
+      return;
+    }
+    const normalized = normalizeInlineTableRows(tableEditor.parameter, tableEditor.rows);
+    if (tableEditor.returnToJsonEditor) {
+      setJsonEditor({ nodeId: tableEditor.nodeId, parameter: tableEditor.parameter });
+      setJsonEditorText(JSON.stringify(normalized, null, 2));
+      setJsonEditorError(null);
+      setTableEditor(null);
+      return;
+    }
+    updateNodeParameter(tableEditor.nodeId, tableEditor.parameter.name, normalized);
     setTableEditor(null);
+  };
+  const importTableCsv = async (file: File) => {
+    if (!tableEditor) return;
+    const parsed = parseCsvRows(await file.text(), schemaPropertyOrder(tableEditor.parameter.schema));
+    if (parsed.error || !parsed.rows) {
+      setCsvPreview({ rows: [], error: parsed.error || 'CSV could not be parsed.' });
+      return;
+    }
+    const validation = validateInlineTableRows(tableEditor.parameter, parsed.rows);
+    setCsvPreview({ rows: parsed.rows, error: validation || undefined });
   };
   const runEntryOperation = async (node: CanvasNode, capability: BackendCapability) => {
     if (!client || !node.capabilityId) return;
@@ -2034,8 +2283,20 @@ export default function CanvasShell({
           ))}
         </div>
       </div>
-      <div className="sf-canvas-world" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}>
-        <svg className="sf-canvas-edges" width={CANVAS_WORLD_WIDTH} height={CANVAS_WORLD_HEIGHT} aria-hidden="true">
+      <div
+        className="sf-canvas-world"
+        style={{
+          width: canvasWorldSize.width,
+          height: canvasWorldSize.height,
+          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+        }}
+      >
+        <svg
+          className="sf-canvas-edges"
+          width={canvasWorldSize.width}
+          height={canvasWorldSize.height}
+          aria-hidden="true"
+        >
           {edges.map((edge) => {
             const source = nodeMap.get(edge.source);
             const target = nodeMap.get(edge.target);
@@ -2076,6 +2337,7 @@ export default function CanvasShell({
           const capability = node.capabilityId
             ? capabilities.operations.find((item) => item.canonical_id === node.capabilityId)
             : undefined;
+          const domainClass = (capability?.domain || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const outputArtifact = (port: NodePort) =>
             artifacts
               .filter(
@@ -2088,7 +2350,7 @@ export default function CanvasShell({
           return (
             <div
               key={node.id}
-              className={`sf-canvas-node ${node.kind} ${node.executionState === 'running' ? 'running' : ''}`}
+              className={`sf-canvas-node ${node.kind} sf-domain-${domainClass} ${node.executionState === 'running' ? 'running' : ''}`}
               style={{ left: node.x, top: node.y }}
               onMouseDown={(event) => beginNodeDrag(event, node)}
               onMouseUp={() => {
@@ -2152,7 +2414,19 @@ export default function CanvasShell({
                     <i className="fa-solid fa-trash" />
                   </button>
                 </div>
-                <strong>{node.title}</strong>
+                <button
+                  type="button"
+                  className="sf-node-ontology-link sf-node-title-link"
+                  aria-label={`Open ontology entry for ${node.title}`}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (capability) onOpenOntologyWiki?.(capability.canonical_id);
+                  }}
+                >
+                  {node.title}
+                </button>
+                {capability?.module_id ? <span>{capability.module_id}</span> : null}
               </div>
               {nodePorts(capability).inputs.length ? (
                 <section className="sf-node-section sf-node-inputs">
@@ -2169,10 +2443,18 @@ export default function CanvasShell({
                       >
                         <i className={typeIcon(port.typeKey)} aria-hidden="true" />
                       </button>
-                      <span>
+                      <button
+                        type="button"
+                        className="sf-node-ontology-link"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenOntologyWiki?.(ontologyPortTerm(port));
+                        }}
+                      >
                         {port.label}
                         {port.required ? ' *' : ''}
-                      </span>
+                      </button>
                     </div>
                   ))}
                 </section>
@@ -2186,7 +2468,17 @@ export default function CanvasShell({
                       key={port.id}
                       title={port.description}
                     >
-                      <span>{port.label}</span>
+                      <button
+                        type="button"
+                        className="sf-node-ontology-link"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenOntologyWiki?.(ontologyPortTerm(port));
+                        }}
+                      >
+                        {port.label}
+                      </button>
                       <button
                         type="button"
                         className={`sf-node-port output ${typeClass(port.typeKey)} ${outputArtifact(port) ? 'available' : ''}`}
@@ -2279,15 +2571,25 @@ export default function CanvasShell({
                                   <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
                                 </button>
                                 <div className="sf-canvas-parameter-heading">
-                                  <strong>{parameter.label || parameter.name}</strong>
-                                </div>
-                                <div className="sf-canvas-parameter-actions">
                                   <button
                                     type="button"
-                                    className="sf-button secondary sf-table-editor-trigger"
-                                    onClick={() => openTableEditor(node, parameter)}
+                                    className="sf-node-ontology-link"
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onOpenOntologyWiki?.(parameter.name);
+                                    }}
                                   >
-                                    <i className="fa-solid fa-table" /> Edit table
+                                    {parameter.label || parameter.name}
+                                  </button>
+                                </div>
+                                <div className="sf-json-parameter-actions">
+                                  <button
+                                    type="button"
+                                    className="sf-button secondary"
+                                    onClick={() => openJsonEditor(node, parameter)}
+                                  >
+                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
                                   </button>
                                 </div>
                               </div>
@@ -2306,12 +2608,22 @@ export default function CanvasShell({
                                   onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
                                 >
                                   <i
-                                    className={typeIcon(String(parameter.schema.type || 'value'))}
+                                    className={typeIcon(parameterTypeKey(parameter))}
                                     aria-hidden="true"
                                   />
                                 </button>
                                 <div className="sf-canvas-parameter-heading">
-                                  <strong>{parameter.label || parameter.name}</strong>
+                                  <button
+                                    type="button"
+                                    className="sf-node-ontology-link"
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onOpenOntologyWiki?.(parameter.name);
+                                    }}
+                                  >
+                                    {parameter.label || parameter.name}
+                                  </button>
                                   <span>
                                     {parameter.extensions?.length ? `.${parameter.extensions.join(', .')}` : ''}
                                     {parameter.directory_extensions?.length
@@ -2320,6 +2632,13 @@ export default function CanvasShell({
                                   </span>
                                 </div>
                                 <div className="sf-canvas-parameter-actions">
+                                  <button
+                                    type="button"
+                                    className="sf-button secondary"
+                                    onClick={() => openJsonEditor(node, parameter)}
+                                  >
+                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                  </button>
                                   <button
                                     type="button"
                                     className="sf-button secondary"
@@ -2426,7 +2745,17 @@ export default function CanvasShell({
                                 <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
                               </button>
                               <div className="sf-canvas-parameter-heading">
-                                <strong>{parameter.label || parameter.name}</strong>
+                                <button
+                                  type="button"
+                                  className="sf-node-ontology-link"
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onOpenOntologyWiki?.(parameter.name);
+                                  }}
+                                >
+                                  {parameter.label || parameter.name}
+                                </button>
                               </div>
                               {isJsonParameter(parameter) ? (
                                 <div className="sf-json-parameter-actions">
@@ -2435,13 +2764,22 @@ export default function CanvasShell({
                                     className="sf-button secondary"
                                     onClick={() => openJsonEditor(node, parameter)}
                                   >
-                                    <i className="fa-solid fa-code" /> Edit JSON
+                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
                                   </button>
                                 </div>
                               ) : (
                                 <input
+                                  type={
+                                    ['integer', 'number', 'real', 'float', 'double'].includes(
+                                      String(Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type),
+                                    )
+                                      ? 'number'
+                                      : 'text'
+                                  }
                                   value={String(value ?? parameter.default ?? parameter.schema.default ?? '')}
-                                  onChange={(event) => updateNodeParameter(node.id, parameter.name, event.target.value)}
+                                  onChange={(event) =>
+                                    updateNodeParameter(node.id, parameter.name, scalarInputValue(parameter, event.target.value))
+                                  }
                                 />
                               )}
                             </div>
@@ -2464,6 +2802,7 @@ export default function CanvasShell({
             <header>
               <div>
                 <h2>{tableEditor.parameter.label || tableEditor.parameter.name}</h2>
+                <small>Type: {schemaTypeLabel(tableEditor.parameter.schema)}</small>
               </div>
               <button
                 type="button"
@@ -2482,7 +2821,10 @@ export default function CanvasShell({
                       const schema = tableEditor.parameter.schema.properties?.[columnName] || {};
                       return (
                         <th key={columnName}>
-                          <span>{schema.title || columnName}</span>
+                          <span>
+                            {columnName}
+                            {(tableEditor.parameter.schema.required || []).includes(columnName) ? ' *' : ''}
+                          </span>
                           <small>{schema.type || 'value'}</small>
                           {schema.type === 'path' ? (
                             <div className="sf-table-editor-path-actions">
@@ -2544,7 +2886,44 @@ export default function CanvasShell({
               </table>
               {!tableEditor.rows.length ? <p className="sf-table-editor-empty">No rows added.</p> : null}
             </div>
+            {tableEditor.error ? <div className="sf-json-editor-error">{tableEditor.error}</div> : null}
+            {csvPreview ? (
+              <div className="sf-table-csv-preview">
+                <strong>CSV preview</strong>
+                <span>{csvPreview.error || `${csvPreview.rows.length} rows ready to import.`}</span>
+                {!csvPreview.error ? (
+                  <button
+                    type="button"
+                    className="sf-button secondary"
+                    onClick={() => {
+                      setTableEditor((current) =>
+                        current ? { ...current, rows: [...current.rows, ...csvPreview.rows], error: null } : current,
+                      );
+                      setCsvPreview(null);
+                    }}
+                  >
+                    Accept preview
+                  </button>
+                ) : null}
+                <button type="button" className="sf-button secondary" onClick={() => setCsvPreview(null)}>
+                  Dismiss
+                </button>
+              </div>
+            ) : null}
             <footer>
+              <label className="sf-button secondary">
+                Import CSV
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void importTableCsv(file);
+                    event.currentTarget.value = '';
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 className="sf-button secondary"
@@ -2580,6 +2959,7 @@ export default function CanvasShell({
             <header>
               <div>
                 <h2>{jsonEditor.parameter.label || jsonEditor.parameter.name}</h2>
+                <small>Type: {schemaTypeLabel(jsonEditor.parameter.schema)}</small>
               </div>
               <button
                 type="button"
@@ -2609,8 +2989,28 @@ export default function CanvasShell({
                   <i className="fa-solid fa-folder-tree" /> Add files/folders
                 </button>
               ) : null}
+              {jsonEditor.parameter.schema.type === 'table' ? (
+                <label className="sf-button secondary">
+                  <i className="fa-solid fa-file-csv" /> Load CSV
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    hidden
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void importJsonCsv(file);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                </label>
+              ) : null}
+              {jsonEditor.parameter.schema.type === 'table' ? (
+                <button type="button" className="sf-button secondary" onClick={openTableEditorFromJsonEditor}>
+                  <i className="fa-solid fa-table" /> Edit as table
+                </button>
+              ) : null}
               <button type="button" className="sf-button" onClick={saveJsonEditor}>
-                Save JSON
+                Save
               </button>
             </footer>
           </section>
@@ -2693,7 +3093,6 @@ export default function CanvasShell({
           <div className="sf-operation-deck-heading">
             <div>
               <strong>{surface === 'explorer' ? 'Choose an operation' : 'Choose the next operation'}</strong>
-              <small>Browse the available operations, inspect their ontology, or add one to the chain.</small>
             </div>
             <button
               type="button"
@@ -2716,16 +3115,58 @@ export default function CanvasShell({
               onChange={(event) => setPaletteSearch(event.target.value)}
             />
           </div>
+          <div className="sf-operation-deck-filters" aria-label="Operation category filters">
+            <label>
+              Domain
+              <select
+                aria-label="Filter operations by domain"
+                value={paletteDomain}
+                onChange={(event) => {
+                  setPaletteDomain(event.target.value);
+                  setPaletteModule('');
+                }}
+              >
+                <option value="">All domains</option>
+                {paletteDomains.map((domain) => (
+                  <option value={domain} key={domain}>
+                    {domain}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Module
+              <select
+                aria-label="Filter operations by module"
+                value={paletteModule}
+                onChange={(event) => setPaletteModule(event.target.value)}
+              >
+                <option value="">All modules</option>
+                {paletteModules.map((module) => (
+                  <option value={module} key={module}>
+                    {module}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="sf-operation-deck-list">
             {filteredTemplates.map((template) => {
               const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
               const ports = nodePorts(capability);
               return (
-                <article className="sf-operation-deck-card" key={template.id}>
+                <article
+                  className={`sf-operation-deck-card sf-domain-${(template.domain || 'unknown')
+                    .replace(/[^a-z0-9_-]/gi, '-')
+                    .toLowerCase()}`}
+                  key={template.id}
+                  data-domain={template.domain || 'unknown'}
+                >
                   <div className="sf-operation-deck-card-content">
                     <strong>{template.title}</strong>
                     <small>
-                      {ports.inputs.length} input{ports.inputs.length === 1 ? '' : 's'} · {ports.outputs.length} output
+                      {template.module || 'core'} · {ports.inputs.length} input
+                      {ports.inputs.length === 1 ? '' : 's'} · {ports.outputs.length} output
                       {ports.outputs.length === 1 ? '' : 's'}
                     </small>
                   </div>
@@ -2970,6 +3411,42 @@ export default function CanvasShell({
           </section>
         </div>
       ) : null}
+      {selectedEdgeId
+        ? (() => {
+            const edge = edges.find((item) => item.id === selectedEdgeId);
+            if (!edge) return null;
+            const candidates = artifacts.filter(
+              (artifact) =>
+                artifact.status === 'published' &&
+                artifact.producer_instance === edge.source &&
+                artifactContractMatches(artifact.contract_id, edge.sourcePort),
+            );
+            return (
+              <aside className="sf-edge-artifact-picker" aria-label="Artifact binding">
+                <strong>Input artifact</strong>
+                <select
+                  value={edge.sourceArtifactId ?? ''}
+                  onChange={(event) => {
+                    const sourceArtifactId = event.target.value || undefined;
+                    setEdges((current) =>
+                      current.map((item) => (item.id === edge.id ? { ...item, sourceArtifactId } : item)),
+                    );
+                  }}
+                >
+                  <option value="">Resolve latest published output</option>
+                  {candidates.map((artifact) => (
+                    <option key={artifact.artifact_id} value={artifact.artifact_id}>
+                      {artifact.artifact_id} · revision {artifact.workflow_revision}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  {candidates.length} published artifact{candidates.length === 1 ? '' : 's'} match this output.
+                </small>
+              </aside>
+            );
+          })()
+        : null}
     </div>
   );
 }

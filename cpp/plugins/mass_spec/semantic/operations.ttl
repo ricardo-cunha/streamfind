@@ -28,20 +28,20 @@ sfms:removeAnalyses
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:analysesTable, sfcore:operationSuccessSignal .
 
-sfms:getAnalysesInfo
+sfms:getAnalyses
     a sf:Operation ;
-    sf:operationId "mass_spec.get_analyses_info" ;
+    sf:operationId "mass_spec.get_analyses" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
-    skos:prefLabel "Get mass spectrometry analysis information" ;
-    skos:definition "Return persisted mass-spectrometry analysis metadata, including analysis names, source paths, replicate/blank labels, and available counts." ;
+    skos:prefLabel "Get mass spectrometry analyses" ;
+    skos:definition "Return a filtered subset of the persisted mass-spectrometry analyses table." ;
     sf:category "mass-spec-inspection" ;
-    sf:guidance "Use after read_mass_spec_files to confirm the exact analysis names accepted by later analysis_names parameters." ;
+    sf:guidance "Use after read_mass_spec_files to select analysis rows and confirm the exact analysis names accepted by later analysis_names parameters." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable ;
-    sf:hasOutputPort sfms:getAnalysesInfoResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:analysesTable, sfcore:operationSuccessSignal .
 
 sfms:getAnalysisNames
     a sf:Operation ;
@@ -142,7 +142,7 @@ sfms:getSpectraHeaders
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:spectraHeadersResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:spectraHeadersTable, sfcore:operationSuccessSignal .
 
 sfms:getChromatogramsHeaders
     a sf:Operation ;
@@ -155,7 +155,7 @@ sfms:getChromatogramsHeaders
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
-    sf:hasOutputPort sfms:chromatogramsHeadersResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:chromatogramsHeadersTable, sfcore:operationSuccessSignal .
 
 sfms:getSpectraTic
     a sf:Operation ;
@@ -171,7 +171,7 @@ sfms:getSpectraTic
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:ticResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:ticTable, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectra
     a sf:Operation ;
@@ -190,7 +190,7 @@ sfms:getRawSpectra
         sfms:rtToleranceParameter,
         sfms:chargeParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:spectraResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:spectraTable, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectraEic
     a sf:Operation ;
@@ -209,7 +209,7 @@ sfms:getRawSpectraEic
         sfms:rtToleranceParameter,
         sfms:chargeParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:eicResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:eicTable, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectraMs1
     a sf:Operation ;
@@ -229,7 +229,7 @@ sfms:getRawSpectraMs1
         sfms:presenceParameter,
         sfms:minIntensityMs1Parameter ;
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:ms1Result, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:ms1Table, sfcore:operationSuccessSignal .
 
 sfms:getRawSpectraMs2
     a sf:Operation ;
@@ -250,7 +250,7 @@ sfms:getRawSpectraMs2
         sfms:presenceParameter,
         sfms:minIntensityMs2Parameter ;
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:ms2Result, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:ms2Table, sfcore:operationSuccessSignal .
 
 sfms:getChromatograms
     a sf:Operation ;
@@ -258,12 +258,12 @@ sfms:getChromatograms
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Get chromatograms" ;
-    skos:definition "Read persisted chromatogram arrays for selected analyses. Reconstructs the complete signal by joining point data from MASS_SPEC_CHROMATOGRAMS with channel metadata from MASS_SPEC_CHROMATOGRAMS_HEADERS." ;
+    skos:definition "Read persisted chromatogram point rows for selected analyses and return the matching subset of the chromatograms table." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
-    sf:hasOutputPort sfms:chromatogramsResult, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:chromatogramsTable ;
+    sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
 sfms:getRawChromatograms
     a sf:Operation ;
@@ -276,7 +276,7 @@ sfms:getRawChromatograms
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
-    sf:hasOutputPort sfms:chromatogramsResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
 sfms:getChromatogramPeaks
     a sf:Operation ;
@@ -289,7 +289,7 @@ sfms:getChromatogramPeaks
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable, sfms:chromatogramPeaksTable ;
-    sf:hasOutputPort sfms:chromatogramPeaksResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
 
 sfms:getFeatures
     a sf:Operation ;
@@ -305,8 +305,8 @@ sfms:getFeatures
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:filteredParameter ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:featuresResult, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 sfms:getSuspects
     a sf:Operation ;
@@ -322,7 +322,7 @@ sfms:getSuspects
         sfms:ppmParameter,
         sfms:rtToleranceParameter ;
     sf:hasInputPort sfms:suspectsTable ;
-    sf:hasOutputPort sfms:suspectsResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 sfms:getInternalStandards
     a sf:Operation ;
@@ -338,7 +338,7 @@ sfms:getInternalStandards
         sfms:ppmParameter,
         sfms:rtToleranceParameter ;
     sf:hasInputPort sfms:internalStandardsTable ;
-    sf:hasOutputPort sfms:internalStandardsResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 sfms:getTransformationProducts
     a sf:Operation ;
@@ -352,7 +352,7 @@ sfms:getTransformationProducts
         sfms:targetsParameter,
         sfms:ppmParameter ;
     sf:hasInputPort sfms:transformationProductsTable ;
-    sf:hasOutputPort sfms:transformationProductsResult, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:transformationProductsTable, sfcore:operationSuccessSignal .
 
 sfms:loadChromatograms
     a sf:Operation ;
@@ -451,13 +451,12 @@ sfms:findFeatures
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find mass spectrometry features" ;
-    skos:definition "Detect chromatographic MS1 features from the selected analyses. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
+    skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
     sf:category "nta-feature-detection" ;
-    sf:guidance "Connect analysesTable. Connect spectraHeadersTable only when persisted headers are available; otherwise headers are read directly from the source files. rt_windows_min and rt_windows_max must be arrays of equal length. An empty analysis_names array processes every analysis." ;
+    sf:guidance "Connect analysesTable. Connect spectraHeadersTable only when persisted headers are available; otherwise headers are read directly from the source files. The operation processes every analysis in analysesTable. rt_windows_min and rt_windows_max must be arrays of equal length." ;
     sf:hasParameter
         sfms:rtWindowsMinParameter,
         sfms:rtWindowsMaxParameter,
-        sfcore:analysisNamesParameter,
         sfms:ppmThresholdParameter,
         sfms:noiseThresholdParameter,
         sfms:minSnrParameter,
@@ -468,7 +467,7 @@ sfms:findFeatures
     sf:cacheable true ;
     sf:hasInputPort sfms:analysesTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:loadFeaturesMs1
@@ -489,8 +488,8 @@ sfms:loadFeaturesMs1
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:loadFeaturesMs2
@@ -510,8 +509,8 @@ sfms:loadFeaturesMs2
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:subtractBlank
@@ -527,8 +526,8 @@ sfms:subtractBlank
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:filterFeatures
@@ -572,8 +571,8 @@ sfms:filterFeatures
         sfms:removeAdductsParameter,
         sfms:removeLossesParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:filterFeaturesMs2
@@ -593,8 +592,8 @@ sfms:filterFeaturesMs2
         sfms:blankPresenceThresholdParameter,
         sfms:globalPresenceThresholdParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:groupFeatures
@@ -612,8 +611,8 @@ sfms:groupFeatures
         sfms:minSamplesParameter,
         sfms:binSizeParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:fillFeatures
@@ -637,8 +636,8 @@ sfms:fillFeatures
         sfms:minSignalToNoiseRatioParameter,
         sfms:minGaussianFitParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:analysesTable, sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:createComponents
@@ -653,8 +652,8 @@ sfms:createComponents
         sfms:rtWindowParameter,
         sfms:minCorrelationParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:annotateComponents
@@ -672,8 +671,8 @@ sfms:annotateComponents
         sfms:ppmParameter,
         sfms:isotopeElementsParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:suspectScreening
@@ -687,7 +686,7 @@ sfms:suspectScreening
     sf:guidance "Run after load_features_ms2 when MS2 assignment is required. Each target should provide a name, mass or formula, optional retention time, and optional MS2 reference peaks. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; an empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
-        sfms:targetsParameter,
+        sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
@@ -696,8 +695,8 @@ sfms:suspectScreening
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 
 sfms:findInternalStandards
@@ -709,7 +708,7 @@ sfms:findInternalStandards
     skos:definition "Match detected features against internal-standard targets by mass, RT, and MS2 similarity." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
-        sfms:targetsParameter,
+        sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
@@ -718,8 +717,8 @@ sfms:findInternalStandards
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfms:internalStandardsTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 
 sfms:correctMatrixSuppression
@@ -734,8 +733,8 @@ sfms:correctMatrixSuppression
         sfms:mpRtWindowParameter,
         sfms:refBlankReplicateParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
 sfms:filterSuspects
@@ -755,7 +754,7 @@ sfms:filterSuspects
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:hasInputPort sfms:featuresTable, sfms:suspectsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 
@@ -776,7 +775,7 @@ sfms:filterInternalStandards
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 
@@ -793,7 +792,7 @@ sfms:assignTransformationProducts
         sfms:chromatographicPhaseParameter,
         sfms:mzrMs2Parameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable, sfms:suspectsTable ;
+    sf:hasInputPort sfms:featuresTable, sfms:suspectsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfms:transformationProductsTable, sfcore:operationSuccessSignal .
 
 
@@ -824,5 +823,5 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:cacheable true ;
-    sf:hasInputPort sfms:ntaFeaturesTable ;
-    sf:hasOutputPort sfms:ntaFeaturesTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .

@@ -216,6 +216,7 @@ Json literal_json(const std::string &raw) {
 }
 Json extension_values(const Graph &graph, const std::string &resource, const std::string &predicate);
 Json extensions(const Graph &graph, const std::string &resource);
+Json result_schema(const Graph &graph, const std::string &resource);
 Json parameter_schema(const Graph &graph, const std::string &resource) {
     Json result = {{"type", value(graph, resource, std::string(sf) + "type")}};
     const auto definition = value(graph, resource, std::string(skos) + "definition"); if (!definition.empty()) result["description"] = definition;
@@ -231,6 +232,15 @@ Json parameter_schema(const Graph &graph, const std::string &resource) {
     }
     const auto example = value(graph, resource, std::string(sf) + "example"); if (!example.empty()) result["examples"] = Json::array({literal_json(example)});
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = parameter_schema(graph, item);
+    const auto table_contract = value(graph, resource, std::string(sf) + "tableContract");
+    if (!table_contract.empty()) {
+        const auto contract_schema = result_schema(graph, table_contract);
+        if (contract_schema.contains("properties")) result["properties"] = contract_schema["properties"];
+        if (contract_schema.contains("x-streamfind-property-order"))
+            result["x-streamfind-property-order"] = contract_schema["x-streamfind-property-order"];
+        if (contract_schema.contains("required")) result["required"] = contract_schema["required"];
+        result["additionalProperties"] = false;
+    }
     Json properties = Json::object(); Json required = Json::array(); Json property_order = Json::array();
     for (const auto &property : values(graph, resource, std::string(sf) + "hasProperty")) {
         const auto name = value(graph, property, std::string(sf) + "propertyName").empty() ? value(graph, property, std::string(sf) + "columnName") : value(graph, property, std::string(sf) + "propertyName");
@@ -263,6 +273,12 @@ Json mcp_schema(Json schema_value) {
 }
 Json column_schema(const Graph &graph, const std::string &resource) {
     Json result = {{"type", value(graph, resource, std::string(sf) + "type")}};
+    const auto label = value(graph, resource, std::string(skos) + "prefLabel");
+    const auto definition = value(graph, resource, std::string(skos) + "definition");
+    const auto storage_type = value(graph, resource, std::string(sf) + "storageType");
+    if (!label.empty()) result["title"] = label;
+    if (!definition.empty()) result["description"] = definition;
+    if (!storage_type.empty()) result["duckdb_type"] = storage_type;
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = column_schema(graph, item);
     Json properties = Json::object(); for (const auto &property : values(graph, resource, std::string(sf) + "hasProperty")) {
         const auto name = value(graph, property, std::string(sf) + "propertyName").empty() ? value(graph, property, std::string(sf) + "columnName") : value(graph, property, std::string(sf) + "propertyName");
@@ -354,7 +370,9 @@ Json project(const Graph &graph, const std::string &domain) {
             const bool optional = std::any_of(optional_input_ports.begin(), optional_input_ports.end(), [&](const auto &candidate) { return local(candidate) == contract; });
             const auto table_name = value(graph, port, std::string(sf) + "tableName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
-            const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "table" ? "tabular_value" : (value_type == "boolean" ? "boolean" : "structured_value"));
+            if (value_type == "table" && table_name.empty())
+                throw std::runtime_error("table input port lacks a canonical DuckDB table contract: " + contract);
+            const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
             entry["input_ports"].push_back({{"id", contract},
                                                 {"semantic_contract", contract},
                                                 {"data_kind", data_kind},
@@ -369,7 +387,9 @@ Json project(const Graph &graph, const std::string &domain) {
             const auto contract = local(port);
             const auto table_name = value(graph, port, std::string(sf) + "tableName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
-            const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "table" ? "tabular_value" : (value_type == "boolean" ? "boolean" : "structured_value"));
+            if (value_type == "table" && table_name.empty())
+                throw std::runtime_error("table output port lacks a canonical DuckDB table contract: " + contract);
+            const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
             has_success_signal = has_success_signal || contract == "operationSuccessSignal";
             entry["output_ports"].push_back({{"id", contract},
                                              {"semantic_contract", contract},
@@ -414,7 +434,14 @@ Json project(const Graph &graph, const std::string &domain) {
         Json columns = Json::array();
         for (const auto &column : values(graph, subject, std::string(sf) + "hasColumn")) {
             const auto column_name = value(graph, column, std::string(sf) + "columnName").empty() ? value(graph, column, std::string(sf) + "propertyName") : value(graph, column, std::string(sf) + "columnName");
-            if (!column_name.empty()) columns.push_back({{"name", column_name}, {"type", value(graph, column, std::string(sf) + "type")} });
+            if (!column_name.empty()) {
+                Json projected = {{"name", column_name}, {"type", value(graph, column, std::string(sf) + "type")}};
+                const auto definition = value(graph, column, std::string(skos) + "definition");
+                const auto storage_type = value(graph, column, std::string(sf) + "storageType");
+                if (!definition.empty()) projected["description"] = definition;
+                if (!storage_type.empty()) projected["duckdb_type"] = storage_type;
+                columns.push_back(std::move(projected));
+            }
         }
         output["tables"].push_back({{"resource_id", local(subject)}, {"table_name", table_name}, {"domain", table_domain}, {"module_id", module_id(graph, subject, "table", table_domain, table_name)}, {"columns", columns}});
     }

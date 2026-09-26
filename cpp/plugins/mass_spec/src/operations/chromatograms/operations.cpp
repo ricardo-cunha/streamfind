@@ -317,25 +317,14 @@ namespace streamfind::mass_spec::chromatograms
 
     Json get_chromatograms(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto analyses = base::utils::input_rows(access, parameters, "analysesTable", {"analysis", "replicate"}, "analysis");
-        std::map<std::string, std::string> replicates;
-        for (const auto &analysis : analyses)
-            replicates[utils::text(analysis, "analysis")] = utils::text(analysis, "replicate");
-        const auto selection_parameters = analysis_name_parameters(parameters, analyses);
-        const auto headers = base::utils::input_rows(access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis");
         const auto points = base::utils::input_rows(access, parameters, "chromatogramsTable", utils::point_columns(), "analysis");
-        const auto header_map = utils::make_header_map(headers);
         Json output = Json::array();
         for (const auto &point : points)
         {
-            if (!selected(selection_parameters, point))
+            if (!utils::selected_analysis(parameters, point) ||
+                !utils::selected_index(parameters, utils::integer(point, "index")))
                 continue;
-            Json row = point;
-            const auto it = header_map.find({utils::text(point, "analysis"), utils::integer(point, "index")});
-            if (it != header_map.end())
-                utils::append_header_fields(row, it->second);
-            row["replicate"] = replicates[utils::text(point, "analysis")];
-            output.push_back(std::move(row));
+            output.push_back(point);
         }
         return output;
     }

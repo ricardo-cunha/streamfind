@@ -1,0 +1,84 @@
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfcore:stringPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "String" ;
+    skos:definition "Unicode text value." ;
+    sf:wireType "string" ;
+    sf:duckdbType "VARCHAR" ;
+    sf:editorKind "text" .
+
+sfcore:integerPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Integer" ;
+    skos:definition "Signed whole-number value." ;
+    sf:wireType "integer" ;
+    sf:duckdbType "BIGINT" ;
+    sf:editorKind "integer" .
+
+sfcore:realPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Real" ;
+    skos:definition "Finite floating-point value." ;
+    sf:wireType "real" ;
+    sf:duckdbType "DOUBLE" ;
+    sf:editorKind "number" .
+
+sfcore:booleanPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Boolean" ;
+    skos:definition "True or false value." ;
+    sf:wireType "boolean" ;
+    sf:duckdbType "BOOLEAN" ;
+    sf:editorKind "checkbox" .
+
+sfcore:binaryPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Binary" ;
+    skos:definition "Opaque byte sequence reserved for binary data." ;
+    sf:wireType "binary" ;
+    sf:duckdbType "BLOB" ;
+    sf:editorKind "binary" .
+
+sfcore:imagePrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Image" ;
+    skos:definition "Image payload or image reference reserved for future media-aware contracts." ;
+    sf:wireType "image" ;
+    sf:duckdbType "BLOB" ;
+    sf:editorKind "image" .
+
+sfcore:timestampPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Timestamp" ;
+    skos:definition "Date and time value with an explicit timestamp representation." ;
+    sf:wireType "timestamp" ;
+    sf:duckdbType "TIMESTAMP" ;
+    sf:editorKind "datetime" .
+
+sfcore:decimalPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Decimal" ;
+    skos:definition "Exact decimal value reserved for precision-sensitive quantities." ;
+    sf:wireType "decimal" ;
+    sf:duckdbType "DECIMAL" ;
+    sf:editorKind "decimal" .
+
+sfcore:uuidPrimitive
+    a sf:PrimitiveType ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "UUID" ;
+    skos:definition "Universally unique identifier represented as a canonical textual UUID." ;
+    sf:wireType "uuid" ;
+    sf:duckdbType "UUID" ;
+    sf:editorKind "uuid" .

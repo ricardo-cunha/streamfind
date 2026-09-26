@@ -20,14 +20,13 @@ ProjectOptions options_from_request(const Json &request, bool read_only = false)
     }
     ProjectOptions options;
     options.database_path = request.at("database_path").get<std::string>();
-    options.domain = request.value("domain", "");
     return options;
 }
 
 Json descriptor(const Project &project, const MethodRegistry &registry) {
     const auto &info = project.info();
     return {
-        {"domain", info.domain},
+        {"domains", info.domains},
         {"metadata", info.metadata.dump()},
         {"schema_version", info.schema_version},
         {"framework_version", info.framework_version},
@@ -106,7 +105,7 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "remove_method") return ProjectCommand::remove_method;
     if (name == "validate_workflow") return ProjectCommand::validate_workflow;
     if (name == "validate") return ProjectCommand::validate;
-    if (name == "get_domain") return ProjectCommand::get_domain;
+    if (name == "get_project_domains") return ProjectCommand::get_project_domains;
     if (name == "get_available_methods") return ProjectCommand::get_available_methods;
     if (name == "run_method") return ProjectCommand::run_method;
     if (name == "copy") return ProjectCommand::copy;
@@ -156,8 +155,8 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         project.validate();
         return {{"valid", true}, {"info", "Project validation finished successfully."}};
     }
-    case ProjectCommand::get_domain:
-        return Project::open(detail::options_from_request(request, true)).get_domain();
+    case ProjectCommand::get_project_domains:
+        return Project::open(detail::options_from_request(request, true)).get_domains();
     case ProjectCommand::get_available_methods:
         return detail::method_entries(registry, request.value("domain", ""));
     case ProjectCommand::run_method: {

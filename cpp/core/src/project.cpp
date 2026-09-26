@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -21,18 +22,9 @@
 
 namespace streamfind
 {
+    constexpr int PROJECT_SCHEMA_VERSION = 2;
     namespace detail
     {
-
-        bool operation_domain_matches_project(const std::string &operation_domain,
-                                              const std::string &project_domain)
-        {
-            // The core streamfind domain provides reusable workflow operations
-            // that are valid in every concrete project domain.
-            return operation_domain.empty() ||
-                   operation_domain == project_domain ||
-                   operation_domain == "streamfind";
-        }
 
         using Statement = duckdb_prepared_statement;
 
@@ -241,11 +233,32 @@ namespace streamfind
             return static_cast<idx_t>(duckdb_value_int64(&result, 0, 0));
         }
 
+        std::optional<int> project_schema_version(duckdb_connection connection)
+        {
+            duckdb_result result{};
+            if (duckdb_query(connection, "SELECT schema_version FROM PROJECT LIMIT 1", &result) == DuckDBError)
+            {
+                const std::string message = db_error(result);
+                duckdb_destroy_result(&result);
+                throw Error(ErrorCode::DatabaseError, "read PROJECT schema version: " + message);
+            }
+            ResultGuard guard(result);
+            if (duckdb_row_count(&result) == 0)
+                return std::nullopt;
+            return duckdb_value_int32(&result, 0, 0);
+        }
+
         void ensure_schema(duckdb_connection connection,
                            const ProjectOptions &)
         {
+            if (has_table(connection, "PROJECT") && !has_column(connection, "PROJECT", "schema_version"))
+                throw Error(ErrorCode::SchemaMismatch, "PROJECT schema version is missing");
+            const auto version = has_table(connection, "PROJECT") ? project_schema_version(connection) : std::nullopt;
+            if (version && *version != PROJECT_SCHEMA_VERSION)
+                throw Error(ErrorCode::SchemaMismatch,
+                            "unsupported PROJECT schema version: " + std::to_string(*version));
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS PROJECT (domain_id VARCHAR NOT NULL, metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT 1, framework_version VARCHAR NOT NULL DEFAULT '" STREAMFIND_FRAMEWORK_VERSION "')",
+                  "CREATE TABLE IF NOT EXISTS PROJECT (metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT " + std::to_string(PROJECT_SCHEMA_VERSION) + ", framework_version VARCHAR NOT NULL DEFAULT '" STREAMFIND_FRAMEWORK_VERSION "')",
                   "create PROJECT table");
 
             query(connection,
@@ -258,7 +271,7 @@ namespace streamfind
                   "CREATE TABLE IF NOT EXISTS WORKFLOW_REVISION (revision INTEGER PRIMARY KEY, workflow JSON NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
                   "create WORKFLOW_REVISION table");
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION (domain_id VARCHAR NOT NULL DEFAULT '', workflow_revision INTEGER NOT NULL, launch_snapshot JSON NOT NULL DEFAULT '{}', status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, process_id VARCHAR, server_id VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, error VARCHAR, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+                  "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION (workflow_revision INTEGER NOT NULL, launch_snapshot JSON NOT NULL DEFAULT '{}', status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, process_id VARCHAR, server_id VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, error VARCHAR, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
                   "create WORKFLOW_EXECUTION table");
             query(connection,
                   "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION_STEP (workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL PRIMARY KEY, method VARCHAR NOT NULL, parameters JSON NOT NULL DEFAULT '{}', parameter_hash VARCHAR NOT NULL, cache_key VARCHAR NOT NULL, status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, error_code VARCHAR, error_message VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -1120,6 +1133,7 @@ namespace streamfind
     Json WorkflowConnection::to_json() const
     {
         return {{"source_operation", source_operation}, {"source_port", source_port},
+                {"source_artifact_id", source_artifact_id},
                 {"target_operation", target_operation}, {"target_port", target_port}};
     }
 
@@ -1130,6 +1144,7 @@ namespace streamfind
                         "Workflow connection must be an object");
         WorkflowConnection output{
             value.value("source_operation", ""), value.value("source_port", ""),
+            value.value("source_artifact_id", ""),
             value.value("target_operation", ""), value.value("target_port", "")};
         if (output.source_operation.empty() || output.source_port.empty() ||
             output.target_operation.empty() || output.target_port.empty())
@@ -1201,11 +1216,6 @@ namespace streamfind
                             "Method is not implemented: " + step.method);
             }
             const auto &definition = method->definition();
-            if (!domain.empty() && !definition.domain.empty() && domain != definition.domain)
-            {
-                throw Error(ErrorCode::WorkflowValidation,
-                            "Method domain does not match workflow domain: " + step.method);
-            }
             const auto parameters = method->resolve_parameters(step.parameters.values);
             for (const auto &table : definition.reads)
             {
@@ -1258,10 +1268,6 @@ namespace streamfind
                 throw Error(ErrorCode::WorkflowValidation,
                             "Workflow operation is unavailable in the current installation: " + operation.operation);
             const auto &definition = registered->definition();
-            if (!domain.empty() &&
-                !detail::operation_domain_matches_project(definition.domain, domain))
-                throw Error(ErrorCode::WorkflowValidation,
-                            "Workflow operation domain does not match project domain: " + operation.operation);
             try {
                 registered->resolve_parameters(operation.parameters.values);
             } catch (const std::exception &error) {
@@ -1330,7 +1336,7 @@ namespace streamfind
     {
         if (!operations.empty() || !connections.empty() || steps.empty()) {
             Json output = {{"schema_version", schema_version}, {"workflow_id", workflow_id},
-                           {"name", name}, {"version", version}, {"domain", domain},
+                           {"name", name}, {"version", version},
                            {"operations", Json::array()}, {"connections", Json::array()}};
             for (const auto &operation : operations)
                 output["operations"].push_back(operation.to_json());
@@ -1354,7 +1360,6 @@ namespace streamfind
             return to_json();
         Json serialized = Json::object({{"name", name},
                                         {"version", version},
-                                        {"domain", domain},
                                         {"steps", Json::array()}});
         for (const auto &step : steps)
         {
@@ -1385,7 +1390,6 @@ namespace streamfind
         workflow.schema_version = value.value("schema_version", 1);
         workflow.workflow_id = value.value("workflow_id", "");
         workflow.version = value.value("version", 1);
-        workflow.domain = value.value("domain", "");
         for (const auto &item : value.value("operations", Json::array()))
             workflow.operations.push_back(WorkflowOperation::from_json(item));
         for (const auto &item : value.value("connections", Json::array()))
@@ -1452,14 +1456,28 @@ namespace streamfind
             throw Error(ErrorCode::InvalidArgument, "Project is closed");
     }
 
+    std::vector<std::string> workflow_domains(const Json &workflow)
+    {
+        if (!workflow.is_object()) return {};
+        std::set<std::string> domains;
+        for (const auto &operation : workflow.value("operations", Json::array()))
+        {
+            const auto operation_id = operation.value("operation", "");
+            const auto separator = operation_id.find('.');
+            if (separator != std::string::npos && separator > 0)
+                domains.insert(operation_id.substr(0, separator));
+        }
+        return {domains.begin(), domains.end()};
+    }
+
     ProjectInfo read_info(duckdb_connection connection)
     {
         ProjectInfo info;
-        prepared(connection, "SELECT domain_id, metadata, schema_version, framework_version, created_at FROM PROJECT LIMIT 1", "read PROJECT row", [](Statement) {}, [&](duckdb_result &result)
+        prepared(connection, "SELECT metadata, workflow, schema_version, framework_version, created_at FROM PROJECT LIMIT 1", "read PROJECT row", [](Statement) {}, [&](duckdb_result &result)
                  {
                  if (duckdb_row_count(&result) == 0) throw Error(ErrorCode::ProjectNotFound, "Project row not found");
-                 info.domain = value_string(result, 0, 0);
-                 info.metadata = parse_json(value_string(result, 1, 0), "PROJECT metadata");
+                 info.metadata = parse_json(value_string(result, 0, 0), "PROJECT metadata");
+                 info.domains = workflow_domains(parse_json(value_string(result, 1, 0), "PROJECT workflow"));
                  info.schema_version = duckdb_value_int32(&result, 2, 0);
                  info.framework_version = value_string(result, 3, 0);
                  info.created_at = value_string(result, 4, 0); });
@@ -1492,8 +1510,6 @@ namespace streamfind
         auto impl = std::make_shared<Project::Impl>();
         impl->options = options;
         Connection connection(*impl);
-        if (has_table(connection.get(), "PROJECTS"))
-            throw Error(ErrorCode::SchemaMismatch, "legacy PROJECTS registry is not supported; expected PROJECT");
         ensure_schema(connection.get(), options);
         const idx_t existing_projects = project_row_count(connection.get());
         if (!creating && existing_projects != 1)
@@ -1502,12 +1518,10 @@ namespace streamfind
             throw Error(ErrorCode::ProjectAlreadyExists, "DuckDB file already contains a project");
         if (creating)
         {
-            prepared(connection.get(), "INSERT INTO PROJECT (domain_id, metadata, workflow) VALUES (?, ?, '[]')", "create PROJECT row", [&](Statement statement)
-                     { bind_text(statement, 1, options.domain); bind_text(statement, 2, json_text(options.metadata)); }, [](duckdb_result &) {});
+            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, '[]')", "create PROJECT row", [&](Statement statement)
+                     { bind_text(statement, 1, json_text(options.metadata)); }, [](duckdb_result &) {});
         }
         impl->info = read_info(connection.get());
-        if (!options.domain.empty() && impl->info.domain != options.domain)
-            throw Error(ErrorCode::SchemaMismatch, "Project domain mismatch");
         audit(connection.get(), creating ? "create" : "open", "project", Json::object());
         if (!creating)
             query(connection.get(), "UPDATE WORKFLOW_EXECUTION SET status = 'interrupted', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'", "recover workflow executions");
@@ -1539,11 +1553,11 @@ namespace streamfind
 
     const std::filesystem::path &Project::get_database_path() const noexcept { return impl_->options.database_path; }
 
-    std::string Project::get_domain() const
+    std::vector<std::string> Project::get_domains() const
     {
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
-        return impl_->info.domain;
+        return impl_->info.domains;
     }
 
     void Project::validate() const
@@ -1551,7 +1565,7 @@ namespace streamfind
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
-        query(connection.get(), "SELECT domain_id, metadata, workflow, schema_version, framework_version FROM PROJECT LIMIT 0", "validate PROJECT schema");
+        query(connection.get(), "SELECT metadata, workflow, schema_version, framework_version FROM PROJECT LIMIT 0", "validate PROJECT schema");
         read_info(connection.get());
         query(connection.get(), "SELECT name, description, hash, data, created_at FROM CACHE LIMIT 0", "validate CACHE schema");
         query(connection.get(), "SELECT operation_type, object_type, operation_details, created_at FROM AUDIT_TRAIL LIMIT 0", "validate AUDIT_TRAIL schema");
@@ -1579,9 +1593,7 @@ namespace streamfind
     Project Project::copy(const ProjectOptions &options) const
     {
         const auto workflow_value = get_workflow();
-        ProjectOptions destination_options = options;
-        destination_options.domain = impl_->info.domain;
-        Project destination = Project::create(destination_options);
+        Project destination = Project::create(options);
         destination.set_metadata(impl_->info.metadata);
         destination.set_workflow(workflow_value);
         for (const auto &entry : get_cache())
@@ -1605,7 +1617,6 @@ namespace streamfind
 
     void Project::set_workflow(Workflow workflow_value, const MethodRegistry &registry)
     {
-        workflow_value.domain = workflow_value.domain.empty() ? impl_->info.domain : workflow_value.domain;
         workflow_value.validate(registry);
         const auto execution = query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1");
         if (!execution.empty())
@@ -1628,7 +1639,6 @@ namespace streamfind
     void Project::set_workflow(Workflow workflow_value, const OperationRegistry &registry)
     {
         const auto previous_workflow = get_workflow();
-        workflow_value.domain = workflow_value.domain.empty() ? impl_->info.domain : workflow_value.domain;
         workflow_value.validate(registry);
         const auto execution = query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1");
         if (!execution.empty())
@@ -1977,7 +1987,9 @@ namespace streamfind
                 const bool port_matches = contract == connection.source_port ||
                     (contract.size() > connection.source_port.size() + 1 &&
                      contract.ends_with("#" + connection.source_port));
-                if (artifact.value("producer_instance", "") == connection.source_operation &&
+                if ((connection.source_artifact_id.empty() ||
+                     artifact.value("artifact_id", "") == connection.source_artifact_id) &&
+                    artifact.value("producer_instance", "") == connection.source_operation &&
                     port_matches &&
                     artifact.value("status", "") == "published") {
                     const auto revision_text = artifact.value("workflow_revision", "");
@@ -2228,7 +2240,6 @@ namespace streamfind
         if (!method)
             throw Error(ErrorCode::WorkflowValidation, "Unknown method: " + method_id);
         Workflow workflow = get_workflow();
-        workflow.domain = workflow.domain.empty() ? get_domain() : workflow.domain;
         const Json resolved = method->resolve_parameters(parameters);
         workflow.steps.push_back({method_id, ParameterValues{resolved}});
         set_workflow(workflow, registry);
@@ -2471,8 +2482,8 @@ namespace streamfind
         }
         const auto revision = request.value("workflow_revision", 0);
         const auto progress = request.value("progress", Json::object());
-        const std::string columns = "domain_id, workflow_revision, launch_snapshot, status, progress";
-        const std::string values = detail::sql_quote(project_->get_domain()) + ", " + std::to_string(revision) + ", " + detail::sql_quote(project_->get_workflow().to_json().dump()) + ", 'queued', " + detail::sql_quote(progress.dump());
+        const std::string columns = "workflow_revision, launch_snapshot, status, progress";
+        const std::string values = std::to_string(revision) + ", " + detail::sql_quote(project_->get_workflow().to_json().dump()) + ", 'queued', " + detail::sql_quote(progress.dump());
         project_->execute_sql("DELETE FROM WORKFLOW_EXECUTION");
         project_->execute_sql("INSERT INTO WORKFLOW_EXECUTION (" + columns + ") VALUES (" + values + ")");
         return current();
@@ -2480,7 +2491,7 @@ namespace streamfind
 
     Json WorkflowExecutionManager::current() const
     {
-        auto rows = project_->query_json("SELECT domain_id, workflow_revision, status, progress, result_reference, error FROM WORKFLOW_EXECUTION LIMIT 1");
+        auto rows = project_->query_json("SELECT workflow_revision, status, progress, result_reference, error FROM WORKFLOW_EXECUTION LIMIT 1");
         if (rows.empty())
             throw Error(ErrorCode::InvalidArgument, "workflow execution not found");
         return rows.at(0);
@@ -2488,7 +2499,7 @@ namespace streamfind
 
     Json WorkflowExecutionManager::list() const
     {
-        auto rows = project_->query_json("SELECT domain_id, workflow_revision, status, progress, result_reference, error FROM WORKFLOW_EXECUTION");
+        auto rows = project_->query_json("SELECT workflow_revision, status, progress, result_reference, error FROM WORKFLOW_EXECUTION");
         return rows;
     }
 

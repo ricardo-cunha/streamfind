@@ -30,7 +30,7 @@ sfcore:domainParameter
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project domain" ;
-    skos:definition "Immutable domain assigned to a project at creation time. Use the domain value reported by get_domain when selecting workflow methods." ;
+    skos:definition "Domain identifier used to select workflow methods and capabilities; it is not a project-level assignment." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;

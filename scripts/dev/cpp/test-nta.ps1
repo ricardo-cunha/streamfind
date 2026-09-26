@@ -178,7 +178,7 @@ function Assert-NtaWorkflowResults {
     $queryArguments.analysis_names = $analysisNames
     $analysesArguments = @{}
     foreach ($entry in $BaseArguments.GetEnumerator()) { $analysesArguments[$entry.Key] = $entry.Value }
-    $analyses = Invoke-McpTool $process 900 'mass_spec.get_analyses_info' $analysesArguments
+    $analyses = Invoke-McpTool $process 900 'mass_spec.get_analyses' $analysesArguments
     $analysisCount = if ($analyses.PSObject.Properties.Name -contains 'row_count') {
         [int]$analyses.row_count
     } else {
@@ -287,7 +287,7 @@ try {
     if ($RunPipeline) {
         $steps = [System.Collections.Generic.List[object]]::new()
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.find_features'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; rt_windows_min = @(); rt_windows_max = @(); ppm_threshold = 10.0; noise_threshold = 250.0; min_snr = 3.0; min_traces = 3; baseline_window = 200.0; max_feature_width = 250.0; base_quantile = 0.99
+            rt_windows_min = @(); rt_windows_max = @(); ppm_threshold = 10.0; noise_threshold = 250.0; min_snr = 3.0; min_traces = 3; baseline_window = 200.0; max_feature_width = 250.0; base_quantile = 0.99
         } })
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.load_features_ms1'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
             analysis_names = $analysisNames; filtered = $false; rt_window = @(-1.0, 1.0); mz_window = @(-1.0, 6.0); min_traces_intensity = 250.0; mz_clust = 0.008; presence = 0.5
@@ -320,7 +320,7 @@ try {
             analysis_names = $analysisNames; min_intensity = 10000.0; remove_isotopes = $true; remove_adducts = $true; remove_losses = $true
         } })
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.suspect_screening'; DiagnosticTool = 'mass_spec.get_suspects'; Parameters = @{
-            analysis_names = $analysisNames; targets = $suspectTargets; ppm = 5.0; sec = 10.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
+            analysis_names = $analysisNames; suspect_targets = $suspectTargets; ppm = 5.0; sec = 10.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
         } })
         $workflow = [ordered]@{
             name = 'scripts-dev-nta'

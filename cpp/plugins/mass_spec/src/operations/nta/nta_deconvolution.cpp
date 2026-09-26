@@ -2280,14 +2280,11 @@ namespace streamfind::mass_spec::nta::deconvolution
         header.activation_ce.push_back(::streamfind::mass_spec::nta::utils::real(row, "activation_ce"));
       }
     }
-    const auto wanted = parameters.value("analysis_names", Json::array());
     FeatureInput input;
     input.log = [&access](std::string_view message) { access.report_progress(0.0, message); };
     for (const auto &row : rows)
     {
       const auto name = ::streamfind::mass_spec::nta::utils::text(row, "analysis");
-      if (!wanted.empty() && std::find(wanted.begin(), wanted.end(), name) == wanted.end())
-        continue;
       ::mass_spec::reader::MASS_SPEC_FILE file(::streamfind::mass_spec::nta::utils::text(row, "file_path"));
       const int index = ::streamfind::mass_spec::nta::utils::integer(row, "analysis_index");
       file.select_analysis(index);
@@ -2319,7 +2316,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     for (const auto &buffer : input.buffers)
       for (int index = 0; index < buffer.size(); ++index)
         output.push_back(::streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(index)));
-    access.emit_table_rows("ntaFeaturesTable", ::streamfind::mass_spec::nta::utils::feature_columns(), ::streamfind::mass_spec::nta::utils::feature_types(), output);
+    access.emit_table_rows("featuresTable", ::streamfind::mass_spec::nta::utils::feature_columns(), ::streamfind::mass_spec::nta::utils::feature_types(), output);
     return Json{{"status", "finished"}, {"features", output.size()}};
   }
 }

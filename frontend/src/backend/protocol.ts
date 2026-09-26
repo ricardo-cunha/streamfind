@@ -20,7 +20,7 @@ export type ProjectSession = {
   session_id: string;
   database_path: string;
   database_size_bytes: number;
-  domain: string;
+  domains: string[];
   metadata: Record<string, JsonValue>;
   initialization?: ProjectInitialization;
 };
@@ -30,6 +30,7 @@ export type ProjectInitialization = {
   state: 'not_required' | 'awaiting_input' | 'running' | 'completed' | 'failed';
   operation_id?: string;
   operation?: OperationCapability;
+  operations?: OperationCapability[];
 };
 
 export type WorkflowState =
@@ -62,6 +63,7 @@ export type WorkflowOperationDefinition = {
 export type WorkflowConnectionDefinition = {
   source_operation: string;
   source_port: string;
+  source_artifact_id?: string;
   target_operation: string;
   target_port: string;
 };
@@ -72,7 +74,6 @@ export type WorkflowDefinition = {
   workflow_id?: string;
   name?: string;
   version: number;
-  domain: string;
   operations: WorkflowOperationDefinition[];
   connections: WorkflowConnectionDefinition[];
 };
@@ -131,6 +132,7 @@ export type DuckDbPrimitiveType =
 /** A column contract is the connection vocabulary for native extraction and plot nodes. */
 export type TableColumnContract = {
   name: string;
+  type?: string;
   primitive_type: DuckDbPrimitiveType;
   duckdb_type?: string;
   nullable?: boolean;
@@ -141,19 +143,11 @@ export type TableColumnContract = {
 
 export type TableContract = {
   table_name: string;
+  resource_id?: string;
   module_id?: string;
   domain?: string;
   description?: string;
   columns: TableColumnContract[];
-};
-
-/** Ontology-defined result class exposed by a backend operation, e.g. `eicResult`. */
-export type DomainResultContract = {
-  canonical_id: string;
-  label: string;
-  definition: string;
-  table: TableContract;
-  schema?: JsonSchema;
 };
 
 export type CapabilityParameter = {
@@ -192,10 +186,9 @@ export type CapabilityPort = {
   multiple?: boolean;
   accepts?: Array<'method' | 'result' | 'table' | 'scalar' | 'column' | 'plot' | 'project' | 'execution'>;
   table?: TableContract;
-  results?: DomainResultContract[];
   schema?: JsonSchema;
   semantic_contract?: string;
-  data_kind?: 'duckdb_table' | 'tabular_value' | 'structured_value' | 'signal';
+  data_kind?: 'duckdb_table' | 'structured_value' | 'signal';
   representations?: string[];
   optional?: boolean;
 };
@@ -203,7 +196,6 @@ export type CapabilityPort = {
 export type OperationCanvasCapability = {
   node_kind: 'operation';
   outputs_to_canvas: true;
-  output_results: DomainResultContract[];
   icon?: string;
   input_ports?: CapabilityPort[];
   connection_guidance?: string;
@@ -233,7 +225,7 @@ export type BackendCapabilityBase = {
   executable?: boolean;
   exposed?: boolean;
   parameters: CapabilityParameter[];
-  result: { schema?: JsonSchema; tables?: TableContract[]; domain_results?: DomainResultContract[] };
+  result: { id?: string; schema?: JsonSchema };
   effects: CapabilityEffects;
   module_id?: string;
   canvas?: CanvasCapability;
@@ -292,6 +284,35 @@ export type FrontendNodeCapability = {
   output_ports: CapabilityPort[];
   domain?: string;
   plot?: { chart_type: string; input_result_types: string[]; required_columns?: string[] };
+};
+
+export type CapabilityIndexModule = {
+  domain: string;
+  module_id: string;
+};
+
+export type CapabilityIndexResponse = {
+  protocol_version: string;
+  domains: string[];
+  modules: CapabilityIndexModule[];
+};
+
+export type CapabilityModulesResponse = {
+  domain: string;
+  modules: string[];
+};
+
+/** Lightweight operation metadata returned by filtered discovery. */
+export type CapabilityOperationSummary = Pick<
+  BackendCapabilityBase,
+  'canonical_id' | 'label' | 'domain' | 'module_id' | 'definition'
+>;
+
+export type CapabilityOperationsRequest = {
+  domain: string;
+  module?: string;
+  search?: string;
+  includeSchema?: boolean;
 };
 
 export type ServiceCapabilities = {

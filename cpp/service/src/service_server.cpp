@@ -12,6 +12,7 @@
 #include <functional>
 #include <fstream>
 #include <random>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -382,6 +383,21 @@ void ServiceServer::handle_client(std::intptr_t socket) {
         std::istringstream line(first);
         std::string method, path, version;
         line >> method >> path >> version;
+        const auto query_marker = path.find('?');
+        const auto route = query_marker == std::string::npos ? path : path.substr(0, query_marker);
+        const auto query = query_marker == std::string::npos ? std::string{} : path.substr(query_marker + 1);
+        const auto query_value = [&](const std::string &name) {
+            const auto prefix = name + "=";
+            std::size_t begin = 0;
+            while (begin < query.size()) {
+                const auto end = query.find('&', begin);
+                const auto part = query.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+                if (part.rfind(prefix, 0) == 0) return detail::percent_decode(part.substr(prefix.size()));
+                if (end == std::string::npos) break;
+                begin = end + 1;
+            }
+            return std::string{};
+        };
         if (std::filesystem::exists(application_root_)) {
             const auto host = detail::header_value(headers, "Host");
             const auto origin = detail::header_value(headers, "Origin");
@@ -440,6 +456,35 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
             else if (method == "GET" && std::filesystem::exists(application_root_) && (path == "/" || path.rfind("/assets/", 0) == 0)) detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
+            else if (method == "GET" && route == "/capabilities/index") detail::send_http(socket, 200, capability_index_json());
+            else if (method == "GET" && route.rfind("/capabilities/domains/", 0) == 0 && route.ends_with("/modules")) {
+                const auto domain = detail::percent_decode(route.substr(std::string("/capabilities/domains/").size(), route.size() - std::string("/capabilities/domains/").size() - std::string("/modules").size()));
+                Json modules = Json::array();
+                const auto entries = catalogue::entries_json();
+                std::set<std::string> unique;
+                if (entries) for (const auto &entry : *entries)
+                    if (entry.value("kind", "") == "operation" && entry.value("exposed", false) && entry.value("executable", false) && entry.value("domain", "") == domain)
+                        unique.insert(entry.value("module_id", ""));
+                for (const auto &module : unique) modules.push_back(module);
+                detail::send_http(socket, 200, Json{{"domain", domain}, {"modules", modules}});
+            }
+            else if (method == "GET" && route == "/capabilities/operations") {
+                const auto domain = query_value("domain");
+                if (domain.empty()) detail::send_http(socket, 400, Json{{"error", "domain is required"}});
+                else detail::send_http(socket, 200, Json{{"operations", capability_operations_json(domain, query_value("module"), query_value("search"), query_value("include_schema") == "true")} });
+            }
+            else if (method == "GET" && route.rfind("/capabilities/operations/", 0) == 0) {
+                const auto operation_id = detail::percent_decode(route.substr(std::string("/capabilities/operations/").size()));
+                const auto entries = catalogue::entries_json();
+                bool found = false;
+                if (entries) for (const auto &entry : *entries)
+                    if (entry.value("kind", "") == "operation" && entry.value("exposed", false) && entry.value("canonical_id", "") == operation_id) {
+                        detail::send_http(socket, 200, entry);
+                        found = true;
+                        break;
+                    }
+                if (!found) detail::send_http(socket, 404, Json{{"error", "operation not found"}, {"operation", operation_id}});
+            }
             else if (method == "GET" && path == "/capabilities") detail::send_http(socket, 200, capabilities_json());
             else if (method == "GET" && path == "/projects") {
                 Json result = Json::array(); for (const auto &project : projects_.list()) result.push_back(project); detail::send_http(socket, 200, Json{{"projects", result}});
@@ -567,14 +612,14 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 detail::send_http(socket, 200, project);
             } else if (method == "POST" && path == "/projects") {
                 const auto input = Json::parse(body);
-                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("domain", "core"), input.value("metadata", Json::object())};
+                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object())};
                 const auto session_id = input.at("session_id").get<std::string>();
                 const auto project = input.value("mode", "create") == "open"
                                          ? projects_.open(session_id, options)
                                          : projects_.create(session_id, options);
                 const auto event_type = input.value("mode", "create") == "open" ? "project.opened" : "project.created";
                 Json response = project;
-                response["initialization"] = project_initialization_json(project.domain);
+                response["initialization"] = project_initialization_json(project.domains);
                 events_.publish(Json{{"type", event_type}, {"project", response}});
                 detail::send_http(socket, 201, response);
             } else detail::send_http(socket, 404, Json{{"error", "endpoint not found"}});

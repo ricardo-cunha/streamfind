@@ -21,6 +21,15 @@ sfcore:infoField
     sf:propertyName "info" ;
     sf:type "string" .
 
+sfcore:updatedField
+    a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Updated state" ;
+    skos:definition "Whether the API command updated the persisted workflow state." ;
+    sf:propertyName "updated" ;
+    sf:type "boolean" .
+
 
 sfcore:validField
     a sf:Field ;

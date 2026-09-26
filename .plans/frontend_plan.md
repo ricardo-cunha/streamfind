@@ -2855,3 +2855,102 @@ failed node execution with diagnostics and no partial publication. Open restores
 the saved graph and available artifacts without rerunning entries; Close disconnects
 without deleting the DuckDB file. OPC UA/MQTT entries remain future capabilities,
 not functionality to fake or special-case in the frontend.
+
+---
+
+# 22. Plotly plot-spec and generic renderer phase
+
+This phase adds scientific plotting without coupling the frontend to MassSpec
+algorithms or duplicating the plotting decisions already present in `bindings/r`.
+The backend operation produces a validated, serializable Plotly-compatible
+specification from a typed artifact. The frontend renders that specification with
+one generic Plotly renderer selected by capability metadata.
+
+## Scope
+
+- Use the existing `bindings/r/R` Plotly modules as the reference for analytical
+  views, trace meaning, axis labels, units, hover fields, legends, and responsive
+  layout. Port the plot contract, not the Shiny runtime or R implementation.
+- Keep data selection, aggregation, units, and scientific defaults in backend
+  operations. React must not read DuckDB, infer column meaning, or rebuild traces
+  from arbitrary table rows.
+- Represent a plot as a persisted or bounded JSON artifact with an explicit
+  semantic renderer contract, for example `plotSpec`, and a producer operation,
+  workflow revision, and source-artifact lineage.
+- Keep Plotly as a frontend dependency behind a generic renderer boundary. A future
+  renderer must be able to consume the same artifact contract without changing
+  operation execution.
+
+## Backend plot-spec contract
+
+Add a core-owned result contract for a Plotly-compatible specification containing:
+
+```text
+PlotSpec
+  schema_version
+  renderer: "plotly"
+  kind: "plot"
+  data: trace[]
+  layout: object
+  config: object
+  source_artifact_ids: string[]
+  metadata: { title, x_label, y_label, x_unit, y_unit, ... }
+```
+
+The backend must validate the spec before publication:
+
+- `data` is an array of supported trace objects;
+- trace arrays have compatible lengths;
+- numeric axes contain finite numbers or explicit nulls;
+- source artifact IDs exist and match the current workflow revision;
+- labels and units come from the operation/catalogue contract;
+- arbitrary executable JavaScript, HTML, event handlers, and unbounded payloads
+  are rejected;
+- payload size and point count are bounded, with a diagnostic requesting a
+  downsampled or paginated operation when limits are exceeded.
+
+Plot operations should consume named typed inputs such as feature, spectrum, EIC,
+or chromatogram artifacts and publish a JSON plot-spec artifact. They must not
+mutate their input tables. A failed plot-spec validation must publish no artifact.
+
+## Frontend generic renderer
+
+Add a typed `PlotSpecArtifact` DTO and a renderer registry with a Plotly renderer:
+
+- select the renderer from `renderer: "plotly"`, never from a MassSpec-specific
+  operation ID;
+- render `data`, `layout`, and safe `config` from the backend spec;
+- show title, units, source artifact identity, loading, empty, and error states;
+- keep large specs lazy and bounded through the artifact preview endpoint;
+- resize on canvas/container changes and dispose Plotly instances on unmount;
+- expose accessible chart text and a data-summary fallback for non-visual users;
+- report unsupported renderer versions or invalid specs as actionable frontend
+  diagnostics rather than silently rendering a blank panel.
+
+## Implementation order
+
+1. Add semantic `PlotSpec`/renderer metadata and a core JSON schema.
+2. Add backend validation and publication through the existing artifact inventory.
+3. Port one MassSpec plotting operation from the R reference, starting with a
+   bounded chromatogram or feature plot; do not implement every R view at once.
+4. Add the typed service artifact-preview response for plot specs.
+5. Add the generic React renderer and a renderer-capability entry in the catalogue.
+6. Add a frontend plot node/view that consumes the typed plot-spec artifact.
+7. Add regression fixtures for valid specs, empty data, mismatched trace lengths,
+   invalid values, stale source artifacts, oversized payloads, and renderer errors.
+8. Validate one real MassSpec operation end to end against a disposable project,
+   then add additional views only after the first renderer contract is stable.
+
+## Acceptance criteria
+
+- The backend generates the plot spec; the frontend does not reconstruct it.
+- A valid Plotly spec is rendered by the generic renderer without MassSpec-specific
+  branching in the renderer component.
+- Plot artifacts retain producer, workflow revision, source lineage, and renderer
+  metadata.
+- Input artifacts remain unchanged after plotting.
+- Invalid, stale, oversized, or unsupported specs fail visibly and publish nothing.
+- The Plotly renderer has unit tests and a live browser smoke test with no console
+  or page errors.
+- The first ported view matches the corresponding R plot's analytical meaning,
+  axes, units, hover fields, and responsive behavior.

@@ -12,11 +12,11 @@ namespace streamfind::mass_spec::base::utils
 {
 nlohmann::json summarize_eic(const nlohmann::json &rows)
 {
-    std::map<std::tuple<std::string, int, std::string, std::string, double>, nlohmann::json> grouped;
+    std::map<std::tuple<std::string, int, std::string, double>, nlohmann::json> grouped;
     for (const auto &row : rows)
     {
         const auto key = std::make_tuple(row.value("analysis", std::string{}), row.value("polarity", 0),
-                                         row.value("target_id", std::string{}), row.value("id", std::string{}), row.value("rt", 0.0));
+                                         row.value("name", std::string{}), row.value("rt", 0.0));
         auto &output = grouped[key];
         if (output.empty()) output = row;
         output["intensity"] = std::max(output.value("intensity", 0.0), row.value("intensity", 0.0));
@@ -28,9 +28,11 @@ nlohmann::json summarize_eic(const nlohmann::json &rows)
 
 nlohmann::json merge_ms_rows(const nlohmann::json &rows, double mz_cluster, double presence)
 {
-    std::map<std::tuple<std::string, std::string, int>, std::vector<nlohmann::json>> groups;
+    std::map<std::tuple<std::string, std::string, int, int, double, double>, std::vector<nlohmann::json>> groups;
     for (const auto &row : rows)
-        groups[{row.value("analysis", std::string{}), row.value("id", std::string{}), row.value("polarity", 0)}].push_back(row);
+    groups[{row.value("analysis", std::string{}), row.value("name", std::string{}), row.value("polarity", 0),
+            row.value("level", 0), row.value("rt", 0.0), row.value("precursor_mz", 0.0)}]
+        .push_back(row);
     nlohmann::json result = nlohmann::json::array();
     for (auto &[key, values] : groups)
     {
@@ -71,16 +73,25 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
     {
         const auto &source = sources[index];
         TargetRange target;
-        target.id = source.value("id", "target" + std::to_string(index));
-        const auto analyses = source.value("analyses", parameters.value("analysis_names", nlohmann::json::array()));
-        for (const auto &analysis : analyses)
-        {
-            if (analysis.is_string()) target.analyses.push_back(analysis.get<std::string>());
-            else if (analysis.is_number_integer()) target.analysis_indices.push_back(analysis.get<int>());
-        }
+        target.id = source.value("name", "target" + std::to_string(index));
+        const auto analyses = source.contains("analysis") ? source.at("analysis") : parameters.value("analysis_names", nlohmann::json::array());
+        if (analyses.is_string())
+            target.analyses.push_back(analyses.get<std::string>());
+        else if (analyses.is_number_integer())
+            target.analysis_indices.push_back(analyses.get<int>());
+        else if (analyses.is_array())
+            for (const auto &analysis : analyses)
+            {
+                if (analysis.is_string()) target.analyses.push_back(analysis.get<std::string>());
+                else if (analysis.is_number_integer()) target.analysis_indices.push_back(analysis.get<int>());
+            }
         const auto polarity = source.value("polarity", parameters.value("polarity", nlohmann::json::array({0})));
         target.polarities = polarity.is_array() ? polarity.get<std::vector<int>>() : std::vector<int>{polarity.get<int>()};
-        target.levels = source.value("levels", parameters.value("levels", nlohmann::json::array())).get<std::vector<int>>();
+        const auto levels = source.contains("level") ? source.at("level") : parameters.value("levels", nlohmann::json::array());
+        if (levels.is_number_integer())
+            target.levels.push_back(levels.get<int>());
+        else if (levels.is_array())
+            target.levels = levels.get<std::vector<int>>();
         const double ppm = parameters.value("ppm", 20.0);
         const double mass = source.value("mass", 0.0), mz = source.value("mz", 0.0), rt = source.value("rt", 0.0);
         target.has_mass = source.contains("mass") || source.contains("mass_min") || source.contains("mass_max");
@@ -131,6 +142,8 @@ nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::js
                                   const char *mass_column, const char *mz_column, const char *rt_column, const char *polarity_column)
 {
     const auto targets = normalize_targets(parameters);
+    const auto requested_targets = parameters.value("targets", nlohmann::json::array());
+    const bool has_requested_targets = requested_targets.is_array() && !requested_targets.empty();
     nlohmann::json result = nlohmann::json::array();
     for (std::size_t row_index = 0; row_index < rows.size(); ++row_index)
     {
@@ -150,7 +163,9 @@ nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::js
             if (analysis_ok && polarity_ok && (mass_column == nullptr || !target.has_mass || (mass >= target.mass_min && mass <= target.mass_max)) &&
                 (mz_column == nullptr || (mz >= target.mz_min && mz <= target.mz_max)) && (rt_column == nullptr || (rt >= target.rt_min && rt <= target.rt_max)))
             {
-                result.push_back(row);
+                auto matched = row;
+                if (has_requested_targets) matched["name"] = target.id;
+                result.push_back(std::move(matched));
                 break;
             }
         }
