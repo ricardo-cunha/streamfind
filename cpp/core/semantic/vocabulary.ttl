@@ -1,6 +1,7 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sfvis: <https://streamfind.dev/catalogue/visualization#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
@@ -71,6 +72,12 @@ sf:OperationResult
     rdfs:subClassOf sf:ArtifactContract ;
     skos:prefLabel "Operation result" ;
     skos:definition "A JSON artifact emitted by a workflow operation and persisted in the project artifact inventory." .
+
+sfvis:VisualizationSpec
+    a rdfs:Class ;
+    rdfs:subClassOf sf:OperationResult ;
+    skos:prefLabel "Visualization specification" ;
+    skos:definition "A versioned, validated JSON artifact describing a client-rendered visualization and its scientific provenance." .
 
 sf:Table
     a rdfs:Class ;

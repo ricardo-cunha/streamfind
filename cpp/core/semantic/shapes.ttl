@@ -1,5 +1,6 @@
-@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfvis: <https://streamfind.dev/catalogue/visualization#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
@@ -250,6 +251,13 @@ sfcore:OperationResultShape
             }
         """
     ] .
+
+sfvis:VisualizationSpecShape
+    a sh:NodeShape ;
+    sh:targetClass sfvis:VisualizationSpec ;
+    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:dataKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "json" ] ;
+    sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "object" ] .
 
 sfcore:TableShape
     a sh:NodeShape ;

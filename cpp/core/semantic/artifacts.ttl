@@ -1,5 +1,6 @@
-@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfvis: <https://streamfind.dev/catalogue/visualization#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfcore:projectTable
@@ -122,4 +123,13 @@ sfcore:selectedPathsResult
     skos:definition "The selected paths in their original order." ;
     sf:type "array" ;
     sf:items sfcore:filePathColumn .
+
+sfcore:visualizationSpecResult
+    a sfvis:VisualizationSpec ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Visualization specification" ;
+    skos:definition "A bounded, versioned visualization envelope consumed by the generic StreamFind visualization runtime." ;
+    sf:type "object" .
 
