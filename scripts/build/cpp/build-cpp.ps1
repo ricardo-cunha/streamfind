@@ -43,6 +43,23 @@ Write-Log "MinGW root: $($toolchain.Root)"
 Write-Log "C compiler: $($toolchain.CCompiler)"
 Write-Log "C++ compiler: $($toolchain.CxxCompiler)"
 
+$cacheFile = Join-Path $buildDir 'CMakeCache.txt'
+if (Test-Path $cacheFile) {
+    $cache = Get-Content -LiteralPath $cacheFile -Raw
+    $expectedCCompiler = [Regex]::Escape($toolchain.CCompiler.Replace('\', '/'))
+    $expectedCxxCompiler = [Regex]::Escape($toolchain.CxxCompiler.Replace('\', '/'))
+    $mixedToolchain =
+        $cache -notmatch "CMAKE_GENERATOR:INTERNAL=Ninja" -or
+        $cache -notmatch "CMAKE_C_COMPILER:.*$expectedCCompiler" -or
+        $cache -notmatch "CMAKE_CXX_COMPILER:.*$expectedCxxCompiler" -or
+        $cache -match 'CMAKE_C_FLAGS:.*(/DWIN32|/D_WINDOWS)' -or
+        $cache -match 'CMAKE_CXX_FLAGS:.*(/DWIN32|/D_WINDOWS|/EHsc)'
+    if ($mixedToolchain) {
+        Write-Log "Discarding mixed-toolchain CMake cache: $buildDir"
+        Remove-Item -Recurse -Force $buildDir
+    }
+}
+
 $configureArgs = @(
     '-G', 'Ninja',
     '-Wno-dev',

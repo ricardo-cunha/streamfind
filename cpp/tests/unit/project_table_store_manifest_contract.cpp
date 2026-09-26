@@ -85,7 +85,7 @@ int run() {
         std::error_code error;
         std::filesystem::remove(path, error);
         auto project = streamfind::Project::create({path, {}});
-        project.execute_sql("CREATE TABLE JSON_CONTRACT (value " + physical_type + ")");
+        project.execute_sql(std::string("CREATE TABLE JSON_CONTRACT (value ") + physical_type + ")");
         bool rejected = false;
         try {
             streamfind::ProjectTableStore(project).require({
