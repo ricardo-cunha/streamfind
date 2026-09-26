@@ -13,20 +13,18 @@
 
 Phase 1 is recorded complete. Phase 2 transport and Phase 3 project lifecycle have
 working slices; Phase 4 canvas interaction scaffolding and part of Phase 5 execution
-exist, but they are NOT an artifact-bound workflow implementation. The current
-canvas graph is local UI state, entries lack data ports, and the backend executes an
-ordered method list. Do not mark Phase 4 or durable Phase 5 complete from those slices.
+exist, but they are NOT an artifact-bound workflow implementation. The frontend still
+contains transitional `method`, `extract`, and `plot` node-kind branches, while the
+current C++ runtime still exposes method-oriented APIs alongside operation metadata.
+Treat those as current migration surfaces, not target workflow concepts. Do not mark
+Phase 4 or durable Phase 5 complete from those slices.
 
 **Next work: Phase 3A, then 3B → 3C → 3D → 3E → revised Phase 4 → revised Phase 5.**
-These intermediate phases replace the old method/operation split before more canvas
-features. The target is one operation-only DAG, with immutable output artifacts,
-JSON values or table references in a DuckDB inventory, and backend-owned execution.
-This decision supersedes older method-chain and disconnected-entry proposals in
-reference notes. Backend code described below is planned unless explicitly checked.
-
-**Visualization work now follows the authoritative contract in Section 22.** Phase 7 and Phase 9 must be implemented
-against `sfvis:VisualizationSpec`: backend operations create visualization artifacts; the shared client runtime renders
-them. Do not add a second path where React reconstructs scientific traces directly from MassSpec tables or operation IDs.
+These intermediate phases complete the operation-only DAG cutover before more canvas
+features. The target is one operation graph with immutable output artifacts, JSON values
+or table references in the DuckDB inventory, backend-owned execution, and visualization
+operations that publish typed `sfvis:VisualizationSpec` artifacts. Backend code described
+below is planned unless explicitly checked against the current native implementation.
 
 Phases describe responsibility and acceptance order, not permission to leave broken
 interfaces between commits. The ABI/registry replacement in 3B–3C and caller/plugin
@@ -102,7 +100,7 @@ add_analyses(parameters: files, replicates, blanks)
        filtered ntaFeaturesTable               featuresResult (memory/JSON)
                     │                                │
                     ▼                                ▼
-             count_table_rows                 plot_features(parameters)
+             count_table_rows                 plot_features (visualization operation)
              numericValue (memory/JSON)                 │
                                                         ▼
                                              visualizationSpec
@@ -121,13 +119,9 @@ import_suspects(parameters: file/database)
 if both are persisted DuckDB table artifacts. `filter_features` consumes one feature
 artifact and publishes a separate output artifact; the original feature artifact
 remains inspectable. The two feature artifacts may share a semantic table contract,
-but never share an ambiguous “current table” identity. `get_features` and row counts may produce bounded in-memory/JSON values. Scientific visualization is represented by
-normal backend visualization-preparation operations that consume exact typed artifact bindings and publish an immutable,
-versioned `sfvis:VisualizationSpec` JSON artifact. The operation owns scientific selection, aggregation, units, trace
-semantics, labels and defaults; it never owns a browser DOM or rendering library instance. A client-side generic
-visualization runtime consumes the resulting spec and performs the actual Plotly/D3 rendering. Visualization operations
-do not mutate their scientific inputs, and a rendering client never infers a different scientific plot directly from
-DuckDB rows.
+but never share an ambiguous “current table” identity. `get_features` and row counts
+may produce bounded in-memory/JSON values. Plot nodes consume a typed result and are
+frontend renderers; they do not silently become backend table mutations.
 
 ### Artifact representations
 
@@ -206,7 +200,7 @@ access DuckDB, invent domain operations, or infer physical table names.
 
 Work only in `C:/Users/cunha/Documents/GitHub/streamfind/.worktrees/frontend`.
 Preserve existing dirty files and keep the main checkout unchanged. Do not commit,
-push, create old/new feature flags, or add legacy workflow adapters. Existing-project
+push, create old/new feature flags, or add compatibility workflow adapters. Existing-project
 schema incompatibility must produce a clear version error, never silent data loss;
 a released-format migration requires a separately approved scope. Leave `bindings/r`
 and `integrations/cf-streamfind` untouched during this refactor.
@@ -274,16 +268,8 @@ React application
 │   └── UI metadata
 │
 ├── Renderer Registry
-│   ├── Generic result renderers
-│   ├── VisualizationSpec renderer
-│   └── Non-plot/domain detail renderers
-│
-├── Visualization Runtime
-│   ├── VisualizationSpec schema/versioning
-│   ├── Plotly renderer
-│   ├── Declarative D3 renderer registry
-│   ├── artifact-backed data resolver
-│   └── text/static fallback adapters
+│   ├── Generic renderers
+│   └── Domain renderers
 │
 ├── Execution Store
 │   ├── Workers
@@ -382,12 +368,8 @@ frontend/
 │   │   ├── visualizationSchema.ts
 │   │   ├── VisualizationDataResolver.ts
 │   │   ├── interactions.ts
-│   │   ├── plotly/
-│   │   │   ├── PlotlyRenderer.tsx
-│   │   │   └── plotlyAdapter.ts
-│   │   └── d3/
-│   │       ├── D3RendererRegistry.ts
-│   │       └── ForceNetworkRenderer.tsx
+│   │   ├── plotly/PlotlyRenderer.tsx
+│   │   └── d3/D3RendererRegistry.ts
 │   │
 │   ├── plugins/
 │   │   ├── PluginProvider.tsx
@@ -1108,7 +1090,7 @@ Status icon should reflect:
    example, `create` can be called directly with a database path and domain to create
    a project, without being placed in a workflow. The workflow framework begins when
    operations are composed into a project graph.
-   `sf:returns` is optional for legacy/public response schemas and must not duplicate
+   `sf:returns` is optional for public response schemas and must not duplicate
    workflow output ports. Workflow data outputs are declared through reusable table or
    result contracts under `sf:hasOutputPort`; execution status, messages and diagnostics
    are returned in the framework execution envelope. Conditional control flow may use
@@ -1196,7 +1178,7 @@ chromatogram commits. It is the baseline for the next implementation slice.
    snapshots declared write tables and records `WORKFLOW_EXECUTION_STEP`. It does
    not resolve named input/output ports or artifact IDs.
 4. `cpp/core/src/project.cpp:1709–1720` implements `run_method` by appending a
-   method step to the persisted workflow before running it. This is a legacy direct
+   method step to the persisted workflow before running it. This direct
    workflow mutation path to replace with an operation-node run mode.
 5. `cpp/core/src/catalogue_binding.cpp:44–67` projects separate method and operation
    definitions. `:71+` registers both module kinds. It currently maps effects only
@@ -1399,7 +1381,7 @@ Local `dev_refactoring` contains `04a61f0b` (persisted chromatograms/native peak
 `5c176cc4` (baseline correction/smoothing). Their algorithm/source changes are now
 present in this worktree's uncommitted state and compile in the current plugin path.
 They are deliberately not called “ported to operations” yet: current registration
-still exposes the processing callbacks through the legacy method boundary until
+still exposes the processing callbacks through the current method boundary until
 Phases 3A–3C provide named ports, artifact handles and the unified executor. Do not
 claim the new framework conversion from this import alone. Import missing changes without replacing local `project_entry`,
 picker metadata, service work or generic SDK fixes. Do not merge the branch blindly
@@ -1497,7 +1479,7 @@ operation explicitly; never advertise an empty/nonexistent table as successful d
    columns. Do not expose arbitrary SQL or trust client-provided physical locators.
 6. Only then update `frontend/src/backend/protocol.ts` and
    `StreamFindApiClient.ts`. Reject incompatible service versions visibly rather than
-   masking them with frontend defaults or a legacy transport.
+   masking them with frontend defaults or a compatibility transport.
 
 ## Backend-first acceptance fixture
 
@@ -1982,58 +1964,44 @@ timestamp
 
 ---
 
-# 10. Phase 7 — VisualizationSpec runtime and MassSpec visualization operations
+# 10. Phase 7 — Renderer registry and MassSpec renderers
 
 ## Goal
 
-Introduce an extensible scientific visualization layer with one strict responsibility split:
-
-```text
-typed scientific artifact
-        ↓
-backend visualization operation
-        ↓
-sfvis:VisualizationSpec JSON artifact
-        ↓
-generic client visualization runtime
-        ↓
-Plotly.js or registered declarative D3 renderer
-```
-
-The backend decides what the scientific plot means. The client decides how a validated visualization specification is
-drawn. Section 22 is authoritative for the schema, lifecycle, MCP interoperability, data binding, security and testing
-rules used in this phase.
+Introduce the extensible scientific visualization layer.
 
 ## Tasks
 
-### 10.1 ResultRenderer and VisualizationRegistry
+### 10.1 RendererRegistry
 
-Keep the generic result registry for tables, metrics, JSON and visualization artifacts:
+Implement:
 
 ```ts
-ResultRendererRegistry.register("core.table", TableRenderer);
-ResultRendererRegistry.register("core.metric", MetricRenderer);
-ResultRendererRegistry.register("core.json", JsonRenderer);
-ResultRendererRegistry.register("core.visualization", VisualizationRenderer);
+RendererRegistry.register(id, renderer);
+RendererRegistry.resolve(artifactDescriptor);
 ```
 
-A result with semantic contract `sfvis:VisualizationSpec` resolves to `core.visualization`. The
-`VisualizationRenderer` validates the spec envelope and delegates to a renderer registered by
-`renderer.renderer_id + renderer.spec_version`.
-
-Initial visualization renderer IDs:
+Core renderer IDs:
 
 ```text
-core.plotly
-d3.force_network
-d3.provenance_graph       # later, only if needed
+core.table
+core.metric
+core.line
+core.scatter
+core.heatmap
 ```
 
-Do not register separate React plot renderers such as `mass_spec.chromatogram`, `mass_spec.spectrum`, or
-`mass_spec.feature_map` when those views are expressible as Plotly specs. Their MassSpec semantics belong in backend
-visualization operations, not in frontend branching.
+MassSpec renderer IDs:
 
-### 10.2 Generic result contract
+```text
+mass_spec.feature_map
+mass_spec.chromatogram
+mass_spec.spectrum
+mass_spec.suspect_table
+mass_spec.compound_match
+```
+
+### 10.2 Renderer contract
 
 ```ts
 interface ResultRendererProps {
@@ -2044,138 +2012,86 @@ interface ResultRendererProps {
 }
 ```
 
-`ArtifactDescriptor` discriminates `storage_kind: 'json' | 'table'` and carries semantic contract, schema,
-availability, producer/run identity and lineage. The visualization renderer obtains the bounded JSON spec through the
-typed artifact API. Artifact-backed datasets declared by the spec are resolved through the dedicated visualization-data
-API described in Section 22.
+`ArtifactDescriptor` discriminates `storage_kind: 'json' | 'table'` and carries the
+semantic contract, schema and availability. JSON renderers receive bounded decoded
+payloads through the typed artifact API; table renderers request paginated rows.
+Provide `core.json` and `core.table` fallbacks. Renderers request data through backend services.
 
-Renderers never receive DuckDB connections, physical table names, arbitrary SQL, or native implementation objects.
+They do not receive DuckDB connections or raw database access.
 
-### 10.3 Backend MassSpec visualization operations
+### 10.3 Feature map
 
-Implement scientific views as normal operations with typed inputs and an
-`sfvis:VisualizationSpec` output. Initial operations should map closely to the proven R/Plotly behavior in
-`bindings/r/R`, while using exact current C++ artifact contracts.
-
-Recommended first set:
+Implement:
 
 ```text
-mass_spec.plot_chromatogram
-mass_spec.plot_spectrum
-mass_spec.plot_feature_map
-mass_spec.plot_feature_profile
-mass_spec.plot_feature_count
-mass_spec.plot_heatmap
-mass_spec.plot_mirrored_ms2
+x = retention time
+y = m/z
+color = intensity or configurable metadata
+size = optional intensity
 ```
 
-Later candidates:
+Interactions:
 
-```text
-mass_spec.plot_fold_change
-mass_spec.plot_3d_surface
-mass_spec.plot_transformation_network
-```
+* zoom;
+* hover;
+* feature selection;
+* filtering;
+* linked details.
 
-Each operation is responsible for scientific selection, filtering, grouping, aggregation, units, labels, hover fields,
-trace grouping and appropriate downsampling policy. It must not embed StreamFind light/dark theme colors or executable
-browser code.
+### 10.4 Chromatogram viewer
 
-### 10.4 Plotly as the primary scientific renderer
+Reusable component supporting:
 
-Use Plotly.js for views that map naturally to declarative traces. Preserve analytical behavior from the legacy R package
-rather than recreating every chart in custom D3 code.
+* TIC;
+* BPC;
+* EIC;
+* selected chromatograms;
+* multiple analyses;
+* zoom;
+* range selection.
 
-Expected mappings include:
+### 10.5 Spectrum viewer
 
-```text
-chromatograms / EIC / TIC / BPC  -> scattergl lines
-feature chromatograms            -> lines + peak-region fill
-feature maps                     -> scattergl
-MS1 / MS2 spectra                -> scattergl stick traces
-mirrored MS2                     -> positive/negative stick traces
-feature counts                   -> bar/scatter
-feature profiles                 -> lines + markers/error bars
-binned data                      -> heatmap/heatmapgl
-3D binned surfaces               -> surface
-fold-change                      -> scatter
-```
+Support:
 
-Start with `scattergl`/WebGL where the R implementation already relies on it or where point counts justify it. Do not
-use D3 merely to avoid Plotly; use D3 only for visualization structures Plotly does not represent cleanly.
+* MS1;
+* MS2;
+* peak labels;
+* mirrored comparison later;
+* selected feature linkage.
 
-### 10.5 Declarative D3 renderers
+### 10.6 Suspect results table
 
-D3 support is renderer-specific and declarative. Never send executable D3/JavaScript from C++, plugin code, DuckDB, or
-MCP tool results.
+Support:
 
-A D3 specification names a known renderer and supplies data/configuration validated against that renderer's schema, for
-example:
+* compound structure;
+* score;
+* formula;
+* m/z;
+* RT;
+* evidence;
+* MS2 summary.
 
-```text
-renderer_id: d3.force_network
-payload:
-  nodes[]
-  links[]
-  node_encoding
-  link_encoding
-```
-
-The frontend owns the implementation of `d3.force_network`. Backend operations own the scientific meaning of nodes,
-links and encodings.
-
-### 10.6 Shared selections and interactions
-
-The visualization runtime exposes normalized local interaction events:
-
-```ts
-type VisualizationInteraction =
-  | { type: "select"; visualizationId: string; keys: string[] }
-  | { type: "range"; visualizationId: string; axis: "x" | "y"; min: number; max: number }
-  | { type: "hover"; visualizationId: string; key?: string };
-```
-
-Backend operations should place stable scientific identifiers such as `feature_id`, `analysis_id`, spectrum ID, or
-chromatogram ID in safe trace metadata/custom-data fields so clients can link views without parsing hover text.
+### 10.7 Linked selections
 
 Shared selection model:
 
 ```text
-Feature map
-    ↓ feature_id
+FeatureMap
+    ↓ selected feature
 Chromatogram
 Spectrum
 Metadata
-Compound evidence
+Compound match
 ```
-
-Selections are client/session state unless an explicit workflow operation persists them. Zooming or clicking a chart must
-not silently mutate project data.
-
-### 10.7 Non-plot detail renderers
-
-Tables, molecular structures, compound evidence cards and other rich result details may remain normal result renderers
-when they are not plots. Examples include:
-
-```text
-mass_spec.suspect_table
-mass_spec.compound_match
-core.table
-core.json
-```
-
-Do not force every result into `VisualizationSpec`.
 
 ## Acceptance criteria
 
-* A backend visualization operation publishes a validated immutable `sfvis:VisualizationSpec` artifact.
-* The React result explorer renders that artifact through `core.visualization` with no MassSpec-specific branching.
-* Plotly is the default scientific plotting engine and matches the analytical meaning of the corresponding R plots.
-* D3 receives only validated declarative payloads for explicitly registered renderer IDs.
-* Scientific inputs remain unchanged after plot-spec generation.
-* Theme selection is applied by the client runtime rather than baked into the backend artifact.
-* Stable datum identifiers support linked feature/chromatogram/spectrum selections.
-* JSON/table fallback renderers remain available for non-visual or unsupported results.
+* Renderer is selected through registry metadata.
+* ResultExplorer contains no `if domain === mass_spec` rendering branches.
+* Feature map works with real FEATURES data.
+* Spectrum and chromatogram components are reusable.
+* JSON and table fallback renderers always remain available.
 
 ---
 
@@ -2302,7 +2218,6 @@ Allow plugins to influence workflow and result presentation without changing gen
 Introduce a small UI metadata vocabulary, for example:
 
 ```text
-sfui:preferredVisualizationOperation
 sfui:preferredRenderer
 sfui:detailsRenderer
 sfui:icon
@@ -2320,19 +2235,13 @@ Example concept:
 
 ```text
 Features table
-  preferredVisualizationOperation → mass_spec.plot_feature_map
+  preferredRenderer → mass_spec.feature_map
   xRole → retention_time
   yRole → mz
   colorRole → intensity
-
-mass_spec.plot_feature_map
-  output semantic contract → sfvis:VisualizationSpec
-  default renderer → core.plotly
 ```
 
-The backend catalogue generator exposes normalized UI metadata. Roles such as `xRole` and `yRole` are scientific
-metadata/defaults available to visualization operations and inspectors; React must not use them to independently
-reconstruct a scientific Plotly trace when a visualization operation exists.
+The backend catalogue generator exposes normalized UI metadata.
 
 React does not interpret Turtle.
 
@@ -2964,719 +2873,275 @@ not functionality to fake or special-case in the frontend.
 
 ---
 
-# 22. VisualizationSpec, shared rendering runtime, and MCP interoperability
+# 22. Preliminary plot-spec notes (superseded by Section 23)
 
-This section is the **authoritative visualization contract** for backend, SDK/plugin, service, React and MCP work.
-Earlier references to “plot nodes”, renderer metadata, or Plotly specs must be interpreted according to this section.
+The following historical notes remain as analytical reference only. The authoritative
+contract, visualization-node design, renderer boundary, and MCP behavior are defined in
+Section 23 below. Do not implement a separate `PlotSpec` contract or frontend-only plot
+node from this section.
 
-The architectural rule is:
+## Scope
+
+- Use the existing `bindings/r/R` Plotly modules as the reference for analytical
+  views, trace meaning, axis labels, units, hover fields, legends, and responsive
+  layout. Port the plot contract, not the Shiny runtime or R implementation.
+- Keep data selection, aggregation, units, and scientific defaults in backend
+  operations. React must not read DuckDB, infer column meaning, or rebuild traces
+  from arbitrary table rows.
+- Represent a plot as a persisted or bounded JSON artifact with an explicit
+  semantic renderer contract, for example `plotSpec`, and a producer operation,
+  workflow revision, and source-artifact lineage.
+- Keep Plotly as a frontend dependency behind a generic renderer boundary. A future
+  renderer must be able to consume the same artifact contract without changing
+  operation execution.
+
+## Backend plot-spec contract
+
+Add a core-owned result contract for a Plotly-compatible specification containing:
+
+```text
+PlotSpec
+  schema_version
+  renderer: "plotly"
+  kind: "plot"
+  data: trace[]
+  layout: object
+  config: object
+  source_artifact_ids: string[]
+  metadata: { title, x_label, y_label, x_unit, y_unit, ... }
+```
+
+The backend must validate the spec before publication:
+
+- `data` is an array of supported trace objects;
+- trace arrays have compatible lengths;
+- numeric axes contain finite numbers or explicit nulls;
+- source artifact IDs exist and match the current workflow revision;
+- labels and units come from the operation/catalogue contract;
+- arbitrary executable JavaScript, HTML, event handlers, and unbounded payloads
+  are rejected;
+- payload size and point count are bounded, with a diagnostic requesting a
+  downsampled or paginated operation when limits are exceeded.
+
+Plot operations should consume named typed inputs such as feature, spectrum, EIC,
+or chromatogram artifacts and publish a JSON plot-spec artifact. They must not
+mutate their input tables. A failed plot-spec validation must publish no artifact.
+
+## Frontend generic renderer
+
+Add a typed `PlotSpecArtifact` DTO and a renderer registry with a Plotly renderer:
+
+- select the renderer from `renderer: "plotly"`, never from a MassSpec-specific
+  operation ID;
+- render `data`, `layout`, and safe `config` from the backend spec;
+- show title, units, source artifact identity, loading, empty, and error states;
+- keep large specs lazy and bounded through the artifact preview endpoint;
+- resize on canvas/container changes and dispose Plotly instances on unmount;
+- expose accessible chart text and a data-summary fallback for non-visual users;
+- report unsupported renderer versions or invalid specs as actionable frontend
+  diagnostics rather than silently rendering a blank panel.
+
+## Implementation order
+
+1. Add semantic `PlotSpec`/renderer metadata and a core JSON schema.
+2. Add backend validation and publication through the existing artifact inventory.
+3. Port one MassSpec plotting operation from the R reference, starting with a
+   bounded chromatogram or feature plot; do not implement every R view at once.
+4. Add the typed service artifact-preview response for plot specs.
+5. Add the generic React renderer and a renderer-capability entry in the catalogue.
+6. Add a frontend plot node/view that consumes the typed plot-spec artifact.
+7. Add regression fixtures for valid specs, empty data, mismatched trace lengths,
+   invalid values, stale source artifacts, oversized payloads, and renderer errors.
+8. Validate one real MassSpec operation end to end against a disposable project,
+   then add additional views only after the first renderer contract is stable.
+
+## Acceptance criteria
+
+- The backend generates the plot spec; the frontend does not reconstruct it.
+- A valid Plotly spec is rendered by the generic renderer without MassSpec-specific
+  branching in the renderer component.
+- Plot artifacts retain producer, workflow revision, source lineage, and renderer
+  metadata.
+- Input artifacts remain unchanged after plotting.
+- Invalid, stale, oversized, or unsupported specs fail visibly and publish nothing.
+- The Plotly renderer has unit tests and a live browser smoke test with no console
+  or page errors.
+- The first ported view matches the corresponding analytical reference's meaning,
+  axes, units, hover fields, and responsive behavior.
+
+---
+
+# 23. Authoritative VisualizationSpec, visualization nodes, and MCP runtime
+
+Section 22 is historical reference only. This section defines the implementation target
+for the current C++ service and frontend.
 
 ```text
 scientific artifact(s)
         │
         ▼
-backend visualization operation
+visualization operation node
         │
         ▼
 immutable sfvis:VisualizationSpec artifact
         │
-        ├──────────────────────────────┐
-        ▼                              ▼
-React application                    MCP server
-        │                              │
-        ▼                              ├── structured VisualizationSpec
-shared visualization runtime           ├── MCP App/UI when host supports it
-        │                              └── text/static fallback otherwise
-   ┌────┴─────┐
-   ▼          ▼
-Plotly.js   registered D3 renderer
+        ├── Workflow output anchor
+        ├── Explorer/result viewer
+        ├── shared React visualization runtime
+        └── MCP structured content / MCP App / fallback
 ```
 
-The C++ core and plugins never render a browser plot. They generate a validated StreamFind envelope whose payload is
-renderer-specific. Plotly is the primary scientific renderer; D3 is available for a small number of registered
-declarative structures.
+A visualization node is a normal persisted operation node. It is not a frontend-only
+computation node and not a second workflow execution model. Workflow and Explorer show
+the same node, run, output port and artifact identity.
 
-## 22.1 Design goals
+## 23.1 Envelope
 
-The visualization system must:
-
-* make scientific plots normal workflow outputs with artifact identity, provenance and cache behavior;
-* keep scientific data selection/aggregation in backend operations;
-* keep browser rendering, theme and interaction implementation in the client;
-* reproduce the useful analytical semantics of the legacy R/Plotly implementation under `bindings/r`;
-* support Plotly.js without making raw Plotly JSON the entire StreamFind contract;
-* permit selected D3 visualizations without transporting executable JavaScript;
-* allow the same visualization artifact to be consumed by React, MCP-capable AI clients, tests and future bindings;
-* scale from small inline plots to large artifact-backed datasets;
-* remain versioned, validated and safe to deserialize;
-* provide meaningful fallback information when an interactive renderer is unavailable.
-
-The visualization system must not:
-
-* expose DuckDB directly to React or MCP clients;
-* make React infer scientific semantics from physical table columns;
-* store executable JavaScript, HTML callbacks, function bodies or arbitrary event handlers in a plot artifact;
-* bake light/dark mode or StreamFind UI theme colors into scientific backend operations;
-* require Node, Chromium, Plotly or D3 inside the C++ core;
-* duplicate a visualization-specific persistence system outside the normal artifact inventory.
-
-## 22.2 VisualizationSpec semantic contract
-
-Introduce a core semantic contract:
-
-```text
-sfvis:VisualizationSpec
-```
-
-It is normally persisted as a bounded JSON artifact and participates in the same immutable artifact inventory as any
-other operation result.
-
-Canonical envelope:
+Use the core semantic contract `sfvis:VisualizationSpec`, stored as a bounded JSON
+artifact in the normal inventory:
 
 ```json
 {
   "schema": "streamfind.visualization/v1",
   "visualization_id": "vis_42",
   "semantic_type": "mass_spec.chromatogram",
-
   "renderer": {
     "engine": "plotly",
     "renderer_id": "core.plotly",
     "spec_version": "1"
   },
-
   "title": "Extracted ion chromatogram",
-
   "data_mode": "inline",
-
-  "payload": {
-    "data": [],
-    "layout": {},
-    "config": {}
-  },
-
+  "payload": { "data": [], "layout": {}, "config": {} },
   "data_bindings": [],
-
-  "interaction": {
-    "selection_key": "feature_id"
-  },
-
+  "interaction": { "selection_key": "feature_id" },
   "provenance": {
     "source_artifact_ids": ["artifact_91"],
     "producer_operation_id": "mass_spec.plot_chromatogram",
     "producer_node_id": "node_8",
     "workflow_revision": 12
   },
-
   "fallback": {
     "description": "EIC for m/z 301.071 ± 5 ppm from 0–18 min"
   }
 }
 ```
 
-Required top-level fields:
+The envelope requires the schema, visualization identity, semantic type, complete
+renderer descriptor, data mode, payload and/or bindings, source-artifact provenance,
+and fallback description. Breaking envelope changes require a new schema version;
+breaking renderer payload changes require a new renderer spec version. Unknown versions
+fail visibly instead of being guessed.
+
+## 23.2 Operation and node behavior
+
+Visualization preparation is a normal operation with typed inputs, parameters, outputs,
+validation, cacheability, lifecycle, provenance and atomic artifact publication:
 
 ```text
-schema
-visualization_id
-semantic_type
-renderer.engine
-renderer.renderer_id
-renderer.spec_version
-data_mode
-payload and/or data_bindings
-provenance.source_artifact_ids
-fallback.description
+mass_spec.plot_chromatogram
+inputs:  chromatograms : sfms:ChromatogramResult
+outputs: visualization : sfvis:VisualizationSpec
 ```
 
-The StreamFind envelope is stable across renderer families. The inner `payload` schema is validated according to
-`renderer_id + spec_version`; a Plotly payload and a D3 network payload are not expected to be interchangeable.
+The backend operation owns scientific selection, aggregation, units, grouping, labels,
+hover fields, stable selection keys and sampling policy. It does not own browser or
+renderer instances. It never mutates its input artifacts.
 
-## 22.3 Renderer descriptor and versioning
+The frontend node must:
 
-Renderer identity is explicit:
+- display the operation label, status, input contracts and visualization output;
+- expose the output artifact only after a matching published artifact exists;
+- show authoritative idle/running/failed/empty/available states;
+- open the shared viewer while preserving node, run, revision and artifact identity;
+- use exact semantic contract and normalized schema compatibility;
+- work identically in Workflow and Explorer;
+- remove transitional executable `plot`/`extract` node paths once the operation cutover
+  lands.
 
-```text
-RendererDescriptor
-  engine
-  renderer_id
-  spec_version
-```
+Do not add a frontend algorithm named `plot_features`, `plot_chromatogram` or
+`plot_spectrum`. Those may be discovered backend operation IDs; the generic node and
+renderer remain unchanged.
 
-Initial values:
+## 23.3 Plotly, artifact data, and D3
 
-```text
-engine: plotly
-renderer_id: core.plotly
-spec_version: 1
+`core.plotly` is the first renderer. Its payload may be close to Plotly.js, but the
+StreamFind envelope remains the contract. Validate supported trace types, compatible
+array lengths, finite numeric values or explicit nulls, safe JSON properties, bounded
+point counts, and source-artifact identity. Reject scripts, callbacks, HTML injection,
+function-valued fields and unbounded arrays. Theme, fonts and colors remain client-owned.
 
-engine: d3
-renderer_id: d3.force_network
-spec_version: 1
-```
-
-The client rejects unknown renderer IDs or unsupported spec versions with an actionable diagnostic and still shows the
-fallback description/data where possible. Never silently reinterpret a v2 payload as v1.
-
-Schema evolution rules:
-
-* additive optional fields may remain within a compatible spec version only when old clients can safely ignore them;
-* breaking payload changes require a new renderer `spec_version`;
-* breaking envelope changes require a new `streamfind.visualization/vN` schema;
-* persisted visualization artifacts keep the exact version that produced them;
-* renderers support a small explicit compatibility range rather than “best effort” parsing.
-
-## 22.4 Plotly payload
-
-For `core.plotly`, payload is deliberately close to Plotly.js:
-
-```json
-{
-  "data": [
-    {
-      "type": "scattergl",
-      "mode": "lines",
-      "x": [0.1, 0.2, 0.3],
-      "y": [123, 415, 302],
-      "name": "Sample 1",
-      "customdata": [["analysis_1"], ["analysis_1"], ["analysis_1"]]
-    }
-  ],
-  "layout": {
-    "xaxis": { "title": { "text": "Retention time [min]" } },
-    "yaxis": { "title": { "text": "Intensity" } }
-  },
-  "config": {
-    "responsive": true
-  }
-}
-```
-
-The backend operation prepares the Plotly traces because it owns scientific grouping, units and defaults. The React
-renderer stays thin: validate DTO -> apply client theme/safe defaults -> pass `data/layout/config` to Plotly.js.
-
-Keep the allowed Plotly surface constrained. Backend validation rejects unsupported trace types, executable properties,
-HTML/script injection, function-valued fields and unbounded arrays.
-
-## 22.5 Declarative D3 payloads
-
-D3 is not itself a portable plot-spec format. StreamFind therefore registers named D3 renderers with explicit schemas.
-
-Example:
-
-```json
-{
-  "schema": "streamfind.visualization/v1",
-  "semantic_type": "mass_spec.transformation_network",
-  "renderer": {
-    "engine": "d3",
-    "renderer_id": "d3.force_network",
-    "spec_version": "1"
-  },
-  "data_mode": "inline",
-  "payload": {
-    "nodes": [
-      { "id": "F1", "label": "m/z 301.071" },
-      { "id": "F2", "label": "m/z 317.066" }
-    ],
-    "links": [
-      { "source": "F1", "target": "F2", "type": "oxidation" }
-    ],
-    "node_encoding": {
-      "size": "intensity",
-      "label": "label"
-    }
-  }
-}
-```
-
-No D3 callback, JavaScript source, DOM selector or function body is allowed in the artifact. The client implementation of
-`d3.force_network` is trusted code shipped with the visualization runtime.
-
-## 22.6 Inline and artifact-backed data modes
-
-Support two data modes.
-
-### Inline
-
-Use for bounded plots whose renderer data is small enough to serialize, cache, inspect and send through MCP directly:
-
-```text
-data_mode: inline
-payload contains renderer data arrays
-```
-
-### Artifact-backed
-
-Use for dense chromatograms, feature maps, long sensor series, large heatmaps or other data that should not be copied
-into a large JSON artifact:
+Use `data_mode: "inline"` only for bounded plots. For dense chromatograms, feature maps,
+heatmaps or sensor series, use declared `data_bindings`:
 
 ```json
 {
   "data_mode": "artifact",
-  "payload": {
-    "layout": {},
-    "config": {}
-  },
+  "payload": { "layout": {}, "config": {} },
   "data_bindings": [
     {
       "binding_id": "chromatogram_points",
       "artifact_id": "artifact_982",
       "semantic_contract": "sfms:ChromatogramPoints",
       "columns": ["rt", "intensity", "analysis_id"],
-      "query": {
-        "filters": []
-      },
-      "sampling": {
-        "method": "lttb",
-        "max_points": 10000
-      }
+      "query": { "filters": [] },
+      "sampling": { "method": "lttb", "max_points": 10000 }
     }
   ]
 }
 ```
 
-Rules:
+The client resolves only declared bindings through a bounded typed service such as
+`visualization.get_data`; it never creates arbitrary SQL. The service checks project
+authorization and exact artifact identity.
 
-* the visualization operation chooses the binding, columns, filters, grouping and sampling policy;
-* the client resolves only the declared binding through a typed service endpoint;
-* the client never converts a binding into arbitrary SQL;
-* the service verifies project/session authorization and that the requested artifact matches the published binding;
-* server responses are bounded and may be chunked/streamed later without changing the visualization envelope;
-* downsampling must preserve the analytical purpose of the plot and be declared in provenance/metadata;
-* an MCP client may request a smaller bounded representation than the React app, but must not silently change scientific
-  aggregation semantics.
+D3 is a renderer implementation, not a portable format. Register explicit declarative
+renderers such as `d3.force_network` or `d3.provenance_graph` only when Plotly is not
+appropriate. Payloads may contain validated nodes, links and encodings, never JavaScript,
+callbacks, DOM selectors or function bodies.
 
-Recommended service surface:
+## 23.4 Shared React/MCP runtime
 
-```text
-visualization.get_spec(artifact_id)
-visualization.get_data(visualization_artifact_id, binding_id, viewport?, limit?)
-```
-
-This may internally reuse generic artifact-query infrastructure, but visualization clients receive a constrained
-visualization-data contract rather than arbitrary SQL capability.
-
-## 22.7 Backend operation contract
-
-Visualization preparation is a normal operation class, not a special side channel.
-
-Conceptual operation:
+Create one typed runtime used by React and the future MCP App:
 
 ```text
-mass_spec.plot_chromatogram
-
-inputs:
-  chromatograms : sfms:ChromatogramResult
-
-parameters:
-  analyses
-  chromatogram_type
-  normalization
-  rt_min
-  rt_max
-
-output:
-  visualization : sfvis:VisualizationSpec
+frontend/src/visualization/
+├── VisualizationRenderer.tsx
+├── VisualizationRegistry.ts
+├── visualizationTypes.ts
+├── visualizationSchema.ts
+├── VisualizationDataResolver.ts
+├── interactions.ts
+├── plotly/PlotlyRenderer.tsx
+└── d3/D3RendererRegistry.ts
 ```
 
-Conceptual C++ DTO:
-
-```cpp
-struct VisualizationSpec {
-    std::string schema;
-    std::string visualization_id;
-    std::string semantic_type;
-    RendererDescriptor renderer;
-    std::string data_mode;
-    nlohmann::json payload;
-    nlohmann::json data_bindings;
-    nlohmann::json interaction;
-    nlohmann::json provenance;
-    nlohmann::json fallback;
-};
-```
-
-Exact ABI representation follows the existing SDK opaque-buffer/C-ABI rules. Do not expose C++ STL/JSON types across a
-binary plugin boundary merely because the conceptual DTO uses them here.
-
-Publication rules:
-
-* resolve exact input artifact IDs from node bindings;
-* build the visualization spec from immutable inputs;
-* validate envelope + renderer payload + referenced bindings;
-* publish the JSON artifact atomically;
-* record source artifact lineage and producing node/run;
-* on validation, cancellation or operation failure publish no partial visualization artifact.
-
-## 22.8 Provenance, fingerprinting and cache behavior
-
-Visualization artifacts use the normal artifact lifecycle.
-
-A visualization fingerprint/cache key includes at least:
-
-```text
-producer operation/plugin/version
-VisualizationSpec envelope version
-renderer_id + renderer spec_version
-normalized plot-operation parameters
-ordered named source artifact fingerprints
-scientifically relevant sampling/aggregation settings
-```
-
-Theme, browser width, current zoom, hover state and other presentation-only client state must not invalidate the backend
-scientific visualization artifact.
-
-Artifact provenance makes it possible to answer:
-
-* which workflow node produced this plot;
-* which source artifacts it visualizes;
-* which operation parameters were used;
-* whether downsampling/aggregation occurred;
-* which renderer contract/version is required.
-
-## 22.9 Validation and security
-
-Validate before publication and again at the trust boundary where appropriate.
-
-Minimum validation:
-
-* envelope schema/version is known;
-* `renderer_id + spec_version` is registered;
-* all source artifact IDs exist and belong to the resolved project/run context;
-* artifact-backed binding IDs are unique and authorized;
-* Plotly trace arrays have compatible lengths;
-* numeric arrays contain finite values or explicit nulls according to schema;
-* D3 node/link references are internally consistent;
-* units/labels required by the operation contract are present;
-* payload bytes, trace count, point count, text length and nested depth are bounded;
-* no arbitrary JavaScript, HTML callbacks, event-handler source, DOM selectors or executable expressions are accepted;
-* URLs/resources, if ever added, require a separate allowlisted resource contract rather than arbitrary renderer fields.
-
-Invalid specs are operation failures with diagnostics, not “best effort” plots.
-
-## 22.10 Theme and presentation authority
-
-Backend visualization operations emit semantic presentation information:
-
-```text
-axis meaning
-axis label
-unit
-series identity
-legend meaning
-annotation meaning
-scientific color category/role where necessary
-```
-
-They do not emit UI-theme decisions such as:
-
-```text
-darkMode
-application background
-global font
-grid color
-StreamFind panel color
-selection highlight color
-```
-
-The shared visualization runtime applies those from StreamFind theme tokens. This allows the same persisted spec to render
-in light/dark mode, the React app, an MCP App, static export, or another future client without recomputation.
-
-When a scientific convention truly requires a color identity, encode it as semantic metadata and document it separately
-from UI-theme styling.
-
-## 22.11 Shared visualization runtime
-
-Keep one implementation of StreamFind visualization rendering.
-
-Target internal package:
-
-```text
-frontend/
-├── src/
-│   └── visualization/                 # app integration
-└── packages/
-    └── visualization-runtime/
-        ├── src/
-        │   ├── VisualizationSpec.ts
-        │   ├── VisualizationRenderer.tsx
-        │   ├── VisualizationRegistry.ts
-        │   ├── VisualizationDataResolver.ts
-        │   ├── interactions.ts
-        │   ├── plotly/
-        │   │   ├── PlotlyRenderer.tsx
-        │   │   └── plotlyAdapter.ts
-        │   └── d3/
-        │       ├── D3RendererRegistry.ts
-        │       └── ForceNetworkRenderer.tsx
-        └── schemas/
-            └── visualization-v1.schema.json
-```
-
-The main React app consumes this package. An MCP visualization UI/app consumes the same package rather than
-reimplementing chart semantics.
-
-If introducing a workspace package is premature, first implement these boundaries under `frontend/src/visualization`
-but keep imports/API boundaries extraction-ready. Do not fork renderer code for MCP.
-
-## 22.12 MCP transport contract
-
-Expose visualization results to MCP as structured data first.
-
-Recommended MCP-facing tools/resources:
-
-```text
-streamfind.get_visualization
-streamfind.get_visualization_data
-```
-
-A successful result exposes the bounded `VisualizationSpec` as structured content so an AI agent can inspect semantic
-type, axes, series, labels, provenance and fallback description even when it cannot render the chart.
-
-For artifact-backed plots, the MCP layer may expose bounded data retrieval through
-`streamfind.get_visualization_data`; it must preserve the published binding and service limits rather than grant
-arbitrary database access.
-
-Do not make PNG the primary contract. The structured spec is the canonical machine-readable result.
-
-## 22.13 MCP interactive UI
-
-When an MCP host supports an embedded MCP App/UI resource, provide a generic StreamFind visualization application that
-uses the shared visualization runtime:
-
-```text
-MCP host
-   ↓ calls StreamFind tool
-StreamFind MCP
-   ├── structured VisualizationSpec
-   └── StreamFind visualization UI resource
-                ↓
-      shared visualization runtime
-          ├── Plotly.js
-          └── registered D3 renderer
-```
-
-The MCP UI contains no MassSpec-specific plotting logic. It receives the same spec that the React application uses.
-
-Treat embedded UI support as an optional host capability. Tool results remain useful without it.
-
-## 22.14 MCP and non-interactive fallbacks
-
-Every visualization spec includes a concise semantic fallback description. Where useful, the MCP/service layer may also
-offer:
-
-```text
-text summary
-PNG
-SVG
-WebP
-```
-
-Static image generation is an adapter/service concern, not a C++ core dependency. Do not add Chromium/Node/Plotly
-rendering dependencies to the scientific core merely to create an image.
-
-Fallback priority:
-
-```text
-1. structured VisualizationSpec
-2. interactive shared runtime when supported
-3. static PNG/SVG when available and useful
-4. concise semantic text description
-```
-
-This allows terminal-oriented MCP harnesses and AI agents to consume the result even when rich UI is unavailable.
-
-## 22.15 Client interactions and linked views
-
-The visualization spec may advertise stable selection keys:
-
-```json
-{
-  "interaction": {
-    "selection_key": "feature_id",
-    "hover_key": "feature_id"
-  }
-}
-```
-
-Plotly `customdata` or D3 datum fields carry stable identifiers. The runtime translates renderer-specific events into
-normalized `VisualizationInteraction` events.
-
-Linked-view state belongs to the client project/session:
-
-```text
-selected feature
-   ├── feature map highlight
-   ├── chromatogram request/view
-   ├── spectrum request/view
-   └── metadata/evidence panel
-```
-
-A click/zoom/hover does not mutate workflow artifacts. If an interaction should launch a new backend operation, that
-transition must be explicit and auditable.
-
-## 22.16 Legacy R plotting reference and migration order
-
-Use `bindings/r/R/utils_plots.R`, `class_ProjectNonTargetAnalysis.R`, chromatogram result modules, spectrum modules and
-related Plotly code as the analytical reference. Preserve meaning, not implementation details.
-
-Recommended migration order:
-
-```text
-1. chromatogram / EIC / TIC / BPC
-2. MS1/MS2 spectrum
-3. feature map
-4. feature profile and feature count
-5. heatmap / grouped heatmap
-6. mirrored suspect/MS2 comparison
-7. fold-change plot
-8. 3D surface
-9. network/provenance D3 views where Plotly is not appropriate
-```
-
-For each port compare:
-
-* input selection semantics;
-* axes and units;
-* grouping/legend behavior;
-* normalization;
-* peak-region representation;
-* hover fields;
-* label behavior;
-* WebGL use/point density;
-* analytical defaults.
-
-Do not mechanically port R/Shiny theme code such as `darkMode`; those concerns belong to the client runtime.
-
-## 22.17 First vertical slice
-
-The first end-to-end implementation is deliberately narrow:
-
-```text
-Chromatogram artifact
-        ↓
-mass_spec.plot_chromatogram
-        ↓
-validated sfvis:VisualizationSpec
-        ↓
-artifact inventory
-        ↓
-visualization.get_spec
-        ↓
-core.visualization
-        ↓
-core.plotly
-        ↓
-Plotly.js in React
-```
-
-Acceptance for this slice requires a real disposable project and real backend-produced chromatogram data. Do not treat a
-hard-coded frontend fixture as completion.
-
-After the React slice is stable, exercise the same spec through MCP structured output. Only then add additional plot
-operations and optional MCP interactive UI/static render adapters.
-
-## 22.18 Testing strategy
-
-### Backend/schema tests
-
-Cover:
-
-* valid Plotly spec;
-* empty-but-valid plot;
-* unsupported trace type;
-* mismatched x/y/customdata lengths;
-* NaN/infinite numeric values;
-* missing source artifact;
-* stale/invalid binding;
-* oversized inline payload;
-* excessive point count;
-* unknown renderer/spec version;
-* D3 dangling node/link IDs;
-* attempted executable/script field;
-* atomic failure with no published artifact.
-
-### Frontend/runtime tests
-
-Cover:
-
-* schema validation;
-* renderer resolution;
-* Plotly mount/update/unmount;
-* responsive resize;
-* light/dark theme application without changing backend spec;
-* inline data;
-* artifact-backed data loading;
-* empty state;
-* loading/error state;
-* unsupported renderer/version fallback;
-* normalized selection events;
-* no console/page errors in browser smoke test.
-
-### Integration tests
-
-Cover:
-
-```text
-workflow artifact
-  → plot operation
-  → VisualizationSpec artifact
-  → service fetch
-  → React render
-```
-
-Then cover:
-
-```text
-VisualizationSpec artifact
-  → MCP tool result structured content
-  → fallback description
-  → interactive MCP UI when available
-```
-
-Golden/regression fixtures compare scientific meaning and contract structure, not pixel-perfect screenshots as the only
-correctness criterion.
-
-## 22.19 Implementation order for another agent
-
-Implement in this order unless a compile/runtime dependency forces a smaller coordinated slice:
-
-1. Define `sfvis:VisualizationSpec` semantic contract and JSON schema.
-2. Add renderer descriptor/version rules and validation.
-3. Add visualization artifact publication through the existing artifact inventory.
-4. Implement `mass_spec.plot_chromatogram` against exact current artifact contracts.
-5. Add `visualization.get_spec` and bounded artifact-preview/service DTOs.
-6. Add `frontend/src/visualization` with `VisualizationRenderer`, registry and `core.plotly`.
-7. Render the real chromatogram spec end to end in React.
-8. Add artifact-backed `visualization.get_data` only when the first real dense plot requires it; do not overbuild first.
-9. Add normalized selection interactions and linked-view hooks.
-10. Port spectrum and feature-map operations from the R analytical reference.
-11. Extract the renderer into `frontend/packages/visualization-runtime` if not done initially.
-12. Expose `VisualizationSpec` from MCP as structured content.
-13. Reuse the shared runtime in an optional MCP visualization UI/app.
-14. Add optional static image adapters outside the C++ core.
-15. Add D3 only for a concrete visualization whose structure is not cleanly represented by Plotly.
-16. Continue the R migration list with regression tests for every visualization operation.
-
-Do not implement every plot type before validating the first end-to-end contract.
-
-## 22.20 Completion criteria
-
-This visualization architecture is complete enough to expand when all of the following are true:
-
-* backend operations, not React, generate scientific plot specifications;
-* `VisualizationSpec` is immutable, versioned, schema-validated and stored in the normal artifact inventory;
-* Plotly.js renders a backend-generated real MassSpec plot through one generic client component;
-* large-data plots have a bounded artifact-backed path with no arbitrary SQL exposure;
-* client theme changes do not recompute or mutate the visualization artifact;
-* no executable D3/JavaScript is transported in visualization specs;
-* D3, when used, resolves through an explicit registered renderer schema;
-* source artifact lineage, producer node/run and sampling/aggregation metadata are inspectable;
-* invalid/oversized/stale specs fail visibly and publish no partial artifact;
-* React contains no MassSpec-specific plot reconstruction branch;
-* MCP can return the same visualization spec as structured content;
-* MCP clients without rich rendering still receive a useful fallback description and, where available, static image;
-* interactive MCP rendering, when supported, reuses the same visualization runtime as React;
-* the first migrated plots preserve the analytical meaning, axes, units, grouping, hover data and relevant interactions of
-  the legacy R/Plotly views.
+Resolve renderers by `engine + renderer_id + spec_version`. Provide Plotly, registered
+D3, text-summary and static fallback adapters without exposing DuckDB or database
+handles. MCP returns the bounded envelope as structured content, a shared
+`ui://streamfind/visualization` resource when supported, and text/static fallback when
+not supported. Static rendering belongs to the service/MCP adapter, not C++ core.
+
+## 23.5 Delivery sequence and tests
+
+1. Define `sfvis:VisualizationSpec`, renderer metadata and JSON schemas in the semantic
+   catalogue boundary.
+2. Add native validation and atomic artifact publication.
+3. Implement one bounded MassSpec chromatogram or feature-map visualization operation,
+   using the analytical reference only for meaning, axes, units and interactions.
+4. Add typed protocol DTOs and bounded spec/data endpoints.
+5. Replace transitional frontend plot/extract branches with ordinary operation nodes.
+6. Add the registry, Plotly renderer, output-anchor viewer and Explorer result card.
+7. Add MCP structured-content and MCP App adapters using the same envelope.
+8. Add D3 only for a concrete non-Plotly view.
+
+Test valid/empty specs, mismatched traces, invalid values, stale inputs, oversized
+payloads, unsupported versions, invalid D3 links, no-publication-on-failure, registry
+resolution, artifact loading, linked selection, renderer lifecycle and accessible
+fallbacks. Browser smoke must run one real visualization operation against a disposable
+project with no page or console errors.
+
+Acceptance requires backend-generated immutable specs, ordinary operation visualization
+nodes, shared Workflow/Explorer/MCP identity, no frontend scientific trace
+reconstruction, bounded large-data resolution, visible failures, and preserved
+analytical meaning from the reference implementation.
