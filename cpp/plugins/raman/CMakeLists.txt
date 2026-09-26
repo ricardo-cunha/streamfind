@@ -31,6 +31,7 @@ add_custom_command(TARGET streamfind_raman_plugin POST_BUILD
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_raman_plugin>/catalogue.duckdb")
 streamfind_validate_plugin_build(streamfind_raman_plugin raman)
+streamfind_stage_mingw_plugin_runtime(streamfind_raman_plugin raman)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/raman/ontology)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"

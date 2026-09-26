@@ -57,6 +57,7 @@ add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/catalogue.duckdb")
 streamfind_validate_plugin_build(streamfind_mass_spec_plugin mass_spec)
+streamfind_stage_mingw_plugin_runtime(streamfind_mass_spec_plugin mass_spec)
 if(MSVC)
     target_compile_definitions(streamfind_mass_spec_plugin PRIVATE
         NOMINMAX

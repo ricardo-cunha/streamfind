@@ -79,7 +79,11 @@ Write-Log "Configuring: cmake $($configureArgs -join ' ')"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
 
 $buildArgs = @('--build', $buildDir, '--config', $Config)
-if ($Target) { $buildArgs += @('--target', $Target) }
+if ($Target) {
+    $buildArgs += @('--target', $Target)
+} else {
+    $buildArgs += @('--target', 'all')
+}
 Write-Log "Building: cmake $($buildArgs -join ' ')"
 & $cmake @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "CMake build failed ($LASTEXITCODE)" }

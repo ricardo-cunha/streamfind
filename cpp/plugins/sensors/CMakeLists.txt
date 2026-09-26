@@ -27,6 +27,7 @@ add_custom_command(TARGET streamfind_sensors_plugin POST_BUILD
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_sensors_plugin>/catalogue.duckdb")
 streamfind_validate_plugin_build(streamfind_sensors_plugin sensors)
+streamfind_stage_mingw_plugin_runtime(streamfind_sensors_plugin sensors)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/sensors/ontology)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
