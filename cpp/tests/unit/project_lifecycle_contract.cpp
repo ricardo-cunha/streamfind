@@ -23,7 +23,26 @@ int run() {
             return streamfind::Json{{"status", "tail"}};
         }));
 
+    streamfind::OperationDefinition consumer_definition;
+    consumer_definition.id = "test.consumer";
+    consumer_definition.name = "Consumer operation";
+    consumer_definition.domain = "test";
+    consumer_definition.input_ports.push_back({"input", "test.table", "one", "duckdb_table", {"table"}, false});
+    operations.register_operation(streamfind::Operation(
+        consumer_definition,
+        [](streamfind::Project &, const streamfind::Json &, const std::string &, const streamfind::Json &) {
+            return streamfind::Json{{"status", "consumer"}};
+        }));
+
     auto project = streamfind::Project::create({path, {{"owner", "test"}}});
+    const auto added = streamfind::api::run(
+        streamfind::api::ProjectCommand::add_operation,
+        {{"database_path", path.string()}, {"operation_id", "consumer-1"},
+         {"operation", "test.consumer"}}, operations);
+    if (!added.at("updated") || added.at("workflow").at("operations").size() != 1) {
+        std::cerr << "incremental operation insertion failed\n";
+        return 1;
+    }
     streamfind::Workflow workflow;
     workflow.name = "operation graph lifecycle";
     workflow.operations.push_back({"tail-1", "test.tail", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()});
@@ -33,6 +52,22 @@ int run() {
         result.at("operations").size() != 1 ||
         result.at("operations").at(0).at("result").at("status") != "tail") {
         std::cerr << "operation graph execution failed\n";
+        return 1;
+    }
+    const auto artifact_id = project.publish_result_artifact(
+        "test.result", {{"value", 42}}, "test.tail", "tail-1", workflow.version);
+    const auto inventory = streamfind::api::run(
+        streamfind::api::ProjectCommand::get_artifact_inventory,
+        {{"database_path", path.string()}}, operations);
+    if (inventory.size() != 1 || inventory.at(0).contains("payload")) {
+        std::cerr << "artifact inventory was not metadata-only\n";
+        return 1;
+    }
+    const auto requested = streamfind::api::run(
+        streamfind::api::ProjectCommand::request_artifact,
+        {{"database_path", path.string()}, {"artifact_id", artifact_id}, {"include_data", true}}, operations);
+    if (requested.size() != 1 || requested.at(0).at("data").at("value") != 42) {
+        std::cerr << "targeted artifact request failed\n";
         return 1;
     }
 

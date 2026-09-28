@@ -5,6 +5,8 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <chrono>
 #include <vector>
 
 #ifdef _WIN32
@@ -18,6 +20,9 @@ extern char **environ;
 
 namespace streamfind::sdk::detail {
 
+constexpr const char *kJavaUrlTemplate =
+    "https://api.adoptium.net/v3/binary/latest/21/ga/{os}/{arch}/jdk/hotspot/normal/eclipse";
+
 std::optional<std::filesystem::path> find_java() {
     const auto executable_name =
 #ifdef _WIN32
@@ -25,31 +30,7 @@ std::optional<std::filesystem::path> find_java() {
 #else
         std::string("java");
 #endif
-    if (const char *raw_path = std::getenv("PATH"); raw_path && *raw_path) {
-#ifdef _WIN32
-        constexpr char separator = ';';
-#else
-        constexpr char separator = ':';
-#endif
-        std::stringstream paths(raw_path);
-        std::string directory;
-        while (std::getline(paths, directory, separator)) {
-            if (directory.empty()) continue;
-            const auto candidate = std::filesystem::path(directory) / executable_name;
-            if (std::filesystem::is_regular_file(candidate)) return candidate;
-        }
-    }
-    if (const char *java_home = std::getenv("JAVA_HOME"); java_home && *java_home) {
-        const auto candidate = std::filesystem::path(java_home) / "bin" / executable_name;
-        if (std::filesystem::is_regular_file(candidate)) return candidate;
-    }
-#ifdef _WIN32
-    const char *home = std::getenv("USERPROFILE");
-#else
-    const char *home = std::getenv("HOME");
-#endif
-    if (!home || !*home) return std::nullopt;
-    const auto java_root = std::filesystem::path(home) / ".streamfind" / "tools" / "java";
+    const auto java_root = streamfind_home() / "tools" / "java";
     if (!std::filesystem::is_directory(java_root)) return std::nullopt;
     for (const auto &entry : std::filesystem::directory_iterator(java_root)) {
         if (!entry.is_directory()) continue;
@@ -57,6 +38,103 @@ std::optional<std::filesystem::path> find_java() {
         if (std::filesystem::is_regular_file(candidate)) return candidate;
     }
     return std::nullopt;
+}
+
+int run_process(const std::filesystem::path &executable, const std::vector<std::string> &arguments);
+
+std::optional<std::filesystem::path> install_java(std::string &diagnostics) {
+#ifdef _WIN32
+    const std::string java_name = "java.exe";
+#else
+    const std::string java_name = "java";
+#endif
+    const auto java_root = streamfind_home() / "tools" / "java";
+    const auto staging = streamfind_home() / "tools" / ".java-installing";
+    const auto lock = streamfind_home() / "tools" / ".java-install.lock";
+    std::error_code lock_error;
+    std::filesystem::create_directories(lock.parent_path(), lock_error);
+    if (!std::filesystem::create_directory(lock, lock_error)) {
+        for (int attempt = 0; attempt < 120; ++attempt) {
+            if (const auto java = find_java()) return java;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        diagnostics = "Timed out waiting for another StreamFind process to install Java under " +
+                      java_root.string() + ".";
+        return std::nullopt;
+    }
+    const auto release_lock = [&]() { std::error_code ignored; std::filesystem::remove_all(lock, ignored); };
+    const auto archive = staging / (
+#ifdef _WIN32
+        "temurin21.zip"
+#else
+        "temurin21.tar.gz"
+#endif
+    );
+    std::error_code error;
+    std::filesystem::remove_all(staging, error);
+    std::filesystem::create_directories(staging, error);
+    if (error) {
+        diagnostics = "Unable to create StreamFind Java tool directory " + staging.string() + ": " + error.message();
+        release_lock();
+        return std::nullopt;
+    }
+    std::string url = kJavaUrlTemplate;
+#ifdef _WIN32
+    const std::string os = "windows";
+#elif defined(__APPLE__)
+    const std::string os = "mac";
+#else
+    const std::string os = "linux";
+#endif
+    url.replace(url.find("{os}"), 4, os);
+    url.replace(url.find("{arch}"), 6, "x64");
+    if (run_process("curl", {"--fail", "--location", "--silent", "--show-error", "--output",
+                              archive.string(), url}) != 0) {
+        std::filesystem::remove_all(staging, error);
+        diagnostics = "Unable to download Temurin JDK 21 into " + java_root.string() +
+                      ". Install curl or check network access.";
+        release_lock();
+        return std::nullopt;
+    }
+    const auto extracted = staging / "extracted";
+    std::filesystem::create_directories(extracted, error);
+    if (run_process("tar", {"-xf", archive.string(), "-C", extracted.string()}) != 0) {
+        std::filesystem::remove_all(staging, error);
+        diagnostics = "Unable to extract the Temurin JDK archive in " + staging.string() + ".";
+        release_lock();
+        return std::nullopt;
+    }
+    std::filesystem::path installed;
+    for (const auto &entry : std::filesystem::directory_iterator(extracted)) {
+        if (entry.is_directory()) {
+            installed = entry.path();
+            break;
+        }
+    }
+    if (installed.empty()) {
+        std::filesystem::remove_all(staging, error);
+        diagnostics = "The downloaded Temurin JDK archive did not contain a top-level JDK directory.";
+        release_lock();
+        return std::nullopt;
+    }
+    std::filesystem::create_directories(java_root, error);
+    const auto previous = java_root.parent_path() / ".java-previous";
+    std::filesystem::remove_all(previous, error);
+    const auto installed_jdk = java_root / installed.filename();
+    if (!error && std::filesystem::exists(installed_jdk))
+        std::filesystem::remove_all(installed_jdk, error);
+    if (!error) std::filesystem::rename(installed, installed_jdk, error);
+    std::filesystem::remove_all(previous, error);
+    std::filesystem::remove_all(staging, error);
+    if (error || !find_java()) {
+        diagnostics = "Temurin JDK installation did not produce " +
+                      (java_root / "bin" / java_name).string() + ".";
+        release_lock();
+        return std::nullopt;
+    }
+    const auto java = find_java();
+    release_lock();
+    return java;
 }
 
 #ifdef _WIN32
@@ -141,11 +219,10 @@ SemanticValidationResult validate_semantics_with_jena(const SemanticResourceSet 
                                                        const std::filesystem::path &jena_home) {
     std::string diagnostics;
     if (!detail::ensure_jena(jena_home, diagnostics)) return {false, diagnostics};
-    const auto java = detail::find_java();
-    if (!java) {
-        return {false, "Java is required to run Apache Jena semantic validation. Install it with "
-                       "streamfind-cli tools install java into the user-scoped .streamfind/tools/java directory."};
-    }
+    std::string java_diagnostics;
+    auto java = detail::find_java();
+    if (!java) java = detail::install_java(java_diagnostics);
+    if (!java) return {false, java_diagnostics};
     const auto shapes = resources.core_directory / "shapes.ttl";
     if (!std::filesystem::exists(shapes)) return {false, "core semantic shapes.ttl is missing"};
 

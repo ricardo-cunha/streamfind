@@ -1961,7 +1961,8 @@ namespace streamfind
 
     Json Project::run_operation(const std::string &operation_id, const Json &parameters,
                                 const OperationRegistry &registry,
-                                const std::string &operation_instance)
+                                const std::string &operation_instance,
+                                const Json &provided_inputs)
     {
         const Operation *operation = registry.find(operation_id);
         if (!operation)
@@ -1974,7 +1975,7 @@ namespace streamfind
         {
             try
             {
-                const auto inputs = resolve_workflow_inputs(instance);
+                const auto inputs = provided_inputs.is_null() ? resolve_workflow_inputs(instance) : provided_inputs;
                 return operation->run_workflow(*this, parameters, instance, inputs);
             }
             catch (const Error &error)
@@ -1988,7 +1989,13 @@ namespace streamfind
                 throw Error(ErrorCode::WorkflowValidation, "Workflow did not execute operation: " + instance);
             }
         }
-        const auto inputs = resolve_workflow_inputs(instance);
+        Json inputs = provided_inputs;
+        if (inputs.is_null()) {
+            if (operation->definition().input_ports.empty())
+                inputs = Json::object();
+            else
+                inputs = resolve_workflow_inputs(instance);
+        }
         const Json result = operation->run_workflow(*this, parameters, instance, inputs);
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);

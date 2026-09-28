@@ -181,6 +181,56 @@ sfcore:outputPortParameter
     sf:default "" ;
     sf:example "sfms:analysesTable" .
 
+sfcore:artifactIdParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Artifact identifier" ;
+    skos:definition "Exact immutable artifact identifier returned by the artifact inventory." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" .
+
+sfcore:operationInstanceParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation instance" ;
+    skos:definition "Workflow operation instance that produced or consumes an artifact." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" .
+
+sfcore:includeDataParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Include artifact data" ;
+    skos:definition "Return the selected JSON payload or bounded rows from a table artifact." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default "false" .
+
+sfcore:artifactLimitParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Artifact row limit" ;
+    skos:definition "Maximum number of table rows returned when artifact data is requested." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "1000" .
+
+sfcore:artifactOffsetParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Artifact row offset" ;
+    skos:definition "Number of table rows to skip when artifact data is requested." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "0" .
+
 
 sfcore:analysesParameter
     a sf:Parameter ;

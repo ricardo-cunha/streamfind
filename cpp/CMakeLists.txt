@@ -19,6 +19,7 @@ set(STREAMFIND_APP_DIR "" CACHE PATH "Built frontend directory to package")
 set(STREAMFIND_MINGW_RUNTIME_DIR "" CACHE PATH
     "MinGW runtime directory to package for Windows releases")
 
+
 if(MSVC AND STREAMFIND_STATIC_MSVC_RUNTIME)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
         CACHE STRING "MSVC runtime library" FORCE)
@@ -427,10 +428,13 @@ endif()
 # Vendor runtime libraries are installed under core/vendors and are resolved
 # through the core runtime path setup before delayed imports or plugins load.
 install(
-    TARGETS streamfind_mcp streamfind_cli streamfind_service streamfind_service_host
+    TARGETS streamfind_mcp streamfind_cli streamfind_service
     EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION bin
 )
+install(TARGETS streamfind_service_host
+    EXPORT streamfind-cpp-targets
+    RUNTIME DESTINATION .)
 if(WIN32)
     install(TARGETS streamfind_mcp_launcher RUNTIME DESTINATION bin)
 endif()

@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <sstream>
+
 #include <stdexcept>
 #include <vector>
 #ifdef _WIN32
@@ -65,27 +65,11 @@ std::string executable_name(const char* name) {
 }
 
 
-std::optional<std::string> find_on_path(const std::string& name) {
-    const char* raw_path = std::getenv("PATH");
-    if (!raw_path) return std::nullopt;
-#ifdef _WIN32
-    constexpr char kSep = ';';
-#else
-    constexpr char kSep = ':';
-#endif
-    std::istringstream stream(raw_path);
-    std::string directory;
-    while (std::getline(stream, directory, kSep)) {
-        if (directory.empty()) continue;
-        auto candidate = fs::path(directory) / name;
-        if (fs::is_regular_file(candidate)) return candidate.string();
-    }
-    return std::nullopt;
-}
-
 } // namespace
 
 std::string streamfind_home() {
+    if (const char* override_home = std::getenv("STREAMFIND_HOME"); override_home && *override_home)
+        return override_home;
 #ifdef _WIN32
     const char* base = std::getenv("USERPROFILE");
 #else
@@ -98,11 +82,6 @@ std::string streamfind_home() {
 std::string tools_dir() { return (fs::path(streamfind_home()) / "tools").string(); }
 
 std::optional<std::string> resolve_java() {
-    if (auto java = find_on_path(executable_name("java"))) return java;
-    if (const char* java_home = std::getenv("JAVA_HOME"); java_home && *java_home) {
-        auto candidate = fs::path(java_home) / "bin" / executable_name("java");
-        if (fs::is_regular_file(candidate)) return candidate.string();
-    }
     auto java_root = fs::path(tools_dir()) / "java";
     if (!fs::is_directory(java_root)) return std::nullopt;
     std::vector<fs::path> jdks;
@@ -174,12 +153,10 @@ std::string install_java() {
         break;
     }
     if (installed.empty()) { fs::remove_all(staging); throw std::runtime_error("Java archive contained no JDK directory"); }
-    fs::create_directories(java_root.parent_path());
-    const auto backup = java_root.parent_path() / ".java-previous";
-    fs::remove_all(backup);
-    if (fs::exists(java_root)) fs::rename(java_root, backup);
-    fs::rename(installed, java_root);
-    fs::remove_all(backup);
+    fs::create_directories(java_root);
+    const auto installed_jdk = java_root / installed.filename();
+    fs::remove_all(installed_jdk);
+    fs::rename(installed, installed_jdk);
     fs::remove_all(staging);
     if (auto java = resolve_java()) return *java;
     throw std::runtime_error("Java installation completed but no executable was found under " + java_root.string());

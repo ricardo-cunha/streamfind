@@ -84,6 +84,20 @@ Never share `tmp/build/core-default`, `tmp/build/mingw-ucrt64`, or a release
 build directory between MSVC, MinGW, GCC, or Clang configurations. Delete the
 tree or use a new named preset when changing the compiler.
 
+### Semantic catalogue Java
+
+Semantic catalogue generation validates Turtle contracts with the vendored
+Apache Jena runtime. It always resolves Java from
+`%USERPROFILE%\.streamfind\tools\java\jdk-*\bin\java.exe` on Windows or
+`~/.streamfind/tools/java/jdk-*/bin/java` on POSIX. System Java, `JAVA_HOME`,
+and `PATH` are deliberately ignored. If the managed JDK is absent, the
+catalogue tool downloads Temurin JDK 21 from Adoptium, extracts it into the
+same `.streamfind` tool directory, and then uses that executable.
+
+`STREAMFIND_HOME` can override the `.streamfind` root for CI and disposable
+test environments. The normal packaged runtime does not need Java; this
+provisioning applies only to development and release-time catalogue generation.
+
 The official C++ suite is the authoritative framework, plugin, mass-spectrometry
 interface, and lightweight NTA coverage registered by CMake. Rust is an
 alternative backend: its wrapper requires the C++ build/release catalogue through
@@ -170,12 +184,13 @@ install method.
   gate.
 - `scripts/release/cpp/release-cpp-linux.sh <version>` — builds, tests, and
   packages only the authoritative C++ Linux backend.
-- The Windows C++ archive is self-contained at launch: configure an MCP host
-  with `bin\\streamfind_mcp_launcher.exe`. The packaged browser entry point
-  is `bin\\streamfind.exe`; it starts `streamfind_service.exe` with the same
-  package-relative runtime paths. Do not prepend the package's
-  `core\\vendors\\mingw` or `core\\vendors\\duckdb` directories to `PATH`;
-  the launchers supply those paths to their child processes.
+- The Windows C++ archive is self-contained at launch: run `streamfind.exe`
+  from the package root. It starts `bin\\streamfind_service.exe` with the same
+  package-relative runtime paths. Advanced MCP clients can use
+  `bin\\streamfind_mcp_launcher.exe` or `bin\\streamfind_mcp.exe`. Do not
+  prepend the package's `core\\vendors\\mingw` or `core\\vendors\\duckdb`
+  directories to `PATH`; the launchers supply those paths to their child
+  processes.
 - Validate an extracted Windows archive with
   `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <package-root>`.
 - `scripts/release/rust/release-rust-linux.sh <version> <cpp-catalogue>` —

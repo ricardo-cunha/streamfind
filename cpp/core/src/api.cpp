@@ -7,6 +7,8 @@
 #include "streamfind/project_table_store.hpp"
 
 
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <utility>
 
@@ -212,28 +214,72 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
             if (existing.id == operation.id)
                 throw Error(ErrorCode::InvalidArgument, "Workflow operation id already exists: " + operation.id);
         workflow.operations.push_back(std::move(operation));
-        project.set_workflow(std::move(workflow), registry);
+        // Incremental graph construction may temporarily contain unconnected
+        // required inputs. validate_workflow remains the explicit validation gate.
+        project.set_workflow(std::move(workflow));
         return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
     }
     case ProjectCommand::connect_operations: {
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = project.get_workflow();
         workflow.connections.push_back(WorkflowConnection::from_json(request));
-        project.set_workflow(std::move(workflow), registry);
+        // Connections and nodes are persisted incrementally; validation is
+        // intentionally deferred until validate_workflow or run_workflow.
+        project.set_workflow(std::move(workflow));
         return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
     }
-    case ProjectCommand::get_artifact_inventory:
-        return Project::open(detail::options_from_request(request, true)).get_artifact_inventory();
+    case ProjectCommand::get_artifact_inventory: {
+        auto inventory = Project::open(detail::options_from_request(request, true)).get_artifact_inventory();
+        for (auto &artifact : inventory) artifact.erase("payload");
+        return inventory;
+    }
     case ProjectCommand::request_artifact: {
         auto project = Project::open(detail::options_from_request(request, true));
         Json result = Json::array();
         for (const auto &artifact : project.get_artifact_inventory()) {
             if (request.contains("artifact_id") && artifact.value("artifact_id", "") != request.at("artifact_id").get<std::string>()) continue;
             if (request.contains("operation") && artifact.value("producer_operation", "") != request.at("operation").get<std::string>()) continue;
+            if (request.contains("operation_instance") && artifact.value("producer_instance", "") != request.at("operation_instance").get<std::string>()) continue;
             if (request.contains("output_port") && artifact.value("contract_id", "") != request.at("output_port").get<std::string>()) continue;
-            result.push_back(artifact);
+            if (request.contains("workflow_revision") && artifact.value("workflow_revision", "") !=
+                    std::to_string(request.at("workflow_revision").get<int>())) continue;
+            auto descriptor = artifact;
+            descriptor.erase("payload");
+            result.push_back(std::move(descriptor));
         }
-        return result;
+        if (!request.value("include_data", false)) return result;
+        if (result.size() != 1)
+            throw Error(ErrorCode::InvalidArgument,
+                        "include_data requires exactly one artifact selector; provide artifact_id, operation_instance, or output_port");
+        auto artifact = result.front();
+        const auto full_inventory = project.get_artifact_inventory();
+        const auto full_artifact = std::find_if(full_inventory.begin(), full_inventory.end(), [&](const auto &candidate) {
+            return candidate.value("artifact_id", "") == artifact.value("artifact_id", "");
+        });
+        if (full_artifact == full_inventory.end())
+            throw Error(ErrorCode::DatabaseError, "Selected artifact disappeared before data retrieval");
+        artifact = *full_artifact;
+        if (artifact.value("representation", "") == "json") {
+            const auto payload = artifact.value("payload", Json(nullptr));
+            if (payload.is_string()) {
+                try { artifact["data"] = Json::parse(payload.get<std::string>()); }
+                catch (...) { artifact["data"] = payload; }
+            } else artifact["data"] = payload;
+        } else if (artifact.value("representation", "") == "table") {
+            const auto table = artifact.value("physical_table", "");
+            if (table.empty()) throw Error(ErrorCode::DatabaseError, "Table artifact has no physical table");
+            if (!std::all_of(table.begin(), table.end(), [](unsigned char c) {
+                    return std::isalnum(c) || c == '_';
+                })) throw Error(ErrorCode::InvalidArgument, "Invalid physical table identifier");
+            const auto limit = std::clamp(request.value("limit", 1000), 1, 10000);
+            const auto offset = std::max(request.value("offset", 0), 0);
+            artifact["data"] = project.query_json("SELECT * FROM \"" + table + "\" LIMIT " +
+                                                   std::to_string(limit) + " OFFSET " + std::to_string(offset));
+            artifact["row_count"] = project.query_json("SELECT COUNT(*) AS count FROM \"" + table + "\"").at(0).value("count", "0");
+            artifact["limit"] = limit;
+            artifact["offset"] = offset;
+        }
+        return Json::array({std::move(artifact)});
     }
     case ProjectCommand::resolve_operation_inputs: {
         if (!request.contains("operation_id"))

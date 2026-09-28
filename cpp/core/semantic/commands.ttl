@@ -329,11 +329,16 @@ sfcore:requestArtifact
     skos:prefLabel "Request an operation output artifact" ;
     skos:definition "Find a published artifact by operation output contract or artifact identifier for AI and application consumers." ;
     sf:category "workflow-observation" ;
-    sf:guidance "Request a specific published output after checking the inventory. Use output_port with the semantic contract id, and use the returned physical_table and artifact_id when inspecting a table output." ;
+    sf:guidance "Call without include_data to discover matching published outputs. Then select exactly one with artifact_id, operation_instance plus output_port, or another unique filter and set include_data true. JSON artifacts return their payload; table artifacts return bounded rows using limit and offset." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
-        sfcore:outputPortParameter ;
+        sfcore:outputPortParameter,
+        sfcore:artifactIdParameter,
+        sfcore:operationInstanceParameter,
+        sfcore:includeDataParameter,
+        sfcore:artifactLimitParameter,
+        sfcore:artifactOffsetParameter ;
     sf:mutatesProject false .
 
 sfcore:resolveOperationInputs

@@ -53,6 +53,7 @@ int main() {
         bool has_add_operation = false;
         bool has_connect_operations = false;
         bool has_set_workflow = false;
+        bool has_request_artifact = false;
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             require(name.rfind("mass_spec.", 0) != 0, "operation-specific MCP tool leaked into tools/list");
@@ -68,11 +69,13 @@ int main() {
             has_add_operation = has_add_operation || name == "add_operation";
             has_connect_operations = has_connect_operations || name == "connect_operations";
             has_set_workflow = has_set_workflow || name == "set_workflow";
+            has_request_artifact = has_request_artifact || name == "request_artifact";
         }
         require(has_domains && has_modules && has_operations && has_operation && has_run_operation,
                 "stable MCP discovery tools are incomplete");
         require(has_create && has_add_operation && has_connect_operations && has_set_workflow,
                 "operation-graph MCP tools are incomplete");
+        require(has_request_artifact, "artifact request MCP tool is missing");
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             if (name == "create")
@@ -83,6 +86,13 @@ int main() {
                             streamfind::Json::array({"database_path", "workflow"}) &&
                             tool.at("inputSchema").at("properties").contains("workflow"),
                         "set_workflow schema does not advertise workflow");
+            if (name == "request_artifact") {
+                const auto &properties = tool.at("inputSchema").at("properties");
+                require(properties.contains("artifact_id") && properties.contains("operation_instance") &&
+                            properties.contains("include_data") && properties.contains("limit") &&
+                            properties.contains("offset"),
+                        "request_artifact schema does not advertise targeted data selection");
+            }
         }
 
         const auto domains = text_json(call(session, 2, "get_domains"));

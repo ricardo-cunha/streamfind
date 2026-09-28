@@ -516,7 +516,8 @@ public:
                     const OperationRegistry &registry);
     Json run_operation(const std::string &operation_id, const Json &parameters,
                        const OperationRegistry &registry,
-                       const std::string &operation_instance = {});
+                       const std::string &operation_instance = {},
+                       const Json &provided_inputs = Json(nullptr));
     void set_operation_log_callback(OperationLogCallback callback);
     void log_operation(std::string_view message) const;
     /** @brief Mark the Project closed; subsequent operations fail. */

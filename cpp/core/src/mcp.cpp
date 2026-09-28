@@ -65,10 +65,12 @@ Json tools() {
                           Json::array({"domain"})));
     result.push_back(tool("get_operation", "Return the full catalogue definition for one operation.",
                           Json{{"operation", {{"type", "string"}}}}, Json::array({"operation"})));
-    result.push_back(tool("run_operation", "Run one canonical domain operation against a project database.",
+    result.push_back(tool("run_operation", "Run one canonical domain operation against a project database. Entry operations may run directly; operations with typed inputs require an existing graph binding or explicit inputs.",
                           Json{{"operation", {{"type", "string"}}},
                                {"database_path", {{"type", "string"}}},
-                               {"arguments", {{"type", "object"}}}},
+                               {"arguments", {{"type", "object"}}},
+                               {"operation_instance", {{"type", "string"}}},
+                               {"inputs", {{"type", "object"}}}},
                           Json::array({"operation", "database_path"})));
 
     // Core project commands are catalogue entries, but their shared project
@@ -92,6 +94,16 @@ Json tools() {
              {"source_port", {{"type", "string"}}}, {"target_operation", {{"type", "string"}}},
              {"target_port", {{"type", "string"}}}},
         Json::array({"database_path", "source_operation", "source_port", "target_operation", "target_port"}));
+    const Json request_artifact_schema = schema(
+        Json{{"database_path", database_path}, {"artifact_id", {{"type", "string"}, {"description", "Exact published artifact identifier."}}},
+             {"operation", {{"type", "string"}, {"description", "Canonical producer operation identifier."}}},
+             {"operation_instance", {{"type", "string"}, {"description", "Workflow operation instance that produced the artifact."}}},
+             {"output_port", {{"type", "string"}, {"description", "Output contract or semantic port identifier."}}},
+             {"workflow_revision", {{"type", "integer"}}},
+             {"include_data", {{"type", "boolean"}, {"description", "Return the JSON payload or bounded table rows for exactly one selected artifact."}}},
+             {"limit", {{"type", "integer", "minimum", 1, "maximum", 10000}}},
+             {"offset", {{"type", "integer", "minimum", 0}}}},
+        Json::array({"database_path"}));
     for (auto &entry : result) {
         const auto name = entry.value("name", "");
         if (name == "create" || name == "describe" || name == "connect" || name == "validate" ||
@@ -101,11 +113,12 @@ Json tools() {
             name == "cancel_execution" ||
             name == "run_workflow" || name == "get_cache" || name == "get_cache_size" ||
             name == "delete_cache" || name == "get_audit_trail" || name == "get_artifact_inventory" ||
-            name == "request_artifact" || name == "resolve_operation_inputs")
+            name == "resolve_operation_inputs")
             entry["inputSchema"] = project_path_schema;
         else if (name == "set_workflow" || name == "validate_workflow") entry["inputSchema"] = workflow_schema;
         else if (name == "add_operation") entry["inputSchema"] = add_operation_schema;
         else if (name == "connect_operations") entry["inputSchema"] = connect_operations_schema;
+        else if (name == "request_artifact") entry["inputSchema"] = request_artifact_schema;
 
         if (name == "create") {
             entry["description"] = "Create a new project database. This is the first step of the operation-graph workflow; then call add_operation for each node.";
@@ -125,6 +138,9 @@ Json tools() {
         } else if (name == "run_workflow") {
             entry["description"] = "Execute the persisted connected operation graph and publish its table and structured-result artifacts.";
             entry["_meta"]["streamfind"]["guidance"] = "Call only after validate_workflow succeeds. Then inspect get_artifact_inventory and structuredContent.";
+        } else if (name == "request_artifact") {
+            entry["description"] = "Select one published operation output, optionally returning its JSON payload or bounded table rows.";
+            entry["_meta"]["streamfind"]["guidance"] = "First call without include_data to discover candidates. Then select exactly one artifact_id, operation_instance plus output_port, or another unique filter and set include_data=true.";
         }
     }
     return result;
@@ -324,8 +340,10 @@ Json Session::handle(const Json &request) {
                 if (!operations_.find(operation_id)) throw Error(ErrorCode::InvalidArgument, "operation not found: " + operation_id);
                 ProjectOptions options;
                 options.database_path = arguments.at("database_path").get<std::string>();
-                const auto operation_arguments = arguments.value("arguments", Json::object());
-                const auto result = Project::open(options).run_operation(operation_id, operation_arguments, operations_);
+                auto operation_arguments = arguments.value("arguments", Json::object());
+                const auto operation_instance = arguments.value("operation_instance", std::string{});
+                const auto inputs = arguments.value("inputs", Json(nullptr));
+                const auto result = Project::open(options).run_operation(operation_id, operation_arguments, operations_, operation_instance, inputs);
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(result)}};
             }
             Json result = Json::array();
@@ -367,7 +385,11 @@ Json Session::handle(const Json &request) {
             Json parameters = arguments;
             parameters.erase("database_path");
             parameters.erase("domain");
-            const Json result = project.run_operation(name, parameters, operations_);
+            const auto inputs = parameters.value("inputs", Json(nullptr));
+            const auto operation_instance = parameters.value("operation_instance", std::string{});
+            parameters.erase("inputs");
+            parameters.erase("operation_instance");
+            const Json result = project.run_operation(name, parameters, operations_, operation_instance, inputs);
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(result)}};
         } catch (const Error &error) { return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}}; }
     }

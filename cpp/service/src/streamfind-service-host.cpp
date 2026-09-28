@@ -28,7 +28,8 @@ std::string service_path() {
     char path[MAX_PATH]{};
     const auto length = GetModuleFileNameA(nullptr, path, MAX_PATH);
     if (length == 0 || length >= MAX_PATH) throw std::runtime_error("unable to resolve StreamFind installation path");
-    return (std::filesystem::path(path).parent_path() / "streamfind_service.exe").string();
+    const auto package_root = std::filesystem::path(path).parent_path();
+    return (package_root / "bin" / "streamfind_service.exe").string();
 }
 
 void configure_child_vendor_runtime() {
@@ -37,7 +38,10 @@ void configure_child_vendor_runtime() {
     if (length == 0 || length >= MAX_PATH)
         throw std::runtime_error("unable to resolve StreamFind package path");
 
-    const auto package_root = std::filesystem::path(module_path).parent_path().parent_path();
+    const auto executable_directory = std::filesystem::path(module_path).parent_path();
+    const auto package_root = std::filesystem::is_directory(executable_directory / "core")
+                                  ? executable_directory
+                                  : executable_directory.parent_path();
     const auto vendor_root = package_root / "core" / "vendors";
     const auto duckdb_directory = vendor_root / "duckdb";
     const auto mingw_directory = vendor_root / "mingw";

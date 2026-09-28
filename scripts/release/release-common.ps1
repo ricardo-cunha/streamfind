@@ -26,7 +26,7 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
 function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk) {
     Assert-DistributionPayload $PackageRoot
     $required = @(
-        'bin/streamfind.exe',
+        'streamfind.exe',
         'bin/streamfind_service.exe',
         'bin/streamfind_mcp.exe',
         'bin/streamfind_mcp_launcher.exe',
