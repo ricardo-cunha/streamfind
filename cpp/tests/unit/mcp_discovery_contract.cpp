@@ -28,6 +28,20 @@ void require(bool condition, const char *message) {
 int main() {
     try {
         streamfind::mcp::Session session;
+        const auto initialized = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}});
+        require(initialized.at("result").at("capabilities").contains("resources"),
+                "MCP initialize omitted resource capability");
+        const auto resources = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/list"}});
+        require(resources.at("result").at("resources").size() == 1 &&
+                    resources.at("result").at("resources").at(0).value("uri", "") ==
+                        "ui://streamfind/visualization",
+                "visualization MCP resource was not listed");
+        const auto resource = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/read"},
+                                              {"params", {{"uri", "ui://streamfind/visualization"}}}});
+        require(resource.at("result").at("contents").at(0).value("mimeType", "") == "text/html" &&
+                    resource.at("result").at("contents").at(0).value("text", "").find("mcp-visualization.html") !=
+                        std::string::npos,
+                "visualization MCP resource did not return the frontend launcher");
         const auto listed = session.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}});
         const auto tools = listed.at("result").at("tools");
         bool has_domains = false;
@@ -35,17 +49,41 @@ int main() {
         bool has_operations = false;
         bool has_operation = false;
         bool has_run_operation = false;
+        bool has_create = false;
+        bool has_add_operation = false;
+        bool has_connect_operations = false;
+        bool has_set_workflow = false;
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             require(name.rfind("mass_spec.", 0) != 0, "operation-specific MCP tool leaked into tools/list");
+            require(name != "add_method" && name != "remove_method" && name != "get_available_methods" &&
+                        name != "run_method",
+                    "legacy workflow-method MCP tool leaked into tools/list");
             has_domains = has_domains || name == "get_domains";
             has_modules = has_modules || name == "get_modules";
             has_operations = has_operations || name == "get_operations";
             has_operation = has_operation || name == "get_operation";
             has_run_operation = has_run_operation || name == "run_operation";
+            has_create = has_create || name == "create";
+            has_add_operation = has_add_operation || name == "add_operation";
+            has_connect_operations = has_connect_operations || name == "connect_operations";
+            has_set_workflow = has_set_workflow || name == "set_workflow";
         }
         require(has_domains && has_modules && has_operations && has_operation && has_run_operation,
                 "stable MCP discovery tools are incomplete");
+        require(has_create && has_add_operation && has_connect_operations && has_set_workflow,
+                "operation-graph MCP tools are incomplete");
+        for (const auto &tool : tools) {
+            const auto name = tool.value("name", "");
+            if (name == "create")
+                require(tool.at("inputSchema").at("required") == streamfind::Json::array({"database_path"}),
+                        "create schema does not require database_path");
+            if (name == "set_workflow")
+                require(tool.at("inputSchema").at("required") ==
+                            streamfind::Json::array({"database_path", "workflow"}) &&
+                            tool.at("inputSchema").at("properties").contains("workflow"),
+                        "set_workflow schema does not advertise workflow");
+        }
 
         const auto domains = text_json(call(session, 2, "get_domains"));
         require(domains.is_array() && std::find(domains.begin(), domains.end(), "mass_spec") != domains.end(),

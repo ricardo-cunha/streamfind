@@ -353,6 +353,11 @@ add_executable(streamfind_mcp core/src/streamfind-mcp.cpp)
 add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
+if(WIN32)
+    add_executable(streamfind_mcp_launcher core/src/streamfind-mcp-launcher.cpp)
+    set_target_properties(streamfind_mcp_launcher PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    streamfind_static_mingw_executable(streamfind_mcp_launcher)
+endif()
 set(STREAMFIND_ENABLED_PLUGINS_JSON)
 foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
     if(STREAMFIND_ENABLED_PLUGINS_JSON)
@@ -426,6 +431,9 @@ install(
     EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION bin
 )
+if(WIN32)
+    install(TARGETS streamfind_mcp_launcher RUNTIME DESTINATION bin)
+endif()
 if(STREAMFIND_APP_DIR AND EXISTS "${STREAMFIND_APP_DIR}")
     install(DIRECTORY "${STREAMFIND_APP_DIR}/" DESTINATION app)
 endif()

@@ -81,7 +81,7 @@ sfcore:getWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "get_workflow" ;
     skos:prefLabel "Read the project workflow" ;
-    skos:definition "Return the ordered persisted workflow, including each method identifier and configured parameters." ;
+    skos:definition "Return the persisted operation graph, including configured operation instances and explicit typed-port connections." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
     sf:returns sfcore:workflowResult ;
@@ -92,7 +92,7 @@ sfcore:getWorkflowExecution
     skos:inScheme sfcore:scheme ;
     sf:commandId "get_workflow_execution" ;
     skos:prefLabel "Read workflow execution" ;
-    skos:definition "Return execution status, hashes, timestamps, errors, and cache keys for the project's workflow steps." ;
+    skos:definition "Return execution status, hashes, timestamps, errors, and cache keys for the project's persisted operation executions." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
     sf:returns sfcore:workflowExecutionEntriesResult ;
@@ -166,34 +166,6 @@ sfcore:setWorkflow
     sf:returns sfcore:workflowResult ;
     sf:mutatesProject true .
 
-sfcore:addMethod
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "add_method" ;
-    skos:prefLabel "Add a method to the project workflow" ;
-    skos:definition "Append one validated workflow method to the ordered project workflow. The method must belong to the project's immutable domain and its parameters must match the method schema returned by get_available_methods." ;
-    sf:category "workflow-planning" ;
-    sf:guidance "Use get_available_methods(domain) first, copy a method id and its parameter names/types, then call add_method. Call validate_workflow before run_workflow." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:methodParameter,
-        sfcore:parametersParameter ;
-    sf:returns sfcore:workflowResult ;
-    sf:mutatesProject true .
-
-sfcore:removeMethod
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "remove_method" ;
-    skos:prefLabel "Remove a method from the project workflow" ;
-    skos:definition "Remove the first matching method object from the ordered project workflow." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:methodParameter ;
-    sf:returns sfcore:workflowResult ;
-    sf:mutatesProject true .
 
 sfcore:validateWorkflow
     a sf:ApiCommand ;
@@ -215,7 +187,7 @@ sfcore:runWorkflow
     skos:prefLabel "Run the project workflow" ;
     skos:definition "Execute the persisted workflow for a project in order, using each operation's domain/module implementation and cached results where valid." ;
     sf:category "workflow-execution" ;
-    sf:guidance "Connect to the project first, inspect or validate the workflow, then call run_workflow. For one-step execution use run_method with a connected session." ;
+    sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Inspect get_artifact_inventory and structured results after execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -267,34 +239,6 @@ sfcore:getAuditTrail
     sf:returns sfcore:auditEntriesResult ;
     sf:mutatesProject false .
 
-sfcore:getAvailableMethods
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "get_available_methods" ;
-    skos:prefLabel "List workflow methods registered for a domain" ;
-    skos:definition "Return workflow methods registered for a domain. This lists methods that can be added to workflows; it does not list MCP operation tools. Operation names and complete input schemas, including nested target fields, are advertised directly by tools/list." ;
-    sf:category "workflow-planning" ;
-    sf:guidance "Use this when planning a workflow. Select a method id from the result, then inspect its parameter definitions before calling add_method. Do not use this operation to discover callable MCP tools; tools/list is the operation catalogue." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:domainParameter ;
-    sf:returns sfcore:methodsResult ;
-    sf:mutatesProject false .
-
-sfcore:runMethod
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "run_method" ;
-    skos:prefLabel "Run a planned workflow method" ;
-    skos:definition "Execute one selected workflow method for a connected project. The method must be registered for its requested domain and its parameters are validated before execution." ;
-    sf:category "workflow-execution" ;
-    sf:guidance "Connect first, discover methods with get_available_methods, and use the method's input schema. Use run_workflow instead when the whole persisted workflow should execute." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:methodParameter,
-        sfcore:parametersParameter ;
-    sf:returns sfcore:workflowExecutionResult ;
-    sf:mutatesProject true .
 
 sfcore:copy
     a sf:ApiCommand ;
@@ -314,7 +258,7 @@ sfcore:close
     skos:inScheme sfcore:scheme ;
     sf:commandId "close" ;
     skos:prefLabel "Close a project handle" ;
-    skos:definition "Clear the connected project context used for workflow methods. This does not delete the project and does not remove stateless operation tools." ;
+    skos:definition "Close a project handle. Operation-graph MCP calls remain stateless and carry database_path explicitly." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
     sf:returns sfcore:apiCommandStatusResult ;
@@ -325,9 +269,9 @@ sfcore:connect
     skos:inScheme sfcore:scheme ;
     sf:commandId "connect" ;
     skos:prefLabel "Connect an MCP session to a project" ;
-    skos:definition "Open an existing project and bind its session state for workflow-method operations. Domain operations remain discoverable and callable without connect; connect establishes the context used by add_method, validate_workflow, run_method, and run_workflow." ;
+    skos:definition "Open an existing project handle. The operation-graph MCP workflow does not require a connected session because every project call carries database_path." ;
     sf:category "session-management" ;
-    sf:guidance "Call connect only after create or describe confirms the project. It does not add operation tools to tools/list. Use it when planning or executing workflow methods; close clears that session context." ;
+    sf:guidance "Do not call this for the stateless operation-graph workflow; use database_path on create, add_operation, connect_operations, validate_workflow, and run_workflow instead." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
     sf:returns sfcore:apiCommandStatusResult ;
@@ -454,9 +398,8 @@ sfcore:workflowResult
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow result" ;
-    skos:definition "The ordered workflow method objects." ;
-    sf:type "array" ;
-    sf:items sfcore:methodField .
+    skos:definition "The persisted operation graph with configured nodes and typed-port connections." ;
+    sf:type "object" .
 
 sfcore:cacheEntriesResult
     a sf:ApiCommandResult ;
@@ -510,31 +453,6 @@ sfcore:auditEntryResult
         sfcore:operationDetailsColumn,
         sfcore:createdAtColumn .
 
-sfcore:methodsResult
-    a sf:ApiCommandResult ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Available methods result" ;
-    skos:definition "Definitions of workflow methods registered for a domain." ;
-    sf:type "array" ;
-    sf:items sfcore:methodDefinitionResult .
-
-sfcore:methodDefinitionResult
-    a sf:ApiCommandResult ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Method definition" ;
-    skos:definition "One workflow method definition available to a domain, including its complete method-specific input schema and execution metadata." ;
-    sf:type "object" ;
-    sf:hasProperty
-        sfcore:methodIdField,
-        sfcore:methodNameField,
-        sfcore:methodDescriptionField,
-        sfcore:methodDomainField,
-        sfcore:methodInputSchemaField,
-        sfcore:methodCacheableField,
-        sfcore:methodSingleOccurrenceField,
-        sfcore:methodWritesField .
 
 sfcore:workflowExecutionResult
     a sf:ApiCommandResult ;
@@ -549,12 +467,12 @@ sfcore:workflowExecutionEntriesResult
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution entries" ;
-    skos:definition "Execution status for workflow steps." ;
+    skos:definition "Execution status for persisted operation executions." ;
     sf:type "table" ;
     sf:hasProperty
         sfcore:workflowRevisionColumn,
         sfcore:stepIndexColumn,
-        sfcore:executionMethodColumn,
+        sfcore:executionOperationColumn,
         sfcore:parameterHashColumn,
         sfcore:executionStatusColumn,
         sfcore:startedAtColumn,

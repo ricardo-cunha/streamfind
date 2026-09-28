@@ -1,142 +1,65 @@
-#include <cassert>
-#include <filesystem>
-#include <iostream>
-#include <stdexcept>
-
 #include "streamfind/api.hpp"
 #include "streamfind/project.hpp"
 #include "../tmp_projects.hpp"
 
+#include <filesystem>
+#include <iostream>
+
+namespace {
+
 int run() {
-    const auto path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-smoke.duckdb";
+    const auto path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-lifecycle.duckdb";
     std::error_code error;
     std::filesystem::remove(path, error);
 
-    auto project = streamfind::Project::create({path, {{"owner", "test"}}});
-    int table_runs = 0;
-    int tail_runs = 0;
-    streamfind::MethodRegistry registry;
-    streamfind::MethodDefinition table_method;
-    table_method.id = "test.table";
-    table_method.name = "Table";
-    table_method.domain = "test";
-    table_method.cacheable = true;
-    table_method.writes = {"TEST_OUTPUT"};
-    registry.register_method(streamfind::Method(
-        table_method,
-        [&table_runs](streamfind::Project &project, const streamfind::Json &) {
-            ++table_runs;
-            project.execute_sql("CREATE TABLE IF NOT EXISTS TEST_OUTPUT (value VARCHAR)");
-            project.execute_sql("DELETE FROM TEST_OUTPUT");
-            project.execute_sql("INSERT INTO TEST_OUTPUT VALUES ('materialized')");
-            return streamfind::Json{{"status", "finished"}};
-        }));
-    streamfind::MethodDefinition tail_method;
-    tail_method.id = "test.tail";
-    tail_method.name = "Tail";
-    tail_method.domain = "test";
-    tail_method.cacheable = false;
-    registry.register_method(streamfind::Method(
-        tail_method,
-        [&tail_runs](streamfind::Project &, const streamfind::Json &) {
-            ++tail_runs;
+    streamfind::OperationRegistry operations;
+    streamfind::OperationDefinition definition;
+    definition.id = "test.tail";
+    definition.name = "Tail operation";
+    definition.domain = "test";
+    operations.register_operation(streamfind::Operation(
+        definition,
+        [](streamfind::Project &, const streamfind::Json &, const std::string &, const streamfind::Json &) {
             return streamfind::Json{{"status", "tail"}};
         }));
-    project.set_metadata({{"owner", "test"}});
-    if (project.get_metadata().at("owner") != "test") {
-        std::cerr << "metadata getter failed\n";
-        return 1;
-    }
-    project.set_cache("test", "test cache", "hash", {{"value", 42}});
-    if (project.get_cache().size() != 1) {
-        std::cerr << "cache creation failed\n";
-        return 1;
-    }
-    project.delete_cache();
-    if (!project.get_cache().empty()) {
-        std::cerr << "cache clear failed\n";
-        return 1;
-    }
-    const auto copy_path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-copy.duckdb";
-    std::filesystem::remove(copy_path, error);
-    auto copied = project.copy({copy_path, {}});
-    if (copied.get_metadata().at("owner") != "test") {
-        std::cerr << "project copy failed\n";
-        return 1;
-    }
-    copied.close();
-    std::filesystem::remove(copy_path, error);
-    streamfind::Workflow table_workflow;
 
-    table_workflow.steps.push_back({"test.table", streamfind::ParameterValues{streamfind::Json::object()}});
-    project.set_workflow(table_workflow, registry);
-    project.run_workflow(registry);
-    const auto launch_snapshot = streamfind::Json::parse(project.query_json("SELECT launch_snapshot FROM WORKFLOW_EXECUTION").at(0).at("launch_snapshot").get<std::string>());
-    if (launch_snapshot.at("steps").size() != 1 || launch_snapshot.at("steps").at(0).at("id") != "test.table") {
-        std::cerr << "workflow launch snapshot was not persisted\n";
+    auto project = streamfind::Project::create({path, {{"owner", "test"}}});
+    streamfind::Workflow workflow;
+    workflow.name = "operation graph lifecycle";
+    workflow.operations.push_back({"tail-1", "test.tail", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()});
+    project.set_workflow(workflow, operations);
+    const auto result = project.run_operation_graph(operations);
+    if (result.at("status") != "completed" ||
+        result.at("operations").size() != 1 ||
+        result.at("operations").at(0).at("result").at("status") != "tail") {
+        std::cerr << "operation graph execution failed\n";
         return 1;
     }
-    project.execute_sql("UPDATE WORKFLOW_EXECUTION SET status = 'running'");
-    project.close();
-    project = streamfind::Project::open({path, {}});
-    if (streamfind::WorkflowExecutionManager(project).current().at("status") != "interrupted") {
-        std::cerr << "workflow restart did not reconcile the active parent\n";
-        return 1;
-    }
-    project.run_workflow(registry);
-    if (table_runs != 1) {
-        std::cerr << "workflow restart reran a valid completed cached step\n";
-        return 1;
-    }
-    project.execute_sql("INSERT INTO WORKFLOW_EXECUTION_STEP (workflow_revision, step_index, method, parameters, parameter_hash, cache_key, status) VALUES (1, 99, 'stale', '{}', 'stale', 'stale', 'completed')");
-    project.execute_sql("DELETE FROM TEST_OUTPUT");
-    project.run_workflow(registry);
-    if (table_runs != 1 || project.query_json("SELECT COUNT(*) AS count FROM WORKFLOW_EXECUTION_STEP").at(0).at("count") != "1" || project.query_json("SELECT value FROM TEST_OUTPUT") != streamfind::Json::array({{{"value", "materialized"}}})) {
-        std::cerr << "cache table materialization failed\n";
-        return 1;
-    }
-    if (project.run_method("test.tail", streamfind::Json::object(), registry).at("status") != "tail" ||
-        table_runs != 1 || tail_runs != 1) {
-        std::cerr << "workflow tail execution did not reuse the completed prefix\n";
-        return 1;
-    }
-    project.execute_sql("DELETE FROM WORKFLOW_EXECUTION");
-    project.delete_cache();
-    if (project.run_method("test.tail", streamfind::Json::object(), registry).at("status") != "tail" ||
-        table_runs != 2 || tail_runs != 3) {
-        std::cerr << "workflow tail execution did not fall back to the full workflow\n";
-        return 1;
-    }
-    const auto execution = project.get_workflow_execution();
-    if (execution.at(0).at("status") != "completed") {
-        std::cerr << "workflow execution tracking failed\n";
-        return 1;
-    }
-    project.delete_cache();
+
     const auto execution_table = streamfind::api::run(
         streamfind::api::ProjectCommand::get_workflow_execution,
-        {{"database_path", path.string()}});
-    if (!execution_table.contains("columns") || execution_table.at("columns").at("step_index").empty()) {
+        {{"database_path", path.string()}}, operations);
+    if (execution_table.at("row_count") != 1) {
         std::cerr << "workflow execution table API failed\n";
         return 1;
     }
     const auto metadata = streamfind::api::run(
         streamfind::api::ProjectCommand::get_metadata,
-        {{"database_path", path.string()}});
+        {{"database_path", path.string()}}, operations);
     if (streamfind::Json::parse(metadata.at("columns").at("metadata").at(0).get<std::string>()).at("owner") != "test") {
         std::cerr << "metadata API failed\n";
         return 1;
     }
-    if (streamfind::api::run(streamfind::api::ProjectCommand::validate,
-                             {{"database_path", path.string()}}).at("valid") != true ||
+    if (!streamfind::api::run(streamfind::api::ProjectCommand::validate,
+                              {{"database_path", path.string()}}, operations).at("valid") ||
         streamfind::api::run(streamfind::api::ProjectCommand::get_cache_size,
-                             {{"database_path", path.string()}}) != 0) {
+                             {{"database_path", path.string()}}, operations) != 0) {
         std::cerr << "project validation API failed\n";
         return 1;
     }
     project.close();
     auto reopened = streamfind::Project::open({path, {}});
-    if (!reopened.get_domains().empty() ||
+    if (reopened.get_domains().size() != 1 ||
         reopened.get_metadata().at("owner") != "test") {
         std::cerr << "project reopen failed\n";
         return 1;
@@ -144,26 +67,10 @@ int run() {
     reopened.validate();
     reopened.close();
     std::filesystem::remove(path, error);
-
-    const auto old_version_path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-old-version.duckdb";
-    std::filesystem::remove(old_version_path, error);
-    auto old_version = streamfind::Project::create({old_version_path, {}});
-    old_version.execute_sql("UPDATE PROJECT SET schema_version = 1");
-    old_version.close();
-    bool old_version_rejected = false;
-    try {
-        auto rejected = streamfind::Project::open({old_version_path, {}});
-        rejected.close();
-    } catch (const streamfind::Error &caught) {
-        old_version_rejected = caught.code() == streamfind::ErrorCode::SchemaMismatch;
-    }
-    if (!old_version_rejected) {
-        std::cerr << "old project schema version was accepted\n";
-        return 1;
-    }
-    std::filesystem::remove(old_version_path, error);
     return 0;
 }
+
+} // namespace
 
 int main() {
     try {

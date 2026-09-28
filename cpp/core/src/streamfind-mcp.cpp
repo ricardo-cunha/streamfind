@@ -181,6 +181,12 @@ int main(int argc, char **argv) {
     std::unique_ptr<streamfind::mcp::detail::DynamicPluginRuntime> dynamic_plugins;
     try {
         const auto executable = streamfind::mcp::detail::executable_path(argc, argv);
+        const auto packaged_app = executable.parent_path().parent_path() / "app";
+#if defined(_WIN32)
+        _putenv_s("STREAMFIND_MCP_APP_DIR", packaged_app.string().c_str());
+#else
+        setenv("STREAMFIND_MCP_APP_DIR", packaged_app.string().c_str(), 1);
+#endif
         const auto configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");
@@ -190,7 +196,7 @@ int main(int argc, char **argv) {
         std::cerr << "streamfind-mcp: registration failed: " << error.what() << '\n';
         return 3;
     }
-    streamfind::mcp::Session session(registry, operations);
+    streamfind::mcp::Session session(operations);
     while (std::getline(std::cin, line)) {
             try { std::cout << session.handle(streamfind::Json::parse(line)).dump() << '\n' << std::flush; }
             catch (const std::exception &error) { std::cout << streamfind::Json{{"jsonrpc", "2.0"}, {"error", {{"code", -32700}, {"message", error.what()}}}}.dump() << '\n' << std::flush; }

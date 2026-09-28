@@ -16,6 +16,40 @@ namespace streamfind {
 
 namespace detail {
 
+void validate_visualization_spec(const std::string &payload) {
+    constexpr std::size_t max_payload_bytes = 1U * 1024U * 1024U;
+    if (payload.size() > max_payload_bytes)
+        throw std::invalid_argument("visualization specification exceeds the 1 MiB payload limit");
+    const auto spec = Json::parse(payload, nullptr, false);
+    if (spec.is_discarded() || !spec.is_object())
+        throw std::invalid_argument("visualization specification must be a JSON object");
+    if (spec.value("schema", "") != "streamfind.visualization/v1")
+        throw std::invalid_argument("visualization specification has an unsupported schema");
+    for (const auto *field : {"visualization_id", "semantic_type", "title", "data_mode"})
+        if (!spec.contains(field) || !spec.at(field).is_string() || spec.at(field).get<std::string>().empty())
+            throw std::invalid_argument(std::string("visualization specification requires ") + field);
+    const auto &renderer = spec.value("renderer", Json::object());
+    if (!renderer.is_object() || renderer.value("engine", "") != "plotly" ||
+        renderer.value("renderer_id", "") != "core.plotly" || renderer.value("spec_version", "") != "1")
+        throw std::invalid_argument("visualization specification has an unsupported renderer");
+    const auto data_mode = spec.at("data_mode").get<std::string>();
+    if (data_mode != "inline" && data_mode != "artifact")
+        throw std::invalid_argument("visualization specification has an unsupported data mode");
+    if (data_mode == "inline" && (!spec.contains("payload") || !spec.at("payload").is_object()))
+        throw std::invalid_argument("inline visualization specification requires an object payload");
+    if (data_mode == "artifact" &&
+        (!spec.contains("data_bindings") || !spec.at("data_bindings").is_array() || spec.at("data_bindings").empty()))
+        throw std::invalid_argument("artifact visualization specification requires data bindings");
+    const auto &provenance = spec.value("provenance", Json::object());
+    if (!provenance.is_object() || !provenance.contains("source_artifact_ids") ||
+        !provenance.at("source_artifact_ids").is_array() || provenance.at("source_artifact_ids").empty() ||
+        provenance.value("producer_operation_id", "").empty() || provenance.value("producer_node_id", "").empty())
+        throw std::invalid_argument("visualization specification requires complete provenance");
+    const auto &fallback = spec.value("fallback", Json::object());
+    if (!fallback.is_object() || fallback.value("description", "").empty())
+        throw std::invalid_argument("visualization specification requires fallback text");
+}
+
 std::string manifest_sql_type(const Json &column) {
     const auto type = column.at("type").get<std::string>();
     if (type == "string") return "VARCHAR";
@@ -530,6 +564,7 @@ std::string ProjectTableStore::publish_result_artifact(
     if (!impl_ || contract_id.empty() || producer_operation.empty() ||
         producer_instance.empty())
         throw Error(ErrorCode::InvalidArgument, "invalid result artifact publication");
+    if (contract_id == "visualizationSpecResult") detail::validate_visualization_spec(payload);
     static std::atomic_uint64_t sequence{0};
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto artifact_id = "artifact_" + std::to_string(stamp) + "_" +

@@ -60,6 +60,7 @@ void assert_request(const Json &requests, const char *name,
 }
 
 void run() {
+    OperationRegistry operations;
     const auto multiproject = load_fixture(STREAMFIND_MULTIPROJECT_FIXTURE);
     const auto lifecycle = load_fixture(STREAMFIND_EXECUTION_LIFECYCLE_FIXTURE);
     const auto mcp = load_fixture(STREAMFIND_MCP_EXECUTION_FIXTURE);
@@ -209,7 +210,7 @@ void run() {
     WorkflowExecutionManager other_manager(other);
     if (!other_manager.list().empty()) throw std::runtime_error("execution manager leaked rows across projects");
     if (other_manager.create({{"workflow_revision", 1}}).at("status") != "queued") throw std::runtime_error("independent project could not queue execution");
-    if (other.run_worker("other-worker").at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
+    if (other.run_worker("other-worker", operations).at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
     manager.scheduler_tick("worker-a");
     project.close();
     auto reopened = Project::open(options);

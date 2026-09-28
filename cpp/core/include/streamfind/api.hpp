@@ -18,13 +18,9 @@ enum class ProjectCommand {
     transition_execution,
     cancel_execution,
     set_workflow,
-    add_method,
-    remove_method,
     validate_workflow,
     validate,
     get_project_domains,
-    get_available_methods,
-    run_method,
     copy,
     run_workflow,
     get_metadata,
@@ -53,11 +49,11 @@ STREAMFIND_CORE_API ProjectCommand command_from_string(std::string_view name);
  *
  * @param command Project operation to execute.
  * @param request JSON request object.
- * @param registry Registry used for workflow validation and execution.
+ * @param registry Registry used for operation-graph validation and execution.
  * @return JSON command result.
  * @throws Error if the request or Project operation is invalid.
  */
 STREAMFIND_CORE_API Json run(ProjectCommand command, const Json &request,
-                             const MethodRegistry &registry = methods());
+                             const OperationRegistry &registry);
 
 }

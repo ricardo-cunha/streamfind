@@ -2614,6 +2614,25 @@ h2 {
 .sf-artifact-viewer.json {
   grid-template-rows: auto minmax(0, 1fr);
 }
+.sf-artifact-viewer.visualization {
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 95vw;
+  height: 95vh;
+  max-height: 95vh;
+}
+.sf-visualization-preview,
+.sf-visualization-preview > [role='img'] {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.sf-visualization-preview {
+  display: flex;
+  flex-direction: column;
+}
+.sf-visualization-preview > [role='img'] {
+  flex: 1 1 auto;
+}
 .sf-artifact-viewer > header {
   display: flex;
   justify-content: space-between;

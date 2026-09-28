@@ -12,6 +12,7 @@
       -Clean    wipe the build tree first
       -Tests    after building, run ctest --output-on-failure
       -Target   a specific CMake target to build (default: all)
+      -Plugins  comma-separated plugin domains or ALL (default: ALL)
       -CMakeArgs additional configure arguments, e.g. -CMakeArgs '-DNAME=value'
       -Config   Debug|Release (default Debug)
 #>
@@ -19,6 +20,7 @@ param(
     [switch]$Clean,
     [switch]$Tests,
     [string]$Target = '',
+    [string]$Plugins = 'ALL',
     [string[]]$CMakeArgs = @(),
     [string]$Config = 'Debug'
 )
@@ -68,6 +70,7 @@ $configureArgs = @(
     "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)",
     "-DCMAKE_BUILD_TYPE=$Config",
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)",
+    "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')",
     '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
     '-DSTREAMFIND_BUILD_TESTS=ON',
     '-DSTREAMFIND_BUILD_SHARED=OFF',

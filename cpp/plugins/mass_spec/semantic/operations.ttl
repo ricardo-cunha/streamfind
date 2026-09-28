@@ -173,6 +173,27 @@ sfms:getSpectraTic
     sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:ticTable, sfcore:operationSuccessSignal .
 
+sfms:plotSpectraTic
+    a sf:Operation ;
+    sf:operationId "mass_spec.plot_spectra_tic" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Plot spectra TIC" ;
+    skos:definition "Generate a bounded Plotly visualization specification for total-ion-current spectra, preserving the R plotting defaults and retention-time units." ;
+    sf:category "mass-spec-visualization" ;
+    sf:hasParameter
+        sfcore:analysisNamesParameter,
+        sfms:levelsParameter,
+        sfms:rtMinParameter,
+        sfms:rtMaxParameter,
+        sfms:plotDownsizeParameter,
+        sfms:plotGroupByParameter,
+        sfms:plotTitleParameter,
+        sfms:plotXLabelParameter,
+        sfms:plotYLabelParameter ;
+    sf:hasInputPort sfms:analysesTable, sfms:spectraHeadersTable ;
+    sf:hasOutputPort sfcore:visualizationSpecResult, sfcore:operationSuccessSignal .
+
 sfms:getRawSpectra
     a sf:Operation ;
     sf:operationId "mass_spec.get_raw_spectra" ;

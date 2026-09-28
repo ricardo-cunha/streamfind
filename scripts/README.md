@@ -22,11 +22,67 @@ and Log Locations"): build trees in `tmp/build/`, release packages in
 | Run data-backed NTA pipeline | Add `-RunPipeline` to `scripts\dev\cpp\test-nta.ps1` |
 | Run explicit cross-backend conformance | `scripts/dev/conformance/run-conformance.ps1 -CppExecutable <path> -RustExecutable <path> -Thermo` |
 | Build C++ release archive | `scripts/release/cpp/release-cpp.cmd -Version <version>` |
+| Run extracted packaged MCP smoke | `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <extracted-package>` |
 | Build Rust release archive | `scripts/release/rust/release-rust.cmd -Version <version> -CppCatalogue <path>` |
 | Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version> -Backend Cpp|Rust|All` |
 | Clean build/test artifacts | `scripts\build\clean-build-temp.cmd` |
 
 Every `.cmd` is a thin wrapper over its `.ps1`; use either form.
+
+## Native toolchain contract
+
+The native stack is deliberately fixed to **CMake + Ninja + GCC-family C/C++**.
+Do not mix compilers or reuse a build directory after changing toolchains.
+
+| Host | Required tools | Resolution policy |
+| --- | --- | --- |
+| Windows | MinGW-w64 UCRT64 GCC/G++, CMake, Ninja | Standard MSYS2 root `C:\msys64`; override with `STREAMFIND_MINGW_ROOT` |
+| Linux | GCC/G++, CMake, Ninja, tar, sha256sum | Standard `/usr/bin` installation; override through `PATH`, `CC`, `CXX`, and `NINJA` |
+
+The Windows scripts prepend `ucrt64\bin` and `usr\bin` to the process `PATH`,
+set `MSYSTEM=UCRT64`, validate the compiler paths, and isolate temporary files
+under `tmp\scratch`. This is required even when `g++.exe` itself is discoverable:
+its `cc1plus.exe` subprocess needs the UCRT64 runtime directories as well.
+
+Use the host presets for direct CMake work:
+
+```powershell
+# Windows PowerShell
+cmake --preset mingw-ucrt64 -S cpp
+cmake --build --preset mingw-ucrt64
+
+# Select a subset of plugins when developing:
+cmake --preset mingw-ucrt64 -S cpp -DSTREAMFIND_ENABLED_PLUGINS="mass_spec;raman"
+```
+
+```bash
+# Linux
+cmake --preset linux-gcc -S cpp
+cmake --build tmp/build/linux-gcc --preset linux-gcc
+```
+
+The canonical scripts perform the same setup and are preferred for releases:
+
+```powershell
+scripts/build/cpp/build-cpp.ps1 -Tests -Plugins ALL
+scripts/release/cpp/release-cpp.ps1 -Version <version> -Plugins ALL
+```
+
+```bash
+STREAMFIND_PLUGINS=ALL scripts/release/cpp/release-cpp-linux.sh <version>
+```
+
+`STREAMFIND_ENABLED_PLUGINS` is a semicolon-separated CMake list. The wrapper
+scripts accept comma-separated values on Windows (`-Plugins mass_spec,raman`)
+and the Linux release lane accepts the same CMake list through
+`STREAMFIND_PLUGINS`. `ALL` is the release default. Plugin discovery remains
+directory-based, but every enabled plugin must define
+`streamfind_<domain>_plugin`; its manifest, semantic catalogue, ABI validation,
+and runtime dependencies are staged by that plugin's CMake target.
+
+Never share `tmp/build/core-default`, `tmp/build/mingw-ucrt64`, or a release
+build directory between MSVC, MinGW, GCC, or Clang configurations. Delete the
+tree or use a new named preset when changing the compiler.
 
 The official C++ suite is the authoritative framework, plugin, mass-spectrometry
 interface, and lightweight NTA coverage registered by CMake. Rust is an
@@ -91,7 +147,7 @@ install method.
 ## What each script does
 
 - `scripts/build/cpp/build-cpp.ps1` — required Windows C++ entry point; initializes
-  the MSVC environment, configures with Ninja into `tmp/build/core-default`
+  the MinGW-w64 UCRT64 environment, configures with Ninja into `tmp/build/core-default`
   (`STREAMFIND_BUILD_TESTS=ON`, `STREAMFIND_BUILD_SHARED=OFF`), builds, and
   optionally runs CTest. Flags: `-Clean`, `-Tests`, `-Target <name>`,
   `-Config <Debug|Release>`.
@@ -114,6 +170,14 @@ install method.
   gate.
 - `scripts/release/cpp/release-cpp-linux.sh <version>` — builds, tests, and
   packages only the authoritative C++ Linux backend.
+- The Windows C++ archive is self-contained at launch: configure an MCP host
+  with `bin\\streamfind_mcp_launcher.exe`. The packaged browser entry point
+  is `bin\\streamfind.exe`; it starts `streamfind_service.exe` with the same
+  package-relative runtime paths. Do not prepend the package's
+  `core\\vendors\\mingw` or `core\\vendors\\duckdb` directories to `PATH`;
+  the launchers supply those paths to their child processes.
+- Validate an extracted Windows archive with
+  `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <package-root>`.
 - `scripts/release/rust/release-rust-linux.sh <version> <cpp-catalogue>` —
   builds, tests, and packages only the Rust Linux backend against the supplied
   C++ catalogue.
@@ -123,8 +187,8 @@ install method.
 
 ## Notes
 
-- On a plain terminal, `TMP`/`TEMP` must be valid Windows paths for MSVC's
-  `link.exe` and cargo doctests (the scripts assume a normal user
+- On a plain terminal, the scripts set repository-local Windows `TMP`/`TEMP`
+  paths before invoking MinGW, CMake, Ninja, or cargo (the scripts assume a normal user
   environment).
 - Build artifacts are gitignored; `scripts/build/clean-build-temp.cmd` removes
   them while preserving tracked scripts and `tmp/logs/`.

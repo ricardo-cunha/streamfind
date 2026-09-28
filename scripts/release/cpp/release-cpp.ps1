@@ -3,6 +3,7 @@
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')][string]$Version,
     [switch]$SkipTests,
+    [string]$Plugins = 'ALL',
     [ValidateSet('Debug', 'Release')][string]$Config = 'Release'
 )
 
@@ -32,6 +33,7 @@ Write-ReleaseLog "Building C++ backend ($Config)..."
     "-DCMAKE_C_COMPILER=$($toolchain.CCompiler)" `
     "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)" "-DCMAKE_BUILD_TYPE=$Config" `
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)" `
+    "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
     -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"

@@ -333,7 +333,7 @@ void EventBroker::publish(const Json &event) {
 
 ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
     const std::filesystem::path &application_root)
-    : port_(port), application_root_(application_root), projects_(methods_, operations_) {
+    : port_(port), application_root_(application_root), projects_(operations_) {
     projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view message) {
         events_.publish(Json{{"type", "operation.log"}, {"project", session_id},
                              {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}});

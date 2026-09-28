@@ -16,6 +16,9 @@ import {
 } from '../backend/StreamFindApiClient';
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from './notifications';
+import { visualizationSpecFromArtifact } from '../visualization/VisualizationDataResolver';
+import { VisualizationRenderer } from '../visualization/VisualizationRenderer';
+import type { VisualizationSpec } from '../visualization/visualizationTypes';
 import type {
   BackendCapability,
   CapabilityParameter,
@@ -393,9 +396,11 @@ function parseCsvRows(text: string, columns: string[]): { rows?: Record<string, 
 }
 
 function isJsonParameter(parameter: CapabilityParameter): boolean {
-  return parameter.schema.type === 'table' ||
+  return (
+    parameter.schema.type === 'table' ||
     parameter.schema.type === 'object' ||
-    (parameter.schema.type === 'array' && !isFileListParameter(parameter));
+    (parameter.schema.type === 'array' && !isFileListParameter(parameter))
+  );
 }
 
 function validateJsonValue(value: unknown, schema: JsonSchema, path = 'value'): string | null {
@@ -614,6 +619,16 @@ function prettyArtifactPayload(payload: ArtifactRecord['payload']): string {
   }
 }
 
+function VisualizationArtifactPreview({ artifact }: { artifact: ArtifactRecord }) {
+  let spec: VisualizationSpec;
+  try {
+    spec = visualizationSpecFromArtifact(artifact);
+  } catch {
+    return <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifact.payload)}</pre>;
+  }
+  return <VisualizationRenderer spec={spec} className="sf-visualization-preview" />;
+}
+
 function artifactContractMatches(artifactContract: string, portContract?: string): boolean {
   if (!portContract) return false;
   if (artifactContract === portContract) return true;
@@ -666,9 +681,34 @@ function portMatchesParameter(sourcePort: NodePort, parameter: CapabilityParamet
 
 const NODE_WIDTH = 224;
 const NODE_HEIGHT = 260;
+const CONNECTED_NODE_GAP = 72;
 const CANVAS_WORLD_WIDTH = 6000;
 const CANVAS_WORLD_HEIGHT = 4000;
 const GRID_SIZE = 22;
+
+function connectedNodePosition(source: CanvasNode, nodes: CanvasNode[]): Point {
+  const columnStep = NODE_WIDTH + CONNECTED_NODE_GAP;
+  const rowStep = NODE_HEIGHT + CONNECTED_NODE_GAP;
+  for (let column = 1; column <= 20; column += 1) {
+    const rowOffsets = [0];
+    for (let row = 1; row < 20; row += 1) rowOffsets.push(row, -row);
+    for (const row of rowOffsets) {
+      const candidate = {
+        x: source.x + column * columnStep,
+        y: source.y + row * rowStep,
+      };
+      const overlaps = nodes.some(
+        (node) =>
+          candidate.x < node.x + NODE_WIDTH &&
+          candidate.x + NODE_WIDTH > node.x &&
+          candidate.y < node.y + NODE_HEIGHT &&
+          candidate.y + NODE_HEIGHT > node.y,
+      );
+      if (!overlaps) return candidate;
+    }
+  }
+  return { x: source.x + columnStep, y: source.y };
+}
 
 const ARTIFACT_PAGE_SIZE = 250;
 const ARTIFACT_ROW_HEIGHT = 32;
@@ -1676,13 +1716,18 @@ export default function CanvasShell({
   const addNode = (template: NodeTemplate) => {
     if (!picker) return;
     const id = `${template.kind}-${nextId.current++}`;
+    const source = picker.source;
+    const sourceNode = source ? nodeMap.get(source) : undefined;
+    const position = sourceNode
+      ? connectedNodePosition(sourceNode, nodes)
+      : { x: picker.x - NODE_WIDTH / 2, y: picker.y - NODE_HEIGHT / 2 };
     const node: CanvasNode = {
       id,
       kind: template.kind,
       title: template.title,
       description: template.description,
-      x: picker.x - NODE_WIDTH / 2,
-      y: picker.y - NODE_HEIGHT / 2,
+      x: position.x,
+      y: position.y,
       outputsToCanvas: template.outputsToCanvas,
       capabilityId: template.capabilityId,
       projectEntry: template.projectEntry,
@@ -1693,10 +1738,8 @@ export default function CanvasShell({
         : {},
     };
     setNodes((current) => [...current, node]);
-    const source = picker.source;
     if (source) {
       const targetCapability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
-      const sourceNode = nodeMap.get(source);
       const sourcePort =
         sourceNode && nodePorts(nodeCapability(sourceNode)).outputs.find((port) => port.id === picker.sourcePort);
       const targetPort =
@@ -1817,15 +1860,15 @@ export default function CanvasShell({
     const centerX = layoutWidth / 2;
     const centerY = layoutHeight / 2;
     stages.forEach((stage) => {
-        const column = groups.get(stage) || [];
-        column.sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
-        column.forEach((node, row) => {
-          const target = byId.get(node.id);
-          if (!target) return;
-          target.x = centerX + (stage - maxStage / 2) * 360 - NODE_WIDTH / 2;
-          target.y = centerY + (row - (column.length - 1) / 2) * 190 - NODE_HEIGHT / 2;
-        });
+      const column = groups.get(stage) || [];
+      column.sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+      column.forEach((node, row) => {
+        const target = byId.get(node.id);
+        if (!target) return;
+        target.x = centerX + (stage - maxStage / 2) * 360 - NODE_WIDTH / 2;
+        target.y = centerY + (row - (column.length - 1) / 2) * 190 - NODE_HEIGHT / 2;
       });
+    });
     setWorldSize((current) => ({
       width: Math.max(current.width, layoutWidth),
       height: Math.max(current.height, layoutHeight),
@@ -1862,7 +1905,8 @@ export default function CanvasShell({
     setJsonEditor({ nodeId: node.id, parameter });
     setJsonEditorText(
       JSON.stringify(
-        node.parameters?.[parameter.name] ?? (parameter.schema.type === 'array' || parameter.schema.type === 'table' ? [] : {}),
+        node.parameters?.[parameter.name] ??
+          (parameter.schema.type === 'array' || parameter.schema.type === 'table' ? [] : {}),
         null,
         2,
       ),
@@ -1944,7 +1988,13 @@ export default function CanvasShell({
         (row): row is Record<string, unknown> => typeof row === 'object' && row !== null && !Array.isArray(row),
       );
       if (rows.length !== parsed.length) throw new Error('Every table row must be a JSON object.');
-      setTableEditor({ nodeId: jsonEditor.nodeId, parameter: jsonEditor.parameter, rows, returnToJsonEditor: true, error: null });
+      setTableEditor({
+        nodeId: jsonEditor.nodeId,
+        parameter: jsonEditor.parameter,
+        rows,
+        returnToJsonEditor: true,
+        error: null,
+      });
       setJsonEditor(null);
     } catch (error) {
       setJsonEditorError(error instanceof Error ? error.message : 'Invalid table JSON.');
@@ -2607,10 +2657,7 @@ export default function CanvasShell({
                                   onMouseDown={(event) => event.stopPropagation()}
                                   onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
                                 >
-                                  <i
-                                    className={typeIcon(parameterTypeKey(parameter))}
-                                    aria-hidden="true"
-                                  />
+                                  <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
                                 </button>
                                 <div className="sf-canvas-parameter-heading">
                                   <button
@@ -2771,14 +2818,22 @@ export default function CanvasShell({
                                 <input
                                   type={
                                     ['integer', 'number', 'real', 'float', 'double'].includes(
-                                      String(Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type),
+                                      String(
+                                        Array.isArray(parameter.schema.type)
+                                          ? parameter.schema.type[0]
+                                          : parameter.schema.type,
+                                      ),
                                     )
                                       ? 'number'
                                       : 'text'
                                   }
                                   value={String(value ?? parameter.default ?? parameter.schema.default ?? '')}
                                   onChange={(event) =>
-                                    updateNodeParameter(node.id, parameter.name, scalarInputValue(parameter, event.target.value))
+                                    updateNodeParameter(
+                                      node.id,
+                                      parameter.name,
+                                      scalarInputValue(parameter, event.target.value),
+                                    )
                                   }
                                 />
                               )}
@@ -3340,7 +3395,13 @@ export default function CanvasShell({
       {artifactViewer ? (
         <div className="sf-artifact-viewer-backdrop" role="presentation" onMouseDown={() => setArtifactViewer(null)}>
           <section
-            className={`sf-artifact-viewer ${artifactViewer.representation === 'table' ? 'wide' : 'json'}`}
+            className={`sf-artifact-viewer ${
+              artifactViewer.contract_id === 'visualizationSpecResult'
+                ? 'visualization'
+                : artifactViewer.representation === 'table'
+                  ? 'wide'
+                  : 'json'
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label="Artifact viewer"
@@ -3405,6 +3466,8 @@ export default function CanvasShell({
                   . Only the visible rows are rendered; data pages load as you scroll.
                 </footer>
               </>
+            ) : artifactViewer.contract_id === 'visualizationSpecResult' ? (
+              <VisualizationArtifactPreview artifact={artifactViewer} />
             ) : (
               <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>
             )}

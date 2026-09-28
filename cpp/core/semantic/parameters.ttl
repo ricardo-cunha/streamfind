@@ -30,7 +30,7 @@ sfcore:domainParameter
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project domain" ;
-    skos:definition "Domain identifier used to select workflow methods and capabilities; it is not a project-level assignment." ;
+    skos:definition "Domain identifier used to discover canonical workflow operations and capabilities; it is not a project-level assignment." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
@@ -53,19 +53,18 @@ sfcore:workflowParameter
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow" ;
-    skos:definition "Ordered array of workflow method objects. Each object must identify a registered method and may contain that method's validated parameters." ;
-    sf:type "array" ;
+    skos:definition "Persisted operation graph containing configured operation nodes and explicit typed connections between their input and output ports." ;
+    sf:type "object" ;
     sf:required true ;
-    sf:default "[]" ;
-    sf:items sfcore:methodField ;
-    sf:example "[]" .
+    sf:default "{}" ;
+    sf:example "{\"operations\":[],\"connections\":[]}" .
 
 sfcore:methodParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method identifier" ;
-    skos:definition "Stable canonical identifier of a registered workflow method, for example mass_spec.find_features. Obtain valid method identifiers and their parameters from get_available_methods(domain)." ;
+    skos:definition "Stable canonical identifier of a workflow operation, for example mass_spec.find_features. Obtain valid operation identifiers and their schemas from get_operations(domain) and get_operation(operation)." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
@@ -76,7 +75,7 @@ sfcore:parametersParameter
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method parameters" ;
-    skos:definition "JSON object containing method-specific parameter values. Use the selected method's parameter definitions from get_available_methods; unknown keys are rejected." ;
+    skos:definition "JSON object containing operation-specific parameter values. Use the selected operation's schema from get_operation; unknown keys are rejected." ;
     sf:type "object" ;
     sf:required false ;
     sf:default "{}" ;

@@ -7,7 +7,6 @@
 #include "streamfind/project_table_store.hpp"
 
 
-#include <algorithm>
 #include <stdexcept>
 #include <utility>
 
@@ -23,7 +22,7 @@ ProjectOptions options_from_request(const Json &request, bool read_only = false)
     return options;
 }
 
-Json descriptor(const Project &project, const MethodRegistry &registry) {
+Json descriptor(const Project &project) {
     const auto &info = project.info();
     return {
         {"domains", info.domains},
@@ -31,12 +30,12 @@ Json descriptor(const Project &project, const MethodRegistry &registry) {
         {"schema_version", info.schema_version},
         {"framework_version", info.framework_version},
         {"created_at", info.created_at},
-        {"workflow", project.get_workflow().to_json(registry)}
+        {"workflow", project.get_workflow().to_json()}
     };
 }
 
-Json descriptor_table(const Project &project, const MethodRegistry &registry) {
-    const auto row = descriptor(project, registry);
+Json descriptor_table(const Project &project) {
+    const auto row = descriptor(project);
     Json columns = Json::object();
     for (auto it = row.begin(); it != row.end(); ++it) columns[it.key()] = Json::array({it.value()});
     return {{"row_count", 1}, {"columns", std::move(columns)}};
@@ -44,7 +43,7 @@ Json descriptor_table(const Project &project, const MethodRegistry &registry) {
 
 Json workflow_execution_table(const Json &rows) {
     const std::vector<std::string> names = {
-        "workflow_revision", "step_index", "method", "parameter_hash",
+        "workflow_revision", "step_index", "operation", "parameter_hash",
         "status", "started_at", "completed_at", "error", "cache_key"};
     Json columns = Json::object();
     for (const auto &name : names) columns[name] = Json::array();
@@ -56,8 +55,8 @@ Json metadata_table(const Json &metadata) {
     return {{"row_count", 1}, {"columns", {{"metadata", Json::array({metadata.dump()})}}}};
 }
 
-Json workflow_table(const Workflow &workflow, const MethodRegistry &registry) {
-    return workflow.to_json(registry);
+Json workflow_table(const Workflow &workflow) {
+    return workflow.to_json();
 }
 
 Json cache_entries(const Project &project) {
@@ -80,14 +79,6 @@ Json audit_entries(const Project &project) {
     return output;
 }
 
-Json method_entries(const MethodRegistry &registry, const std::string &domain) {
-    Json output = Json::array();
-    for (const auto &definition : registry.list(domain)) {
-        if (const auto *method = registry.find(definition.id)) output.push_back(method->to_json());
-    }
-    return output;
-}
-
 } // namespace detail
 
 ProjectCommand command_from_string(std::string_view name) {
@@ -101,13 +92,9 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "transition_execution") return ProjectCommand::transition_execution;
     if (name == "cancel_execution") return ProjectCommand::cancel_execution;
     if (name == "set_workflow") return ProjectCommand::set_workflow;
-    if (name == "add_method") return ProjectCommand::add_method;
-    if (name == "remove_method") return ProjectCommand::remove_method;
     if (name == "validate_workflow") return ProjectCommand::validate_workflow;
     if (name == "validate") return ProjectCommand::validate;
     if (name == "get_project_domains") return ProjectCommand::get_project_domains;
-    if (name == "get_available_methods") return ProjectCommand::get_available_methods;
-    if (name == "run_method") return ProjectCommand::run_method;
     if (name == "copy") return ProjectCommand::copy;
     if (name == "run_workflow") return ProjectCommand::run_workflow;
     if (name == "get_metadata") return ProjectCommand::get_metadata;
@@ -126,28 +113,25 @@ ProjectCommand command_from_string(std::string_view name) {
     throw Error(ErrorCode::InvalidArgument, "Unknown Project command: " + std::string(name));
 }
 
-Json run(ProjectCommand command, const Json &request, const MethodRegistry &registry) {
+Json run(ProjectCommand command, const Json &request, const OperationRegistry &registry) {
     switch (command) {
     case ProjectCommand::create: {
         auto options = detail::options_from_request(request);
         auto project = Project::create(options);
         if (request.contains("metadata")) project.set_metadata(request.at("metadata"));
-        return detail::descriptor_table(project, registry);
+        return detail::descriptor_table(project);
     }
     case ProjectCommand::describe:
-        return detail::descriptor_table(Project::open(detail::options_from_request(request, true)), registry);
+        return detail::descriptor_table(Project::open(detail::options_from_request(request, true)));
     case ProjectCommand::get_workflow: {
         auto project = Project::open(detail::options_from_request(request, true));
-        return detail::workflow_table(project.get_workflow(), registry);
+        return detail::workflow_table(project.get_workflow());
     }
     case ProjectCommand::validate_workflow: {
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
         auto project = Project::open(detail::options_from_request(request, true));
         const auto workflow = Workflow::from_json(request.at("workflow"));
-        const std::function<bool(std::string_view)> has_table = [&](std::string_view table) {
-            return ProjectTableStore(project).has_table(std::string(table));
-        };
-        workflow.validate(registry, has_table);
+        workflow.validate(registry);
         return {{"valid", true}, {"info", "Workflow validation finished successfully."}};
     }
     case ProjectCommand::validate: {
@@ -157,13 +141,7 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
     }
     case ProjectCommand::get_project_domains:
         return Project::open(detail::options_from_request(request, true)).get_domains();
-    case ProjectCommand::get_available_methods:
-        return detail::method_entries(registry, request.value("domain", ""));
-    case ProjectCommand::run_method: {
-        if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
-        auto project = Project::open(detail::options_from_request(request));
-        return project.run_method(request.at("method").get<std::string>(), request.value("parameters", Json::object()), registry);
-    }
+
     case ProjectCommand::copy: {
         if (!request.contains("destination_database_path")) {
             throw Error(ErrorCode::InvalidArgument, "Request requires destination_database_path");
@@ -172,18 +150,15 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         ProjectOptions destination_options;
         destination_options.database_path = request.at("destination_database_path").get<std::string>();
         auto destination = source.copy(destination_options);
-        return detail::descriptor_table(destination, registry);
+        return detail::descriptor_table(destination);
     }
     case ProjectCommand::set_workflow: {
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = Workflow::from_json(request.at("workflow"));
-        const std::function<bool(std::string_view)> has_table = [&](std::string_view table) {
-            return ProjectTableStore(project).has_table(std::string(table));
-        };
-        workflow.validate(registry, has_table);
+        workflow.validate(registry);
         project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow(), registry);
+        return detail::workflow_table(project.get_workflow());
     }
     case ProjectCommand::get_workflow_execution:
         return detail::workflow_execution_table(Project::open(detail::options_from_request(request, true)).get_workflow_execution());
@@ -217,26 +192,7 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         auto project = Project::open(detail::options_from_request(request));
         return WorkflowExecutionManager(project).cancel();
     }
-    case ProjectCommand::add_method: {
-        if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
-        auto project = Project::open(detail::options_from_request(request));
-        auto workflow = project.get_workflow();
-        workflow.steps.push_back({request.at("method").get<std::string>(), request.value("parameters", Json::object())});
-        project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow(), registry);
-    }
-    case ProjectCommand::remove_method: {
-        if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
-        auto project = Project::open(detail::options_from_request(request));
-        auto workflow = project.get_workflow();
-        const auto method = request.at("method").get<std::string>();
-        const auto step = std::find_if(workflow.steps.begin(), workflow.steps.end(),
-                                       [&method](const auto &candidate) { return candidate.method == method; });
-        if (step == workflow.steps.end()) throw Error(ErrorCode::InvalidArgument, "Method is not in workflow: " + method);
-        workflow.steps.erase(step);
-        project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow(), registry);
-    }
+
     case ProjectCommand::add_operation: {
         if (!request.contains("operation_id") || !request.contains("operation"))
             throw Error(ErrorCode::InvalidArgument, "Request requires operation_id and operation");
@@ -290,8 +246,8 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         auto project = Project::open(detail::options_from_request(request));
         const Json result = request.contains("worker_id")
             ? project.run_worker(request.at("worker_id").get<std::string>(), registry)
-            : project.run_workflow(registry).to_json();
-        return {{"result", result}, {"workflow", detail::workflow_table(project.get_workflow(), registry)}};
+            : project.run_operation_graph(registry);
+        return {{"result", result}, {"workflow", detail::workflow_table(project.get_workflow())}};
     }
     case ProjectCommand::get_metadata:
         return detail::metadata_table(Project::open(detail::options_from_request(request, true)).get_metadata());

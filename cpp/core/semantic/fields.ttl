@@ -125,7 +125,7 @@ sfcore:methodInputSchemaField
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method input schema" ;
-    skos:definition "Complete JSON Schema for the method-specific parameter object. Use this schema when constructing add_method or run_method parameters." ;
+    skos:definition "Complete JSON Schema for an operation-specific parameter object. Use this schema when constructing an operation node." ;
     sf:propertyName "inputSchema" ;
     sf:type "object" .
 

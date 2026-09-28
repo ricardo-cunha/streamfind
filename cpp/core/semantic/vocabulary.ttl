@@ -59,7 +59,7 @@ sf:Parameter
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Parameter" ;
-    skos:definition "A named input accepted by an operation or workflow method." .
+    skos:definition "A named input accepted by a workflow operation." .
 
 sf:Fixture
     a rdfs:Class ;
@@ -125,7 +125,7 @@ sf:ReadDependency
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Read dependency" ;
-    skos:definition "A conditional table dependency of a workflow method." .
+    skos:definition "A conditional table dependency of a workflow operation." .
 
 sf:Column
     a rdfs:Class ;
@@ -227,7 +227,7 @@ sf:methodId
     rdfs:domain sf:Method ;
     rdfs:range rdfs:Literal ;
     skos:prefLabel "method identifier" ;
-    skos:definition "Stable identifier of a workflow method." .
+    skos:definition "Stable identifier of a workflow operation." .
 
 sf:providedByModule
     a rdf:Property ;

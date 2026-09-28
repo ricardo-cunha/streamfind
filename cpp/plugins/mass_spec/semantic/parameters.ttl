@@ -16,6 +16,63 @@ sfms:levelsParameter
     sf:items sfcore:integerItemParameter ;
     sf:example "[1,2]" .
 
+sfms:plotDownsizeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Plot downsize" ;
+    skos:definition "Optional retention-time bin width used to average TIC points before plotting." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 0.0 ;
+    sf:units "seconds" ;
+    sf:example 5.0 .
+
+sfms:plotGroupByParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Plot group" ;
+    skos:definition "TIC trace grouping key." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "analysis" ;
+    sf:enum "analysis,replicate,polarity,level" ;
+    sf:example "analysis" .
+
+sfms:plotTitleParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Plot title" ;
+    skos:definition "Optional visualization title." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "Total Ion Chromatograms (TICs)" ;
+    sf:example "Total Ion Chromatograms (TICs)" .
+
+sfms:plotXLabelParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Plot x-axis label" ;
+    skos:definition "Optional x-axis label." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "Retention time / seconds" ;
+    sf:example "Retention time / seconds" .
+
+sfms:plotYLabelParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Plot y-axis label" ;
+    skos:definition "Optional y-axis label." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "Intensity / counts" ;
+    sf:example "Intensity / counts" .
+
 sfms:rtMinParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

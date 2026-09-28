@@ -4,8 +4,6 @@
 #include <functional>
 #include <limits>
 #include <memory>
-#include <atomic>
-#include <functional>
 #include <optional>
 #include <cstdint>
 #include <stdexcept>
@@ -289,22 +287,6 @@ private:
     std::vector<Operation> operations_;
 };
 
-/** @brief Return the process-wide default method registry. */
-STREAMFIND_CORE_API MethodRegistry &methods();
-
-/** @brief One ordered method invocation in a workflow. */
-struct STREAMFIND_CORE_API WorkflowStep {
-    /// Registered method identifier.
-    std::string method;
-    /// Values passed to that method.
-    ParameterValues parameters;
-
-    /** @brief Export the step method id and values as JSON. */
-    Json to_json() const;
-    /** @brief Parse a workflow step from JSON. */
-    static WorkflowStep from_json(const Json &value);
-};
-
 /** @brief One operation instance in a persisted workflow graph. */
 struct STREAMFIND_CORE_API WorkflowOperation {
     std::string id;
@@ -341,24 +323,16 @@ public:
     std::string name;
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
-    /// Ordered method invocations.
-    std::vector<WorkflowStep> steps;
     /// Operation instances forming the backend execution graph.
     std::vector<WorkflowOperation> operations;
     /// Explicit typed-port dataflow connections.
     std::vector<WorkflowConnection> connections;
 
-    /** @brief Validate method ids, ordering, domains, occurrences, and values. */
-    void validate(const MethodRegistry &registry) const;
-    /** @brief Validate with table availability from the target project. */
-    void validate(const MethodRegistry &registry,
-                  const std::function<bool(std::string_view)> &has_table) const;
     /** @brief Validate operation instances and port bindings against the installed catalogue. */
     void validate(const OperationRegistry &registry) const;
     /** @brief Export the workflow definition as JSON. */
     Json to_json() const;
-    /** @brief Export ordered method metadata with configured parameter values. */
-    Json to_json(const MethodRegistry &registry) const;
+
     /** @brief Parse a canonical workflow object from JSON. */
     static Workflow from_json(const Json &value);
 };
@@ -391,32 +365,6 @@ enum class STREAMFIND_CORE_API ExecutionState {
 STREAMFIND_CORE_API bool valid_execution_transition(ExecutionState from,
                                                      ExecutionState to) noexcept;
 
-/** @brief Cooperative cancellation state for long-running operations. */
-class STREAMFIND_CORE_API CancellationToken {
-public:
-    /** @brief Request cancellation. */
-    void cancel() noexcept;
-    /** @brief Return whether cancellation was requested. */
-    bool is_cancelled() const noexcept;
-private:
-    std::atomic<bool> cancelled_{false};
-};
-
-/** @brief Progress snapshot emitted during execution. */
-struct STREAMFIND_CORE_API ProgressEvent {
-    std::string operation;
-    std::size_t completed{0};
-    std::size_t total{0};
-};
-
-using ProgressCallback = std::function<void(const ProgressEvent &)>;
-
-/** @brief Stable result envelope for workflow execution. */
-struct STREAMFIND_CORE_API ExecutionResult {
-    Json results{Json::array()};
-    bool cancelled{false};
-    Json to_json() const;
-};
 
 /** @brief Typed exception raised by the streamfind core API. */
 class STREAMFIND_CORE_API Error : public std::runtime_error {
@@ -505,8 +453,8 @@ public:
     /** @brief Validate the project schema and persisted row state. */
     void validate() const;
     Workflow get_workflow() const;
-    /** @brief Persist a workflow using the supplied method registry. */
-    void set_workflow(Workflow workflow, const MethodRegistry &registry = methods());
+    /** @brief Replace a workflow without revalidation, for copying an already validated graph. */
+    void set_workflow(Workflow workflow);
     /** @brief Persist an operation workflow after validating it against installed operations. */
     void set_workflow(Workflow workflow, const OperationRegistry &registry);
     /** @brief Remove persisted workflow revisions older than the current revision. */
@@ -563,16 +511,9 @@ public:
     /** @brief Execute the persisted operation graph in topological order. */
     Json run_operation_graph(const OperationRegistry &registry);
 
-    /** @brief Execute the persisted workflow using a method registry. */
-    ExecutionResult run_workflow(const MethodRegistry &registry = methods(),
-                                 CancellationToken *cancellation = nullptr,
-                                 ProgressCallback progress = {});
     /** @brief Claim, execute, and release one externally-triggered worker run. */
     Json run_worker(const std::string &worker_id,
-                    const MethodRegistry &registry = methods());
-    /** @brief Execute one registered method with supplied parameters. */
-    Json run_method(const std::string &method_id, const Json &parameters,
-                    const MethodRegistry &registry = methods());
+                    const OperationRegistry &registry);
     Json run_operation(const std::string &operation_id, const Json &parameters,
                        const OperationRegistry &registry,
                        const std::string &operation_instance = {});

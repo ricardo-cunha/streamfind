@@ -3,6 +3,7 @@
 #include <shellapi.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -28,6 +29,28 @@ std::string service_path() {
     const auto length = GetModuleFileNameA(nullptr, path, MAX_PATH);
     if (length == 0 || length >= MAX_PATH) throw std::runtime_error("unable to resolve StreamFind installation path");
     return (std::filesystem::path(path).parent_path() / "streamfind_service.exe").string();
+}
+
+void configure_child_vendor_runtime() {
+    char module_path[MAX_PATH]{};
+    const auto length = GetModuleFileNameA(nullptr, module_path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+        throw std::runtime_error("unable to resolve StreamFind package path");
+
+    const auto package_root = std::filesystem::path(module_path).parent_path().parent_path();
+    const auto vendor_root = package_root / "core" / "vendors";
+    const auto duckdb_directory = vendor_root / "duckdb";
+    const auto mingw_directory = vendor_root / "mingw";
+    if (!std::filesystem::is_directory(duckdb_directory) ||
+        !std::filesystem::is_directory(mingw_directory))
+        throw std::runtime_error("StreamFind vendor runtime directories are missing");
+
+    const char *existing_path = std::getenv("PATH");
+    std::string path = duckdb_directory.string() + ";" + mingw_directory.string();
+    if (existing_path != nullptr && *existing_path != '\0')
+        path += ";" + std::string(existing_path);
+    if (_putenv_s("PATH", path.c_str()) != 0)
+        throw std::runtime_error("unable to configure StreamFind vendor runtime path");
 }
 
 bool running() { return child.hProcess != nullptr && WaitForSingleObject(child.hProcess, 0) == WAIT_TIMEOUT; }
@@ -70,6 +93,10 @@ std::uint16_t choose_port() {
 
 void start_child(std::uint16_t port) {
     const auto executable = service_path();
+    // streamfind_service imports DuckDB before its C++ main() can run. Add
+    // package-owned runtime directories before CreateProcess so the Windows
+    // loader can resolve DuckDB and the MinGW runtime on clean machines.
+    configure_child_vendor_runtime();
     std::string command = "\"" + executable + "\" " + std::to_string(port);
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);

@@ -31,8 +31,7 @@ sfcore:projectWorkflowColumn
     skos:prefLabel "Workflow" ;
     skos:definition "Persisted workflow JSON." ;
     sf:columnName "workflow" ;
-    sf:type "array" ;
-    sf:items sfcore:methodField ;
+    sf:type "object" ;
     sf:storageType "JSON" .
 
 sfcore:createdAtColumn
@@ -225,13 +224,13 @@ sfcore:serverIdColumn
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
-sfcore:executionMethodColumn
+sfcore:executionOperationColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Method" ;
-    skos:definition "Method executed at this step." ;
-    sf:columnName "method" ;
+    skos:prefLabel "Operation" ;
+    skos:definition "Operation executed at this graph position." ;
+    sf:columnName "operation" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
@@ -240,7 +239,7 @@ sfcore:parameterHashColumn
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Parameter hash" ;
-    skos:definition "Hash of resolved step parameters." ;
+    skos:definition "Hash of resolved operation parameters." ;
     sf:columnName "parameter_hash" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .

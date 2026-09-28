@@ -29,6 +29,7 @@ function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk
         'bin/streamfind.exe',
         'bin/streamfind_service.exe',
         'bin/streamfind_mcp.exe',
+        'bin/streamfind_mcp_launcher.exe',
         'bin/streamfind_cli.exe',
         'bin/streamfind.json',
         'plugins/mass_spec/plugin.json',

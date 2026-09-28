@@ -24,6 +24,7 @@ namespace streamfind::mass_spec
         STREAMFIND_DOMAIN_API Json get_spectra_headers(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_chromatograms_headers(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_spectra_tic(sdk::PluginProjectAccess &, const Json &);
+        STREAMFIND_DOMAIN_API Json plot_spectra_tic(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_raw_spectra(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_raw_spectra_eic(sdk::PluginProjectAccess &, const Json &);
         STREAMFIND_DOMAIN_API Json get_raw_spectra_ms1(sdk::PluginProjectAccess &, const Json &);

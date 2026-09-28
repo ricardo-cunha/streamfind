@@ -39,14 +39,14 @@ let project = Project::create(ProjectOptions {
 })?;
 ```
 
-Common project operations include:
+The preserved Rust project API includes its own workflow surface:
 
 ```text
 create, describe, validate
 get_metadata, set_metadata
 get_domain
 get_workflow, set_workflow, validate_workflow, run_workflow
-get_methods, run_method
+legacy workflow methods and execution helpers
 get_cache, get_cache_size, delete_cache
 get_audit_trail
 copy, close
@@ -66,8 +66,8 @@ The exact command options are shown by `streamfind-rust-cli --help`.
 ## MCP and external tools
 
 The [Rust MCP quickstart](../quickstart/rust-mcp.md) documents the stdio server.
-It uses the same catalogue-backed Operation and workflow Method model as the
-C++ server.
+It is retained for stale development and compatibility work only. It is not the
+reference implementation for the current C++ operation-graph framework.
 
 Optional tools such as Open Babel, Java, and MetFrag are separate components.
 They are not downloaded automatically by the native package.

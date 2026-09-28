@@ -30,6 +30,34 @@ int main() {
         const auto rows = project.query_json("SELECT value FROM \"" + physical_table + "\"");
         if (rows != streamfind::Json::array({{{"value", "published"}}}))
             throw std::runtime_error("published artifact table does not contain the emitted row");
+        const auto visualization = streamfind::Json{
+            {"schema", "streamfind.visualization/v1"},
+            {"visualization_id", "vis_test"},
+            {"semantic_type", "mass_spec.chromatogram"},
+            {"renderer", {{"engine", "plotly"}, {"renderer_id", "core.plotly"}, {"spec_version", "1"}}},
+            {"title", "Test chromatogram"},
+            {"data_mode", "inline"},
+            {"payload", {{"data", streamfind::Json::array()}, {"layout", streamfind::Json::object()}}},
+            {"data_bindings", streamfind::Json::array()},
+            {"provenance", {{"source_artifact_ids", {"source_1"}}, {"producer_operation_id", "test.plot"}, {"producer_node_id", "node_1"}}},
+            {"fallback", {{"description", "Test chromatogram"}}},
+        };
+        streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &tables) {
+            tables.publish_result_artifact(
+                "visualizationSpecResult", visualization.dump(), "test.plot", "node_1", 1);
+        });
+        if (project.get_artifact_inventory().size() != 2)
+            throw std::runtime_error("visualization artifact was not published");
+        bool rejected = false;
+        try {
+            streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &tables) {
+                tables.publish_result_artifact("visualizationSpecResult", "{}", "test.plot", "node_2", 1);
+            });
+        } catch (const std::exception &) {
+            rejected = true;
+        }
+        if (!rejected || project.get_artifact_inventory().size() != 2)
+            throw std::runtime_error("invalid visualization artifact was published");
         project.close();
         std::filesystem::remove(path, error);
         std::cout << "Artifact publication contract passed\n";

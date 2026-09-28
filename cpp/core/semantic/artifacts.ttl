@@ -80,7 +80,7 @@ sfcore:workflowExecutionStepTable
     sf:hasColumn
         sfcore:workflowRevisionColumn,
         sfcore:stepIndexColumn,
-        sfcore:executionMethodColumn,
+        sfcore:executionOperationColumn,
         sfcore:executionParametersColumn,
         sfcore:parameterHashColumn,
         sfcore:cacheKeyColumn,

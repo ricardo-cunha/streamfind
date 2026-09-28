@@ -13,7 +13,8 @@
       "binaryDir": "${sourceDir}/../tmp/build/core-default",
       "cacheVariables": {
         "STREAMFIND_BUILD_TESTS": "ON",
-        "STREAMFIND_BUILD_SHARED": "OFF"
+        "STREAMFIND_BUILD_SHARED": "OFF",
+        "STREAMFIND_ENABLED_PLUGINS": "ALL"
       }
     },
     {
@@ -30,7 +31,22 @@
         "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/g++.exe",
         "CMAKE_MAKE_PROGRAM": "C:/msys64/ucrt64/bin/ninja.exe",
         "STREAMFIND_BUILD_TESTS": "ON",
-        "STREAMFIND_BUILD_SHARED": "OFF"
+        "STREAMFIND_BUILD_SHARED": "OFF",
+        "STREAMFIND_ENABLED_PLUGINS": "ALL"
+      }
+    },
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux GCC + Ninja configuration",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../tmp/build/linux-gcc",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_MAKE_PROGRAM": "ninja",
+        "STREAMFIND_BUILD_TESTS": "ON",
+        "STREAMFIND_BUILD_SHARED": "OFF",
+        "STREAMFIND_ENABLED_PLUGINS": "ALL"
       }
     }
   ],
@@ -46,6 +62,10 @@
         "MSYSTEM": "UCRT64",
         "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
       }
+    },
+    {
+      "name": "linux-gcc",
+      "configurePreset": "linux-gcc"
     }
   ]
 }

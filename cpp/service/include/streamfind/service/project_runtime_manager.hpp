@@ -18,8 +18,8 @@ namespace streamfind::service {
 class ProjectRuntimeManager {
 public:
     static constexpr const char *kWorkflowIdle = "idle";
-    explicit ProjectRuntimeManager(MethodRegistry &methods, OperationRegistry &operations)
-        : methods_(&methods), operations_(&operations) {}
+    explicit ProjectRuntimeManager(OperationRegistry &operations)
+        : operations_(&operations) {}
     ProjectRuntimeManager(const ProjectRuntimeManager &) = delete;
     ProjectRuntimeManager &operator=(const ProjectRuntimeManager &) = delete;
 
@@ -50,9 +50,8 @@ private:
     std::unordered_map<std::string, std::unique_ptr<Project>> projects_;
     std::unordered_map<std::string, std::string> workflow_states_;
     std::unordered_map<std::string, std::thread> workflow_workers_;
-    std::unordered_map<std::string, std::shared_ptr<CancellationToken>> workflow_cancellations_;
+    std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;
     std::unordered_map<std::string, Json> workflow_progress_;
-    MethodRegistry *methods_;
     OperationRegistry *operations_;
     std::function<void(const std::string &, std::string_view)> operation_log_callback_;
 };

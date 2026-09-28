@@ -265,12 +265,12 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
         }
         workflow_states_[session_id] = "queued";
         workflow_progress_[session_id] = Json{{"completed", 0}, {"total", 0}, {"current_step", 0}};
-        auto cancellation = std::make_shared<CancellationToken>();
+        auto cancellation = std::make_shared<std::atomic_bool>(false);
         workflow_cancellations_[session_id] = cancellation;
         project = iterator->second.get();
         workflow_workers_[session_id] = std::thread([this, session_id, project, cancellation] {
             try {
-                if (cancellation->is_cancelled()) {
+                if (cancellation->load()) {
                     set_workflow_state(session_id, "cancelled");
                     std::lock_guard lock(mutex_);
                     workflow_cancellations_.erase(session_id);
@@ -301,7 +301,7 @@ std::string ProjectRuntimeManager::cancel_workflow(const std::string &session_id
     if (projects_.find(session_id) == projects_.end()) throw std::invalid_argument("project session not found");
     const auto cancellation = workflow_cancellations_.find(session_id);
     if (cancellation == workflow_cancellations_.end()) throw std::invalid_argument("workflow is not running");
-    cancellation->second->cancel();
+    cancellation->second->store(true);
     workflow_states_[session_id] = "cancelling";
     return "cancelling";
 }

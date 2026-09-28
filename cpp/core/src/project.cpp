@@ -274,8 +274,8 @@ namespace streamfind
                   "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION (workflow_revision INTEGER NOT NULL, launch_snapshot JSON NOT NULL DEFAULT '{}', status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, process_id VARCHAR, server_id VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, error VARCHAR, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
                   "create WORKFLOW_EXECUTION table");
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION_STEP (workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL PRIMARY KEY, method VARCHAR NOT NULL, parameters JSON NOT NULL DEFAULT '{}', parameter_hash VARCHAR NOT NULL, cache_key VARCHAR NOT NULL, status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, error_code VARCHAR, error_message VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-                  "create WORKFLOW_EXECUTION_STEP table");
+                  "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION_STEP (workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL PRIMARY KEY, operation VARCHAR NOT NULL, parameters JSON NOT NULL DEFAULT '{}', parameter_hash VARCHAR NOT NULL, cache_key VARCHAR NOT NULL, status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, error_code VARCHAR, error_message VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+                  "create WORKFLOW_EXECUTION table");
             query(connection,
                   "CREATE TABLE IF NOT EXISTS ARTIFACT_INVENTORY (artifact_id VARCHAR PRIMARY KEY, contract_id VARCHAR NOT NULL, representation VARCHAR NOT NULL, physical_table VARCHAR, payload JSON, producer_operation VARCHAR NOT NULL, producer_instance VARCHAR NOT NULL, workflow_revision INTEGER NOT NULL, status VARCHAR NOT NULL DEFAULT 'published', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
                   "create ARTIFACT_INVENTORY table");
@@ -369,7 +369,7 @@ namespace streamfind
             }
         }
 
-        void execution_row(duckdb_connection connection, int revision, std::size_t index, const std::string &method, const std::string &parameter_hash, const std::string &status, const std::string &cache_key, const std::string &launch_snapshot, const std::string &error = {})
+        void execution_row(duckdb_connection connection, int revision, std::size_t index, const std::string &operation, const std::string &parameter_hash, const std::string &status, const std::string &cache_key, const std::string &launch_snapshot, const std::string &error = {})
         {
             duckdb_result parent_result{};
             if (duckdb_query(connection, "SELECT process_id FROM WORKFLOW_EXECUTION LIMIT 1", &parent_result) == DuckDBError)
@@ -389,8 +389,8 @@ namespace streamfind
             {
                 query(connection, "UPDATE WORKFLOW_EXECUTION SET workflow_revision = " + std::to_string(revision) + ", launch_snapshot = " + sql_quote(launch_snapshot) + ", status = CASE WHEN process_id IS NULL OR process_id = '' THEN " + sql_quote(status) + " ELSE status END, error = " + sql_quote(error) + ", updated_at = CURRENT_TIMESTAMP", "update workflow execution");
             }
-            prepared(connection, "INSERT INTO WORKFLOW_EXECUTION_STEP (workflow_revision, step_index, method, parameters, parameter_hash, cache_key, status) VALUES (?, ?, ?, '{}', ?, ?, ?) ON CONFLICT(step_index) DO UPDATE SET workflow_revision = excluded.workflow_revision, method = excluded.method, parameter_hash = excluded.parameter_hash, cache_key = excluded.cache_key, status = excluded.status", "write workflow execution step", [&](Statement statement)
-                     { duckdb_bind_int32(statement, 1, revision); duckdb_bind_int32(statement, 2, static_cast<int>(index)); bind_text(statement, 3, method); bind_text(statement, 4, parameter_hash); bind_text(statement, 5, cache_key); bind_text(statement, 6, status); }, [](duckdb_result &) {});
+            prepared(connection, "INSERT INTO WORKFLOW_EXECUTION_STEP (workflow_revision, step_index, operation, parameters, parameter_hash, cache_key, status) VALUES (?, ?, ?, '{}', ?, ?, ?) ON CONFLICT(step_index) DO UPDATE SET workflow_revision = excluded.workflow_revision, operation = excluded.operation, parameter_hash = excluded.parameter_hash, cache_key = excluded.cache_key, status = excluded.status", "write workflow execution entry", [&](Statement statement)
+                     { duckdb_bind_int32(statement, 1, revision); duckdb_bind_int32(statement, 2, static_cast<int>(index)); bind_text(statement, 3, operation); bind_text(statement, 4, parameter_hash); bind_text(statement, 5, cache_key); bind_text(statement, 6, status); }, [](duckdb_result &) {});
         }
 
         const char *parameter_type_name(ParameterType type)
@@ -475,13 +475,6 @@ namespace streamfind
                (from == ExecutionState::cancelling && to == ExecutionState::cancelled);
     }
 
-    void CancellationToken::cancel() noexcept { cancelled_.store(true); }
-    bool CancellationToken::is_cancelled() const noexcept { return cancelled_.load(); }
-
-    Json ExecutionResult::to_json() const
-    {
-        return {{"results", results}, {"cancelled", cancelled}};
-    }
 
     Json TableColumnDefinition::to_json() const
     {
@@ -1074,28 +1067,6 @@ namespace streamfind
         return output;
     }
 
-    MethodRegistry &methods()
-    {
-        static MethodRegistry registry;
-        return registry;
-    }
-
-    Json WorkflowStep::to_json() const
-    {
-        return {{"method", method}, {"parameters", parameters.to_json()}};
-    }
-
-    WorkflowStep WorkflowStep::from_json(const Json &value)
-    {
-        if (!value.is_object() || (!value.contains("method") && !value.contains("id")))
-        {
-            throw Error(ErrorCode::WorkflowValidation, "Workflow step requires a method");
-        }
-        WorkflowStep step;
-        step.method = value.value("method", value.value("id", ""));
-        step.parameters = ParameterValues::from_json(value.value("parameters", Json::object()));
-        return step;
-    }
 
     Json WorkflowOperation::to_json() const
     {
@@ -1153,99 +1124,6 @@ namespace streamfind
         return output;
     }
 
-    void Workflow::validate(const MethodRegistry &registry) const
-    {
-        validate(registry, {});
-    }
-
-    void Workflow::validate(const MethodRegistry &registry,
-                            const std::function<bool(std::string_view)> &has_table) const
-    {
-        if (!operations.empty() || !connections.empty()) {
-            std::set<std::string> operation_ids;
-            for (const auto &operation : operations) {
-                if (operation.id.empty() || operation.operation.empty() ||
-                    !operation_ids.insert(operation.id).second)
-                    throw Error(ErrorCode::WorkflowValidation,
-                                "Workflow operation ids must be unique and non-empty");
-            }
-            std::set<std::pair<std::string, std::string>> bindings;
-            std::map<std::string, std::vector<std::string>> outgoing;
-            std::map<std::string, std::size_t> indegree;
-            for (const auto &operation : operations) indegree[operation.id] = 0;
-            for (const auto &connection : connections) {
-                if (!operation_ids.contains(connection.source_operation) ||
-                    !operation_ids.contains(connection.target_operation) ||
-                    !bindings.insert({connection.target_operation, connection.target_port}).second)
-                    throw Error(ErrorCode::WorkflowValidation,
-                                "Workflow connection references an unknown operation or duplicate input port");
-                outgoing[connection.source_operation].push_back(connection.target_operation);
-                ++indegree[connection.target_operation];
-            }
-            std::vector<std::string> ready;
-            for (const auto &[id, degree] : indegree) if (degree == 0) ready.push_back(id);
-            std::size_t visited = 0;
-            for (std::size_t index = 0; index < ready.size(); ++index) {
-                ++visited;
-                for (const auto &target : outgoing[ready[index]])
-                    if (--indegree[target] == 0) ready.push_back(target);
-            }
-            if (visited != operations.size())
-                throw Error(ErrorCode::WorkflowValidation,
-                            "Workflow operation connections contain a cycle");
-            return;
-        }
-        std::unordered_map<std::string, std::size_t> counts;
-        std::vector<std::string> available;
-        const auto available_table = [&](const std::string &table) {
-            return std::find(available.begin(), available.end(), table) != available.end() ||
-                   (has_table && has_table(table));
-        };
-        const auto add_table = [&](const std::string &table) {
-            if (!available_table(table)) available.push_back(table);
-        };
-        for (const auto &step : steps)
-        {
-            const Method *method = registry.find(step.method);
-            if (!method)
-                throw Error(ErrorCode::WorkflowValidation,
-                            "Unknown workflow method: " + step.method);
-            if (!method->implemented())
-            {
-                throw Error(ErrorCode::WorkflowValidation,
-                            "Method is not implemented: " + step.method);
-            }
-            const auto &definition = method->definition();
-            const auto parameters = method->resolve_parameters(step.parameters.values);
-            for (const auto &table : definition.reads)
-            {
-                if (!available_table(table))
-                {
-                    throw Error(ErrorCode::WorkflowValidation,
-                                "Required table is not available before method " + step.method + ": " + table);
-                }
-            }
-            for (const auto &conditional : definition.conditional_reads)
-            {
-                if (!parameters.contains(conditional.parameter))
-                    throw Error(ErrorCode::WorkflowValidation,
-                                "Conditional read parameter is missing: " + conditional.parameter);
-                const auto &actual = parameters.at(conditional.parameter);
-                const bool active = conditional.equals.is_null()
-                    ? (actual.is_boolean() && actual.get<bool>())
-                    : actual == conditional.equals;
-                if (active && !available_table(conditional.table))
-                    throw Error(ErrorCode::WorkflowValidation,
-                                "Conditional required table is not available before method " + step.method + ": " + conditional.table);
-            }
-            if (definition.single_occurrence && ++counts[step.method] > 1)
-            {
-                throw Error(ErrorCode::WorkflowValidation,
-                            "Method occurs too many times: " + step.method);
-            }
-            for (const auto &table : definition.writes) add_table(table);
-        }
-    }
 
     void Workflow::validate(const OperationRegistry &registry) const
     {
@@ -1334,43 +1212,18 @@ namespace streamfind
 
     Json Workflow::to_json() const
     {
-        if (!operations.empty() || !connections.empty() || steps.empty()) {
-            Json output = {{"schema_version", schema_version}, {"workflow_id", workflow_id},
-                           {"name", name}, {"version", version},
-                           {"operations", Json::array()}, {"connections", Json::array()}};
-            for (const auto &operation : operations)
-                output["operations"].push_back(operation.to_json());
-            for (const auto &connection : connections)
-                output["connections"].push_back(connection.to_json());
-            return output;
-        }
-        Json serialized_steps = Json::array();
-        for (const auto &step : steps)
-            serialized_steps.push_back(step.to_json());
-        return serialized_steps;
+        Json output = {{"schema_version", schema_version}, {"workflow_id", workflow_id},
+                       {"name", name}, {"version", version},
+                       {"operations", Json::array()}, {"connections", Json::array()}};
+        for (const auto &operation : operations)
+            output["operations"].push_back(operation.to_json());
+        for (const auto &connection : connections)
+            output["connections"].push_back(connection.to_json());
+        return output;
     }
 
     bool Method::implemented() const noexcept {
         return static_cast<bool>(executor_) || static_cast<bool>(context_executor_);
-    }
-
-    Json Workflow::to_json(const MethodRegistry &registry) const
-    {
-        if (!operations.empty() || !connections.empty())
-            return to_json();
-        Json serialized = Json::object({{"name", name},
-                                        {"version", version},
-                                        {"steps", Json::array()}});
-        for (const auto &step : steps)
-        {
-            const auto *method = registry.find(step.method);
-            if (!method)
-                throw Error(ErrorCode::WorkflowValidation, "Unknown workflow method: " + step.method);
-            auto value = method->to_json();
-            value["parameters"] = step.parameters.to_json();
-            serialized["steps"].push_back(std::move(value));
-        }
-        return serialized;
     }
 
     Workflow Workflow::from_json(const Json &value)
@@ -1378,14 +1231,10 @@ namespace streamfind
         if (value.is_null())
             return {};
         Workflow workflow;
-        if (value.is_array())
-        {
-            for (const auto &item : value)
-                workflow.steps.push_back(WorkflowStep::from_json(item));
-            return workflow;
-        }
         if (!value.is_object())
-            throw Error(ErrorCode::WorkflowValidation, "Workflow must be an object or array");
+            throw Error(ErrorCode::WorkflowValidation, "Workflow must be an operation graph object");
+        if (value.contains("steps"))
+            throw Error(ErrorCode::WorkflowValidation, "Legacy workflow steps are not supported; use operations and connections");
         workflow.name = value.value("name", "");
         workflow.schema_version = value.value("schema_version", 1);
         workflow.workflow_id = value.value("workflow_id", "");
@@ -1394,10 +1243,6 @@ namespace streamfind
             workflow.operations.push_back(WorkflowOperation::from_json(item));
         for (const auto &item : value.value("connections", Json::array()))
             workflow.connections.push_back(WorkflowConnection::from_json(item));
-        for (const auto &item : value.value("steps", Json::array()))
-        {
-            workflow.steps.push_back(WorkflowStep::from_json(item));
-        }
         return workflow;
     }
 
@@ -1518,7 +1363,7 @@ namespace streamfind
             throw Error(ErrorCode::ProjectAlreadyExists, "DuckDB file already contains a project");
         if (creating)
         {
-            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, '[]')", "create PROJECT row", [&](Statement statement)
+            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, '{\"schema_version\":1,\"operations\":[],\"connections\":[]}')", "create PROJECT row", [&](Statement statement)
                      { bind_text(statement, 1, json_text(options.metadata)); }, [](duckdb_result &) {});
         }
         impl->info = read_info(connection.get());
@@ -1571,7 +1416,7 @@ namespace streamfind
         query(connection.get(), "SELECT operation_type, object_type, operation_details, created_at FROM AUDIT_TRAIL LIMIT 0", "validate AUDIT_TRAIL schema");
         query(connection.get(), "SELECT revision, workflow, created_at FROM WORKFLOW_REVISION LIMIT 0", "validate WORKFLOW_REVISION schema");
         query(connection.get(), "SELECT workflow_revision, launch_snapshot, status, progress, result_reference, started_at, completed_at, error, created_at, updated_at FROM WORKFLOW_EXECUTION LIMIT 0", "validate WORKFLOW_EXECUTION schema");
-        query(connection.get(), "SELECT workflow_revision, step_index, method, parameters, parameter_hash, cache_key, status, progress, result_reference, error_code, error_message, started_at, completed_at, updated_at FROM WORKFLOW_EXECUTION_STEP LIMIT 0", "validate WORKFLOW_EXECUTION_STEP schema");
+        query(connection.get(), "SELECT workflow_revision, step_index, operation, parameters, parameter_hash, cache_key, status, progress, result_reference, error_code, error_message, started_at, completed_at, updated_at FROM WORKFLOW_EXECUTION_STEP LIMIT 0", "validate WORKFLOW_EXECUTION_STEP schema");
     }
 
     void Project::set_metadata(Json metadata)
@@ -1615,25 +1460,23 @@ namespace streamfind
         return Workflow::from_json(value);
     }
 
-    void Project::set_workflow(Workflow workflow_value, const MethodRegistry &registry)
+    void Project::set_workflow(Workflow workflow_value)
     {
-        workflow_value.validate(registry);
+        if (workflow_value.schema_version != 1)
+            throw Error(ErrorCode::SchemaMismatch, "Unsupported workflow schema version");
         const auto execution = query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1");
         if (!execution.empty())
         {
             const auto status = execution.at(0).value("status", "");
             if (status == "queued" || status == "running" || status == "cancelling")
-            {
-                throw Error(ErrorCode::InvalidArgument,
-                            "workflow mutation is blocked while an execution is active");
-            }
+                throw Error(ErrorCode::InvalidArgument, "workflow mutation is blocked while an execution is active");
         }
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
         prepared(connection.get(), "UPDATE PROJECT SET workflow = ?, updated_at = CURRENT_TIMESTAMP", "update workflow", [&](Statement statement)
-                 { bind_text(statement, 1, json_text(workflow_value.to_json(registry))); }, [](duckdb_result &) {});
-        audit(connection.get(), "update", "workflow", workflow_value.to_json(registry));
+                 { bind_text(statement, 1, json_text(workflow_value.to_json())); }, [](duckdb_result &) {});
+        audit(connection.get(), "update", "workflow", workflow_value.to_json());
     }
 
     void Project::set_workflow(Workflow workflow_value, const OperationRegistry &registry)
@@ -1940,7 +1783,7 @@ namespace streamfind
 
     Json Project::get_workflow_execution() const
     {
-        return query_json("SELECT workflow_revision, step_index, method, parameter_hash, status, started_at, completed_at, error_message AS error, cache_key FROM WORKFLOW_EXECUTION_STEP ORDER BY workflow_revision, step_index");
+        return query_json("SELECT workflow_revision, step_index, operation, parameter_hash, status, started_at, completed_at, error_message AS error, cache_key FROM WORKFLOW_EXECUTION_STEP ORDER BY workflow_revision, step_index");
     }
 
     Json Project::get_artifact_inventory() const
@@ -2092,131 +1935,14 @@ namespace streamfind
         return {{"status", "completed"}, {"operations", executions}};
     }
 
-    ExecutionResult Project::run_workflow(const MethodRegistry &registry, CancellationToken *cancellation, ProgressCallback progress)
-    {
-        Workflow current = get_workflow();
-        current.validate(registry);
-        const std::string launch_snapshot = current.to_json(registry).dump();
-        {
-            std::lock_guard lock(impl_->mutex);
-            ensure_active(*impl_);
-            Connection connection(*impl_);
-            query(connection.get(), "DELETE FROM WORKFLOW_EXECUTION_STEP", "reset workflow execution steps");
-        }
-        Json results = Json::array();
-        std::size_t completed = 0;
-        std::string previous_hash = "initial";
-        const auto publish_progress = [&](std::size_t done)
-        {
-            const Json value = Json{{"completed", done}, {"total", current.steps.size()}, {"current_step", done == 0 ? 0 : done - 1}};
-            execute_sql("UPDATE WORKFLOW_EXECUTION SET progress = " + detail::sql_quote(value.dump()) + ", updated_at = CURRENT_TIMESTAMP");
-            if (progress)
-                progress({"workflow", done, current.steps.size()});
-        };
-        for (std::size_t index = 0; index < current.steps.size(); ++index)
-        {
-            const auto &step = current.steps[index];
-            if (cancellation && cancellation->is_cancelled())
-                return {results, true};
-            if (cancellation)
-            {
-                const auto state = query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1");
-                if (!state.empty() && state.at(0).value("status", "") == "cancelling")
-                    return {results, true};
-            }
-            const Method *method = registry.find(step.method);
-            const Json parameters = method->resolve_parameters(step.parameters.values);
-            const auto &definition = method->definition();
-            const std::string parameter_hash = hash_text(parameters.dump());
-            const std::string key = hash_text(previous_hash + "\n" + definition.id + "\n" + definition.version + "\n" + parameters.dump());
-            {
-                std::lock_guard lock(impl_->mutex);
-                ensure_active(*impl_);
-                Connection connection(*impl_);
-                execution_row(connection.get(), current.version, index, definition.id, parameter_hash, "pending", key, launch_snapshot);
-            }
-            if (definition.cacheable)
-            {
-                if (auto cached = get_cache_entry(key))
-                {
-                    const Json payload = parse_json(std::string(cached->data.begin(), cached->data.end()), "cached result");
-                    if (payload.is_object() && payload.contains("result") && payload.contains("tables") && payload.at("tables").is_object())
-                    {
-                        {
-                            std::lock_guard lock(impl_->mutex);
-                            Connection connection(*impl_);
-                            restore_tables(connection.get(), payload.at("tables"));
-                            results.push_back(payload.at("result"));
-                            execution_row(connection.get(), current.version, index, definition.id, parameter_hash, "completed", key, launch_snapshot);
-                            audit(connection.get(), "cache_hit", "workflow_step", Json{{"method", definition.id}, {"cache_key", key}});
-                        }
-                        previous_hash = key;
-                        publish_progress(++completed);
-                        continue;
-                    }
-                }
-                std::lock_guard lock(impl_->mutex);
-                Connection connection(*impl_);
-                audit(connection.get(), "cache_miss", "workflow_step", Json{{"method", definition.id}, {"cache_key", key}});
-            }
-            {
-                std::lock_guard lock(impl_->mutex);
-                ensure_active(*impl_);
-                Connection connection(*impl_);
-                audit(connection.get(), "start", "workflow_step", Json{{"method", definition.id}, {"cache_key", key}, {"parameters", parameters}});
-                execution_row(connection.get(), current.version, index, definition.id, parameter_hash, "running", key, launch_snapshot);
-            }
-            sdk::ExecutionServices services;
-            services.cancellation_requested = [cancellation]() {
-                return cancellation && cancellation->is_cancelled();
-            };
-            services.report_progress = [&progress, index, total = current.steps.size()](
-                                           double, std::string_view message) {
-                if (progress)
-                    progress({message.empty() ? "method" : std::string(message), index, total});
-            };
-            try
-            {
-                Json result = method->run(*this, parameters, services);
-                results.push_back(result);
-                if (definition.cacheable)
-                {
-                    Json snapshots;
-                    {
-                        std::lock_guard lock(impl_->mutex);
-                        Connection connection(*impl_);
-                        snapshots = snapshot_tables(connection.get(), definition.writes);
-                    }
-                    set_cache(definition.id, "workflow result", key, Json{{"result", result}, {"tables", std::move(snapshots)}});
-                }
-                previous_hash = key;
-                publish_progress(++completed);
-                std::lock_guard lock(impl_->mutex);
-                Connection connection(*impl_);
-                audit(connection.get(), "complete", "workflow_step", Json{{"method", definition.id}, {"cache_key", key}});
-                execution_row(connection.get(), current.version, index, definition.id, parameter_hash, "completed", key, launch_snapshot);
-            }
-            catch (const std::exception &error)
-            {
-                std::lock_guard lock(impl_->mutex);
-                Connection connection(*impl_);
-                audit(connection.get(), "failed", "workflow_step", Json{{"method", definition.id}, {"error", error.what()}});
-                execution_row(connection.get(), current.version, index, definition.id, parameter_hash, "failed", key, launch_snapshot, error.what());
-                throw;
-            }
-        }
-        return {results, false};
-    }
-
-    Json Project::run_worker(const std::string &worker_id, const MethodRegistry &registry)
+    Json Project::run_worker(const std::string &worker_id, const OperationRegistry &registry)
     {
         WorkflowExecutionManager manager(*this);
         manager.scheduler_tick(worker_id);
-        CancellationToken cancellation;
         try
         {
-            const auto result = run_workflow(registry, &cancellation);
-            manager.release_worker(worker_id, result.cancelled ? ExecutionState::cancelled : ExecutionState::completed);
+            run_operation_graph(registry);
+            manager.release_worker(worker_id, ExecutionState::completed);
         }
         catch (const std::exception &error)
         {
@@ -2231,132 +1957,6 @@ namespace streamfind
             throw;
         }
         return manager.current();
-    }
-
-    Json Project::run_method(const std::string &method_id, const Json &parameters,
-                             const MethodRegistry &registry)
-    {
-        const Method *method = registry.find(method_id);
-        if (!method)
-            throw Error(ErrorCode::WorkflowValidation, "Unknown method: " + method_id);
-        Workflow workflow = get_workflow();
-        const Json resolved = method->resolve_parameters(parameters);
-        workflow.steps.push_back({method_id, ParameterValues{resolved}});
-        set_workflow(workflow, registry);
-        workflow = get_workflow();
-        workflow.validate(registry);
-        const std::string launch_snapshot = workflow.to_json(registry).dump();
-        const std::size_t index = workflow.steps.size() - 1;
-        bool preceding_step_matches = index == 0;
-        if (index > 0)
-        {
-            const auto parent = query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1");
-            const bool parent_completed = !parent.empty() && parent.at(0).value("status", "") == "completed";
-            for (const auto &row : parent_completed ? get_workflow_execution() : Json::array())
-            {
-                if (row.value("workflow_revision", "") == std::to_string(workflow.version) &&
-                    row.value("step_index", "") == std::to_string(index - 1) &&
-                    row.value("method", "") == workflow.steps[index - 1].method &&
-                    row.value("status", "") == "completed" &&
-                    !row.value("cache_key", "").empty())
-                {
-                    preceding_step_matches = true;
-                    break;
-                }
-            }
-        }
-        if (!preceding_step_matches)
-        {
-            const auto execution = run_workflow(registry);
-            if (execution.results.empty())
-                throw Error(ErrorCode::WorkflowValidation, "Workflow has no steps: " + method_id);
-            return execution.results.back();
-        }
-        if (workflow.steps[index].method != method_id)
-            throw Error(ErrorCode::WorkflowValidation, "Method is not the appended workflow step: " + method_id);
-        if (workflow.steps[index].parameters.values != resolved)
-            throw Error(ErrorCode::WorkflowValidation, "Parameters do not match the planned workflow step");
-        std::string previous_hash = "initial";
-        if (index > 0)
-        {
-            const auto execution = get_workflow_execution();
-            for (const auto &row : execution)
-            {
-                if (row.value("workflow_revision", "") == std::to_string(workflow.version) && row.value("step_index", "") == std::to_string(index - 1) && row.value("status", "") == "completed")
-                {
-                    previous_hash = row.value("cache_key", "initial");
-                    break;
-                }
-            }
-            if (previous_hash == "initial")
-                throw Error(ErrorCode::WorkflowValidation, "Previous workflow step has not completed");
-        }
-        const auto &definition = method->definition();
-        const std::string parameter_hash = hash_text(resolved.dump());
-        const std::string key = hash_text(previous_hash + "\n" + definition.id + "\n" + definition.version + "\n" + resolved.dump());
-        {
-            std::lock_guard lock(impl_->mutex);
-            Connection connection(*impl_);
-            execution_row(connection.get(), workflow.version, index, method_id, parameter_hash, "running", key, launch_snapshot);
-        }
-        {
-            std::lock_guard lock(impl_->mutex);
-            ensure_active(*impl_);
-            Connection connection(*impl_);
-            audit(connection.get(), "start", "method", Json{{"method", method_id}, {"parameters", resolved}});
-        }
-        Json result;
-        bool cache_hit = false;
-        try
-        {
-            if (definition.cacheable)
-            {
-                if (auto cached = get_cache_entry(key))
-                {
-                    const Json payload = parse_json(std::string(cached->data.begin(), cached->data.end()), "cached result");
-                    if (payload.is_object() && payload.contains("result") && payload.contains("tables") && payload.at("tables").is_object())
-                    {
-                        std::lock_guard lock(impl_->mutex);
-                        Connection connection(*impl_);
-                        restore_tables(connection.get(), payload.at("tables"));
-                        result = payload.at("result");
-                        execution_row(connection.get(), workflow.version, index, method_id, parameter_hash, "completed", key, launch_snapshot);
-                        cache_hit = true;
-                    }
-                }
-            }
-            if (!cache_hit)
-                result = method->run(*this, resolved);
-            if (!cache_hit && definition.cacheable)
-            {
-                Json snapshots;
-                {
-                    std::lock_guard lock(impl_->mutex);
-                    Connection connection(*impl_);
-                    snapshots = snapshot_tables(connection.get(), definition.writes);
-                }
-                set_cache(definition.id, "workflow result", key, Json{{"result", result}, {"tables", std::move(snapshots)}});
-            }
-            if (!cache_hit)
-            {
-                std::lock_guard lock(impl_->mutex);
-                Connection connection(*impl_);
-                execution_row(connection.get(), workflow.version, index, method_id, parameter_hash, "completed", key, launch_snapshot);
-            }
-        }
-        catch (const std::exception &error)
-        {
-            std::lock_guard lock(impl_->mutex);
-            Connection connection(*impl_);
-            execution_row(connection.get(), workflow.version, index, method_id, parameter_hash, "failed", key, launch_snapshot, error.what());
-            throw;
-        }
-        {
-            std::lock_guard lock(impl_->mutex);
-            Connection connection(*impl_);
-            audit(connection.get(), "complete", "method", Json{{"method", method_id}});
-        }
-        return result;
     }
 
     Json Project::run_operation(const std::string &operation_id, const Json &parameters,

@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './app/App';
+import { McpVisualizationApp } from './McpVisualizationApp';
 import { registerCoreVisualizationRenderers } from './visualization/registerVisualizationRenderers';
 import './theme/theme.css';
 
@@ -9,7 +9,7 @@ async function bootstrap() {
   registerCoreVisualizationRenderers(Plotly);
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <McpVisualizationApp />
     </StrictMode>,
   );
 }

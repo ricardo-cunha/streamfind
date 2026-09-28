@@ -1,13 +1,13 @@
 # R package
 
-The StreamFind R package provides the existing R interface for DuckDB-backed
+The StreamFind R package is a legacy interface for DuckDB-backed
 mass-spectrometry and non-target-screening workflows, including the Shiny
 application.
 
-!!! note "Separate interface"
-    The R package is separate from the native C++ and Rust packages. Use this
-    page for R installation and usage; use [Releases](../releases.md) for the
-    native packages and MCP servers.
+!!! warning "Legacy interface"
+    The R package is separate from the current native C++ operation-graph
+    framework. Use this page only for existing R and Shiny workflows. New
+    integrations should use the native C++ package and its MCP interface.
 
 ## Installation
 

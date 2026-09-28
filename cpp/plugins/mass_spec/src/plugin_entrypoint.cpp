@@ -42,6 +42,7 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.get_spectra_headers", sdk::CapabilityKind::Operation, &base::get_spectra_headers},
         {"mass_spec.get_chromatograms_headers", sdk::CapabilityKind::Operation, &base::get_chromatograms_headers},
         {"mass_spec.get_spectra_tic", sdk::CapabilityKind::Operation, &base::get_spectra_tic},
+        {"mass_spec.plot_spectra_tic", sdk::CapabilityKind::Operation, &base::plot_spectra_tic},
         {"mass_spec.get_raw_spectra", sdk::CapabilityKind::Operation, &base::get_raw_spectra},
         {"mass_spec.get_raw_spectra_eic", sdk::CapabilityKind::Operation, &base::get_raw_spectra_eic},
         {"mass_spec.get_raw_spectra_ms1", sdk::CapabilityKind::Operation, &base::get_raw_spectra_ms1},

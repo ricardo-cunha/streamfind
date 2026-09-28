@@ -221,18 +221,6 @@ private:
         const auto parameters = value(result, 15, row);
         if (!is_null(result, 13, row)) {
             entry["mcp"] = Json{{"name", text(result, 13, row)}, {"input_schema", input_schema}};
-        } else {
-            Json method_schema = {{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}};
-            if (parameters.is_array()) {
-                for (const auto &parameter : parameters) {
-                    if (!parameter.is_object()) continue;
-                    const auto name = parameter.value("name", "");
-                    if (name.empty()) continue;
-                    method_schema["properties"][name] = parameter.value("schema", Json::object());
-                    if (parameter.value("required", false)) method_schema["required"].push_back(name);
-                }
-            }
-            entry["method_schema"] = std::move(method_schema);
         }
         entry["parameters"] = value(result, 15, row);
         entry["result"] = Json{{"schema", value(result, 16, row)}};

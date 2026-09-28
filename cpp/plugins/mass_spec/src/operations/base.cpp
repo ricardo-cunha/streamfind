@@ -515,6 +515,70 @@ namespace streamfind::mass_spec::base
         return result;
     }
 
+    Json plot_spectra_tic(sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        auto query_parameters = parameters;
+        if (query_parameters.value("rt_min", 0.0) == 0.0) query_parameters.erase("rt_min");
+        if (query_parameters.value("rt_max", 0.0) == 0.0) query_parameters.erase("rt_max");
+        const auto rows = get_spectra_tic(access, query_parameters);
+        if (!rows.is_array() || rows.empty())
+            throw std::invalid_argument("No TIC data found for the selected analyses");
+        const auto downsize = parameters.value("plot_downsize", 0.0);
+        const auto group_by = parameters.value("plot_group_by", std::string("analysis"));
+        const auto x_label = parameters.value("plot_x_label", std::string("Retention time / seconds"));
+        const auto y_label = parameters.value("plot_y_label", std::string("Intensity / counts"));
+        const auto title = parameters.value("plot_title", std::string("Total Ion Chromatograms (TICs)"));
+        if (downsize < 0.0)
+            throw std::invalid_argument("downsize must be non-negative");
+        if (group_by != "analysis" && group_by != "replicate" && group_by != "polarity" && group_by != "level")
+            throw std::invalid_argument("group_by must be analysis, replicate, polarity, or level");
+
+        struct Aggregate { double rt{}; double tic{}; std::size_t count{}; };
+        std::map<std::string, std::map<double, Aggregate>> groups;
+        for (const auto &row : rows)
+        {
+            const auto group = group_by == "analysis" ? row.value("analysis", std::string{}) :
+                               group_by == "replicate" ? row.value("replicate", std::string{}) :
+                               group_by == "polarity" ? std::to_string(json_integer(row, "polarity")) :
+                                                         std::to_string(json_integer(row, "level"));
+            auto rt = json_real(row, "rt");
+            if (downsize > 0.0) rt = std::floor(rt / downsize) * downsize;
+            auto &aggregate = groups[group][rt];
+            aggregate.rt = rt;
+            aggregate.tic += json_real(row, "tic");
+            ++aggregate.count;
+        }
+
+        Json traces = Json::array();
+        for (const auto &[group, points] : groups)
+        {
+            Json x = Json::array();
+            Json y = Json::array();
+            for (const auto &[_, point] : points)
+            {
+                x.push_back(point.rt);
+                y.push_back(point.count == 0 ? 0.0 : point.tic / static_cast<double>(point.count));
+            }
+            traces.push_back({{"type", "scatter"}, {"mode", "lines"}, {"name", group}, {"x", x}, {"y", y}});
+        }
+
+        Json source_ids = Json::array();
+        for (const auto &[_, input] : parameters.value("_inputs", Json::object()).items())
+            if (input.is_object() && input.contains("artifact_id")) source_ids.push_back(input.at("artifact_id"));
+        if (source_ids.empty()) source_ids.push_back("spectraHeadersTable");
+        return {
+            {"schema", "streamfind.visualization/v1"},
+            {"visualization_id", "mass_spec.plot_spectra_tic"},
+            {"semantic_type", "mass_spec.spectra_tic"},
+            {"title", title},
+            {"data_mode", "inline"},
+            {"renderer", {{"engine", "plotly"}, {"renderer_id", "core.plotly"}, {"spec_version", "1"}}},
+            {"payload", {{"data", traces}, {"layout", {{"title", title}, {"xaxis", {{"title", x_label}}}, {"yaxis", {{"title", y_label}}}, {"hovermode", "x unified"}}}, {"config", {{"responsive", true}, {"displaylogo", false}}}}},
+            {"provenance", {{"source_artifact_ids", source_ids}, {"producer_operation_id", "mass_spec.plot_spectra_tic"}, {"producer_node_id", parameters.value("_operation_instance", std::string("mass_spec.plot_spectra_tic"))}}},
+            {"fallback", {{"description", "TIC visualization unavailable for the selected analyses."}}}
+        };
+    }
+
     Json get_raw_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         const auto analyses = selected_analysis_rows(access, parameters);
