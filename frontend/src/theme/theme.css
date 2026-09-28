@@ -1786,9 +1786,19 @@ h2 {
   pointer-events: stroke;
   cursor: pointer;
 }
+.sf-canvas-edges path.sf-port-type-table { stroke: #2563eb; }
+.sf-canvas-edges path.sf-port-type-array-string { stroke: #9333ea; }
+.sf-canvas-edges path.sf-port-type-array-number { stroke: #c2410c; }
+.sf-canvas-edges path.sf-port-type-array-boolean { stroke: #15803d; }
+.sf-canvas-edges path.sf-port-type-array-structured,
+.sf-canvas-edges path.sf-port-type-object { stroke: #be185d; }
+.sf-canvas-edges path.sf-port-type-json { stroke: #7c3aed; }
+.sf-canvas-edges path.sf-port-type-path { stroke: #0891b2; }
+.sf-canvas-edges path.sf-port-type-boolean { stroke: #16a34a; }
+.sf-canvas-edges path.sf-port-type-number { stroke: #ea580c; }
+.sf-canvas-edges path.sf-port-type-string { stroke: #ca8a04; }
+.sf-canvas-edges path.sf-port-type-unknown { stroke: #64748b; }
 .sf-canvas-edges path.selected {
-  stroke: var(--sf-warning, #d97706);
-  stroke-width: 4;
   opacity: 1;
 }
 .sf-canvas-edges path.pending {
@@ -2258,29 +2268,17 @@ h2 {
   background: transparent;
   color: var(--sf-text);
 }
-.sf-operation-deck-filters {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.sf-operation-deck-filters label {
-  display: grid;
-  flex: 1;
-  gap: 4px;
-  color: var(--sf-text-muted);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.sf-operation-deck-filters select {
-  min-width: 0;
+.sf-operation-deck-search select {
+  flex: 0 1 250px;
+  min-width: 150px;
   padding: 6px 8px;
   border: 1px solid var(--sf-border);
   border-radius: 6px;
-  background: var(--sf-surface);
+  background: color-mix(in srgb, var(--sf-accent) 18%, var(--sf-surface));
   color: var(--sf-text);
   font-size: 0.72rem;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sf-accent) 12%, transparent);
 }
 .sf-operation-deck-list {
   display: grid;
@@ -2294,9 +2292,12 @@ h2 {
 .sf-operation-deck-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
+  align-items: start;
   gap: 9px;
+  height: 64px;
+  max-height: 64px;
   min-height: 64px;
+  min-width: 0;
   padding: 8px;
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
@@ -2336,7 +2337,7 @@ h2 {
 .sf-operation-deck-card-content {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 2px;
 }
 .sf-operation-deck-card-content strong {
   color: var(--sf-text);
@@ -2344,13 +2345,31 @@ h2 {
   line-height: 1.25;
   overflow-wrap: anywhere;
   white-space: normal;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 .sf-operation-deck-card-content small {
+  display: block;
+  min-width: 0;
   color: var(--sf-text-muted);
   font-size: 0.64rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.sf-operation-deck-card-compact .sf-operation-deck-card-content strong {
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+.sf-operation-deck-card-compact .sf-operation-deck-card-content small {
+  font-size: 0.52rem;
+  line-height: 1.1;
+}
+.sf-operation-deck-card-dense .sf-operation-deck-card-content strong {
+  font-size: 0.6rem;
+  line-height: 1.05;
+}
+.sf-operation-deck-card-dense .sf-operation-deck-card-content small {
+  font-size: 0.48rem;
+  line-height: 1.05;
 }
 .sf-operation-deck-card .sf-icon-button {
   width: 26px;
@@ -2522,6 +2541,14 @@ h2 {
   cursor: crosshair;
   font-size: 0.46rem;
   line-height: 1;
+}
+.sf-node-port > i,
+.sf-node-parameter-port > i {
+  display: block;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
 }
 .sf-node-port.input {
   position: absolute;

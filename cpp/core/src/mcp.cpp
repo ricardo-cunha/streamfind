@@ -101,8 +101,8 @@ Json tools() {
              {"output_port", {{"type", "string"}, {"description", "Output contract or semantic port identifier."}}},
              {"workflow_revision", {{"type", "integer"}}},
              {"include_data", {{"type", "boolean"}, {"description", "Return the JSON payload or bounded table rows for exactly one selected artifact."}}},
-             {"limit", {{"type", "integer", "minimum", 1, "maximum", 10000}}},
-             {"offset", {{"type", "integer", "minimum", 0}}}},
+             {"limit", Json{{"type", "integer"}, {"minimum", 1}, {"maximum", 10000}}},
+             {"offset", Json{{"type", "integer"}, {"minimum", 0}}}},
         Json::array({"database_path"}));
     for (auto &entry : result) {
         const auto name = entry.value("name", "");

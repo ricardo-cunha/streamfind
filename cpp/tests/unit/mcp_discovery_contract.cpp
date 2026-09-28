@@ -92,6 +92,13 @@ int main() {
                             properties.contains("include_data") && properties.contains("limit") &&
                             properties.contains("offset"),
                         "request_artifact schema does not advertise targeted data selection");
+                require(properties.at("limit").is_object() && properties.at("limit").value("type", "") == "integer" &&
+                            properties.at("limit").value("minimum", 0) == 1 &&
+                            properties.at("limit").value("maximum", 0) == 10000,
+                        "request_artifact limit schema is not a valid bounded integer schema");
+                require(properties.at("offset").is_object() && properties.at("offset").value("type", "") == "integer" &&
+                            properties.at("offset").value("minimum", -1) == 0,
+                        "request_artifact offset schema is not a valid non-negative integer schema");
             }
         }
 

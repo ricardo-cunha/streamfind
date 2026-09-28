@@ -51,7 +51,6 @@ type CanvasEdge = {
   id: string;
   source: string;
   sourcePort: string;
-  sourceArtifactId?: string;
   target: string;
   targetPort: string;
 };
@@ -115,7 +114,6 @@ function canvasWorkflow(
   const connections: WorkflowConnectionDefinition[] = edges.map((edge) => ({
     source_operation: edge.source,
     source_port: edge.sourcePort,
-    ...(edge.sourceArtifactId ? { source_artifact_id: edge.sourceArtifactId } : {}),
     target_operation: edge.target,
     target_port: edge.targetPort,
   }));
@@ -141,6 +139,15 @@ type NodeTemplate = {
   domain?: string;
   module?: string;
 };
+
+type DocumentationFocus = { section: 'inputs' | 'outputs' | 'parameters'; key: string };
+
+function operationDeckDensity(title: string, metadata: string): 'regular' | 'compact' | 'dense' {
+  const totalLength = title.length + metadata.length;
+  if (title.length > 36 || totalLength > 78) return 'dense';
+  if (title.length > 25 || totalLength > 58) return 'compact';
+  return 'regular';
+}
 
 function capabilityTemplates(capabilities: ServiceCapabilities): NodeTemplate[] {
   const backend = capabilities.operations
@@ -507,6 +514,14 @@ function portTypeKey(port: CapabilityPort | NodePort): string {
   return 'unknown';
 }
 
+function visualPortTypeKey(port: NodePort): string {
+  const schemaType = Array.isArray(port.schema?.type) ? port.schema.type[0] : port.schema?.type;
+  if (schemaType === 'array') return schemaTypeLabel(port.schema);
+  if (schemaType === 'object') return 'object';
+  if (schemaType === 'table') return 'table';
+  return port.typeKey;
+}
+
 function parameterTypeKey(parameter: CapabilityParameter): string {
   const type = Array.isArray(parameter.schema.type) ? parameter.schema.type.join('|') : parameter.schema.type;
   if (type === 'table') return 'table';
@@ -860,11 +875,11 @@ export default function CanvasShell({
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [documentationFocus, setDocumentationFocus] = useState<DocumentationFocus | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const lastStatusRef = useRef<{ message: string; timestamp: number } | null>(null);
   const recentEventRef = useRef<Map<string, number>>(new Map());
   const [paletteSearch, setPaletteSearch] = useState('');
-  const [paletteDomain, setPaletteDomain] = useState('');
   const [paletteModule, setPaletteModule] = useState('');
   const [anchorCenters, setAnchorCenters] = useState<Record<string, Point>>({});
   const [expandedParameters, setExpandedParameters] = useState<Record<string, boolean>>({});
@@ -1183,7 +1198,6 @@ export default function CanvasShell({
           id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
           source: connection.source_operation,
           sourcePort: connection.source_port,
-          sourceArtifactId: connection.source_artifact_id,
           target: connection.target_operation,
           targetPort: connection.target_port,
         }));
@@ -1358,7 +1372,6 @@ export default function CanvasShell({
         id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
         source: connection.source_operation,
         sourcePort: connection.source_port,
-        sourceArtifactId: connection.source_artifact_id,
         target: connection.target_operation,
         targetPort: connection.target_port,
       }));
@@ -1434,6 +1447,15 @@ export default function CanvasShell({
         : (ports.length && nodePorts(capability).inputs.length ? 120 + nodePorts(capability).inputs.length * 31 : 94) +
           index * 31;
     return { x: node.x + (direction === 'input' ? -12 : NODE_WIDTH + 12), y: node.y + top };
+  };
+  const edgeTypeKey = (node: CanvasNode, portId: string, direction: 'input' | 'output'): string => {
+    const capability = nodeCapability(node);
+    if (direction === 'input' && portId.startsWith('parameter:')) {
+      const parameter = capability?.parameters.find((candidate) => `parameter:${candidate.name}` === portId);
+      return parameter ? parameterTypeKey(parameter) : 'unknown';
+    }
+    const port = nodePorts(capability)[direction === 'input' ? 'inputs' : 'outputs'].find((candidate) => candidate.id === portId);
+    return port ? visualPortTypeKey(port) : 'unknown';
   };
 
   useEffect(() => {
@@ -1786,44 +1808,38 @@ export default function CanvasShell({
       return false;
     });
   }, [capabilities.operations, nodeMap, nodeTemplates, picker]);
-  const paletteDomains = useMemo(
-    () =>
-      [
-        ...new Set(
-          availableTemplates.map((template) => template.domain).filter((domain): domain is string => Boolean(domain)),
-        ),
-      ].sort(),
-    [availableTemplates],
-  );
   const paletteModules = useMemo(
     () =>
       [
         ...new Set(
           availableTemplates
-            .filter((template) => !paletteDomain || template.domain === paletteDomain)
             .map((template) => template.module)
             .filter((module): module is string => Boolean(module)),
         ),
       ].sort(),
-    [availableTemplates, paletteDomain],
+    [availableTemplates],
   );
+  const paletteSearchQuery = paletteSearch.trim().toLocaleLowerCase();
   const filteredTemplates = useMemo(() => {
     const categorized = availableTemplates.filter(
-      (template) =>
-        (!paletteDomain || template.domain === paletteDomain) && (!paletteModule || template.module === paletteModule),
+      (template) => !paletteModule || template.module === paletteModule,
     );
-    if (!paletteSearch.trim()) return categorized;
-    let expression: RegExp;
-    try {
-      expression = new RegExp(paletteSearch, 'i');
-    } catch {
-      return [];
-    }
+    if (!paletteSearchQuery) return categorized;
     return categorized.filter((template) => {
       const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
-      return expression.test(JSON.stringify(capability || template));
+      const ontologyFragment = [
+        capability?.canonical_id,
+        capability?.label,
+        capability?.definition,
+        capability?.domain,
+        capability?.module_id,
+      ]
+        .filter((value): value is string => typeof value === 'string')
+        .join(' ')
+        .toLocaleLowerCase();
+      return ontologyFragment.includes(paletteSearchQuery);
     });
-  }, [availableTemplates, capabilities.operations, paletteDomain, paletteModule, paletteSearch]);
+  }, [availableTemplates, capabilities.operations, paletteModule, paletteSearchQuery]);
   const arrangeNodes = () => {
     if (!nodes.length) return;
     const indegree = new Map(nodes.map((node) => [node.id, 0]));
@@ -2114,6 +2130,33 @@ export default function CanvasShell({
     ? capabilities.operations.find((item) => item.canonical_id === pickerCapabilityId)
     : undefined;
   const documentationCapability = selectedCapability || pickerCapability;
+  useEffect(() => {
+    if (!documentationFocus) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-ontology-focus]')).find(
+        (element) =>
+          element.dataset.ontologyFocusSection === documentationFocus.section &&
+          element.dataset.ontologyFocusKey === documentationFocus.key,
+      );
+      if (target) {
+        const pane = target.closest<HTMLElement>('.sf-node-info-pane');
+        if (pane) {
+          pane.scrollTo({
+            top: Math.max(0, target.offsetTop - pane.clientHeight / 2 + target.offsetHeight / 2),
+            behavior: 'smooth',
+          });
+        }
+        target.focus({ preventScroll: true });
+      }
+      }, 0);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [documentationFocus, documentationCapability]);
+  const openNodeDocumentation = (nodeId: string, focus: DocumentationFocus | null = null) => {
+    setDocumentationFocus(focus);
+    setSelectedNodeId(nodeId);
+  };
   const pathWizardNode = pathWizard ? nodes.find((node) => node.id === pathWizard.nodeId) : undefined;
   const pathWizardEntries =
     pathWizardNode && pathWizard
@@ -2357,7 +2400,7 @@ export default function CanvasShell({
             return (
               <path
                 key={edge.id}
-                className={selectedEdgeId === edge.id ? 'selected' : undefined}
+                className={`${typeClass(edgeTypeKey(source, edge.sourcePort, 'output'))}${selectedEdgeId === edge.id ? ' selected' : ''}`}
                 d={`M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${to.x - bend} ${to.y}, ${to.x} ${to.y}`}
                 onMouseDown={(event) => beginEdgeReconnect(event, edge)}
                 onClick={(event) => {
@@ -2376,7 +2419,7 @@ export default function CanvasShell({
                 const bend = Math.max(70, Math.abs(connection.point.x - from.x) * 0.45);
                 return (
                   <path
-                    className="pending"
+                    className={`pending ${typeClass(edgeTypeKey(source, connection.sourcePort, 'output'))}`}
                     d={`M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${connection.point.x - bend} ${connection.point.y}, ${connection.point.x} ${connection.point.y}`}
                   />
                 );
@@ -2417,6 +2460,7 @@ export default function CanvasShell({
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
+                      setDocumentationFocus(null);
                       setSelectedNodeId(node.id);
                     }}
                   >
@@ -2471,7 +2515,7 @@ export default function CanvasShell({
                   onMouseDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (capability) onOpenOntologyWiki?.(capability.canonical_id);
+                    if (capability) openNodeDocumentation(node.id);
                   }}
                 >
                   {node.title}
@@ -2485,13 +2529,13 @@ export default function CanvasShell({
                     <div className="sf-node-port-row" key={port.id} title={port.description}>
                       <button
                         type="button"
-                        className={`sf-node-port input ${typeClass(port.typeKey)}`}
+                        className={`sf-node-port input ${typeClass(visualPortTypeKey(port))}`}
                         data-canvas-anchor={`${node.id}|input|${port.id}`}
                         aria-label={`Connect to ${node.title} input ${port.label}`}
                         onMouseDown={(event) => event.stopPropagation()}
                         onMouseUp={(event) => finishConnection(event, node, port.id)}
                       >
-                        <i className={typeIcon(port.typeKey)} aria-hidden="true" />
+                        <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -2499,7 +2543,7 @@ export default function CanvasShell({
                         onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onOpenOntologyWiki?.(ontologyPortTerm(port));
+                          openNodeDocumentation(node.id, { section: 'inputs', key: port.id });
                         }}
                       >
                         {port.label}
@@ -2524,14 +2568,14 @@ export default function CanvasShell({
                         onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onOpenOntologyWiki?.(ontologyPortTerm(port));
+                          openNodeDocumentation(node.id, { section: 'outputs', key: port.id });
                         }}
                       >
                         {port.label}
                       </button>
                       <button
                         type="button"
-                        className={`sf-node-port output ${typeClass(port.typeKey)} ${outputArtifact(port) ? 'available' : ''}`}
+                        className={`sf-node-port output ${typeClass(visualPortTypeKey(port))} ${outputArtifact(port) ? 'available' : ''}`}
                         data-canvas-anchor={`${node.id}|output|${port.id}`}
                         aria-label={`Connect from ${node.title} output ${port.label}`}
                         onMouseDown={(event) => beginConnection(event, node, port.id)}
@@ -2563,7 +2607,7 @@ export default function CanvasShell({
                           }
                         }}
                       >
-                        <i className={typeIcon(port.typeKey)} aria-hidden="true" />
+                        <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
                       </button>
                       {outputArtifact(port) ? (
                         <div className="sf-output-artifact-popover" role="tooltip">
@@ -2627,7 +2671,7 @@ export default function CanvasShell({
                                     onMouseDown={(event) => event.stopPropagation()}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onOpenOntologyWiki?.(parameter.name);
+                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
                                     }}
                                   >
                                     {parameter.label || parameter.name}
@@ -2666,7 +2710,7 @@ export default function CanvasShell({
                                     onMouseDown={(event) => event.stopPropagation()}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onOpenOntologyWiki?.(parameter.name);
+                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
                                     }}
                                   >
                                     {parameter.label || parameter.name}
@@ -2798,7 +2842,7 @@ export default function CanvasShell({
                                   onMouseDown={(event) => event.stopPropagation()}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    onOpenOntologyWiki?.(parameter.name);
+                                    openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
                                   }}
                                 >
                                   {parameter.label || parameter.name}
@@ -3169,49 +3213,27 @@ export default function CanvasShell({
               value={paletteSearch}
               onChange={(event) => setPaletteSearch(event.target.value)}
             />
-          </div>
-          <div className="sf-operation-deck-filters" aria-label="Operation category filters">
-            <label>
-              Domain
-              <select
-                aria-label="Filter operations by domain"
-                value={paletteDomain}
-                onChange={(event) => {
-                  setPaletteDomain(event.target.value);
-                  setPaletteModule('');
-                }}
-              >
-                <option value="">All domains</option>
-                {paletteDomains.map((domain) => (
-                  <option value={domain} key={domain}>
-                    {domain}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Module
-              <select
-                aria-label="Filter operations by module"
-                value={paletteModule}
-                onChange={(event) => setPaletteModule(event.target.value)}
-              >
-                <option value="">All modules</option>
-                {paletteModules.map((module) => (
-                  <option value={module} key={module}>
-                    {module}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <select
+              aria-label="Filter operations by module"
+              value={paletteModule}
+              onChange={(event) => setPaletteModule(event.target.value)}
+            >
+              <option value="">All modules</option>
+              {paletteModules.map((module) => (
+                <option value={module} key={module}>
+                  {module}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="sf-operation-deck-list">
             {filteredTemplates.map((template) => {
               const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
               const ports = nodePorts(capability);
+              const metadata = `${template.module || 'core'} · ${ports.inputs.length} input${ports.inputs.length === 1 ? '' : 's'} · ${ports.outputs.length} output${ports.outputs.length === 1 ? '' : 's'}`;
               return (
                 <article
-                  className={`sf-operation-deck-card sf-domain-${(template.domain || 'unknown')
+                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(template.domain || 'unknown')
                     .replace(/[^a-z0-9_-]/gi, '-')
                     .toLowerCase()}`}
                   key={template.id}
@@ -3219,11 +3241,7 @@ export default function CanvasShell({
                 >
                   <div className="sf-operation-deck-card-content">
                     <strong>{template.title}</strong>
-                    <small>
-                      {template.module || 'core'} · {ports.inputs.length} input
-                      {ports.inputs.length === 1 ? '' : 's'} · {ports.outputs.length} output
-                      {ports.outputs.length === 1 ? '' : 's'}
-                    </small>
+                    <small>{metadata}</small>
                   </div>
                   <button
                     type="button"
@@ -3250,6 +3268,7 @@ export default function CanvasShell({
           className="sf-side-pane-backdrop sf-node-info-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
+              setDocumentationFocus(null);
               setSelectedNodeId(null);
               setPickerCapabilityId(null);
             }
@@ -3265,6 +3284,7 @@ export default function CanvasShell({
                 className="sf-icon-button sf-close-button"
                 aria-label="Close operation documentation"
                 onClick={() => {
+                  setDocumentationFocus(null);
                   setSelectedNodeId(null);
                   setPickerCapabilityId(null);
                 }}
@@ -3282,7 +3302,14 @@ export default function CanvasShell({
             <section>
               <h3>Inputs</h3>
               {nodePorts(documentationCapability).inputs.map((port) => (
-                <div className="sf-info-row" key={port.id}>
+                <div
+                  className="sf-info-row"
+                  key={port.id}
+                  data-ontology-focus="true"
+                  data-ontology-focus-section="inputs"
+                  data-ontology-focus-key={port.id}
+                  tabIndex={-1}
+                >
                   {ontologyPortTerm(port) && onOpenOntologyWiki ? (
                     <button
                       type="button"
@@ -3315,7 +3342,14 @@ export default function CanvasShell({
             <section>
               <h3>Outputs</h3>
               {nodePorts(documentationCapability).outputs.map((port) => (
-                <div className="sf-info-row" key={port.id}>
+                <div
+                  className="sf-info-row"
+                  key={port.id}
+                  data-ontology-focus="true"
+                  data-ontology-focus-section="outputs"
+                  data-ontology-focus-key={port.id}
+                  tabIndex={-1}
+                >
                   {ontologyPortTerm(port) && onOpenOntologyWiki ? (
                     <button
                       type="button"
@@ -3344,7 +3378,14 @@ export default function CanvasShell({
               {documentationCapability.parameters
                 .filter((parameter) => parameter.name !== 'database_path')
                 .map((parameter) => (
-                  <div className="sf-info-row" key={parameter.name}>
+                  <div
+                    className="sf-info-row"
+                    key={parameter.name}
+                    data-ontology-focus="true"
+                    data-ontology-focus-section="parameters"
+                    data-ontology-focus-key={parameter.name}
+                    tabIndex={-1}
+                  >
                     {onOpenOntologyWiki ? (
                       <button
                         type="button"
@@ -3474,42 +3515,7 @@ export default function CanvasShell({
           </section>
         </div>
       ) : null}
-      {selectedEdgeId
-        ? (() => {
-            const edge = edges.find((item) => item.id === selectedEdgeId);
-            if (!edge) return null;
-            const candidates = artifacts.filter(
-              (artifact) =>
-                artifact.status === 'published' &&
-                artifact.producer_instance === edge.source &&
-                artifactContractMatches(artifact.contract_id, edge.sourcePort),
-            );
-            return (
-              <aside className="sf-edge-artifact-picker" aria-label="Artifact binding">
-                <strong>Input artifact</strong>
-                <select
-                  value={edge.sourceArtifactId ?? ''}
-                  onChange={(event) => {
-                    const sourceArtifactId = event.target.value || undefined;
-                    setEdges((current) =>
-                      current.map((item) => (item.id === edge.id ? { ...item, sourceArtifactId } : item)),
-                    );
-                  }}
-                >
-                  <option value="">Resolve latest published output</option>
-                  {candidates.map((artifact) => (
-                    <option key={artifact.artifact_id} value={artifact.artifact_id}>
-                      {artifact.artifact_id} · revision {artifact.workflow_revision}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  {candidates.length} published artifact{candidates.length === 1 ? '' : 's'} match this output.
-                </small>
-              </aside>
-            );
-          })()
-        : null}
+
     </div>
   );
 }
