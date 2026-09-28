@@ -71,7 +71,6 @@ int run(const Arguments &arguments) {
     valid &= require_directory(arguments.source_dir / "semantic", "semantic");
     valid &= require_directory(arguments.source_dir / "src", "src");
     valid &= require_file(arguments.source_dir / "src/plugin_entrypoint.cpp", "src/plugin_entrypoint.cpp");
-    valid &= require_directory(arguments.source_dir / "src/methods", "src/methods");
     valid &= require_directory(arguments.source_dir / "src/operations", "src/operations");
     valid &= require_directory(arguments.source_dir / "src/utils", "src/utils");
     if (!valid)

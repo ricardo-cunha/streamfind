@@ -3,16 +3,6 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 
-sfcore:projectDomainColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Domain" ;
-    skos:definition "Immutable project domain." ;
-    sf:columnName "domain" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
 sfcore:projectMetadataColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;
@@ -23,6 +13,17 @@ sfcore:projectMetadataColumn
     sf:type "string" ;
     sf:storageType "JSON" .
 
+sfcore:filePathColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "File path" ;
+    skos:definition "A filesystem file or directory path selected as workflow input." ;
+    sf:columnName "path" ;
+    sf:type "string" ;
+    sf:pathKind "file-or-directory" ;
+    sf:storageType "VARCHAR" .
+
 sfcore:projectWorkflowColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;
@@ -30,8 +31,7 @@ sfcore:projectWorkflowColumn
     skos:prefLabel "Workflow" ;
     skos:definition "Persisted workflow JSON." ;
     sf:columnName "workflow" ;
-    sf:type "array" ;
-    sf:items sfcore:methodField ;
+    sf:type "object" ;
     sf:storageType "JSON" .
 
 sfcore:createdAtColumn
@@ -164,16 +164,6 @@ sfcore:stepIndexColumn
     sf:type "integer" ;
     sf:storageType "INTEGER" .
 
-sfcore:executionDomainColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Domain ID" ;
-    skos:definition "Immutable project domain associated with the execution." ;
-    sf:columnName "domain_id" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
 sfcore:launchSnapshotColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;
@@ -234,13 +224,13 @@ sfcore:serverIdColumn
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
-sfcore:executionMethodColumn
+sfcore:executionOperationColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Method" ;
-    skos:definition "Method executed at this step." ;
-    sf:columnName "method" ;
+    skos:prefLabel "Operation" ;
+    skos:definition "Operation executed at this graph position." ;
+    sf:columnName "operation" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
@@ -249,7 +239,7 @@ sfcore:parameterHashColumn
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Parameter hash" ;
-    skos:definition "Hash of resolved step parameters." ;
+    skos:definition "Hash of resolved operation parameters." ;
     sf:columnName "parameter_hash" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .

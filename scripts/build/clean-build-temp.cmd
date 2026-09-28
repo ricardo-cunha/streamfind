@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
-rem Remove generated C++, Rust, and repository temporary output.
+rem Remove generated C++, Rust, frontend, test, and distribution output.
 rem Run from any working directory; the repository root is derived from this file.
 rem
 rem Default behaviour: remove build/test artifacts and disposable scratch, but
@@ -16,13 +16,26 @@ rem Committed convenience scripts live under scripts\ and are never touched.
 rem The tracked scripts\dev directory is not deleted by this command.
 
 set "ROOT=%~dp0..\.."
+set "FAILED=0"
 
+rem Legacy and platform build roots.
 call :remove_dir "%ROOT%\build" "root CMake/build output"
+call :remove_dir "%ROOT%\cpp\build" "C++ in-tree build output"
 call :remove_dir "%ROOT%\core\build" "standalone C++ core build output"
 call :remove_dir "%ROOT%\core\vendor\openbabel\build" "vendored OpenBabel build output"
 call :remove_dir "%ROOT%\rust\target" "Rust target output"
 call :remove_dir "%ROOT%\integrations\cf-streamfind\build" "Cogniflow integration build output"
+
+rem Production and test output outside tmp\.
 call :remove_dir "%ROOT%\dist" "distribution output"
+call :remove_dir "%ROOT%\cpp\dist" "C++ distribution output"
+call :remove_dir "%ROOT%\frontend\dist" "frontend production output"
+call :remove_dir "%ROOT%\test-results" "repository test results"
+call :remove_dir "%ROOT%\cpp\test-results" "C++ test results"
+call :remove_dir "%ROOT%\rust\test-results" "Rust test results"
+call :remove_dir "%ROOT%\coverage" "test coverage output"
+call :remove_dir "%ROOT%\cpp\coverage" "C++ coverage output"
+call :remove_dir "%ROOT%\frontend\coverage" "frontend coverage output"
 call :remove_dir "%ROOT%\site" "documentation site output"
 call :remove_dir "%ROOT%\_skbuild" "scikit-build output"
 call :remove_dir "%ROOT%\log" "legacy repository logs (folded into tmp\logs)"
@@ -33,6 +46,9 @@ call :remove_dir "%ROOT%\tmp\build" "temporary build trees (CMake/Cargo)"
 call :remove_dir "%ROOT%\tmp\projects" "temporary test project files (DuckDB fixtures)"
 call :remove_dir "%ROOT%\tmp\scratch" "temporary scratch files"
 call :remove_dir "%ROOT%\tmp\release-output" "temporary release packages"
+call :remove_dir "%ROOT%\tmp\dist" "temporary distribution output"
+call :remove_dir "%ROOT%\tmp\test-results" "temporary test results"
+call :remove_dir "%ROOT%\tmp\coverage" "temporary coverage output"
 
 rem Development-support scripts and logs are kept by default.
 rem --all also wipes them (call once a supported feature is implemented).
@@ -48,16 +64,17 @@ for /d %%D in ("%ROOT%\cmake-build-*") do (
 
 rem Python environments and their caches are intentionally left untouched.
 
-if errorlevel 1 (
+if "%FAILED%"=="1" (
     echo Cleanup completed with errors. 1>&2
     exit /b 1
 )
 
 echo Generated build and temporary output removed.
-exit /b 0
+goto :eof
 
 :remove_dir
-if not exist "%~1\" exit /b 0
+if not exist "%~1\" goto :eof
 echo Removing %~2: "%~1"
 rd /s /q "%~1"
-exit /b %errorlevel%
+if errorlevel 1 set "FAILED=1"
+goto :eof

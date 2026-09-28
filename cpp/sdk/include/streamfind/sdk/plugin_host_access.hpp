@@ -18,6 +18,16 @@ public:
     void append(const std::string &table_name,
                 const std::vector<std::string> &column_names,
                 const std::vector<std::vector<std::optional<std::string>>> &rows) override;
+    void emit_table_rows(
+        const std::string &output_contract_id,
+        const std::vector<std::string> &column_names,
+        const std::vector<std::string> &column_types,
+        const nlohmann::json &rows) override;
+    void emit_table_batch(const std::string &output_contract_id,
+                          const std::vector<streamfind_plugin_batch_column> &columns,
+                          std::uint64_t row_count) override;
+    void emit_result(const std::string &output_contract_id,
+                     const std::string &payload) override;
     void update_composite(
         const std::string &table_name,
         const std::vector<std::string> &key_columns,
@@ -25,9 +35,12 @@ public:
         const std::vector<std::vector<std::optional<std::string>>> &rows) override;
     void delete_rows(const std::string &table_name, const std::string &key_column,
                      const std::vector<std::vector<std::optional<std::string>>> &rows) override;
+    void report_progress(double fraction, std::string_view message) override;
     void require_table(const std::string &table_name) override;
 
 private:
+    streamfind_plugin_column_type column_type(const std::string &table_name,
+                                              const std::string &column_name) const;
     const streamfind_plugin_host_api &host_;
     void *execution_context_;
 };

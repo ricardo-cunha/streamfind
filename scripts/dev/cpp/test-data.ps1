@@ -61,7 +61,7 @@ try {
     if ([int]$added.row_count -ne 1) {
         throw "Expected one parsed analysis, received $($added.row_count)"
     }
-    $info = Invoke-McpTool $process 5 'mass_spec.get_analyses_info' @{
+    $info = Invoke-McpTool $process 5 'mass_spec.get_analyses' @{
         database_path = $database
     }
     if ([int]$info.row_count -ne 1) {

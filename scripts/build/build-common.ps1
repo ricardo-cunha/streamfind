@@ -165,6 +165,32 @@ function Get-Ninja {
     throw 'ninja not found on PATH, via $env:NINJA, or in the Visual Studio CMake tools'
 }
 
+function Initialize-MinGWUcrt64 {
+    $msysRoot = if ($env:STREAMFIND_MINGW_ROOT) {
+        $env:STREAMFIND_MINGW_ROOT
+    } else {
+        'C:\msys64'
+    }
+    $mingwBin = Join-Path $msysRoot 'ucrt64\bin'
+    $msysBin = Join-Path $msysRoot 'usr\bin'
+    foreach ($required in @('gcc.exe', 'g++.exe', 'ninja.exe')) {
+        if (-not (Test-Path (Join-Path $mingwBin $required))) {
+            throw "MinGW UCRT64 tool is missing: $(Join-Path $mingwBin $required)"
+        }
+    }
+    $env:MSYSTEM = 'UCRT64'
+    $env:PATH = "$mingwBin;$msysBin;$env:PATH"
+    Set-RepositoryTemp
+    return [pscustomobject]@{
+        Root = $msysRoot
+        Bin = $mingwBin
+        CMake = (Get-CMake)
+        Ninja = (Join-Path $mingwBin 'ninja.exe')
+        CCompiler = (Join-Path $mingwBin 'gcc.exe')
+        CxxCompiler = (Join-Path $mingwBin 'g++.exe')
+    }
+}
+
 <#
     Invoke-VcvarsAll: runs vcvarsall.bat for the given architecture and imports
     the resulting environment into the current PowerShell session.

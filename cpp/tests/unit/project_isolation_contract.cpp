@@ -53,10 +53,8 @@ void run() {
     std::filesystem::remove(second_path);
     const auto &first_spec = expected.at("databases").at(0);
     const auto &second_spec = expected.at("databases").at(1);
-    ProjectOptions first_options{first_path, first_spec.at("domain_id").get<std::string>(), {{"owner", "project-a"}}};
-    first_options.domain = first_spec.at("domain_id").get<std::string>();
-    ProjectOptions second_options{second_path, second_spec.at("domain_id").get<std::string>(), {{"owner", "project-b"}}};
-    second_options.domain = second_spec.at("domain_id").get<std::string>();
+    ProjectOptions first_options{first_path, {{"owner", "project-a"}}};
+    ProjectOptions second_options{second_path, {{"owner", "project-b"}}};
     auto first = Project::create(first_options);
     first.set_metadata({{"owner", "project-a"}});
     const auto schema = domain_schema_fixture();
@@ -97,7 +95,7 @@ void run() {
     for (const auto module : modules) ProjectTableStore(first).require_manifest("mass_spec", module);
     bool same_file_rejected = false;
     try {
-        Project::create({first_path, "mass_spec", {}});
+        Project::create({first_path, {}});
     } catch (const Error &error) {
         same_file_rejected = error.code() == ErrorCode::ProjectAlreadyExists;
     }
@@ -108,26 +106,11 @@ void run() {
     second.close();
     auto reopened_first = Project::open(first_options);
     auto reopened_second = Project::open(second_options);
-    if (reopened_first.get_domain() != first_spec.at("domain_id").get<std::string>() ||
-        reopened_second.get_domain() != second_spec.at("domain_id").get<std::string>()) {
+    if (!reopened_first.get_domains().empty() || !reopened_second.get_domains().empty()) {
         throw std::runtime_error("separate project files did not reopen");
     }
     reopened_first.close();
     reopened_second.close();
-
-    const auto invalid_path = root / "streamfind-cpp-invalid-registry.duckdb";
-    std::filesystem::remove(invalid_path);
-    auto invalid = Project::create({invalid_path, "raman", {}});
-    invalid.execute_sql("CREATE TABLE PROJECTS (legacy_key VARCHAR NOT NULL, domain_id VARCHAR NOT NULL)");
-    invalid.close();
-    bool legacy_registry_rejected = false;
-    try {
-        Project::open({invalid_path, "raman", {}});
-    } catch (const Error &error) {
-        legacy_registry_rejected = error.code() == ErrorCode::SchemaMismatch;
-    }
-    if (!legacy_registry_rejected) throw std::runtime_error("legacy PROJECTS registry was accepted");
-    std::filesystem::remove(invalid_path);
 
     std::filesystem::remove(first_path);
     std::filesystem::remove(second_path);

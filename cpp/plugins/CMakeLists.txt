@@ -7,12 +7,24 @@ file(GLOB STREAMFIND_PLUGIN_DIRECTORIES
     "${CMAKE_CURRENT_LIST_DIR}/*")
 list(SORT STREAMFIND_PLUGIN_DIRECTORIES)
 
+set(STREAMFIND_ENABLED_PLUGINS "ALL" CACHE STRING
+    "Semicolon-separated plugin domains to build, or ALL")
+string(TOUPPER "${STREAMFIND_ENABLED_PLUGINS}" _enabled_plugins_upper)
+set(_build_all_plugins FALSE)
+if(_enabled_plugins_upper STREQUAL "ALL" OR STREAMFIND_ENABLED_PLUGINS STREQUAL "")
+    set(_build_all_plugins TRUE)
+endif()
+
 set(STREAMFIND_PLUGIN_DOMAINS)
 set(STREAMFIND_PLUGIN_TARGETS)
 set(STREAMFIND_PLUGIN_SEMANTIC_DIRS)
 foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DIRECTORIES)
     if(NOT IS_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/${_plugin_domain}" OR
        NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/${_plugin_domain}/CMakeLists.txt")
+        continue()
+    endif()
+    if(NOT _build_all_plugins AND
+       NOT _plugin_domain IN_LIST STREAMFIND_ENABLED_PLUGINS)
         continue()
     endif()
     add_subdirectory("${_plugin_domain}")
@@ -28,7 +40,8 @@ foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DIRECTORIES)
 endforeach()
 
 if(NOT STREAMFIND_PLUGIN_DOMAINS)
-    message(FATAL_ERROR "No C++ plugins were discovered under ${CMAKE_CURRENT_LIST_DIR}")
+    message(FATAL_ERROR
+        "No enabled C++ plugins were discovered. STREAMFIND_ENABLED_PLUGINS='${STREAMFIND_ENABLED_PLUGINS}'")
 endif()
 
 set(STREAMFIND_PLUGIN_DOMAINS "${STREAMFIND_PLUGIN_DOMAINS}" PARENT_SCOPE)

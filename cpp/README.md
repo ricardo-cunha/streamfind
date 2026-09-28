@@ -91,7 +91,7 @@ Canonical `Project` methods:
 ```text
 get_metadata() / set_metadata(Json)
 get_database_path()
-get_domain()
+get_domains()
 validate()
 get_workflow() / set_workflow(Workflow)
 copy(ProjectOptions)
@@ -100,8 +100,9 @@ get_cache() / get_cache_size() / get_cache_entry(hash)
 set_cache(name, description, hash, Json)
 delete_cache()
 get_audit_trail()
-run_method(method_id, parameters)
-run_workflow()
+run_operation(operation_id, parameters, registry)
+run_operation_graph(registry)
+run_worker(worker_id, registry)
 close()
 ```
 
@@ -124,30 +125,29 @@ Canonical commands are:
 ```text
 create, describe, validate
 get_metadata, set_metadata
-get_domain
+get_project_domains
 get_workflow, set_workflow, validate_workflow, run_workflow
-get_methods, run_method
+add_operation, connect_operations, get_artifact_inventory
 copy
 get_cache, get_cache_size, delete_cache
 get_audit_trail
 close
 ```
 
-`set_metadata`, `set_workflow`, `run_method`, `run_workflow`, `delete_cache`,
+`set_metadata`, `set_workflow`, `run_workflow`, `delete_cache`,
 and `copy` require a writable project. `get_*`, `describe`, and validation
 commands are read-only.
 
 ## Execution Contracts
 
-Workflow execution returns `ExecutionResult`:
+Operation-graph execution returns a JSON graph result:
 
 ```json
-{"results": [], "cancelled": false}
+{"status": "completed", "operations": []}
 ```
 
-Long-running callers may provide a `CancellationToken` and `ProgressCallback`.
-Cancellation is cooperative. Progress events contain `operation`, `completed`,
-and `total`.
+Each persisted operation node carries its parameters. Typed connections determine
+the execution order and input artifacts; validate the graph before running it.
 
 Errors use the stable `ErrorCode` enum, including invalid arguments, missing or
 existing projects, schema/database failures, workflow validation, method
@@ -207,7 +207,7 @@ build, and Release package. Adding a plugin therefore does not require editing
 ### Full native C++ NTA workflow
 
 The NTA development test imports the 18 wastewater analyses from the sibling
-`streamfind.data` repository, executes all 12 workflow methods, and verifies the
+`streamfind.data` repository, executes the connected operation graph, and verifies the
 persisted DuckDB results with
 `scripts/dev/cpp/verify-nta-project.py`. Verification includes:
 

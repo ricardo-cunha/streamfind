@@ -1,14 +1,29 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sfvis: <https://streamfind.dev/catalogue/visualization#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
 sf:Operation
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Operation" ;
-    skos:definition "A generic public capability exposed by streamfind." .
+    skos:definition "A computational capability that can be placed in a project workflow." .
+
+sf:ApiCommand
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    owl:disjointWith sf:Operation ;
+    skos:prefLabel "API command" ;
+    skos:definition "A callable control-plane capability exposed through the CLI, MCP, service API, or application for managing projects, workflows, executions, and metadata. It is not a workflow data-processing node." .
+
+sf:WorkflowConnection
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Workflow connection" ;
+    skos:definition "A project-workflow binding from one operation output port to another operation input port." .
 
 sf:Method
     a rdfs:Class ;
@@ -32,19 +47,19 @@ sf:Project
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Project" ;
-    skos:definition "A persisted streamfind workspace with an immutable domain." .
+    skos:definition "A persisted streamfind workspace whose workflow operations may span domains." .
 
 sf:Workflow
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Workflow" ;
-    skos:definition "An ordered, versioned set of methods executed for a project." .
+    skos:definition "A versioned project workflow of operations and typed port connections." .
 
 sf:Parameter
     a rdfs:Class ;
-    rdfs:subClassOf sf:Result ;
+    rdfs:subClassOf skos:Concept ;
     skos:prefLabel "Parameter" ;
-    skos:definition "A named input accepted by an operation or workflow method." .
+    skos:definition "A named input accepted by a workflow operation." .
 
 sf:Fixture
     a rdfs:Class ;
@@ -52,23 +67,71 @@ sf:Fixture
     skos:prefLabel "Fixture" ;
     skos:definition "A backend-neutral example used to verify a semantic contract." .
 
-sf:Result
+sf:OperationResult
     a rdfs:Class ;
-    rdfs:subClassOf skos:Concept ;
-    skos:prefLabel "Result" ;
-    skos:definition "The structured value returned by a streamfind capability." .
+    rdfs:subClassOf sf:ArtifactContract ;
+    skos:prefLabel "Operation result" ;
+    skos:definition "A JSON artifact emitted by a workflow operation and persisted in the project artifact inventory." .
+
+sfvis:VisualizationSpec
+    a rdfs:Class ;
+    rdfs:subClassOf sf:OperationResult ;
+    skos:prefLabel "Visualization specification" ;
+    skos:definition "A versioned, validated JSON artifact describing a client-rendered visualization and its scientific provenance." .
 
 sf:Table
     a rdfs:Class ;
+    rdfs:subClassOf sf:ArtifactContract ;
+    skos:prefLabel "DuckDB table artifact" ;
+    skos:definition "A physical DuckDB table persisted in the project database and exchanged through workflow artifact ports." .
+
+sf:PrimitiveType
+    a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
-    skos:prefLabel "Table" ;
-    skos:definition "A persisted project table used by a capability." .
+    skos:prefLabel "Primitive type" ;
+    skos:definition "An extensible scalar value type used as the atomic unit of semantic fields and table cells." .
+
+sf:SemanticType
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Semantic type" ;
+    skos:definition "A domain-level meaning composed over a primitive representation without changing its wire or storage type." .
+
+sf:ArrayType
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Array type" ;
+    skos:definition "A homogeneous list type whose elements use one declared primitive or semantic type." .
+
+sf:ApiCommandResult
+    a rdfs:Class ;
+    rdfs:subClassOf sf:ArtifactContract ;
+    skos:prefLabel "API command result" ;
+    skos:definition "A control-plane response schema returned by an API command; it is not a workflow data result or persisted domain table." .
+
+sf:TabularValue
+    a rdfs:Class ;
+    rdfs:subClassOf sf:ArtifactContract ;
+    skos:prefLabel "Tabular value" ;
+    skos:definition "An in-memory table-shaped parameter or result value described by sf:type \"table\" and sf:Column properties; it is not itself a persisted DuckDB table." .
+
+sf:ArtifactContract
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Artifact contract" ;
+    skos:definition "A reusable semantic contract for a workflow artifact, such as a table or structured result." .
+
+sf:ReadDependency
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Read dependency" ;
+    skos:definition "A conditional table dependency of a workflow operation." .
 
 sf:Column
     a rdfs:Class ;
     rdfs:subClassOf sf:Field ;
-    skos:prefLabel "Column" ;
-    skos:definition "A typed column in a persisted project table." .
+    skos:prefLabel "Tabular column" ;
+    skos:definition "A typed column shared by physical DuckDB table artifacts and in-memory tabular value contracts." .
 
 sf:Error
     a rdfs:Class ;
@@ -89,12 +152,82 @@ sf:operationId
     skos:prefLabel "operation identifier" ;
     skos:definition "Stable identifier of a generic operation." .
 
+sf:commandId
+    a rdf:Property ;
+    rdfs:domain sf:ApiCommand ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "command identifier" ;
+    skos:definition "Stable identifier of a callable API command." .
+
+sf:operationVersion
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "operation version" ;
+    skos:definition "Implementation or catalogue version included in operation identity and cache keys." .
+
+sf:projectEntry
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range xsd:boolean ;
+    skos:prefLabel "project entry" ;
+    skos:definition "Whether the operation is a graph root that accepts parameters and publishes initial artifacts without data inputs." .
+
+sf:hasInputPort
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range sf:ArtifactContract ;
+    skos:prefLabel "has input port" ;
+    skos:definition "Associates an operation with a reusable artifact contract accepted as input." .
+
+sf:optionalInputPort
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range sf:ArtifactContract ;
+    skos:prefLabel "optional input port" ;
+    skos:definition "Marks an input artifact contract that may be omitted when the operation has an alternate source or fallback behavior." .
+
+sf:hasOutputPort
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range sf:ArtifactContract ;
+    skos:prefLabel "has output port" ;
+    skos:definition "Associates an operation with a reusable artifact contract published as output." .
+
+sf:sourceNodeId
+    a rdf:Property ;
+    rdfs:domain sf:WorkflowConnection ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "source node identifier" ;
+    skos:definition "Project workflow node identifier at the output side of a connection." .
+
+sf:sourcePortId
+    a rdf:Property ;
+    rdfs:domain sf:WorkflowConnection ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "source port identifier" ;
+    skos:definition "Output port identifier at the source side of a connection." .
+
+sf:targetNodeId
+    a rdf:Property ;
+    rdfs:domain sf:WorkflowConnection ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "target node identifier" ;
+    skos:definition "Project workflow node identifier at the input side of a connection." .
+
+sf:targetPortId
+    a rdf:Property ;
+    rdfs:domain sf:WorkflowConnection ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "target port identifier" ;
+    skos:definition "Input port identifier at the target side of a connection." .
+
 sf:methodId
     a rdf:Property ;
     rdfs:domain sf:Method ;
     rdfs:range rdfs:Literal ;
     skos:prefLabel "method identifier" ;
-    skos:definition "Stable identifier of a workflow method." .
+    skos:definition "Stable identifier of a workflow operation." .
 
 sf:providedByModule
     a rdf:Property ;
@@ -110,12 +243,32 @@ sf:cacheable
     skos:prefLabel "cacheable" ;
     skos:definition "Whether successful method results may be cached." .
 
-sf:requiredMethods
+sf:conditionalRead
     a rdf:Property ;
     rdfs:domain sf:Method ;
-    rdfs:range rdf:List ;
-    skos:prefLabel "required methods" ;
-    skos:definition "Methods that must already occur earlier in the workflow." .
+    rdfs:range sf:ReadDependency ;
+    skos:prefLabel "conditional read" ;
+    skos:definition "A table read required when its declared condition is true." .
+
+sf:table
+    a rdf:Property ;
+    rdfs:domain sf:ReadDependency ;
+    rdfs:range sf:Table ;
+    skos:prefLabel "dependency table" ;
+    skos:definition "The table required by a conditional read dependency." .
+
+sf:when
+    a rdf:Property ;
+    rdfs:domain sf:ReadDependency ;
+    rdfs:range sf:Parameter ;
+    skos:prefLabel "dependency condition" ;
+    skos:definition "A boolean method parameter that activates a conditional read." .
+
+sf:equals
+    a rdf:Property ;
+    rdfs:domain sf:ReadDependency ;
+    skos:prefLabel "dependency expected value" ;
+    skos:definition "The value at which the dependency condition is active." .
 
 sf:singleOccurrence
     a rdf:Property ;
@@ -132,29 +285,11 @@ sf:category
     skos:prefLabel "interface category" ;
     skos:definition "Human- and agent-facing category used to group related capabilities in documentation and tool descriptions." .
 
-sf:invocationModel
-    a rdf:Property ;
-    rdfs:range rdfs:Literal ;
-    skos:prefLabel "invocation model" ;
-    skos:definition "Whether a capability is a stateless operation or a connected workflow method." .
-
-sf:requiresConnection
-    a rdf:Property ;
-    rdfs:range xsd:boolean ;
-    skos:prefLabel "requires connection" ;
-    skos:definition "Whether a capability requires a prior connected MCP project session." .
-
 sf:guidance
     a rdf:Property ;
     rdfs:range rdfs:Literal ;
     skos:prefLabel "usage guidance" ;
     skos:definition "Action-oriented guidance explaining when and how a capability should be used by a person or an AI agent." .
-
-sf:nextOperation
-    a rdf:Property ;
-    rdfs:range sf:Operation ;
-    skos:prefLabel "next operation" ;
-    skos:definition "Operation normally used next in the guided project workflow." .
 
 sf:units
     a rdf:Property ;
@@ -185,6 +320,13 @@ sf:required
     skos:prefLabel "required" ;
     skos:definition "Indicates whether a parameter must be supplied." .
 
+sf:defaultRequired
+    a rdf:Property ;
+    rdfs:domain sf:Parameter ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "default required" ;
+    skos:definition "Indicates that a parameter must declare an sf:default value." .
+
 sf:type
     a rdf:Property ;
     rdfs:range rdfs:Literal ;
@@ -208,6 +350,13 @@ sf:items
     skos:prefLabel "items" ;
     skos:definition "Schema of the items contained in an array parameter." .
 
+sf:tableContract
+    a rdf:Property ;
+    rdfs:domain sf:Parameter ;
+    rdfs:range sf:Table ;
+    skos:prefLabel "table contract" ;
+    skos:definition "Canonical table schema accepted by a table-valued parameter." .
+
     sf:hasProperty a rdf:Property ;
     rdfs:range sf:Field ;
     skos:prefLabel "has property" ;
@@ -225,12 +374,12 @@ sf:example
     skos:prefLabel "example" ;
     skos:definition "Example value showing how a parameter is supplied." .
 
-sf:defaults
+sf:default
     a rdf:Property ;
-    rdfs:domain sf:Operation ;
+    rdfs:domain sf:Parameter ;
     rdfs:range rdfs:Literal ;
-    skos:prefLabel "parameter defaults" ;
-    skos:definition "JSON object containing operation-specific default parameter values." .
+    skos:prefLabel "default" ;
+    skos:definition "Value used when a parameter is not explicitly supplied." .
 
 sf:extensions
     a rdf:Property ;
@@ -257,6 +406,55 @@ sf:tableName
     skos:prefLabel "table name" ;
     skos:definition "DuckDB table name." .
 
+sf:dataKind
+    a rdf:Property ;
+    rdfs:domain sf:ArtifactContract ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "data kind" ;
+    skos:definition "Runtime representation kind of an artifact contract. Persisted table contracts use the value duckdb_table." .
+
+sf:valueType
+    a rdf:Property ;
+    rdfs:domain sf:Column ;
+    rdfs:range skos:Concept ;
+    skos:prefLabel "value type" ;
+    skos:definition "The type of one cell in a column; row-wise repetition is supplied by the table." .
+
+sf:primitiveType
+    a rdf:Property ;
+    rdfs:domain sf:SemanticType ;
+    rdfs:range sf:PrimitiveType ;
+    skos:prefLabel "primitive type" ;
+    skos:definition "Atomic representation used by a domain semantic type." .
+
+sf:elementType
+    a rdf:Property ;
+    rdfs:domain sf:ArrayType ;
+    rdfs:range skos:Concept ;
+    skos:prefLabel "element type" ;
+    skos:definition "Type of each element in a homogeneous array." .
+
+sf:wireType
+    a rdf:Property ;
+    rdfs:domain sf:PrimitiveType ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "wire type" ;
+    skos:definition "Portable JSON or binary encoding label for a primitive type." .
+
+sf:duckdbType
+    a rdf:Property ;
+    rdfs:domain sf:PrimitiveType ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "DuckDB type" ;
+    skos:definition "DuckDB storage mapping for a primitive type." .
+
+sf:editorKind
+    a rdf:Property ;
+    rdfs:domain sf:PrimitiveType ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "editor kind" ;
+    skos:definition "Frontend editor capability associated with a primitive type." .
+
 sf:reads
     a rdf:Property ;
     rdfs:range sf:Table ;
@@ -271,10 +469,10 @@ sf:writes
 
 sf:mutatesProject
     a rdf:Property ;
-    rdfs:domain sf:Operation ;
-    rdfs:range rdfs:Literal ;
+    rdfs:domain sf:ApiCommand ;
+    rdfs:range xsd:boolean ;
     skos:prefLabel "mutates project" ;
-    skos:definition "Whether an operation changes persisted project state." .
+    skos:definition "Whether an API command changes persisted project state." .
 
 sf:mapsTo
     a rdf:Property ;
@@ -298,7 +496,7 @@ sf:hasWorkflow
 
 sf:returns
     a rdf:Property ;
-    rdfs:range sf:Result ;
+    rdfs:range sf:ArtifactContract ;
     skos:prefLabel "returns" ;
     skos:definition "Associates a capability with its result semantics." .
 

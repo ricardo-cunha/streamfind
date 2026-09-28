@@ -61,14 +61,13 @@ std::optional<std::string> binary_relative() {
     return std::nullopt;
 }
 
-/// Release/install layout: <prefix>/bin/<exe> + <prefix>/share/streamfind/.
+/// Release/install layout: <prefix>/bin/<exe> + <prefix>/core/.
 /// Resolving relative to the executable makes unpacked release archives
 /// relocatable (no compile-time prefix dependency).
 std::optional<std::string> binary_relative_share() {
-    const auto candidate = executable_dir().parent_path() / "share" / "streamfind" / "catalogue.duckdb";
+    const auto candidate = executable_dir().parent_path() / "core" / "catalogue.duckdb";
     if (std::filesystem::exists(candidate)) return candidate.string();
-    const auto core_candidate = executable_dir().parent_path() / "share" / "streamfind" /
-                                "core" / "catalogue.duckdb";
+    const auto core_candidate = executable_dir().parent_path() / "core" / "core-catalogue.duckdb";
     if (std::filesystem::exists(core_candidate)) return core_candidate.string();
     return std::nullopt;
 }
@@ -117,7 +116,7 @@ public:
             "SELECT canonical_id, kind, domain, label, definition, category, invocation_model, "
             "requires_connection, guidance, next_operations, interface_guidance, executable, "
             "exposed, mcp_name, input_schema, parameters, result_schema, reads_tables, "
-            "writes_tables, cacheable, single_occurrence, mutates_project, required_methods, module_id "
+            "writes_tables, cacheable, single_occurrence, mutates_project, module_id, conditional_reads, result_id, project_entry, input_ports, output_ports "
             "FROM catalogue_entries ORDER BY canonical_id";
         if (duckdb_query(connection_, sql, &result) == DuckDBError) {
             std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
@@ -135,7 +134,7 @@ public:
 
     Json tables(const std::string &domain, const std::string &module_id) const {
         duckdb_result result{};
-        const std::string sql = "SELECT table_name, module_id, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
+        const std::string sql = "SELECT table_name, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
                                 domain + "' AND module_id = '" + module_id + "' ORDER BY table_name";
         if (duckdb_query(connection_, sql.c_str(), &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
@@ -146,14 +145,15 @@ public:
         for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
             output.push_back(Json{{"table_name", text(result, 0, row)},
                                   {"module_id", text(result, 1, row)},
-                                  {"columns", value(result, 2, row)}});
+                                  {"resource_id", text(result, 2, row)},
+                                  {"columns", value(result, 3, row)}});
         duckdb_destroy_result(&result);
         return output;
     }
 
     Json document() const {
         duckdb_result result{};
-        const char *sql = "SELECT table_name, domain, module_id, CAST(columns AS VARCHAR) FROM catalogue_tables ORDER BY table_name";
+        const char *sql = "SELECT table_name, domain, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables ORDER BY table_name";
         if (duckdb_query(connection_, sql, &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
             duckdb_destroy_result(&result);
@@ -162,7 +162,8 @@ public:
         Json table_list = Json::array();
         for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
             table_list.push_back(Json{{"table_name", text(result, 0, row)}, {"domain", text(result, 1, row)},
-                                      {"module_id", text(result, 2, row)}, {"columns", value(result, 3, row)}});
+                                      {"module_id", text(result, 2, row)}, {"resource_id", text(result, 3, row)},
+                                      {"columns", value(result, 4, row)}});
         duckdb_destroy_result(&result);
         return Json{{"version", 2}, {"entries", entries()}, {"tables", std::move(table_list)}};
     }
@@ -220,18 +221,6 @@ private:
         const auto parameters = value(result, 15, row);
         if (!is_null(result, 13, row)) {
             entry["mcp"] = Json{{"name", text(result, 13, row)}, {"input_schema", input_schema}};
-        } else {
-            Json method_schema = {{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}};
-            if (parameters.is_array()) {
-                for (const auto &parameter : parameters) {
-                    if (!parameter.is_object()) continue;
-                    const auto name = parameter.value("name", "");
-                    if (name.empty()) continue;
-                    method_schema["properties"][name] = parameter.value("schema", Json::object());
-                    if (parameter.value("required", false)) method_schema["required"].push_back(name);
-                }
-            }
-            entry["method_schema"] = std::move(method_schema);
         }
         entry["parameters"] = value(result, 15, row);
         entry["result"] = Json{{"schema", value(result, 16, row)}};
@@ -239,13 +228,17 @@ private:
             {"mutates_project", boolean(result, 21, row)},
             {"reads", value(result, 17, row)},
             {"writes", value(result, 18, row)},
+            {"conditional_reads", value(result, 23, row)},
         };
         if (kind == "method") {
             entry["cacheable"] = boolean(result, 19, row);
             entry["single_occurrence"] = boolean(result, 20, row);
-            entry["required_methods"] = value(result, 22, row);
         }
-        entry["module_id"] = text(result, 23, row);
+        entry["module_id"] = text(result, 22, row);
+        entry["result"]["id"] = text(result, 24, row);
+        entry["project_entry"] = boolean(result, 25, row);
+        entry["input_ports"] = value(result, 26, row);
+        entry["output_ports"] = value(result, 27, row);
         return entry;
     }
 
@@ -326,7 +319,7 @@ std::optional<std::string> find_core_path() {
         return std::string(value);
     const auto executable = detail::executable_dir();
     const std::vector<std::filesystem::path> candidates = {
-        executable / "core" / "catalogue.duckdb",
+        executable.parent_path() / "core" / "core-catalogue.duckdb",
         executable / "semantic_catalogue" / "core" / "catalogue.duckdb",
         executable.parent_path() / "semantic_catalogue" / "core" / "catalogue.duckdb",
         executable.parent_path() / "share" / "streamfind" / "core" / "catalogue.duckdb",
@@ -370,7 +363,7 @@ const Catalogue &catalogue() {
         if (!path) {
             result.error =
                 "catalogue.duckdb not found; searched STREAMFIND_CATALOGUE, the executable directory, "
-                "and the install data directory (share/streamfind). Ensure the runtime knowledge base "
+                "and the install data directory (core). Ensure the runtime knowledge base "
                 "is installed alongside the binaries.";
             return result;
         }
@@ -421,7 +414,7 @@ std::optional<Json> tools_json() {
     if (!entries) return std::nullopt;
     Json tools = Json::array();
     for (const auto &entry : *entries) {
-        if (entry.value("kind", "") != "operation" || entry.value("domain", "") != "streamfind" ||
+        if ((entry.value("kind", "") != "operation" && entry.value("kind", "") != "command") || entry.value("domain", "") != "streamfind" ||
             !entry.value("exposed", false)) {
             continue;
         }
@@ -431,10 +424,14 @@ std::optional<Json> tools_json() {
         const auto model = entry.at("interface").value("invocation_model", "");
         if (!model.empty()) description += " Invocation model: " + model + ".";
         const bool read_only = !entry.at("effects").value("mutates_project", false);
+        const auto mcp = entry.value("mcp", Json::object());
+        const auto input_schema = mcp.value(
+            "input_schema",
+            Json{{"type", "object"}, {"properties", Json::object()}, {"required", Json::array()}});
         tools.push_back(Json{
-                            {"name", entry.at("mcp").at("name")},
+                            {"name", mcp.value("name", entry.value("canonical_id", ""))},
                             {"description", description},
-                            {"inputSchema", entry.at("mcp").at("input_schema")},
+                            {"inputSchema", input_schema},
                             {"annotations", {{"title", entry.value("label", "")},
                                               {"readOnlyHint", read_only},
                                               {"destructiveHint", !read_only}}},

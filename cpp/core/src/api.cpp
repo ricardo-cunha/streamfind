@@ -4,9 +4,11 @@
  */
 
 #include "streamfind/api.hpp"
+#include "streamfind/project_table_store.hpp"
 
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <utility>
 
@@ -19,24 +21,23 @@ ProjectOptions options_from_request(const Json &request, bool read_only = false)
     }
     ProjectOptions options;
     options.database_path = request.at("database_path").get<std::string>();
-    options.domain = request.value("domain", "");
     return options;
 }
 
-Json descriptor(const Project &project, const MethodRegistry &registry) {
+Json descriptor(const Project &project) {
     const auto &info = project.info();
     return {
-        {"domain", info.domain},
+        {"domains", info.domains},
         {"metadata", info.metadata.dump()},
         {"schema_version", info.schema_version},
         {"framework_version", info.framework_version},
         {"created_at", info.created_at},
-        {"workflow", project.get_workflow().to_json(registry)}
+        {"workflow", project.get_workflow().to_json()}
     };
 }
 
-Json descriptor_table(const Project &project, const MethodRegistry &registry) {
-    const auto row = descriptor(project, registry);
+Json descriptor_table(const Project &project) {
+    const auto row = descriptor(project);
     Json columns = Json::object();
     for (auto it = row.begin(); it != row.end(); ++it) columns[it.key()] = Json::array({it.value()});
     return {{"row_count", 1}, {"columns", std::move(columns)}};
@@ -44,7 +45,7 @@ Json descriptor_table(const Project &project, const MethodRegistry &registry) {
 
 Json workflow_execution_table(const Json &rows) {
     const std::vector<std::string> names = {
-        "workflow_revision", "step_index", "method", "parameter_hash",
+        "workflow_revision", "step_index", "operation", "parameter_hash",
         "status", "started_at", "completed_at", "error", "cache_key"};
     Json columns = Json::object();
     for (const auto &name : names) columns[name] = Json::array();
@@ -56,8 +57,8 @@ Json metadata_table(const Json &metadata) {
     return {{"row_count", 1}, {"columns", {{"metadata", Json::array({metadata.dump()})}}}};
 }
 
-Json workflow_table(const Workflow &workflow, const MethodRegistry &registry) {
-    return workflow.to_json(registry);
+Json workflow_table(const Workflow &workflow) {
+    return workflow.to_json();
 }
 
 Json cache_entries(const Project &project) {
@@ -80,14 +81,6 @@ Json audit_entries(const Project &project) {
     return output;
 }
 
-Json method_entries(const MethodRegistry &registry, const std::string &domain) {
-    Json output = Json::array();
-    for (const auto &definition : registry.list(domain)) {
-        if (const auto *method = registry.find(definition.id)) output.push_back(method->to_json());
-    }
-    return output;
-}
-
 } // namespace detail
 
 ProjectCommand command_from_string(std::string_view name) {
@@ -101,13 +94,9 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "transition_execution") return ProjectCommand::transition_execution;
     if (name == "cancel_execution") return ProjectCommand::cancel_execution;
     if (name == "set_workflow") return ProjectCommand::set_workflow;
-    if (name == "add_method") return ProjectCommand::add_method;
-    if (name == "remove_method") return ProjectCommand::remove_method;
     if (name == "validate_workflow") return ProjectCommand::validate_workflow;
     if (name == "validate") return ProjectCommand::validate;
-    if (name == "get_domain") return ProjectCommand::get_domain;
-    if (name == "get_available_methods") return ProjectCommand::get_available_methods;
-    if (name == "run_method") return ProjectCommand::run_method;
+    if (name == "get_project_domains") return ProjectCommand::get_project_domains;
     if (name == "copy") return ProjectCommand::copy;
     if (name == "run_workflow") return ProjectCommand::run_workflow;
     if (name == "get_metadata") return ProjectCommand::get_metadata;
@@ -116,27 +105,33 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "delete_cache") return ProjectCommand::delete_cache;
     if (name == "get_cache_size") return ProjectCommand::get_cache_size;
     if (name == "get_audit_trail") return ProjectCommand::get_audit_trail;
-        if (name == "close") return ProjectCommand::close;
+    if (name == "close") return ProjectCommand::close;
+    if (name == "add_operation") return ProjectCommand::add_operation;
+    if (name == "connect_operations") return ProjectCommand::connect_operations;
+    if (name == "get_artifact_inventory") return ProjectCommand::get_artifact_inventory;
+    if (name == "request_artifact") return ProjectCommand::request_artifact;
+    if (name == "resolve_operation_inputs") return ProjectCommand::resolve_operation_inputs;
 
     throw Error(ErrorCode::InvalidArgument, "Unknown Project command: " + std::string(name));
 }
 
-Json run(ProjectCommand command, const Json &request, const MethodRegistry &registry) {
+Json run(ProjectCommand command, const Json &request, const OperationRegistry &registry) {
     switch (command) {
     case ProjectCommand::create: {
         auto options = detail::options_from_request(request);
         auto project = Project::create(options);
         if (request.contains("metadata")) project.set_metadata(request.at("metadata"));
-        return detail::descriptor_table(project, registry);
+        return detail::descriptor_table(project);
     }
     case ProjectCommand::describe:
-        return detail::descriptor_table(Project::open(detail::options_from_request(request, true)), registry);
+        return detail::descriptor_table(Project::open(detail::options_from_request(request, true)));
     case ProjectCommand::get_workflow: {
         auto project = Project::open(detail::options_from_request(request, true));
-        return detail::workflow_table(project.get_workflow(), registry);
+        return detail::workflow_table(project.get_workflow());
     }
     case ProjectCommand::validate_workflow: {
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
+        auto project = Project::open(detail::options_from_request(request, true));
         const auto workflow = Workflow::from_json(request.at("workflow"));
         workflow.validate(registry);
         return {{"valid", true}, {"info", "Workflow validation finished successfully."}};
@@ -146,15 +141,9 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         project.validate();
         return {{"valid", true}, {"info", "Project validation finished successfully."}};
     }
-    case ProjectCommand::get_domain:
-        return Project::open(detail::options_from_request(request, true)).get_domain();
-    case ProjectCommand::get_available_methods:
-        return detail::method_entries(registry, request.value("domain", ""));
-    case ProjectCommand::run_method: {
-        if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
-        auto project = Project::open(detail::options_from_request(request));
-        return project.run_method(request.at("method").get<std::string>(), request.value("parameters", Json::object()), registry);
-    }
+    case ProjectCommand::get_project_domains:
+        return Project::open(detail::options_from_request(request, true)).get_domains();
+
     case ProjectCommand::copy: {
         if (!request.contains("destination_database_path")) {
             throw Error(ErrorCode::InvalidArgument, "Request requires destination_database_path");
@@ -163,7 +152,7 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         ProjectOptions destination_options;
         destination_options.database_path = request.at("destination_database_path").get<std::string>();
         auto destination = source.copy(destination_options);
-        return detail::descriptor_table(destination, registry);
+        return detail::descriptor_table(destination);
     }
     case ProjectCommand::set_workflow: {
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
@@ -171,7 +160,7 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         auto workflow = Workflow::from_json(request.at("workflow"));
         workflow.validate(registry);
         project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow(), registry);
+        return detail::workflow_table(project.get_workflow());
     }
     case ProjectCommand::get_workflow_execution:
         return detail::workflow_execution_table(Project::open(detail::options_from_request(request, true)).get_workflow_execution());
@@ -205,32 +194,106 @@ Json run(ProjectCommand command, const Json &request, const MethodRegistry &regi
         auto project = Project::open(detail::options_from_request(request));
         return WorkflowExecutionManager(project).cancel();
     }
-    case ProjectCommand::add_method: {
-        if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
+
+    case ProjectCommand::add_operation: {
+        if (!request.contains("operation_id") || !request.contains("operation"))
+            throw Error(ErrorCode::InvalidArgument, "Request requires operation_id and operation");
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = project.get_workflow();
-        workflow.steps.push_back({request.at("method").get<std::string>(), request.value("parameters", Json::object())});
-        project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow(), registry);
+        WorkflowOperation operation;
+        operation.id = request.at("operation_id").get<std::string>();
+        operation.operation = request.at("operation").get<std::string>();
+        operation.parameters = ParameterValues::from_json(request.value("parameters", Json::object()));
+        operation.inputs = request.value("inputs", Json::object());
+        operation.position = request.value("position", Json::object());
+        if (!operation.inputs.is_object())
+            throw Error(ErrorCode::InvalidArgument, "Request inputs must be an object");
+        if (!operation.position.is_object())
+            throw Error(ErrorCode::InvalidArgument, "Request position must be an object");
+        for (const auto &existing : workflow.operations)
+            if (existing.id == operation.id)
+                throw Error(ErrorCode::InvalidArgument, "Workflow operation id already exists: " + operation.id);
+        workflow.operations.push_back(std::move(operation));
+        // Incremental graph construction may temporarily contain unconnected
+        // required inputs. validate_workflow remains the explicit validation gate.
+        project.set_workflow(std::move(workflow));
+        return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
     }
-    case ProjectCommand::remove_method: {
-        if (!request.contains("method")) throw Error(ErrorCode::InvalidArgument, "Request requires method");
+    case ProjectCommand::connect_operations: {
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = project.get_workflow();
-        const auto method = request.at("method").get<std::string>();
-        const auto step = std::find_if(workflow.steps.begin(), workflow.steps.end(),
-                                       [&method](const auto &candidate) { return candidate.method == method; });
-        if (step == workflow.steps.end()) throw Error(ErrorCode::InvalidArgument, "Method is not in workflow: " + method);
-        workflow.steps.erase(step);
-        project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow(), registry);
+        workflow.connections.push_back(WorkflowConnection::from_json(request));
+        // Connections and nodes are persisted incrementally; validation is
+        // intentionally deferred until validate_workflow or run_workflow.
+        project.set_workflow(std::move(workflow));
+        return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
     }
+    case ProjectCommand::get_artifact_inventory: {
+        auto inventory = Project::open(detail::options_from_request(request, true)).get_artifact_inventory();
+        for (auto &artifact : inventory) artifact.erase("payload");
+        return inventory;
+    }
+    case ProjectCommand::request_artifact: {
+        auto project = Project::open(detail::options_from_request(request, true));
+        Json result = Json::array();
+        for (const auto &artifact : project.get_artifact_inventory()) {
+            if (request.contains("artifact_id") && artifact.value("artifact_id", "") != request.at("artifact_id").get<std::string>()) continue;
+            if (request.contains("operation") && artifact.value("producer_operation", "") != request.at("operation").get<std::string>()) continue;
+            if (request.contains("operation_instance") && artifact.value("producer_instance", "") != request.at("operation_instance").get<std::string>()) continue;
+            if (request.contains("output_port") && artifact.value("contract_id", "") != request.at("output_port").get<std::string>()) continue;
+            if (request.contains("workflow_revision") && artifact.value("workflow_revision", "") !=
+                    std::to_string(request.at("workflow_revision").get<int>())) continue;
+            auto descriptor = artifact;
+            descriptor.erase("payload");
+            result.push_back(std::move(descriptor));
+        }
+        if (!request.value("include_data", false)) return result;
+        if (result.size() != 1)
+            throw Error(ErrorCode::InvalidArgument,
+                        "include_data requires exactly one artifact selector; provide artifact_id, operation_instance, or output_port");
+        auto artifact = result.front();
+        const auto full_inventory = project.get_artifact_inventory();
+        const auto full_artifact = std::find_if(full_inventory.begin(), full_inventory.end(), [&](const auto &candidate) {
+            return candidate.value("artifact_id", "") == artifact.value("artifact_id", "");
+        });
+        if (full_artifact == full_inventory.end())
+            throw Error(ErrorCode::DatabaseError, "Selected artifact disappeared before data retrieval");
+        artifact = *full_artifact;
+        if (artifact.value("representation", "") == "json") {
+            const auto payload = artifact.value("payload", Json(nullptr));
+            if (payload.is_string()) {
+                try { artifact["data"] = Json::parse(payload.get<std::string>()); }
+                catch (...) { artifact["data"] = payload; }
+            } else artifact["data"] = payload;
+        } else if (artifact.value("representation", "") == "table") {
+            const auto table = artifact.value("physical_table", "");
+            if (table.empty()) throw Error(ErrorCode::DatabaseError, "Table artifact has no physical table");
+            if (!std::all_of(table.begin(), table.end(), [](unsigned char c) {
+                    return std::isalnum(c) || c == '_';
+                })) throw Error(ErrorCode::InvalidArgument, "Invalid physical table identifier");
+            const auto limit = std::clamp(request.value("limit", 1000), 1, 10000);
+            const auto offset = std::max(request.value("offset", 0), 0);
+            artifact["data"] = project.query_json("SELECT * FROM \"" + table + "\" LIMIT " +
+                                                   std::to_string(limit) + " OFFSET " + std::to_string(offset));
+            artifact["row_count"] = project.query_json("SELECT COUNT(*) AS count FROM \"" + table + "\"").at(0).value("count", "0");
+            artifact["limit"] = limit;
+            artifact["offset"] = offset;
+        }
+        return Json::array({std::move(artifact)});
+    }
+    case ProjectCommand::resolve_operation_inputs: {
+        if (!request.contains("operation_id"))
+            throw Error(ErrorCode::InvalidArgument, "Request requires operation_id");
+        auto project = Project::open(detail::options_from_request(request, true));
+        return project.resolve_workflow_inputs(request.at("operation_id").get<std::string>());
+    }
+
     case ProjectCommand::run_workflow: {
         auto project = Project::open(detail::options_from_request(request));
         const Json result = request.contains("worker_id")
             ? project.run_worker(request.at("worker_id").get<std::string>(), registry)
-            : project.run_workflow(registry).to_json();
-        return {{"result", result}, {"workflow", detail::workflow_table(project.get_workflow(), registry)}};
+            : project.run_operation_graph(registry);
+        return {{"result", result}, {"workflow", detail::workflow_table(project.get_workflow())}};
     }
     case ProjectCommand::get_metadata:
         return detail::metadata_table(Project::open(detail::options_from_request(request, true)).get_metadata());

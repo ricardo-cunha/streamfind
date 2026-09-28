@@ -9,6 +9,7 @@
 
 ## C++ Project Rules
 
+- On Windows, build and package the C++ core and native plugins with the MinGW-w64 UCRT64 GCC stack: CMake, Ninja, `C:/msys64/ucrt64/bin/gcc.exe`, and `C:/msys64/ucrt64/bin/g++.exe`. Do not use MSVC, Visual Studio environment initialization, `cl.exe`, or the MSVC linker for StreamFind core/plugin builds or release distributions. Package matching MinGW runtime DLLs under the runtime vendor tree when required.
 - Do not create anonymous namespaces (`namespace {}`) in project C++ code.
 - Use an explicit named internal namespace such as `streamfind::detail` for non-public helpers, or use a file-local `static` function where appropriate.
 - This rule applies to `cpp/` and project-owned C++ code. Do not rewrite third-party or vendored source under `cpp/vendor/`.

@@ -10,9 +10,12 @@ streamfind_add_semantic_catalogue(streamfind_raman_plugin raman
     "${CMAKE_CURRENT_SOURCE_DIR}/semantic")
 target_include_directories(streamfind_raman_plugin PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:sdk/include>
 )
 set_target_properties(streamfind_raman_plugin PROPERTIES OUTPUT_NAME "streamfind_raman")
+if(WIN32)
+    set_target_properties(streamfind_raman_plugin PROPERTIES PREFIX "")
+endif()
 target_include_directories(streamfind_raman_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../core/include")
@@ -28,11 +31,12 @@ add_custom_command(TARGET streamfind_raman_plugin POST_BUILD
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_raman_plugin>/catalogue.duckdb")
 streamfind_validate_plugin_build(streamfind_raman_plugin raman)
+streamfind_stage_mingw_plugin_runtime(streamfind_raman_plugin raman)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
-    DESTINATION share/streamfind/semantic/raman)
+    DESTINATION plugins/raman/ontology)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
-    DESTINATION share/streamfind/plugins/raman)
+    DESTINATION plugins/raman)
 install(TARGETS streamfind_raman_plugin
-    RUNTIME DESTINATION share/streamfind/plugins/raman
-    LIBRARY DESTINATION share/streamfind/plugins/raman
-    ARCHIVE DESTINATION lib)
+    RUNTIME DESTINATION plugins/raman
+    LIBRARY DESTINATION plugins/raman
+    ARCHIVE DESTINATION sdk/lib)

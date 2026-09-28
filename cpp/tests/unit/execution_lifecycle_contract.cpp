@@ -60,6 +60,7 @@ void assert_request(const Json &requests, const char *name,
 }
 
 void run() {
+    OperationRegistry operations;
     const auto multiproject = load_fixture(STREAMFIND_MULTIPROJECT_FIXTURE);
     const auto lifecycle = load_fixture(STREAMFIND_EXECUTION_LIFECYCLE_FIXTURE);
     const auto mcp = load_fixture(STREAMFIND_MCP_EXECUTION_FIXTURE);
@@ -79,7 +80,7 @@ void run() {
         throw std::runtime_error("execution contract: lifecycle state names changed");
     }
     const std::set<std::string> expected_required = {
-        "domain_id", "workflow_revision", "status"};
+        "workflow_revision", "status"};
     if (string_set(lifecycle.at("required_fields")) != expected_required) {
         throw std::runtime_error("execution contract: required field names changed");
     }
@@ -163,7 +164,7 @@ void run() {
     assert_request(mcp.at("requests"), "get", {"database_path"}, {});
     assert_request(mcp.at("requests"), "cancel", {"database_path"}, {});
     if (string_set(mcp.at("result_fields")) !=
-        std::set<std::string>{"domain_id", "workflow_revision",
+        std::set<std::string>{"workflow_revision",
                               "status", "progress", "result_reference", "error"}) {
         throw std::runtime_error("execution contract: result field names changed");
     }
@@ -173,7 +174,7 @@ void run() {
 
     const auto path = streamfind::test::tmp_projects_dir() / "execution-manager.duckdb";
     std::filesystem::remove(path);
-    ProjectOptions options{path.string(), "mass_spec", {}};
+    ProjectOptions options{path.string(), {}};
     auto project = Project::create(options);
     WorkflowExecutionManager manager(project);
     const auto created = manager.create({{"method", "step"}, {"workflow_revision", 1}, {"step_index", 0}});
@@ -205,11 +206,11 @@ void run() {
     }
     const auto other_path = streamfind::test::tmp_projects_dir() / "execution-manager-other.duckdb";
     std::filesystem::remove(other_path);
-    auto other = Project::create({other_path.string(), "mass_spec", {}});
+    auto other = Project::create({other_path.string(), {}});
     WorkflowExecutionManager other_manager(other);
     if (!other_manager.list().empty()) throw std::runtime_error("execution manager leaked rows across projects");
     if (other_manager.create({{"workflow_revision", 1}}).at("status") != "queued") throw std::runtime_error("independent project could not queue execution");
-    if (other.run_worker("other-worker").at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
+    if (other.run_worker("other-worker", operations).at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
     manager.scheduler_tick("worker-a");
     project.close();
     auto reopened = Project::open(options);

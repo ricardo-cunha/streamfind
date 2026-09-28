@@ -14,8 +14,7 @@ STREAMFIND_DOMAIN_API std::string streamfind_home();
 /// `<home>/tools`.
 STREAMFIND_DOMAIN_API std::string tools_dir();
 
-/// Locates `java`/`java.exe`: PATH -> `JAVA_HOME/bin` ->
-/// `<tools>/java/jdk-*/bin` (R rule: PATH first).
+/// Locates the managed `java`/`java.exe` under `<tools>/java/jdk-*`.
 STREAMFIND_DOMAIN_API std::optional<std::string> resolve_java();
 
 /// Locates the MetFrag command-line jar: `<tools>/metfrag/MetFragCL.jar`.

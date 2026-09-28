@@ -1,18 +1,17 @@
 # Availability and compatibility
 
-streamfind currently offers an active native C++ preview release, a preserved
-Rust preview backend, and the preserved R package. Choose the interface that
-matches your application.
+streamfind currently offers a native C++ preview release. The Rust backend is
+stale development code and the R package is a legacy interface.
 
 ## Available interfaces
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
 | C++ backend | Version {{ streamfind_version }} project version; latest package is v0.1.0 for Windows x64 and Linux x86_64 | Native C++ applications and MCP clients |
-| Rust backend | Preserved preview backend; development currently paused | Existing Rust applications, CLI use, and compatibility work |
+| Rust backend | Stale development backend | Existing Rust applications and compatibility work |
 | C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
-| Rust MCP server | Included in the Rust packages | Applications or agents using the Rust implementation |
-| R package | Preserved and functional | Existing R and Shiny workflows |
+| Rust MCP server | Preserved with the stale Rust backend | Existing Rust experiments only |
+| R package | Legacy interface | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path currently |
 | Cogniflow integration | Separate future path | Not part of the native packages |
 | React frontend | Future interface using the C++ backend | Not released |
@@ -25,7 +24,7 @@ The current native packages include:
 
 - DuckDB-backed project creation, inspection, metadata, workflow, cache, and
   audit operations;
-- catalogue-backed MCP Operations and workflow Method schemas;
+- catalogue-backed MCP Operations and operation-graph schemas;
 - mass-spectrometry analysis management and metadata/query operations;
 - raw and persisted spectrum and chromatogram access;
 - native mzML and vendor-container reader implementations;
@@ -38,20 +37,21 @@ format merely because a reader exists in the catalogue.
 
 ## MCP usage model
 
-Both native servers use JSON-RPC over standard input/output.
+The native C++ server uses JSON-RPC over standard input/output.
 
 - `initialize` provides usage instructions.
 - `tools/list` exposes callable Operations, including domain Operations, without
   requiring a connected project.
-- Domain Operations require `database_path` and `project_id` in each request.
-- `get_available_methods` returns workflow Methods and their complete input
-  schemas.
-- `connect` opens an existing project for workflow execution; it does not
-  create a project.
-- `close` ends the connected workflow session.
+- Domain Operations require `database_path` in each request; additional
+  parameters are operation-specific.
+- `get_operations` and `get_operation` expose operation schemas and typed ports.
+- `add_operation` persists operation nodes and their JSON parameters.
+- `connect_operations` persists typed output-to-input connections.
+- `validate_workflow` checks the complete graph before execution.
+- `run_workflow` executes the graph and publishes artifacts.
 
-The [C++ MCP quickstart](quickstart/cpp-mcp.md) and
-[Rust MCP quickstart](quickstart/rust-mcp.md) provide complete request flows.
+The [C++ MCP quickstart](quickstart/cpp-mcp.md) provides the current request
+flow. The Rust quickstart is retained only for stale backend development.
 
 ## Compatibility scope
 

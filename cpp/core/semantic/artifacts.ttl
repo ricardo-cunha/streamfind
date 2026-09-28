@@ -1,0 +1,135 @@
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfvis: <https://streamfind.dev/catalogue/visualization#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfcore:projectTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project table" ;
+    skos:definition "Generic project identity, metadata, workflow, and framework state." ;
+    sf:tableName "PROJECT" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfcore:projectMetadataColumn,
+        sfcore:projectWorkflowColumn,
+        sfcore:createdAtColumn,
+        sfcore:schemaVersionColumn,
+        sfcore:frameworkVersionColumn .
+
+sfcore:cacheTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache table" ;
+    skos:definition "Cached workflow results owned by a project." ;
+    sf:tableName "CACHE" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfcore:cacheNameColumn,
+        sfcore:cacheDescriptionColumn,
+        sfcore:cacheHashColumn,
+        sfcore:cacheDataColumn,
+        sfcore:createdAtColumn .
+
+sfcore:auditTrailTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Audit trail table" ;
+    skos:definition "Persisted project and workflow operation audit events." ;
+    sf:tableName "AUDIT_TRAIL" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfcore:operationTypeColumn,
+        sfcore:objectTypeColumn,
+        sfcore:operationDetailsColumn,
+        sfcore:createdAtColumn .
+
+sfcore:workflowExecutionTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution table" ;
+    skos:definition "Singleton persisted lifecycle state for the current workflow execution." ;
+    sf:tableName "WORKFLOW_EXECUTION" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfcore:workflowRevisionColumn,
+        sfcore:launchSnapshotColumn,
+        sfcore:executionStatusColumn,
+        sfcore:executionProgressColumn,
+        sfcore:resultReferenceColumn,
+        sfcore:processIdColumn,
+        sfcore:serverIdColumn,
+        sfcore:startedAtColumn,
+        sfcore:completedAtColumn,
+        sfcore:executionErrorColumn,
+        sfcore:createdAtColumn,
+        sfcore:updatedAtColumn .
+
+sfcore:workflowExecutionStepTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution step table" ;
+    skos:definition "Durable child records for the latest workflow execution, including method state, cache identity, progress, and lifecycle timestamps." ;
+    sf:tableName "WORKFLOW_EXECUTION_STEP" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfcore:workflowRevisionColumn,
+        sfcore:stepIndexColumn,
+        sfcore:executionOperationColumn,
+        sfcore:executionParametersColumn,
+        sfcore:parameterHashColumn,
+        sfcore:cacheKeyColumn,
+        sfcore:executionStatusColumn,
+        sfcore:executionProgressColumn,
+        sfcore:resultReferenceColumn,
+        sfcore:stepErrorCodeColumn,
+        sfcore:stepErrorMessageColumn,
+        sfcore:startedAtColumn,
+        sfcore:completedAtColumn,
+        sfcore:updatedAtColumn .
+
+sfcore:operationSuccessSignal
+    a sf:OperationResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation success signal" ;
+    skos:definition "Boolean result emitted for every operation to indicate whether it completed successfully." ;
+    sf:type "boolean" .
+
+sfcore:operationStatusResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Operation status" ;
+    skos:definition "Whether an operation completed as requested and an informational message about the outcome." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:statusField,
+        sfcore:infoField .
+
+sfcore:selectedPathsResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected files and folders" ;
+    skos:definition "The selected paths in their original order." ;
+    sf:type "array" ;
+    sf:items sfcore:filePathColumn .
+
+sfcore:visualizationSpecResult
+    a sfvis:VisualizationSpec ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Visualization specification" ;
+    skos:definition "A bounded, versioned visualization envelope consumed by the generic StreamFind visualization runtime." ;
+    sf:type "object" .
+

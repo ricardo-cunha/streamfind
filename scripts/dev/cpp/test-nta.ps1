@@ -173,17 +173,66 @@ function Invoke-NtaMethodWithDiagnostics {
 function Assert-NtaWorkflowResults {
     param([Parameter(Mandatory = $true)]$BaseArguments)
 
-    $python = if (-not $isWindowsPlatform -and (Test-Path (Join-Path $repoRoot '.venv/bin/python'))) {
-                (Join-Path $repoRoot '.venv/bin/python')
-    } elseif (Test-Path (Join-Path $repoRoot '.venv\Scripts\python.exe')) {
-        (Join-Path $repoRoot '.venv\Scripts\python.exe')
-    } elseif (Test-Path         (Join-Path $repoRoot '.venv/bin/python')) {
-                (Join-Path $repoRoot '.venv/bin/python')
+    $queryArguments = @{}
+    foreach ($entry in $BaseArguments.GetEnumerator()) { $queryArguments[$entry.Key] = $entry.Value }
+    $queryArguments.analysis_names = $analysisNames
+    $analysesArguments = @{}
+    foreach ($entry in $BaseArguments.GetEnumerator()) { $analysesArguments[$entry.Key] = $entry.Value }
+    $analyses = Invoke-McpTool $process 900 'mass_spec.get_analyses' $analysesArguments
+    $analysisCount = if ($analyses.PSObject.Properties.Name -contains 'row_count') {
+        [int]$analyses.row_count
     } else {
-        throw 'Repository-local Python environment not found; create .venv and install duckdb.'
+        @($analyses).Count
     }
-    & $python (Join-Path $repoRoot 'scripts\dev\cpp\verify-nta-project.py') $database --expected-analyses $analysisNames.Count --min-similarity 0.7
-    if ($LASTEXITCODE -ne 0) { throw "Persisted NTA verification failed ($LASTEXITCODE)" }
+    $featureCount = 0
+    $ms2Count = 0
+    $suspectRows = [System.Collections.Generic.List[object]]::new()
+    $featureQueryId = 901
+    foreach ($analysisName in $analysisNames) {
+        $featureArguments = @{}
+        foreach ($entry in $BaseArguments.GetEnumerator()) { $featureArguments[$entry.Key] = $entry.Value }
+        $featureArguments.analysis_names = @($analysisName)
+        $features = Invoke-McpTool $process $featureQueryId 'mass_spec.get_features' $featureArguments
+        if ($features.PSObject.Properties.Name -contains 'row_count') {
+            $featureCount += [int]$features.row_count
+            $ms2Count += @($features.columns.ms2_size | Where-Object { $_ -gt 0 }).Count
+        } else {
+            $featureRows = @($features)
+            $featureCount += $featureRows.Count
+            $ms2Count += @($featureRows | Where-Object { $_.ms2_size -gt 0 }).Count
+        }
+        $featureQueryId++
+        $suspectArguments = @{}
+        foreach ($entry in $BaseArguments.GetEnumerator()) { $suspectArguments[$entry.Key] = $entry.Value }
+        $suspectArguments.analysis_names = @($analysisName)
+        $suspects = Invoke-McpTool $process ($featureQueryId + 100) 'mass_spec.get_suspects' $suspectArguments
+        if ($suspects.PSObject.Properties.Name -contains 'row_count') {
+            foreach ($rowIndex in 0..([int]$suspects.row_count - 1)) {
+                $suspectRows.Add([pscustomobject]@{
+                    shared_fragments = $suspects.columns.shared_fragments[$rowIndex]
+                    cosine_similarity = $suspects.columns.cosine_similarity[$rowIndex]
+                })
+            }
+        } else {
+            foreach ($row in @($suspects)) {
+                $suspectRows.Add([pscustomobject]@{
+                    shared_fragments = $row.shared_fragments
+                    cosine_similarity = $row.cosine_similarity
+                })
+            }
+        }
+    }
+    $suspectCount = $suspectRows.Count
+    $sharedCount = @($suspectRows | Where-Object { $_.shared_fragments -gt 0 }).Count
+    $similarCount = @($suspectRows | Where-Object { $_.cosine_similarity -ge 0.7 }).Count
+    if ($analysisCount -ne $analysisNames.Count) { throw "NTA verification failed: analyses=$analysisCount, expected $($analysisNames.Count)" }
+    if ($featureCount -lt 1 -or $ms2Count -lt 1 -or $suspectCount -lt 1 -or $sharedCount -lt 1 -or $similarCount -lt 1) {
+        throw "NTA verification failed: features=$featureCount; features_with_ms2=$ms2Count; suspects=$suspectCount; suspects_with_shared_fragments=$sharedCount; suspects_similarity_ge_0.7=$similarCount"
+    }
+    $similarities = @($suspectRows.cosine_similarity | Where-Object { $null -ne $_ })
+    $minimumSimilarity = ($similarities | Measure-Object -Minimum).Minimum
+    $maximumSimilarity = ($similarities | Measure-Object -Maximum).Maximum
+    Write-Host "NTA verification passed: analyses=$analysisCount; features=$featureCount; features_with_ms2=$ms2Count; suspects=$suspectCount; suspects_with_shared_fragments=$sharedCount; suspects_similarity_ge_0.7=$similarCount; similarity_range=($minimumSimilarity, $maximumSimilarity)"
 
     Write-Host '[verify] persisted NTA result checks passed'
 }
@@ -238,7 +287,7 @@ try {
     if ($RunPipeline) {
         $steps = [System.Collections.Generic.List[object]]::new()
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.find_features'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; rt_windows_min = @(); rt_windows_max = @(); ppm_threshold = 10.0; noise_threshold = 250.0; min_snr = 3.0; min_traces = 3; baseline_window = 200.0; max_feature_width = 250.0; base_quantile = 0.99
+            rt_windows_min = @(); rt_windows_max = @(); ppm_threshold = 10.0; noise_threshold = 250.0; min_snr = 3.0; min_traces = 3; baseline_window = 200.0; max_feature_width = 250.0; base_quantile = 0.99
         } })
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.load_features_ms1'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
             analysis_names = $analysisNames; filtered = $false; rt_window = @(-1.0, 1.0); mz_window = @(-1.0, 6.0); min_traces_intensity = 250.0; mz_clust = 0.008; presence = 0.5
@@ -271,7 +320,7 @@ try {
             analysis_names = $analysisNames; min_intensity = 10000.0; remove_isotopes = $true; remove_adducts = $true; remove_losses = $true
         } })
         $steps.Add([pscustomobject]@{ Method = 'mass_spec.suspect_screening'; DiagnosticTool = 'mass_spec.get_suspects'; Parameters = @{
-            analysis_names = $analysisNames; targets = $suspectTargets; ppm = 5.0; sec = 10.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
+            analysis_names = $analysisNames; suspect_targets = $suspectTargets; ppm = 5.0; sec = 10.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
         } })
         $workflow = [ordered]@{
             name = 'scripts-dev-nta'

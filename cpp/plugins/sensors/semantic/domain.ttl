@@ -7,4 +7,4 @@ sfsensors:sensors
     a sf:Domain ;
     skos:prefLabel "sensors" ;
     skos:definition "Sensor data project domain." ;
-    sf:guidance "Sensor workflow: create or describe the project, connect when using workflow methods, then discover methods with get_available_methods(domain=sensors)." .
+    sf:guidance "Sensor workflow: create or describe the project, discover canonical operations with get_operations(domain=sensors), add configured operation nodes, connect typed ports, validate the graph, and run_workflow." .

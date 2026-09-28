@@ -28,12 +28,14 @@ int main() {
                 streamfind::Json{{"name", "created"}, {"type", "timestamp"}},
                 streamfind::Json{{"name", "amount"}, {"type", "decimal"}},
                 streamfind::Json{{"name", "payload"}, {"type", "binary"}},
+                streamfind::Json{{"name", "tags"}, {"type", "array"}},
+                streamfind::Json{{"name", "metadata"}, {"type", "object"}},
             })}}})}
     });
 
     streamfind::ProjectOptions options;
     options.database_path = path;
-    options.domain = "test";
+
     auto project = streamfind::Project::create(options);
     streamfind::ProjectTableStore::install_manifest_schema(project, "test", "test.module");
 
@@ -48,19 +50,24 @@ int main() {
     streamfind::ProjectTableStore::transaction(project, {"DYNAMIC_SCHEMA_TABLE"},
         [](streamfind::ProjectTableStore &tables) {
             tables.append("DYNAMIC_SCHEMA_TABLE",
-                          {"name", "count", "ratio", "created", "amount", "payload"},
+                          {"name", "count", "ratio", "created", "amount", "payload", "tags", "metadata"},
                           {{std::string("native"), std::string("7"), std::string("1.25"),
                             std::string("2026-09-12 19:45:01.123456"), std::string("123456789012345.678"),
-                            std::string({'A', '\0', 'B'})},
+                            std::string({'A', '\0', 'B'}), std::string("[\"a\",\"b\"]"),
+                            std::string("{\"source\":\"native\",\"ok\":true}")},
                            {std::string("nullable"), std::string("8"), std::string("2.5"),
-                            std::nullopt, std::nullopt, std::nullopt}});
+                            std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt}});
         });
     const auto values = project.query_json(
         "SELECT name, CAST(created AS VARCHAR) AS created, CAST(amount AS VARCHAR) AS amount, "
-        "octet_length(payload) AS payload_size, hex(payload) AS payload_hex FROM DYNAMIC_SCHEMA_TABLE ORDER BY count");
+        "octet_length(payload) AS payload_size, hex(payload) AS payload_hex, CAST(tags AS VARCHAR) AS tags, "
+        "CAST(metadata AS VARCHAR) AS metadata "
+        "FROM DYNAMIC_SCHEMA_TABLE ORDER BY count");
     if (values.size() != 2 || values.at(0).value("created", "") != "2026-09-12 19:45:01.123456" ||
         values.at(0).value("amount", "") != "123456789012345.678" ||
-        values.at(0).value("payload_size", "") != "3" || values.at(0).value("payload_hex", "") != "410042")
+        values.at(0).value("payload_size", "") != "3" || values.at(0).value("payload_hex", "") != "410042" ||
+        values.at(0).value("tags", "") != "[\"a\",\"b\"]" ||
+        values.at(0).value("metadata", "") != "{\"source\":\"native\",\"ok\":true}")
         throw std::runtime_error("native timestamp, decimal, or blob append failed");
     return 0;
     } catch (const std::exception &error) {

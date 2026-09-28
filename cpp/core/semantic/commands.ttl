@@ -1,0 +1,498 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfcore:create
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "create" ;
+    skos:prefLabel "Create a project" ;
+    skos:definition "Create a new persisted DuckDB project without assigning a project-level domain. This is the normal first project-management operation; after it succeeds, call describe to inspect the created project." ;
+    sf:category "project-management" ;
+    sf:guidance "Use create once for a new database. Then use describe to inspect it. Do not call create to open an existing project; use describe or connect instead." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:projectDescriptorResult ;
+    sf:mutatesProject true .
+
+sfcore:describe
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "describe" ;
+    skos:prefLabel "Describe a project" ;
+    skos:definition "Inspect a persisted project's identity, derived domains, metadata, workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work." ;
+    sf:category "project-management" ;
+    sf:guidance "Call describe with the same database_path used by create. If the project does not exist, do not guess metadata; create it or correct the path." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:projectDescriptorResult ;
+    sf:mutatesProject false .
+
+sfcore:validate
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "validate" ;
+    skos:prefLabel "Validate a project" ;
+    skos:definition "Validate a project's schema and persisted state." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:validationResult ;
+    sf:mutatesProject false .
+
+sfcore:getDomains
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_project_domains" ;
+    skos:prefLabel "Read project domains" ;
+    skos:definition "Read the domains represented by operations in the persisted project workflow." ;
+    sf:category "project-management" ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:domainsResult ;
+    sf:mutatesProject false .
+
+sfcore:getMetadata
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_metadata" ;
+    skos:prefLabel "Read project metadata" ;
+    skos:definition "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set." ;
+    sf:category "project-management" ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:metadataResult ;
+    sf:mutatesProject false .
+
+sfcore:setMetadata
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "set_metadata" ;
+    skos:prefLabel "Set project metadata" ;
+    skos:definition "Replace the user-defined metadata stored for a project. This changes metadata only and does not change persisted workflow operations or analyses." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:metadataParameter ;
+    sf:returns sfcore:metadataResult ;
+    sf:mutatesProject true .
+
+sfcore:getWorkflow
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_workflow" ;
+    skos:prefLabel "Read the project workflow" ;
+    skos:definition "Return the persisted operation graph, including configured operation instances and explicit typed-port connections." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowResult ;
+    sf:mutatesProject false .
+
+sfcore:getWorkflowExecution
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_workflow_execution" ;
+    skos:prefLabel "Read workflow execution" ;
+    skos:definition "Return execution status, hashes, timestamps, errors, and cache keys for the project's persisted operation executions." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowExecutionEntriesResult ;
+    sf:mutatesProject false .
+
+sfcore:createWorkflowExecution
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "create_workflow_execution" ;
+    skos:prefLabel "Create workflow execution" ;
+    skos:definition "Create a durable queued workflow execution record for the selected project." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowExecutionResult ;
+    sf:mutatesProject true .
+
+sfcore:getExecution
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_execution" ;
+    skos:prefLabel "Get workflow execution" ;
+    skos:definition "Read one durable workflow execution by identifier." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowExecutionResult ;
+    sf:mutatesProject false .
+
+sfcore:listExecutions
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "list_executions" ;
+    skos:prefLabel "List workflow executions" ;
+    skos:definition "List durable workflow executions scoped to the selected project." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowExecutionEntriesResult ;
+    sf:mutatesProject false .
+
+sfcore:transitionExecution
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "transition_execution" ;
+    skos:prefLabel "Transition workflow execution" ;
+    skos:definition "Advance one workflow execution through a valid lifecycle transition." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowExecutionResult ;
+    sf:mutatesProject true .
+
+sfcore:cancelExecution
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "cancel_execution" ;
+    skos:prefLabel "Cancel workflow execution" ;
+    skos:definition "Cancel a queued execution or request cancellation of a running execution." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:workflowExecutionResult ;
+    sf:mutatesProject true .
+
+sfcore:setWorkflow
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "set_workflow" ;
+    skos:prefLabel "Set the project workflow" ;
+    skos:definition "Validate and replace a project's ordered workflow. Operation identifiers, dependency ordering, semantic connections, and parameters are checked before persistence." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:workflowParameter ;
+    sf:returns sfcore:workflowResult ;
+    sf:mutatesProject true .
+
+
+sfcore:validateWorkflow
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "validate_workflow" ;
+    skos:prefLabel "Validate a workflow" ;
+    skos:definition "Validate workflow operation identifiers, ordering dependencies, semantic connections, occurrence rules, and parameter values without executing the workflow." ;
+    sf:category "workflow-planning" ;
+    sf:guidance "Use after assembling a workflow and before run_workflow. Fix the returned validation message before executing." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:workflowParameter ;
+    sf:returns sfcore:validationResult ;
+    sf:mutatesProject false .
+
+sfcore:runWorkflow
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "run_workflow" ;
+    skos:prefLabel "Run the project workflow" ;
+    skos:definition "Execute the persisted workflow for a project in order, using each operation's domain/module implementation and cached results where valid." ;
+    sf:category "workflow-execution" ;
+    sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Inspect get_artifact_inventory and structured results after execution." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:workerIdParameter ;
+    sf:returns sfcore:workflowExecutionResult ;
+    sf:mutatesProject true .
+
+sfcore:getCache
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_cache" ;
+    skos:prefLabel "Read project cache" ;
+    skos:definition "Return cache entries stored for a project." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:cacheEntriesResult ;
+    sf:mutatesProject false .
+
+sfcore:getCacheSize
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_cache_size" ;
+    skos:prefLabel "Read project cache size" ;
+    skos:definition "Return the number of cache entries stored for a project." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:cacheSizeResult ;
+    sf:mutatesProject false .
+
+sfcore:deleteCache
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "delete_cache" ;
+    skos:prefLabel "Delete project cache" ;
+    skos:definition "Delete all cache entries stored for a project." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:apiCommandStatusResult ;
+    sf:mutatesProject true .
+
+sfcore:getAuditTrail
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_audit_trail" ;
+    skos:prefLabel "Read project audit events" ;
+    skos:definition "Return audit events recorded for a project." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:auditEntriesResult ;
+    sf:mutatesProject false .
+
+
+sfcore:copy
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "copy" ;
+    skos:prefLabel "Copy a project" ;
+    skos:definition "Copy a complete persisted project, including metadata, workflow, analyses, cached tables, and audit information, to a destination database." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:destinationDatabasePathParameter ;
+    sf:returns sfcore:projectDescriptorResult ;
+    sf:mutatesProject true .
+
+sfcore:close
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "close" ;
+    skos:prefLabel "Close a project handle" ;
+    skos:definition "Close a project handle. Operation-graph MCP calls remain stateless and carry database_path explicitly." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:apiCommandStatusResult ;
+    sf:mutatesProject false .
+
+sfcore:connect
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "connect" ;
+    skos:prefLabel "Connect an MCP session to a project" ;
+    skos:definition "Open an existing project handle. The operation-graph MCP workflow does not require a connected session because every project call carries database_path." ;
+    sf:category "session-management" ;
+    sf:guidance "Do not call this for the stateless operation-graph workflow; use database_path on create, add_operation, connect_operations, validate_workflow, and run_workflow instead." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:returns sfcore:apiCommandStatusResult ;
+    sf:mutatesProject false .
+
+sfcore:addOperation
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "add_operation" ;
+    skos:prefLabel "Add an operation to the workflow" ;
+    skos:definition "Add a uniquely identified workflow operation with its parameters to the backend operation graph." ;
+    sf:category "workflow-construction" ;
+    sf:guidance "Use one unique operation_id per node instance. The operation value must be a canonical ontology operation id from tools/list, such as mass_spec.find_features. Parameters belong to this node instance; input artifacts are supplied only through explicit port connections." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:operationIdParameter,
+        sfcore:operationParameter,
+        sfcore:parametersParameter ;
+    sf:mutatesProject true .
+
+sfcore:connectOperations
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "connect_operations" ;
+    skos:prefLabel "Connect workflow operation ports" ;
+    skos:definition "Create an explicit typed-port connection from one workflow operation output to another operation input." ;
+    sf:category "workflow-construction" ;
+    sf:guidance "Connect a declared output port to a compatible declared input port or parameter. Use the exact operation instance ids and semantic port ids from the operation definitions. For dynamic parameter binding, set target_port to parameter:<parameter_name>; the published output payload is merged into that parameter before validation and execution. A target port accepts at most one connection; use validate_workflow before execution." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:sourceOperationParameter,
+        sfcore:sourcePortParameter,
+        sfcore:targetOperationParameter,
+        sfcore:targetPortParameter ;
+    sf:mutatesProject true .
+
+sfcore:getArtifactInventory
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_artifact_inventory" ;
+    skos:prefLabel "Read the artifact inventory" ;
+    skos:definition "Return immutable table and structured-result artifacts published by workflow operations." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Use after run_workflow to verify that declared outputs are published. Match artifacts by contract_id, producer_instance, producer_operation, workflow_revision, and status; do not infer availability from the textual run response." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:mutatesProject false .
+
+sfcore:requestArtifact
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "request_artifact" ;
+    skos:prefLabel "Request an operation output artifact" ;
+    skos:definition "Find a published artifact by operation output contract or artifact identifier for AI and application consumers." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Call without include_data to discover matching published outputs. Then select exactly one with artifact_id, operation_instance plus output_port, or another unique filter and set include_data true. JSON artifacts return their payload; table artifacts return bounded rows using limit and offset." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:outputPortParameter,
+        sfcore:artifactIdParameter,
+        sfcore:operationInstanceParameter,
+        sfcore:includeDataParameter,
+        sfcore:artifactLimitParameter,
+        sfcore:artifactOffsetParameter ;
+    sf:mutatesProject false .
+
+sfcore:resolveOperationInputs
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "resolve_operation_inputs" ;
+    skos:prefLabel "Resolve operation input artifacts" ;
+    skos:definition "Resolve each explicit workflow connection for an operation to the published immutable input artifact and physical table." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Use before executing or diagnosing a downstream node to confirm that every explicit connection resolves to a current published artifact from the expected producer instance." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:operationIdParameter ;
+    sf:mutatesProject false .
+
+sfcore:projectDescriptorResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project descriptor" ;
+    skos:definition "Project identity, derived domains, metadata, workflow, table list, and cache summary." ;
+    sf:type "table" ;
+    sf:hasProperty
+        sfcore:projectMetadataColumn,
+        sfcore:schemaVersionColumn,
+        sfcore:frameworkVersionColumn,
+        sfcore:createdAtColumn,
+        sfcore:projectWorkflowColumn .
+
+sfcore:validationResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Validation result" ;
+    skos:definition "Whether validation succeeded and an explanatory message." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:validField,
+        sfcore:infoField .
+
+sfcore:domainsResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project domains result" ;
+    skos:definition "The domains represented by persisted workflow operations." ;
+    sf:type "array" ;
+    sf:items sfcore:domainField .
+
+sfcore:metadataResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project metadata result" ;
+    skos:definition "The project metadata JSON object." ;
+    sf:type "table" ;
+    sf:hasProperty sfcore:projectMetadataColumn .
+
+sfcore:workflowResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow result" ;
+    skos:definition "The persisted operation graph with configured nodes and typed-port connections." ;
+    sf:type "object" .
+
+sfcore:cacheEntriesResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache entries result" ;
+    skos:definition "The project's cache entries." ;
+    sf:type "array" ;
+    sf:items sfcore:cacheEntryResult .
+
+sfcore:cacheEntryResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache entry" ;
+    skos:definition "One cached workflow result entry." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:cacheNameColumn,
+        sfcore:cacheDescriptionColumn,
+        sfcore:cacheHashColumn,
+        sfcore:createdAtColumn .
+
+sfcore:cacheSizeResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache size result" ;
+    skos:definition "The number of cache entries." ;
+    sf:type "integer" .
+
+sfcore:auditEntriesResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Audit trail result" ;
+    skos:definition "The project's ordered audit events." ;
+    sf:type "array" ;
+    sf:items sfcore:auditEntryResult .
+
+sfcore:auditEntryResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Audit entry" ;
+    skos:definition "One persisted project audit event." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:operationTypeColumn,
+        sfcore:objectTypeColumn,
+        sfcore:operationDetailsColumn,
+        sfcore:createdAtColumn .
+
+
+sfcore:workflowExecutionResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution result" ;
+    skos:definition "Workflow results, cancellation state, and the persisted workflow." ;
+    sf:type "object" .
+
+sfcore:workflowExecutionEntriesResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution entries" ;
+    skos:definition "Execution status for persisted operation executions." ;
+    sf:type "table" ;
+    sf:hasProperty
+        sfcore:workflowRevisionColumn,
+        sfcore:stepIndexColumn,
+        sfcore:executionOperationColumn,
+        sfcore:parameterHashColumn,
+        sfcore:executionStatusColumn,
+        sfcore:startedAtColumn,
+        sfcore:completedAtColumn,
+        sfcore:executionErrorColumn,
+        sfcore:cacheKeyColumn .
+
+sfcore:apiCommandStatusResult
+    a sf:ApiCommandResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "API command status" ;
+    skos:definition "Control-plane status response returned by a project-management API command." ;
+    sf:type "object" ;
+    sf:hasProperty
+        sfcore:statusField,
+        sfcore:infoField,
+        sfcore:updatedField .

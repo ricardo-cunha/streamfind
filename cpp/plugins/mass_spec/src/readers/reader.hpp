@@ -251,7 +251,7 @@ namespace mass_spec
       int analysis_index = 0;
       int source_analysis_number = 0;
       std::string name;
-      int analysis_count = 1;
+
     };
 
     struct MASS_SPEC_CHROMATOGRAMS_HEADERS

@@ -5,6 +5,7 @@
 #include <memory>
 #include <utility>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "streamfind/export.hpp"
@@ -58,6 +59,24 @@ public:
     void append(const std::string &table_name,
                 const std::vector<std::string> &column_names,
                 const std::vector<std::vector<std::optional<std::string>>> &rows) const;
+    /** @brief Allocate a new immutable DuckDB table artifact in this transaction. */
+    std::pair<std::string, std::string> allocate_table_artifact(
+        const std::string &contract_id,
+        const std::string &producer_operation,
+        const std::string &producer_instance,
+        int workflow_revision,
+        const Json &columns) const;
+    /** @brief Publish a structured JSON result artifact in this transaction. */
+    std::string publish_result_artifact(
+        const std::string &contract_id,
+        const std::string &payload,
+        const std::string &producer_operation,
+        const std::string &producer_instance,
+        int workflow_revision) const;
+    /** @brief Record immutable lineage from resolved input artifacts to an output artifact. */
+    void append_artifact_lineage(
+        const std::string &artifact_id,
+        const std::vector<std::tuple<std::string, std::string, std::string>> &inputs) const;
 
 private:
     explicit ProjectTableStore(Project &project, std::vector<std::string> owned_tables);

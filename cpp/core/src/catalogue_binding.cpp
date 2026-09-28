@@ -48,8 +48,10 @@ MethodDefinition method_definition(const Json &entry) {
     definition.description = entry.value("definition", entry.value("label", ""));
     definition.domain = entry.value("domain", "");
     definition.cacheable = entry.value("cacheable", false);
+    definition.reads = entry.value("effects", Json::object()).value("reads", std::vector<std::string>{});
     definition.writes = entry.value("effects", Json::object()).value("writes", std::vector<std::string>{});
-    definition.required_methods = entry.value("required_methods", std::vector<std::string>{});
+    for (const auto &item : entry.value("effects", Json::object()).value("conditional_reads", Json::array()))
+        definition.conditional_reads.push_back({item.at("table").get<std::string>(), item.at("parameter").get<std::string>(), item.value("equals", Json())});
     definition.single_occurrence = entry.value("single_occurrence", false);
     definition.parameters = parameter_schema(entry);
     return definition;
@@ -61,7 +63,21 @@ OperationDefinition operation_definition(const Json &entry) {
     definition.name = entry.value("label", definition.id);
     definition.description = entry.value("definition", entry.value("label", ""));
     definition.domain = entry.value("domain", "");
+    definition.version = entry.value("operation_version", "1");
+    definition.project_entry = entry.value("project_entry", false);
+    definition.cacheable = entry.value("cacheable", false);
     definition.parameters = parameter_schema(entry);
+    for (const auto &port : entry.value("input_ports", Json::array()))
+        definition.input_ports.push_back(OperationDefinition::Port::from_json(port));
+    for (const auto &port : entry.value("output_ports", Json::array()))
+        definition.output_ports.push_back(OperationDefinition::Port::from_json(port));
+    bool has_success_signal = false;
+    for (const auto &port : definition.output_ports)
+        has_success_signal = has_success_signal || port.id == "operationSuccessSignal";
+    if (!has_success_signal)
+        throw std::invalid_argument("catalogue: operation is missing operationSuccessSignal: " + definition.id);
+    if (definition.project_entry && !definition.input_ports.empty())
+        throw std::invalid_argument("catalogue: project-entry operation has input ports: " + definition.id);
     return definition;
 }
 
@@ -117,8 +133,11 @@ void register_module(const DomainModuleBinding &module,
                 entry.value("module_id", "") == module.module_id) {
                 const auto result_schema = entry.value("result", Json::object()).value("schema", Json::object());
                 const auto executor = binding.executor;
-                auto shaped_executor = [executor, result_schema](Project &project, const Json &parameters) {
-                    return shape_table_result(executor(project, parameters), result_schema);
+                auto shaped_executor = [executor, result_schema](
+                    Project &project, const Json &parameters,
+                    const std::string &operation_instance, const Json &inputs) {
+                    return shape_table_result(
+                        executor(project, parameters, operation_instance, inputs), result_schema);
                 };
                 operation_registry.register_operation(
                     Operation(operation_definition(entry), std::move(shaped_executor), binding.validator));

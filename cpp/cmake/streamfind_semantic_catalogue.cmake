@@ -75,6 +75,19 @@ function(streamfind_add_semantic_catalogue target domain semantic_dir)
     )
     add_custom_target(${target}_catalogue ALL
         DEPENDS "${output_json}" "${output_matrix}" "${output_db}")
+
+    # The running service loads the plugin catalogue beside the plugin DLL.
+    # POST_BUILD copies are insufficient when only the semantic catalogue
+    # changes, because the plugin binary itself then remains up to date.
+    set(staged_db "${CMAKE_CURRENT_BINARY_DIR}/catalogue.duckdb")
+    add_custom_command(
+        OUTPUT "${staged_db}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${output_db}" "${staged_db}"
+        DEPENDS "${output_db}"
+        VERBATIM
+    )
+    add_custom_target(${target}_catalogue_stage DEPENDS "${staged_db}")
+    add_dependencies(${target} ${target}_catalogue_stage)
     add_dependencies(${target} ${target}_catalogue)
-    install(FILES "${output_db}" DESTINATION "share/streamfind/plugins/${domain}")
+    install(FILES "${output_db}" DESTINATION "plugins/${domain}")
 endfunction()

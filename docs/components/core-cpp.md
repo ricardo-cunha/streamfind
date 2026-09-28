@@ -22,10 +22,9 @@ The catalogue is required by the MCP server and must remain with the package.
 ## Plugin framework
 
 The C++ host owns project persistence, DuckDB connections, transactions, schema
-lifecycle, workflow execution, validation, cache, and audit state. The SDK
-defines the generic versioned plugin ABI and host callbacks. Domain plugins own
-their catalogues, schemas, native readers, algorithms, Operations, and workflow
-Methods.
+lifecycle, operation-graph execution, validation, cache, and audit state. The
+SDK defines the generic versioned plugin ABI and host callbacks. Domain plugins
+own their catalogues, schemas, native readers, algorithms, and Operations.
 
 Dynamic plugins receive an opaque transaction-scoped host access context. They do
 not receive `streamfind::Project` or DuckDB handles, and they do not create
@@ -51,7 +50,7 @@ create, describe, validate
 get_metadata, set_metadata
 get_domain
 get_workflow, set_workflow, validate_workflow, run_workflow
-get_methods, run_method
+get_operations, get_operation, add_operation, connect_operations
 get_cache, get_cache_size, delete_cache
 get_audit_trail
 copy, close
@@ -62,9 +61,8 @@ Domains are assigned when a project is created and are immutable afterward.
 ## MCP
 
 The [C++ MCP quickstart](../quickstart/cpp-mcp.md) documents the stdio server
-and the stateless Operation/workflow Method distinction.
+and the persisted operation-graph workflow.
 
-The Rust MCP server is a preserved implementation of the same semantic operation
-names and input schemas, but Rust development is currently paused. New
-capabilities target the C++ backend first. A future React frontend will consume
-this C++ public boundary and will not access DuckDB or plugin internals directly.
+The Rust MCP server is a stale development backend and is not the current
+runtime contract. A future React frontend will consume this C++ public boundary
+and will not access DuckDB or plugin internals directly.

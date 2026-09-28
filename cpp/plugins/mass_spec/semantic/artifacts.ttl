@@ -1,0 +1,622 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfms:analysesTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry analyses table" ;
+    skos:definition "Persisted summary and metadata for imported mass spectrometry analyses." ;
+    sf:tableName "MASS_SPEC_ANALYSES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:analysisIndexColumn,
+        sfms:sourceAnalysisNumberColumn,
+        sfms:replicateNameColumn,
+        sfms:blankNameColumn,
+        sfms:fileNameColumn,
+        sfms:filePathColumn,
+        sfms:fileDirColumn,
+        sfms:fileExtensionColumn,
+        sfms:formatColumn,
+        sfms:typeColumn,
+        sfms:timeStampColumn,
+        sfms:numberSpectraColumn,
+        sfms:numberChromatogramsColumn,
+        sfms:numberSpectraBinaryArraysColumn,
+        sfms:minMzColumn,
+        sfms:maxMzColumn,
+        sfms:startRtColumn,
+        sfms:endRtColumn,
+        sfms:hasIonMobilityColumn,
+        sfms:concentrationColumn,
+        sfcore:createdAtColumn .
+
+sfms:spectraHeadersTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry spectra headers table" ;
+    skos:definition "Persisted header metadata for spectra in a mass spectrometry analysis." ;
+    sf:tableName "MASS_SPEC_SPECTRA_HEADERS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:indexColumn,
+        sfms:scanColumn,
+        sfms:arrayLengthColumn,
+        sfms:levelColumn,
+        sfms:modeColumn,
+        sfms:polarityColumn,
+        sfms:configurationColumn,
+        sfms:lowMzColumn,
+        sfms:highMzColumn,
+        sfms:bpMzColumn,
+        sfms:bpIntColumn,
+        sfms:ticColumn,
+        sfms:rtColumn,
+        sfms:mobilityColumn,
+        sfms:windowMzColumn,
+        sfms:windowMzLowColumn,
+        sfms:windowMzHighColumn,
+        sfms:precursorMzColumn,
+        sfms:precursorIntensityColumn,
+        sfms:precursorChargeColumn,
+        sfms:activationCeColumn .
+
+sfms:chromatogramsHeadersTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry chromatograms headers table" ;
+    skos:definition "Persisted header metadata for chromatograms in a mass spectrometry analysis." ;
+    sf:tableName "MASS_SPEC_CHROMATOGRAMS_HEADERS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:indexColumn,
+        sfms:chromatogramIdColumn,
+        sfms:arrayLengthColumn,
+        sfms:polarityColumn,
+        sfms:precursorMzColumn,
+        sfms:activationCeColumn,
+        sfms:productMzColumn,
+        sfms:signalTypeColumn,
+        sfms:chromatogramTypeColumn,
+        sfms:detectorColumn,
+        sfms:channelColumn,
+        sfms:unitsColumn,
+        sfms:wavelengthNmColumn,
+        sfms:intervalMsColumn,
+        sfms:startTimeColumn,
+        sfms:endTimeColumn,
+        sfms:intensityMultiplierColumn .
+
+sfms:chromatogramsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry chromatogram points table" ;
+    skos:definition "Persisted chromatogram point records for mass spectrometry analyses. Channel metadata lives in MASS_SPEC_CHROMATOGRAMS_HEADERS; join through analysis and index." ;
+    sf:tableName "MASS_SPEC_CHROMATOGRAMS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:indexColumn,
+        sfms:rtColumn,
+        sfms:rawIntensityColumn,
+        sfms:baselineColumn,
+        sfms:intensityColumn,
+        sfcore:createdAtColumn .
+
+sfms:chromatogramPeaksTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry chromatogram peaks table" ;
+    skos:definition "Persisted chromatographic peak records. Detector-independent: one row per detected peak within a chromatogram. Join to MASS_SPEC_CHROMATOGRAMS_HEADERS through analysis and chromatogram_index." ;
+    sf:tableName "MASS_SPEC_CHROMATOGRAM_PEAKS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:chromatogramIndexColumn,
+        sfms:peakIdColumn,
+        sfms:rtColumn,
+        sfms:rtStartColumn,
+        sfms:rtEndColumn,
+        sfms:peakHeightColumn,
+        sfms:peakRawHeightColumn,
+        sfms:areaColumn,
+        sfms:peakRawAreaColumn,
+        sfms:peakBaselineAreaColumn,
+        sfms:peakWidthColumn,
+        sfms:peakFwhmColumn,
+        sfms:peakSnrColumn,
+        sfms:peakAsymmetryColumn,
+        sfms:peakSharpnessColumn,
+        sfms:peakPlatesColumn,
+        sfms:peakNumberPointsColumn,
+        sfms:integrationAlgorithmColumn,
+        sfms:integrationStatusColumn,
+        sfms:manualOverrideColumn,
+        sfcore:createdAtColumn .
+
+sfms:featuresTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "NTA features table" ;
+    skos:definition "Persisted MS1 features detected for non-target analysis." ;
+    sf:tableName "MASS_SPEC_NTA_FEATURES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:blankNameColumn,
+        sfms:nameColumn,
+        sfms:featureColumn,
+        sfms:featureComponentColumn,
+        sfms:featureGroupColumn,
+        sfms:adductColumn,
+        sfms:rtColumn,
+        sfms:mzColumn,
+        sfms:massColumn,
+        sfms:intensityColumn,
+        sfms:noiseColumn,
+        sfms:snColumn,
+        sfms:areaColumn,
+        sfms:traceCountColumn,
+        sfms:rtMinColumn,
+        sfms:rtMaxColumn,
+        sfms:widthColumn,
+        sfms:mzMinColumn,
+        sfms:mzMaxColumn,
+        sfms:ppmColumn,
+        sfms:fwhmRtColumn,
+        sfms:fwhmMzColumn,
+        sfms:gaussianAColumn,
+        sfms:gaussianMuColumn,
+        sfms:gaussianSigmaColumn,
+        sfms:gaussianR2Column,
+        sfms:jaggednessColumn,
+        sfms:sharpnessColumn,
+        sfms:asymmetryColumn,
+        sfms:modalityColumn,
+        sfms:platesColumn,
+        sfms:polarityColumn,
+        sfms:filteredColumn,
+        sfms:filterColumn,
+        sfms:filledColumn,
+        sfms:correctionColumn,
+        sfms:eicSizeColumn,
+        sfms:eicRtColumn,
+        sfms:eicMzColumn,
+        sfms:eicIntensityColumn,
+        sfms:eicBaselineColumn,
+        sfms:eicSmoothedColumn,
+        sfms:ms1SizeColumn,
+        sfms:ms1MzColumn,
+        sfms:ms1IntensityColumn,
+        sfms:ms2SizeColumn,
+        sfms:ms2MzColumn,
+        sfms:ms2IntensityColumn,
+        sfms:annotationCategoryColumn,
+        sfms:annotationTypeColumn,
+        sfms:annotationParentFeatureColumn,
+        sfms:annotationElementColumn,
+        sfms:annotationMassErrorDaColumn,
+        sfms:annotationMassErrorPpmColumn,
+        sfms:annotationRtErrorColumn,
+        sfms:annotationRelIntensityColumn,
+        sfms:annotationExpectedRelIntensityMinColumn,
+        sfms:annotationExpectedRelIntensityMaxColumn,
+        sfms:annotationScoreColumn,
+        sfms:componentSizeColumn,
+        sfms:componentRtCenterColumn,
+        sfms:componentRtSpreadColumn,
+        sfms:componentDensityColumn,
+        sfms:componentMeanCorrelationColumn,
+        sfms:componentBestPartnerColumn,
+        sfms:componentMaxCorrelationColumn,
+        sfms:componentMeanCorrelationToComponentColumn,
+        sfms:componentMembershipScoreColumn,
+        sfms:componentIsCoreColumn,
+        sfms:componentBridgeFlagColumn,
+        sfcore:createdAtColumn .
+
+sfms:suspectsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "NTA suspects table" ;
+    skos:definition "Persisted suspect-screening assignment rows." ;
+    sf:tableName "MASS_SPEC_NTA_SUSPECTS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:featureColumn,
+        sfms:featureGroupColumn,
+        sfms:candidateRankColumn,
+        sfms:nameColumn,
+        sfms:polarityColumn,
+        sfms:dbMassColumn,
+        sfms:expMassColumn,
+        sfms:errorMassColumn,
+        sfms:dbRtColumn,
+        sfms:expRtColumn,
+        sfms:errorRtColumn,
+        sfms:intensityColumn,
+        sfms:areaColumn,
+        sfms:idLevelColumn,
+        sfms:scoreColumn,
+        sfms:sharedFragmentsColumn,
+        sfms:cosineSimilarityColumn,
+        sfms:formulaColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn,
+        sfms:xLogPColumn,
+        sfms:databaseIdColumn,
+        sfms:dbMs2SizeColumn,
+        sfms:dbMs2MzColumn,
+        sfms:dbMs2IntensityColumn,
+        sfms:dbMs2FormulaColumn,
+        sfms:dbMs2SmilesColumn,
+        sfms:expMs2SizeColumn,
+        sfms:expMs2MzColumn,
+        sfms:expMs2IntensityColumn .
+
+sfms:internalStandardsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "NTA internal standards table" ;
+    skos:definition "Persisted internal-standard assignment rows." ;
+    sf:tableName "MASS_SPEC_NTA_INTERNAL_STANDARDS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:featureColumn,
+        sfms:featureGroupColumn,
+        sfms:featureComponentColumn,
+        sfms:adductColumn,
+        sfms:candidateRankColumn,
+        sfms:nameColumn,
+        sfms:polarityColumn,
+        sfms:dbMassColumn,
+        sfms:expMassColumn,
+        sfms:errorMassColumn,
+        sfms:dbRtColumn,
+        sfms:expRtColumn,
+        sfms:errorRtColumn,
+        sfms:intensityColumn,
+        sfms:areaColumn,
+        sfms:idLevelColumn,
+        sfms:scoreColumn,
+        sfms:sharedFragmentsColumn,
+        sfms:cosineSimilarityColumn,
+        sfms:formulaColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn,
+        sfms:xLogPColumn,
+        sfms:databaseIdColumn,
+        sfms:dbMs2SizeColumn,
+        sfms:dbMs2MzColumn,
+        sfms:dbMs2IntensityColumn,
+        sfms:dbMs2FormulaColumn,
+        sfms:dbMs2SmilesColumn,
+        sfms:expMs2SizeColumn,
+        sfms:expMs2MzColumn,
+        sfms:expMs2IntensityColumn .
+
+sfms:transformationProductsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "NTA transformation products table" ;
+    skos:definition "Persisted transformation-product assignment rows." ;
+    sf:tableName "MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:featureGroupColumn,
+        sfms:tpPrecursorFeatureGroupColumn,
+        sfms:tpMainPrecursorFeatureGroupColumn,
+        sfms:tpAssignmentRankColumn,
+        sfms:nameColumn,
+        sfms:formulaColumn,
+        sfms:massColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn,
+        sfms:xLogPColumn,
+        sfms:tpTransformationColumn,
+        sfms:tpPrecursorNameColumn,
+        sfms:tpPrecursorFormulaColumn,
+        sfms:tpPrecursorMassColumn,
+        sfms:tpPrecursorSmilesColumn,
+        sfms:tpPrecursorInChIColumn,
+        sfms:tpPrecursorInChIKeyColumn,
+        sfms:tpPrecursorXLogPColumn,
+        sfms:tpMainPrecursorNameColumn,
+        sfms:tpMainPrecursorFormulaColumn,
+        sfms:tpMainPrecursorMassColumn,
+        sfms:tpMainPrecursorSmilesColumn,
+        sfms:tpMainPrecursorInChIColumn,
+        sfms:tpMainPrecursorInChIKeyColumn,
+        sfms:tpMainPrecursorXLogPColumn,
+        sfms:cosineSimilarityColumn,
+        sfms:tpMainPrecursorCosineSimilarityColumn,
+        sfms:tpRtPlausibilityColumn,
+        sfms:tpMainPrecursorRtPlausibilityColumn,
+        sfms:tpAssignmentScoreColumn,
+        sfms:tpNetworkLevelColumn,
+        sfms:tpAssignmentStatusColumn,
+        sfcore:createdAtColumn .
+
+sfms:ticTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry total ion current" ;
+    skos:definition "Table of filtered total ion current records." ;
+    sf:tableName "MASS_SPEC_TIC" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:polarityColumn,
+        sfms:levelColumn,
+        sfms:rtColumn,
+        sfms:mobilityColumn,
+        sfms:ticColumn,
+        sfms:bpMzColumn,
+        sfms:bpIntColumn .
+
+sfms:spectraTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry raw spectra" ;
+    skos:definition "Table of independently targeted raw spectrum points." ;
+    sf:tableName "MASS_SPEC_SPECTRA" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:nameColumn,
+        sfms:polarityColumn,
+        sfms:levelColumn,
+        sfms:preMzColumn,
+        sfms:preMzLowColumn,
+        sfms:preMzHighColumn,
+        sfms:preCeColumn,
+        sfms:rtColumn,
+        sfms:mobilityColumn,
+        sfms:mzColumn,
+        sfms:intensityColumn .
+
+sfms:eicTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry extracted ion chromatograms" ;
+    skos:definition "Table of extracted ion chromatogram spectrum points." ;
+    sf:tableName "MASS_SPEC_EIC" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:nameColumn,
+        sfms:polarityColumn,
+        sfms:levelColumn,
+        sfms:preMzColumn,
+        sfms:preMzLowColumn,
+        sfms:preMzHighColumn,
+        sfms:preCeColumn,
+        sfms:rtColumn,
+        sfms:mobilityColumn,
+        sfms:mzColumn,
+        sfms:intensityColumn .
+
+sfms:ms1Table
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry MS1 spectra" ;
+    skos:definition "Table of clustered and presence-filtered MS1 spectrum points." ;
+    sf:tableName "MASS_SPEC_MS1" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:nameColumn,
+        sfms:polarityColumn,
+        sfms:levelColumn,
+        sfms:preMzColumn,
+        sfms:preMzLowColumn,
+        sfms:preMzHighColumn,
+        sfms:preCeColumn,
+        sfms:rtColumn,
+        sfms:mobilityColumn,
+        sfms:mzColumn,
+        sfms:intensityColumn .
+
+sfms:ms2Table
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry MS2 spectra" ;
+    skos:definition "Table of clustered and presence-filtered MS2 spectrum points." ;
+    sf:tableName "MASS_SPEC_MS2" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
+        sfms:nameColumn,
+        sfms:polarityColumn,
+        sfms:levelColumn,
+        sfms:preMzColumn,
+        sfms:preMzLowColumn,
+        sfms:preMzHighColumn,
+        sfms:preCeColumn,
+        sfms:rtColumn,
+        sfms:mobilityColumn,
+        sfms:mzColumn,
+        sfms:intensityColumn .
+
+sfms:analysisNamesResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry analysis names" ;
+    skos:definition "Analysis names ordered as stored in the analyses table." ;
+    sf:type "array" ;
+    sf:items sfms:analysisNameColumn .
+
+sfms:replicateNamesResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry replicate names" ;
+    skos:definition "Replicate names ordered as stored in the analyses table." ;
+    sf:type "array" ;
+    sf:items sfms:replicateNameColumn .
+
+sfms:blankNamesResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry blank names" ;
+    skos:definition "Blank names ordered as stored in the analyses table." ;
+    sf:type "array" ;
+    sf:items sfms:blankNameColumn .
+
+sfms:concentrationsResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry concentrations" ;
+    skos:definition "Concentrations ordered as stored in the analyses table." ;
+    sf:type "array" ;
+    sf:items sfms:concentrationColumn .
+
+sfms:targetsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry targets table" ;
+    skos:definition "Schema for target rows supplied inline or through a persisted DuckDB table connection." ;
+    sf:tableName "MASS_SPEC_TARGETS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:nameColumn,
+        sfms:analysisNameColumn,
+        sfms:polarityColumn,
+        sfms:levelColumn,
+        sfms:massColumn,
+        sfms:massMinColumn,
+        sfms:massMaxColumn,
+        sfms:mzColumn,
+        sfms:mzMinColumn,
+        sfms:mzMaxColumn,
+        sfms:rtColumn,
+        sfms:rtMinColumn,
+        sfms:rtMaxColumn,
+        sfms:formulaColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn .
+
+sfms:suspectTargetsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry suspect targets table" ;
+    skos:definition "Schema for suspect rows matched against detected features and optional MS2 reference spectra during suspect screening." ;
+    sf:tableName "MASS_SPEC_SUSPECT_TARGETS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:nameColumn,
+        sfms:massColumn,
+        sfms:polarityColumn,
+        sfms:mzColumn,
+        sfms:rtColumn,
+        sfms:formulaColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn,
+        sfms:xLogPColumn,
+        sfms:databaseIdColumn,
+        sfms:fragmentsMzPosColumn,
+        sfms:fragmentsIntensityPosColumn,
+        sfms:fragmentsMzNegColumn,
+        sfms:fragmentsIntensityNegColumn .
+
+sfms:transformationProductCandidatesTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Transformation-product candidate table" ;
+    skos:definition "Schema for candidate transformation-product rows supplied to transformation-product assignment." ;
+    sf:tableName "MASS_SPEC_TRANSFORMATION_PRODUCT_CANDIDATES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:tpProductNameColumn,
+        sfms:tpTransformationColumn,
+        sfms:tpPrecursorNameColumn,
+        sfms:tpPrecursorFormulaColumn,
+        sfms:tpPrecursorMassColumn,
+        sfms:tpPrecursorSmilesColumn,
+        sfms:tpPrecursorInChIColumn,
+        sfms:tpPrecursorInChIKeyColumn,
+        sfms:tpPrecursorXLogPColumn,
+        sfms:tpMainPrecursorNameColumn,
+        sfms:tpMainPrecursorFormulaColumn,
+        sfms:tpMainPrecursorMassColumn,
+        sfms:tpMainPrecursorSmilesColumn,
+        sfms:tpMainPrecursorInChIColumn,
+        sfms:tpMainPrecursorInChIKeyColumn,
+        sfms:tpMainPrecursorXLogPColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn .
+
+sfms:databaseCandidatesTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag candidate database table" ;
+    skos:definition "Schema for local candidate database rows supplied to MetFrag." ;
+    sf:tableName "MASS_SPEC_DATABASE_CANDIDATES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:suspectNameColumn,
+        sfms:formulaColumn,
+        sfms:massColumn,
+        sfms:smilesColumn,
+        sfms:inChIColumn,
+        sfms:inChIKeyColumn,
+        sfms:xLogPColumn .
+

@@ -64,7 +64,7 @@ int run() {
         const auto path = base / (std::string("manifest-proof-") + suffix + ".duckdb");
         std::error_code error;
         std::filesystem::remove(path, error);
-        auto project = streamfind::Project::create({path, "mass_spec", {}});
+        auto project = streamfind::Project::create({path, {}});
         install(project, omit_table, omit_column, wrong_type);
         bool passed = true;
         try {
@@ -74,6 +74,27 @@ int run() {
             passed = false;
         }
         if (suffix == std::string("valid") ? !passed : passed) return 1;
+        project.close();
+        std::filesystem::remove(path, error);
+    }
+
+    for (const auto &[semantic_type, physical_type] :
+         {std::pair{"array", "JSON"}, std::pair{"object", "JSON"},
+          std::pair{"array", "VARCHAR"}, std::pair{"object", "VARCHAR"}}) {
+        const auto path = base / (std::string("manifest-json-") + semantic_type + "-" + physical_type + ".duckdb");
+        std::error_code error;
+        std::filesystem::remove(path, error);
+        auto project = streamfind::Project::create({path, {}});
+        project.execute_sql(std::string("CREATE TABLE JSON_CONTRACT (value ") + physical_type + ")");
+        bool rejected = false;
+        try {
+            streamfind::ProjectTableStore(project).require({
+                {"JSON_CONTRACT", {}, {{"value", semantic_type}}}});
+        } catch (const streamfind::Error &) {
+            rejected = true;
+        }
+        const bool should_reject = physical_type != "JSON";
+        if (rejected != should_reject) return 1;
         project.close();
         std::filesystem::remove(path, error);
     }

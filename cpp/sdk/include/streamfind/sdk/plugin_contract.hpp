@@ -28,7 +28,8 @@ struct STREAMFIND_SDK_API MethodBinding {
 /** @brief Stable in-process operation binding supplied by a domain plugin. */
 struct STREAMFIND_SDK_API OperationBinding {
     std::string_view id;
-    std::function<nlohmann::json(Project &, const nlohmann::json &)> executor;
+    std::function<nlohmann::json(Project &, const nlohmann::json &,
+                                 const std::string &, const nlohmann::json &)> executor;
     std::function<void(const nlohmann::json &)> validator;
 };
 

@@ -1,18 +1,18 @@
 # How streamfind works
 
-streamfind presents one public contract through several interfaces. The shared
-semantic catalogue describes operations, workflow Methods, parameters, schemas,
-results, and usage guidance. Native backends implement that contract, and MCP
-adapters make it available to applications and AI agents.
+streamfind is a DuckDB-backed analytical runtime. The native C++ core owns
+projects, persistence, validation, and execution. Domain plugins provide
+catalogued operations through the SDK. The semantic catalogue describes the
+operations, parameters, typed ports, results, and usage guidance exposed to
+applications and AI agents.
 
 ```text
                  Shared semantic catalogue
-       operations • methods • parameters • results
+       operations • parameters • typed ports • results
                          │
           ┌──────────────┴──────────────┐
           ▼                             ▼
-   C++ core + plugins       Rust backend (preserved)
-          │                    development paused
+   C++ core + plugins       Rust backend (stale development)
           ▼
      C++ public API / MCP
           │
@@ -20,34 +20,36 @@ adapters make it available to applications and AI agents.
    Future React frontend
 ```
 
-## Operations and workflow Methods
+## Operations and operation graphs
 
-The public contract distinguishes two kinds of capability:
+**Operations** are the units of computation and project interaction. Each
+operation has an identifier, parameters, typed input ports, typed output
+ports, and a catalogue description.
 
-- **Operations** are callable project or domain actions. Domain Operations are
-  stateless and include their project selection in every request.
-- **Workflow Methods** are ordered processing steps. They are discovered with
-  `get_available_methods` and executed in a connected project session.
+A workflow is a persisted operation graph:
 
-Methods are not MCP tools. `tools/list` is the discovery endpoint for callable
-Operations; `get_available_methods` is the discovery endpoint for workflow
-Methods.
+```text
+operations[]   = node id + operation identifier + parameters
+connections[]  = output port -> input port
+```
+
+The runtime validates the graph, resolves dependencies from typed connections,
+executes each operation, and persists execution records and artifacts. Every
+required input must be connected explicitly.
 
 ## Project usage model
 
 A typical application or agent follows this sequence:
 
-1. create or open a project;
-2. inspect its identity, domain, metadata, and available analyses;
-3. invoke stateless domain Operations for direct queries;
-4. connect when a workflow is required;
-5. discover Methods and their schemas;
-6. validate and execute the workflow;
-7. close the connected session.
+1. create or open a project with `database_path`;
+2. discover operations and inspect their schemas;
+3. add operation nodes and persist their parameters;
+4. connect compatible output and input ports;
+5. validate the operation graph;
+6. run the graph and inspect its artifacts and results.
 
-The C++ MCP server is the active application boundary. The Rust MCP server is a
-preserved implementation of the shared catalogue contract; Rust development is
-currently paused and it should not be treated as the target for new capabilities.
+The C++ MCP server is the application boundary. The Rust MCP server is a stale
+development backend and is not the current runtime contract.
 
 The future React frontend will use the C++ public API and service boundary,
 including MCP or a later HTTP adapter. It will not access DuckDB files or plugin
@@ -63,7 +65,7 @@ plugins:
 - **SDK** defines the versioned generic plugin ABI, host callbacks, manifest
   validation, and semantic catalogue integration.
 - **Plugins** own domain schemas, native readers, processing algorithms, and
-  catalogue-declared Operations and workflow Methods.
+  catalogue-declared Operations and operation graphs.
 
 Plugins are loaded from allowlisted packages. They receive an opaque,
 transaction-scoped host access context rather than `Project` or DuckDB handles,

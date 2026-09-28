@@ -4,13 +4,12 @@
 #include <functional>
 #include <limits>
 #include <memory>
-#include <atomic>
-#include <functional>
 #include <optional>
 #include <cstdint>
 #include <stdexcept>
 #include <variant>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -156,6 +155,13 @@ struct STREAMFIND_CORE_API ParameterValues {
     static ParameterValues from_json(const Json &value);
 };
 
+/** @brief A table dependency activated by a boolean method parameter. */
+struct STREAMFIND_CORE_API ConditionalRead {
+    std::string table;
+    std::string parameter;
+    Json equals;
+};
+
 /** @brief Complete documented and executable description of a method. */
 struct STREAMFIND_CORE_API MethodDefinition {
     /// Stable registry and persisted workflow identifier.
@@ -166,7 +172,10 @@ struct STREAMFIND_CORE_API MethodDefinition {
     std::string description;
     std::string version{"1"};
     std::string domain;
-    std::vector<std::string> required_methods;
+    /// Tables that must exist before this method can execute.
+    std::vector<std::string> reads;
+    /// Additional tables required when the named boolean parameter is true.
+    std::vector<ConditionalRead> conditional_reads;
     bool single_occurrence{false};
     std::string developer;
     std::string contact;
@@ -229,24 +238,44 @@ private:
 };
 
 struct STREAMFIND_CORE_API OperationDefinition {
-    std::string id, name, description, domain;
+    struct Port {
+        std::string id;
+        std::string semantic_contract;
+        std::string cardinality{"one"};
+        std::string data_kind;
+        std::vector<std::string> representations;
+        bool optional{false};
+
+        Json to_json() const;
+        static Port from_json(const Json &value);
+    };
+
+    std::string id, name, description, domain, version{"1"};
+    bool project_entry{false};
+    bool cacheable{false};
     ParameterSchema parameters;
+    std::vector<Port> input_ports;
+    std::vector<Port> output_ports;
 };
-using OperationExecutor = std::function<Json(Project &, const Json &)>;
+using WorkflowOperationExecutor = std::function<Json(
+    Project &, const Json &, const std::string &, const Json &)>;
 using OperationValidator = std::function<void(const Json &)>;
 
 class STREAMFIND_CORE_API Operation {
 public:
-    Operation(OperationDefinition definition, OperationExecutor executor = {},
+    Operation(OperationDefinition definition,
+              WorkflowOperationExecutor executor = {},
               OperationValidator validator = {});
     const OperationDefinition &definition() const noexcept;
     Json to_json() const;
     Json resolve_parameters(const Json &value) const;
-    Json run(Project &project, const Json &value) const;
+    Json run_workflow(Project &project, const Json &value,
+                      const std::string &operation_instance,
+                      const Json &inputs) const;
 private:
     OperationDefinition definition_;
-    OperationExecutor executor_;
     OperationValidator validator_;
+    WorkflowOperationExecutor executor_;
 };
 
 class STREAMFIND_CORE_API OperationRegistry {
@@ -258,41 +287,53 @@ private:
     std::vector<Operation> operations_;
 };
 
-/** @brief Return the process-wide default method registry. */
-STREAMFIND_CORE_API MethodRegistry &methods();
-
-/** @brief One ordered method invocation in a workflow. */
-struct STREAMFIND_CORE_API WorkflowStep {
-    /// Registered method identifier.
-    std::string method;
-    /// Values passed to that method.
+/** @brief One operation instance in a persisted workflow graph. */
+struct STREAMFIND_CORE_API WorkflowOperation {
+    std::string id;
+    std::string operation;
     ParameterValues parameters;
+    Json inputs{Json::object()};
+    /// Optional canvas presentation coordinates; omitted for portable/API-created workflows.
+    Json position{Json::object()};
 
-    /** @brief Export the step method id and values as JSON. */
     Json to_json() const;
-    /** @brief Parse a workflow step from JSON. */
-    static WorkflowStep from_json(const Json &value);
+    static WorkflowOperation from_json(const Json &value);
 };
 
-/** @brief Ordered, versioned method workflow owned by a Project. */
+/** @brief One typed output-port to input-port workflow connection. */
+struct STREAMFIND_CORE_API WorkflowConnection {
+    std::string source_operation;
+    std::string source_port;
+    std::string source_artifact_id;
+    std::string target_operation;
+    std::string target_port;
+
+    Json to_json() const;
+    static WorkflowConnection from_json(const Json &value);
+};
+
+/** @brief Versioned workflow graph owned by a Project. */
 class STREAMFIND_CORE_API Workflow {
 public:
+    /// Version of the portable workflow-definition document format.
+    int schema_version{1};
+    /// Stable identity of the reusable workflow definition.
+    std::string workflow_id;
     /// Display name of the workflow.
     std::string name;
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
-    /// Domain this workflow belongs to.
-    std::string domain;
-    /// Ordered method invocations.
-    std::vector<WorkflowStep> steps;
+    /// Operation instances forming the backend execution graph.
+    std::vector<WorkflowOperation> operations;
+    /// Explicit typed-port dataflow connections.
+    std::vector<WorkflowConnection> connections;
 
-    /** @brief Validate method ids, ordering, domains, occurrences, and values. */
-    void validate(const MethodRegistry &registry) const;
+    /** @brief Validate operation instances and port bindings against the installed catalogue. */
+    void validate(const OperationRegistry &registry) const;
     /** @brief Export the workflow definition as JSON. */
     Json to_json() const;
-    /** @brief Export ordered method metadata with configured parameter values. */
-    Json to_json(const MethodRegistry &registry) const;
-    /** @brief Parse a workflow object or legacy ordered array from JSON. */
+
+    /** @brief Parse a canonical workflow object from JSON. */
     static Workflow from_json(const Json &value);
 };
 
@@ -324,32 +365,6 @@ enum class STREAMFIND_CORE_API ExecutionState {
 STREAMFIND_CORE_API bool valid_execution_transition(ExecutionState from,
                                                      ExecutionState to) noexcept;
 
-/** @brief Cooperative cancellation state for long-running operations. */
-class STREAMFIND_CORE_API CancellationToken {
-public:
-    /** @brief Request cancellation. */
-    void cancel() noexcept;
-    /** @brief Return whether cancellation was requested. */
-    bool is_cancelled() const noexcept;
-private:
-    std::atomic<bool> cancelled_{false};
-};
-
-/** @brief Progress snapshot emitted during execution. */
-struct STREAMFIND_CORE_API ProgressEvent {
-    std::string operation;
-    std::size_t completed{0};
-    std::size_t total{0};
-};
-
-using ProgressCallback = std::function<void(const ProgressEvent &)>;
-
-/** @brief Stable result envelope for workflow execution. */
-struct STREAMFIND_CORE_API ExecutionResult {
-    Json results{Json::array()};
-    bool cancelled{false};
-    Json to_json() const;
-};
 
 /** @brief Typed exception raised by the streamfind core API. */
 class STREAMFIND_CORE_API Error : public std::runtime_error {
@@ -367,16 +382,14 @@ private:
 struct STREAMFIND_CORE_API ProjectOptions {
     /// DuckDB file to create or open.
     std::filesystem::path database_path;
-    /// Domain assigned once when a project is created.
-    std::string domain;
     /// Project-owned metadata initialized on creation.
     Json metadata{Json::object()};
 };
 
 /** @brief Persisted identity and metadata for an open Project. */
 struct STREAMFIND_CORE_API ProjectInfo {
-    /// Domain selected for the project.
-    std::string domain;
+    /// Domains represented by persisted workflow operations.
+    std::vector<std::string> domains;
     /// Project-owned metadata.
     Json metadata{Json::object()};
     int schema_version{1};
@@ -410,6 +423,7 @@ struct STREAMFIND_CORE_API AuditEntry {
 /** @brief RAII handle for a DuckDB-backed streamfind Project. */
 class STREAMFIND_CORE_API Project {
 public:
+    using OperationLogCallback = std::function<void(std::string_view)>;
     /** @internal Implementation state shared by the Project handle. */
     struct Impl;
     /** @internal Construct from initialized implementation state. */
@@ -434,13 +448,17 @@ public:
 
     /** @brief Replace project metadata. */
     void set_metadata(Json metadata);
-    /** @brief Return the project domain. */
-    std::string get_domain() const;
+    /** @brief Return domains represented by persisted workflow operations. */
+    std::vector<std::string> get_domains() const;
     /** @brief Validate the project schema and persisted row state. */
     void validate() const;
     Workflow get_workflow() const;
-    /** @brief Persist a workflow using the supplied method registry. */
-    void set_workflow(Workflow workflow, const MethodRegistry &registry = methods());
+    /** @brief Replace a workflow without revalidation, for copying an already validated graph. */
+    void set_workflow(Workflow workflow);
+    /** @brief Persist an operation workflow after validating it against installed operations. */
+    void set_workflow(Workflow workflow, const OperationRegistry &registry);
+    /** @brief Remove persisted workflow revisions older than the current revision. */
+    void clear_workflow_history();
     /** @brief Copy this project to a new database. */
     Project copy(const ProjectOptions &options) const;
     /** @brief List tables visible in the project database. */
@@ -480,19 +498,28 @@ public:
     std::vector<AuditEntry> get_audit_trail() const;
     /** @brief Return persisted execution rows for every workflow step. */
     Json get_workflow_execution() const;
+    /** @brief Return immutable table and structured result artifacts published by workflows. */
+    Json get_artifact_inventory() const;
+    /** @brief Publish a structured JSON result for an operation output port. */
+    std::string publish_result_artifact(const std::string &contract_id,
+                                        const Json &payload,
+                                        const std::string &producer_operation,
+                                        const std::string &producer_instance,
+                                        int workflow_revision = 0);
+    /** @brief Resolve graph connections for one operation to published input artifacts. */
+    Json resolve_workflow_inputs(const std::string &operation_id) const;
+    /** @brief Execute the persisted operation graph in topological order. */
+    Json run_operation_graph(const OperationRegistry &registry);
 
-    /** @brief Execute the persisted workflow using a method registry. */
-    ExecutionResult run_workflow(const MethodRegistry &registry = methods(),
-                                 CancellationToken *cancellation = nullptr,
-                                 ProgressCallback progress = {});
     /** @brief Claim, execute, and release one externally-triggered worker run. */
     Json run_worker(const std::string &worker_id,
-                    const MethodRegistry &registry = methods());
-    /** @brief Execute one registered method with supplied parameters. */
-    Json run_method(const std::string &method_id, const Json &parameters,
-                    const MethodRegistry &registry = methods());
+                    const OperationRegistry &registry);
     Json run_operation(const std::string &operation_id, const Json &parameters,
-                       const OperationRegistry &registry) const;
+                       const OperationRegistry &registry,
+                       const std::string &operation_instance = {},
+                       const Json &provided_inputs = Json(nullptr));
+    void set_operation_log_callback(OperationLogCallback callback);
+    void log_operation(std::string_view message) const;
     /** @brief Mark the Project closed; subsequent operations fail. */
     void close() noexcept;
 

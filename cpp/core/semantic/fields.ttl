@@ -21,6 +21,16 @@ sfcore:infoField
     sf:propertyName "info" ;
     sf:type "string" .
 
+sfcore:updatedField
+    a sf:Field ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Updated state" ;
+    skos:definition "Whether the API command updated the persisted workflow state." ;
+    sf:propertyName "updated" ;
+    sf:type "boolean" .
+
+
 sfcore:validField
     a sf:Field ;
     sf:availableInDomain sfcore:streamfind ;
@@ -44,8 +54,7 @@ sfcore:methodField
         sfcore:methodDescriptionField,
         sfcore:methodDomainField,
         sfcore:methodParametersField,
-        sfcore:methodCacheableField,
-        sfcore:methodRequiredField .
+        sfcore:methodCacheableField .
 
 sfcore:methodIdField
     a sf:Field ;
@@ -102,16 +111,6 @@ sfcore:methodCacheableField
     sf:propertyName "cacheable" ;
     sf:type "boolean" .
 
-sfcore:methodRequiredField
-    a sf:Field ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Required methods" ;
-    skos:definition "Methods required earlier in the workflow." ;
-    sf:propertyName "required_methods" ;
-    sf:type "array" ;
-    sf:items sfcore:stringItemParameter .
-
 sfcore:methodSingleOccurrenceField
     a sf:Field ;
     sf:availableInDomain sfcore:streamfind ;
@@ -126,7 +125,7 @@ sfcore:methodInputSchemaField
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method input schema" ;
-    skos:definition "Complete JSON Schema for the method-specific parameter object. Use this schema when constructing add_method or run_method parameters." ;
+    skos:definition "Complete JSON Schema for an operation-specific parameter object. Use this schema when constructing an operation node." ;
     sf:propertyName "inputSchema" ;
     sf:type "object" .
 
@@ -145,7 +144,7 @@ sfcore:analysisFilePathField
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis file path" ;
-    skos:definition "Filesystem path of the analysis file." ;
+    skos:definition "Filesystem path of the analysis file or vendor directory." ;
     sf:propertyName "path" ;
     sf:type "string" ;
     sf:required true ;

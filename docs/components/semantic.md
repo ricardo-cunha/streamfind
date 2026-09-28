@@ -1,41 +1,40 @@
 # Semantic catalogue
 
 The semantic catalogue is the shared public description of streamfind's
-interfaces. It defines operation names, workflow Methods, domains, parameters,
-input constraints, result fields, units, nullability, and agent-facing usage
-guidance.
+interface. It defines operation names, domains, parameters, typed input and
+output ports, input constraints, result fields, units, nullability, and
+agent-facing usage guidance.
 
 ## What the catalogue provides
 
 The catalogue allows an application or AI agent to discover:
 
 - which Operations can be called directly;
-- which workflow Methods are available;
+- which operations are available;
 - required and optional parameters;
 - nested object and array schemas;
 - defaults, examples, constraints, and units;
 - result shapes and project effects;
 - suggested next operations and whether a connection is required.
 
-The C++ and Rust MCP servers use the same catalogue so that their tool names,
-descriptions, and input schemas remain equivalent.
+The C++ MCP server uses the catalogue for tool names, descriptions, input
+schemas, ports, and result contracts.
 
-## Operations and Methods
+## Operations and operation graphs
 
-- **Operations** are callable project or domain actions. Domain Operations are
-  stateless and require `database_path` and `project_id`.
-- **Methods** are workflow steps. Use `get_available_methods` to discover them
-  and their schemas; Methods are not advertised as MCP tools.
+- **Operations** are callable project or domain actions. They expose typed
+  ports and operation-specific parameters.
+- **Operation graphs** persist operation nodes and typed connections. A node
+  stores its operation identifier and JSON parameters.
 
 Typical project entry points are:
 
 ```text
 create -> describe -> get_domain/get_metadata
-      -> domain Operations
-
-connect -> get_available_methods
-        -> set_workflow/validate_workflow
-        -> run_workflow or run_method
+      -> get_operations -> get_operation
+      -> add_operation -> connect_operations
+      -> validate_workflow -> run_workflow
+      -> get_artifact_inventory
         -> close
 ```
 

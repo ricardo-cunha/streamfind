@@ -1,13 +1,13 @@
 # Rust MCP server
 
-The Rust MCP server is included in the
+The Rust MCP server is a preserved stale-development component. It is included in the
 [Windows x64 and Linux x86_64 Rust packages](../releases.md). It communicates
 with MCP clients using JSON-RPC messages over standard input/output.
 
 !!! warning "Preserved backend"
-    Rust development is currently paused. This quickstart documents the
-    preserved Rust package for existing compatibility work; new capabilities
-    target the C++ backend and its plugin framework.
+    This page is retained for existing Rust development and compatibility work.
+    It is not the current streamfind runtime guide. Use the [C++ MCP
+    quickstart](cpp-mcp.md) for the current operation-based framework.
 
 ## Package paths
 
@@ -21,7 +21,7 @@ Linux:   <package>/bin/streamfind-rust-mcp
 Keep `share/streamfind/catalogue.duckdb` and `catalogue.json` with the
 package. The DuckDB catalogue is required runtime data for the MCP server.
 
-## Project and Operation flow
+## Preserved Rust interface
 
 A typical client or AI agent uses this sequence:
 
@@ -43,19 +43,9 @@ Example requests, one JSON object per line:
 Direct domain Operations are stateless and do not require `connect` or
 `close`.
 
-## Workflow Methods
-
-Workflow Methods are processing steps, not MCP tools. To use them:
-
-1. call `connect` with an existing `database_path` and `project_id`;
-2. call `get_available_methods` to discover Methods and their complete schemas;
-3. use `add_method` or `set_workflow` to create the ordered workflow;
-4. call `validate_workflow`;
-5. call `run_workflow` or `run_method`;
-6. call `close` when finished.
-
-`tools/list` exposes Operations before connection; it is not the Method
-discovery endpoint.
+The preserved Rust interface may expose contracts that differ from the current
+C++ operation graph. Do not use this backend as a reference for new clients or
+new capabilities.
 
 ## Rust CLI
 

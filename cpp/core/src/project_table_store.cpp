@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <atomic>
+#include <chrono>
 #include <duckdb.h>
 #include <limits>
 #include <sstream>
@@ -14,6 +16,40 @@ namespace streamfind {
 
 namespace detail {
 
+void validate_visualization_spec(const std::string &payload) {
+    constexpr std::size_t max_payload_bytes = 1U * 1024U * 1024U;
+    if (payload.size() > max_payload_bytes)
+        throw std::invalid_argument("visualization specification exceeds the 1 MiB payload limit");
+    const auto spec = Json::parse(payload, nullptr, false);
+    if (spec.is_discarded() || !spec.is_object())
+        throw std::invalid_argument("visualization specification must be a JSON object");
+    if (spec.value("schema", "") != "streamfind.visualization/v1")
+        throw std::invalid_argument("visualization specification has an unsupported schema");
+    for (const auto *field : {"visualization_id", "semantic_type", "title", "data_mode"})
+        if (!spec.contains(field) || !spec.at(field).is_string() || spec.at(field).get<std::string>().empty())
+            throw std::invalid_argument(std::string("visualization specification requires ") + field);
+    const auto &renderer = spec.value("renderer", Json::object());
+    if (!renderer.is_object() || renderer.value("engine", "") != "plotly" ||
+        renderer.value("renderer_id", "") != "core.plotly" || renderer.value("spec_version", "") != "1")
+        throw std::invalid_argument("visualization specification has an unsupported renderer");
+    const auto data_mode = spec.at("data_mode").get<std::string>();
+    if (data_mode != "inline" && data_mode != "artifact")
+        throw std::invalid_argument("visualization specification has an unsupported data mode");
+    if (data_mode == "inline" && (!spec.contains("payload") || !spec.at("payload").is_object()))
+        throw std::invalid_argument("inline visualization specification requires an object payload");
+    if (data_mode == "artifact" &&
+        (!spec.contains("data_bindings") || !spec.at("data_bindings").is_array() || spec.at("data_bindings").empty()))
+        throw std::invalid_argument("artifact visualization specification requires data bindings");
+    const auto &provenance = spec.value("provenance", Json::object());
+    if (!provenance.is_object() || !provenance.contains("source_artifact_ids") ||
+        !provenance.at("source_artifact_ids").is_array() || provenance.at("source_artifact_ids").empty() ||
+        provenance.value("producer_operation_id", "").empty() || provenance.value("producer_node_id", "").empty())
+        throw std::invalid_argument("visualization specification requires complete provenance");
+    const auto &fallback = spec.value("fallback", Json::object());
+    if (!fallback.is_object() || fallback.value("description", "").empty())
+        throw std::invalid_argument("visualization specification requires fallback text");
+}
+
 std::string manifest_sql_type(const Json &column) {
     const auto type = column.at("type").get<std::string>();
     if (type == "string") return "VARCHAR";
@@ -22,6 +58,7 @@ std::string manifest_sql_type(const Json &column) {
     if (type == "boolean") return "BOOLEAN";
     if (type == "timestamp") return "TIMESTAMP";
     if (type == "binary") return "BLOB";
+    if (type == "object" || type == "array") return "JSON";
     if (type == "decimal") {
         const auto width = column.value("precision", 18);
         const auto scale = column.value("scale", 3);
@@ -374,6 +411,7 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
                 : expected == "real" ? (actual == "DOUBLE" || actual == "FLOAT" || actual == "DECIMAL")
                 : expected == "boolean" ? actual == "BOOLEAN"
                 : expected == "timestamp" ? actual.find("TIMESTAMP") != std::string::npos
+                : expected == "array" || expected == "object" ? actual == "JSON"
                 : true;
             if (!compatible)
                 throw Error(ErrorCode::SchemaMismatch, "incompatible type for " + column + " in domain table " +
@@ -474,6 +512,96 @@ void ProjectTableStore::append(
         return;
     }
     project_->append_rows(table_name, column_names, rows);
+}
+
+std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
+    const std::string &contract_id,
+    const std::string &producer_operation,
+    const std::string &producer_instance,
+    int workflow_revision,
+    const Json &columns) const {
+    if (!impl_ || contract_id.empty() || producer_operation.empty() ||
+        producer_instance.empty() || !columns.is_array() || columns.empty())
+        throw Error(ErrorCode::InvalidArgument, "invalid table artifact allocation");
+    static std::atomic_uint64_t sequence{0};
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto token = std::to_string(stamp) + "_" + std::to_string(sequence.fetch_add(1));
+    const std::string artifact_id = "artifact_" + token;
+    const std::string physical_table = "ARTIFACT_" + token;
+    std::vector<std::string> definitions;
+    for (const auto &column : columns) {
+        const auto name = detail::manifest_identifier(column.at("name").get<std::string>());
+        definitions.push_back(name + " " + detail::manifest_sql_type(column));
+    }
+    std::string ddl = "CREATE TABLE " + physical_table + " (";
+    for (std::size_t index = 0; index < definitions.size(); ++index) {
+        if (index != 0) ddl += ", ";
+        ddl += definitions[index];
+    }
+    ddl += ")";
+    impl_->owned_tables.push_back(physical_table);
+    detail::store_query(*impl_, ddl);
+    const auto quote = [](const std::string &value) {
+        std::string output = "'";
+        for (const char character : value)
+            output += character == '\'' ? "''" : std::string(1, character);
+        return output + "'";
+    };
+    detail::store_query(*impl_,
+        "INSERT INTO ARTIFACT_INVENTORY (artifact_id, contract_id, representation, physical_table, producer_operation, producer_instance, workflow_revision) VALUES (" +
+        quote(artifact_id) + ", " + quote(contract_id) + ", 'table', " +
+        quote(physical_table) + ", " + quote(producer_operation) + ", " +
+        quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
+    return {artifact_id, physical_table};
+}
+
+std::string ProjectTableStore::publish_result_artifact(
+    const std::string &contract_id,
+    const std::string &payload,
+    const std::string &producer_operation,
+    const std::string &producer_instance,
+    int workflow_revision) const {
+    if (!impl_ || contract_id.empty() || producer_operation.empty() ||
+        producer_instance.empty())
+        throw Error(ErrorCode::InvalidArgument, "invalid result artifact publication");
+    if (contract_id == "visualizationSpecResult") detail::validate_visualization_spec(payload);
+    static std::atomic_uint64_t sequence{0};
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto artifact_id = "artifact_" + std::to_string(stamp) + "_" +
+        std::to_string(sequence.fetch_add(1));
+    const auto quote = [](const std::string &value) {
+        std::string output = "'";
+        for (const char character : value)
+            output += character == '\'' ? "''" : std::string(1, character);
+        return output + "'";
+    };
+    detail::store_query(*impl_,
+        "INSERT INTO ARTIFACT_INVENTORY (artifact_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision) VALUES (" +
+        quote(artifact_id) + ", " + quote(contract_id) + ", 'json', " +
+        quote(payload) + "::JSON, " + quote(producer_operation) + ", " +
+        quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
+    return artifact_id;
+}
+
+void ProjectTableStore::append_artifact_lineage(
+    const std::string &artifact_id,
+    const std::vector<std::tuple<std::string, std::string, std::string>> &inputs) const {
+    if (!impl_ || artifact_id.empty())
+        throw Error(ErrorCode::InvalidArgument, "invalid artifact lineage");
+    const auto quote = [](const std::string &value) {
+        std::string output = "'";
+        for (const char character : value)
+            output += character == '\'' ? "''" : std::string(1, character);
+        return output + "'";
+    };
+    for (const auto &[source_artifact, source_port, target_port] : inputs) {
+        if (source_artifact.empty() || source_port.empty() || target_port.empty())
+            throw Error(ErrorCode::InvalidArgument, "artifact lineage requires source and port ids");
+        detail::store_query(*impl_,
+            "INSERT INTO ARTIFACT_LINEAGE (artifact_id, source_artifact_id, source_port_id, target_port_id) VALUES (" +
+            quote(artifact_id) + ", " + quote(source_artifact) + ", " +
+            quote(source_port) + ", " + quote(target_port) + ")");
+    }
 }
 
 }  // namespace streamfind

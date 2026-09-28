@@ -7,13 +7,46 @@
 #include <string>
 #include <utility>
 #include <vector>
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 #include "streamfind/catalogue.hpp"
+#include "streamfind/core_operations.hpp"
 #include "streamfind/mcp.hpp"
 #include "streamfind/plugin_configuration.hpp"
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
+#include "streamfind/vendor_runtime.hpp"
 
 namespace streamfind::mcp::detail {
+
+std::filesystem::path executable_path(int argc, char **argv) {
+#if defined(_WIN32)
+    std::vector<wchar_t> buffer(512);
+    for (;;) {
+        const auto length = GetModuleFileNameW(nullptr, buffer.data(),
+                                                static_cast<DWORD>(buffer.size()));
+        if (length == 0) break;
+        if (length < buffer.size() - 1)
+            return std::filesystem::path(std::wstring(buffer.data(), length));
+        buffer.resize(buffer.size() * 2);
+    }
+#elif defined(__linux__)
+    std::vector<char> buffer(512);
+    for (;;) {
+        const auto length = readlink("/proc/self/exe", buffer.data(), buffer.size());
+        if (length <= 0) break;
+        if (static_cast<std::size_t>(length) < buffer.size())
+            return std::filesystem::path(std::string(buffer.data(), static_cast<std::size_t>(length)));
+        buffer.resize(buffer.size() * 2);
+    }
+#endif
+    if (argc > 0 && argv != nullptr && argv[0] != nullptr)
+        return std::filesystem::absolute(std::filesystem::path(argv[0]));
+    return std::filesystem::current_path() / "streamfind_mcp";
+}
 
 namespace host_callbacks {
 
@@ -47,6 +80,7 @@ public:
         if (!core_path) throw std::runtime_error("installed core catalogue not found");
         auto merged = catalogue::load_document(*core_path);
         if (!merged) throw std::runtime_error("installed core catalogue could not be loaded");
+        core_operations::register_operations(merged->at("entries"), operations);
         std::set<std::string> loaded_ids;
         for (const auto &plugin_id : configuration.configuration.enabled_plugins) {
             std::filesystem::path package_root;
@@ -79,6 +113,8 @@ public:
             loaded->host.clear_table = &sdk::plugin_clear_table;
             loaded->host.read_batch = &sdk::plugin_read_batch;
             loaded->host.append_batch = &sdk::plugin_append_batch;
+            loaded->host.emit_table_batch = &sdk::plugin_emit_table_batch;
+            loaded->host.emit_result = &sdk::plugin_emit_result;
             loaded->host.update_batch = &sdk::plugin_update_batch;
             loaded->host.update_composite_batch = &sdk::plugin_update_composite_batch;
             loaded->host.delete_batch = &sdk::plugin_delete_batch;
@@ -138,15 +174,20 @@ private:
 }  // namespace streamfind::mcp::detail
 
 int main(int argc, char **argv) {
+    streamfind::configure_vendor_runtime_paths();
     std::string line;
     streamfind::MethodRegistry registry;
     streamfind::OperationRegistry operations;
     std::unique_ptr<streamfind::mcp::detail::DynamicPluginRuntime> dynamic_plugins;
     try {
-        const auto executable_path = argc > 0
-                                         ? std::filesystem::absolute(argv[0])
-                                         : std::filesystem::current_path() / "streamfind_mcp";
-        const auto configuration_path = executable_path.parent_path() / "streamfind.json";
+        const auto executable = streamfind::mcp::detail::executable_path(argc, argv);
+        const auto packaged_app = executable.parent_path().parent_path() / "app";
+#if defined(_WIN32)
+        _putenv_s("STREAMFIND_MCP_APP_DIR", packaged_app.string().c_str());
+#else
+        setenv("STREAMFIND_MCP_APP_DIR", packaged_app.string().c_str(), 1);
+#endif
+        const auto configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");
         dynamic_plugins = std::make_unique<streamfind::mcp::detail::DynamicPluginRuntime>();
@@ -155,7 +196,7 @@ int main(int argc, char **argv) {
         std::cerr << "streamfind-mcp: registration failed: " << error.what() << '\n';
         return 3;
     }
-    streamfind::mcp::Session session(registry, operations);
+    streamfind::mcp::Session session(operations);
     while (std::getline(std::cin, line)) {
             try { std::cout << session.handle(streamfind::Json::parse(line)).dump() << '\n' << std::flush; }
             catch (const std::exception &error) { std::cout << streamfind::Json{{"jsonrpc", "2.0"}, {"error", {{"code", -32700}, {"message", error.what()}}}}.dump() << '\n' << std::flush; }
