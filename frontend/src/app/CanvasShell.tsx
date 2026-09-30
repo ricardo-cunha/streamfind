@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -222,16 +223,11 @@ function ontologyPortTerm(port: NodePort): string {
 }
 
 function tableRowsToWireValue(value: unknown): unknown {
-  if (!Array.isArray(value) || value.some((row) => typeof row !== 'object' || row === null || Array.isArray(row)))
-    return value;
-  const names = Array.from(new Set(value.flatMap((row) => Object.keys(row as Record<string, unknown>))));
-  return {
-    columns: names.map((name) => ({
-      name,
-      type: 'string',
-      values: value.map((row) => (row as Record<string, unknown>)[name] ?? null),
-    })),
-  };
+  // Row-oriented table values are the public operation form. Preserve their
+  // scalar JSON types; converting every cell to a string loses numeric target
+  // values such as mass and m/z. The native validator also accepts the
+  // persisted column-oriented form when one is supplied directly.
+  return value;
 }
 
 function wireParameters(
@@ -651,6 +647,11 @@ function artifactContractMatches(artifactContract: string, portContract?: string
   return local(artifactContract) === local(portContract);
 }
 
+function isVisualizationArtifact(artifact: ArtifactRecord): boolean {
+  const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
+  return contract === 'visualizationSpecResult';
+}
+
 function nodePorts(capability: BackendCapability | undefined): { inputs: NodePort[]; outputs: NodePort[] } {
   const canvas = capability?.canvas;
   const inputPorts = canvas?.input_ports || capability?.input_ports || capability?.inputs || [];
@@ -725,50 +726,30 @@ function connectedNodePosition(source: CanvasNode, nodes: CanvasNode[]): Point {
   return { x: source.x + columnStep, y: source.y };
 }
 
-const ARTIFACT_PAGE_SIZE = 250;
-const ARTIFACT_ROW_HEIGHT = 32;
-
-type ArtifactRow = ArtifactDataResponse['rows'][number];
+const ARTIFACT_PAGE_SIZE = 1000;
 
 function VirtualArtifactTable({
   columns,
-  totalRows,
   pages,
+  pageOffset,
   loading,
-  requestPage,
 }: {
   columns: ArtifactDataResponse['columns'];
-  totalRows: number;
   pages: Record<number, ArtifactDataResponse>;
+  pageOffset: number;
   loading: boolean;
-  requestPage: (offset: number) => void;
 }) {
-  const [scrollTop, setScrollTop] = useState(0);
-  const viewportHeight = 520;
-  const firstRow = Math.max(0, Math.floor(scrollTop / ARTIFACT_ROW_HEIGHT) - 8);
-  const visibleCount = Math.ceil(viewportHeight / ARTIFACT_ROW_HEIGHT) + 16;
-  const lastRow = Math.min(totalRows, firstRow + visibleCount);
-  const firstPage = Math.floor(firstRow / ARTIFACT_PAGE_SIZE) * ARTIFACT_PAGE_SIZE;
-  const lastPage = Math.floor(Math.max(firstRow, lastRow - 1) / ARTIFACT_PAGE_SIZE) * ARTIFACT_PAGE_SIZE;
+  const rows = pages[pageOffset]?.rows ?? [];
 
-  useEffect(() => {
-    for (let offset = firstPage; offset <= lastPage; offset += ARTIFACT_PAGE_SIZE) requestPage(offset);
-  }, [firstPage, lastPage, requestPage]);
-
-  const rowAt = (index: number): ArtifactRow | undefined => {
-    const offset = Math.floor(index / ARTIFACT_PAGE_SIZE) * ARTIFACT_PAGE_SIZE;
-    return pages[offset]?.rows[index - offset];
-  };
-
+  const columnWidth = 160;
   return (
-    <div
-      className="sf-artifact-virtual-scroll"
-      role="region"
-      aria-label="Artifact table"
-      tabIndex={0}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-    >
+    <div className="sf-artifact-virtual-scroll" role="region" aria-label="Artifact table" tabIndex={0}>
       <table>
+        <colgroup>
+          {columns.map((column) => (
+            <col key={column.name} style={{ width: columnWidth }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
             {columns.map((column) => (
@@ -780,26 +761,18 @@ function VirtualArtifactTable({
           </tr>
         </thead>
         <tbody>
-          <tr aria-hidden="true" className="sf-artifact-virtual-spacer">
-            <td colSpan={columns.length} style={{ height: firstRow * ARTIFACT_ROW_HEIGHT }} />
-          </tr>
-          {Array.from({ length: Math.max(0, lastRow - firstRow) }, (_, rowOffset) => {
-            const index = firstRow + rowOffset;
-            const row = rowAt(index);
+          {rows.map((row, index) => {
             return (
               <tr key={index}>
                 {columns.map((column) => (
-                  <td key={column.name}>{row ? (row[column.name] ?? 'NULL') : 'Loading…'}</td>
+                  <td key={column.name}>{row[column.name] ?? 'NULL'}</td>
                 ))}
               </tr>
             );
           })}
-          <tr aria-hidden="true" className="sf-artifact-virtual-spacer">
-            <td colSpan={columns.length} style={{ height: Math.max(0, totalRows - lastRow) * ARTIFACT_ROW_HEIGHT }} />
-          </tr>
         </tbody>
       </table>
-      {loading ? <div className="sf-artifact-viewer-loading">Loading visible rows…</div> : null}
+      {loading ? <div className="sf-artifact-viewer-loading">Refreshing table…</div> : null}
     </div>
   );
 }
@@ -826,6 +799,7 @@ export default function CanvasShell({
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
+  const initialViewportFittedRef = useRef(false);
   const [worldSize, setWorldSize] = useState({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
   const viewportRef = useRef({ offset, scale });
   useEffect(() => {
@@ -887,7 +861,7 @@ export default function CanvasShell({
     surface === 'workflow' ? 'Drag an output connector to a compatible input connector.' : 'Workflow canvas',
   );
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
-  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
+  const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactViewer, setArtifactViewer] = useState<ArtifactRecord | null>(null);
   const [artifactData, setArtifactData] = useState<ArtifactDataResponse | null>(null);
   const [artifactPages, setArtifactPages] = useState<Record<number, ArtifactDataResponse>>({});
@@ -929,11 +903,14 @@ export default function CanvasShell({
     [appendLog],
   );
   const refreshArtifacts = useCallback(() => {
-    if (!client || typeof client.artifacts !== 'function') return Promise.resolve();
+    if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
     return client
-      .artifacts(project.session_id)
-      .then(setArtifacts)
-      .catch(() => undefined);
+      .currentArtifacts(project.session_id)
+      .then((artifacts) => {
+        setCurrentArtifacts(artifacts);
+        return artifacts;
+      })
+      .catch(() => []);
   }, [client, project.session_id]);
   const artifactPageRequests = useRef(new Set<number>());
   const artifactPageQueryRef = useRef('');
@@ -944,8 +921,6 @@ export default function CanvasShell({
       if (offset === 0 && artifactPageQueryRef.current !== queryKey) {
         artifactPageQueryRef.current = queryKey;
         artifactPageRequests.current.clear();
-        setArtifactData(null);
-        setArtifactPages({});
       }
       if (artifactPageRequests.current.has(offset)) return;
       artifactPageRequests.current.add(offset);
@@ -960,7 +935,7 @@ export default function CanvasShell({
           descending: artifactViewerDescending,
         })
         .then((result) => {
-          setArtifactData((current) => current ?? result);
+          setArtifactData(result);
           setArtifactPages((current) => {
             const next = { ...current, [offset]: result };
             return Object.fromEntries(
@@ -980,7 +955,8 @@ export default function CanvasShell({
   );
   useEffect(() => {
     if (!artifactViewer || artifactViewer.representation !== 'table' || !client) return;
-    requestArtifactPage(0);
+    const timer = window.setTimeout(() => requestArtifactPage(0), 300);
+    return () => window.clearTimeout(timer);
   }, [artifactViewer, client, requestArtifactPage]);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1167,6 +1143,7 @@ export default function CanvasShell({
       .workflowDefinition(project.session_id)
       .then((result) => {
         if (!active) return;
+        initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
@@ -1204,6 +1181,11 @@ export default function CanvasShell({
         nextId.current = loadedNodes.length + 1;
         setNodes(loadedNodes);
         setEdges(loadedEdges);
+        setWorldSize((current) => ({
+          width: Math.max(current.width, ...loadedNodes.map((node) => node.x + NODE_WIDTH + 800)),
+          height: Math.max(current.height, ...loadedNodes.map((node) => node.y + NODE_HEIGHT + 600)),
+        }));
+        void refreshArtifacts();
         setWorkflowLoaded(true);
         setStatus('Workflow loaded from the project.');
       })
@@ -1216,7 +1198,35 @@ export default function CanvasShell({
     return () => {
       active = false;
     };
-  }, [capabilities.operations, client, project.session_id, setStatus, surface]);
+  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface]);
+
+  useLayoutEffect(() => {
+    if (!workflowLoaded || !nodes.length || initialViewportFittedRef.current) return undefined;
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const minX = Math.min(...nodes.map((node) => node.x));
+    const minY = Math.min(...nodes.map((node) => node.y));
+    const maxX = Math.max(...nodes.map((node) => node.x + NODE_WIDTH));
+    const maxY = Math.max(...nodes.map((node) => node.y + NODE_HEIGHT));
+    const padding = 80;
+    const boundsWidth = Math.max(1, maxX - minX);
+    const boundsHeight = Math.max(1, maxY - minY);
+    const fittedScale = Math.max(
+      0.35,
+      Math.min(
+        1.2,
+        (canvas.clientWidth - padding * 2) / boundsWidth,
+        (canvas.clientHeight - padding * 2) / boundsHeight,
+      ),
+    );
+    initialViewportFittedRef.current = true;
+    setScale(fittedScale);
+    setOffset({
+      x: (canvas.clientWidth - boundsWidth * fittedScale) / 2 - minX * fittedScale,
+      y: (canvas.clientHeight - boundsHeight * fittedScale) / 2 - minY * fittedScale,
+    });
+    return undefined;
+  }, [nodes, workflowLoaded]);
 
   const workflowAction = async (action: 'run' | 'pause' | 'cancel') => {
     if (!client) return;
@@ -1454,7 +1464,9 @@ export default function CanvasShell({
       const parameter = capability?.parameters.find((candidate) => `parameter:${candidate.name}` === portId);
       return parameter ? parameterTypeKey(parameter) : 'unknown';
     }
-    const port = nodePorts(capability)[direction === 'input' ? 'inputs' : 'outputs'].find((candidate) => candidate.id === portId);
+    const port = nodePorts(capability)[direction === 'input' ? 'inputs' : 'outputs'].find(
+      (candidate) => candidate.id === portId,
+    );
     return port ? visualPortTypeKey(port) : 'unknown';
   };
 
@@ -1812,18 +1824,14 @@ export default function CanvasShell({
     () =>
       [
         ...new Set(
-          availableTemplates
-            .map((template) => template.module)
-            .filter((module): module is string => Boolean(module)),
+          availableTemplates.map((template) => template.module).filter((module): module is string => Boolean(module)),
         ),
       ].sort(),
     [availableTemplates],
   );
   const paletteSearchQuery = paletteSearch.trim().toLocaleLowerCase();
   const filteredTemplates = useMemo(() => {
-    const categorized = availableTemplates.filter(
-      (template) => !paletteModule || template.module === paletteModule,
-    );
+    const categorized = availableTemplates.filter((template) => !paletteModule || template.module === paletteModule);
     if (!paletteSearchQuery) return categorized;
     return categorized.filter((template) => {
       const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
@@ -2096,8 +2104,22 @@ export default function CanvasShell({
             : item,
         ),
       );
-      await refreshArtifacts();
-      setStatus(`${capability.label} completed.`);
+      const artifacts = await refreshArtifacts();
+      const visualization = artifacts.find(
+        (artifact) => artifact.producer_instance === node.id && isVisualizationArtifact(artifact),
+      );
+      if (visualization) {
+        setArtifactViewer(visualization);
+        setArtifactData(null);
+        setArtifactViewerSearch('');
+        setArtifactViewerSort('');
+        setArtifactViewerDescending(false);
+      }
+      const cacheHit =
+        result !== null && typeof result === 'object' && !Array.isArray(result) && result.cache_hit === true;
+      setStatus(
+        cacheHit ? `${capability.label} reused cached artifacts; execution skipped.` : `${capability.label} completed.`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
       setNodes((current) =>
@@ -2134,21 +2156,21 @@ export default function CanvasShell({
     if (!documentationFocus) return;
     const frame = window.requestAnimationFrame(() => {
       window.setTimeout(() => {
-      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-ontology-focus]')).find(
-        (element) =>
-          element.dataset.ontologyFocusSection === documentationFocus.section &&
-          element.dataset.ontologyFocusKey === documentationFocus.key,
-      );
-      if (target) {
-        const pane = target.closest<HTMLElement>('.sf-node-info-pane');
-        if (pane) {
-          pane.scrollTo({
-            top: Math.max(0, target.offsetTop - pane.clientHeight / 2 + target.offsetHeight / 2),
-            behavior: 'smooth',
-          });
+        const target = Array.from(document.querySelectorAll<HTMLElement>('[data-ontology-focus]')).find(
+          (element) =>
+            element.dataset.ontologyFocusSection === documentationFocus.section &&
+            element.dataset.ontologyFocusKey === documentationFocus.key,
+        );
+        if (target) {
+          const pane = target.closest<HTMLElement>('.sf-node-info-pane');
+          if (pane) {
+            pane.scrollTo({
+              top: Math.max(0, target.offsetTop - pane.clientHeight / 2 + target.offsetHeight / 2),
+              behavior: 'smooth',
+            });
+          }
+          target.focus({ preventScroll: true });
         }
-        target.focus({ preventScroll: true });
-      }
       }, 0);
     });
     return () => window.cancelAnimationFrame(frame);
@@ -2432,7 +2454,7 @@ export default function CanvasShell({
             : undefined;
           const domainClass = (capability?.domain || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const outputArtifact = (port: NodePort) =>
-            artifacts
+            currentArtifacts
               .filter(
                 (artifact) =>
                   artifact.status === 'published' &&
@@ -2508,18 +2530,7 @@ export default function CanvasShell({
                     <i className="fa-solid fa-trash" />
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className="sf-node-ontology-link sf-node-title-link"
-                  aria-label={`Open ontology entry for ${node.title}`}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (capability) openNodeDocumentation(node.id);
-                  }}
-                >
-                  {node.title}
-                </button>
+                <strong className="sf-node-title">{node.title}</strong>
                 {capability?.module_id ? <span>{capability.module_id}</span> : null}
               </div>
               {nodePorts(capability).inputs.length ? (
@@ -3233,7 +3244,9 @@ export default function CanvasShell({
               const metadata = `${template.module || 'core'} · ${ports.inputs.length} input${ports.inputs.length === 1 ? '' : 's'} · ${ports.outputs.length} output${ports.outputs.length === 1 ? '' : 's'}`;
               return (
                 <article
-                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(template.domain || 'unknown')
+                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(
+                    template.domain || 'unknown'
+                  )
                     .replace(/[^a-z0-9_-]/gi, '-')
                     .toLowerCase()}`}
                   key={template.id}
@@ -3437,7 +3450,7 @@ export default function CanvasShell({
         <div className="sf-artifact-viewer-backdrop" role="presentation" onMouseDown={() => setArtifactViewer(null)}>
           <section
             className={`sf-artifact-viewer ${
-              artifactViewer.contract_id === 'visualizationSpecResult'
+              isVisualizationArtifact(artifactViewer)
                 ? 'visualization'
                 : artifactViewer.representation === 'table'
                   ? 'wide'
@@ -3495,19 +3508,34 @@ export default function CanvasShell({
                 </div>
                 <VirtualArtifactTable
                   columns={artifactData?.columns ?? artifactViewer.columns ?? []}
-                  totalRows={artifactData?.total_rows ?? 0}
                   pages={artifactPages}
+                  pageOffset={artifactData?.offset ?? 0}
                   loading={artifactViewerLoading}
-                  requestPage={requestArtifactPage}
                 />
                 <footer>
-                  {artifactData
-                    ? `Showing all ${artifactData.total_rows} rows with virtual rendering`
-                    : 'No rows loaded'}
-                  . Only the visible rows are rendered; data pages load as you scroll.
+                  <span>
+                    {artifactData
+                      ? `Showing rows ${artifactData.offset + 1}-${Math.min(artifactData.offset + artifactData.rows.length, artifactData.total_rows)} of ${artifactData.total_rows}`
+                      : 'No rows loaded'}
+                    . Search and sorting are performed by the service.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => requestArtifactPage(Math.max(0, (artifactData?.offset ?? 0) - ARTIFACT_PAGE_SIZE))}
+                    disabled={!artifactData || artifactData.offset === 0 || artifactViewerLoading}
+                  >
+                    Previous page
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestArtifactPage((artifactData?.offset ?? 0) + ARTIFACT_PAGE_SIZE)}
+                    disabled={!artifactData || artifactData.offset + artifactData.rows.length >= artifactData.total_rows || artifactViewerLoading}
+                  >
+                    Next page
+                  </button>
                 </footer>
               </>
-            ) : artifactViewer.contract_id === 'visualizationSpecResult' ? (
+            ) : isVisualizationArtifact(artifactViewer) ? (
               <VisualizationArtifactPreview artifact={artifactViewer} />
             ) : (
               <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>
@@ -3515,7 +3543,6 @@ export default function CanvasShell({
           </section>
         </div>
       ) : null}
-
     </div>
   );
 }

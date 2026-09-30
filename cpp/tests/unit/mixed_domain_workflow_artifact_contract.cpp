@@ -90,7 +90,7 @@ void run() {
         workflow.operations = {
             {"source", "domain_a.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()},
             {"consumer", "domain_b.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()}};
-        workflow.connections.push_back({"source", "table", "", "consumer", "input"});
+        workflow.connections.push_back({"source", "table", "consumer", "input"});
 
         project.set_workflow(workflow, registry);
         const auto stored = project.get_workflow();

@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StreamFindApiClient } from './StreamFindApiClient';
 
-const response = (body: unknown, ok = true, status = 200) =>
-  ({ ok, status, json: async () => body }) as Response;
+const response = (body: unknown, ok = true, status = 200) => ({ ok, status, json: async () => body }) as Response;
 
 describe('StreamFindApiClient capability discovery', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('loads the lightweight capability index', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      response({ protocol_version: '1.0', domains: ['core'], modules: [{ domain: 'core', module_id: 'io' }] }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        response({ protocol_version: '1.0', domains: ['core'], modules: [{ domain: 'core', module_id: 'io' }] }),
+      );
 
     const result = await new StreamFindApiClient('http://service').capabilitiesIndex();
 
@@ -19,9 +20,15 @@ describe('StreamFindApiClient capability discovery', () => {
   });
 
   it('encodes domain and applies module and search filters for operation summaries', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      response({ operations: [{ canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' }] }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        response({
+          operations: [
+            { canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' },
+          ],
+        }),
+      );
 
     const result = await new StreamFindApiClient('http://service').capabilityOperations({
       domain: 'lab/core',

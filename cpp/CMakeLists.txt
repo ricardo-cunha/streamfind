@@ -128,6 +128,7 @@ set(STREAMFIND_CORE_SOURCES
     ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
     core/src/api.cpp
     core/src/project.cpp
+    core/src/fingerprint.cpp
     core/src/mcp.cpp
     core/src/catalogue.cpp
     core/src/catalogue_binding.cpp

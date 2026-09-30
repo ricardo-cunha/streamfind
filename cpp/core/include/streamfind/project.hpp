@@ -182,7 +182,7 @@ struct STREAMFIND_CORE_API MethodDefinition {
     std::string link;
     std::string doi;
     ParameterSchema parameters;
-    bool cacheable{false};
+
     /// Tables whose rows must be captured for cache materialization.
     std::vector<std::string> writes;
 };
@@ -252,7 +252,7 @@ struct STREAMFIND_CORE_API OperationDefinition {
 
     std::string id, name, description, domain, version{"1"};
     bool project_entry{false};
-    bool cacheable{false};
+
     ParameterSchema parameters;
     std::vector<Port> input_ports;
     std::vector<Port> output_ports;
@@ -304,7 +304,7 @@ struct STREAMFIND_CORE_API WorkflowOperation {
 struct STREAMFIND_CORE_API WorkflowConnection {
     std::string source_operation;
     std::string source_port;
-    std::string source_artifact_id;
+
     std::string target_operation;
     std::string target_port;
 
@@ -397,17 +397,6 @@ struct STREAMFIND_CORE_API ProjectInfo {
     std::string created_at;
 };
 
-/** @brief One serialized entry in the Project CACHE table. */
-struct STREAMFIND_CORE_API CacheEntry {
-    /// Cache operation/name label.
-    std::string name;
-    /// Human-readable cache description.
-    std::string description;
-    /// Deterministic cache key.
-    std::string hash;
-    std::vector<std::uint8_t> data;
-    std::string created_at;
-};
 
 /** @brief One processing event from the Project AUDIT_TRAIL table. */
 struct STREAMFIND_CORE_API AuditEntry {
@@ -483,23 +472,15 @@ public:
                      const std::vector<std::string> &column_names,
                      const std::vector<std::vector<std::optional<std::string>>> &rows) const;
 
-    /** @brief Return all cache entries for this project. */
-    std::vector<CacheEntry> get_cache() const;
-    /** @brief Return the number of cache entries for this project. */
-    std::size_t get_cache_size() const;
-    /** @brief Find a cache entry by deterministic hash. */
-    std::optional<CacheEntry> get_cache_entry(const std::string &hash) const;
-    /** @brief Insert or replace a JSON value in the project cache. */
-    void set_cache(std::string name, std::string description,
-                   std::string hash, const Json &value);
-    /** @brief Delete all cache entries for this project. */
-    void delete_cache();
+
     /** @brief Return processing and cache audit events in time order. */
     std::vector<AuditEntry> get_audit_trail() const;
     /** @brief Return persisted execution rows for every workflow step. */
     Json get_workflow_execution() const;
     /** @brief Return immutable table and structured result artifacts published by workflows. */
     Json get_artifact_inventory() const;
+    /** @brief Return the newest published artifact for each producer/output contract. */
+    Json get_current_artifact_inventory() const;
     /** @brief Publish a structured JSON result for an operation output port. */
     std::string publish_result_artifact(const std::string &contract_id,
                                         const Json &payload,
@@ -508,6 +489,8 @@ public:
                                         int workflow_revision = 0);
     /** @brief Resolve graph connections for one operation to published input artifacts. */
     Json resolve_workflow_inputs(const std::string &operation_id) const;
+    Json resolve_workflow_inputs(const std::string &operation_id,
+                                 const Json &current_artifacts) const;
     /** @brief Execute the persisted operation graph in topological order. */
     Json run_operation_graph(const OperationRegistry &registry);
 

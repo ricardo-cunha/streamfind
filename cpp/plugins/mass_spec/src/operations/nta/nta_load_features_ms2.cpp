@@ -16,7 +16,9 @@ using Json = nlohmann::json;
         const float presence = parameters.value("presence", 0.8);
         if (min_traces < 0 || isolation_window < 0 || mz_clust < 0 || presence < 0 || presence > 1)
             throw Error(ErrorCode::InvalidArgument, "invalid MS2 spectrum loading parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        auto all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
         auto &buffers = data.feature_buffers();
         for (size_t i = 0; i < buffers.size(); ++i)
         {

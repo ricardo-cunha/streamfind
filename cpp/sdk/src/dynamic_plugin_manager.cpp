@@ -157,6 +157,8 @@ Json invoke_dynamic(
             }
         }
         context.tables = &tables;
+        context.database_path = project.get_database_path();
+        context.operation_instance = workflow_instance;
         context.cancelled = &cancelled;
         context.progress = [&project](double, std::string_view message) {
             if (!message.empty()) project.log_operation(message);
@@ -457,7 +459,7 @@ void register_dynamic_plugin_capabilities(
             definition.domain = entry.value("domain", "");
             definition.version = entry.value("operation_version", "1");
             definition.project_entry = entry.value("project_entry", false);
-            definition.cacheable = entry.value("cacheable", false);
+
             definition.parameters = ParameterSchema::from_json(
                 parameter_schema(entry));
             for (const auto &port : entry.value("input_ports", Json::array()))

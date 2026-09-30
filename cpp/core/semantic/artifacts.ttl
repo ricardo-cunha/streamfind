@@ -18,20 +18,6 @@ sfcore:projectTable
         sfcore:schemaVersionColumn,
         sfcore:frameworkVersionColumn .
 
-sfcore:cacheTable
-    a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache table" ;
-    skos:definition "Cached workflow results owned by a project." ;
-    sf:tableName "CACHE" ;
-    sf:dataKind "duckdb_table" ;
-    sf:hasColumn
-        sfcore:cacheNameColumn,
-        sfcore:cacheDescriptionColumn,
-        sfcore:cacheHashColumn,
-        sfcore:cacheDataColumn,
-        sfcore:createdAtColumn .
 
 sfcore:auditTrailTable
     a sf:Table ;

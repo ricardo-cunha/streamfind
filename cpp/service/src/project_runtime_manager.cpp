@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <system_error>
+#include <tuple>
 
 namespace streamfind::service {
 
@@ -164,6 +165,11 @@ Json ProjectRuntimeManager::artifact_inventory(const std::string &session_id) co
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     auto artifacts = iterator->second->get_artifact_inventory();
     for (auto &artifact : artifacts) {
+        const auto revision = artifact.find("workflow_revision");
+        if (revision != artifact.end() && revision->is_string()) {
+            try { artifact["workflow_revision"] = std::stoi(revision->get<std::string>()); }
+            catch (...) { artifact["workflow_revision"] = 0; }
+        }
         const auto table = artifact.contains("physical_table") &&
                                    artifact.at("physical_table").is_string()
                                ? artifact.at("physical_table").get<std::string>()
@@ -183,10 +189,35 @@ Json ProjectRuntimeManager::artifact_inventory(const std::string &session_id) co
             for (const auto &column : columns)
                 artifact["columns"].push_back({{"name", column.value("column_name", "")}, {"type", column.value("column_type", "")}});
         } catch (const std::exception &error) {
-            throw std::runtime_error("artifact inventory inspection failed for " + table + ": " + error.what());
+            // A stale historical table must not hide valid current artifacts after reopening a project.
+            // Keep the inventory row visible for provenance, but exclude it from current selection.
+            artifact["status"] = "stale";
+            artifact["availability_error"] = error.what();
         }
     }
     return artifacts;
+}
+
+Json ProjectRuntimeManager::current_artifact_inventory(const std::string &session_id) const {
+    const auto artifacts = artifact_inventory(session_id);
+    Json current = Json::object();
+    for (const auto &artifact : artifacts) {
+        if (artifact.value("status", "") != "published") continue;
+        const auto key = artifact.value("producer_instance", "") + "\n" + artifact.value("contract_id", "");
+        const auto existing = current.find(key);
+        const auto newer = [&](const Json &candidate, const Json &previous) {
+            const auto candidate_revision = candidate.value("workflow_revision", 0);
+            const auto previous_revision = previous.value("workflow_revision", 0);
+            return candidate_revision > previous_revision ||
+                   (candidate_revision == previous_revision &&
+                    std::tie(candidate["created_at"], candidate["artifact_id"]) >
+                        std::tie(previous["created_at"], previous["artifact_id"]));
+        };
+        if (existing == current.end() || newer(artifact, *existing)) current[key] = artifact;
+    }
+    Json result = Json::array();
+    for (const auto &[key, artifact] : current.items()) result.push_back(artifact);
+    return result;
 }
 
 Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const Json &request) const {
@@ -212,31 +243,52 @@ Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const J
     quoted_table += "\"";
     const auto description = iterator->second->query_json("DESCRIBE " + quoted_table);
     std::vector<std::string> columns;
-    for (const auto &column : description) columns.push_back(column.value("column_name", std::string{}));
-    const auto search = request.value("search", std::string{});
+    for (const auto &column : description)
+        columns.push_back(column.value("column_name", std::string{}));
+    const auto quote_identifier = [](const std::string &value) {
+        std::string output = "\"";
+        for (const char character : value) output += character == '"' ? "\"\"" : std::string(1, character);
+        return output + "\"";
+    };
+    const auto escape = [](const std::string &value) {
+        std::string output;
+        for (const char character : value) output += character == '\'' ? "''" : std::string(1, character);
+        return output;
+    };
     std::string where;
+    const auto append_condition = [&where](const std::string &condition) {
+        where += where.empty() ? " WHERE " + condition : " AND " + condition;
+    };
+    const auto search = request.value("search", std::string{});
     if (!search.empty()) {
-        std::string escaped;
-        for (const char character : search) escaped += character == '\'' ? "''" : std::string(1, character);
+        std::string search_condition;
         for (const auto &column : columns) {
-            if (!where.empty()) where += " OR ";
-            where += "CAST(\"" + column + "\" AS VARCHAR) ILIKE '%" + escaped + "%'";
+            if (!search_condition.empty()) search_condition += " OR ";
+            search_condition += "CAST(" + quote_identifier(column) + " AS VARCHAR) ILIKE '%" + escape(search) + "%'";
         }
-        where = " WHERE " + where;
+        append_condition("(" + search_condition + ")");
     }
     const auto sort = request.value("sort_column", std::string{});
     const bool valid_sort = std::find(columns.begin(), columns.end(), sort) != columns.end();
-    const auto order = valid_sort ? (" ORDER BY \"" + sort + "\" " + (request.value("descending", false) ? "DESC" : "ASC")) : std::string{};
+    const auto order = valid_sort ? (" ORDER BY " + quote_identifier(sort) + " " + (request.value("descending", false) ? "DESC" : "ASC")) : std::string{};
     const auto limit = std::clamp(request.value("limit", 100), 1, 1000);
     const auto offset = std::max(0, request.value("offset", 0));
-    const auto total = iterator->second->query_json("SELECT COUNT(*) AS row_count FROM " + quoted_table + where);
-    const auto rows = iterator->second->query_json("SELECT * FROM " + quoted_table + where + order +
-                                                   " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset));
+    auto rows = iterator->second->query_json(
+        "SELECT *, COUNT(*) OVER() AS \"__streamfind_total_rows\" FROM " + quoted_table + where + order +
+        " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset));
+    std::size_t total_rows = 0;
+    if (!rows.empty()) {
+        total_rows = std::stoull(rows.front().value("__streamfind_total_rows", std::string{"0"}));
+        for (auto &row : rows) row.erase("__streamfind_total_rows");
+    } else {
+        const auto count = iterator->second->query_json("SELECT COUNT(*) AS \"__streamfind_total_rows\" FROM " + quoted_table + where);
+        if (!count.empty()) total_rows = std::stoull(count.front().value("__streamfind_total_rows", std::string{"0"}));
+    }
     Json column_json = Json::array();
     for (const auto &column : description)
         column_json.push_back({{"name", column.value("column_name", std::string{})}, {"type", column.value("column_type", std::string{})}});
     return {{"artifact_id", artifact_id}, {"columns", column_json}, {"rows", rows},
-            {"offset", offset}, {"limit", limit}, {"total_rows", total.empty() ? 0 : std::stoull(total.front().value("row_count", std::string{"0"}))}};
+            {"offset", offset}, {"limit", limit}, {"total_rows", total_rows}};
 }
 
 std::string ProjectRuntimeManager::set_workflow_state(const std::string &session_id, const std::string &state) {

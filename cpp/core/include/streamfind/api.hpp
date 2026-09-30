@@ -25,14 +25,13 @@ enum class ProjectCommand {
     run_workflow,
     get_metadata,
     set_metadata,
-    get_cache,
-    delete_cache,
-    get_cache_size,
+
     get_audit_trail,
     close,
     add_operation,
     connect_operations,
     get_artifact_inventory,
+    get_current_artifact_inventory,
     request_artifact,
     resolve_operation_inputs,
 };

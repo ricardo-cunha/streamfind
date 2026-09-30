@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -21,6 +22,8 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     using ResultEmitter = std::function<streamfind_plugin_status(
         void *, const char *, uint32_t, const char *, uint64_t, void *)>;
     ProjectTableStore *tables{nullptr};
+    std::filesystem::path database_path;
+    std::string operation_instance;
     std::atomic_bool *cancelled{nullptr};
     std::function<void(double, std::string_view)> progress;
     std::vector<std::string> allowed_tables;

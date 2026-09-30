@@ -51,7 +51,7 @@ get_metadata, set_metadata
 get_domain
 get_workflow, set_workflow, validate_workflow, run_workflow
 get_operations, get_operation, add_operation, connect_operations
-get_cache, get_cache_size, delete_cache
+get_artifact_inventory, get_current_artifact_inventory, request_artifact
 get_audit_trail
 copy, close
 ```

@@ -111,8 +111,8 @@ Json tools() {
             name == "get_workflow" || name == "get_workflow_execution" || name == "create_workflow_execution" ||
             name == "get_execution" || name == "list_executions" || name == "transition_execution" ||
             name == "cancel_execution" ||
-            name == "run_workflow" || name == "get_cache" || name == "get_cache_size" ||
-            name == "delete_cache" || name == "get_audit_trail" || name == "get_artifact_inventory" ||
+            name == "run_workflow" || name == "get_audit_trail" || name == "get_artifact_inventory" ||
+            name == "get_current_artifact_inventory" ||
             name == "resolve_operation_inputs")
             entry["inputSchema"] = project_path_schema;
         else if (name == "set_workflow" || name == "validate_workflow") entry["inputSchema"] = workflow_schema;
@@ -147,12 +147,12 @@ Json tools() {
 }
 
 const char *command(const std::string &name) {
-    static const std::array<std::string, 31> commands = {
+    static const std::array<std::string, 29> commands = {
         "create", "describe", "validate", "get_project_domains", "get_metadata",
         "set_metadata", "get_workflow", "get_workflow_execution", "create_workflow_execution", "get_execution", "list_executions", "transition_execution", "cancel_execution", "set_workflow", "validate_workflow",
-        "run_workflow", "get_cache", "get_cache_size", "delete_cache",
+        "run_workflow",
         "get_audit_trail", "copy", "close",
-        "add_operation", "connect_operations", "get_artifact_inventory",
+        "add_operation", "connect_operations", "get_artifact_inventory", "get_current_artifact_inventory",
         "request_artifact", "resolve_operation_inputs",
 
     };

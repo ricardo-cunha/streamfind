@@ -54,6 +54,7 @@ int main() {
         bool has_connect_operations = false;
         bool has_set_workflow = false;
         bool has_request_artifact = false;
+        bool has_current_artifact_inventory = false;
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             require(name.rfind("mass_spec.", 0) != 0, "operation-specific MCP tool leaked into tools/list");
@@ -70,12 +71,14 @@ int main() {
             has_connect_operations = has_connect_operations || name == "connect_operations";
             has_set_workflow = has_set_workflow || name == "set_workflow";
             has_request_artifact = has_request_artifact || name == "request_artifact";
+            has_current_artifact_inventory = has_current_artifact_inventory || name == "get_current_artifact_inventory";
         }
         require(has_domains && has_modules && has_operations && has_operation && has_run_operation,
                 "stable MCP discovery tools are incomplete");
         require(has_create && has_add_operation && has_connect_operations && has_set_workflow,
                 "operation-graph MCP tools are incomplete");
         require(has_request_artifact, "artifact request MCP tool is missing");
+        require(has_current_artifact_inventory, "current artifact inventory MCP tool is missing");
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             if (name == "create")
@@ -123,6 +126,9 @@ int main() {
             require(operation.value("domain", "") == "mass_spec" &&
                         operation.value("module_id", "") == "mass_spec.nta",
                     "operation filtering returned the wrong module");
+        for (const auto &operation : operations)
+            require(!operation.contains("cacheable"),
+                    "operation catalogue still exposes the removed cacheable flag");
 
         const auto searched = text_json(call(session, 4, "get_operations",
                                              {{"domain", "mass_spec"}, {"search", "nta"}}));

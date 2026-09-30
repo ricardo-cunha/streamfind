@@ -122,7 +122,9 @@ export class StreamFindApiClient {
   async capabilityOperations(
     options: CapabilityOperationsRequest & { includeSchema?: false },
   ): Promise<CapabilityOperationSummary[]>;
-  async capabilityOperations(options: CapabilityOperationsRequest): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
+  async capabilityOperations(
+    options: CapabilityOperationsRequest,
+  ): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
     const query = new URLSearchParams({ domain: options.domain });
     if (options.module) query.set('module', options.module);
     if (options.search) query.set('search', options.search);
@@ -189,6 +191,13 @@ export class StreamFindApiClient {
   async artifacts(sessionId: string): Promise<ArtifactRecord[]> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts`);
     if (!response.ok) throw new Error(`Artifact inventory request failed (${response.status})`);
+    const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
+    return result.artifacts || [];
+  }
+
+  async currentArtifacts(sessionId: string): Promise<ArtifactRecord[]> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/current`);
+    if (!response.ok) throw new Error(`Current artifact inventory request failed (${response.status})`);
     const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
     return result.artifacts || [];
   }

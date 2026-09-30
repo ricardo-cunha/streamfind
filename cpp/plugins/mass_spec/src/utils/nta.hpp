@@ -87,7 +87,7 @@ namespace streamfind::mass_spec::nta::utils
     bool component_bridge_flag = false;
   };
   extern std::ofstream debug_log;
-  void init_debug_log(const std::string &, const std::string & = {});
+  void init_debug_log(const std::string &, const std::string & = {}, bool append = false);
   void close_debug_log();
   float mean(const std::vector<float> &);
   float standard_deviation(const std::vector<float> &, float);

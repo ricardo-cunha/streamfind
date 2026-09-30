@@ -1,5 +1,6 @@
 #ifndef NTA_ANNOTATION_H
 #include "utils/nta.hpp"
+#include "streamfind/sdk/debug_session.hpp"
 
 #define NTA_ANNOTATION_H
 
@@ -302,7 +303,8 @@ namespace streamfind::mass_spec::nta
         float ppm,
         const std::vector<std::string> &isotopeElements,
         const std::string &debugComponent = "",
-        const std::string &debugAnalysis = "");
+        const std::string &debugAnalysis = "",
+        sdk::DebugSession *debug = nullptr);
 
   } // namespace annotation
 } // namespace streamfind::mass_spec::nta

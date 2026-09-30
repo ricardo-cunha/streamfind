@@ -553,6 +553,11 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/artifacts");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, Json{{"artifacts", projects_.artifact_inventory(session_id)}});
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/current")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/current");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, Json{{"artifacts", projects_.current_artifact_inventory(session_id)}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/validate")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/validate");
@@ -600,9 +605,13 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                                          {"payload", Json{{"message", error.what()}}}});
                     throw;
                 }
+                const bool cache_hit = result.value("cache_hit", false);
                 events_.publish(Json{{"type", "operation.completed"}, {"project", session_id},
                                      {"operation_id", operation_id},
-                                     {"payload", Json{{"message", "Operation execution completed."}}}});
+                                     {"payload", Json{{"message", cache_hit
+                                         ? "Operation reused cached artifacts; execution skipped."
+                                         : "Operation execution completed."},
+                                                       {"cache_hit", cache_hit}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"operation_id", operation_id}, {"result", result}});
             } else if (method == "DELETE" && path.rfind("/projects/", 0) == 0) {
                 const auto session_id = detail::percent_decode(path.substr(std::string("/projects/").size()));

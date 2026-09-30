@@ -127,9 +127,27 @@ namespace streamfind::mass_spec::nta::deconvolution
     {
       if (!bin_data[bin_idx].empty())
       {
-        float quantile_val = ::streamfind::mass_spec::nta::utils::quantile(bin_data[bin_idx], params.quantile);
-        float adjusted_threshold = quantile_val * params.threshold_multiplier;
-        bin_quantiles[bin_idx] = std::max(adjusted_threshold, noise_threshold);
+        std::vector<float> positive;
+        positive.reserve(bin_data[bin_idx].size());
+        for (const float value : bin_data[bin_idx])
+          if (std::isfinite(value) && value > 0.0f)
+            positive.push_back(value);
+        if (positive.empty())
+          continue;
+
+        // The upper tail contains chromatographic ions, so using the requested
+        // quantile directly makes the noise estimate follow signal intensity.
+        // Estimate the background from the lower half and a robust IQR fence.
+        const float q25 = ::streamfind::mass_spec::nta::utils::quantile(positive, 0.25f);
+        const float q50 = ::streamfind::mass_spec::nta::utils::quantile(positive, 0.50f);
+        const float q75 = ::streamfind::mass_spec::nta::utils::quantile(positive, 0.75f);
+        const float robust_threshold = q50 + 1.5f * std::max(0.0f, q75 - q25);
+        const float lower_tail_quantile = std::min(params.quantile, 0.50f);
+        const float quantile_threshold =
+            ::streamfind::mass_spec::nta::utils::quantile(positive, lower_tail_quantile) *
+            params.threshold_multiplier;
+        bin_quantiles[bin_idx] = std::max(
+            noise_threshold, std::max(robust_threshold, quantile_threshold));
       }
     }
     for (int i = 0; i < n; ++i)
@@ -234,7 +252,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       size_t &total_raw_points,
       size_t &total_clean_points,
       const int &debugSpecIdx,
-      const float &baseQuantile)
+      const float &baseQuantile,
+      sdk::DebugSession *debug)
   {
     std::vector<std::vector<std::vector<float>>> single_spectrum = ana.get_spectra({spectrumIdx});
     std::vector<float> &raw_mz = single_spectrum[0][0];
@@ -264,7 +283,24 @@ namespace streamfind::mass_spec::nta::deconvolution
 
     auto raw_noise = calculate_noise_levels(raw_intensity, noise_params, noiseThreshold);
 
-    bool should_debug = (debugSpecIdx >= 0 && spectrumIdx == debugSpecIdx);
+    bool should_debug = debug != nullptr && debug->matches_spectrum(spectrumIdx) &&
+                        debugSpecIdx >= 0 && spectrumIdx == debugSpecIdx;
+
+    if (should_debug) {
+      const float noise_mean = utils::mean(raw_noise);
+      const float noise_stddev = utils::standard_deviation(raw_noise, noise_mean);
+      std::ostringstream detail;
+      detail << "Denoising spectrum " << spectrumIdx << " (RT=" << rt << ")\n"
+             << "baseQuantile=" << baseQuantile << ", bins=" << noise_params.bins
+             << ", noise_mean=" << noise_mean << ", noise_stddev=" << noise_stddev << "\n"
+             << "raw_mz\traw_intensity\traw_noise\n";
+      for (int i = 0; i < std::min(raw_n_traces, 100); ++i)
+        detail << std::fixed << std::setprecision(6) << raw_mz[i] << '\t'
+               << raw_intensity[i] << '\t' << raw_noise[i] << '\n';
+      if (raw_n_traces > 100)
+        detail << "... (" << (raw_n_traces - 100) << " more traces omitted)\n";
+      debug->write_line(detail.str());
+    }
 
     if (should_debug)
     {
@@ -274,7 +310,9 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::ostringstream header;
       header << "=== Denoising Debug Log for Spectrum " << spectrumIdx
              << " (RT=" << rt << "s) ===" << std::endl;
-      ::streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), header.str());
+      if (debug != nullptr && debug->enabled())
+        ::streamfind::mass_spec::nta::utils::init_debug_log(
+            debug->path().string(), header.str(), true);
 
       // Calculate noise level statistics for debug output
       float noise_mean = ::streamfind::mass_spec::nta::utils::mean(raw_noise);
@@ -310,6 +348,18 @@ namespace streamfind::mass_spec::nta::deconvolution
     filter_and_cluster(raw_mz, raw_intensity, raw_noise, ppmThreshold, final_mz, final_intensity, final_noise);
 
     total_clean_points += final_mz.size();
+
+    if (should_debug) {
+      std::ostringstream detail;
+      detail << "clean_mz\tclean_intensity\tclean_noise\n";
+      for (size_t i = 0; i < std::min(final_mz.size(), static_cast<size_t>(100)); ++i)
+        detail << std::fixed << std::setprecision(6) << final_mz[i] << '\t'
+               << final_intensity[i] << '\t' << final_noise[i] << '\n';
+      if (final_mz.size() > 100)
+        detail << "... (" << (final_mz.size() - 100) << " more traces omitted)\n";
+      detail << "denoising_summary=" << raw_n_traces << " -> " << final_mz.size();
+      debug->write_line(detail.str());
+    }
 
     if (should_debug)
     {
@@ -1021,7 +1071,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       float baselineWindow,
       float maxWidth,
       const std::string &analysis_name,
-      float debugMZ)
+      float debugMZ,
+      sdk::DebugSession *debug_session)
   {
     // Initialize debug log file with dynamic filename based on debugMZ
     if (debugMZ > 0.0f)
@@ -1030,7 +1081,9 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::ostringstream header;
       header << "=== Peak Detection Debug Log (m/z = " << std::fixed << std::setprecision(4)
              << debugMZ << ") ===\n";
-      ::streamfind::mass_spec::nta::utils::init_debug_log(filename, header.str());
+      if (debug_session != nullptr && debug_session->enabled())
+        ::streamfind::mass_spec::nta::utils::init_debug_log(
+            debug_session->path().string(), header.str(), true);
     }
 
     std::map<int, std::vector<int>> cluster_indices;
@@ -1047,7 +1100,8 @@ namespace streamfind::mass_spec::nta::deconvolution
         continue;
 
       // Enable debug mode only if debugMZ is greater than 0
-      bool debug = (debugMZ > 0.0f);
+      bool debug = debug_session != nullptr && debug_session->has_mz_selector() &&
+                   debug_session->matches_analysis(analysis_name);
 
       // Check if this cluster contains the target m/z within its range
       bool cluster_matches_debug_mz = false;
@@ -1071,6 +1125,18 @@ namespace streamfind::mass_spec::nta::deconvolution
         if (debugMZ >= cluster_min_mz && debugMZ <= cluster_max_mz)
         {
           cluster_matches_debug_mz = true;
+          if (debug_session != nullptr) {
+            std::ostringstream detail;
+            detail << "Debug cluster=" << cluster_id << " polarity=" << polarity_sign
+                   << " traces=" << indices.size() << " mz_range=" << cluster_min_mz
+                   << ".." << cluster_max_mz << "\n"
+                   << "cluster_rt\tcluster_mz\tcluster_intensity\tcluster_noise\n";
+            for (const int idx : indices)
+              detail << std::fixed << std::setprecision(6) << clust_rt[idx] << '\t'
+                     << clust_mz[idx] << '\t' << clust_intensity[idx] << '\t'
+                     << clust_noise[idx] << '\n';
+            debug_session->write_line(detail.str());
+          }
           DEBUG_LOG("DEBUG Processing cluster " << cluster_id << " with " << indices.size()
                                                 << " traces (polarity: " << polarity_sign << ")" << std::endl);
           DEBUG_LOG("      Cluster m/z range: " << std::fixed << std::setprecision(4)
@@ -1166,6 +1232,19 @@ namespace streamfind::mass_spec::nta::deconvolution
       auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 4, 2);
       // auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
 
+      if (cluster_matches_debug_mz && debug_session != nullptr) {
+        std::ostringstream detail;
+        detail << "Peak-finding preparation: cycle_time=" << cycle_time
+               << " baseline_window_size=" << baseline_window_size << "\n"
+               << "index\trt\tmz\tintensity\tbaseline\tsmoothed\n";
+        for (size_t i = 0; i < cluster_rt.size(); ++i)
+          detail << i << '\t' << std::fixed << std::setprecision(6)
+                 << cluster_rt[i] << '\t' << cluster_mz[i] << '\t'
+                 << cluster_intensity[i] << '\t' << baseline[i] << '\t'
+                 << smoothed_intensity[i] << '\n';
+        debug_session->write_line(detail.str());
+      }
+
       // DEBUG: Log smoothed and baseline data for inspection
       if (cluster_matches_debug_mz)
       {
@@ -1191,6 +1270,17 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::vector<float> first_derivative, second_derivative;
       ::streamfind::mass_spec::nta::utils::calculate_derivatives(smoothed_intensity, first_derivative, second_derivative);
       auto candidates = find_peak_candidates(first_derivative, smoothed_intensity, 0);
+
+      if (cluster_matches_debug_mz && debug_session != nullptr) {
+        std::ostringstream detail;
+        detail << "Peak candidates: " << candidates.size() << "\n";
+        for (const int peak_idx : candidates)
+          if (peak_idx >= 0 && peak_idx < static_cast<int>(cluster_rt.size()))
+            detail << "candidate index=" << peak_idx << " rt=" << cluster_rt[peak_idx]
+                   << " mz=" << cluster_mz[peak_idx]
+                   << " smoothed=" << smoothed_intensity[peak_idx] << "\n";
+        debug_session->write_line(detail.str());
+      }
 
       if (cluster_matches_debug_mz)
       {
@@ -1218,6 +1308,18 @@ namespace streamfind::mass_spec::nta::deconvolution
           cluster_rt,
           cluster_intensity,
           cluster_matches_debug_mz);
+
+      if (cluster_matches_debug_mz && debug_session != nullptr) {
+        std::ostringstream detail;
+        detail << "Validated peaks: " << valid_peaks.size() << "\n";
+        for (const int peak_idx : valid_peaks)
+          if (peak_idx >= 0 && peak_idx < static_cast<int>(cluster_rt.size()))
+            detail << "valid index=" << peak_idx << " rt=" << cluster_rt[peak_idx]
+                   << " mz=" << cluster_mz[peak_idx]
+                   << " smoothed=" << smoothed_intensity[peak_idx] << "\n";
+        if (valid_peaks.empty()) detail << "All candidates rejected during validation\n";
+        debug_session->write_line(detail.str());
+      }
 
       if (cluster_matches_debug_mz)
       {
@@ -1441,6 +1543,20 @@ namespace streamfind::mass_spec::nta::deconvolution
                                             << " (width=" << width << "s, n=" << n_traces << ")" << std::endl);
           }
         }
+      }
+
+      if (cluster_matches_debug_mz && debug_session != nullptr) {
+        std::ostringstream detail;
+        detail << "Peak boundaries after merging: " << peak_boundaries.size() << "\n";
+        for (const auto &[peak_idx, bounds] : peak_boundaries) {
+          const auto [left_idx, right_idx] = bounds;
+          detail << "apex_index=" << peak_idx << " apex_rt=" << cluster_rt[peak_idx]
+                 << " apex_mz=" << cluster_mz[peak_idx]
+                 << " left_index=" << left_idx << " right_index=" << right_idx
+                 << " rt_min=" << cluster_rt[left_idx]
+                 << " rt_max=" << cluster_rt[right_idx] << '\n';
+        }
+        debug_session->write_line(detail.str());
       }
 
       // Step 2: Calculate final properties for non-overlapping peaks
@@ -2034,7 +2150,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       const float &baseQuantile,
       const std::string &debugAnalysis,
       const float &debugMZ,
-      const int &debugSpecIdx)
+      const int &debugSpecIdx,
+      sdk::DebugSession &debug)
   {
     if (rtWindowsMin.size() != rtWindowsMax.size())
     {
@@ -2050,6 +2167,9 @@ namespace streamfind::mass_spec::nta::deconvolution
     {
       input.report(std::to_string(a + 1) + "/" + std::to_string(analysis_names.size()) +
                    " Processing analysis " + analysis_names[a]);
+
+      if (debug.enabled() && debug.matches_analysis(analysis_names[a]))
+        debug.write_line("Processing analysis: " + analysis_names[a]);
 
       // Only enable debugging for matching analysis
       float current_debugMZ = (debugAnalysis.empty() || debugAnalysis == analysis_names[a]) ? debugMZ : 0.0f;
@@ -2107,6 +2227,12 @@ namespace streamfind::mass_spec::nta::deconvolution
       {
         const float &rt = rt_load[i];
         const int &spectrumIdx = idx_load[i];
+
+        if (debug.enabled() && debug.matches_analysis(analysis_names[a]) &&
+            debug.matches_spectrum(spectrumIdx)) {
+          debug.write_line("Matched spectrum index=" + std::to_string(spectrumIdx) +
+                           " rt=" + std::to_string(rt));
+        }
         const int &polarity = polarity_load[i];
 
         if (polarity > 0)
@@ -2126,7 +2252,8 @@ namespace streamfind::mass_spec::nta::deconvolution
               total_raw_points,
               total_clean_points,
               current_debugSpecIdx,
-              baseQuantile);
+              baseQuantile,
+              &debug);
         }
         else if (polarity < 0)
         {
@@ -2145,7 +2272,8 @@ namespace streamfind::mass_spec::nta::deconvolution
               total_raw_points,
               total_clean_points,
               current_debugSpecIdx,
-              baseQuantile);
+              baseQuantile,
+              &debug);
         }
         if ((i + 1) % 100 == 0 || i + 1 == idx_load.size())
           input.report("      Denoised " + std::to_string(i + 1) + "/" + std::to_string(idx_load.size()) + " spectra");
@@ -2159,6 +2287,10 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::cerr << "      Denoising stats: " << total_raw_points << " -> " << total_clean_points
                 << " points (" << std::fixed << std::setprecision(1) << denoising_efficiency
                 << "% noise removed, baseQuantile=" << baseQuantile << ")" << std::endl;
+      if (debug.enabled() && debug.matches_analysis(analysis_names[a])) {
+        debug.write_line("Denoising: raw_points=" + std::to_string(total_raw_points) +
+                         " clean_points=" + std::to_string(total_clean_points));
+      }
 
       // Process positive and negative polarities separately
       std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW> pos_features, neg_features;
@@ -2178,13 +2310,16 @@ namespace streamfind::mass_spec::nta::deconvolution
             pos_clust_noise, pos_clust_cluster, pos_number_clusters);
 
         std::cerr << "  3a/5 Detecting peaks in " << pos_number_clusters << " positive m/z clusters" << std::endl;
+        if (debug.enabled() && debug.matches_analysis(analysis_names[a]))
+          debug.write_line("Positive clusters=" + std::to_string(pos_number_clusters));
         pos_features = process_polarity_clusters(
             pos_clust_rt, pos_clust_mz, pos_clust_intensity,
             pos_clust_noise, pos_clust_cluster, pos_number_clusters,
             +1, "[M+H]+", -1.007276f, // positive: subtract proton
             minTraces, minSNR, baselineWindow, maxWidth,
             analysis_names[a],
-            current_debugMZ);
+            current_debugMZ,
+            &debug);
       }
 
       // Process negative polarity
@@ -2202,13 +2337,16 @@ namespace streamfind::mass_spec::nta::deconvolution
             neg_clust_noise, neg_clust_cluster, neg_number_clusters);
 
         std::cerr << "  3b/5 Detecting peaks in " << neg_number_clusters << " negative m/z clusters" << std::endl;
+        if (debug.enabled() && debug.matches_analysis(analysis_names[a]))
+          debug.write_line("Negative clusters=" + std::to_string(neg_number_clusters));
         neg_features = process_polarity_clusters(
             neg_clust_rt, neg_clust_mz, neg_clust_intensity,
             neg_clust_noise, neg_clust_cluster, neg_number_clusters,
             -1, "[M-H]-", 1.007276f, // negative: add proton
             minTraces, minSNR, baselineWindow, maxWidth,
             analysis_names[a],
-            current_debugMZ);
+            current_debugMZ,
+            &debug);
       }
 
       // Combine features from both polarities
@@ -2253,7 +2391,7 @@ namespace streamfind::mass_spec::nta::deconvolution
           {"analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
            "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
            "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"},
-          "analysis");
+          "analysis,index");
       for (const auto &row : header_rows)
       {
         auto &header = persisted_headers[::streamfind::mass_spec::nta::utils::text(row, "analysis")];
@@ -2308,9 +2446,21 @@ namespace streamfind::mass_spec::nta::deconvolution
       mins.push_back(value.get<float>());
     for (const auto &value : maximums)
       maxs.push_back(value.get<float>());
-    find_features(input, mins, maxs, parameters.value("ppm_threshold", 15.0f), parameters.value("noise_threshold", 250.0f),
+    const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
+        ? parameters.at("debug_analysis").get<std::string>() : std::string{};
+    const auto debug_mz = parameters.value("debug_mz", 0.0f);
+    const auto debug_spec_idx = parameters.value("debug_spec_idx", -1);
+    auto debug = sdk::DebugSession::open(
+        access.database_path(), "mass_spec.find_features", access.operation_instance(),
+        sdk::DebugOptions{debug_analysis, debug_mz, debug_spec_idx});
+    if (debug.enabled())
+      input.report("Debug log: " + debug.path().string());
+    find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
                   parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
-                  parameters.value("max_feature_width", parameters.value("max_width", 100.0f)), parameters.value("base_quantile", 0.1f), "", 0.0f, -1);
+                  parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
+                  debug_analysis, debug_mz, debug_spec_idx, debug);
+    if (debug.enabled())
+      debug.write_line("Feature detection completed");
 
     Json output = Json::array();
     for (const auto &buffer : input.buffers)

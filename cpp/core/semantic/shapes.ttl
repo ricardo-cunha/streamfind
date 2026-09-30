@@ -30,7 +30,6 @@ sfcore:OperationShape
     sh:property [ sh:path sf:operationVersion ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:projectEntry ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
-    sh:property [ sh:path sf:cacheable ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
     sh:property [ sh:path sf:hasInputPort ; sh:class sf:ArtifactContract ] ;
     sh:property [ sh:path sf:hasOutputPort ; sh:class sf:ArtifactContract ] ;
@@ -73,7 +72,6 @@ sfcore:MethodShape
     a sh:NodeShape ;
     sh:targetClass sf:Method ;
     sh:property [ sh:path sf:methodId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:property [ sh:path sf:cacheable ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:singleOccurrence ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
     sh:property [ sh:path sf:hasParameter ; sh:minCount 1 ; sh:class sf:Parameter ] ;
@@ -97,16 +95,7 @@ sfcore:MethodShape
             }
         """
     ] ;
-    sh:sparql [
-            sh:message "Cacheable methods must declare every table needed for cache restoration in sf:writes." ;
-            sh:select """
-                PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this
-                WHERE {
-                    $this sf:cacheable true .
-                    FILTER NOT EXISTS { $this sf:writes ?table . }
-                }
-            """
-        ] ;
+
         sh:property [ sh:path sf:conditionalRead ; sh:class sf:ReadDependency ] ;
         sh:sparql [
             sh:message "Object parameters must declare at least one property schema." ;

@@ -53,8 +53,7 @@ sfcore:methodField
         sfcore:methodNameField,
         sfcore:methodDescriptionField,
         sfcore:methodDomainField,
-        sfcore:methodParametersField,
-        sfcore:methodCacheableField .
+        sfcore:methodParametersField .
 
 sfcore:methodIdField
     a sf:Field ;
@@ -101,15 +100,6 @@ sfcore:methodParametersField
     skos:definition "Validated configured method parameter values." ;
     sf:propertyName "parameters" ;
     sf:type "object" .
-
-sfcore:methodCacheableField
-    a sf:Field ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cacheable" ;
-    skos:definition "Whether method results may be cached." ;
-    sf:propertyName "cacheable" ;
-    sf:type "boolean" .
 
 sfcore:methodSingleOccurrenceField
     a sf:Field ;

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,6 +25,9 @@ namespace streamfind::sdk {
 class STREAMFIND_SDK_API PluginProjectAccess {
 public:
     virtual ~PluginProjectAccess() = default;
+
+    virtual const std::filesystem::path &database_path() const noexcept = 0;
+    virtual std::string_view operation_instance() const noexcept = 0;
 
     virtual Json query(const std::string &sql) = 0;
     virtual void require_table(const std::string &table_name) = 0;

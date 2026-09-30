@@ -10,6 +10,9 @@ class STREAMFIND_SDK_API PluginHostAccess final : public PluginProjectAccess {
 public:
     PluginHostAccess(const streamfind_plugin_host_api &host, void *execution_context);
 
+    const std::filesystem::path &database_path() const noexcept override;
+    std::string_view operation_instance() const noexcept override;
+
     Json query(const std::string &sql) override;
     Json read(const std::string &table_name,
               const std::vector<std::string> &column_names,

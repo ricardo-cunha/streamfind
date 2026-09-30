@@ -27,7 +27,9 @@ Json get_features(sdk::PluginProjectAccess &access, const Json &parameters)
     auto rows = base::utils::input_rows(access, parameters, "featuresTable", utils::feature_columns(), "analysis");
     if (!parameters.value("filtered", false))
         rows.erase(std::remove_if(rows.begin(), rows.end(), [](const Json &row) { return utils::integer(row, "filtered") != 0; }), rows.end());
-    return base::utils::filter_target_rows(rows, parameters, "mass", "mz", "rt", "polarity");
+    auto output = base::utils::filter_target_rows(rows, parameters, "mass", "mz", "rt", "polarity");
+    access.emit_table_rows("featuresTable", utils::feature_columns(), utils::feature_types(), output);
+    return Json{{"status", "finished"}, {"features", output.size()}};
 }
 
 Json get_suspects(sdk::PluginProjectAccess &access, const Json &parameters)

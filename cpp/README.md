@@ -96,9 +96,6 @@ validate()
 get_workflow() / set_workflow(Workflow)
 copy(ProjectOptions)
 list_tables()
-get_cache() / get_cache_size() / get_cache_entry(hash)
-set_cache(name, description, hash, Json)
-delete_cache()
 get_audit_trail()
 run_operation(operation_id, parameters, registry)
 run_operation_graph(registry)
@@ -129,12 +126,11 @@ get_project_domains
 get_workflow, set_workflow, validate_workflow, run_workflow
 add_operation, connect_operations, get_artifact_inventory
 copy
-get_cache, get_cache_size, delete_cache
 get_audit_trail
 close
 ```
 
-`set_metadata`, `set_workflow`, `run_workflow`, `delete_cache`,
+`set_metadata`, `set_workflow`, and `run_workflow`
 and `copy` require a writable project. `get_*`, `describe`, and validation
 commands are read-only.
 

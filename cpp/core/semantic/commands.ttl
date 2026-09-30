@@ -195,39 +195,6 @@ sfcore:runWorkflow
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject true .
 
-sfcore:getCache
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "get_cache" ;
-    skos:prefLabel "Read project cache" ;
-    skos:definition "Return cache entries stored for a project." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:cacheEntriesResult ;
-    sf:mutatesProject false .
-
-sfcore:getCacheSize
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "get_cache_size" ;
-    skos:prefLabel "Read project cache size" ;
-    skos:definition "Return the number of cache entries stored for a project." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:cacheSizeResult ;
-    sf:mutatesProject false .
-
-sfcore:deleteCache
-    a sf:ApiCommand ;
-    skos:inScheme sfcore:scheme ;
-    sf:commandId "delete_cache" ;
-    skos:prefLabel "Delete project cache" ;
-    skos:definition "Delete all cache entries stored for a project." ;
-    sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
-    sf:returns sfcore:apiCommandStatusResult ;
-    sf:mutatesProject true .
-
 sfcore:getAuditTrail
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
@@ -322,6 +289,18 @@ sfcore:getArtifactInventory
     sf:hasParameter sfcore:databasePathParameter ;
     sf:mutatesProject false .
 
+sfcore:getCurrentArtifactInventory
+    a sf:ApiCommand ;
+    skos:inScheme sfcore:scheme ;
+    sf:commandId "get_current_artifact_inventory" ;
+    skos:prefLabel "Read current workflow artifacts" ;
+    skos:definition "Return the newest published artifact for each workflow producer and output contract." ;
+    sf:category "workflow-observation" ;
+    sf:guidance "Use this for current connected outputs. Use get_artifact_inventory when historical artifact browsing is required." ;
+    sf:availableInDomain sfcore:streamfind ;
+    sf:hasParameter sfcore:databasePathParameter ;
+    sf:mutatesProject false .
+
 sfcore:requestArtifact
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
@@ -405,36 +384,6 @@ sfcore:workflowResult
     skos:prefLabel "Workflow result" ;
     skos:definition "The persisted operation graph with configured nodes and typed-port connections." ;
     sf:type "object" .
-
-sfcore:cacheEntriesResult
-    a sf:ApiCommandResult ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache entries result" ;
-    skos:definition "The project's cache entries." ;
-    sf:type "array" ;
-    sf:items sfcore:cacheEntryResult .
-
-sfcore:cacheEntryResult
-    a sf:ApiCommandResult ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache entry" ;
-    skos:definition "One cached workflow result entry." ;
-    sf:type "object" ;
-    sf:hasProperty
-        sfcore:cacheNameColumn,
-        sfcore:cacheDescriptionColumn,
-        sfcore:cacheHashColumn,
-        sfcore:createdAtColumn .
-
-sfcore:cacheSizeResult
-    a sf:ApiCommandResult ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache size result" ;
-    skos:definition "The number of cache entries." ;
-    sf:type "integer" .
 
 sfcore:auditEntriesResult
     a sf:ApiCommandResult ;
