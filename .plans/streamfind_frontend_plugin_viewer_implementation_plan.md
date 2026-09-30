@@ -7,14 +7,13 @@ curation UI\
 
 ## 1. Objective
 
-Extend the current streamfind React frontend with a runtime-loadable
-**frontend plugin architecture** that complements the existing C++
-domain plugin architecture.
-
-The first implementation mission is a **mass-spec feature-table viewer**
-inspired by the legacy R/Shiny NTS application. This viewer should prove
-that domain-specific UI can be added without coupling domain behavior to
-the core frontend.
+Extend the current streamfind React frontend toward a frontend plugin and
+viewer architecture that complements the existing C++ domain plugin system.
+The first implementation mission is a **mass-spec / NTA feature-table
+viewer** inspired by the legacy R/Shiny NTS application. This plan
+distinguishes the current static visualization implementation from the target
+runtime plugin architecture; runtime loading is a future phase, not current
+functionality.
 
 The architectural rule is:
 
@@ -22,8 +21,13 @@ The architectural rule is:
 > Backend operations validate and commit. Artifacts and audit/provenance
 > records preserve state.**
 
-The existing generic visualization path must continue to work unchanged
-while this capability is introduced.
+The frontend web app is the authoritative visualization surface. MCP is an
+execution and artifact-discovery interface, not the primary HTML/UI renderer.
+MCP must return the persisted visualization artifact and enough semantic
+metadata for an agent or harness to explain what was produced, while the
+streamfind web app opens the workflow and renders the artifact interactively.
+Do not make MCP HTML entry points or packaged MCP visualization assets a
+requirement for visualization support.
 
 ------------------------------------------------------------------------
 
@@ -59,6 +63,58 @@ The current frontend already contains useful foundations:
 
 This means the new system should **generalize the existing
 registry/semantic-contract approach**, not replace it.
+
+------------------------------------------------------------------------
+
+## Current implementation state and gaps
+
+The current checkout already provides a usable backend/artifact foundation,
+but it does not yet provide the viewer/plugin architecture described below.
+Treat these as facts when implementing the plan:
+
+### C++ / MCP already implemented
+
+-   The C++ service uses persisted operation graphs with typed ports,
+    immutable published artifacts, workflow revisions, lineage, execution
+    records, and artifact-cache reuse.
+-   MCP exposes stable project tools plus operation discovery and
+    `run_operation`; domain operations are discovered through catalogue-backed
+    query tools rather than one MCP tool per operation.
+-   Artifact inventory and bounded artifact retrieval already exist, including
+    table pagination/filtering controls and metadata-only inventory queries.
+-   `visualizationSpecResult` is a validated JSON artifact contract in the
+    C++ project table store.
+-   The current MCP implementation still advertises `resources/list`,
+    `resources/read`, `structuredContent`, and `ui://streamfind/visualization`
+    HTML resources, and the C++ distribution currently requires
+    `app/index.html`. These are transitional MCP-owned rendering paths that
+    Phase 0b must remove.
+
+### Frontend already implemented
+
+-   `frontend/src/visualization/VisualizationRegistry.ts` is a static
+    renderer registry, with renderer registration in
+    `registerVisualizationRenderers.ts`.
+-   `VisualizationDataResolver.ts` resolves a published
+    `visualizationSpecResult` artifact, and `VisualizationRenderer.tsx`
+    validates the spec and selects a registered renderer with a fallback.
+-   `McpVisualizationApp.tsx` and `mcpVisualization.tsx` currently implement
+    the MCP HTML entry point. They are not the target architecture and should
+    be removed or repurposed only after the web-app artifact viewer path is
+    available.
+-   `CanvasShell.tsx` currently owns the generic artifact viewer and bounded
+    table paging. A dedicated `ViewerShell`/`ViewerResolver` and domain viewer
+    registry are still planned work.
+-   There is no `frontend/src/viewers/` or `frontend/src/plugins/` runtime
+    registry/loader yet, and no first-party mass-spec Feature Inspector yet.
+
+### Consequence for sequencing
+
+Do not start by implementing dynamic JavaScript loading. First move the
+existing visualization renderer and generic artifact viewer into an explicit
+web-app viewer boundary, remove the MCP HTML dependency, and prove that the
+same persisted artifact can be inspected from the workflow UI. Only then
+introduce a versioned frontend plugin API and runtime loader.
 
 ------------------------------------------------------------------------
 
@@ -295,9 +351,12 @@ distributed together.
 Runtime plugins must not receive unrestricted access to React
 application internals.
 
-Provide a narrow, versioned API.
+The following is a target, versioned plugin API rather than an existing
+frontend service. Until Phase 3, viewers should use the typed
+`StreamFindApiClient`/viewer context and must not import private `CanvasShell`
+state.
 
-Candidate services:
+Target services:
 
 ``` text
 artifacts
@@ -366,7 +425,61 @@ all.
 
 ------------------------------------------------------------------------
 
-## 11. First mission: mass-spec feature-table viewer
+## Visualization boundary: MCP produces, web app renders
+
+The MCP interface and the web app have deliberately different
+responsibilities:
+
+| Surface | Responsibility |
+| --- | --- |
+| MCP server | Assemble/run workflow nodes, publish immutable artifacts, return artifact references, semantic contracts, summaries, and explicit guidance that rich visualization is available in the web app. |
+| External MCP harness | Display the returned summary or its own fallback; it must not be expected to execute streamfind's HTML entry points. |
+| streamfind web app | Open the saved workflow, resolve the published artifact, select a compatible viewer/renderer, and provide the interactive plot. |
+| Visualization node | Compute or transform scientific data and publish a typed visualization artifact; it is not itself an MCP UI surface. |
+
+Remove MCP-specific visualization HTML entry points and packaged `app/`
+visualization assets from the release path. The release must not require a
+browser-capable MCP Apps harness to make visualization support usable. This
+is not a removal of visualization data: the MCP response still exposes the
+artifact ID, semantic visualization contract, producer node/port, workflow
+revision, bounded metadata, and a text fallback describing what the web app
+can render.
+
+The implementation must preserve one artifact contract across both surfaces:
+
+``` text
+workflow visualization operation
+        |
+        v
+immutable sfvis:VisualizationSpec artifact
+        |
+        +---- MCP: artifact reference + semantic summary + web-app guidance
+        |
+        +---- web app: ViewerResolver -> registered renderer/plugin
+```
+
+MCP tool and operation descriptions should say, in substance, that a
+visualization result is persisted for inspection in the streamfind web app.
+They should not promise inline HTML, an MCP resource URL, or a harness-specific
+interactive plot. If a harness cannot render the artifact, it still receives a
+useful result summary and a stable artifact reference.
+
+Acceptance criteria for this boundary:
+
+1. A plotting operation can run through MCP without an MCP HTML resource or
+   packaged visualization app entry point.
+2. The response identifies the published visualization artifact and its
+   semantic contract.
+3. The response explains that the interactive visualization is opened in the
+   streamfind web app from the saved workflow/artifact.
+4. The web app can open the same artifact and choose the registered renderer
+   without creating a second workflow node or recomputing scientific data.
+5. A non-rendering MCP harness still receives a meaningful text/metadata
+   fallback.
+
+------------------------------------------------------------------------
+
+## First mission: mass-spec feature-table viewer
 
 The first end-to-end implementation should be a feature inspector
 inspired by the legacy R/Shiny NTS workflow.
@@ -475,12 +588,12 @@ Suggested viewer context:
 
 ``` ts
 type ViewerContext = {
-  projectId: string;
+  sessionId: string;
   nodeId?: string;
   portId?: string;
   artifactId: string;
   semanticType: string;
-  api: FrontendPluginApi;
+  api: StreamFindApiClient;
 };
 ```
 
@@ -644,28 +757,36 @@ Examples:
 
 ------------------------------------------------------------------------
 
-## 18. Preserve the current Plotly path
+## 18. Preserve the web-app Plotly path; remove MCP HTML rendering
 
-Do not replace the current `visualizationSpecResult` implementation as
-part of the first frontend-plugin work.
+Do not make MCP-side HTML rendering the visualization authority. The
+`visualizationSpecResult`/`sfvis:VisualizationSpec` artifact remains the
+stable data contract, and the streamfind web app remains responsible for
+resolving and rendering it.
 
-Keep:
+Keep the web-app path:
 
 ``` text
 backend plot operation
        |
-visualizationSpecResult
+visualizationSpecResult artifact
        |
-VisualizationDataResolver
+web app VisualizationDataResolver
        |
-VisualizationRenderer
+ViewerResolver / VisualizationRenderer
        |
-VisualizationRegistry
-       |
-Plotly renderer
+registered Plotly or domain renderer
 ```
 
-The new path exists alongside it:
+Remove any MCP release packaging that exists only to expose an HTML entry
+point for that plot. MCP may return the artifact reference and bounded
+semantic summary, and may state that the result is viewable in the web app,
+but it should not advertise a harness-dependent interactive HTML resource.
+The generic viewer/plugin path and the visualization renderer should consume
+the same persisted artifact rather than maintaining separate MCP and React
+plot implementations.
+
+The new path exists alongside the generic artifact viewer:
 
 ``` text
 table/artifact port
@@ -680,7 +801,7 @@ domain-specific viewer
 ```
 
 Later, visualization renderers can be exposed through the same frontend
-plugin SDK.
+plugin SDK, but the rendering location remains the web app.
 
 ------------------------------------------------------------------------
 
@@ -694,26 +815,69 @@ Before coding:
 -   identify the current mass-spec feature table contract/table;
 -   identify operations required to retrieve feature EIC/MS1/MS2;
 -   map relevant legacy R/Shiny behavior to current C++ capabilities;
--   identify missing backend operations.
+-   identify missing backend operations;
+-   inventory the release/MCP HTML entry points and `app/` assets that
+    currently attempt to render visualization inside an MCP harness;
+-   define the MCP result envelope for artifact ID, semantic contract,
+    producer node/port, workflow revision, bounded summary, and web-app
+    guidance;
+-   identify the exact MCP tool descriptions and release packaging rules that
+    must be changed so visualization is described as web-app rendered.
 
 **Deliverable:** explicit feature-viewer data contract and backend
-capability matrix.
+capability matrix, plus an MCP/web-app visualization boundary specification.
 
-### Phase 1 --- Core viewer abstraction
+### Phase 0b --- Remove MCP-owned visualization assets
 
-Implement:
+Implement the boundary before building specialized viewers:
 
--   `ViewerShell`;
--   `ViewerRegistry`;
--   `ViewerResolver`;
--   viewer context;
--   generic table fallback;
--   CanvasShell integration.
+-   remove MCP-only HTML entry points and visualization `app/` assets from
+    the release/package manifests;
+-   retain the semantic visualization artifact and bounded artifact retrieval
+    through MCP;
+-   update MCP operation/tool descriptions and result summaries to identify
+    the artifact and direct users to the streamfind web app;
+-   keep non-rendering harnesses useful through text and metadata fallback;
+-   add an MCP contract test proving that visualization support does not
+    depend on an HTML resource while the artifact reference remains present.
+
+Likely files to inspect or modify:
+
+-   `cpp/core/src/mcp.cpp`;
+-   `cpp/service/src/service_server.cpp`;
+-   `cpp/sdk/src/catalogue_builder.cpp`;
+-   `cpp/tests/unit/mcp_discovery_contract.cpp`;
+-   `scripts/release/cpp/release-cpp.ps1` and related package manifests;
+-   `frontend/src/visualization/VisualizationDataResolver.ts`;
+-   `frontend/src/visualization/VisualizationRenderer.tsx`.
+
+**Acceptance:** a fresh packaged MCP server exposes artifact-based
+visualization guidance without shipping or requiring MCP HTML entry points,
+and the web app remains the only rich interactive rendering authority.
+
+### Phase 1 --- Extract the web-app viewer boundary
+
+Implement the first target boundary around existing code rather than creating
+parallel rendering paths:
+
+-   introduce `frontend/src/viewers/ViewerShell.tsx` and
+    `viewerTypes.ts`;
+-   introduce `ViewerResolver` and adapt the existing static
+    `VisualizationRegistry`/`VisualizationRenderer` to it;
+-   move generic artifact-viewer lifecycle out of `CanvasShell.tsx` while
+    preserving the current session-aware `StreamFindApiClient` boundary;
+-   resolve visualization specs from persisted artifacts, not MCP
+    `structuredContent` or window message state;
+-   keep a generic table/JSON fallback for artifacts without a specialized
+    viewer;
+-   remove the web app's dependency on `McpVisualizationApp` for normal
+    workflow inspection.
 
 Do not add runtime JavaScript loading yet.
 
-**Acceptance:** a statically registered test viewer can open from a
-compatible port/artifact.
+**Acceptance:** a statically registered test viewer opens from a compatible
+workflow output/artifact in the web app, and the same behavior works when MCP
+returns only the artifact reference and summary.
 
 ### Phase 2 --- First-party mass-spec feature viewer
 
@@ -788,7 +952,10 @@ the common plugin lifecycle.
 
 ## 20. Suggested frontend organization
 
-Target direction:
+The current implementation remains under `frontend/src/visualization/` and
+`frontend/src/app/`, including the transitional `McpVisualizationApp.tsx`.
+The following is the target organization after Phase 1, not a claim about the
+current checkout:
 
 ``` text
 frontend/src/
@@ -833,22 +1000,33 @@ decided alongside the build/distribution strategy.
 
 ## 21. Backend work likely required
 
-The frontend work should drive only narrowly required backend additions.
+The C++ operation/artifact/MCP foundations are already present. Add only the
+viewer-facing contracts and narrowly required domain operations; do not create
+viewer-specific C++ APIs when the generic artifact/operation API is sufficient.
 
-Potential requirements:
+### Already available and to reuse
 
--   expose semantic type/contract reliably for artifacts and ports;
--   artifact/table paging and filtering APIs;
+-   semantic type/contract metadata for published artifacts and ports;
+-   metadata-only artifact inventory and bounded table paging/filtering via
+    the service API;
+-   immutable JSON/table artifact publication and lineage/provenance records;
+-   generic operation execution and artifact retrieval through MCP and the
+    typed service client.
+
+### Remaining backend work
+
+-   expose a stable visualization artifact envelope with renderer metadata,
+    semantic type, provenance, interaction keys, fallback text, and bounded
+    inline or artifact-backed data bindings;
 -   retrieve feature detail by stable feature ID;
--   retrieve EIC for selected feature;
--   retrieve MS1 for selected feature;
--   retrieve MS2 for selected feature;
--   curation mutation operations;
--   artifact/provenance metadata;
--   frontend plugin discovery metadata.
-
-Do not create viewer-specific C++ APIs if an existing generic
-artifact/operation API can provide the same capability.
+-   retrieve EIC for a selected feature;
+-   retrieve MS1 for a selected feature;
+-   retrieve MS2 for a selected feature;
+-   add curation mutation operations only after the read-only viewer works;
+-   expose any missing artifact/port metadata needed by the web-app resolver;
+-   remove MCP resource/HTML packaging from the release contract;
+-   add MCP descriptions and structured summaries that point to the web app,
+    without making `structuredContent` or a UI resource the only path.
 
 ------------------------------------------------------------------------
 
@@ -856,12 +1034,23 @@ artifact/operation API can provide the same capability.
 
 ### Core frontend tests
 
--   registry registration/resolution;
+Existing coverage to preserve and extend:
+
+-   `frontend/src/visualization/VisualizationDataResolver.test.ts` for
+    visualization artifact validation;
+-   `frontend/src/app/App.test.tsx` and shell tests for workflow/artifact
+    navigation;
+-   renderer registration/resolution and fallback behavior.
+
+Planned additions:
+
+-   viewer registration/resolution;
 -   duplicate IDs;
 -   semantic compatibility;
 -   missing viewer fallback;
 -   plugin API compatibility;
--   failed plugin load isolation.
+-   failed plugin load isolation;
+-   removal of MCP-window/message dependencies from normal web-app viewers.
 
 ### Feature viewer tests
 
@@ -873,6 +1062,17 @@ artifact/operation API can provide the same capability.
 -   missing optional data;
 -   large-table pagination/filtering;
 -   viewer close/reopen state behavior.
+
+### MCP/web-app boundary tests
+
+-   MCP `tools/list` and operation descriptions explain that visualization
+    artifacts are inspected in the streamfind web app;
+-   MCP results contain stable artifact identity, semantic contract, producer
+    node/port, workflow revision, bounded summary, and text fallback;
+-   packaged MCP output contains no MCP-only visualization HTML entry point or
+    required `app/` visualization asset;
+-   the web app opens the returned artifact and resolves a registered renderer;
+-   a harness that cannot render HTML can still report what was produced.
 
 ### Curation tests
 
@@ -918,28 +1118,26 @@ artifact/operation API can provide the same capability.
 
 The smallest slice that meaningfully validates the architecture is:
 
-1.  identify the semantic contract of the mass-spec feature-table
-    output;
-2.  add `ViewerRegistry`;
-3.  add generic `ViewerShell`;
-4.  expose compatible viewers from a node output/artifact;
-5.  implement a statically registered `FeatureTableViewer`;
-6.  display the feature table;
-7.  select one feature;
-8.  fetch and display one dependent view, preferably EIC;
-9.  ensure no new workflow node is created;
-10. preserve the existing Plotly visualization behavior.
+1. inventory the current `visualizationSpecResult` artifact and MCP resource
+   behavior;
+2. remove the release/package dependency on MCP HTML assets;
+3. add a web-app `ViewerShell` around the existing static renderer registry;
+4. resolve compatible viewers from a workflow output/artifact, not from an MCP
+   resource or a hard-coded node ID;
+5. implement a statically registered generic artifact viewer;
+6. implement the first mass-spec `FeatureTableViewer` against bounded artifact
+   retrieval;
+7. select one feature and request one dependent view, preferably EIC;
+8. ensure no new workflow node is created by opening the viewer;
+9. preserve the existing Plotly renderer behavior in the web app;
+10. only after this works, define the versioned frontend plugin API and runtime
+    loader.
 
-Only after this works should the feature viewer be converted into a
-dynamically loaded frontend plugin.
+This sequencing separates three risks:
 
-This sequencing separates two risks:
-
--   **viewer architecture risk**, and
--   **runtime JavaScript plugin-loading risk**.
-
-It prevents runtime-loading complexity from blocking validation of the
-domain viewer model.
+-   MCP/web-app boundary and release packaging;
+-   viewer architecture and artifact binding;
+-   runtime JavaScript plugin loading.
 
 ------------------------------------------------------------------------
 
@@ -961,4 +1159,7 @@ For the first proof-of-concept, success means the mass-spec NTA feature
 table can be opened from its existing workflow data anchor in a rich
 Feature Inspector, with coordinated feature data views comparable in
 purpose to the legacy R/Shiny application, **without representing that
-inspector as another analytical workflow node**.
+inspector as another analytical workflow node**. Visualization operations
+also satisfy the cross-surface boundary: MCP produces and describes the
+persisted artifact, while only the streamfind web app provides the rich
+interactive plot; no MCP HTML entry point is required or shipped.
