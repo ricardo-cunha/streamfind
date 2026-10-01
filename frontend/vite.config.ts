@@ -10,7 +10,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         application: 'index.html',
-        mcpVisualization: 'mcp-visualization.html',
       },
     },
   },

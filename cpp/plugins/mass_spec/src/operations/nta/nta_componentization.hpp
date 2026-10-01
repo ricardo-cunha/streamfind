@@ -1,5 +1,6 @@
 #ifndef NTA_COMPONENTIZATION_H
 #include "utils/nta.hpp"
+#include "streamfind/sdk/debug_session.hpp"
 
 #define NTA_COMPONENTIZATION_H
 
@@ -38,7 +39,8 @@ namespace streamfind::mass_spec::nta
         const std::vector<float> &rtWindow,
         float minCorrelation = 0.8f,
         float debugRT = 0.0f,
-        const std::string &debugAnalysis = "");
+        const std::string &debugAnalysis = "",
+        sdk::DebugSession *debug = nullptr);
 
   } // namespace componentization
 } // namespace streamfind::mass_spec::nta

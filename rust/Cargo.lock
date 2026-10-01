@@ -1102,7 +1102,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "streamfind-rust-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "streamfind-rust-core",
@@ -1111,7 +1111,7 @@ dependencies = [
 
 [[package]]
 name = "streamfind-rust-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "duckdb",
  "serde",
@@ -1122,11 +1122,11 @@ dependencies = [
 
 [[package]]
 name = "streamfind-rust-external"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "streamfind-rust-mass-spec"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "cfb",
@@ -1143,7 +1143,7 @@ dependencies = [
 
 [[package]]
 name = "streamfind-rust-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "streamfind-rust-core",
@@ -1156,21 +1156,21 @@ dependencies = [
 
 [[package]]
 name = "streamfind-rust-raman"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "streamfind-rust-core",
 ]
 
 [[package]]
 name = "streamfind-rust-sensors"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "streamfind-rust-core",
 ]
 
 [[package]]
 name = "streamfind-rust-test-support"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
 ]

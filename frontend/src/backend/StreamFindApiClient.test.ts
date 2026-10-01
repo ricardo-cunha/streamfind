@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StreamFindApiClient } from './StreamFindApiClient';
 
-const response = (body: unknown, ok = true, status = 200) =>
-  ({ ok, status, json: async () => body }) as Response;
+const response = (body: unknown, ok = true, status = 200) => ({ ok, status, json: async () => body }) as Response;
 
 describe('StreamFindApiClient capability discovery', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('loads the lightweight capability index', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      response({ protocol_version: '1.0', domains: ['core'], modules: [{ domain: 'core', module_id: 'io' }] }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        response({ protocol_version: '1.0', domains: ['core'], modules: [{ domain: 'core', module_id: 'io' }] }),
+      );
 
     const result = await new StreamFindApiClient('http://service').capabilitiesIndex();
 
@@ -20,7 +21,11 @@ describe('StreamFindApiClient capability discovery', () => {
 
   it('encodes domain and applies module and search filters for operation summaries', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      response({ operations: [{ canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' }] }),
+      response({
+        operations: [
+          { canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' },
+        ],
+      }),
     );
 
     const result = await new StreamFindApiClient('http://service').capabilityOperations({
@@ -55,5 +60,15 @@ describe('StreamFindApiClient capability discovery', () => {
     await expect(new StreamFindApiClient('http://service').capabilitiesIndex()).rejects.toThrow(
       'Capabilities index request failed (503)',
     );
+  });
+
+  it('preserves the backend error body for operation failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response({ error: 'Workflow execution lock was lost' }, false, 400),
+    );
+
+    await expect(
+      new StreamFindApiClient('http://service').runOperation('session', 'mass_spec.read_mass_spec_files', {}),
+    ).rejects.toThrow('Operation request failed (400): Workflow execution lock was lost');
   });
 });

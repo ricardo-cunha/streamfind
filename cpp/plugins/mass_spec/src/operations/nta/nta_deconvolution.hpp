@@ -7,6 +7,7 @@
 
 #include "utils/nta.hpp"
 #include "streamfind/sdk/plugin_project_access.hpp"
+#include "streamfind/sdk/debug_session.hpp"
 
 #include <vector>
 #include <string>
@@ -74,7 +75,8 @@ namespace streamfind::mass_spec::nta
         size_t &total_raw_points,
         size_t &total_clean_points,
         const int &debugSpecIdx,
-        const float &baseQuantile = 0.10f);
+        const float &baseQuantile = 0.10f,
+        sdk::DebugSession *debug = nullptr);
 
     struct SpectraPoint
     {
@@ -184,7 +186,8 @@ namespace streamfind::mass_spec::nta
         float baselineWindow,
         float maxWidth,
         const std::string &analysis_name,
-        float debugMZ = 0.0f);
+        float debugMZ = 0.0f,
+        sdk::DebugSession *debug = nullptr);
 
     struct FeatureInput
     {
@@ -218,7 +221,8 @@ namespace streamfind::mass_spec::nta
         const float &baseQuantile,
         const std::string &debugAnalysis,
         const float &debugMZ,
-        const int &debugSpecIdx);
+        const int &debugSpecIdx,
+        sdk::DebugSession &debug);
 
     STREAMFIND_DOMAIN_API Json find_features(sdk::PluginProjectAccess &, const Json &);
   } // namespace deconvolution

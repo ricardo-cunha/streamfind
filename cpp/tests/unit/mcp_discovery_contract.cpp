@@ -29,19 +29,11 @@ int main() {
     try {
         streamfind::mcp::Session session;
         const auto initialized = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}});
-        require(initialized.at("result").at("capabilities").contains("resources"),
-                "MCP initialize omitted resource capability");
+        require(!initialized.at("result").at("capabilities").contains("resources"),
+                "MCP still advertises HTML visualization resources");
         const auto resources = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/list"}});
-        require(resources.at("result").at("resources").size() == 1 &&
-                    resources.at("result").at("resources").at(0).value("uri", "") ==
-                        "ui://streamfind/visualization",
-                "visualization MCP resource was not listed");
-        const auto resource = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/read"},
-                                              {"params", {{"uri", "ui://streamfind/visualization"}}}});
-        require(resource.at("result").at("contents").at(0).value("mimeType", "") == "text/html" &&
-                    resource.at("result").at("contents").at(0).value("text", "").find("mcp-visualization.html") !=
-                        std::string::npos,
-                "visualization MCP resource did not return the frontend launcher");
+        require(resources.contains("error") && resources.at("error").value("code", 0) == -32601,
+                "MCP still serves the removed visualization resource surface");
         const auto listed = session.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}});
         const auto tools = listed.at("result").at("tools");
         bool has_domains = false;
@@ -54,6 +46,7 @@ int main() {
         bool has_connect_operations = false;
         bool has_set_workflow = false;
         bool has_request_artifact = false;
+        bool has_current_artifact_inventory = false;
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             require(name.rfind("mass_spec.", 0) != 0, "operation-specific MCP tool leaked into tools/list");
@@ -70,12 +63,14 @@ int main() {
             has_connect_operations = has_connect_operations || name == "connect_operations";
             has_set_workflow = has_set_workflow || name == "set_workflow";
             has_request_artifact = has_request_artifact || name == "request_artifact";
+            has_current_artifact_inventory = has_current_artifact_inventory || name == "get_current_artifact_inventory";
         }
         require(has_domains && has_modules && has_operations && has_operation && has_run_operation,
                 "stable MCP discovery tools are incomplete");
         require(has_create && has_add_operation && has_connect_operations && has_set_workflow,
                 "operation-graph MCP tools are incomplete");
         require(has_request_artifact, "artifact request MCP tool is missing");
+        require(has_current_artifact_inventory, "current artifact inventory MCP tool is missing");
         for (const auto &tool : tools) {
             const auto name = tool.value("name", "");
             if (name == "create")
@@ -92,6 +87,13 @@ int main() {
                             properties.contains("include_data") && properties.contains("limit") &&
                             properties.contains("offset"),
                         "request_artifact schema does not advertise targeted data selection");
+                require(properties.at("limit").is_object() && properties.at("limit").value("type", "") == "integer" &&
+                            properties.at("limit").value("minimum", 0) == 1 &&
+                            properties.at("limit").value("maximum", 0) == 10000,
+                        "request_artifact limit schema is not a valid bounded integer schema");
+                require(properties.at("offset").is_object() && properties.at("offset").value("type", "") == "integer" &&
+                            properties.at("offset").value("minimum", -1) == 0,
+                        "request_artifact offset schema is not a valid non-negative integer schema");
             }
         }
 
@@ -116,6 +118,9 @@ int main() {
             require(operation.value("domain", "") == "mass_spec" &&
                         operation.value("module_id", "") == "mass_spec.nta",
                     "operation filtering returned the wrong module");
+        for (const auto &operation : operations)
+            require(!operation.contains("cacheable"),
+                    "operation catalogue still exposes the removed cacheable flag");
 
         const auto searched = text_json(call(session, 4, "get_operations",
                                              {{"domain", "mass_spec"}, {"search", "nta"}}));

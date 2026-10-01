@@ -189,7 +189,8 @@ sfcore:artifactIdParameter
     skos:definition "Exact immutable artifact identifier returned by the artifact inventory." ;
     sf:type "string" ;
     sf:required false ;
-    sf:default "" .
+    sf:default "" ;
+    sf:example "artifact-0001" .
 
 sfcore:operationInstanceParameter
     a sf:Parameter ;
@@ -199,7 +200,8 @@ sfcore:operationInstanceParameter
     skos:definition "Workflow operation instance that produced or consumes an artifact." ;
     sf:type "string" ;
     sf:required false ;
-    sf:default "" .
+    sf:default "" ;
+    sf:example "operation-1" .
 
 sfcore:includeDataParameter
     a sf:Parameter ;
@@ -209,7 +211,8 @@ sfcore:includeDataParameter
     skos:definition "Return the selected JSON payload or bounded rows from a table artifact." ;
     sf:type "boolean" ;
     sf:required false ;
-    sf:default "false" .
+    sf:default "false" ;
+    sf:example false .
 
 sfcore:artifactLimitParameter
     a sf:Parameter ;
@@ -219,7 +222,8 @@ sfcore:artifactLimitParameter
     skos:definition "Maximum number of table rows returned when artifact data is requested." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default "1000" .
+    sf:default "1000" ;
+    sf:example 1000 .
 
 sfcore:artifactOffsetParameter
     a sf:Parameter ;
@@ -229,7 +233,8 @@ sfcore:artifactOffsetParameter
     skos:definition "Number of table rows to skip when artifact data is requested." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default "0" .
+    sf:default "0" ;
+    sf:example 0 .
 
 
 sfcore:analysesParameter
@@ -340,3 +345,36 @@ sfcore:realItemParameter
     sf:required true ;
     sf:default 0.0 ;
     sf:example 1.0 .
+
+sfcore:debugAnalysisParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug analysis" ;
+    skos:definition "Optional analysis name to include in plugin diagnostic logging. Empty disables the analysis selector." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "sample_1" .
+
+sfcore:debugMzParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug m/z" ;
+    skos:definition "Optional m/z value to include in plugin diagnostic logging. Zero disables the m/z selector." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 0.0 ;
+    sf:example 500.2 .
+
+sfcore:debugSpecIdxParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug spectrum index" ;
+    skos:definition "Optional zero-based spectrum index to include in plugin diagnostic logging. -1 disables the spectrum selector." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default -1 ;
+    sf:example 42 .

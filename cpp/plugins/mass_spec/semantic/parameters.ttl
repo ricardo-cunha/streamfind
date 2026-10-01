@@ -3,6 +3,28 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+sfms:debugRtParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug RT" ;
+    skos:definition "Optional retention time used to select a component-creation diagnostic trace. Zero disables RT debugging." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 0.0 ;
+    sf:example 120.0 .
+
+sfms:debugComponentParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug component" ;
+    skos:definition "Optional component identifier to include in annotation diagnostics. Empty disables component debugging." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "component_1" .
+
 sfms:levelsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -182,8 +204,8 @@ sfms:ppmThresholdParameter
     sf:type "real" ;
     sf:required false ;
     sf:defaultRequired true ;
-    sf:default 15.0 ;
-    sf:example 15.0 .
+    sf:default 10.0 ;
+    sf:example 10.0 .
 
 sfms:noiseThresholdParameter
     a sf:Parameter ;
@@ -194,7 +216,7 @@ sfms:noiseThresholdParameter
     sf:type "real" ;
     sf:required false ;
     sf:defaultRequired true ;
-    sf:default 15.0 ;
+    sf:default 250.0 ;
     sf:example 250.0 .
 
 sfms:minSnrParameter
@@ -241,8 +263,8 @@ sfms:maxFeatureWidthParameter
     sf:type "real" ;
     sf:required false ;
     sf:defaultRequired true ;
-    sf:default 100.0 ;
-    sf:example 100.0 .
+    sf:default 250.0 ;
+    sf:example 250.0 .
 
 sfms:baseQuantileParameter
     a sf:Parameter ;
@@ -253,16 +275,16 @@ sfms:baseQuantileParameter
     sf:type "real" ;
     sf:required false ;
     sf:defaultRequired true ;
-    sf:default 0.1 ;
-    sf:example 0.1 .
+    sf:default 0.99 ;
+    sf:example 0.99 .
 
 sfms:targetsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry targets" ;
-    skos:definition "Optional target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. Each row may select a mass, m/z, retention-time interval, structure, or database identifier." ;
-    sf:guidance "Use analysis to restrict a row to one analysis name returned by mass_spec.get_analysis_names; omit it to use the analyses selected by the operation. Provide mass, m/z, retention time, or chemical-identity fields as needed. When row bounds are omitted, the operation derives them from ppm and retention-time tolerance parameters." ;
+    skos:definition "Optional target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. For feature matching, provide mass or mz, optionally rt or explicit bounds, and optionally analysis, polarity, and name. Formula, SMILES, InChI, and InChIKey are accepted target metadata but do not replace mass or mz matching." ;
+    sf:guidance "Use an array of objects such as [{\"mass\":267.1834,\"name\":\"Metoprolol\"}]. Omit analysis_names and analysis to search all analyses. Omit polarity to search both polarities; include polarity in a row only when it is a deliberate constraint. A mass or mz value is expanded by ppm; an exact rt value is expanded by rt_tolerance seconds. Use mass_min/mass_max, mzmin/mzmax, or rtmin/rtmax for explicit inclusive ranges. The returned featuresTable is a new persisted artifact." ;
     sf:type "table" ;
     sf:tableContract sfms:targetsTable ;
     sf:required false ;
@@ -301,10 +323,10 @@ sfms:ppmParameter
     skos:definition "Mass tolerance in parts per million. For an exact mz or mass target, this expands the matching interval around the target." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 20.0 ;
+    sf:default 10.0 ;
     sf:units "ppm" ;
     sf:constraints "{\"exclusiveMinimum\":0}" ;
-    sf:example 20.0 .
+    sf:example 10.0 .
 
 sfms:rtToleranceParameter
     a sf:Parameter ;
@@ -425,7 +447,7 @@ sfms:filteredParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Include filtered features" ;
-    skos:definition "When false (default), features marked as filtered are excluded from spectrum loading." ;
+    skos:definition "When false (default), features marked as filtered are excluded from the returned feature table. Set true to include them." ;
     sf:type "boolean" ;
     sf:required false ;
     sf:default false ;
@@ -439,9 +461,9 @@ sfms:rtWindowParameter
     skos:definition "Two-element [min, max] retention-time offset applied to each feature's detection window." ;
     sf:type "array" ;
     sf:required false ;
-    sf:default "[]" ;
+    sf:default "[-2.5, 2.5]" ;
     sf:items sfcore:realItemParameter ;
-    sf:example "[0.0, 0.0]" .
+    sf:example "[-2.5, 2.5]" .
 
 sfms:mzWindowParameter
     a sf:Parameter ;
@@ -507,8 +529,8 @@ sfms:maxIsotopesParameter
     skos:definition "Maximum number of isotopes considered per element during annotation." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default 5 ;
-    sf:example 5 .
+    sf:default 8 ;
+    sf:example 8 .
 
 sfms:maxChargeParameter
     a sf:Parameter ;
@@ -537,12 +559,12 @@ sfms:isotopeElementsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Isotope elements" ;
-    skos:definition "Elements considered for isotope annotation." ;
+    skos:definition "Elements and allowed isotope-count ranges for annotation. Each entry must use Element:min-max syntax, such as C:1-80." ;
     sf:type "array" ;
     sf:required false ;
-    sf:default "[\"C\",\"H\",\"N\",\"O\",\"S\"]" ;
+    sf:default "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" ;
     sf:items sfcore:stringItemParameter ;
-    sf:example "[\"C\",\"H\",\"N\",\"O\",\"S\"]" .
+    sf:example "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" .
 
 sfms:minSamplesParameter
     a sf:Parameter ;

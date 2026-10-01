@@ -39,18 +39,7 @@ let project = Project::create(ProjectOptions {
 })?;
 ```
 
-The preserved Rust project API includes its own workflow surface:
-
-```text
-create, describe, validate
-get_metadata, set_metadata
-get_domain
-get_workflow, set_workflow, validate_workflow, run_workflow
-legacy workflow methods and execution helpers
-get_cache, get_cache_size, delete_cache
-get_audit_trail
-copy, close
-```
+The Rust implementation remains a deferred backend during the C++-first migration; its older project and MCP surface is not part of the active C++ contract.
 
 ## CLI
 

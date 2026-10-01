@@ -7,14 +7,14 @@ stale development code and the R package is a legacy interface.
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | Version {{ streamfind_version }} project version; latest package is v0.1.0 for Windows x64 and Linux x86_64 | Native C++ applications and MCP clients |
-| Rust backend | Stale development backend | Existing Rust applications and compatibility work |
+| C++ backend | Version {{ streamfind_version }} project version; 0.3.0 targets Windows x64 and Linux x86_64 preview packages | Native C++ applications and MCP clients |
+| Rust backend | Stale development backend; no 0.3.0 release | Existing Rust applications and compatibility work |
 | C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
 | Rust MCP server | Preserved with the stale Rust backend | Existing Rust experiments only |
 | R package | Legacy interface | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path currently |
 | Cogniflow integration | Separate future path | Not part of the native packages |
-| React frontend | Future interface using the C++ backend | Not released |
+| React frontend | Development/preview interface using the C++ service | Not included in native archives |
 
 See [Releases](releases.md) for package downloads and checksums.
 
@@ -89,10 +89,11 @@ for the distribution notice and compatibility boundaries.
 
 The [Python package](components/bindings-python.md) and
 [Cogniflow integration](components/cf-streamfind.md) pages describe the current
-availability of those future-facing assets without implying that they are part
-of the native release.
+availability of those separate future-facing assets without implying that they
+are part of the native C++ release.
 
-The planned React frontend is also not released. It will use the C++ backend's
-public service boundary and will not contain a second persistence or domain
-processing implementation. New backend capabilities should therefore target the
-C++ core/plugin framework first.
+The React frontend is currently a development/preview application. It uses the
+C++ backend's public service boundary and does not contain a second persistence
+or domain-processing implementation. It is not included as a separately
+supported desktop application in the native archives. New backend capabilities
+should therefore target the C++ core/plugin framework first.

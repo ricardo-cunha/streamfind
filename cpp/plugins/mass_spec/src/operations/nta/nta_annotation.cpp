@@ -365,6 +365,8 @@ namespace streamfind::mass_spec::nta
 
           const int min_n = std::stoi(range.substr(0, dash_pos));
           const int max_n = std::stoi(range.substr(dash_pos + 1));
+          if (min_n < 0 || max_n < min_n)
+            throw std::invalid_argument("isotope element ranges must satisfy 0 <= min <= max: " + spec);
           parsed.ranges[element] = {min_n, max_n};
         }
 
@@ -1367,7 +1369,8 @@ namespace streamfind::mass_spec::nta
         float ppm,
         const std::vector<std::string> &isotopeElements,
         const std::string &debugComponent,
-        const std::string &debugAnalysis)
+        const std::string &debugAnalysis,
+        sdk::DebugSession *debug)
     {
       ISOTOPE_SET isotopes;
       const std::vector<std::string> default_elements = {"C:1-60", "N:0-10", "O:0-20", "S:0-4", "Cl:0-6", "Br:0-4"};
@@ -1435,7 +1438,8 @@ namespace streamfind::mass_spec::nta
             header << "=== Component Annotation Debug Log ===" << std::endl
                    << "Analysis: " << debugAnalysis << std::endl
                    << "Component: " << debugComponent << std::endl;
-            ::streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), header.str());
+            ::streamfind::mass_spec::nta::utils::init_debug_log(
+                debug != nullptr ? debug->path().string() : log_filename.str(), header.str(), true);
           }
 
           for (int idx : component_indices)
@@ -1854,18 +1858,31 @@ namespace streamfind::mass_spec::nta::annotate_components
 using Json = nlohmann::json;
     Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const int max_isotopes = parameters.value("max_isotopes", 5);
+        const int max_isotopes = parameters.value("max_isotopes", 8);
         const int max_charge = parameters.value("max_charge", 1);
         const int max_gaps = parameters.value("max_gaps", 1);
         const float ppm = parameters.value("ppm", 10.0);
         std::vector<std::string> isotope_elements;
-        const auto isotope_elements_param = parameters.value("isotope_elements", Json::array({Json("C:1-60"), Json("N:0-10"), Json("O:0-20"), Json("S:0-4"), Json("Cl:0-6"), Json("Br:0-4")}));
+        const auto isotope_elements_param = parameters.value("isotope_elements", Json::array({Json("C:1-80"), Json("N:0-10"), Json("O:0-20"), Json("S:0-4"), Json("Cl:0-6"), Json("Br:0-4")}));
         for (const auto &v : isotope_elements_param)
             isotope_elements.push_back(v.get<std::string>());
         if (max_isotopes < 1 || max_charge < 1 || max_gaps < 0 || ppm < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid annotation parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
-        ::streamfind::mass_spec::nta::annotation::annotate_components_impl(data, max_isotopes, max_charge, max_gaps, ppm, isotope_elements);
+        // Annotation is intentionally all-analysis, like find_features.
+        // Ignore stale selection values from older workflow revisions.
+        auto all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
+        const auto debug_component = parameters.contains("debug_component") && parameters.at("debug_component").is_string()
+            ? parameters.at("debug_component").get<std::string>() : std::string{};
+        const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
+            ? parameters.at("debug_analysis").get<std::string>() : std::string{};
+        auto debug = sdk::DebugSession::open(
+            access.database_path(), "mass_spec.annotate_components", access.operation_instance(),
+            sdk::DebugOptions{debug_analysis, 0.0, -1, !debug_component.empty() && !debug_analysis.empty(), false});
+        ::streamfind::mass_spec::nta::annotation::annotate_components_impl(
+            data, max_isotopes, max_charge, max_gaps, ppm, isotope_elements,
+            debug_component, debug_analysis, &debug);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Components annotated."}};
     }

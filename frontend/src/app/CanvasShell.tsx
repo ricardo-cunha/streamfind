@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,11 +15,11 @@ import {
   type ArtifactRecord,
   type ProjectSession,
 } from '../backend/StreamFindApiClient';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from './notifications';
-import { visualizationSpecFromArtifact } from '../visualization/VisualizationDataResolver';
-import { VisualizationRenderer } from '../visualization/VisualizationRenderer';
-import type { VisualizationSpec } from '../visualization/visualizationTypes';
+import { ViewerShell } from '../viewers/ViewerShell';
+import { ViewerResolver } from '../viewers/ViewerResolver';
 import type {
   BackendCapability,
   CapabilityParameter,
@@ -51,7 +52,6 @@ type CanvasEdge = {
   id: string;
   source: string;
   sourcePort: string;
-  sourceArtifactId?: string;
   target: string;
   targetPort: string;
 };
@@ -115,7 +115,6 @@ function canvasWorkflow(
   const connections: WorkflowConnectionDefinition[] = edges.map((edge) => ({
     source_operation: edge.source,
     source_port: edge.sourcePort,
-    ...(edge.sourceArtifactId ? { source_artifact_id: edge.sourceArtifactId } : {}),
     target_operation: edge.target,
     target_port: edge.targetPort,
   }));
@@ -127,6 +126,18 @@ function canvasWorkflow(
     operations,
     connections,
   };
+}
+
+function nextCanvasNodeNumber(nodes: CanvasNode[]): number {
+  return (
+    Math.max(
+      0,
+      ...nodes.map((node) => {
+        const match = /-(\d+)$/.exec(node.id);
+        return match ? Number(match[1]) : 0;
+      }),
+    ) + 1
+  );
 }
 
 type NodeTemplate = {
@@ -141,6 +152,15 @@ type NodeTemplate = {
   domain?: string;
   module?: string;
 };
+
+type DocumentationFocus = { section: 'inputs' | 'outputs' | 'parameters'; key: string };
+
+function operationDeckDensity(title: string, metadata: string): 'regular' | 'compact' | 'dense' {
+  const totalLength = title.length + metadata.length;
+  if (title.length > 36 || totalLength > 78) return 'dense';
+  if (title.length > 25 || totalLength > 58) return 'compact';
+  return 'regular';
+}
 
 function capabilityTemplates(capabilities: ServiceCapabilities): NodeTemplate[] {
   const backend = capabilities.operations
@@ -215,16 +235,11 @@ function ontologyPortTerm(port: NodePort): string {
 }
 
 function tableRowsToWireValue(value: unknown): unknown {
-  if (!Array.isArray(value) || value.some((row) => typeof row !== 'object' || row === null || Array.isArray(row)))
-    return value;
-  const names = Array.from(new Set(value.flatMap((row) => Object.keys(row as Record<string, unknown>))));
-  return {
-    columns: names.map((name) => ({
-      name,
-      type: 'string',
-      values: value.map((row) => (row as Record<string, unknown>)[name] ?? null),
-    })),
-  };
+  // Row-oriented table values are the public operation form. Preserve their
+  // scalar JSON types; converting every cell to a string loses numeric target
+  // values such as mass and m/z. The native validator also accepts the
+  // persisted column-oriented form when one is supplied directly.
+  return value;
 }
 
 function wireParameters(
@@ -507,6 +522,14 @@ function portTypeKey(port: CapabilityPort | NodePort): string {
   return 'unknown';
 }
 
+function visualPortTypeKey(port: NodePort): string {
+  const schemaType = Array.isArray(port.schema?.type) ? port.schema.type[0] : port.schema?.type;
+  if (schemaType === 'array') return schemaTypeLabel(port.schema);
+  if (schemaType === 'object') return 'object';
+  if (schemaType === 'table') return 'table';
+  return port.typeKey;
+}
+
 function parameterTypeKey(parameter: CapabilityParameter): string {
   const type = Array.isArray(parameter.schema.type) ? parameter.schema.type.join('|') : parameter.schema.type;
   if (type === 'table') return 'table';
@@ -619,21 +642,21 @@ function prettyArtifactPayload(payload: ArtifactRecord['payload']): string {
   }
 }
 
-function VisualizationArtifactPreview({ artifact }: { artifact: ArtifactRecord }) {
-  let spec: VisualizationSpec;
-  try {
-    spec = visualizationSpecFromArtifact(artifact);
-  } catch {
-    return <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifact.payload)}</pre>;
-  }
-  return <VisualizationRenderer spec={spec} className="sf-visualization-preview" />;
-}
-
 function artifactContractMatches(artifactContract: string, portContract?: string): boolean {
   if (!portContract) return false;
   if (artifactContract === portContract) return true;
   const local = (value: string) => value.split('#').at(-1)?.split(':').at(-1) ?? value;
   return local(artifactContract) === local(portContract);
+}
+
+function isVisualizationArtifact(artifact: ArtifactRecord): boolean {
+  const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
+  return contract === 'visualizationSpecResult';
+}
+
+function isFeatureArtifact(artifact: ArtifactRecord): boolean {
+  const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
+  return contract === 'featuresTable';
 }
 
 function nodePorts(capability: BackendCapability | undefined): { inputs: NodePort[]; outputs: NodePort[] } {
@@ -710,81 +733,117 @@ function connectedNodePosition(source: CanvasNode, nodes: CanvasNode[]): Point {
   return { x: source.x + columnStep, y: source.y };
 }
 
-const ARTIFACT_PAGE_SIZE = 250;
-const ARTIFACT_ROW_HEIGHT = 32;
-
-type ArtifactRow = ArtifactDataResponse['rows'][number];
+// Keep the browser responsive while still making each page useful for inspection.
+// Filtering, sorting, and pagination remain server-side operations.
+const ARTIFACT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 function VirtualArtifactTable({
   columns,
-  totalRows,
   pages,
+  pageOffset,
   loading,
-  requestPage,
 }: {
   columns: ArtifactDataResponse['columns'];
-  totalRows: number;
   pages: Record<number, ArtifactDataResponse>;
+  pageOffset: number;
   loading: boolean;
-  requestPage: (offset: number) => void;
 }) {
-  const [scrollTop, setScrollTop] = useState(0);
-  const viewportHeight = 520;
-  const firstRow = Math.max(0, Math.floor(scrollTop / ARTIFACT_ROW_HEIGHT) - 8);
-  const visibleCount = Math.ceil(viewportHeight / ARTIFACT_ROW_HEIGHT) + 16;
-  const lastRow = Math.min(totalRows, firstRow + visibleCount);
-  const firstPage = Math.floor(firstRow / ARTIFACT_PAGE_SIZE) * ARTIFACT_PAGE_SIZE;
-  const lastPage = Math.floor(Math.max(firstRow, lastRow - 1) / ARTIFACT_PAGE_SIZE) * ARTIFACT_PAGE_SIZE;
+  const page = pages[pageOffset];
+  const rows = page?.rows ?? [];
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowHeight = 34;
+  const headerHeight = 48;
+  const columnWidths = useMemo(
+    () =>
+      columns.map((column) => {
+        const longestValue = (pages[pageOffset]?.rows ?? []).reduce((longest, row) => {
+          const valueLength = String(row[column.name] ?? 'NULL').length;
+          return Math.max(longest, valueLength);
+        }, column.name.length);
+        const typeLength = column.type.length;
+        return Math.max(longestValue, typeLength) * 8 + 32;
+      }),
+    [columns, pageOffset, pages],
+  );
+  // Only the active server-side page is kept in the vertical DOM window;
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 8,
+  });
+  const columnVirtualizer = useVirtualizer({
+    count: columns.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => columnWidths[index] ?? 160,
+    horizontal: true,
+    overscan: 2,
+  });
+  useEffect(() => {
+    columnWidths.forEach((width, index) => columnVirtualizer.resizeItem(index, width));
+  }, [columnVirtualizer, columnWidths]);
+  const virtualColumns = columnVirtualizer.getVirtualItems();
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalWidth = columnVirtualizer.getTotalSize();
 
   useEffect(() => {
-    for (let offset = firstPage; offset <= lastPage; offset += ARTIFACT_PAGE_SIZE) requestPage(offset);
-  }, [firstPage, lastPage, requestPage]);
-
-  const rowAt = (index: number): ArtifactRow | undefined => {
-    const offset = Math.floor(index / ARTIFACT_PAGE_SIZE) * ARTIFACT_PAGE_SIZE;
-    return pages[offset]?.rows[index - offset];
-  };
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    scrollElement.scrollTo({ top: 0, left: scrollElement.scrollLeft, behavior: 'auto' });
+  }, [pageOffset]);
 
   return (
     <div
+      ref={scrollRef}
       className="sf-artifact-virtual-scroll"
-      role="region"
+      role="table"
       aria-label="Artifact table"
+      aria-rowcount={page?.total_rows ?? undefined}
       tabIndex={0}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >
-      <table>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column.name}>
-                {column.name}
-                <small>{column.type}</small>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr aria-hidden="true" className="sf-artifact-virtual-spacer">
-            <td colSpan={columns.length} style={{ height: firstRow * ARTIFACT_ROW_HEIGHT }} />
-          </tr>
-          {Array.from({ length: Math.max(0, lastRow - firstRow) }, (_, rowOffset) => {
-            const index = firstRow + rowOffset;
-            const row = rowAt(index);
+      {loading ? <div className="sf-artifact-viewer-loading">Loading rows…</div> : null}
+      <div className="sf-artifact-virtual-header" style={{ width: totalWidth, height: headerHeight }}>
+        {virtualColumns.map((virtualColumn) => {
+          const column = columns[virtualColumn.index];
+          return (
+            <div
+              className="sf-artifact-virtual-cell sf-artifact-virtual-header-cell"
+              key={column.name}
+              role="columnheader"
+              style={{ left: virtualColumn.start, top: 0, width: virtualColumn.size, height: headerHeight }}
+            >
+              {column.name}
+              <small>{column.type}</small>
+            </div>
+          );
+        })}
+      </div>
+      <div className="sf-artifact-virtual-canvas" style={{ width: totalWidth, height: rowVirtualizer.getTotalSize() }}>
+        {virtualRows.map((virtualRow) => {
+          const row = rows[virtualRow.index];
+          return virtualColumns.map((virtualColumn) => {
+            const column = columns[virtualColumn.index];
+            const cellValue = row ? (row[column.name] ?? 'NULL') : 'Loading…';
             return (
-              <tr key={index}>
-                {columns.map((column) => (
-                  <td key={column.name}>{row ? (row[column.name] ?? 'NULL') : 'Loading…'}</td>
-                ))}
-              </tr>
+              <div
+                className="sf-artifact-virtual-cell sf-artifact-virtual-body-cell"
+                key={`${virtualRow.index}-${column.name}`}
+                role="cell"
+                style={{
+                  left: virtualColumn.start,
+                  top: virtualRow.start,
+                  width: virtualColumn.size,
+                  height: virtualRow.size,
+                }}
+              >
+                <span title={cellValue}>{cellValue}</span>
+              </div>
             );
-          })}
-          <tr aria-hidden="true" className="sf-artifact-virtual-spacer">
-            <td colSpan={columns.length} style={{ height: Math.max(0, totalRows - lastRow) * ARTIFACT_ROW_HEIGHT }} />
-          </tr>
-        </tbody>
-      </table>
-      {loading ? <div className="sf-artifact-viewer-loading">Loading visible rows…</div> : null}
+          });
+        })}
+      </div>
+      {!loading && rows.length === 0 ? <div className="sf-artifact-viewer-empty">No matching rows.</div> : null}
     </div>
   );
 }
@@ -811,6 +870,7 @@ export default function CanvasShell({
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
+  const initialViewportFittedRef = useRef(false);
   const [worldSize, setWorldSize] = useState({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
   const viewportRef = useRef({ offset, scale });
   useEffect(() => {
@@ -860,11 +920,11 @@ export default function CanvasShell({
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [documentationFocus, setDocumentationFocus] = useState<DocumentationFocus | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const lastStatusRef = useRef<{ message: string; timestamp: number } | null>(null);
   const recentEventRef = useRef<Map<string, number>>(new Map());
   const [paletteSearch, setPaletteSearch] = useState('');
-  const [paletteDomain, setPaletteDomain] = useState('');
   const [paletteModule, setPaletteModule] = useState('');
   const [anchorCenters, setAnchorCenters] = useState<Record<string, Point>>({});
   const [expandedParameters, setExpandedParameters] = useState<Record<string, boolean>>({});
@@ -872,14 +932,38 @@ export default function CanvasShell({
     surface === 'workflow' ? 'Drag an output connector to a compatible input connector.' : 'Workflow canvas',
   );
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
-  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
+  const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactViewer, setArtifactViewer] = useState<ArtifactRecord | null>(null);
+  const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'feature' | 'default'>('default');
+  const [hoveredOutputAnchor, setHoveredOutputAnchor] = useState<string | null>(null);
+  const outputHoverTimeoutRef = useRef<number | null>(null);
   const [artifactData, setArtifactData] = useState<ArtifactDataResponse | null>(null);
   const [artifactPages, setArtifactPages] = useState<Record<number, ArtifactDataResponse>>({});
   const [artifactViewerSearch, setArtifactViewerSearch] = useState('');
+  const [artifactViewerPageSize, setArtifactViewerPageSize] = useState(250);
   const [artifactViewerSort, setArtifactViewerSort] = useState('');
   const [artifactViewerDescending, setArtifactViewerDescending] = useState(false);
   const [artifactViewerLoading, setArtifactViewerLoading] = useState(false);
+  const openArtifactViewer = (artifact: ArtifactRecord, mode: 'table' | 'feature' | 'default') => {
+    setArtifactViewer(artifact);
+    setArtifactViewerMode(mode);
+    setArtifactData(null);
+    setArtifactPages({});
+    artifactPageRequests.current.clear();
+    artifactPageQueryRef.current = '';
+    setArtifactViewerSearch('');
+    setArtifactViewerPageSize(250);
+    setArtifactViewerSort('');
+    setArtifactViewerDescending(false);
+  };
+  const showOutputRendererMenu = (key: string) => {
+    if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
+    setHoveredOutputAnchor(key);
+  };
+  const hideOutputRendererMenu = () => {
+    if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
+    outputHoverTimeoutRef.current = window.setTimeout(() => setHoveredOutputAnchor(null), 300);
+  };
   const historyRef = useRef<{ past: CanvasHistorySnapshot[]; future: CanvasHistorySnapshot[]; current: string }>({
     past: [],
     future: [],
@@ -914,22 +998,26 @@ export default function CanvasShell({
     [appendLog],
   );
   const refreshArtifacts = useCallback(() => {
-    if (!client || typeof client.artifacts !== 'function') return Promise.resolve();
+    if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
     return client
-      .artifacts(project.session_id)
-      .then(setArtifacts)
-      .catch(() => undefined);
+      .currentArtifacts(project.session_id)
+      .then((artifacts) => {
+        setCurrentArtifacts(artifacts);
+        return artifacts;
+      })
+      .catch(() => []);
   }, [client, project.session_id]);
   const artifactPageRequests = useRef(new Set<number>());
   const artifactPageQueryRef = useRef('');
   const requestArtifactPage = useCallback(
-    (offset: number) => {
+    (offset: number, activate = false) => {
       if (!artifactViewer || artifactViewer.representation !== 'table' || !client) return;
-      const queryKey = `${artifactViewer.artifact_id}|${artifactViewerSearch}|${artifactViewerSort}|${artifactViewerDescending}`;
-      if (offset === 0 && artifactPageQueryRef.current !== queryKey) {
+      const queryKey = `${artifactViewer.artifact_id}|${artifactViewerPageSize}|${artifactViewerSearch}|${artifactViewerSort}|${artifactViewerDescending}`;
+      if (offset !== 0 && artifactPageQueryRef.current !== queryKey) return;
+      const queryChanged = offset === 0 && artifactPageQueryRef.current !== queryKey;
+      if (queryChanged) {
         artifactPageQueryRef.current = queryKey;
         artifactPageRequests.current.clear();
-        setArtifactData(null);
         setArtifactPages({});
       }
       if (artifactPageRequests.current.has(offset)) return;
@@ -938,19 +1026,20 @@ export default function CanvasShell({
       void client
         .artifactData(project.session_id, {
           artifact_id: artifactViewer.artifact_id,
-          limit: ARTIFACT_PAGE_SIZE,
+          limit: artifactViewerPageSize,
           offset,
           search: artifactViewerSearch,
           sort_column: artifactViewerSort,
           descending: artifactViewerDescending,
         })
         .then((result) => {
-          setArtifactData((current) => current ?? result);
+          if (artifactPageQueryRef.current !== queryKey) return;
+          if (activate) setArtifactData(result);
           setArtifactPages((current) => {
             const next = { ...current, [offset]: result };
             return Object.fromEntries(
               Object.entries(next).filter(
-                ([pageOffset]) => Math.abs(Number(pageOffset) - offset) <= ARTIFACT_PAGE_SIZE * 3,
+                ([pageOffset]) => Math.abs(Number(pageOffset) - offset) <= artifactViewerPageSize * 3,
               ),
             );
           });
@@ -958,14 +1047,24 @@ export default function CanvasShell({
         .catch(() => undefined)
         .finally(() => {
           artifactPageRequests.current.delete(offset);
-          setArtifactViewerLoading(false);
+          if (artifactPageQueryRef.current === queryKey && artifactPageRequests.current.size === 0)
+            setArtifactViewerLoading(false);
         });
     },
-    [artifactViewer, artifactViewerDescending, artifactViewerSearch, artifactViewerSort, client, project.session_id],
+    [
+      artifactViewer,
+      artifactViewerDescending,
+      artifactViewerPageSize,
+      artifactViewerSearch,
+      artifactViewerSort,
+      client,
+      project.session_id,
+    ],
   );
   useEffect(() => {
     if (!artifactViewer || artifactViewer.representation !== 'table' || !client) return;
-    requestArtifactPage(0);
+    const timer = window.setTimeout(() => requestArtifactPage(0, true), 300);
+    return () => window.clearTimeout(timer);
   }, [artifactViewer, client, requestArtifactPage]);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1152,6 +1251,7 @@ export default function CanvasShell({
       .workflowDefinition(project.session_id)
       .then((result) => {
         if (!active) return;
+        initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
@@ -1183,13 +1283,17 @@ export default function CanvasShell({
           id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
           source: connection.source_operation,
           sourcePort: connection.source_port,
-          sourceArtifactId: connection.source_artifact_id,
           target: connection.target_operation,
           targetPort: connection.target_port,
         }));
-        nextId.current = loadedNodes.length + 1;
+        nextId.current = nextCanvasNodeNumber(loadedNodes);
         setNodes(loadedNodes);
         setEdges(loadedEdges);
+        setWorldSize((current) => ({
+          width: Math.max(current.width, ...loadedNodes.map((node) => node.x + NODE_WIDTH + 800)),
+          height: Math.max(current.height, ...loadedNodes.map((node) => node.y + NODE_HEIGHT + 600)),
+        }));
+        void refreshArtifacts();
         setWorkflowLoaded(true);
         setStatus('Workflow loaded from the project.');
       })
@@ -1202,7 +1306,35 @@ export default function CanvasShell({
     return () => {
       active = false;
     };
-  }, [capabilities.operations, client, project.session_id, setStatus, surface]);
+  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface]);
+
+  useLayoutEffect(() => {
+    if (!workflowLoaded || !nodes.length || initialViewportFittedRef.current) return undefined;
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const minX = Math.min(...nodes.map((node) => node.x));
+    const minY = Math.min(...nodes.map((node) => node.y));
+    const maxX = Math.max(...nodes.map((node) => node.x + NODE_WIDTH));
+    const maxY = Math.max(...nodes.map((node) => node.y + NODE_HEIGHT));
+    const padding = 80;
+    const boundsWidth = Math.max(1, maxX - minX);
+    const boundsHeight = Math.max(1, maxY - minY);
+    const fittedScale = Math.max(
+      0.35,
+      Math.min(
+        1.2,
+        (canvas.clientWidth - padding * 2) / boundsWidth,
+        (canvas.clientHeight - padding * 2) / boundsHeight,
+      ),
+    );
+    initialViewportFittedRef.current = true;
+    setScale(fittedScale);
+    setOffset({
+      x: (canvas.clientWidth - boundsWidth * fittedScale) / 2 - minX * fittedScale,
+      y: (canvas.clientHeight - boundsHeight * fittedScale) / 2 - minY * fittedScale,
+    });
+    return undefined;
+  }, [nodes, workflowLoaded]);
 
   const workflowAction = async (action: 'run' | 'pause' | 'cancel') => {
     if (!client) return;
@@ -1272,16 +1404,30 @@ export default function CanvasShell({
     }
   };
 
-  const clearWorkflowHistory = async () => {
+  const clearArtifactCache = async () => {
     if (!client || workflowBusy) return;
     setWorkflowBusy(true);
     try {
-      await client.clearWorkflowHistory(project.session_id);
+      await client.clearArtifactCache(project.session_id);
       historyRef.current = { past: [], current: historyRef.current.current, future: [] };
-      setStatus('Workflow history and artifacts from prior revisions were cleared.');
+      setStatus('Cached data and cache history were cleared; published artifacts were retained.');
       await refreshArtifacts();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Workflow history could not be cleared.');
+      setStatus(error instanceof Error ? error.message : 'Cached data could not be cleared.');
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
+  const clearAllArtifacts = async () => {
+    if (!client || workflowBusy) return;
+    setWorkflowBusy(true);
+    try {
+      await client.clearAllArtifacts(project.session_id);
+      setStatus('All artifacts and cache entries were cleared; the workflow definition was retained.');
+      await refreshArtifacts();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Artifacts could not be cleared.');
     } finally {
       setWorkflowBusy(false);
     }
@@ -1358,11 +1504,10 @@ export default function CanvasShell({
         id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
         source: connection.source_operation,
         sourcePort: connection.source_port,
-        sourceArtifactId: connection.source_artifact_id,
         target: connection.target_operation,
         targetPort: connection.target_port,
       }));
-      nextId.current = loadedNodes.length + 1;
+      nextId.current = nextCanvasNodeNumber(loadedNodes);
       setNodes(loadedNodes);
       setEdges(loadedEdges);
       setExpandedParameters({});
@@ -1434,6 +1579,17 @@ export default function CanvasShell({
         : (ports.length && nodePorts(capability).inputs.length ? 120 + nodePorts(capability).inputs.length * 31 : 94) +
           index * 31;
     return { x: node.x + (direction === 'input' ? -12 : NODE_WIDTH + 12), y: node.y + top };
+  };
+  const edgeTypeKey = (node: CanvasNode, portId: string, direction: 'input' | 'output'): string => {
+    const capability = nodeCapability(node);
+    if (direction === 'input' && portId.startsWith('parameter:')) {
+      const parameter = capability?.parameters.find((candidate) => `parameter:${candidate.name}` === portId);
+      return parameter ? parameterTypeKey(parameter) : 'unknown';
+    }
+    const port = nodePorts(capability)[direction === 'input' ? 'inputs' : 'outputs'].find(
+      (candidate) => candidate.id === portId,
+    );
+    return port ? visualPortTypeKey(port) : 'unknown';
   };
 
   useEffect(() => {
@@ -1786,44 +1942,34 @@ export default function CanvasShell({
       return false;
     });
   }, [capabilities.operations, nodeMap, nodeTemplates, picker]);
-  const paletteDomains = useMemo(
-    () =>
-      [
-        ...new Set(
-          availableTemplates.map((template) => template.domain).filter((domain): domain is string => Boolean(domain)),
-        ),
-      ].sort(),
-    [availableTemplates],
-  );
   const paletteModules = useMemo(
     () =>
       [
         ...new Set(
-          availableTemplates
-            .filter((template) => !paletteDomain || template.domain === paletteDomain)
-            .map((template) => template.module)
-            .filter((module): module is string => Boolean(module)),
+          availableTemplates.map((template) => template.module).filter((module): module is string => Boolean(module)),
         ),
       ].sort(),
-    [availableTemplates, paletteDomain],
+    [availableTemplates],
   );
+  const paletteSearchQuery = paletteSearch.trim().toLocaleLowerCase();
   const filteredTemplates = useMemo(() => {
-    const categorized = availableTemplates.filter(
-      (template) =>
-        (!paletteDomain || template.domain === paletteDomain) && (!paletteModule || template.module === paletteModule),
-    );
-    if (!paletteSearch.trim()) return categorized;
-    let expression: RegExp;
-    try {
-      expression = new RegExp(paletteSearch, 'i');
-    } catch {
-      return [];
-    }
+    const categorized = availableTemplates.filter((template) => !paletteModule || template.module === paletteModule);
+    if (!paletteSearchQuery) return categorized;
     return categorized.filter((template) => {
       const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
-      return expression.test(JSON.stringify(capability || template));
+      const ontologyFragment = [
+        capability?.canonical_id,
+        capability?.label,
+        capability?.definition,
+        capability?.domain,
+        capability?.module_id,
+      ]
+        .filter((value): value is string => typeof value === 'string')
+        .join(' ')
+        .toLocaleLowerCase();
+      return ontologyFragment.includes(paletteSearchQuery);
     });
-  }, [availableTemplates, capabilities.operations, paletteDomain, paletteModule, paletteSearch]);
+  }, [availableTemplates, capabilities.operations, paletteModule, paletteSearchQuery]);
   const arrangeNodes = () => {
     if (!nodes.length) return;
     const indegree = new Map(nodes.map((node) => [node.id, 0]));
@@ -2080,10 +2226,42 @@ export default function CanvasShell({
             : item,
         ),
       );
-      await refreshArtifacts();
-      setStatus(`${capability.label} completed.`);
+      const artifacts = await refreshArtifacts();
+      const visualization = artifacts.find(
+        (artifact) => artifact.producer_instance === node.id && isVisualizationArtifact(artifact),
+      );
+      if (visualization) {
+        setArtifactViewer(visualization);
+        setArtifactData(null);
+        setArtifactViewerSearch('');
+        setArtifactViewerSort('');
+        setArtifactViewerDescending(false);
+      }
+      const cacheHit =
+        result !== null && typeof result === 'object' && !Array.isArray(result) && result.cache_hit === true;
+      setStatus(
+        cacheHit ? `${capability.label} reused cached artifacts; execution skipped.` : `${capability.label} completed.`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
+      const artifacts = await refreshArtifacts();
+      const published = artifacts.some(
+        (artifact) =>
+          artifact.producer_instance === node.id &&
+          artifact.status === 'published' &&
+          artifact.workflow_revision === workflowRevision,
+      );
+      if (published) {
+        setNodes((current) =>
+          current.map((item) =>
+            item.id === node.id
+              ? { ...item, executionState: 'completed', executionMessage: `Artifacts published; ${message}` }
+              : item,
+          ),
+        );
+        setStatus(`Operation completed and artifacts were published, but the response reported an error: ${message}`);
+        return;
+      }
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id ? { ...item, executionState: 'failed', executionMessage: message } : item,
@@ -2114,6 +2292,33 @@ export default function CanvasShell({
     ? capabilities.operations.find((item) => item.canonical_id === pickerCapabilityId)
     : undefined;
   const documentationCapability = selectedCapability || pickerCapability;
+  useEffect(() => {
+    if (!documentationFocus) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        const target = Array.from(document.querySelectorAll<HTMLElement>('[data-ontology-focus]')).find(
+          (element) =>
+            element.dataset.ontologyFocusSection === documentationFocus.section &&
+            element.dataset.ontologyFocusKey === documentationFocus.key,
+        );
+        if (target) {
+          const pane = target.closest<HTMLElement>('.sf-node-info-pane');
+          if (pane) {
+            pane.scrollTo({
+              top: Math.max(0, target.offsetTop - pane.clientHeight / 2 + target.offsetHeight / 2),
+              behavior: 'smooth',
+            });
+          }
+          target.focus({ preventScroll: true });
+        }
+      }, 0);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [documentationFocus, documentationCapability]);
+  const openNodeDocumentation = (nodeId: string, focus: DocumentationFocus | null = null) => {
+    setDocumentationFocus(focus);
+    setSelectedNodeId(nodeId);
+  };
   const pathWizardNode = pathWizard ? nodes.find((node) => node.id === pathWizard.nodeId) : undefined;
   const pathWizardEntries =
     pathWizardNode && pathWizard
@@ -2123,15 +2328,16 @@ export default function CanvasShell({
           )
         : []
       : [];
-  const updatePathWizardSelection = (paths: string[]) => {
+  const appendPathWizardSelection = (paths: string[]) => {
     if (!pathWizard || !pathWizardNode) return;
+    const currentNodePaths = pathWizardEntries;
     if (pathWizard.mergeIntoJsonEditor && jsonEditor) {
-      let current: unknown[] = [];
+      let current: unknown[] = currentNodePaths;
       try {
         const parsed = JSON.parse(jsonEditorText);
         if (Array.isArray(parsed)) current = parsed;
       } catch {
-        current = pathWizardEntries;
+        current = currentNodePaths;
       }
       const merged = [...current];
       for (const path of paths) if (!merged.includes(path)) merged.push(path);
@@ -2140,7 +2346,9 @@ export default function CanvasShell({
       setJsonEditorError(null);
       return;
     }
-    updateNodeParameter(pathWizardNode.id, pathWizard.parameter.name, paths);
+    const merged = [...currentNodePaths];
+    for (const path of paths) if (!merged.includes(path)) merged.push(path);
+    updateNodeParameter(pathWizardNode.id, pathWizard.parameter.name, merged);
   };
 
   return (
@@ -2240,9 +2448,19 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
-              onClick={() => void clearWorkflowHistory()}
-              title="Clear saved workflow history and old artifacts"
-              aria-label="Clear saved workflow history and old artifacts"
+              onClick={() => void clearArtifactCache()}
+              title="Clear cached data and cache history"
+              aria-label="Clear cached data and cache history"
+            >
+              <i className="fa-solid fa-database" />
+            </button>
+            <button
+              type="button"
+              className="sf-canvas-control"
+              onClick={() => void clearAllArtifacts()}
+              disabled={workflowBusy}
+              title="Clear all artifacts"
+              aria-label="Clear all artifacts"
             >
               <i className="fa-solid fa-trash-can" />
             </button>
@@ -2357,7 +2575,7 @@ export default function CanvasShell({
             return (
               <path
                 key={edge.id}
-                className={selectedEdgeId === edge.id ? 'selected' : undefined}
+                className={`${typeClass(edgeTypeKey(source, edge.sourcePort, 'output'))}${selectedEdgeId === edge.id ? ' selected' : ''}`}
                 d={`M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${to.x - bend} ${to.y}, ${to.x} ${to.y}`}
                 onMouseDown={(event) => beginEdgeReconnect(event, edge)}
                 onClick={(event) => {
@@ -2376,7 +2594,7 @@ export default function CanvasShell({
                 const bend = Math.max(70, Math.abs(connection.point.x - from.x) * 0.45);
                 return (
                   <path
-                    className="pending"
+                    className={`pending ${typeClass(edgeTypeKey(source, connection.sourcePort, 'output'))}`}
                     d={`M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${connection.point.x - bend} ${connection.point.y}, ${connection.point.x} ${connection.point.y}`}
                   />
                 );
@@ -2389,7 +2607,7 @@ export default function CanvasShell({
             : undefined;
           const domainClass = (capability?.domain || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const outputArtifact = (port: NodePort) =>
-            artifacts
+            currentArtifacts
               .filter(
                 (artifact) =>
                   artifact.status === 'published' &&
@@ -2417,6 +2635,7 @@ export default function CanvasShell({
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
+                      setDocumentationFocus(null);
                       setSelectedNodeId(node.id);
                     }}
                   >
@@ -2464,18 +2683,7 @@ export default function CanvasShell({
                     <i className="fa-solid fa-trash" />
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className="sf-node-ontology-link sf-node-title-link"
-                  aria-label={`Open ontology entry for ${node.title}`}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (capability) onOpenOntologyWiki?.(capability.canonical_id);
-                  }}
-                >
-                  {node.title}
-                </button>
+                <strong className="sf-node-title">{node.title}</strong>
                 {capability?.module_id ? <span>{capability.module_id}</span> : null}
               </div>
               {nodePorts(capability).inputs.length ? (
@@ -2485,13 +2693,13 @@ export default function CanvasShell({
                     <div className="sf-node-port-row" key={port.id} title={port.description}>
                       <button
                         type="button"
-                        className={`sf-node-port input ${typeClass(port.typeKey)}`}
+                        className={`sf-node-port input ${typeClass(visualPortTypeKey(port))}`}
                         data-canvas-anchor={`${node.id}|input|${port.id}`}
                         aria-label={`Connect to ${node.title} input ${port.label}`}
                         onMouseDown={(event) => event.stopPropagation()}
                         onMouseUp={(event) => finishConnection(event, node, port.id)}
                       >
-                        <i className={typeIcon(port.typeKey)} aria-hidden="true" />
+                        <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -2499,7 +2707,7 @@ export default function CanvasShell({
                         onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onOpenOntologyWiki?.(ontologyPortTerm(port));
+                          openNodeDocumentation(node.id, { section: 'inputs', key: port.id });
                         }}
                       >
                         {port.label}
@@ -2517,6 +2725,8 @@ export default function CanvasShell({
                       className={`sf-node-port-row output ${outputArtifact(port) ? 'has-artifact' : ''}`}
                       key={port.id}
                       title={port.description}
+                      onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
+                      onMouseLeave={hideOutputRendererMenu}
                     >
                       <button
                         type="button"
@@ -2524,14 +2734,14 @@ export default function CanvasShell({
                         onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onOpenOntologyWiki?.(ontologyPortTerm(port));
+                          openNodeDocumentation(node.id, { section: 'outputs', key: port.id });
                         }}
                       >
                         {port.label}
                       </button>
                       <button
                         type="button"
-                        className={`sf-node-port output ${typeClass(port.typeKey)} ${outputArtifact(port) ? 'available' : ''}`}
+                        className={`sf-node-port output ${typeClass(visualPortTypeKey(port))} ${outputArtifact(port) ? 'available' : ''}`}
                         data-canvas-anchor={`${node.id}|output|${port.id}`}
                         aria-label={`Connect from ${node.title} output ${port.label}`}
                         onMouseDown={(event) => beginConnection(event, node, port.id)}
@@ -2541,12 +2751,11 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) {
-                            setArtifactViewer(artifact as ArtifactRecord);
-                            setArtifactViewerSearch('');
-                            setArtifactViewerSort('');
-                            setArtifactViewerDescending(false);
-                          }
+                          if (artifact)
+                            openArtifactViewer(
+                              artifact as ArtifactRecord,
+                              isFeatureArtifact(artifact as ArtifactRecord) ? 'feature' : 'default',
+                            );
                         }}
                         onClick={(event) => {
                           if (event.detail !== 2) return;
@@ -2554,22 +2763,48 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) {
-                            setArtifactViewer(artifact as ArtifactRecord);
-                            setArtifactData(null);
-                            setArtifactViewerSearch('');
-                            setArtifactViewerSort('');
-                            setArtifactViewerDescending(false);
-                          }
+                          if (artifact)
+                            openArtifactViewer(
+                              artifact as ArtifactRecord,
+                              isFeatureArtifact(artifact as ArtifactRecord) ? 'feature' : 'default',
+                            );
                         }}
                       >
-                        <i className={typeIcon(port.typeKey)} aria-hidden="true" />
+                        <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
                       </button>
-                      {outputArtifact(port) ? (
-                        <div className="sf-output-artifact-popover" role="tooltip">
+                      {outputArtifact(port) && hoveredOutputAnchor === `${node.id}|${port.id}` ? (
+                        <div
+                          className="sf-output-artifact-popover sf-output-renderer-menu"
+                          role="dialog"
+                          aria-label={`Render ${port.label}`}
+                          onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
+                          onMouseLeave={hideOutputRendererMenu}
+                        >
                           <strong>{port.label}</strong>
                           <span>{artifactSummary(outputArtifact(port) as ArtifactRecord)}</span>
-                          <small>Double-click the anchor to open this artifact</small>
+                          {isFeatureArtifact(outputArtifact(port) as ArtifactRecord) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openArtifactViewer(outputArtifact(port) as ArtifactRecord, 'table');
+                                }}
+                              >
+                                Table renderer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openArtifactViewer(outputArtifact(port) as ArtifactRecord, 'feature');
+                                }}
+                              >
+                                Features Explorer
+                              </button>
+                            </>
+                          ) : null}
+                          <small>Double-click the anchor to open the default renderer</small>
                         </div>
                       ) : null}
                     </div>
@@ -2627,7 +2862,7 @@ export default function CanvasShell({
                                     onMouseDown={(event) => event.stopPropagation()}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onOpenOntologyWiki?.(parameter.name);
+                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
                                     }}
                                   >
                                     {parameter.label || parameter.name}
@@ -2666,7 +2901,7 @@ export default function CanvasShell({
                                     onMouseDown={(event) => event.stopPropagation()}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onOpenOntologyWiki?.(parameter.name);
+                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
                                     }}
                                   >
                                     {parameter.label || parameter.name}
@@ -2798,7 +3033,7 @@ export default function CanvasShell({
                                   onMouseDown={(event) => event.stopPropagation()}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    onOpenOntologyWiki?.(parameter.name);
+                                    openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
                                   }}
                                 >
                                   {parameter.label || parameter.name}
@@ -3100,44 +3335,15 @@ export default function CanvasShell({
               <PathFileManager
                 client={client}
                 selectedPaths={pathWizardEntries}
-                onSelectionChange={updatePathWizardSelection}
+                onAddPaths={appendPathWizardSelection}
               />
             ) : null}
-            <div className="sf-canvas-file-entries">
-              {pathWizardEntries.map((path, index) => (
-                <div className="sf-canvas-file-entry" key={`${path}-${index}`}>
-                  <input
-                    aria-label={`Selected path ${index + 1}`}
-                    value={path}
-                    onChange={(event) => {
-                      const next = [...pathWizardEntries];
-                      next[index] = event.target.value;
-                      updateNodeParameter(pathWizardNode.id, pathWizard.parameter.name, next);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="sf-button secondary"
-                    onClick={() =>
-                      updateNodeParameter(
-                        pathWizardNode.id,
-                        pathWizard.parameter.name,
-                        pathWizardEntries.filter((_, itemIndex) => itemIndex !== index),
-                      )
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              {!pathWizardEntries.length ? <p className="sf-table-editor-empty">No paths selected.</p> : null}
-            </div>
             <footer>
               <button type="button" className="sf-button secondary" onClick={() => setPathWizard(null)}>
                 Cancel
               </button>
               <button type="button" className="sf-button" onClick={() => setPathWizard(null)}>
-                Use selected paths
+                Done
               </button>
             </footer>
           </section>
@@ -3169,49 +3375,29 @@ export default function CanvasShell({
               value={paletteSearch}
               onChange={(event) => setPaletteSearch(event.target.value)}
             />
-          </div>
-          <div className="sf-operation-deck-filters" aria-label="Operation category filters">
-            <label>
-              Domain
-              <select
-                aria-label="Filter operations by domain"
-                value={paletteDomain}
-                onChange={(event) => {
-                  setPaletteDomain(event.target.value);
-                  setPaletteModule('');
-                }}
-              >
-                <option value="">All domains</option>
-                {paletteDomains.map((domain) => (
-                  <option value={domain} key={domain}>
-                    {domain}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Module
-              <select
-                aria-label="Filter operations by module"
-                value={paletteModule}
-                onChange={(event) => setPaletteModule(event.target.value)}
-              >
-                <option value="">All modules</option>
-                {paletteModules.map((module) => (
-                  <option value={module} key={module}>
-                    {module}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <select
+              aria-label="Filter operations by module"
+              value={paletteModule}
+              onChange={(event) => setPaletteModule(event.target.value)}
+            >
+              <option value="">All modules</option>
+              {paletteModules.map((module) => (
+                <option value={module} key={module}>
+                  {module}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="sf-operation-deck-list">
             {filteredTemplates.map((template) => {
               const capability = capabilities.operations.find((item) => item.canonical_id === template.capabilityId);
               const ports = nodePorts(capability);
+              const metadata = `${template.module || 'core'} · ${ports.inputs.length} input${ports.inputs.length === 1 ? '' : 's'} · ${ports.outputs.length} output${ports.outputs.length === 1 ? '' : 's'}`;
               return (
                 <article
-                  className={`sf-operation-deck-card sf-domain-${(template.domain || 'unknown')
+                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(
+                    template.domain || 'unknown'
+                  )
                     .replace(/[^a-z0-9_-]/gi, '-')
                     .toLowerCase()}`}
                   key={template.id}
@@ -3219,11 +3405,7 @@ export default function CanvasShell({
                 >
                   <div className="sf-operation-deck-card-content">
                     <strong>{template.title}</strong>
-                    <small>
-                      {template.module || 'core'} · {ports.inputs.length} input
-                      {ports.inputs.length === 1 ? '' : 's'} · {ports.outputs.length} output
-                      {ports.outputs.length === 1 ? '' : 's'}
-                    </small>
+                    <small>{metadata}</small>
                   </div>
                   <button
                     type="button"
@@ -3250,6 +3432,7 @@ export default function CanvasShell({
           className="sf-side-pane-backdrop sf-node-info-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
+              setDocumentationFocus(null);
               setSelectedNodeId(null);
               setPickerCapabilityId(null);
             }
@@ -3265,6 +3448,7 @@ export default function CanvasShell({
                 className="sf-icon-button sf-close-button"
                 aria-label="Close operation documentation"
                 onClick={() => {
+                  setDocumentationFocus(null);
                   setSelectedNodeId(null);
                   setPickerCapabilityId(null);
                 }}
@@ -3282,7 +3466,14 @@ export default function CanvasShell({
             <section>
               <h3>Inputs</h3>
               {nodePorts(documentationCapability).inputs.map((port) => (
-                <div className="sf-info-row" key={port.id}>
+                <div
+                  className="sf-info-row"
+                  key={port.id}
+                  data-ontology-focus="true"
+                  data-ontology-focus-section="inputs"
+                  data-ontology-focus-key={port.id}
+                  tabIndex={-1}
+                >
                   {ontologyPortTerm(port) && onOpenOntologyWiki ? (
                     <button
                       type="button"
@@ -3315,7 +3506,14 @@ export default function CanvasShell({
             <section>
               <h3>Outputs</h3>
               {nodePorts(documentationCapability).outputs.map((port) => (
-                <div className="sf-info-row" key={port.id}>
+                <div
+                  className="sf-info-row"
+                  key={port.id}
+                  data-ontology-focus="true"
+                  data-ontology-focus-section="outputs"
+                  data-ontology-focus-key={port.id}
+                  tabIndex={-1}
+                >
                   {ontologyPortTerm(port) && onOpenOntologyWiki ? (
                     <button
                       type="button"
@@ -3344,7 +3542,14 @@ export default function CanvasShell({
               {documentationCapability.parameters
                 .filter((parameter) => parameter.name !== 'database_path')
                 .map((parameter) => (
-                  <div className="sf-info-row" key={parameter.name}>
+                  <div
+                    className="sf-info-row"
+                    key={parameter.name}
+                    data-ontology-focus="true"
+                    data-ontology-focus-section="parameters"
+                    data-ontology-focus-key={parameter.name}
+                    tabIndex={-1}
+                  >
                     {onOpenOntologyWiki ? (
                       <button
                         type="button"
@@ -3393,123 +3598,126 @@ export default function CanvasShell({
         </div>
       ) : null}
       {artifactViewer ? (
-        <div className="sf-artifact-viewer-backdrop" role="presentation" onMouseDown={() => setArtifactViewer(null)}>
-          <section
-            className={`sf-artifact-viewer ${
-              artifactViewer.contract_id === 'visualizationSpecResult'
-                ? 'visualization'
-                : artifactViewer.representation === 'table'
-                  ? 'wide'
-                  : 'json'
-            }`}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Artifact viewer"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <div>
-                <h2>{artifactViewer.contract_id}</h2>
-                <small>
-                  {artifactViewer.representation} · {artifactViewer.artifact_id}
-                </small>
-              </div>
-              <button
-                type="button"
-                className="sf-icon-button"
-                aria-label="Close artifact viewer"
-                onClick={() => setArtifactViewer(null)}
-              >
-                <i className="fa-solid fa-xmark" />
-              </button>
-            </header>
-            {artifactViewer.representation === 'table' ? (
-              <>
-                <div className="sf-artifact-viewer-toolbar">
-                  <input
-                    value={artifactViewerSearch}
-                    onChange={(event) => setArtifactViewerSearch(event.target.value)}
-                    placeholder="Search all columns"
-                    aria-label="Search all columns"
-                  />
+        <ViewerShell
+          title={artifactViewer.contract_id}
+          subtitle={`${artifactViewer.representation} · ${artifactViewer.artifact_id}`}
+          variant={
+            artifactViewerMode === 'feature' || isVisualizationArtifact(artifactViewer)
+              ? 'visualization'
+              : artifactViewer.representation === 'table' || artifactViewerMode === 'table'
+                ? 'wide'
+                : 'json'
+          }
+          onClose={() => setArtifactViewer(null)}
+        >
+          {isFeatureArtifact(artifactViewer) && artifactViewerMode === 'feature' ? (
+            <ViewerResolver
+              context={{
+                sessionId: project.session_id,
+                artifactId: artifactViewer.artifact_id,
+                semanticType: artifactViewer.contract_id,
+                artifact: artifactViewer,
+                api: client,
+              }}
+              fallback={<pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>}
+            />
+          ) : artifactViewerMode === 'table' || artifactViewer.representation === 'table' ? (
+            <>
+              <div className="sf-artifact-viewer-toolbar">
+                <label>
+                  Rows per page
                   <select
-                    value={artifactViewerSort}
-                    onChange={(event) => setArtifactViewerSort(event.target.value)}
-                    aria-label="Sort by column"
+                    value={artifactViewerPageSize}
+                    onChange={(event) => {
+                      setArtifactData(null);
+                      setArtifactPages({});
+                      artifactPageRequests.current.clear();
+                      setArtifactViewerPageSize(Number(event.target.value));
+                    }}
+                    aria-label="Rows per page"
                   >
-                    <option value="">Natural order</option>
-                    {(artifactData?.columns ?? artifactViewer.columns ?? []).map((column) => (
-                      <option key={column.name} value={column.name}>
-                        {column.name}
+                    {ARTIFACT_PAGE_SIZE_OPTIONS.map((pageSize) => (
+                      <option key={pageSize} value={pageSize}>
+                        {pageSize}
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="button"
-                    onClick={() => setArtifactViewerDescending((value) => !value)}
-                    disabled={!artifactViewerSort}
-                  >
-                    {artifactViewerDescending ? 'Descending' : 'Ascending'}
-                  </button>
-                </div>
-                <VirtualArtifactTable
-                  columns={artifactData?.columns ?? artifactViewer.columns ?? []}
-                  totalRows={artifactData?.total_rows ?? 0}
-                  pages={artifactPages}
-                  loading={artifactViewerLoading}
-                  requestPage={requestArtifactPage}
+                </label>
+                <input
+                  value={artifactViewerSearch}
+                  onChange={(event) => setArtifactViewerSearch(event.target.value)}
+                  placeholder="Search all columns"
+                  aria-label="Search all columns"
                 />
-                <footer>
-                  {artifactData
-                    ? `Showing all ${artifactData.total_rows} rows with virtual rendering`
-                    : 'No rows loaded'}
-                  . Only the visible rows are rendered; data pages load as you scroll.
-                </footer>
-              </>
-            ) : artifactViewer.contract_id === 'visualizationSpecResult' ? (
-              <VisualizationArtifactPreview artifact={artifactViewer} />
-            ) : (
-              <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>
-            )}
-          </section>
-        </div>
-      ) : null}
-      {selectedEdgeId
-        ? (() => {
-            const edge = edges.find((item) => item.id === selectedEdgeId);
-            if (!edge) return null;
-            const candidates = artifacts.filter(
-              (artifact) =>
-                artifact.status === 'published' &&
-                artifact.producer_instance === edge.source &&
-                artifactContractMatches(artifact.contract_id, edge.sourcePort),
-            );
-            return (
-              <aside className="sf-edge-artifact-picker" aria-label="Artifact binding">
-                <strong>Input artifact</strong>
                 <select
-                  value={edge.sourceArtifactId ?? ''}
-                  onChange={(event) => {
-                    const sourceArtifactId = event.target.value || undefined;
-                    setEdges((current) =>
-                      current.map((item) => (item.id === edge.id ? { ...item, sourceArtifactId } : item)),
-                    );
-                  }}
+                  value={artifactViewerSort}
+                  onChange={(event) => setArtifactViewerSort(event.target.value)}
+                  aria-label="Sort by column"
                 >
-                  <option value="">Resolve latest published output</option>
-                  {candidates.map((artifact) => (
-                    <option key={artifact.artifact_id} value={artifact.artifact_id}>
-                      {artifact.artifact_id} · revision {artifact.workflow_revision}
+                  <option value="">Natural order</option>
+                  {(artifactData?.columns ?? artifactViewer.columns ?? []).map((column) => (
+                    <option key={column.name} value={column.name}>
+                      {column.name}
                     </option>
                   ))}
                 </select>
-                <small>
-                  {candidates.length} published artifact{candidates.length === 1 ? '' : 's'} match this output.
-                </small>
-              </aside>
-            );
-          })()
-        : null}
+                <button
+                  type="button"
+                  onClick={() => setArtifactViewerDescending((value) => !value)}
+                  disabled={!artifactViewerSort}
+                >
+                  {artifactViewerDescending ? 'Descending' : 'Ascending'}
+                </button>
+              </div>
+              <VirtualArtifactTable
+                columns={artifactData?.columns ?? artifactViewer.columns ?? []}
+                pages={artifactPages}
+                pageOffset={artifactData?.offset ?? 0}
+                loading={artifactViewerLoading}
+              />
+              <footer>
+                <span>
+                  {artifactData
+                    ? `Showing rows ${artifactData.offset + 1}-${Math.min(artifactData.offset + artifactData.rows.length, artifactData.total_rows)} of ${artifactData.total_rows}`
+                    : 'No rows loaded'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    requestArtifactPage(Math.max(0, (artifactData?.offset ?? 0) - artifactViewerPageSize), true)
+                  }
+                  disabled={!artifactData || artifactData.offset === 0 || artifactViewerLoading}
+                >
+                  Previous page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestArtifactPage((artifactData?.offset ?? 0) + artifactViewerPageSize, true)}
+                  disabled={
+                    !artifactData ||
+                    artifactData.offset + artifactData.rows.length >= artifactData.total_rows ||
+                    artifactViewerLoading
+                  }
+                >
+                  Next page
+                </button>
+              </footer>
+            </>
+          ) : isVisualizationArtifact(artifactViewer) ? (
+            <ViewerResolver
+              context={{
+                sessionId: project.session_id,
+                artifactId: artifactViewer.artifact_id,
+                semanticType: artifactViewer.contract_id,
+                artifact: artifactViewer,
+              }}
+              fallback={<pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>}
+            />
+          ) : (
+            <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>
+          )}
+        </ViewerShell>
+      ) : null}
     </div>
   );
 }

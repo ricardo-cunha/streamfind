@@ -85,8 +85,21 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
                 if (analysis.is_string()) target.analyses.push_back(analysis.get<std::string>());
                 else if (analysis.is_number_integer()) target.analysis_indices.push_back(analysis.get<int>());
             }
-        const auto polarity = source.value("polarity", parameters.value("polarity", nlohmann::json::array({0})));
-        target.polarities = polarity.is_array() ? polarity.get<std::vector<int>>() : std::vector<int>{polarity.get<int>()};
+        // Polarity is an optional per-target constraint.  Do not inherit a
+        // default from the operation: an omitted polarity must mean that
+        // both positive and negative feature rows are eligible.
+        if (source.contains("polarity") && !source.at("polarity").is_null())
+        {
+            const auto &polarity = source.at("polarity");
+            if (polarity.is_array())
+                for (const auto &value : polarity)
+                    if (value.is_number_integer()) target.polarities.push_back(value.get<int>());
+                    else if (value.is_string()) target.polarities.push_back(std::stoi(value.get<std::string>()));
+            else if (polarity.is_number_integer())
+                target.polarities.push_back(polarity.get<int>());
+            else if (polarity.is_string())
+                target.polarities.push_back(std::stoi(polarity.get<std::string>()));
+        }
         const auto levels = source.contains("level") ? source.at("level") : parameters.value("levels", nlohmann::json::array());
         if (levels.is_number_integer())
             target.levels.push_back(levels.get<int>());
@@ -135,7 +148,11 @@ static int row_integer(const nlohmann::json &row, const char *column)
     const auto it = row.find(column);
     if (it == row.end() || it->is_null()) return 0;
     if (it->is_boolean()) return it->get<bool>() ? 1 : 0;
-    return it->is_number() ? it->get<int>() : std::stoi(it->get<std::string>());
+    if (it->is_number()) return it->get<int>();
+    const auto value = it->get<std::string>();
+    if (value == "true" || value == "TRUE") return 1;
+    if (value == "false" || value == "FALSE") return 0;
+    return value.empty() ? 0 : std::stoi(value);
 }
 
 nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::json &parameters,

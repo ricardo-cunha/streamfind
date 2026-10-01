@@ -11,7 +11,19 @@ ParameterDefinition parameter_definition(const Json &item) {
     ParameterDefinition parameter;
     parameter.name = item.at("name").get<std::string>();
     parameter.description = item.value("description", item.value("definition", ""));
-    parameter.type = TypeDescriptor::from_json(item.at("schema"));
+    auto schema = item.at("schema");
+    if (schema.value("type", "") == "table" && schema.value("properties", Json::object()).is_object())
+    {
+        Json columns = Json::array();
+        for (const auto &[name, property] : schema.at("properties").items())
+        {
+            auto type = property.value("type", "string");
+            if (type == "number") type = "real";
+            columns.push_back({{"name", name}, {"type", type}, {"required", false}});
+        }
+        schema["columns"] = std::move(columns);
+    }
+    parameter.type = TypeDescriptor::from_json(schema);
     parameter.required = item.value("required", false);
     parameter.default_value = item.value("default", Json(nullptr));
     parameter.example = item.value("example", Json(nullptr));
@@ -47,7 +59,6 @@ MethodDefinition method_definition(const Json &entry) {
     definition.name = entry.value("label", definition.id);
     definition.description = entry.value("definition", entry.value("label", ""));
     definition.domain = entry.value("domain", "");
-    definition.cacheable = entry.value("cacheable", false);
     definition.reads = entry.value("effects", Json::object()).value("reads", std::vector<std::string>{});
     definition.writes = entry.value("effects", Json::object()).value("writes", std::vector<std::string>{});
     for (const auto &item : entry.value("effects", Json::object()).value("conditional_reads", Json::array()))
@@ -65,7 +76,6 @@ OperationDefinition operation_definition(const Json &entry) {
     definition.domain = entry.value("domain", "");
     definition.version = entry.value("operation_version", "1");
     definition.project_entry = entry.value("project_entry", false);
-    definition.cacheable = entry.value("cacheable", false);
     definition.parameters = parameter_schema(entry);
     for (const auto &port : entry.value("input_ports", Json::array()))
         definition.input_ports.push_back(OperationDefinition::Port::from_json(port));

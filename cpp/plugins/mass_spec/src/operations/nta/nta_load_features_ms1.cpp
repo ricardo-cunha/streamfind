@@ -21,7 +21,9 @@ using Json = nlohmann::json;
         const float rt_hi = rt_window.size() >= 2 ? rt_window[1].get<float>() : 0.0f;
         const float mz_lo = mz_window.size() >= 1 ? mz_window[0].get<float>() : 0.0f;
         const float mz_hi = mz_window.size() >= 2 ? mz_window[1].get<float>() : 0.0f;
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        auto all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
         auto &buffers = data.feature_buffers();
         for (size_t i = 0; i < buffers.size(); ++i)
         {

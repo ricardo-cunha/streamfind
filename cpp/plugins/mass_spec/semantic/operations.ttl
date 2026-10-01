@@ -221,7 +221,7 @@ sfms:getRawSpectraEic
     skos:prefLabel "Get extracted ion chromatograms" ;
     skos:definition "Read MS1 raw points grouped as extracted-ion chromatograms for independent target ranges. Each target must provide mass/mz bounds or a chemical structure; optional id, analysis, polarity, level, and retention-time fields narrow the result." ;
     sf:category "mass-spec-query" ;
-    sf:guidance "Use mz for a measured ion such as 275.23457, mass for a neutral mass, or SMILES/InChI when the exact mass should be derived. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Do not use get_available_methods to discover this operation; it is listed directly by tools/list." ;
+    sf:guidance "Use mz for a measured ion such as 275.23457, mass for a neutral mass, or SMILES/InChI when the exact mass should be derived. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Use the operation catalogue and tools/list to discover this operation; do not use method discovery." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:targetsParameter,
@@ -318,11 +318,10 @@ sfms:getFeatures
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Get NTA features" ;
-    skos:definition "Read persisted non-target-analysis features matching analysis, mass or m/z, retention time, and polarity targets." ;
+    skos:definition "Return a reduced, persisted featuresTable artifact containing features that match optional target rows. Omit analysis_names to search every analysis. Each target may provide mass, mz, rt, explicit bounds, analysis, and optional polarity; omitted polarity never filters. A mass or mz target is expanded by ppm, and an exact rt target is expanded by rt_tolerance seconds. The result includes the matched target name when supplied and is available for artifact inspection and downstream connections." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
+        sfms:analysisNamesParameter,
         sfms:targetsParameter,
-        sfms:polarityParameter,
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:filteredParameter ;
@@ -387,7 +386,6 @@ sfms:loadChromatograms
         sfms:chromatogramIdRegexParameter,
         sfms:ignoreCaseParameter,
         sfms:invertParameter ;
-    sf:cacheable false ;
     sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:chromatogramsHeadersTable, sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
@@ -403,7 +401,6 @@ sfms:filterChromatogramsRetentionTime
         sfms:analysisNamesParameter,
         sfms:rtMinParameter,
         sfms:rtMaxParameter ;
-    sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
@@ -425,7 +422,6 @@ sfms:findChromatogramPeaks
         sfms:minPeakWidthParameter,
         sfms:maxPeakWidthParameter,
         sfms:minSnrParameter ;
-    sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
 
@@ -444,7 +440,6 @@ sfms:correctChromatogramBaseline
         sfms:lambdaParameter,
         sfms:asymmetryPenaltyParameter,
         sfms:maxIterationsParameter ;
-    sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
@@ -461,7 +456,6 @@ sfms:smoothChromatograms
         sfms:smoothingAlgorithmParameter,
         sfms:windowSizeParameter,
         sfms:polyOrderParameter ;
-    sf:cacheable false ;
     sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
@@ -484,8 +478,10 @@ sfms:findFeatures
         sfms:minTracesParameter,
         sfms:baselineWindowParameter,
         sfms:maxFeatureWidthParameter,
-        sfms:baseQuantileParameter ;
-    sf:cacheable true ;
+        sfms:baseQuantileParameter,
+        sfcore:debugAnalysisParameter,
+        sfcore:debugMzParameter,
+        sfcore:debugSpecIdxParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
@@ -499,16 +495,14 @@ sfms:loadFeaturesMs1
     skos:prefLabel "Load MS1 spectra for features" ;
     skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
-    sf:guidance "Run after find_features. The operation reads source files and the persisted feature table; filtered controls whether already-filtered features are skipped. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
+    sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:filteredParameter,
         sfms:rtWindowParameter,
         sfms:mzWindowParameter,
         sfms:minTracesIntensityParameter,
         sfms:mzClustParameter,
         sfms:presenceParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -521,15 +515,13 @@ sfms:loadFeaturesMs2
     skos:prefLabel "Load MS2 spectra for features" ;
     skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
-    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads source files and the persisted feature table; it updates ms2_size, ms2_mz, and ms2_intensity without requiring a separate spectraHeadersTable input." ;
+    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table; it updates ms2_size, ms2_mz, and ms2_intensity without requiring a separate spectraHeadersTable input." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:filteredParameter,
         sfms:minTracesIntensityParameter,
         sfms:isolationWindowParameter,
         sfms:mzClustParameter,
         sfms:presenceParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -546,7 +538,6 @@ sfms:subtractBlank
         sfms:blankThresholdParameter,
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -591,7 +582,6 @@ sfms:filterFeatures
         sfms:removeIsotopesParameter,
         sfms:removeAdductsParameter,
         sfms:removeLossesParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -612,7 +602,6 @@ sfms:filterFeaturesMs2
         sfms:mzClustParameter,
         sfms:blankPresenceThresholdParameter,
         sfms:globalPresenceThresholdParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -631,7 +620,6 @@ sfms:groupFeatures
         sfms:ppmParameter,
         sfms:minSamplesParameter,
         sfms:binSizeParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -656,7 +644,6 @@ sfms:fillFeatures
         sfms:rtApexDeviationParameter,
         sfms:minSignalToNoiseRatioParameter,
         sfms:minGaussianFitParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -667,12 +654,13 @@ sfms:createComponents
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Create components" ;
-    skos:definition "Join correlated features into components based on EIC correlation within a retention-time window." ;
+    skos:definition "Join correlated features from every analysis into components based on EIC correlation within a retention-time window." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:rtWindowParameter,
-        sfms:minCorrelationParameter ;
-    sf:cacheable true ;
+        sfms:minCorrelationParameter,
+        sfms:debugRtParameter,
+        sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -683,15 +671,16 @@ sfms:annotateComponents
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Annotate components" ;
-    skos:definition "Annotate feature components with isotopic, adduct, and fragment relationships." ;
+    skos:definition "Annotate feature components from every analysis with isotopic, adduct, and fragment relationships." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:maxIsotopesParameter,
         sfms:maxChargeParameter,
         sfms:maxGapsParameter,
         sfms:ppmParameter,
-        sfms:isotopeElementsParameter ;
-    sf:cacheable true ;
+        sfms:isotopeElementsParameter,
+        sfms:debugComponentParameter,
+        sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -715,7 +704,6 @@ sfms:suspectScreening
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
 
@@ -737,7 +725,6 @@ sfms:findInternalStandards
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
@@ -753,7 +740,6 @@ sfms:correctMatrixSuppression
         sfcore:analysisNamesParameter,
         sfms:mpRtWindowParameter,
         sfms:refBlankReplicateParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -774,7 +760,6 @@ sfms:filterSuspects
         sfms:idLevelsParameter,
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable, sfms:suspectsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
@@ -795,7 +780,6 @@ sfms:filterInternalStandards
         sfms:idLevelsParameter,
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
@@ -812,7 +796,6 @@ sfms:assignTransformationProducts
         sfms:transformationProductsParameter,
         sfms:chromatographicPhaseParameter,
         sfms:mzrMs2Parameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable, sfms:suspectsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfms:transformationProductsTable, sfcore:operationSuccessSignal .
 
@@ -843,6 +826,5 @@ sfms:metfragScreening
         sfms:useSmilesParameter,
         sfms:filteredParameter,
         sfms:debugParameter ;
-    sf:cacheable true ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .

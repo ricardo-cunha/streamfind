@@ -122,9 +122,25 @@ std::vector<float> nta::deconvolution::calculate_noise_levels(const std::vector<
   {
     if (!bin_data[bin_idx].empty())
     {
-      float quantile_val = nta::utils::quantile(bin_data[bin_idx], params.quantile);
-      float adjusted_threshold = quantile_val * params.threshold_multiplier;
-      bin_quantiles[bin_idx] = std::max(adjusted_threshold, noise_threshold);
+      std::vector<float> positive;
+      positive.reserve(bin_data[bin_idx].size());
+      for (const float value : bin_data[bin_idx])
+        if (std::isfinite(value) && value > 0.0f)
+          positive.push_back(value);
+      if (positive.empty())
+        continue;
+
+      // Estimate the background from the lower half and a robust IQR fence;
+      // the upper tail is dominated by chromatographic ions.
+      const float q25 = nta::utils::quantile(positive, 0.25f);
+      const float q50 = nta::utils::quantile(positive, 0.50f);
+      const float q75 = nta::utils::quantile(positive, 0.75f);
+      const float robust_threshold = q50 + 1.5f * std::max(0.0f, q75 - q25);
+      const float lower_tail_quantile = std::min(params.quantile, 0.50f);
+      const float quantile_threshold =
+          nta::utils::quantile(positive, lower_tail_quantile) * params.threshold_multiplier;
+      bin_quantiles[bin_idx] = std::max(
+          noise_threshold, std::max(robust_threshold, quantile_threshold));
     }
   }
   for (int i = 0; i < n; ++i)

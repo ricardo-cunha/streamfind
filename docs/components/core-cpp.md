@@ -51,7 +51,7 @@ get_metadata, set_metadata
 get_domain
 get_workflow, set_workflow, validate_workflow, run_workflow
 get_operations, get_operation, add_operation, connect_operations
-get_cache, get_cache_size, delete_cache
+get_artifact_inventory, get_current_artifact_inventory, request_artifact
 get_audit_trail
 copy, close
 ```
@@ -64,5 +64,5 @@ The [C++ MCP quickstart](../quickstart/cpp-mcp.md) documents the stdio server
 and the persisted operation-graph workflow.
 
 The Rust MCP server is a stale development backend and is not the current
-runtime contract. A future React frontend will consume this C++ public boundary
-and will not access DuckDB or plugin internals directly.
+runtime contract. The current React development/preview frontend consumes this
+C++ public boundary and does not access DuckDB or plugin internals directly.

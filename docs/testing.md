@@ -36,5 +36,5 @@ compatibility guarantees.
 ## Development priority
 
 Native readers, persistence behavior, and plugin interfaces are provided by the
-C++ core/plugin framework. A future React frontend will use the C++ public
-boundary rather than access plugin internals directly.
+C++ core/plugin framework. The current React development frontend uses the C++
+public service boundary rather than accessing plugin internals directly.

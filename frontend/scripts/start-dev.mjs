@@ -1,5 +1,5 @@
 /* global fetch, setTimeout */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
@@ -11,7 +11,6 @@ const serviceExecutable = resolve(buildRoot, 'streamfind_service.exe');
 const serviceUrl = process.env.STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790';
 const servicePort = new URL(serviceUrl).port || '8790';
 const children = [];
-let serviceStarted = false;
 let shuttingDown = false;
 
 function log(message) {
@@ -40,7 +39,6 @@ function startService() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: false,
   });
-  serviceStarted = true;
   children.push(child);
   child.stdout.on('data', (chunk) => process.stdout.write(`[backend] ${chunk}`));
   child.stderr.on('data', (chunk) => process.stderr.write(`[backend] ${chunk}`));
@@ -73,11 +71,10 @@ function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   for (const child of children.reverse()) {
+    if (process.platform === 'win32' && child.pid) {
+      spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    }
     if (!child.killed) child.kill();
-  }
-  if (serviceStarted && process.platform === 'win32') {
-    const service = children.find((child) => child.spawnfile === serviceExecutable);
-    if (service?.pid) spawn('taskkill.exe', ['/PID', String(service.pid), '/T', '/F'], { stdio: 'ignore' });
   }
   setTimeout(() => process.exit(exitCode), 100);
 }

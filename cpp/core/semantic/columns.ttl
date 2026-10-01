@@ -74,46 +74,6 @@ sfcore:frameworkVersionColumn
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
-sfcore:cacheNameColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache name" ;
-    skos:definition "Cache entry name." ;
-    sf:columnName "name" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
-sfcore:cacheDescriptionColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache description" ;
-    skos:definition "Cache entry description." ;
-    sf:columnName "description" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
-sfcore:cacheHashColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache hash" ;
-    skos:definition "Cache entry content hash." ;
-    sf:columnName "hash" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
-sfcore:cacheDataColumn
-    a sf:Column ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Cache data" ;
-    skos:definition "Serialized cached result." ;
-    sf:columnName "data" ;
-    sf:type "binary" ;
-    sf:storageType "BLOB" .
-
 sfcore:operationTypeColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;

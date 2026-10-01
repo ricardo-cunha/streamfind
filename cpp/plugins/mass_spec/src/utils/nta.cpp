@@ -22,9 +22,9 @@
 namespace streamfind::mass_spec::nta::utils
 {
     std::ofstream debug_log;
-    void init_debug_log(const std::string &name, const std::string &header)
+    void init_debug_log(const std::string &name, const std::string &header, bool append)
     {
-        debug_log.open(name, std::ios::trunc);
+        debug_log.open(name, append ? std::ios::app : std::ios::trunc);
         if (debug_log)
             debug_log << header << '\n';
     }
@@ -281,6 +281,8 @@ namespace streamfind::mass_spec::nta::utils
         if (it->is_number_integer()) return it->get<int>();
         if (it->is_number()) return static_cast<int>(it->get<double>());
         const auto value = it->get<std::string>();
+        if (value == "true" || value == "TRUE") return 1;
+        if (value == "false" || value == "FALSE") return 0;
         return value.empty() ? 0 : std::stoi(value);
     }
 

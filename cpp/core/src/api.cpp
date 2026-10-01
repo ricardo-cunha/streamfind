@@ -61,15 +61,6 @@ Json workflow_table(const Workflow &workflow) {
     return workflow.to_json();
 }
 
-Json cache_entries(const Project &project) {
-    Json output = Json::array();
-    for (const auto &entry : project.get_cache()) {
-        output.push_back({{"name", entry.name}, {"description", entry.description},
-                          {"hash", entry.hash}, {"created_at", entry.created_at},
-                          {"size", entry.data.size()}});
-    }
-    return output;
-}
 
 Json audit_entries(const Project &project) {
     Json output = Json::array();
@@ -101,14 +92,13 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "run_workflow") return ProjectCommand::run_workflow;
     if (name == "get_metadata") return ProjectCommand::get_metadata;
     if (name == "set_metadata") return ProjectCommand::set_metadata;
-    if (name == "get_cache") return ProjectCommand::get_cache;
-    if (name == "delete_cache") return ProjectCommand::delete_cache;
-    if (name == "get_cache_size") return ProjectCommand::get_cache_size;
+
     if (name == "get_audit_trail") return ProjectCommand::get_audit_trail;
     if (name == "close") return ProjectCommand::close;
     if (name == "add_operation") return ProjectCommand::add_operation;
     if (name == "connect_operations") return ProjectCommand::connect_operations;
     if (name == "get_artifact_inventory") return ProjectCommand::get_artifact_inventory;
+    if (name == "get_current_artifact_inventory") return ProjectCommand::get_current_artifact_inventory;
     if (name == "request_artifact") return ProjectCommand::request_artifact;
     if (name == "resolve_operation_inputs") return ProjectCommand::resolve_operation_inputs;
 
@@ -233,6 +223,11 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         for (auto &artifact : inventory) artifact.erase("payload");
         return inventory;
     }
+    case ProjectCommand::get_current_artifact_inventory: {
+        auto inventory = Project::open(detail::options_from_request(request, true)).get_current_artifact_inventory();
+        for (auto &artifact : inventory) artifact.erase("payload");
+        return inventory;
+    }
     case ProjectCommand::request_artifact: {
         auto project = Project::open(detail::options_from_request(request, true));
         Json result = Json::array();
@@ -303,15 +298,7 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         project.set_metadata(request.at("metadata"));
         return detail::metadata_table(project.get_metadata());
     }
-    case ProjectCommand::get_cache:
-        return detail::cache_entries(Project::open(detail::options_from_request(request, true)));
-    case ProjectCommand::delete_cache: {
-        auto project = Project::open(detail::options_from_request(request));
-        project.delete_cache();
-        return Json{{"status", "finished"}, {"info", "Cache deleted successfully."}};
-    }
-    case ProjectCommand::get_cache_size:
-        return Project::open(detail::options_from_request(request, true)).get_cache_size();
+
     case ProjectCommand::get_audit_trail:
         return detail::audit_entries(Project::open(detail::options_from_request(request, true)));
     case ProjectCommand::close: {

@@ -88,22 +88,23 @@ namespace streamfind::mass_spec::nta
       aligned1.reserve(rt1.size());
       aligned2.reserve(rt1.size());
 
-      size_t closest_hint = 0;
       for (size_t i = 0; i < rt1.size(); ++i) {
         const float rt_val = rt1[i];
 
         // Skip if outside overlap range
         if (rt_val < overlap_start || rt_val > overlap_end) continue;
 
-        // EIC retention times are ordered. Advance a monotonic cursor rather
-        // than rescanning the complete second EIC for every point.
-        while (closest_hint + 1 < rt2.size() &&
-               std::abs(rt2[closest_hint + 1] - rt_val) <=
-                 std::abs(rt2[closest_hint] - rt_val)) {
-          ++closest_hint;
+        // Match the legacy R package implementation exactly: EIC retention
+        // times are not assumed to be sorted in their serialized order.
+        size_t best_idx = 0;
+        float min_diff = std::abs(rt2[0] - rt_val);
+        for (size_t j = 1; j < rt2.size(); ++j) {
+          const float diff = std::abs(rt2[j] - rt_val);
+          if (diff < min_diff) {
+            min_diff = diff;
+            best_idx = j;
+          }
         }
-        const size_t best_idx = closest_hint;
-        const float min_diff = std::abs(rt2[best_idx] - rt_val);
 
         // Only include if RT values are reasonably close (within 0.5 seconds)
         if (min_diff <= 0.5f) {
@@ -121,17 +122,24 @@ namespace streamfind::mass_spec::nta
         const std::vector<float> &rtWindow,
         float minCorrelation,
         float debugRT,
-        const std::string &debugAnalysis)
+        const std::string &debugAnalysis,
+        sdk::DebugSession *debug)
     {
       const float left_offset = rtWindow.size() >= 1 ? rtWindow[0] : 0.0f;
       const float right_offset = rtWindow.size() >= 2 ? rtWindow[1] : 0.0f;
 
-      const bool debug_mode = debugRT > 0.0f;
+      const bool debug_mode = debug != nullptr && debug->enabled() && debugRT > 0.0f;
       if (debug_mode) {
-        std::ostringstream log_filename;
-        log_filename << "log/debug_log_create_components_"
-                     << std::fixed << std::setprecision(2) << debugRT << ".log";
-        ::streamfind::mass_spec::nta::utils::init_debug_log(log_filename.str(), "=== Component Creation Debug Log ===\n");
+        std::ostringstream header;
+        header << "=== Create components parameters ===\n"
+               << "debug_rt: " << std::fixed << std::setprecision(6) << debugRT << "\n"
+               << "debug_analysis: " << (debugAnalysis.empty() ? "<all analyses>" : debugAnalysis) << "\n"
+               << "rt_window: [" << left_offset << ", " << right_offset << "]\n"
+               << "debug_rt_window: [" << (debugRT + left_offset) << ", "
+               << (debugRT + right_offset) << "]\n"
+               << "min_correlation: " << minCorrelation << "\n";
+        ::streamfind::mass_spec::nta::utils::init_debug_log(
+            debug->path().string(), header.str(), true);
       }
 
       bool debug_triggered = false;
@@ -158,7 +166,9 @@ namespace streamfind::mass_spec::nta
           std::cerr << "Debugging components: Analysis '" << analysis_name
                       << "' RT=" << debugRT << " (window " << left_offset << " to " << right_offset
                       << ") -> [" << (debugRT + left_offset) << ", " << (debugRT + right_offset) << "]" << std::endl;
-          DEBUG_OUT("\nDebugging analysis: " << analysis_name << "\n");
+          DEBUG_OUT("\nDebugging analysis: " << analysis_name
+                    << "\nDebug RT window: [" << (debugRT + left_offset)
+                    << ", " << (debugRT + right_offset) << "]\n");
         }
 
         std::map<int, std::vector<int>> polarity_groups;
@@ -239,6 +249,19 @@ namespace streamfind::mass_spec::nta
 
           const size_t feature_count = feature_eics.size();
           const float max_rt_gap = std::max(std::abs(left_offset), std::abs(right_offset));
+          if (should_debug) {
+            DEBUG_LOG("\n--- Features in debug RT window ---\n");
+            for (size_t feature_index = 0; feature_index < feature_eics.size(); ++feature_index) {
+              const auto &feature = feature_eics[feature_index];
+              if (feature.rt < debugRT + left_offset || feature.rt > debugRT + right_offset)
+                continue;
+              const auto &ft = fts.get_feature(feature.idx);
+              DEBUG_LOG("  candidate[" << feature_index << "]: " << ft.feature
+                        << ": RT=" << ft.rt << ", mz=" << ft.mz
+                        << ", intensity=" << ft.intensity
+                        << ", eic_points=" << feature.eic_rt.size() << "\n");
+            }
+          }
           auto rt_compatible = [&](float rt_a, float rt_b) {
             return (rt_b >= rt_a + left_offset && rt_b <= rt_a + right_offset) ||
                    (rt_a >= rt_b + left_offset && rt_a <= rt_b + right_offset);
@@ -254,13 +277,20 @@ namespace streamfind::mass_spec::nta
               const float rt_delta = feature_eics[b].rt - feature_eics[a].rt;
               if (rt_delta > max_rt_gap) break;
               if (!rt_compatible(feature_eics[a].rt, feature_eics[b].rt)) continue;
+              const bool pair_in_debug_window = should_debug &&
+                  ((feature_eics[a].rt >= debugRT + left_offset && feature_eics[a].rt <= debugRT + right_offset) ||
+                   (feature_eics[b].rt >= debugRT + left_offset && feature_eics[b].rt <= debugRT + right_offset));
               if (minCorrelation <= 0.0f) {
                 adjacency[a].push_back(static_cast<int>(b));
                 adjacency[b].push_back(static_cast<int>(a));
+                if (pair_in_debug_window)
+                  DEBUG_LOG("  pair " << a << "-" << b << ": accepted (min_correlation <= 0)\n");
                 continue;
               }
               if (feature_eics[a].eic_rt.empty() || feature_eics[a].eic_int.empty() ||
                   feature_eics[b].eic_rt.empty() || feature_eics[b].eic_int.empty()) {
+                if (pair_in_debug_window)
+                  DEBUG_LOG("  pair " << a << "-" << b << ": rejected (missing EIC data)\n");
                 continue;
               }
 
@@ -269,7 +299,11 @@ namespace streamfind::mass_spec::nta
                 feature_eics[b].eic_rt, feature_eics[b].eic_int
               );
 
-              if (aligned1.size() < 3) continue;
+              if (aligned1.size() < 3) {
+                if (pair_in_debug_window)
+                  DEBUG_LOG("  pair " << a << "-" << b << ": rejected (aligned EIC points=" << aligned1.size() << ")\n");
+                continue;
+              }
 
               const float corr = calculate_pearson_correlation(aligned1, aligned2);
               correlation_matrix[a][b] = corr;
@@ -277,6 +311,11 @@ namespace streamfind::mass_spec::nta
               if (corr >= minCorrelation) {
                 adjacency[a].push_back(static_cast<int>(b));
                 adjacency[b].push_back(static_cast<int>(a));
+                if (pair_in_debug_window)
+                  DEBUG_LOG("  pair " << a << "-" << b << ": accepted correlation=" << corr << "\n");
+              } else if (pair_in_debug_window) {
+                DEBUG_LOG("  pair " << a << "-" << b << ": rejected correlation=" << corr
+                          << " < " << minCorrelation << "\n");
               }
             }
           }
@@ -349,6 +388,8 @@ namespace streamfind::mass_spec::nta
             const std::string component_id = oss.str();
 
             if (debug_this_component && should_debug) {
+              DEBUG_LOG("\n--- RT window match: [" << (debugRT + left_offset)
+                        << ", " << (debugRT + right_offset) << "] ---\n");
               DEBUG_LOG("\n--- Analysis " << analysis_name
                         << " [Polarity=" << polarity << "]: Graph Component " << component_id
                         << " ---\n");
@@ -513,11 +554,25 @@ using Json = nlohmann::json;
         for (const auto &v : rt_window_param)
             rt_window.push_back(v.get<float>());
         if (rt_window.empty())
-            rt_window = {0.0f, 0.0f};
+            rt_window = {-2.5f, 2.5f};
+        if (rt_window.size() != 2 || rt_window[0] > rt_window[1])
+            throw Error(ErrorCode::InvalidArgument, "rt_window must contain [min, max] with min <= max");
         if (min_correlation < 0 || min_correlation > 1)
             throw Error(ErrorCode::InvalidArgument, "invalid componentization parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
-        ::streamfind::mass_spec::nta::componentization::create_components_impl(data, rt_window, min_correlation);
+        // Componentization is intentionally all-analysis, like find_features.
+        // Ignore any stale analysis_names value from an older workflow revision
+        // rather than silently producing a partial component table.
+        auto all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
+        const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
+            ? parameters.at("debug_analysis").get<std::string>() : std::string{};
+        const auto debug_rt = parameters.value("debug_rt", 0.0f);
+        auto debug = sdk::DebugSession::open(
+            access.database_path(), "mass_spec.create_components", access.operation_instance(),
+            sdk::DebugOptions{debug_analysis, 0.0, -1, debug_rt > 0.0f, false});
+        ::streamfind::mass_spec::nta::componentization::create_components_impl(
+            data, rt_window, min_correlation, debug_rt, debug_analysis, &debug);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Components created."}};
     }

@@ -37,4 +37,43 @@ describe('PlotlyRenderer', () => {
     view.unmount();
     expect(runtime.purge).toHaveBeenCalledOnce();
   });
+
+  it('clears selection when Plotly reports a click without a point', async () => {
+    let clickHandler: ((event: { points?: Array<{ pointIndex?: number; pointNumber?: number }> }) => void) | undefined;
+    let doubleClickHandler: (() => void) | undefined;
+    type PlotElement = HTMLDivElement & {
+      on?: (
+        event: string,
+        handler: (event: { points?: Array<{ pointIndex?: number; pointNumber?: number }> }) => void,
+      ) => void;
+    };
+    const runtime: PlotlyRuntime = {
+      newPlot: vi.fn((element) => {
+        (element as PlotElement).on = (_event, handler) => {
+          if (_event === 'plotly_click') clickHandler = handler;
+          if (_event === 'plotly_doubleclick') doubleClickHandler = () => handler({ points: [] });
+        };
+      }),
+    };
+    const onPointClick = vi.fn();
+    const onPlotClick = vi.fn();
+    const onDoubleClick = vi.fn();
+    render(
+      <PlotlyRenderer
+        runtime={runtime}
+        spec={spec}
+        onPointClick={onPointClick}
+        onPlotClick={onPlotClick}
+        onDoubleClick={onDoubleClick}
+      />,
+    );
+    await vi.waitFor(() => expect(clickHandler).toBeDefined());
+
+    clickHandler?.({ points: [] });
+
+    expect(onPointClick).not.toHaveBeenCalled();
+    expect(onPlotClick).toHaveBeenCalledOnce();
+    doubleClickHandler?.();
+    expect(onDoubleClick).toHaveBeenCalledOnce();
+  });
 });

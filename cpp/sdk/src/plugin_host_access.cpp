@@ -74,6 +74,14 @@ PluginHostAccess::PluginHostAccess(
     }
 }
 
+const std::filesystem::path &PluginHostAccess::database_path() const noexcept {
+    return static_cast<const PluginDataServiceContext *>(execution_context_)->database_path;
+}
+
+std::string_view PluginHostAccess::operation_instance() const noexcept {
+    return static_cast<const PluginDataServiceContext *>(execution_context_)->operation_instance;
+}
+
 streamfind_plugin_column_type PluginHostAccess::column_type(
     const std::string &table_name, const std::string &column_name) const {
     const auto &context = *static_cast<const PluginDataServiceContext *>(execution_context_);

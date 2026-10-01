@@ -63,7 +63,6 @@ export type WorkflowOperationDefinition = {
 export type WorkflowConnectionDefinition = {
   source_operation: string;
   source_port: string;
-  source_artifact_id?: string;
   target_operation: string;
   target_port: string;
 };
@@ -241,7 +240,6 @@ export type OperationCapability = BackendCapabilityBase & {
   kind: 'operation';
   mcp?: { name: string; input_schema: JsonSchema };
   method_schema?: never;
-  cacheable?: never;
   single_occurrence?: never;
 };
 
@@ -250,14 +248,12 @@ export type ApiCommandCapability = BackendCapabilityBase & {
   kind: 'command';
   mcp?: { name: string; input_schema: JsonSchema };
   method_schema?: JsonSchema;
-  cacheable?: never;
   single_occurrence?: never;
 };
 
 export type MethodCapability = BackendCapabilityBase & {
   kind: 'method';
   method_schema?: JsonSchema;
-  cacheable?: boolean;
   single_occurrence?: boolean;
   mcp?: never;
 };

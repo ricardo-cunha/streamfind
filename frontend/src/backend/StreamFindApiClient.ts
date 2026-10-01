@@ -122,7 +122,9 @@ export class StreamFindApiClient {
   async capabilityOperations(
     options: CapabilityOperationsRequest & { includeSchema?: false },
   ): Promise<CapabilityOperationSummary[]>;
-  async capabilityOperations(options: CapabilityOperationsRequest): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
+  async capabilityOperations(
+    options: CapabilityOperationsRequest,
+  ): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
     const query = new URLSearchParams({ domain: options.domain });
     if (options.module) query.set('module', options.module);
     if (options.search) query.set('search', options.search);
@@ -166,7 +168,16 @@ export class StreamFindApiClient {
         body: JSON.stringify({ parameters, operation_instance: operationInstance || operationId }),
       },
     );
-    if (!response.ok) throw new Error(`Operation request failed (${response.status})`);
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const payload = (await response.json()) as { error?: string };
+        detail = payload.error ? `: ${payload.error}` : '';
+      } catch {
+        // Preserve the HTTP status when the service returned no JSON body.
+      }
+      throw new Error(`Operation request failed (${response.status})${detail}`);
+    }
     const result = (await response.json()) as { result: JsonValue };
     return result.result;
   }
@@ -180,6 +191,24 @@ export class StreamFindApiClient {
     return result;
   }
 
+  async clearArtifactCache(sessionId: string): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/cache/clear`, {
+      method: 'POST',
+    });
+    const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
+    if (!response.ok) throw new Error(result.error || `Artifact cache clear request failed (${response.status})`);
+    return result;
+  }
+
+  async clearAllArtifacts(sessionId: string): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/clear`, {
+      method: 'POST',
+    });
+    const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
+    if (!response.ok) throw new Error(result.error || `Artifact clear request failed (${response.status})`);
+    return result;
+  }
+
   async workflowState(sessionId: string): Promise<WorkflowStateResponse> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/state`);
     if (!response.ok) throw new Error(`Workflow state request failed (${response.status})`);
@@ -189,6 +218,13 @@ export class StreamFindApiClient {
   async artifacts(sessionId: string): Promise<ArtifactRecord[]> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts`);
     if (!response.ok) throw new Error(`Artifact inventory request failed (${response.status})`);
+    const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
+    return result.artifacts || [];
+  }
+
+  async currentArtifacts(sessionId: string): Promise<ArtifactRecord[]> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/current`);
+    if (!response.ok) throw new Error(`Current artifact inventory request failed (${response.status})`);
     const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
     return result.artifacts || [];
   }

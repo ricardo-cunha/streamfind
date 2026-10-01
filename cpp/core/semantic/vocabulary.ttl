@@ -236,13 +236,6 @@ sf:providedByModule
     skos:prefLabel "provided by module" ;
     skos:definition "Stable native domain-module identifier that provides a method or operation." .
 
-sf:cacheable
-    a rdf:Property ;
-    rdfs:domain sf:Method ;
-    rdfs:range xsd:boolean ;
-    skos:prefLabel "cacheable" ;
-    skos:definition "Whether successful method results may be cached." .
-
 sf:conditionalRead
     a rdf:Property ;
     rdfs:domain sf:Method ;

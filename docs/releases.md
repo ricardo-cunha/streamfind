@@ -1,9 +1,9 @@
 # Releases
 
-The repository currently publishes versioned **preview releases** for the
-native C++ and Rust backends. These archives are self-contained runtime
-packages for Windows x64 and Linux x86_64; they are not yet
-compatibility-stable SDK releases.
+The repository publishes versioned **preview releases** for the native C++
+backend. The 0.3.0 release targets self-contained C++ runtime packages for
+Windows x64 and Linux x86_64; it is not a compatibility-stable SDK release.
+Rust remains preserved development code and is not released in 0.3.0.
 
 The GitHub Release is the authoritative distribution location.
 
@@ -14,21 +14,29 @@ and is not part of the current release line.
 
 ## Project version: {{ streamfind_version }}
 
-The native C++ and Rust project metadata targets version
-**{{ streamfind_version }}**, and the latest downloadable GitHub release is
-`v0.2.0`.
+The native C++ project metadata targets version **{{ streamfind_version }}**.
+The latest downloadable GitHub release is `v0.3.0`.
 
-## Latest downloadable release: 0.2.0
+## 0.3.0 release scope
+
+Version 0.3.0 publishes the authoritative C++ packages only:
+
+- Windows x86_64 ZIP;
+- Linux x86_64 TGZ;
+- a checksum manifest covering the published C++ archives.
+
+The Rust backend remains in the source workspace for preservation and
+development compatibility, but no Rust 0.3.0 archive will be produced.
+
+## Latest downloadable release: 0.3.0
 
 | Backend | Archive | Size | SHA-256 |
 | --- | --- | ---: | --- |
-| C++ core | [Download `streamfind-core-cpp-0.2.0-Windows-x86_64.zip`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.2.0/streamfind-core-cpp-0.2.0-Windows-x86_64.zip) | 33,246,508 bytes | `178d4ec1ecf6de088dd986df989c1a3c5935d2bc88a3c06a41041f0457bdfb53` |
-| Rust backend | [Download `streamfind-rust-0.2.0-Windows-x86_64.zip`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.2.0/streamfind-rust-0.2.0-Windows-x86_64.zip) | 21,218,964 bytes | `b33adfc34fca168cdf3fb02a034f73393c15e6b015e8587c34de1cfc587561c5` |
-| C++ core | [Download `streamfind-core-cpp-0.2.0-Linux-x86_64.tgz`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.2.0/streamfind-core-cpp-0.2.0-Linux-x86_64.tgz) | 85,115,349 bytes | `2f59df6c8f332e648a1a5e6b406f1737307bb8de3d8b2937a98b05e17f6ba334` |
-| Rust backend | [Download `streamfind-rust-0.2.0-Linux-x86_64.tgz`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.2.0/streamfind-rust-0.2.0-Linux-x86_64.tgz) | 30,813,449 bytes | `be6ef91b87cf37aa61cb9c1aed9da9e135e92b1b780003e6c3bbeb4c2273744a` |
+| C++ core | [Download `streamfind-core-cpp-0.3.0-Windows-x86_64.zip`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.3.0/streamfind-core-cpp-0.3.0-Windows-x86_64.zip) | 70,954,362 bytes | `f52417790bf24c6ebfd194abdcb9e3e69b43eb6247a1a0a499070e40f0bbe162` |
+| C++ core | [Download `streamfind-core-cpp-0.3.0-Linux-x86_64.tgz`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.3.0/streamfind-core-cpp-0.3.0-Linux-x86_64.tgz) | 167,775,348 bytes | `1b1e212067a21cb4048b67916a6de27a3de1c5cece906dffff88506fea2701a8` |
 
 The complete checksum list is available as the
-[`sha256sums.txt`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.2.0/sha256sums.txt)
+[`sha256sums.txt`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.3.0/sha256sums.txt)
 asset attached to the GitHub Release.
 
 ## Package contents
@@ -39,32 +47,19 @@ The C++ archives contain:
 
 - the `streamfind_mcp.exe` or `streamfind_mcp` MCP server and C++ runtime libraries;
 - public C++ headers and libraries;
-- `share/streamfind/catalogue.duckdb`;
+- `core/catalogue.duckdb` and packaged plugin catalogues;
 - the native runtime dependencies assembled by CPack.
-
-### Rust archive
-
-The Rust archives contain:
-
-- `bin/streamfind-rust-cli.exe` or `bin/streamfind-rust-cli`;
-- `bin/streamfind-rust-mcp.exe` or `bin/streamfind-rust-mcp`;
-- `share/streamfind/catalogue.duckdb`;
-- the native runtime dependencies assembled for the package.
-
-`share/streamfind/catalogue.duckdb` is required runtime data for both native
-backends. Do not remove it from the package or distribute an MCP executable
-without it.
 
 ## Legal and attribution files
 
 Native archives should be distributed together with the project notice and
-the backend-specific attribution payload:
+the C++ vendor attribution payload:
 
 ```text
 NOTICE.md
 LICENSE.md
 C++: vendor licence texts from `cpp/vendor/`
-Rust: LICENSES.md
+
 ```
 
 These files identify streamfind's licence, bundled third-party components, and
@@ -82,21 +77,24 @@ launched directly by an MCP client over stdio. For the complete request flow,
 see the [C++ MCP quickstart](quickstart/cpp-mcp.md) or
 [Rust MCP quickstart](quickstart/rust-mcp.md).
 
-Example Rust package layout:
+Example C++ package layout:
 
 ```text
-streamfind-rust-0.2.0-Windows-x86_64/
+streamfind-core-cpp-0.3.0-Windows-x86_64/
 ├── bin/
-│   ├── streamfind-rust-cli.exe
-│   └── streamfind-rust-mcp.exe
-└── share/streamfind/
-    └── catalogue.duckdb
+│   ├── streamfind_cli.exe
+│   ├── streamfind_mcp.exe
+│   └── streamfind_service.exe
+├── core/
+│   └── catalogue.duckdb
+└── plugins/
+    └── mass_spec/
 ```
 
 ## Release scope
 
-The native archives are useful for testing the current C++/Rust backends and
-MCP interfaces. They do not provide:
+The native archives are preview packages for the current C++ backend and MCP
+interfaces. They do not provide:
 
 - a stable cross-version API or ABI guarantee;
 - the public Python package;

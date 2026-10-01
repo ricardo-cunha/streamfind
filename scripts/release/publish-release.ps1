@@ -2,7 +2,7 @@
     publish-release.ps1 — publish verified archives from tmp/release-output to
     an existing or new GitHub Release.
 
-    This script does not build or test. Run the C++ and/or Rust release script
+    This script does not build or test. Run the C++ release script
     first, review the output, then run this script when the release is ready.
 
     Usage:
@@ -20,7 +20,7 @@ param(
     [string]$Version,
     [string]$Repository = 'ricardo-cunha/streamfind',
     [ValidateSet('Cpp', 'Rust', 'All')]
-    [string]$Backend = 'All',
+    [string]$Backend = 'Cpp',
     [switch]$Replace
 )
 
@@ -61,6 +61,9 @@ if (($Backend -in @('Cpp', 'All')) -and -not ($archives | Where-Object { $_.Name
 if (($Backend -in @('Rust', 'All')) -and -not ($archives | Where-Object { $_.Name -like "streamfind-rust-$Version-*" })) {
     throw "The Rust archive for $Version is missing from $output."
 }
+if ($Backend -eq 'Cpp' -and ($archives | Where-Object { $_.Name -like "streamfind-rust-$Version-*" })) {
+    throw "Rust archives for $Version are present in $output. Remove stale archives or explicitly publish with -Backend All."
+}
 $archives = @($archives | Where-Object {
     $Backend -eq 'All' -or ($Backend -eq 'Cpp' -and $_.Name -like "streamfind-core-cpp-$Version-*") -or ($Backend -eq 'Rust' -and $_.Name -like "streamfind-rust-$Version-*")
 })
@@ -95,7 +98,13 @@ if ($Replace) {
     if ($LASTEXITCODE -ne 0) { throw "GitHub Release asset upload failed ($LASTEXITCODE)." }
 } else {
     Write-Host "Creating GitHub Release $tag..."
-    $notes = "Development release of the independent native C++ and Rust backends. See the documentation for package contents and compatibility scope."
+    $notes = if ($Backend -eq 'Cpp') {
+        "Development release of the native C++ backend for Windows and Linux. Rust is not included in this release. See the documentation for package contents and compatibility scope."
+    } elseif ($Backend -eq 'Rust') {
+        "Development release of the preserved Rust backend. See the documentation for package contents and compatibility scope."
+    } else {
+        "Development release of the native C++ and Rust backends. See the documentation for package contents and compatibility scope."
+    }
     & $gh.Path release create $tag @assets --repo $Repository --title "streamfind $Version" --notes $notes --generate-notes
     if ($LASTEXITCODE -ne 0) { throw "GitHub Release creation failed ($LASTEXITCODE)." }
 }

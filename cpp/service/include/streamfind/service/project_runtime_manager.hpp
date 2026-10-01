@@ -30,8 +30,11 @@ public:
     Json validate_workflow(const std::string &session_id, const Json &definition) const;
     Json save_workflow(const std::string &session_id, const Json &definition);
     Json clear_workflow_history(const std::string &session_id);
+    Json clear_artifact_cache(const std::string &session_id);
+    Json clear_all_artifacts(const std::string &session_id);
     Json workflow_snapshot(const std::string &session_id) const;
     Json artifact_inventory(const std::string &session_id) const;
+    Json current_artifact_inventory(const std::string &session_id) const;
     Json artifact_data(const std::string &session_id, const Json &request) const;
     std::string set_workflow_state(const std::string &session_id, const std::string &state);
     std::string start_workflow(const std::string &session_id);

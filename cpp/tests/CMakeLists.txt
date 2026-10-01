@@ -7,6 +7,11 @@ target_link_libraries(streamfind_project_lifecycle_contract PRIVATE streamfind::
 add_test(NAME streamfind_project_lifecycle_contract COMMAND streamfind_project_lifecycle_contract)
 set_tests_properties(streamfind_project_lifecycle_contract PROPERTIES LABELS "framework")
 
+add_executable(streamfind_fingerprint_contract unit/fingerprint_contract.cpp)
+target_link_libraries(streamfind_fingerprint_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_fingerprint_contract COMMAND streamfind_fingerprint_contract)
+set_tests_properties(streamfind_fingerprint_contract PROPERTIES LABELS "framework")
+
 add_executable(streamfind_plugin_abi_contract unit/plugin_abi_contract.cpp)
 target_link_libraries(streamfind_plugin_abi_contract PRIVATE streamfind::cpp_sdk)
 add_test(NAME streamfind_plugin_abi_contract COMMAND streamfind_plugin_abi_contract)
