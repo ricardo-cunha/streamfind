@@ -13,6 +13,10 @@ function(streamfind_configure_cpp_library target export_name)
         EXPORT_NAME ${export_name}
         POSITION_INDEPENDENT_CODE ON
     )
+    if(UNIX AND NOT APPLE)
+        set_target_properties(${target} PROPERTIES
+            INSTALL_RPATH "$ORIGIN/../../core/vendors/openbabel")
+    endif()
     target_compile_features(${target} PUBLIC cxx_std_20)
 
     if(STREAMFIND_BUILD_SHARED)
