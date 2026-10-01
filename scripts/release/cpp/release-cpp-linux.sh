@@ -16,7 +16,7 @@ if [[ -f "$source_archive" ]]; then mv -f "$source_archive" "$archive"; fi
 test -f "$archive"; assert_archive "$archive" licenses
 listing="${archive}.list"
 tar -tzf "$archive" > "$listing"
-plugin_manifests=$(grep -E '(^|/)share/streamfind/plugins/[^/]+/plugin\.json$' "$listing")
+plugin_manifests=$(grep -E '(^|/)plugins/[^/]+/plugin\.json$' "$listing")
 test -n "$plugin_manifests"
 grep -Eq '(^|/)lib/libduckdb_static\.a$' "$listing"
 while IFS= read -r manifest_path; do
@@ -30,7 +30,7 @@ while IFS= read -r manifest_path; do
     grep -q '"semantic_catalogue": "catalogue.duckdb"' "$manifest_file"
     library_name="$(grep -m1 '"linux-x86_64":' "$manifest_file" | sed -E 's/.*"linux-x86_64": "([^"]+)".*/\1/')"
     test -n "$library_name"
-    grep -Eq '(^|/)share/streamfind/plugins/'"$domain"'/'"$library_name"'$' "$listing"
+    grep -Eq '(^|/)plugins/'"$domain"'/'"$library_name"'$' "$listing"
     grep -q '"linux-x86_64": "'"$library_name"'"' "$manifest_file"
     rm -f "$manifest_file"
 done <<< "$plugin_manifests"

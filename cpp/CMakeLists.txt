@@ -211,6 +211,7 @@ install(
     RUNTIME DESTINATION bin
 )
 install(TARGETS streamfind_openbabel_runtime
+    EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION core/vendors/openbabel
     LIBRARY DESTINATION core/vendors/openbabel
     ARCHIVE DESTINATION sdk/lib)
@@ -395,21 +396,19 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
-add_executable(streamfind_service_host
-    service/src/streamfind-service-host.cpp)
 if(WIN32)
+    add_executable(streamfind_service_host
+        service/src/streamfind-service-host.cpp)
     target_sources(streamfind_service_host PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind.rc")
-endif()
-add_dependencies(streamfind_service_host streamfind_service)
-if(WIN32)
+    add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE ws2_32 shell32)
+    set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind)
+    streamfind_static_mingw_executable(streamfind_service_host)
 endif()
-set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind)
 streamfind_static_mingw_executable(streamfind_mcp)
 streamfind_static_mingw_executable(streamfind_cli)
 streamfind_static_mingw_executable(streamfind_service)
-streamfind_static_mingw_executable(streamfind_service_host)
 
 if(MSVC)
     foreach(_target IN ITEMS
@@ -433,10 +432,10 @@ install(
     EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION bin
 )
-install(TARGETS streamfind_service_host
-    EXPORT streamfind-cpp-targets
-    RUNTIME DESTINATION .)
 if(WIN32)
+    install(TARGETS streamfind_service_host
+        EXPORT streamfind-cpp-targets
+        RUNTIME DESTINATION .)
     install(TARGETS streamfind_mcp_launcher RUNTIME DESTINATION bin)
 endif()
 if(STREAMFIND_APP_DIR AND EXISTS "${STREAMFIND_APP_DIR}")
@@ -461,12 +460,21 @@ add_custom_command(TARGET streamfind_mcp POST_BUILD
         "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
         "$<TARGET_FILE_DIR:streamfind_mcp>"
 )
-add_custom_command(TARGET streamfind_service POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
-        "$<TARGET_FILE_DIR:streamfind_service>"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${STREAMFIND_DUCKDB_RUNTIME}"
-        "$<TARGET_FILE_DIR:streamfind_service>"
-    COMMENT "Staging streamfind_service runtime dependencies"
-)
+if(STREAMFIND_DUCKDB_RUNTIME)
+    add_custom_command(TARGET streamfind_service POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
+            "$<TARGET_FILE_DIR:streamfind_service>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${STREAMFIND_DUCKDB_RUNTIME}"
+            "$<TARGET_FILE_DIR:streamfind_service>"
+        COMMENT "Staging streamfind_service runtime dependencies"
+    )
+else()
+    add_custom_command(TARGET streamfind_service POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
+            "$<TARGET_FILE_DIR:streamfind_service>"
+        COMMENT "Staging streamfind_service runtime dependencies"
+    )
+endif()
