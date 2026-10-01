@@ -24,7 +24,7 @@ preserved from an earlier development phase and is not released in 0.3.0.
 
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | 0.3.0 project version; preview packages are being prepared for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
+| C++ backend | 0.3.0 preview packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
 | Rust backend | Stale development backend; not released in 0.3.0 | Existing Rust experiments only |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
 | R package | Legacy interface | Existing R and Shiny workflows |
