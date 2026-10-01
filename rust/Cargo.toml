@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/cli", "crates/external", "crates/mcp", "crates/mass-spec", "crates/raman", "crates/sensors", "crates/test-support"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 
 [profile.release]
 strip = true

@@ -1,9 +1,9 @@
 # Releases
 
 The repository publishes versioned **preview releases** for the native C++
-backend. The 0.3.0 release targets self-contained C++ runtime packages for
+backend. The 0.4.0 release targets self-contained C++ runtime packages for
 Windows x64 and Linux x86_64; it is not a compatibility-stable SDK release.
-Rust remains preserved development code and is not released in 0.3.0.
+Rust remains preserved development code and is not released in 0.4.0.
 
 The GitHub Release is the authoritative distribution location.
 
@@ -15,28 +15,28 @@ and is not part of the current release line.
 ## Project version: {{ streamfind_version }}
 
 The native C++ project metadata targets version **{{ streamfind_version }}**.
-The latest downloadable GitHub release is `v0.3.0`.
+The latest downloadable GitHub release is `v0.4.0`.
 
-## 0.3.0 release scope
+## 0.4.0 release scope
 
-Version 0.3.0 publishes the authoritative C++ packages only:
+Version 0.4.0 publishes the authoritative C++ packages only:
 
 - Windows x86_64 ZIP;
 - Linux x86_64 TGZ;
 - a checksum manifest covering the published C++ archives.
 
 The Rust backend remains in the source workspace for preservation and
-development compatibility, but no Rust 0.3.0 archive will be produced.
+development compatibility, but no Rust 0.4.0 archive will be produced.
 
-## Latest downloadable release: 0.3.0
+## Latest downloadable release: 0.4.0
 
 | Backend | Archive | Size | SHA-256 |
 | --- | --- | ---: | --- |
-| C++ core | [Download `streamfind-core-cpp-0.3.0-Windows-x86_64.zip`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.3.0/streamfind-core-cpp-0.3.0-Windows-x86_64.zip) | 70,954,362 bytes | `f52417790bf24c6ebfd194abdcb9e3e69b43eb6247a1a0a499070e40f0bbe162` |
-| C++ core | [Download `streamfind-core-cpp-0.3.0-Linux-x86_64.tgz`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.3.0/streamfind-core-cpp-0.3.0-Linux-x86_64.tgz) | 167,775,348 bytes | `1b1e212067a21cb4048b67916a6de27a3de1c5cece906dffff88506fea2701a8` |
+| C++ core | [Download `streamfind-core-cpp-0.4.0-Windows-x86_64.zip`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.4.0/streamfind-core-cpp-0.4.0-Windows-x86_64.zip) | 70,954,359 bytes | `f661d4a125f425744ed22f40074629f599f811bd45604286ba240a208d2d08d6` |
+| C++ core | [Download `streamfind-core-cpp-0.4.0-Linux-x86_64.tgz`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.4.0/streamfind-core-cpp-0.4.0-Linux-x86_64.tgz) | 169,407,704 bytes | `46b35bbc606fd561259a9c80f2b3855d1662af12281190e4235bb2bb83f379e0` |
 
 The complete checksum list is available as the
-[`sha256sums.txt`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.3.0/sha256sums.txt)
+[`sha256sums.txt`](https://github.com/ricardo-cunha/streamfind/releases/download/v0.4.0/sha256sums.txt)
 asset attached to the GitHub Release.
 
 ## Package contents
@@ -49,6 +49,12 @@ The C++ archives contain:
 - public C++ headers and libraries;
 - `core/catalogue.duckdb` and packaged plugin catalogues;
 - the native runtime dependencies assembled by CPack.
+
+Both archives contain the built React web app under `app/` and a `streamfind`
+launcher at the package root. Running the launcher starts the local C++ service
+and opens the packaged app in the default browser. The development Vite app is
+also available separately when frontend source changes are being developed. See
+the [Web app](web-app.md) page for the platform-specific instructions.
 
 ## Legal and attribution files
 
@@ -80,7 +86,11 @@ see the [C++ MCP quickstart](quickstart/cpp-mcp.md) or
 Example C++ package layout:
 
 ```text
-streamfind-core-cpp-0.3.0-Windows-x86_64/
+streamfind-core-cpp-0.4.0-Windows-x86_64/
+├── app/
+│   ├── index.html
+│   └── assets/
+├── streamfind.exe
 ├── bin/
 │   ├── streamfind_cli.exe
 │   ├── streamfind_mcp.exe

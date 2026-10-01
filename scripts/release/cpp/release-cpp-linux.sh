@@ -6,8 +6,15 @@ VERSION="${1:?usage: release-cpp-linux.sh VERSION}"
 PLUGINS="${STREAMFIND_PLUGINS:-ALL}"
 OUT="${STREAMFIND_RELEASE_DIR:-$REPO_ROOT/tmp/release-output}"
 BUILD="$REPO_ROOT/tmp/build/release-cpp-linux"
+FRONTEND="$REPO_ROOT/frontend"
+FRONTEND_DIST="$FRONTEND/dist"
 mkdir -p "$OUT"
-cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS"
+if [[ "${STREAMFIND_SKIP_FRONTEND_BUILD:-0}" == 0 ]]; then
+    require_tool npm
+    (cd "$FRONTEND" && npm ci && npm run build)
+fi
+test -f "$FRONTEND_DIST/index.html"
+cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
 cmake --build "$BUILD" --parallel "${STREAMFIND_JOBS:-$(nproc)}"
 [[ "${STREAMFIND_RUN_TESTS:-1}" == 0 ]] || (cd "$BUILD" && ctest --output-on-failure)
 (cd "$BUILD" && cpack -G TGZ -C Release -B "$OUT")
@@ -16,6 +23,8 @@ if [[ -f "$source_archive" ]]; then mv -f "$source_archive" "$archive"; fi
 test -f "$archive"; assert_archive "$archive" licenses
 listing="${archive}.list"
 tar -tzf "$archive" > "$listing"
+grep -Eq '(^|/)app/index\.html$' "$listing"
+grep -Eq '(^|/)streamfind$' "$listing"
 plugin_manifests=$(grep -E '(^|/)plugins/[^/]+/plugin\.json$' "$listing")
 test -n "$plugin_manifests"
 grep -Eq '(^|/)lib/libduckdb_static\.a$' "$listing"

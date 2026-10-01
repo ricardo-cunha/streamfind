@@ -6,7 +6,7 @@
     first, review the output, then run this script when the release is ready.
 
     Usage:
-      powershell -ExecutionPolicy Bypass -File scripts\release\publish-release.ps1 -Version 0.2.0
+      powershell -ExecutionPolicy Bypass -File scripts\release\publish-release.ps1 -Version 0.4.0
       powershell -ExecutionPolicy Bypass -File scripts\release\publish-release.ps1 -Version 0.1.0 -Replace
 
     By default, the script creates a new v<Version> GitHub Release and fails

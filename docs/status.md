@@ -7,14 +7,14 @@ stale development code and the R package is a legacy interface.
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | Version {{ streamfind_version }} project version; 0.3.0 targets Windows x64 and Linux x86_64 preview packages | Native C++ applications and MCP clients |
-| Rust backend | Stale development backend; no 0.3.0 release | Existing Rust applications and compatibility work |
+| C++ backend | Version {{ streamfind_version }} project version; 0.4.0 targets Windows x64 and Linux x86_64 preview packages | Native C++ applications and MCP clients |
+| Rust backend | Stale development backend; no 0.4.0 release | Existing Rust applications and compatibility work |
 | C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
 | Rust MCP server | Preserved with the stale Rust backend | Existing Rust experiments only |
 | R package | Legacy interface | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path currently |
 | Cogniflow integration | Separate future path | Not part of the native packages |
-| React frontend | Development/preview interface using the C++ service | Not included in native archives |
+| React web app | Browser interface using the C++ service | Included in the Windows and Linux native archives |
 
 See [Releases](releases.md) for package downloads and checksums.
 
@@ -92,8 +92,9 @@ The [Python package](components/bindings-python.md) and
 availability of those separate future-facing assets without implying that they
 are part of the native C++ release.
 
-The React frontend is currently a development/preview application. It uses the
-C++ backend's public service boundary and does not contain a second persistence
-or domain-processing implementation. It is not included as a separately
-supported desktop application in the native archives. New backend capabilities
-should therefore target the C++ core/plugin framework first.
+The React web app is a development/preview application backed by the C++ service.
+Both native archives include the built static assets and a root-level `streamfind`
+launcher, which starts the local service and opens the app in the default browser.
+For development, the app can be run from `frontend/` with the Vite launcher. It
+uses the C++ backend's public service boundary and does not contain a second
+persistence or domain-processing implementation. See [Web app](web-app.md).
