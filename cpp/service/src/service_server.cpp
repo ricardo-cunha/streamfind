@@ -533,6 +533,16 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow/history/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.clear_workflow_history(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/cache/clear")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/cache/clear");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.clear_artifact_cache(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/clear")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/clear");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.clear_all_artifacts(session_id));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
@@ -605,7 +615,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                                          {"payload", Json{{"message", error.what()}}}});
                     throw;
                 }
-                const bool cache_hit = result.value("cache_hit", false);
+                // Operations may legitimately return an array of published artifacts.
+                // Only object results can carry the optional cache_hit flag.
+                const bool cache_hit = result.is_object() && result.value("cache_hit", false);
                 events_.publish(Json{{"type", "operation.completed"}, {"project", session_id},
                                      {"operation_id", operation_id},
                                      {"payload", Json{{"message", cache_hit

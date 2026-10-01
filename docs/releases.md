@@ -1,9 +1,9 @@
 # Releases
 
-The repository currently publishes versioned **preview releases** for the
-native C++ and Rust backends. These archives are self-contained runtime
-packages for Windows x64 and Linux x86_64; they are not yet
-compatibility-stable SDK releases.
+The repository publishes versioned **preview releases** for the native C++
+backend. The 0.3.0 release targets self-contained C++ runtime packages for
+Windows x64 and Linux x86_64; it is not a compatibility-stable SDK release.
+Rust remains preserved development code and is not released in 0.3.0.
 
 The GitHub Release is the authoritative distribution location.
 
@@ -14,9 +14,20 @@ and is not part of the current release line.
 
 ## Project version: {{ streamfind_version }}
 
-The native C++ and Rust project metadata targets version
-**{{ streamfind_version }}**, and the latest downloadable GitHub release is
+The native C++ project metadata targets version **{{ streamfind_version }}**.
+Until 0.3.0 is built and published, the latest downloadable GitHub release is
 `v0.2.0`.
+
+## 0.3.0 release scope
+
+Version 0.3.0 will publish the authoritative C++ packages only:
+
+- Windows x86_64 ZIP;
+- Linux x86_64 TGZ;
+- a checksum manifest covering the published C++ archives.
+
+The Rust backend remains in the source workspace for preservation and
+development compatibility, but no Rust 0.3.0 archive will be produced.
 
 ## Latest downloadable release: 0.2.0
 

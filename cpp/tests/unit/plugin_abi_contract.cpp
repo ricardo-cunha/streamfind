@@ -16,7 +16,7 @@ int main() {
     descriptor.abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor.struct_size = sizeof(descriptor);
     descriptor.plugin_id = "stage9.contract";
-    descriptor.plugin_version = "0.2.0";
+    descriptor.plugin_version = "0.3.0";
     descriptor.register_plugin = nullptr;
     descriptor.shutdown_plugin = nullptr;
 

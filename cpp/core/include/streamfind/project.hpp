@@ -448,6 +448,10 @@ public:
     void set_workflow(Workflow workflow, const OperationRegistry &registry);
     /** @brief Remove persisted workflow revisions older than the current revision. */
     void clear_workflow_history();
+    /** @brief Remove cache manifests while retaining published artifacts. */
+    void clear_artifact_cache();
+    /** @brief Remove every published artifact and cache entry while retaining the workflow. */
+    void clear_all_artifacts();
     /** @brief Copy this project to a new database. */
     Project copy(const ProjectOptions &options) const;
     /** @brief List tables visible in the project database. */

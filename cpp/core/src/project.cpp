@@ -17,6 +17,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <regex>
 #include <set>
 
 #include <stdexcept>
@@ -38,6 +39,12 @@ namespace streamfind
         {
             const char *message = duckdb_result_error(&result);
             return message ? message : "DuckDB operation failed";
+        }
+
+        bool is_generated_artifact_table(const std::string &table)
+        {
+            static const std::regex pattern("^ARTIFACT_[0-9]+_[0-9]+$");
+            return std::regex_match(table, pattern);
         }
 
         void check(duckdb_state state, const std::string &context)
@@ -1771,7 +1778,7 @@ namespace streamfind
         for (const auto &entry : physical_artifact_tables)
         {
             const auto table = text_of(entry, "table_name");
-            if (table.empty() || retained_tables.contains(table)) continue;
+            if (table.empty() || retained_tables.contains(table) || !detail::is_generated_artifact_table(table)) continue;
             std::string quoted = "\"";
             for (const char character : table) quoted += character == '\"' ? "\"\"" : std::string(1, character);
             quoted += "\"";
@@ -1782,6 +1789,52 @@ namespace streamfind
         query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
         query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE AS lineage WHERE NOT EXISTS (SELECT 1 FROM ARTIFACT_INVENTORY AS artifact WHERE artifact.artifact_id = lineage.artifact_id) OR NOT EXISTS (SELECT 1 FROM ARTIFACT_INVENTORY AS source WHERE source.artifact_id = lineage.source_artifact_id)", "clear orphaned workflow lineage");
         audit(connection.get(), "update", "workflow", current.to_json());
+    }
+
+    void Project::clear_artifact_cache()
+    {
+        std::lock_guard lock(impl_->mutex);
+        ensure_active(*impl_);
+        Connection connection(*impl_);
+        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT", "clear artifact cache outputs");
+        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
+    }
+
+    void Project::clear_all_artifacts()
+    {
+        const auto inventory = get_artifact_inventory();
+        const auto physical_artifact_tables = query_json(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'main' AND substr(upper(table_name), 1, 9) = 'ARTIFACT_' "
+            "AND table_name NOT IN ('ARTIFACT_CACHE', 'ARTIFACT_CACHE_OUTPUT', "
+            "'ARTIFACT_INVENTORY', 'ARTIFACT_LINEAGE')");
+        std::lock_guard lock(impl_->mutex);
+        ensure_active(*impl_);
+        Connection connection(*impl_);
+        const auto drop_table = [&](const std::string &table) {
+            std::string quoted = "\"";
+            for (const char character : table) quoted += character == '\"' ? "\"\"" : std::string(1, character);
+            quoted += "\"";
+            query(connection.get(), "DROP TABLE IF EXISTS " + quoted, "clear artifact table");
+        };
+        for (const auto &artifact : inventory) {
+            const auto physical_table_value = artifact.find("physical_table");
+            const auto physical_table = physical_table_value != artifact.end() && physical_table_value->is_string()
+                ? physical_table_value->get<std::string>()
+                : std::string{};
+            if (!physical_table.empty() && detail::is_generated_artifact_table(physical_table)) drop_table(physical_table);
+        }
+        for (const auto &entry : physical_artifact_tables) {
+            const auto table_value = entry.find("table_name");
+            const auto table = table_value != entry.end() && table_value->is_string()
+                ? table_value->get<std::string>()
+                : std::string{};
+            if (!table.empty() && detail::is_generated_artifact_table(table)) drop_table(table);
+        }
+        query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE", "clear artifact lineage");
+        query(connection.get(), "DELETE FROM ARTIFACT_INVENTORY", "clear artifact inventory");
+        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT", "clear artifact cache outputs");
+        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
     }
 
     std::vector<std::string> Project::list_tables() const

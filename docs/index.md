@@ -18,11 +18,11 @@ and AI agents. A Rust backend is preserved from an earlier development phase.
 - [See the legacy R package](components/bindings-r.md).
 
 !!! note "Version {{ streamfind_version }}"
-    The native C++ and Rust project version is now **{{ streamfind_version }}**. The latest
-    downloadable archives are currently the `v0.1.0` Windows and Linux preview
-    packages; the [Releases](releases.md) page will be updated when the `v{{ streamfind_version }}`
-    archives are published. Cross-version API and ABI stability is not yet
-    guaranteed.
+    The native C++ project version is **{{ streamfind_version }}**. The 0.3.0
+    release targets C++ packages for Windows x64 and Linux x86_64; Rust remains
+    preserved development code and is not included. Download links are added to
+    [Releases](releases.md) only after the corresponding GitHub assets have been
+    built and verified. Cross-version API and ABI stability is not yet guaranteed.
 
 ## Interfaces
 
@@ -34,7 +34,7 @@ and AI agents. A Rust backend is preserved from an earlier development phase.
 | R package | Existing R workflows, non-target screening, and Shiny application | Legacy interface |
 | Python package | Public Python API | Not released |
 | Cogniflow integration | Cogniflow adapter | Separate future integration path |
-| React frontend | Planned user interface over the C++ backend | Future; not released |
+| React frontend | Development/preview browser application over the C++ service | Not included in native archives |
 
 ## MCP at a glance
 
@@ -64,5 +64,5 @@ the catalogue, native APIs, and MCP.
 
 The active implementation path is the C++ plugin framework. Rust remains a
 preserved, stale development backend while C++ domain plugins and native readers
-are completed. A future React frontend will use the C++ backend through its
-public service boundary; it will not access project DuckDB files directly.
+are completed. The current React application uses the C++ backend through its
+public service boundary; it does not access project DuckDB files directly.

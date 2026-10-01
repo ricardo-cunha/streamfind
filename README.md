@@ -6,14 +6,16 @@
 
 streamfind is a DuckDB-backed framework for analytical data processing. Its
 active native backend is C++, with mass-spectrometry data access, a shared
-semantic catalogue, a dynamic plugin framework, and MCP servers for applications
-and AI agents. A Rust backend is preserved from an earlier development phase.
+semantic catalogue, a dynamic plugin framework, a browser-facing development
+application, and MCP servers for applications and AI agents. A Rust backend is
+preserved from an earlier development phase and is not released in 0.3.0.
 
 ## Start here
 
 - [Read the user documentation](https://streamfind.odea-project.org/).
 - [Download the native packages](docs/releases.md).
 - [Use the C++ MCP server](docs/quickstart/cpp-mcp.md).
+- [Run the development frontend](frontend/README.md).
 - [See the preserved Rust backend](docs/components/rust.md).
 - [See the legacy R package](docs/components/bindings-r.md).
 - [Check availability and compatibility](docs/status.md).
@@ -22,15 +24,17 @@ and AI agents. A Rust backend is preserved from an earlier development phase.
 
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | Preview packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
-| Rust backend | Stale development backend | Existing Rust experiments only |
+| C++ backend | 0.3.0 project version; preview packages are being prepared for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
+| Rust backend | Stale development backend; not released in 0.3.0 | Existing Rust experiments only |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
 | R package | Legacy interface | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path yet |
 | Cogniflow integration | Separate future path | Not included in native packages |
 
-The native C++ and Rust project version is maintained in the Rust workspace
-manifest. See [Releases](docs/releases.md) for the latest downloadable assets.
+The native C++ project version is maintained in the Rust workspace manifest so
+CMake and the release tooling share one version source. Rust remains in the
+workspace for preservation and development compatibility, but is not part of
+the 0.3.0 release. See [Releases](docs/releases.md) for downloadable assets.
 
 ## Native implementation
 
@@ -44,11 +48,11 @@ The Rust backend is a stale, preserved development backend. It is not the
 recommended runtime or extension point. The R package is a separate legacy
 interface and is not the native C++ API.
 
-A React frontend is a future interface, not a released component. It is planned
-to consume the C++ backend through its public API and MCP/HTTP integration
-boundary rather than embedding domain logic or accessing DuckDB directly. The
-frontend will be added after the C++ backend contract and plugin framework are
-stable.
+The React frontend is currently a development and preview application. The
+coupled launcher starts the native C++ service, waits for readiness, and starts
+the Vite application. The frontend consumes the typed service boundary and does
+not access DuckDB files or plugin internals directly. It is not included in the
+native 0.3.0 archives as a separately supported desktop distribution.
 
 ## Vendor compatibility and trademarks
 

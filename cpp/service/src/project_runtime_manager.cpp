@@ -150,6 +150,22 @@ Json ProjectRuntimeManager::clear_workflow_history(const std::string &session_id
     return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
 }
 
+Json ProjectRuntimeManager::clear_artifact_cache(const std::string &session_id) {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    iterator->second->clear_artifact_cache();
+    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+}
+
+Json ProjectRuntimeManager::clear_all_artifacts(const std::string &session_id) {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    iterator->second->clear_all_artifacts();
+    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+}
+
 Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) const {
     std::lock_guard lock(mutex_);
     if (projects_.find(session_id) == projects_.end()) throw std::invalid_argument("project session not found");
@@ -330,7 +346,8 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
                 }
                 set_workflow_state(session_id, "running");
                 const auto result = project->run_operation_graph(*operations_);
-                set_workflow_state(session_id, result.value("status", "failed") == "completed" ? "completed" : "failed");
+                const auto status = result.is_object() ? result.value("status", std::string{"failed"}) : std::string{"completed"};
+                set_workflow_state(session_id, status == "completed" ? "completed" : "failed");
                 std::lock_guard lock(mutex_);
                 workflow_cancellations_.erase(session_id);
             } catch (const std::exception &error) {

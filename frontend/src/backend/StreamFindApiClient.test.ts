@@ -20,15 +20,13 @@ describe('StreamFindApiClient capability discovery', () => {
   });
 
   it('encodes domain and applies module and search filters for operation summaries', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        response({
-          operations: [
-            { canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' },
-          ],
-        }),
-      );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response({
+        operations: [
+          { canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' },
+        ],
+      }),
+    );
 
     const result = await new StreamFindApiClient('http://service').capabilityOperations({
       domain: 'lab/core',
@@ -62,5 +60,15 @@ describe('StreamFindApiClient capability discovery', () => {
     await expect(new StreamFindApiClient('http://service').capabilitiesIndex()).rejects.toThrow(
       'Capabilities index request failed (503)',
     );
+  });
+
+  it('preserves the backend error body for operation failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response({ error: 'Workflow execution lock was lost' }, false, 400),
+    );
+
+    await expect(
+      new StreamFindApiClient('http://service').runOperation('session', 'mass_spec.read_mass_spec_files', {}),
+    ).rejects.toThrow('Operation request failed (400): Workflow execution lock was lost');
   });
 });

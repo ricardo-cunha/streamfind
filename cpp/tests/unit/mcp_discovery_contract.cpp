@@ -29,19 +29,11 @@ int main() {
     try {
         streamfind::mcp::Session session;
         const auto initialized = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}});
-        require(initialized.at("result").at("capabilities").contains("resources"),
-                "MCP initialize omitted resource capability");
+        require(!initialized.at("result").at("capabilities").contains("resources"),
+                "MCP still advertises HTML visualization resources");
         const auto resources = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/list"}});
-        require(resources.at("result").at("resources").size() == 1 &&
-                    resources.at("result").at("resources").at(0).value("uri", "") ==
-                        "ui://streamfind/visualization",
-                "visualization MCP resource was not listed");
-        const auto resource = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/read"},
-                                              {"params", {{"uri", "ui://streamfind/visualization"}}}});
-        require(resource.at("result").at("contents").at(0).value("mimeType", "") == "text/html" &&
-                    resource.at("result").at("contents").at(0).value("text", "").find("mcp-visualization.html") !=
-                        std::string::npos,
-                "visualization MCP resource did not return the frontend launcher");
+        require(resources.contains("error") && resources.at("error").value("code", 0) == -32601,
+                "MCP still serves the removed visualization resource surface");
         const auto listed = session.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}});
         const auto tools = listed.at("result").at("tools");
         bool has_domains = false;

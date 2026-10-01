@@ -15,11 +15,11 @@ import {
   type ArtifactRecord,
   type ProjectSession,
 } from '../backend/StreamFindApiClient';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from './notifications';
-import { visualizationSpecFromArtifact } from '../visualization/VisualizationDataResolver';
-import { VisualizationRenderer } from '../visualization/VisualizationRenderer';
-import type { VisualizationSpec } from '../visualization/visualizationTypes';
+import { ViewerShell } from '../viewers/ViewerShell';
+import { ViewerResolver } from '../viewers/ViewerResolver';
 import type {
   BackendCapability,
   CapabilityParameter,
@@ -126,6 +126,18 @@ function canvasWorkflow(
     operations,
     connections,
   };
+}
+
+function nextCanvasNodeNumber(nodes: CanvasNode[]): number {
+  return (
+    Math.max(
+      0,
+      ...nodes.map((node) => {
+        const match = /-(\d+)$/.exec(node.id);
+        return match ? Number(match[1]) : 0;
+      }),
+    ) + 1
+  );
 }
 
 type NodeTemplate = {
@@ -630,16 +642,6 @@ function prettyArtifactPayload(payload: ArtifactRecord['payload']): string {
   }
 }
 
-function VisualizationArtifactPreview({ artifact }: { artifact: ArtifactRecord }) {
-  let spec: VisualizationSpec;
-  try {
-    spec = visualizationSpecFromArtifact(artifact);
-  } catch {
-    return <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifact.payload)}</pre>;
-  }
-  return <VisualizationRenderer spec={spec} className="sf-visualization-preview" />;
-}
-
 function artifactContractMatches(artifactContract: string, portContract?: string): boolean {
   if (!portContract) return false;
   if (artifactContract === portContract) return true;
@@ -650,6 +652,11 @@ function artifactContractMatches(artifactContract: string, portContract?: string
 function isVisualizationArtifact(artifact: ArtifactRecord): boolean {
   const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
   return contract === 'visualizationSpecResult';
+}
+
+function isFeatureArtifact(artifact: ArtifactRecord): boolean {
+  const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
+  return contract === 'featuresTable';
 }
 
 function nodePorts(capability: BackendCapability | undefined): { inputs: NodePort[]; outputs: NodePort[] } {
@@ -726,7 +733,9 @@ function connectedNodePosition(source: CanvasNode, nodes: CanvasNode[]): Point {
   return { x: source.x + columnStep, y: source.y };
 }
 
-const ARTIFACT_PAGE_SIZE = 1000;
+// Keep the browser responsive while still making each page useful for inspection.
+// Filtering, sorting, and pagination remain server-side operations.
+const ARTIFACT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 function VirtualArtifactTable({
   columns,
@@ -739,40 +748,102 @@ function VirtualArtifactTable({
   pageOffset: number;
   loading: boolean;
 }) {
-  const rows = pages[pageOffset]?.rows ?? [];
+  const page = pages[pageOffset];
+  const rows = page?.rows ?? [];
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowHeight = 34;
+  const headerHeight = 48;
+  const columnWidths = useMemo(
+    () =>
+      columns.map((column) => {
+        const longestValue = (pages[pageOffset]?.rows ?? []).reduce((longest, row) => {
+          const valueLength = String(row[column.name] ?? 'NULL').length;
+          return Math.max(longest, valueLength);
+        }, column.name.length);
+        const typeLength = column.type.length;
+        return Math.max(longestValue, typeLength) * 8 + 32;
+      }),
+    [columns, pageOffset, pages],
+  );
+  // Only the active server-side page is kept in the vertical DOM window;
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 8,
+  });
+  const columnVirtualizer = useVirtualizer({
+    count: columns.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => columnWidths[index] ?? 160,
+    horizontal: true,
+    overscan: 2,
+  });
+  useEffect(() => {
+    columnWidths.forEach((width, index) => columnVirtualizer.resizeItem(index, width));
+  }, [columnVirtualizer, columnWidths]);
+  const virtualColumns = columnVirtualizer.getVirtualItems();
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalWidth = columnVirtualizer.getTotalSize();
 
-  const columnWidth = 160;
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    scrollElement.scrollTo({ top: 0, left: scrollElement.scrollLeft, behavior: 'auto' });
+  }, [pageOffset]);
+
   return (
-    <div className="sf-artifact-virtual-scroll" role="region" aria-label="Artifact table" tabIndex={0}>
-      <table>
-        <colgroup>
-          {columns.map((column) => (
-            <col key={column.name} style={{ width: columnWidth }} />
-          ))}
-        </colgroup>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column.name}>
-                {column.name}
-                <small>{column.type}</small>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
+    <div
+      ref={scrollRef}
+      className="sf-artifact-virtual-scroll"
+      role="table"
+      aria-label="Artifact table"
+      aria-rowcount={page?.total_rows ?? undefined}
+      tabIndex={0}
+    >
+      {loading ? <div className="sf-artifact-viewer-loading">Loading rows…</div> : null}
+      <div className="sf-artifact-virtual-header" style={{ width: totalWidth, height: headerHeight }}>
+        {virtualColumns.map((virtualColumn) => {
+          const column = columns[virtualColumn.index];
+          return (
+            <div
+              className="sf-artifact-virtual-cell sf-artifact-virtual-header-cell"
+              key={column.name}
+              role="columnheader"
+              style={{ left: virtualColumn.start, top: 0, width: virtualColumn.size, height: headerHeight }}
+            >
+              {column.name}
+              <small>{column.type}</small>
+            </div>
+          );
+        })}
+      </div>
+      <div className="sf-artifact-virtual-canvas" style={{ width: totalWidth, height: rowVirtualizer.getTotalSize() }}>
+        {virtualRows.map((virtualRow) => {
+          const row = rows[virtualRow.index];
+          return virtualColumns.map((virtualColumn) => {
+            const column = columns[virtualColumn.index];
+            const cellValue = row ? (row[column.name] ?? 'NULL') : 'Loading…';
             return (
-              <tr key={index}>
-                {columns.map((column) => (
-                  <td key={column.name}>{row[column.name] ?? 'NULL'}</td>
-                ))}
-              </tr>
+              <div
+                className="sf-artifact-virtual-cell sf-artifact-virtual-body-cell"
+                key={`${virtualRow.index}-${column.name}`}
+                role="cell"
+                style={{
+                  left: virtualColumn.start,
+                  top: virtualRow.start,
+                  width: virtualColumn.size,
+                  height: virtualRow.size,
+                }}
+              >
+                <span title={cellValue}>{cellValue}</span>
+              </div>
             );
-          })}
-        </tbody>
-      </table>
-      {loading ? <div className="sf-artifact-viewer-loading">Refreshing table…</div> : null}
+          });
+        })}
+      </div>
+      {!loading && rows.length === 0 ? <div className="sf-artifact-viewer-empty">No matching rows.</div> : null}
     </div>
   );
 }
@@ -863,12 +934,36 @@ export default function CanvasShell({
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
   const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactViewer, setArtifactViewer] = useState<ArtifactRecord | null>(null);
+  const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'feature' | 'default'>('default');
+  const [hoveredOutputAnchor, setHoveredOutputAnchor] = useState<string | null>(null);
+  const outputHoverTimeoutRef = useRef<number | null>(null);
   const [artifactData, setArtifactData] = useState<ArtifactDataResponse | null>(null);
   const [artifactPages, setArtifactPages] = useState<Record<number, ArtifactDataResponse>>({});
   const [artifactViewerSearch, setArtifactViewerSearch] = useState('');
+  const [artifactViewerPageSize, setArtifactViewerPageSize] = useState(250);
   const [artifactViewerSort, setArtifactViewerSort] = useState('');
   const [artifactViewerDescending, setArtifactViewerDescending] = useState(false);
   const [artifactViewerLoading, setArtifactViewerLoading] = useState(false);
+  const openArtifactViewer = (artifact: ArtifactRecord, mode: 'table' | 'feature' | 'default') => {
+    setArtifactViewer(artifact);
+    setArtifactViewerMode(mode);
+    setArtifactData(null);
+    setArtifactPages({});
+    artifactPageRequests.current.clear();
+    artifactPageQueryRef.current = '';
+    setArtifactViewerSearch('');
+    setArtifactViewerPageSize(250);
+    setArtifactViewerSort('');
+    setArtifactViewerDescending(false);
+  };
+  const showOutputRendererMenu = (key: string) => {
+    if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
+    setHoveredOutputAnchor(key);
+  };
+  const hideOutputRendererMenu = () => {
+    if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
+    outputHoverTimeoutRef.current = window.setTimeout(() => setHoveredOutputAnchor(null), 300);
+  };
   const historyRef = useRef<{ past: CanvasHistorySnapshot[]; future: CanvasHistorySnapshot[]; current: string }>({
     past: [],
     future: [],
@@ -915,12 +1010,15 @@ export default function CanvasShell({
   const artifactPageRequests = useRef(new Set<number>());
   const artifactPageQueryRef = useRef('');
   const requestArtifactPage = useCallback(
-    (offset: number) => {
+    (offset: number, activate = false) => {
       if (!artifactViewer || artifactViewer.representation !== 'table' || !client) return;
-      const queryKey = `${artifactViewer.artifact_id}|${artifactViewerSearch}|${artifactViewerSort}|${artifactViewerDescending}`;
-      if (offset === 0 && artifactPageQueryRef.current !== queryKey) {
+      const queryKey = `${artifactViewer.artifact_id}|${artifactViewerPageSize}|${artifactViewerSearch}|${artifactViewerSort}|${artifactViewerDescending}`;
+      if (offset !== 0 && artifactPageQueryRef.current !== queryKey) return;
+      const queryChanged = offset === 0 && artifactPageQueryRef.current !== queryKey;
+      if (queryChanged) {
         artifactPageQueryRef.current = queryKey;
         artifactPageRequests.current.clear();
+        setArtifactPages({});
       }
       if (artifactPageRequests.current.has(offset)) return;
       artifactPageRequests.current.add(offset);
@@ -928,19 +1026,20 @@ export default function CanvasShell({
       void client
         .artifactData(project.session_id, {
           artifact_id: artifactViewer.artifact_id,
-          limit: ARTIFACT_PAGE_SIZE,
+          limit: artifactViewerPageSize,
           offset,
           search: artifactViewerSearch,
           sort_column: artifactViewerSort,
           descending: artifactViewerDescending,
         })
         .then((result) => {
-          setArtifactData(result);
+          if (artifactPageQueryRef.current !== queryKey) return;
+          if (activate) setArtifactData(result);
           setArtifactPages((current) => {
             const next = { ...current, [offset]: result };
             return Object.fromEntries(
               Object.entries(next).filter(
-                ([pageOffset]) => Math.abs(Number(pageOffset) - offset) <= ARTIFACT_PAGE_SIZE * 3,
+                ([pageOffset]) => Math.abs(Number(pageOffset) - offset) <= artifactViewerPageSize * 3,
               ),
             );
           });
@@ -948,14 +1047,23 @@ export default function CanvasShell({
         .catch(() => undefined)
         .finally(() => {
           artifactPageRequests.current.delete(offset);
-          setArtifactViewerLoading(false);
+          if (artifactPageQueryRef.current === queryKey && artifactPageRequests.current.size === 0)
+            setArtifactViewerLoading(false);
         });
     },
-    [artifactViewer, artifactViewerDescending, artifactViewerSearch, artifactViewerSort, client, project.session_id],
+    [
+      artifactViewer,
+      artifactViewerDescending,
+      artifactViewerPageSize,
+      artifactViewerSearch,
+      artifactViewerSort,
+      client,
+      project.session_id,
+    ],
   );
   useEffect(() => {
     if (!artifactViewer || artifactViewer.representation !== 'table' || !client) return;
-    const timer = window.setTimeout(() => requestArtifactPage(0), 300);
+    const timer = window.setTimeout(() => requestArtifactPage(0, true), 300);
     return () => window.clearTimeout(timer);
   }, [artifactViewer, client, requestArtifactPage]);
   useEffect(() => {
@@ -1178,7 +1286,7 @@ export default function CanvasShell({
           target: connection.target_operation,
           targetPort: connection.target_port,
         }));
-        nextId.current = loadedNodes.length + 1;
+        nextId.current = nextCanvasNodeNumber(loadedNodes);
         setNodes(loadedNodes);
         setEdges(loadedEdges);
         setWorldSize((current) => ({
@@ -1296,16 +1404,30 @@ export default function CanvasShell({
     }
   };
 
-  const clearWorkflowHistory = async () => {
+  const clearArtifactCache = async () => {
     if (!client || workflowBusy) return;
     setWorkflowBusy(true);
     try {
-      await client.clearWorkflowHistory(project.session_id);
+      await client.clearArtifactCache(project.session_id);
       historyRef.current = { past: [], current: historyRef.current.current, future: [] };
-      setStatus('Workflow history and artifacts from prior revisions were cleared.');
+      setStatus('Cached data and cache history were cleared; published artifacts were retained.');
       await refreshArtifacts();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Workflow history could not be cleared.');
+      setStatus(error instanceof Error ? error.message : 'Cached data could not be cleared.');
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
+  const clearAllArtifacts = async () => {
+    if (!client || workflowBusy) return;
+    setWorkflowBusy(true);
+    try {
+      await client.clearAllArtifacts(project.session_id);
+      setStatus('All artifacts and cache entries were cleared; the workflow definition was retained.');
+      await refreshArtifacts();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Artifacts could not be cleared.');
     } finally {
       setWorkflowBusy(false);
     }
@@ -1385,7 +1507,7 @@ export default function CanvasShell({
         target: connection.target_operation,
         targetPort: connection.target_port,
       }));
-      nextId.current = loadedNodes.length + 1;
+      nextId.current = nextCanvasNodeNumber(loadedNodes);
       setNodes(loadedNodes);
       setEdges(loadedEdges);
       setExpandedParameters({});
@@ -2122,6 +2244,24 @@ export default function CanvasShell({
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
+      const artifacts = await refreshArtifacts();
+      const published = artifacts.some(
+        (artifact) =>
+          artifact.producer_instance === node.id &&
+          artifact.status === 'published' &&
+          artifact.workflow_revision === workflowRevision,
+      );
+      if (published) {
+        setNodes((current) =>
+          current.map((item) =>
+            item.id === node.id
+              ? { ...item, executionState: 'completed', executionMessage: `Artifacts published; ${message}` }
+              : item,
+          ),
+        );
+        setStatus(`Operation completed and artifacts were published, but the response reported an error: ${message}`);
+        return;
+      }
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id ? { ...item, executionState: 'failed', executionMessage: message } : item,
@@ -2188,15 +2328,16 @@ export default function CanvasShell({
           )
         : []
       : [];
-  const updatePathWizardSelection = (paths: string[]) => {
+  const appendPathWizardSelection = (paths: string[]) => {
     if (!pathWizard || !pathWizardNode) return;
+    const currentNodePaths = pathWizardEntries;
     if (pathWizard.mergeIntoJsonEditor && jsonEditor) {
-      let current: unknown[] = [];
+      let current: unknown[] = currentNodePaths;
       try {
         const parsed = JSON.parse(jsonEditorText);
         if (Array.isArray(parsed)) current = parsed;
       } catch {
-        current = pathWizardEntries;
+        current = currentNodePaths;
       }
       const merged = [...current];
       for (const path of paths) if (!merged.includes(path)) merged.push(path);
@@ -2205,7 +2346,9 @@ export default function CanvasShell({
       setJsonEditorError(null);
       return;
     }
-    updateNodeParameter(pathWizardNode.id, pathWizard.parameter.name, paths);
+    const merged = [...currentNodePaths];
+    for (const path of paths) if (!merged.includes(path)) merged.push(path);
+    updateNodeParameter(pathWizardNode.id, pathWizard.parameter.name, merged);
   };
 
   return (
@@ -2305,9 +2448,19 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
-              onClick={() => void clearWorkflowHistory()}
-              title="Clear saved workflow history and old artifacts"
-              aria-label="Clear saved workflow history and old artifacts"
+              onClick={() => void clearArtifactCache()}
+              title="Clear cached data and cache history"
+              aria-label="Clear cached data and cache history"
+            >
+              <i className="fa-solid fa-database" />
+            </button>
+            <button
+              type="button"
+              className="sf-canvas-control"
+              onClick={() => void clearAllArtifacts()}
+              disabled={workflowBusy}
+              title="Clear all artifacts"
+              aria-label="Clear all artifacts"
             >
               <i className="fa-solid fa-trash-can" />
             </button>
@@ -2572,6 +2725,8 @@ export default function CanvasShell({
                       className={`sf-node-port-row output ${outputArtifact(port) ? 'has-artifact' : ''}`}
                       key={port.id}
                       title={port.description}
+                      onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
+                      onMouseLeave={hideOutputRendererMenu}
                     >
                       <button
                         type="button"
@@ -2596,12 +2751,11 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) {
-                            setArtifactViewer(artifact as ArtifactRecord);
-                            setArtifactViewerSearch('');
-                            setArtifactViewerSort('');
-                            setArtifactViewerDescending(false);
-                          }
+                          if (artifact)
+                            openArtifactViewer(
+                              artifact as ArtifactRecord,
+                              isFeatureArtifact(artifact as ArtifactRecord) ? 'feature' : 'default',
+                            );
                         }}
                         onClick={(event) => {
                           if (event.detail !== 2) return;
@@ -2609,22 +2763,48 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) {
-                            setArtifactViewer(artifact as ArtifactRecord);
-                            setArtifactData(null);
-                            setArtifactViewerSearch('');
-                            setArtifactViewerSort('');
-                            setArtifactViewerDescending(false);
-                          }
+                          if (artifact)
+                            openArtifactViewer(
+                              artifact as ArtifactRecord,
+                              isFeatureArtifact(artifact as ArtifactRecord) ? 'feature' : 'default',
+                            );
                         }}
                       >
                         <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
                       </button>
-                      {outputArtifact(port) ? (
-                        <div className="sf-output-artifact-popover" role="tooltip">
+                      {outputArtifact(port) && hoveredOutputAnchor === `${node.id}|${port.id}` ? (
+                        <div
+                          className="sf-output-artifact-popover sf-output-renderer-menu"
+                          role="dialog"
+                          aria-label={`Render ${port.label}`}
+                          onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
+                          onMouseLeave={hideOutputRendererMenu}
+                        >
                           <strong>{port.label}</strong>
                           <span>{artifactSummary(outputArtifact(port) as ArtifactRecord)}</span>
-                          <small>Double-click the anchor to open this artifact</small>
+                          {isFeatureArtifact(outputArtifact(port) as ArtifactRecord) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openArtifactViewer(outputArtifact(port) as ArtifactRecord, 'table');
+                                }}
+                              >
+                                Table renderer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openArtifactViewer(outputArtifact(port) as ArtifactRecord, 'feature');
+                                }}
+                              >
+                                Features Explorer
+                              </button>
+                            </>
+                          ) : null}
+                          <small>Double-click the anchor to open the default renderer</small>
                         </div>
                       ) : null}
                     </div>
@@ -3155,44 +3335,15 @@ export default function CanvasShell({
               <PathFileManager
                 client={client}
                 selectedPaths={pathWizardEntries}
-                onSelectionChange={updatePathWizardSelection}
+                onAddPaths={appendPathWizardSelection}
               />
             ) : null}
-            <div className="sf-canvas-file-entries">
-              {pathWizardEntries.map((path, index) => (
-                <div className="sf-canvas-file-entry" key={`${path}-${index}`}>
-                  <input
-                    aria-label={`Selected path ${index + 1}`}
-                    value={path}
-                    onChange={(event) => {
-                      const next = [...pathWizardEntries];
-                      next[index] = event.target.value;
-                      updateNodeParameter(pathWizardNode.id, pathWizard.parameter.name, next);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="sf-button secondary"
-                    onClick={() =>
-                      updateNodeParameter(
-                        pathWizardNode.id,
-                        pathWizard.parameter.name,
-                        pathWizardEntries.filter((_, itemIndex) => itemIndex !== index),
-                      )
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              {!pathWizardEntries.length ? <p className="sf-table-editor-empty">No paths selected.</p> : null}
-            </div>
             <footer>
               <button type="button" className="sf-button secondary" onClick={() => setPathWizard(null)}>
                 Cancel
               </button>
               <button type="button" className="sf-button" onClick={() => setPathWizard(null)}>
-                Use selected paths
+                Done
               </button>
             </footer>
           </section>
@@ -3447,101 +3598,125 @@ export default function CanvasShell({
         </div>
       ) : null}
       {artifactViewer ? (
-        <div className="sf-artifact-viewer-backdrop" role="presentation" onMouseDown={() => setArtifactViewer(null)}>
-          <section
-            className={`sf-artifact-viewer ${
-              isVisualizationArtifact(artifactViewer)
-                ? 'visualization'
-                : artifactViewer.representation === 'table'
-                  ? 'wide'
-                  : 'json'
-            }`}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Artifact viewer"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <div>
-                <h2>{artifactViewer.contract_id}</h2>
-                <small>
-                  {artifactViewer.representation} · {artifactViewer.artifact_id}
-                </small>
-              </div>
-              <button
-                type="button"
-                className="sf-icon-button"
-                aria-label="Close artifact viewer"
-                onClick={() => setArtifactViewer(null)}
-              >
-                <i className="fa-solid fa-xmark" />
-              </button>
-            </header>
-            {artifactViewer.representation === 'table' ? (
-              <>
-                <div className="sf-artifact-viewer-toolbar">
-                  <input
-                    value={artifactViewerSearch}
-                    onChange={(event) => setArtifactViewerSearch(event.target.value)}
-                    placeholder="Search all columns"
-                    aria-label="Search all columns"
-                  />
+        <ViewerShell
+          title={artifactViewer.contract_id}
+          subtitle={`${artifactViewer.representation} · ${artifactViewer.artifact_id}`}
+          variant={
+            artifactViewerMode === 'feature' || isVisualizationArtifact(artifactViewer)
+              ? 'visualization'
+              : artifactViewer.representation === 'table' || artifactViewerMode === 'table'
+                ? 'wide'
+                : 'json'
+          }
+          onClose={() => setArtifactViewer(null)}
+        >
+          {isFeatureArtifact(artifactViewer) && artifactViewerMode === 'feature' ? (
+            <ViewerResolver
+              context={{
+                sessionId: project.session_id,
+                artifactId: artifactViewer.artifact_id,
+                semanticType: artifactViewer.contract_id,
+                artifact: artifactViewer,
+                api: client,
+              }}
+              fallback={<pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>}
+            />
+          ) : artifactViewerMode === 'table' || artifactViewer.representation === 'table' ? (
+            <>
+              <div className="sf-artifact-viewer-toolbar">
+                <label>
+                  Rows per page
                   <select
-                    value={artifactViewerSort}
-                    onChange={(event) => setArtifactViewerSort(event.target.value)}
-                    aria-label="Sort by column"
+                    value={artifactViewerPageSize}
+                    onChange={(event) => {
+                      setArtifactData(null);
+                      setArtifactPages({});
+                      artifactPageRequests.current.clear();
+                      setArtifactViewerPageSize(Number(event.target.value));
+                    }}
+                    aria-label="Rows per page"
                   >
-                    <option value="">Natural order</option>
-                    {(artifactData?.columns ?? artifactViewer.columns ?? []).map((column) => (
-                      <option key={column.name} value={column.name}>
-                        {column.name}
+                    {ARTIFACT_PAGE_SIZE_OPTIONS.map((pageSize) => (
+                      <option key={pageSize} value={pageSize}>
+                        {pageSize}
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="button"
-                    onClick={() => setArtifactViewerDescending((value) => !value)}
-                    disabled={!artifactViewerSort}
-                  >
-                    {artifactViewerDescending ? 'Descending' : 'Ascending'}
-                  </button>
-                </div>
-                <VirtualArtifactTable
-                  columns={artifactData?.columns ?? artifactViewer.columns ?? []}
-                  pages={artifactPages}
-                  pageOffset={artifactData?.offset ?? 0}
-                  loading={artifactViewerLoading}
+                </label>
+                <input
+                  value={artifactViewerSearch}
+                  onChange={(event) => setArtifactViewerSearch(event.target.value)}
+                  placeholder="Search all columns"
+                  aria-label="Search all columns"
                 />
-                <footer>
-                  <span>
-                    {artifactData
-                      ? `Showing rows ${artifactData.offset + 1}-${Math.min(artifactData.offset + artifactData.rows.length, artifactData.total_rows)} of ${artifactData.total_rows}`
-                      : 'No rows loaded'}
-                    . Search and sorting are performed by the service.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => requestArtifactPage(Math.max(0, (artifactData?.offset ?? 0) - ARTIFACT_PAGE_SIZE))}
-                    disabled={!artifactData || artifactData.offset === 0 || artifactViewerLoading}
-                  >
-                    Previous page
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => requestArtifactPage((artifactData?.offset ?? 0) + ARTIFACT_PAGE_SIZE)}
-                    disabled={!artifactData || artifactData.offset + artifactData.rows.length >= artifactData.total_rows || artifactViewerLoading}
-                  >
-                    Next page
-                  </button>
-                </footer>
-              </>
-            ) : isVisualizationArtifact(artifactViewer) ? (
-              <VisualizationArtifactPreview artifact={artifactViewer} />
-            ) : (
-              <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>
-            )}
-          </section>
-        </div>
+                <select
+                  value={artifactViewerSort}
+                  onChange={(event) => setArtifactViewerSort(event.target.value)}
+                  aria-label="Sort by column"
+                >
+                  <option value="">Natural order</option>
+                  {(artifactData?.columns ?? artifactViewer.columns ?? []).map((column) => (
+                    <option key={column.name} value={column.name}>
+                      {column.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setArtifactViewerDescending((value) => !value)}
+                  disabled={!artifactViewerSort}
+                >
+                  {artifactViewerDescending ? 'Descending' : 'Ascending'}
+                </button>
+              </div>
+              <VirtualArtifactTable
+                columns={artifactData?.columns ?? artifactViewer.columns ?? []}
+                pages={artifactPages}
+                pageOffset={artifactData?.offset ?? 0}
+                loading={artifactViewerLoading}
+              />
+              <footer>
+                <span>
+                  {artifactData
+                    ? `Showing rows ${artifactData.offset + 1}-${Math.min(artifactData.offset + artifactData.rows.length, artifactData.total_rows)} of ${artifactData.total_rows}`
+                    : 'No rows loaded'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    requestArtifactPage(Math.max(0, (artifactData?.offset ?? 0) - artifactViewerPageSize), true)
+                  }
+                  disabled={!artifactData || artifactData.offset === 0 || artifactViewerLoading}
+                >
+                  Previous page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestArtifactPage((artifactData?.offset ?? 0) + artifactViewerPageSize, true)}
+                  disabled={
+                    !artifactData ||
+                    artifactData.offset + artifactData.rows.length >= artifactData.total_rows ||
+                    artifactViewerLoading
+                  }
+                >
+                  Next page
+                </button>
+              </footer>
+            </>
+          ) : isVisualizationArtifact(artifactViewer) ? (
+            <ViewerResolver
+              context={{
+                sessionId: project.session_id,
+                artifactId: artifactViewer.artifact_id,
+                semanticType: artifactViewer.contract_id,
+                artifact: artifactViewer,
+              }}
+              fallback={<pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>}
+            />
+          ) : (
+            <pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>
+          )}
+        </ViewerShell>
       ) : null}
     </div>
   );

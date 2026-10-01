@@ -24,7 +24,7 @@ while IFS= read -r manifest_path; do
     manifest_file="${archive}.${domain}.manifest"
     tar -xOf "$archive" "$manifest_path" > "$manifest_file"
     grep -q "\"plugin_id\": \"$domain\"" "$manifest_file"
-    grep -q '"version": "0.2.0"' "$manifest_file"
+    grep -q '"version": "'"$VERSION"'"' "$manifest_file"
     grep -q '"abi_version": { "major": 1, "minor": 1 }' "$manifest_file"
     grep -q '"static_composition": false' "$manifest_file"
     grep -q '"semantic_catalogue": "catalogue.duckdb"' "$manifest_file"

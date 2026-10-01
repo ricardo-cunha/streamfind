@@ -4,15 +4,10 @@ import { type FileSystemEntry, StreamFindApiClient } from '../backend/StreamFind
 type PathFileManagerProps = {
   client: StreamFindApiClient;
   selectedPaths: string[];
-  onSelectionChange: (paths: string[]) => void;
+  onAddPaths: (paths: string[]) => void;
 };
 
 type TreeNode = FileSystemEntry & { children?: TreeNode[]; expanded?: boolean; loading?: boolean };
-
-function pathName(path: string): string {
-  const normalized = path.replace(/[\\/]+$/, '');
-  return normalized.slice(Math.max(normalized.lastIndexOf('\\'), normalized.lastIndexOf('/')) + 1) || normalized;
-}
 
 function pathSegments(path: string): Array<{ label: string; path: string }> {
   const normalized = path.replaceAll('/', '\\').replace(/[\\]+$/, '');
@@ -47,7 +42,7 @@ function fileIcon(entry: FileSystemEntry): string {
   return entry.isDirectory ? 'fa-solid fa-folder sf-file-icon-folder' : 'fa-solid fa-file sf-file-icon-file';
 }
 
-export function PathFileManager({ client, selectedPaths, onSelectionChange }: PathFileManagerProps) {
+export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileManagerProps) {
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<FileSystemEntry[]>([]);
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -56,6 +51,8 @@ export function PathFileManager({ client, selectedPaths, onSelectionChange }: Pa
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingPaths, setPendingPaths] = useState<string[]>(selectedPaths);
+  const selectionAnchor = useRef<string | null>(null);
   const requestId = useRef(0);
 
   const loadPath = (path: string) => {
@@ -139,14 +136,25 @@ export function PathFileManager({ client, selectedPaths, onSelectionChange }: Pa
       });
   }, [entries, search]);
 
-  const selectEntry = (entry: FileSystemEntry, event: MouseEvent) => {
-    const additive = event.ctrlKey || event.metaKey;
-    const next = additive
-      ? selectedPaths.includes(entry.path)
-        ? selectedPaths.filter((path) => path !== entry.path)
-        : [...selectedPaths, entry.path]
-      : [entry.path];
-    onSelectionChange(next);
+  const selectEntry = (entry: FileSystemEntry, event: MouseEvent, contextSelection = false) => {
+    event.preventDefault();
+    const entryIndex = visibleEntries.findIndex((candidate) => candidate.path === entry.path);
+    const anchorIndex = selectionAnchor.current
+      ? visibleEntries.findIndex((candidate) => candidate.path === selectionAnchor.current)
+      : -1;
+    if (event.shiftKey && anchorIndex >= 0 && entryIndex >= 0) {
+      const start = Math.min(anchorIndex, entryIndex);
+      const end = Math.max(anchorIndex, entryIndex);
+      const range = visibleEntries.slice(start, end + 1).map((candidate) => candidate.path);
+      setPendingPaths((current) => [...current, ...range.filter((path) => !current.includes(path))]);
+    } else if (event.ctrlKey || event.metaKey || contextSelection) {
+      setPendingPaths((current) =>
+        current.includes(entry.path) ? current.filter((path) => path !== entry.path) : [...current, entry.path],
+      );
+    } else {
+      setPendingPaths([entry.path]);
+    }
+    selectionAnchor.current = entry.path;
   };
 
   const selectTreeFolder = (node: TreeNode) => {
@@ -225,9 +233,10 @@ export function PathFileManager({ client, selectedPaths, onSelectionChange }: Pa
           {visibleEntries.map((entry) => (
             <button
               type="button"
-              className={`sf-windows-file-row${selectedPaths.includes(entry.path) ? ' selected' : ''}`}
+              className={`sf-windows-file-row${pendingPaths.includes(entry.path) ? ' selected' : ''}`}
               key={entry.path}
               onClick={(event) => selectEntry(entry, event)}
+              onContextMenu={(event) => selectEntry(entry, event, true)}
               onDoubleClick={() => entry.isDirectory && loadPath(entry.path)}
             >
               <span>
@@ -241,11 +250,22 @@ export function PathFileManager({ client, selectedPaths, onSelectionChange }: Pa
         </main>
       </div>
       <div className="sf-windows-file-name-bar">
-        <label htmlFor="sf-file-name">File name:</label>
-        <input id="sf-file-name" value={selectedPaths.map(pathName).join('; ')} readOnly />
-        <select aria-label="File type" defaultValue="all">
-          <option value="all">All files (*.*)</option>
-        </select>
+        <span className="sf-windows-selection-count" aria-live="polite">
+          {pendingPaths.length} path{pendingPaths.length === 1 ? '' : 's'} selected
+        </span>
+        <span className="sf-windows-selection-help">Shift-click or right-click to add a batch.</span>
+        <button
+          type="button"
+          className="sf-button"
+          disabled={!pendingPaths.length}
+          onClick={() => {
+            onAddPaths(pendingPaths);
+            setPendingPaths([]);
+            selectionAnchor.current = null;
+          }}
+        >
+          <i className="fa-solid fa-plus" /> Add selected paths
+        </button>
       </div>
     </div>
   );

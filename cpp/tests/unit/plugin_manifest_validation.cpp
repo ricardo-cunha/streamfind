@@ -9,9 +9,9 @@ int main() {
     const auto valid = streamfind::sdk::parse_plugin_manifest(R"json({
         "plugin_id": "sensors",
         "name": "Sensors",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "abi_version": {"major": 1, "minor": 0},
-        "sdk_compatibility": {"minimum": "0.2.0", "maximum": "0.2.x"},
+        "sdk_compatibility": {"minimum": "0.3.0", "maximum": "0.3.x"},
         "library": {
             "windows-x86_64": "streamfind_sensors.dll",
             "linux-x86_64": "libstreamfind_sensors.so"
@@ -28,9 +28,9 @@ int main() {
     const auto traversal = streamfind::sdk::parse_plugin_manifest(R"json({
         "plugin_id": "sensors",
         "name": "Sensors",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "abi_version": {"major": 1, "minor": 0},
-        "sdk_compatibility": {"minimum": "0.2.0", "maximum": "0.2.x"},
+        "sdk_compatibility": {"minimum": "0.3.0", "maximum": "0.3.x"},
         "library": {
             "windows-x86_64": "../mass_spec.dll",
             "linux-x86_64": "../libmass_spec.so"

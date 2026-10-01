@@ -73,7 +73,7 @@ streamfind_plugin_get_descriptor(
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "stage9.fixture";
-    descriptor->plugin_version = "0.2.0";
+    descriptor->plugin_version = "0.3.0";
     descriptor->register_plugin = &streamfind::stage9_fixture::register_plugin;
     descriptor->shutdown_plugin = &streamfind::stage9_fixture::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;

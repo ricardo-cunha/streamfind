@@ -6,9 +6,19 @@ export type VisualizationRendererViewProps = {
   spec: VisualizationSpec;
   className?: string;
   unsupported?: (spec: VisualizationSpec) => ReactNode;
+  onPointClick?: VisualizationRendererProps['onPointClick'];
+  onPlotClick?: VisualizationRendererProps['onPlotClick'];
+  onDoubleClick?: VisualizationRendererProps['onDoubleClick'];
 };
 
-export function VisualizationRenderer({ spec, className, unsupported }: VisualizationRendererViewProps): ReactNode {
+export function VisualizationRenderer({
+  spec,
+  className,
+  unsupported,
+  onPointClick,
+  onPlotClick,
+  onDoubleClick,
+}: VisualizationRendererViewProps): ReactNode {
   if (!isVisualizationSpec(spec)) {
     return <div role="alert">Invalid visualization specification.</div>;
   }
@@ -22,6 +32,6 @@ export function VisualizationRenderer({ spec, className, unsupported }: Visualiz
       )
     );
   }
-  const props: VisualizationRendererProps = { spec, className };
+  const props: VisualizationRendererProps = { spec, className, onPointClick, onPlotClick, onDoubleClick };
   return renderer(props);
 }

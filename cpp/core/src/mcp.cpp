@@ -6,8 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <filesystem>
-#include <fstream>
 #include <set>
 
 namespace streamfind::mcp {
@@ -136,8 +134,8 @@ Json tools() {
             entry["description"] = "Validate the persisted operation graph and its parameters without executing it.";
             entry["_meta"]["streamfind"]["guidance"] = "Call after adding and connecting nodes; fix every validation error before run_workflow.";
         } else if (name == "run_workflow") {
-            entry["description"] = "Execute the persisted connected operation graph and publish its table and structured-result artifacts.";
-            entry["_meta"]["streamfind"]["guidance"] = "Call only after validate_workflow succeeds. Then inspect get_artifact_inventory and structuredContent.";
+            entry["description"] = "Execute the persisted connected operation graph and publish its table and structured-result artifacts for inspection in the streamfind web app.";
+            entry["_meta"]["streamfind"]["guidance"] = "Call only after validate_workflow succeeds. Then inspect get_artifact_inventory and request_artifact; open the saved workflow in the streamfind web app for rich visualization.";
         } else if (name == "request_artifact") {
             entry["description"] = "Select one published operation output, optionally returning its JSON payload or bounded table rows.";
             entry["_meta"]["streamfind"]["guidance"] = "First call without include_data to discover candidates. Then select exactly one artifact_id, operation_instance plus output_port, or another unique filter and set include_data=true.";
@@ -200,10 +198,6 @@ Json operation_result(const Json &value) {
     Json result = {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
     if (value.is_object() && value.value("schema", "") == "streamfind.visualization/v1") {
         result["structuredContent"] = value;
-        result["content"].push_back({{"type", "resource_link"},
-                                      {"uri", "ui://streamfind/visualization"},
-                                      {"name", value.value("title", "StreamFind visualization")},
-                                      {"mimeType", "text/html"}});
     }
     return result;
 }
@@ -219,51 +213,11 @@ Json workflow_result(const Json &value) {
     }
     if (visualizations.size() == 1) {
         result["structuredContent"] = visualizations.front();
-        result["content"].push_back({{"type", "resource_link"},
-                                      {"uri", "ui://streamfind/visualization"},
-                                      {"name", visualizations.front().value("title", "StreamFind visualization")},
-                                      {"mimeType", "text/html"}});
     } else if (!visualizations.empty()) {
         result["structuredContent"] = {{"schema", "streamfind.mcp.workflow-visualizations/v1"},
                                         {"visualizations", visualizations}};
-        for (const auto &visualization : visualizations)
-            result["content"].push_back({{"type", "resource_link"},
-                                          {"uri", "ui://streamfind/visualization"},
-                                          {"name", visualization.value("title", "StreamFind visualization")},
-                                          {"mimeType", "text/html"}});
     }
     return result;
-}
-
-Json visualization_resource() {
-    const auto app_directory_value = std::getenv("STREAMFIND_MCP_APP_DIR");
-    const auto app_directory = app_directory_value == nullptr
-                                    ? std::filesystem::path{}
-                                    : std::filesystem::path(app_directory_value);
-    const auto app_file = app_directory / "mcp-visualization.html";
-    if (!app_directory.empty() && std::filesystem::exists(app_file)) {
-        std::ifstream input(app_file, std::ios::binary);
-        std::string html((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        const std::string asset_prefix = "ui://streamfind/visualization/assets/";
-        std::size_t position = 0;
-        while ((position = html.find("/assets/", position)) != std::string::npos) {
-            html.replace(position, 8, asset_prefix);
-            position += asset_prefix.size();
-        }
-        return {{"uri", "ui://streamfind/visualization"},
-                {"name", "StreamFind visualization"},
-                {"description", "Frontend visualization app for StreamFind visualization specifications."},
-                {"mimeType", "text/html"}, {"text", html}};
-    }
-    const auto configured_url = std::getenv("STREAMFIND_MCP_VISUALIZATION_URL");
-    const std::string app_url = configured_url == nullptr
-                                    ? "http://127.0.0.1:5173/mcp-visualization.html"
-                                    : configured_url;
-    return {{"uri", "ui://streamfind/visualization"},
-            {"name", "StreamFind visualization"},
-            {"description", "Frontend visualization app for StreamFind visualization specifications."},
-            {"mimeType", "text/html"},
-            {"text", "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>StreamFind visualization</title></head><body><div id=\"root\"></div><script type=\"module\" src=\"" + app_url + "\"></script></body></html>"}};
 }
 }
 
@@ -272,51 +226,12 @@ Session::Session(const OperationRegistry &operations) : operations_(operations) 
 Json Session::handle(const Json &request) {
     const auto id = request.value("id", Json(nullptr));
     const auto method = request.value("method", "");
-    if (method == "initialize") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"protocolVersion", "2025-03-26"}, {"capabilities", {{"tools", Json::object()}, {"resources", {{"subscribe", false}, {"listChanged", false}}}}}, {"serverInfo", {{"name", "streamfind-cpp"}, {"version", std::string(streamfind::version())}}}, {"instructions", detail::interface_guidance()}}}};
+    if (method == "initialize") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"protocolVersion", "2025-03-26"}, {"capabilities", {{"tools", Json::object()}}}, {"serverInfo", {{"name", "streamfind-cpp"}, {"version", std::string(streamfind::version())}}}, {"instructions", detail::interface_guidance()}}}};
     if (method == "tools/list") {
             auto catalogue = detail::tools();
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", catalogue}}}};
         }
-    if (method == "resources/list") {
-        const auto resource = detail::visualization_resource();
-        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"resources", Json::array({{{"uri", resource.at("uri")}, {"name", resource.at("name")}, {"description", resource.at("description")}, {"mimeType", resource.at("mimeType")}}})}}}};
-    }
-    if (method == "resources/read") {
-        const auto uri = request.at("params").value("uri", "");
-        const std::string asset_prefix = "ui://streamfind/visualization/assets/";
-        if (uri.rfind(asset_prefix, 0) == 0) {
-            const auto app_directory_value = std::getenv("STREAMFIND_MCP_APP_DIR");
-            const auto asset_name = uri.substr(asset_prefix.size());
-            const auto app_directory = app_directory_value == nullptr
-                                            ? std::filesystem::path{}
-                                            : std::filesystem::path(app_directory_value);
-            const auto asset_path = app_directory / "assets" / asset_name;
-            if (asset_name.empty() || asset_name.find("..") != std::string::npos ||
-                !std::filesystem::exists(asset_path))
-                return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32002}, {"message", "Unknown MCP resource asset"}}}};
-            std::ifstream input(asset_path, std::ios::binary);
-            std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-            const std::string asset_uri_prefix = "ui://streamfind/visualization/assets/";
-            std::size_t import_position = 0;
-            while ((import_position = content.find("\"./", import_position)) != std::string::npos) {
-                content.replace(import_position + 1, 2, asset_uri_prefix);
-                import_position += asset_uri_prefix.size() + 1;
-            }
-            import_position = 0;
-            while ((import_position = content.find("'./", import_position)) != std::string::npos) {
-                content.replace(import_position + 1, 2, asset_uri_prefix);
-                import_position += asset_uri_prefix.size() + 1;
-            }
-            const auto extension = asset_path.extension().string();
-            const auto mime_type = extension == ".css" ? "text/css" :
-                                   extension == ".js" ? "text/javascript" : "application/octet-stream";
-            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"contents", Json::array({{{"uri", uri}, {"mimeType", mime_type}, {"text", content}}})}}}};
-        }
-        if (uri != "ui://streamfind/visualization")
-            return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32002}, {"message", "Unknown MCP resource"}}}};
-        const auto resource = detail::visualization_resource();
-        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"contents", Json::array({{{"uri", resource.at("uri")}, {"mimeType", resource.at("mimeType")}, {"text", resource.at("text")}}})}}}};
-    }
+
     if (method != "tools/call") return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32601}, {"message", "Unsupported MCP method"}}}};
     const auto name = request.at("params").value("name", "");
     if (name == "connect") {

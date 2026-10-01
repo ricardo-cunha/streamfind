@@ -1,9 +1,14 @@
 import type { ReactNode } from 'react';
 import type { VisualizationSpec } from './visualizationTypes';
 
+export type VisualizationPointClick = { customdata?: unknown; pointIndex?: number; pointNumber?: number };
+
 export type VisualizationRendererProps = {
   spec: VisualizationSpec;
   className?: string;
+  onPointClick?: (point: VisualizationPointClick) => void;
+  onPlotClick?: () => void;
+  onDoubleClick?: () => void;
 };
 
 export type VisualizationRenderer = (props: VisualizationRendererProps) => ReactNode;
