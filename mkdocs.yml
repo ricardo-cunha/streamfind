@@ -53,6 +53,7 @@ nav:
   - Home: index.md
   - Availability: status.md
   - Releases: releases.md
+  - Web app: web-app.md
 
   - How streamfind works: architecture.md
   - Components:

@@ -17,7 +17,7 @@ applications and AI agents.
      C++ public API / MCP
           │
           ▼
-   React development/preview frontend
+   React web app
 ```
 
 ## Operations and operation graphs
@@ -51,10 +51,10 @@ A typical application or agent follows this sequence:
 The C++ MCP server is the application boundary. The Rust MCP server is a stale
 development backend and is not the current runtime contract.
 
-The current React development/preview frontend uses the C++ public API and
-service boundary. It does not access DuckDB files or plugin internals directly
-and is not included as a separately supported desktop application in the native
-release archives.
+The React web app uses the C++ public API and service boundary. It does not
+access DuckDB files or plugin internals directly. Both native archives contain
+the built app and a launcher that starts the local service and opens it in a
+browser. The [Web app](web-app.md) page documents the platform paths.
 
 ## C++ plugin framework
 

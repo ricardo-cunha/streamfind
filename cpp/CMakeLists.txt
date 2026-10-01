@@ -405,6 +405,14 @@ if(WIN32)
     target_link_libraries(streamfind_service_host PRIVATE ws2_32 shell32)
     set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind)
     streamfind_static_mingw_executable(streamfind_service_host)
+else()
+    add_executable(streamfind_service_host
+        service/src/streamfind-service-launcher.cpp)
+    add_dependencies(streamfind_service_host streamfind_service)
+    set_target_properties(streamfind_service_host PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        OUTPUT_NAME streamfind)
 endif()
 streamfind_static_mingw_executable(streamfind_mcp)
 streamfind_static_mingw_executable(streamfind_cli)
@@ -437,6 +445,10 @@ if(WIN32)
         EXPORT streamfind-cpp-targets
         RUNTIME DESTINATION .)
     install(TARGETS streamfind_mcp_launcher RUNTIME DESTINATION bin)
+else()
+    install(TARGETS streamfind_service_host
+        EXPORT streamfind-cpp-targets
+        RUNTIME DESTINATION .)
 endif()
 if(STREAMFIND_APP_DIR AND EXISTS "${STREAMFIND_APP_DIR}")
     install(DIRECTORY "${STREAMFIND_APP_DIR}/" DESTINATION app)

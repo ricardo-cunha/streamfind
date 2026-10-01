@@ -8,7 +8,7 @@ streamfind is a DuckDB-backed framework for analytical data processing. Its
 active native backend is C++, with mass-spectrometry data access, a shared
 semantic catalogue, a dynamic plugin framework, a browser-facing development
 application, and MCP servers for applications and AI agents. A Rust backend is
-preserved from an earlier development phase and is not released in 0.3.0.
+preserved from an earlier development phase and is not released in 0.4.0.
 
 ## Start here
 
@@ -24,9 +24,10 @@ preserved from an earlier development phase and is not released in 0.3.0.
 
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | 0.3.0 preview packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
-| Rust backend | Stale development backend; not released in 0.3.0 | Existing Rust experiments only |
+| C++ backend | 0.4.0 preview packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
+| Rust backend | Stale development backend; not released in 0.4.0 | Existing Rust experiments only |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
+| React web app | Windows and Linux archives include built assets and a browser launcher | Local browser UI over the C++ service |
 | R package | Legacy interface | Existing R and Shiny workflows |
 | Python package | Not released | No public installation path yet |
 | Cogniflow integration | Separate future path | Not included in native packages |
@@ -34,7 +35,7 @@ preserved from an earlier development phase and is not released in 0.3.0.
 The native C++ project version is maintained in the Rust workspace manifest so
 CMake and the release tooling share one version source. Rust remains in the
 workspace for preservation and development compatibility, but is not part of
-the 0.3.0 release. See [Releases](docs/releases.md) for downloadable assets.
+the 0.4.0 release. See [Releases](docs/releases.md) for downloadable assets.
 
 ## Native implementation
 
@@ -48,11 +49,12 @@ The Rust backend is a stale, preserved development backend. It is not the
 recommended runtime or extension point. The R package is a separate legacy
 interface and is not the native C++ API.
 
-The React frontend is currently a development and preview application. The
-coupled launcher starts the native C++ service, waits for readiness, and starts
-the Vite application. The frontend consumes the typed service boundary and does
-not access DuckDB files or plugin internals directly. It is not included in the
-native 0.3.0 archives as a separately supported desktop distribution.
+The React web app is a development and preview application. The native 0.4.0
+archives include its built static assets and a root-level `streamfind` launcher;
+running that launcher starts the local C++ service and opens the app in the
+default browser. The frontend consumes the typed service boundary and does not
+access DuckDB files or plugin internals directly. See
+[`docs/web-app.md`](docs/web-app.md) for launch and development instructions.
 
 ## Vendor compatibility and trademarks
 

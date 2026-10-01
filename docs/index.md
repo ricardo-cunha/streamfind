@@ -18,7 +18,7 @@ and AI agents. A Rust backend is preserved from an earlier development phase.
 - [See the legacy R package](components/bindings-r.md).
 
 !!! note "Version {{ streamfind_version }}"
-    The native C++ project version is **{{ streamfind_version }}**. The 0.3.0
+    The native C++ project version is **{{ streamfind_version }}**. The 0.4.0
     release targets C++ packages for Windows x64 and Linux x86_64; Rust remains
     preserved development code and is not included. Download links are added to
     [Releases](releases.md) only after the corresponding GitHub assets have been
@@ -34,7 +34,7 @@ and AI agents. A Rust backend is preserved from an earlier development phase.
 | R package | Existing R workflows, non-target screening, and Shiny application | Legacy interface |
 | Python package | Public Python API | Not released |
 | Cogniflow integration | Cogniflow adapter | Separate future integration path |
-| React frontend | Development/preview browser application over the C++ service | Not included in native archives |
+| React web app | Browser application served by the packaged C++ service; also available from the Vite development server | Included in the Windows and Linux native archives |
 
 ## MCP at a glance
 
@@ -65,4 +65,5 @@ the catalogue, native APIs, and MCP.
 The active implementation path is the C++ plugin framework. Rust remains a
 preserved, stale development backend while C++ domain plugins and native readers
 are completed. The current React application uses the C++ backend through its
-public service boundary; it does not access project DuckDB files directly.
+public service boundary; it does not access project DuckDB files directly. See
+[Web app](web-app.md) for the packaged Windows launch path and development setup.
