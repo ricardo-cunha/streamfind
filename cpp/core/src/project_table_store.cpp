@@ -335,7 +335,7 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     std::set<std::string> modules;
     for (const auto &table : *manifest)
     {
-        owned_tables.push_back(detail::manifest_identifier(table.at("table_name").get<std::string>()));
+        owned_tables.push_back(detail::manifest_identifier(table.at("table_contract_name").get<std::string>()));
         modules.insert(table.value("module_id", std::string{}));
     }
     ProjectTableStore::transaction(project, owned_tables, [&](ProjectTableStore &tables) {
@@ -344,7 +344,7 @@ void ProjectTableStore::install_manifest_schema(Project &project,
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "PRIMARY KEY (domain_id, module_id))");
         for (const auto &table : *manifest) {
-            const auto table_name = detail::manifest_identifier(table.at("table_name").get<std::string>());
+            const auto table_name = detail::manifest_identifier(table.at("table_contract_name").get<std::string>());
             std::vector<std::string> definitions;
             for (const auto &column : table.value("columns", Json::array())) {
                 const auto name = detail::manifest_identifier(column.at("name").get<std::string>());
@@ -426,7 +426,7 @@ void ProjectTableStore::require_manifest(const std::string &domain, const std::s
     std::vector<TableRequirement> requirements;
     for (const auto &table : *manifest) {
         TableRequirement requirement;
-        requirement.name = table.value("table_name", "");
+        requirement.name = table.value("table_contract_name", "");
         for (const auto &column : table.value("columns", Json::array()))
             requirement.required_column_types.emplace_back(column.value("name", ""), column.value("type", ""));
         requirements.push_back(std::move(requirement));

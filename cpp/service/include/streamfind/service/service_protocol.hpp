@@ -105,7 +105,7 @@ inline Json capabilities_json() {
                 output_results.push_back(Json{{"canonical_id", result_id},
                                               {"label", result_id},
                                               {"definition", result.value("schema", Json::object()).value("description", "")},
-                                              {"table", Json{{"table_name", result_id},
+                                              {"table", Json{{"table_contract_name", result_id},
                                                                {"domain", entry.value("domain", "")},
                                                                {"module_id", entry.value("module_id", "")},
                                                                {"columns", Json::array()}}},

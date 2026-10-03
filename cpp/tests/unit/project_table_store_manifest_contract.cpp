@@ -27,14 +27,14 @@ void install(streamfind::Project &project, bool omit_table, bool omit_column, bo
     std::string first_table;
     std::string first_column;
     for (const auto &table : *manifest) {
-        if (table.at("table_name").get<std::string>().rfind("MASS_SPEC_", 0) == 0) {
-            first_table = table.at("table_name");
+        if (table.at("table_contract_name").get<std::string>().rfind("MASS_SPEC_", 0) == 0) {
+            first_table = table.at("table_contract_name");
             if (!table.at("columns").empty()) first_column = table.at("columns").front().at("name");
             break;
         }
     }
     for (const auto &table : *manifest) {
-        const auto name = table.at("table_name").get<std::string>();
+        const auto name = table.at("table_contract_name").get<std::string>();
         if (omit_table && name == first_table) continue;
         std::string ddl = "CREATE TABLE IF NOT EXISTS \"" + name + "\" (";
         bool first = true;

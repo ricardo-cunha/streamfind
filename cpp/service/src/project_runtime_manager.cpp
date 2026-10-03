@@ -117,7 +117,7 @@ Json ProjectRuntimeManager::validate_workflow(const std::string &session_id, con
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    auto workflow = Workflow::from_json(definition);
+    auto workflow = definition.is_null() ? iterator->second->get_workflow() : Workflow::from_json(definition);
     Json diagnostics = Json::array();
     try {
         workflow.validate(*operations_);

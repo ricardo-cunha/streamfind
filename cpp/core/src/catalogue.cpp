@@ -134,8 +134,8 @@ public:
 
     Json tables(const std::string &domain, const std::string &module_id) const {
         duckdb_result result{};
-        const std::string sql = "SELECT table_name, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
-                                domain + "' AND module_id = '" + module_id + "' ORDER BY table_name";
+        const std::string sql = "SELECT table_contract_name, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
+                                domain + "' AND module_id = '" + module_id + "' ORDER BY table_contract_name";
         if (duckdb_query(connection_, sql.c_str(), &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
             duckdb_destroy_result(&result);
@@ -143,7 +143,7 @@ public:
         }
         Json output = Json::array();
         for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
-            output.push_back(Json{{"table_name", text(result, 0, row)},
+            output.push_back(Json{{"table_contract_name", text(result, 0, row)},
                                   {"module_id", text(result, 1, row)},
                                   {"resource_id", text(result, 2, row)},
                                   {"columns", value(result, 3, row)}});
@@ -153,7 +153,7 @@ public:
 
     Json document() const {
         duckdb_result result{};
-        const char *sql = "SELECT table_name, domain, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables ORDER BY table_name";
+        const char *sql = "SELECT table_contract_name, domain, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables ORDER BY table_contract_name";
         if (duckdb_query(connection_, sql, &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
             duckdb_destroy_result(&result);
@@ -161,7 +161,7 @@ public:
         }
         Json table_list = Json::array();
         for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
-            table_list.push_back(Json{{"table_name", text(result, 0, row)}, {"domain", text(result, 1, row)},
+            table_list.push_back(Json{{"table_contract_name", text(result, 0, row)}, {"domain", text(result, 1, row)},
                                       {"module_id", text(result, 2, row)}, {"resource_id", text(result, 3, row)},
                                       {"columns", value(result, 4, row)}});
         duckdb_destroy_result(&result);
@@ -270,10 +270,10 @@ Json import_plugin_catalogue(const Json &base,
     Json merged = base;
     if (!merged.contains("tables") || !merged.at("tables").is_array())
         merged["tables"] = Json::array();
-    std::set<std::string> table_names;
+    std::set<std::string> table_contract_names;
     for (const auto &table : merged.at("tables")) {
         if (!table.is_object()) throw std::invalid_argument("catalogue: base table is not an object");
-        table_names.insert(table.value("table_name", ""));
+        table_contract_names.insert(table.value("table_contract_name", ""));
     }
     for (const auto &entry : plugin.at("entries")) {
         if (!entry.is_object() || !entry.contains("canonical_id") ||
@@ -296,8 +296,8 @@ Json import_plugin_catalogue(const Json &base,
             if (table.value("domain", "") != expected_domain ||
                 !modules.contains(table.value("module_id", "")))
                 throw std::invalid_argument("catalogue: plugin table has wrong ownership");
-            if (!table_names.insert(table.value("table_name", "")).second)
-                throw std::invalid_argument("catalogue: duplicate table " + table.value("table_name", ""));
+            if (!table_contract_names.insert(table.value("table_contract_name", "")).second)
+                throw std::invalid_argument("catalogue: duplicate table " + table.value("table_contract_name", ""));
             merged["tables"].push_back(table);
         }
     }

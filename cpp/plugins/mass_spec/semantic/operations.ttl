@@ -468,7 +468,7 @@ sfms:findFeatures
     skos:prefLabel "Find mass spectrometry features" ;
     skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
     sf:category "nta-feature-detection" ;
-    sf:guidance "Connect analysesTable. Connect spectraHeadersTable only when persisted headers are available; otherwise headers are read directly from the source files. The operation processes every analysis in analysesTable. rt_windows_min and rt_windows_max must be arrays of equal length." ;
+    sf:guidance "Connect analysesTable. spectraHeadersTable is optional and acts as a performance optimization when persisted headers match the same analysis names and indices; otherwise headers are read directly from the source files. The operation processes every analysis in analysesTable. rt_windows_min and rt_windows_max must be arrays of equal length." ;
     sf:hasParameter
         sfms:rtWindowsMinParameter,
         sfms:rtWindowsMaxParameter,
@@ -532,13 +532,14 @@ sfms:subtractBlank
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Subtract blank features" ;
-    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows." ;
+    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows. Requires analysesTable for native source paths and blank metadata." ;
+    sf:guidance "Connect analysesTable and featuresTable. The analysesTable supplies native source paths, analysis indices, replicate labels, and blank labels required to read blank spectra." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:blankThresholdParameter,
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
-    sf:hasInputPort sfms:featuresTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 

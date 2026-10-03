@@ -31,6 +31,12 @@ int main() {
         const auto initialized = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}});
         require(!initialized.at("result").at("capabilities").contains("resources"),
                 "MCP still advertises HTML visualization resources");
+        const auto instructions = initialized.at("result").value("instructions", std::string{});
+        require(instructions.find("streamfind web app") != std::string::npos &&
+                    instructions.find("artifact") != std::string::npos,
+                "MCP initialize guidance does not direct rich visualization to the web app artifacts");
+        require(session.handle({{"jsonrpc", "2.0"}, {"method", "initialized"}}).is_null(),
+                "MCP initialized notification produced a response");
         const auto resources = session.handle({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "resources/list"}});
         require(resources.contains("error") && resources.at("error").value("code", 0) == -32601,
                 "MCP still serves the removed visualization resource surface");
@@ -81,6 +87,9 @@ int main() {
                             streamfind::Json::array({"database_path", "workflow"}) &&
                             tool.at("inputSchema").at("properties").contains("workflow"),
                         "set_workflow schema does not advertise workflow");
+            if (name == "validate_workflow")
+                require(tool.at("inputSchema").at("required") == streamfind::Json::array({"database_path"}),
+                        "validate_workflow should allow validation of the saved workflow");
             if (name == "request_artifact") {
                 const auto &properties = tool.at("inputSchema").at("properties");
                 require(properties.contains("artifact_id") && properties.contains("operation_instance") &&

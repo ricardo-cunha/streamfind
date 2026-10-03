@@ -163,6 +163,10 @@ Json invoke_dynamic(
         context.progress = [&project](double, std::string_view message) {
             if (!message.empty()) project.log_operation(message);
         };
+        plugin.runtime_diagnostics.clear();
+        context.report_error = [&plugin](std::string_view message) {
+            plugin.runtime_diagnostics.assign(message.data(), message.size());
+        };
         context.allowed_tables = transaction_tables;
         if (manifest) {
             for (const auto &table : *manifest) {

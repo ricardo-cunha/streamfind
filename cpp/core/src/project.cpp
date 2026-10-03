@@ -2226,6 +2226,7 @@ namespace streamfind
                 execution_row(connection.get(), workflow.version, index, operation.operation,
                               parameter_hash, inputs, "running", cache_key, launch_snapshot);
             }
+            try {
             bool complete_cached_outputs = !cached_artifacts.empty();
             for (const auto &port : executor->definition().output_ports) {
                 if (port.optional)
@@ -2328,6 +2329,16 @@ namespace streamfind
                     current_artifacts[operation.id][output_port] = artifact.value("artifact_id", "");
             for (const auto &target : outgoing[operation_id])
                 if (--indegree[target] == 0) ready.push_back(target);
+            } catch (const std::exception &error) {
+                execute_sql("UPDATE WORKFLOW_EXECUTION_STEP SET status = 'failed', error_message = " +
+                            detail::sql_quote(error.what()) + ", updated_at = CURRENT_TIMESTAMP WHERE step_index = " +
+                            std::to_string(index));
+                throw;
+            } catch (...) {
+                execute_sql("UPDATE WORKFLOW_EXECUTION_STEP SET status = 'failed', error_message = 'unknown workflow step failure', updated_at = CURRENT_TIMESTAMP WHERE step_index = " +
+                            std::to_string(index));
+                throw;
+            }
         }
         if (executions.size() != workflow.operations.size())
             throw Error(ErrorCode::WorkflowValidation,

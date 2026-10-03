@@ -100,6 +100,14 @@ bool allowed_column(const PluginDataServiceContext &context, const std::string &
 
 namespace streamfind::sdk {
 
+namespace detail {
+
+void report_data_service_error(PluginDataServiceContext &context, std::string_view message) {
+    if (context.report_error) context.report_error(message);
+}
+
+}  // namespace detail
+
 streamfind_plugin_status plugin_has_table(
     void *execution_context,
     const char *table_name,
@@ -119,8 +127,9 @@ streamfind_plugin_status plugin_has_table(
         *exists = context->tables->has_table(table) ? 1 : 0;
         return STREAMFIND_PLUGIN_OK;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_clear_table(
@@ -135,8 +144,9 @@ streamfind_plugin_status plugin_clear_table(
         context->tables->execute("DELETE FROM " + detail::quoted_identifier(table_name, table_name_size));
         return STREAMFIND_PLUGIN_OK;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_read_batch(
@@ -254,8 +264,9 @@ streamfind_plugin_status plugin_read_batch(
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_append_batch(
@@ -302,8 +313,9 @@ streamfind_plugin_status plugin_append_batch(
             std::string(table_name, table_name_size), names, rows);
         return STREAMFIND_PLUGIN_OK;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_emit_table_batch(
@@ -411,8 +423,9 @@ streamfind_plugin_status plugin_update_batch(
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_update_composite_batch(
@@ -488,8 +501,9 @@ streamfind_plugin_status plugin_update_composite_batch(
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_delete_batch(
@@ -529,8 +543,9 @@ streamfind_plugin_status plugin_delete_batch(
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     } catch (...) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
+            detail::report_data_service_error(*context, "unknown plugin data-service failure");
+            return STREAMFIND_PLUGIN_ERROR;
+        }
 }
 
 streamfind_plugin_status plugin_report_progress(

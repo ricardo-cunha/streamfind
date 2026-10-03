@@ -1,0 +1,10 @@
+{
+  "id": "streamfind.mass-spec",
+  "name": "streamfind mass-spec viewers",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/mass-spec/index.ts",
+  "domains": ["mass_spec"],
+  "artifactContracts": ["featuresTable"]
+}

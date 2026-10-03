@@ -572,7 +572,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/validate");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                const auto validation = projects_.validate_workflow(session_id, Json::parse(body));
+                const auto request = Json::parse(body);
+                const auto validation = projects_.validate_workflow(
+                    session_id, request.contains("workflow") ? request.at("workflow") : Json(nullptr));
                 detail::send_http(socket, 200, validation);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/run")) {
                 const auto prefix = std::string("/projects/");

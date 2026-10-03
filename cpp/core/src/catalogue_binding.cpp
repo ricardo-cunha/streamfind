@@ -111,7 +111,7 @@ void register_module(const DomainModuleBinding &module,
                                         module.module_id);
         for (const auto &table : module.tables) {
             const auto found = std::find_if(manifest->begin(), manifest->end(), [&](const auto &entry) {
-                return entry.value("table_name", "") == table;
+                return entry.value("table_contract_name", "") == table;
             });
             if (found == manifest->end())
                 throw std::invalid_argument("catalogue: missing owned table " + table +
@@ -183,7 +183,7 @@ void install_module_schema(const DomainModuleBinding &module, Project &project) 
             throw std::invalid_argument("catalogue: table manifest unavailable for module " + module.module_id);
         for (const auto &table : module.tables) {
             const auto found = std::find_if(manifest->begin(), manifest->end(), [&](const auto &entry) {
-                return entry.value("table_name", "") == table;
+                return entry.value("table_contract_name", "") == table;
             });
             if (found == manifest->end())
                 throw std::invalid_argument("catalogue: missing owned table " + table +

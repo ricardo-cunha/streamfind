@@ -290,7 +290,7 @@ pub fn table_manifest(domain: &str) -> Result<Vec<(String, Vec<(String, String)>
     let connection =
         Connection::open_with_flags(&path, config).map_err(|error| error.to_string())?;
     let mut statement = connection
-        .prepare("SELECT table_name, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = ? ORDER BY table_name")
+        .prepare("SELECT table_contract_name, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = ? ORDER BY table_contract_name")
         .map_err(|error| error.to_string())?;
     let mut rows = statement
         .query([domain])

@@ -574,7 +574,7 @@ sfms:minSamplesParameter
     skos:definition "Minimum number of analyses in which a feature must appear to form a group." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default 0 ;
+    sf:default 1 ;
     sf:example 2 .
 
 sfms:binSizeParameter
@@ -816,7 +816,7 @@ sfms:minSnParameter
     skos:definition "Optional minimum signal-to-noise threshold; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 3.0 ;
+    sf:default "null" ;
     sf:example 3.0 .
 
 sfms:minIntensityParameter
@@ -827,7 +827,7 @@ sfms:minIntensityParameter
     skos:definition "Optional minimum feature apex intensity; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 10000.0 .
 
 sfms:minAreaParameter
@@ -838,7 +838,7 @@ sfms:minAreaParameter
     skos:definition "Optional minimum integrated feature area; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 10000.0 .
 
 sfms:minWidthParameter
@@ -849,7 +849,7 @@ sfms:minWidthParameter
     skos:definition "Optional minimum chromatographic peak width in seconds; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 5.0 ;
+    sf:default "null" ;
     sf:example 5.0 .
 
 sfms:maxWidthParameter
@@ -860,7 +860,7 @@ sfms:maxWidthParameter
     skos:definition "Optional maximum chromatographic peak width in seconds; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 100.0 ;
+    sf:default "null" ;
     sf:example 100.0 .
 
 sfms:maxPpmParameter
@@ -871,7 +871,7 @@ sfms:maxPpmParameter
     skos:definition "Optional maximum acceptable mass error in ppm; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 10.0 ;
+    sf:default "null" ;
     sf:example 10.0 .
 
 sfms:minFwhmRtParameter
@@ -904,7 +904,7 @@ sfms:minFwhmMzParameter
     skos:definition "Optional minimum m/z full width at half maximum; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.001 ;
+    sf:default "null" ;
     sf:example 0.001 .
 
 sfms:maxFwhmMzParameter
@@ -915,7 +915,7 @@ sfms:maxFwhmMzParameter
     skos:definition "Optional maximum m/z full width at half maximum; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.1 ;
+    sf:default "null" ;
     sf:example 0.1 .
 
 sfms:minGaussianAParameter
@@ -948,7 +948,7 @@ sfms:maxGaussianMuParameter
     skos:definition "Optional maximum fitted Gaussian centre; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 2000.0 .
 
 sfms:minGaussianSigmaParameter
@@ -1036,7 +1036,7 @@ sfms:maxModalityParameter
     skos:definition "Optional maximum number of local maxima; null disables." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default 0 ;
+    sf:default "null" ;
     sf:example 2 .
 
 sfms:minPlatesParameter

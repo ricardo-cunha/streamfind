@@ -81,7 +81,9 @@ Json tools() {
     const Json database_path = {{"type", "string"}, {"description", "Path to the project DuckDB database."}};
     const Json project_path_schema = schema(Json{{"database_path", database_path}}, Json::array({"database_path"}));
     const Json workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
-                                        Json::array({"database_path", "workflow"}));
+                                        Json::array({"database_path"}));
+    const Json set_workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
+                                            Json::array({"database_path", "workflow"}));
     const Json add_operation_schema = schema(
         Json{{"database_path", database_path}, {"operation_id", {{"type", "string"}}},
              {"operation", {{"type", "string"}}}, {"parameters", {{"type", "object"}}},
@@ -113,7 +115,8 @@ Json tools() {
             name == "get_current_artifact_inventory" ||
             name == "resolve_operation_inputs")
             entry["inputSchema"] = project_path_schema;
-        else if (name == "set_workflow" || name == "validate_workflow") entry["inputSchema"] = workflow_schema;
+        else if (name == "set_workflow") entry["inputSchema"] = set_workflow_schema;
+        else if (name == "validate_workflow") entry["inputSchema"] = workflow_schema;
         else if (name == "add_operation") entry["inputSchema"] = add_operation_schema;
         else if (name == "connect_operations") entry["inputSchema"] = connect_operations_schema;
         else if (name == "request_artifact") entry["inputSchema"] = request_artifact_schema;
@@ -177,8 +180,11 @@ std::string interface_guidance() {
         "and inspect their full schemas with get_operation; use add_operation and "
         "connect_operations (or set_workflow for an atomic graph replacement); call "
         "validate_workflow; call get_workflow to confirm the saved graph; call run_workflow; "
-        "then inspect the returned operation results, get_artifact_inventory, request_artifact, "
-        "and resolve_operation_inputs. Table outputs are immutable published artifacts identified "
+        "then inspect the returned operation results, get_artifact_inventory, "
+                "request_artifact, and resolve_operation_inputs. "
+                "Visualization results are persisted artifacts: use their artifact metadata and "
+                "bounded text fallback in MCP, then open the saved workflow in the streamfind web app "
+                "for rich interactive visualization. Table outputs are immutable published artifacts "
         "by workflow revision, producer operation instance, and output contract. Use the artifact "
         "inventory rather than execution text as proof that an output is available to downstream "
         "operations. This operation-graph workflow is stateless at the MCP boundary: every "
@@ -195,29 +201,15 @@ std::string tool_description(const Json &entry, const std::string &fallback) {
 }
 
 Json operation_result(const Json &value) {
-    Json result = {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
-    if (value.is_object() && value.value("schema", "") == "streamfind.visualization/v1") {
-        result["structuredContent"] = value;
-    }
-    return result;
+    // MCP returns a bounded text/metadata fallback only. The persisted
+    // visualization artifact remains the rich-rendering contract owned by the
+    // streamfind web app; do not duplicate it in structuredContent or an MCP
+    // Apps HTML resource.
+    return {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
 }
 
 Json workflow_result(const Json &value) {
-    Json result = {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
-    Json visualizations = Json::array();
-    for (const auto &operation : value.value("operations", Json::array())) {
-        const auto operation_result_value = operation.value("result", Json(nullptr));
-        if (operation_result_value.is_object() &&
-            operation_result_value.value("schema", "") == "streamfind.visualization/v1")
-            visualizations.push_back(operation_result_value);
-    }
-    if (visualizations.size() == 1) {
-        result["structuredContent"] = visualizations.front();
-    } else if (!visualizations.empty()) {
-        result["structuredContent"] = {{"schema", "streamfind.mcp.workflow-visualizations/v1"},
-                                        {"visualizations", visualizations}};
-    }
-    return result;
+    return {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
 }
 }
 
@@ -226,6 +218,7 @@ Session::Session(const OperationRegistry &operations) : operations_(operations) 
 Json Session::handle(const Json &request) {
     const auto id = request.value("id", Json(nullptr));
     const auto method = request.value("method", "");
+    if (method == "initialized" && !request.contains("id")) return Json(nullptr);
     if (method == "initialize") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"protocolVersion", "2025-03-26"}, {"capabilities", {{"tools", Json::object()}}}, {"serverInfo", {{"name", "streamfind-cpp"}, {"version", std::string(streamfind::version())}}}, {"instructions", detail::interface_guidance()}}}};
     if (method == "tools/list") {
             auto catalogue = detail::tools();
@@ -312,12 +305,18 @@ Json Session::handle(const Json &request) {
     if (name == "validate_workflow" || name == "set_workflow") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            if (!arguments.contains("database_path") || !arguments.contains("workflow"))
-                throw Error(ErrorCode::InvalidArgument, "Workflow validation requires database_path and workflow");
+            if (!arguments.contains("database_path") ||
+                (name == "set_workflow" && !arguments.contains("workflow")))
+                throw Error(ErrorCode::InvalidArgument,
+                            name == "set_workflow"
+                                ? "Workflow update requires database_path and workflow"
+                                : "Workflow validation requires database_path");
             ProjectOptions options;
             options.database_path = arguments.at("database_path").get<std::string>();
             auto project = Project::open(options);
-            auto workflow = Workflow::from_json(arguments.at("workflow"));
+            auto workflow = arguments.contains("workflow")
+                ? Workflow::from_json(arguments.at("workflow"))
+                : project.get_workflow();
             workflow.validate(operations_);
             if (name == "set_workflow") project.set_workflow(workflow, operations_);
             const Json result = {{"valid", true}, {"workflow", workflow.to_json()}};
@@ -334,11 +333,8 @@ Json Session::handle(const Json &request) {
             ProjectOptions options;
             options.database_path = arguments.at("database_path").get<std::string>();
             auto project = Project::open(options);
-            const auto workflow = project.get_workflow();
-            if (!workflow.operations.empty() || !workflow.connections.empty()) {
-                const Json result = project.run_operation_graph(operations_);
-                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::workflow_result(result)}};
-            }
+            const Json result = project.run_operation_graph(operations_);
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::workflow_result(result)}};
         } catch (const Error &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }

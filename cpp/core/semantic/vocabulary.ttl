@@ -392,12 +392,12 @@ sf:columnName
     skos:prefLabel "column name" ;
     skos:definition "DuckDB column name." .
 
-sf:tableName
+sf:tableContractName
     a rdf:Property ;
     rdfs:domain sf:Table ;
     rdfs:range rdfs:Literal ;
-    skos:prefLabel "table name" ;
-    skos:definition "DuckDB table name." .
+    skos:prefLabel "table contract name" ;
+    skos:definition "Stable logical name of a table contract. Runtime-produced table artifacts may use a generated physical DuckDB table name and must be resolved through their artifact identifier." .
 
 sf:dataKind
     a rdf:Property ;

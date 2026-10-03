@@ -192,7 +192,12 @@ int main(int argc, char **argv) {
     }
     streamfind::mcp::Session session(operations);
     while (std::getline(std::cin, line)) {
-            try { std::cout << session.handle(streamfind::Json::parse(line)).dump() << '\n' << std::flush; }
+            try {
+                const auto request = streamfind::Json::parse(line);
+                const auto response = session.handle(request);
+                if (!response.is_null() && request.contains("id"))
+                    std::cout << response.dump() << '\n' << std::flush;
+            }
             catch (const std::exception &error) { std::cout << streamfind::Json{{"jsonrpc", "2.0"}, {"error", {{"code", -32700}, {"message", error.what()}}}}.dump() << '\n' << std::flush; }
         }
 }

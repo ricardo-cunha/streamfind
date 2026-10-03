@@ -252,11 +252,11 @@ sfcore:TableShape
     a sh:NodeShape ;
     sh:targetClass sf:Table ;
     sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
-    sh:property [ sh:path sf:tableName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Z][A-Z0-9_]*$" ] ;
+    sh:property [ sh:path sf:tableContractName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Z][A-Z0-9_]*$" ] ;
     sh:property [ sh:path sf:dataKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "duckdb_table" ] ;
     sh:property [ sh:path sf:hasColumn ; sh:minCount 1 ; sh:class sf:Column ] ;
-    sh:sparql [ sh:message "Table names must be unique." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:tableName ?name .
-                ?other a sf:Table ; sf:tableName ?name .
+    sh:sparql [ sh:message "Table contract names must be unique." ; sh:select """ PREFIX sf: <https://streamfind.dev/vocabulary#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT $this WHERE { $this sf:tableContractName ?name .
+                ?other a sf:Table ; sf:tableContractName ?name .
                 FILTER (?other != $this)
             }
         """

@@ -174,7 +174,7 @@ sfcore:validateWorkflow
     skos:prefLabel "Validate a workflow" ;
     skos:definition "Validate workflow operation identifiers, ordering dependencies, semantic connections, occurrence rules, and parameter values without executing the workflow." ;
     sf:category "workflow-planning" ;
-    sf:guidance "Use after assembling a workflow and before run_workflow. Fix the returned validation message before executing." ;
+    sf:guidance "Use after assembling a workflow and before run_workflow. If workflow is supplied, validate that candidate; if omitted, validate the project's saved workflow. An explicitly supplied empty graph is a valid no-op workflow. Fix the returned validation message before executing." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:workflowParameter ;
     sf:returns sfcore:validationResult ;

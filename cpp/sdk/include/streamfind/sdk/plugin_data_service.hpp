@@ -26,6 +26,7 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     std::string operation_instance;
     std::atomic_bool *cancelled{nullptr};
     std::function<void(double, std::string_view)> progress;
+    std::function<void(std::string_view)> report_error;
     std::vector<std::string> allowed_tables;
     std::unordered_map<std::string, std::unordered_set<std::string>> readable_columns;
     std::unordered_map<std::string, std::unordered_set<std::string>> writable_columns;

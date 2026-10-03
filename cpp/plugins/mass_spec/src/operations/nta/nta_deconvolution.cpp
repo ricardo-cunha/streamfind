@@ -2433,7 +2433,12 @@ namespace streamfind::mass_spec::nta::deconvolution
       input.blank_names.push_back(::streamfind::mass_spec::nta::utils::text(row, "blank"));
 
       const auto persisted = persisted_headers.find(name);
-      input.headers.push_back(persisted == persisted_headers.end() ? file.get_spectra_headers() : persisted->second);
+      // Persisted headers are keyed by analysis name. An empty or stale persisted
+      // entry must not suppress the native-reader fallback for that analysis.
+      input.headers.push_back(
+          persisted == persisted_headers.end() || persisted->second.index.empty()
+              ? file.get_spectra_headers()
+              : persisted->second);
     }
     input.buffers.resize(input.names.size());
 
