@@ -1436,6 +1436,8 @@ namespace mass_spec
       };
 
       constexpr std::string_view accession_ms_level = "MS:1000511";
+      constexpr std::string_view accession_centroid_spectrum = "MS:1000127";
+      constexpr std::string_view accession_profile_spectrum = "MS:1000128";
       constexpr std::string_view accession_positive_scan = "MS:1000130";
       constexpr std::string_view accession_negative_scan = "MS:1000129";
       constexpr std::string_view accession_lowest_observed_mz = "MS:1000528";
@@ -1675,6 +1677,7 @@ namespace mass_spec
         s.array_length = spectrum_node.attribute("defaultArrayLength").as_int();
 
         int ms_level = 1;
+        int mode = 0;
         int polarity = 0;
         float rt = 0.0f;
         float prec_mz = 0.0f;
@@ -1689,6 +1692,10 @@ namespace mass_spec
           {
             if (accession == accession_ms_level)
               ms_level = cv.attribute("value").as_int(1);
+            else if (accession == accession_centroid_spectrum)
+              mode = 1;
+            else if (accession == accession_profile_spectrum)
+              mode = 0;
             else if (accession == accession_positive_scan)
               polarity = 1;
             else if (accession == accession_negative_scan)
@@ -1708,6 +1715,10 @@ namespace mass_spec
           {
             if (name_contains(cv, "ms level"))
               ms_level = cv.attribute("value").as_int(1);
+            else if (name_contains(cv, "centroid spectrum"))
+              mode = 1;
+            else if (name_contains(cv, "profile spectrum"))
+              mode = 0;
             else if (name_contains(cv, "positive scan"))
               polarity = 1;
             else if (name_contains(cv, "negative scan"))
@@ -1725,6 +1736,7 @@ namespace mass_spec
           }
         }
         s.level = ms_level;
+        s.mode = mode;
         s.polarity = polarity;
 
         auto scan_list = spectrum_node.child("scanList");

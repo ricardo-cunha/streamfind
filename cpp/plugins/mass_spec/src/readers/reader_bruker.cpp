@@ -77,6 +77,72 @@ std::string value_string(duckdb_result &result, idx_t column, idx_t row)
   duckdb_free(value);
   return output;
 }
+
+std::vector<std::uint8_t> decode_hex_blob(const std::string &value)
+{
+  if (value.size() % 2 != 0) throw std::runtime_error("Odd-length Bruker transformator blob.");
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve(value.size() / 2);
+  const auto nibble = [](const char c) -> std::uint8_t {
+    if (c >= '0' && c <= '9') return static_cast<std::uint8_t>(c - '0');
+    if (c >= 'A' && c <= 'F') return static_cast<std::uint8_t>(c - 'A' + 10);
+    if (c >= 'a' && c <= 'f') return static_cast<std::uint8_t>(c - 'a' + 10);
+    throw std::runtime_error("Invalid hexadecimal Bruker transformator blob.");
+  };
+  for (std::size_t i = 0; i < value.size(); i += 2)
+    bytes.push_back(static_cast<std::uint8_t>((nibble(value[i]) << 4) | nibble(value[i + 1])));
+  return bytes;
+}
+
+double read_le_double(const std::vector<std::uint8_t> &bytes, const std::size_t offset)
+{
+  if (offset + sizeof(double) > bytes.size()) throw std::runtime_error("Truncated Bruker transformator blob.");
+  double value = 0.0;
+  std::memcpy(&value, bytes.data() + offset, sizeof(value));
+  if (!std::isfinite(value)) throw std::runtime_error("Non-finite Bruker transformator coefficient.");
+  return value;
+}
+
+BafCalibration parse_baf_calibration(const std::string &hex_blob)
+{
+  const auto bytes = decode_hex_blob(hex_blob);
+  if (bytes.size() < 60) throw std::runtime_error("Unsupported Bruker transformator blob size.");
+  BafCalibration calibration;
+  calibration.digitizer_delay = read_le_double(bytes, 4);
+  calibration.digitizer_timebase = read_le_double(bytes, 12);
+  calibration.c0 = read_le_double(bytes, 20);
+  calibration.c1 = read_le_double(bytes, 28);
+  calibration.c2 = read_le_double(bytes, 36);
+  calibration.c3 = read_le_double(bytes, 44);
+  calibration.c4 = read_le_double(bytes, 52);
+  calibration.valid = calibration.digitizer_timebase > 0.0 && calibration.c1 > 0.0;
+  if (!calibration.valid) throw std::runtime_error("Invalid Bruker transformator calibration.");
+  return calibration;
+}
+
+double baf_index_to_mz(const BafCalibration &calibration, const double index)
+{
+  const double tof = calibration.digitizer_delay + calibration.digitizer_timebase * index;
+  const double linear = std::sqrt(1.0e12 / calibration.c1);
+  const auto equation = [&](const double root) {
+    return calibration.c0 + linear * root + calibration.c2 * root * root + calibration.c3 * root * root * root - tof;
+  };
+  double lower = 0.0;
+  double upper = 100.0;
+  while (equation(upper) < 0.0 && upper < 1.0e6) upper *= 2.0;
+  if (equation(lower) > 0.0 || equation(upper) < 0.0)
+    throw std::runtime_error("Bruker transformator root is outside supported range.");
+  for (int iteration = 0; iteration < 80; ++iteration)
+  {
+    const double middle = (lower + upper) * 0.5;
+    if (equation(middle) < 0.0) lower = middle;
+    else upper = middle;
+  }
+  const double root = (lower + upper) * 0.5;
+  const double mz = root * root - calibration.c4;
+  if (!std::isfinite(mz) || mz < 0.0) throw std::runtime_error("Invalid Bruker calibrated m/z.");
+  return mz;
+}
 }
 
 Family detect_family(const std::string &path)
@@ -85,10 +151,12 @@ Family detect_family(const std::string &path)
   if (!std::filesystem::is_directory(root)) return Family::Unknown;
   const auto tsf = std::filesystem::is_regular_file(root / "analysis.tsf") &&
                    std::filesystem::is_regular_file(root / "analysis.tsf_bin");
-  if (tsf) return Family::Tsf;
   const auto baf = std::filesystem::is_regular_file(root / "analysis.baf") &&
                    std::filesystem::is_regular_file(root / "analysis.baf_idx") &&
                    std::filesystem::is_regular_file(root / "analysis.sqlite");
+  if (tsf && baf)
+    throw std::runtime_error("Ambiguous Bruker directory contains both TSF and BAF containers: " + path);
+  if (tsf) return Family::Tsf;
   if (baf) return Family::Baf;
   return Family::Unknown;
 }
@@ -188,16 +256,37 @@ TsfCalibration read_tsf_calibration(const std::string &path, const TsfFrame &fra
   return calibration;
 }
 
-std::vector<double> tsf_tof_to_mz(const TsfCalibration &calibration, const std::vector<double> &tof)
+std::vector<double> tsf_tof_to_mz(const TsfCalibration &calibration, const double frame_t1, const double frame_t2, const std::vector<double> &tof)
 {
-  double mz_min = calibration.mz_min;
-  double mz_max = calibration.mz_max;
-  if (calibration.otof_control) { mz_min -= 5.0; mz_max += 5.0; }
-  const double intercept = std::sqrt(mz_min);
-  const double slope = (std::sqrt(mz_max) - intercept) / static_cast<double>(calibration.tof_max);
+  if (calibration.model_type != 1 || !(calibration.c1 > 0.0))
+    throw std::runtime_error("Unsupported or incomplete TSF m/z calibration model.");
+  const double temperature_factor = 1.0 + (calibration.dc1 * (calibration.t1 - frame_t1) + calibration.dc2 * (calibration.t2 - frame_t2)) / 1.0e6;
+  if (!(temperature_factor > 0.0))
+    throw std::runtime_error("Invalid TSF m/z calibration temperature factor.");
+  const double c1 = calibration.c1 * temperature_factor;
+  const double sqrt_term = std::sqrt(1.0e12 / c1);
+  const double max_mz = std::max(calibration.mz_max + std::abs(calibration.c4), 1.0);
+  const double max_x = std::sqrt(max_mz);
   std::vector<double> mz;
   mz.reserve(tof.size());
-  for (const auto value : tof) mz.push_back(std::pow(intercept + slope * value, 2.0));
+  for (const auto value : tof)
+  {
+    const double target = value * calibration.digitizer_timebase + calibration.digitizer_delay - calibration.c0;
+    if (!(target >= 0.0))
+      throw std::runtime_error("TSF TOF is below the calibration model intercept.");
+    auto equation = [&](const double x) { return sqrt_term * x + calibration.c2 * x * x + calibration.c3 * x * x * x - target; };
+    double low = 0.0;
+    double high = max_x;
+    while (equation(high) < 0.0) high *= 2.0;
+    for (int iteration = 0; iteration < 80; ++iteration)
+    {
+      const double middle = (low + high) / 2.0;
+      if (equation(middle) < 0.0) low = middle;
+      else high = middle;
+    }
+    const double x = (low + high) / 2.0;
+    mz.push_back(x * x - calibration.c4);
+  }
   return mz;
 }
 
@@ -213,7 +302,8 @@ std::vector<TsfFrame> read_tsf_frames(const std::string &path)
   {
     TsfFrame frame;
     frame.id = duckdb_value_int64(&result, 0, row);
-    frame.retention_time = duckdb_value_double(&result, 1, row);
+    // TSF Frames.Time is stored in minutes; the public reader contract is seconds.
+    frame.retention_time = duckdb_value_double(&result, 1, row) * 60.0;
     frame.polarity = detail::value_string(result, 2, row);
     frame.scan_mode = static_cast<std::int32_t>(duckdb_value_int64(&result, 3, row));
     frame.msms_type = static_cast<std::int32_t>(duckdb_value_int64(&result, 4, row));
@@ -298,7 +388,7 @@ std::vector<BafSpectrumMetadata> read_baf_spectra_metadata(const std::string &pa
   if (detect_family(path) != Family::Baf)
     throw std::runtime_error("Not a Bruker BAF directory: " + path);
   detail::SqliteScan database((std::filesystem::path(path) / "analysis.sqlite").string());
-  const auto query = "SELECT s.Id,s.Rt,s.AcquisitionKey,COALESCE(s.Parent,0),s.MzAcqRangeLower,s.MzAcqRangeUpper,s.SumIntensity,s.MaxIntensity,s.TransformatorId,s.ProfileMzId,s.ProfileIntensityId,s.LineMzId,s.LineIntensityId,COALESCE(a.Polarity,0),COALESCE(a.ScanMode,0),COALESCE(a.AcquisitionMode,0),COALESCE(a.MsLevel,0) FROM " + database.scan("Spectra") + " s LEFT JOIN " + database.scan("AcquisitionKeys") + " a ON a.Id=s.AcquisitionKey ORDER BY s.Id";
+  const auto query = "SELECT s.Id,s.Rt,s.AcquisitionKey,COALESCE(s.Parent,0),s.MzAcqRangeLower,s.MzAcqRangeUpper,s.SumIntensity,s.MaxIntensity,s.TransformatorId,s.ProfileMzId,s.ProfileIntensityId,s.LineMzId,s.LineIntensityId,COALESCE(a.Polarity,0),COALESCE(a.ScanMode,0),COALESCE(a.AcquisitionMode,0),COALESCE(a.MsLevel,0),COALESCE((SELECT TRY_CAST(CAST(v.Value AS VARCHAR) AS DOUBLE) FROM " + database.scan("PerSpectrumVariables") + " v WHERE v.Spectrum=s.Id AND v.Variable=7),0.0),COALESCE((SELECT TRY_CAST(CAST(v.Value AS VARCHAR) AS DOUBLE) FROM " + database.scan("PerSpectrumVariables") + " v WHERE v.Spectrum=s.Id AND v.Variable=8),0.0),COALESCE((SELECT TRY_CAST(CAST(v.Value AS VARCHAR) AS DOUBLE) FROM " + database.scan("PerSpectrumVariables") + " v WHERE v.Spectrum=s.Id AND v.Variable=5),0.0),COALESCE((SELECT TRY_CAST(CAST(v.Value AS VARCHAR) AS INTEGER) FROM " + database.scan("PerSpectrumVariables") + " v WHERE v.Spectrum=s.Id AND v.Variable=6),0),hex(t.Blob) FROM " + database.scan("Spectra") + " s LEFT JOIN " + database.scan("AcquisitionKeys") + " a ON a.Id=s.AcquisitionKey LEFT JOIN " + database.scan("Transformators") + " t ON t.Id=s.TransformatorId ORDER BY s.Id";
   auto result = database.query(query);
   std::vector<BafSpectrumMetadata> spectra;
   spectra.reserve(duckdb_row_count(&result));
@@ -318,10 +408,18 @@ std::vector<BafSpectrumMetadata> read_baf_spectra_metadata(const std::string &pa
     spectrum.profile_intensity_id = std::stoull(detail::value_string(result, 10, row));
     spectrum.line_mz_id = std::stoull(detail::value_string(result, 11, row));
     spectrum.line_intensity_id = std::stoull(detail::value_string(result, 12, row));
-    spectrum.polarity = static_cast<std::int32_t>(duckdb_value_int64(&result, 13, row));
+    const auto native_polarity = static_cast<std::int32_t>(duckdb_value_int64(&result, 13, row));
+    spectrum.polarity = native_polarity == 0 ? 1 : native_polarity;
     spectrum.scan_mode = static_cast<std::int32_t>(duckdb_value_int64(&result, 14, row));
     spectrum.acquisition_mode = static_cast<std::int32_t>(duckdb_value_int64(&result, 15, row));
     spectrum.ms_level = static_cast<std::int32_t>(duckdb_value_int64(&result, 16, row));
+    spectrum.precursor_mz = duckdb_value_double(&result, 17, row);
+    spectrum.isolation_width = duckdb_value_double(&result, 18, row);
+    spectrum.activation_ce = duckdb_value_double(&result, 19, row);
+    spectrum.precursor_charge = static_cast<std::int32_t>(duckdb_value_int64(&result, 20, row));
+    const auto transformator_blob = detail::value_string(result, 21, row);
+    if (transformator_blob.empty()) throw std::runtime_error("Missing Bruker transformator calibration.");
+    spectrum.calibration = detail::parse_baf_calibration(transformator_blob);
     spectra.push_back(std::move(spectrum));
   }
   duckdb_destroy_result(&result);
@@ -480,7 +578,12 @@ BafProfileSpectrum read_baf_profile_spectrum_variant(const std::string &path, co
       }
       else
       {
-        previous = reader.read(32);
+        const auto raw = reader.read(32);
+        const auto delta = static_cast<std::int32_t>(raw);
+        const auto value = static_cast<std::int64_t>(previous) + delta;
+        if (value < 0 || value > std::numeric_limits<std::uint32_t>::max())
+          throw std::runtime_error("BAF full-width profile delta exceeds uint32 range.");
+        previous = static_cast<std::uint32_t>(value);
         spectrum.intensity[position++] = previous;
       }
       emitted = true;
@@ -519,7 +622,7 @@ public:
   std::string get_type() override { return "MS"; }
   std::string get_time_stamp() override { return {}; }
   std::vector<int> get_polarity() override { return metadata_int([](const TsfFrame &f) { return f.polarity == "+" ? 1 : f.polarity == "-" ? -1 : 0; }); }
-  std::vector<int> get_mode() override { return metadata_int([](const TsfFrame &f) { return f.scan_mode; }); }
+  std::vector<int> get_mode() override { return std::vector<int>(frames_.size(), 1); }
   std::vector<int> get_level() override { return metadata_int([](const TsfFrame &f) { return f.msms_type == 0 ? 1 : 2; }); }
   std::vector<int> get_configuration() override { return std::vector<int>(frames_.size(), 0); }
   float get_min_mz() override { return 95.0f; }
@@ -539,7 +642,7 @@ public:
   std::vector<int> get_spectra_array_length(std::vector<int> indices = {}) override { return values(indices, [](const TsfFrame &f) { return f.num_peaks; }); }
   std::vector<int> get_spectra_level(std::vector<int> indices = {}) override { return values(indices, [](const TsfFrame &f) { return f.msms_type == 0 ? 1 : 2; }); }
   std::vector<int> get_spectra_configuration(std::vector<int> indices = {}) override { return std::vector<int>(normalize(std::move(indices)).size(), 0); }
-  std::vector<int> get_spectra_mode(std::vector<int> indices = {}) override { return values(indices, [](const TsfFrame &f) { return f.scan_mode; }); }
+  std::vector<int> get_spectra_mode(std::vector<int> indices = {}) override { return std::vector<int>(normalize(std::move(indices)).size(), 1); }
   std::vector<int> get_spectra_polarity(std::vector<int> indices = {}) override { return values(indices, [](const TsfFrame &f) { return f.polarity == "+" ? 1 : f.polarity == "-" ? -1 : 0; }); }
   std::vector<float> get_spectra_lowmz(std::vector<int> indices = {}) override { return values_float(indices, [](const TsfFrame &) { return 95.0f; }); }
   std::vector<float> get_spectra_highmz(std::vector<int> indices = {}) override { return values_float(indices, [](const TsfFrame &) { return 2505.0f; }); }
@@ -557,7 +660,7 @@ public:
   MASS_SPEC_SPECTRA_HEADERS get_spectra_headers(std::vector<int> indices = {}, bool = false) override
   {
     const auto selected = normalize(indices); MASS_SPEC_SPECTRA_HEADERS out; out.resize_all(selected.size());
-    for (std::size_t n = 0; n < selected.size(); ++n) { const auto &f = frames_.at(selected[n]); out.index[n] = static_cast<int>(selected[n]); out.scan[n] = static_cast<int>(f.id); out.array_length[n] = f.num_peaks; out.level[n] = f.msms_type == 0 ? 1 : 2; out.mode[n] = f.scan_mode; out.polarity[n] = f.polarity == "+" ? 1 : f.polarity == "-" ? -1 : 0; out.lowmz[n] = 95.0f; out.highmz[n] = 2505.0f; out.bpint[n] = static_cast<float>(f.max_intensity); out.tic[n] = static_cast<float>(f.summed_intensities); out.rt[n] = static_cast<float>(f.retention_time); const auto *i = find_msms(f.id); if (i) { out.precursor_mz[n] = static_cast<float>(i->trigger_mass); out.window_mz[n] = static_cast<float>(i->trigger_mass); out.window_mzlow[n] = static_cast<float>(i->trigger_mass - i->isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(i->trigger_mass + i->isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(i->collision_energy); out.precursor_charge[n] = i->precursor_charge; } }
+    for (std::size_t n = 0; n < selected.size(); ++n) { const auto &f = frames_.at(selected[n]); out.index[n] = static_cast<int>(selected[n]); out.scan[n] = static_cast<int>(f.id); out.array_length[n] = f.num_peaks; out.level[n] = f.msms_type == 0 ? 1 : 2; out.mode[n] = 1; out.polarity[n] = f.polarity == "+" ? 1 : f.polarity == "-" ? -1 : 0; out.lowmz[n] = 95.0f; out.highmz[n] = 2505.0f; out.bpint[n] = static_cast<float>(f.max_intensity); out.tic[n] = static_cast<float>(f.summed_intensities); out.rt[n] = static_cast<float>(f.retention_time); const auto *i = find_msms(f.id); if (i) { out.precursor_mz[n] = static_cast<float>(i->trigger_mass); out.window_mz[n] = static_cast<float>(i->trigger_mass); out.window_mzlow[n] = static_cast<float>(i->trigger_mass - i->isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(i->trigger_mass + i->isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(i->collision_energy); out.precursor_charge[n] = i->precursor_charge; } }
     return out;
   }
   MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> = {}) override { return {}; }
@@ -568,7 +671,7 @@ public:
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
     trace_spectrum_decode(index);
-    const auto &frame = frames_.at(static_cast<std::size_t>(index)); const auto raw = read_tsf_line_spectrum(file_, frame); const auto calibration = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(calibration, raw.tof); const auto *info = find_msms(frame.id); MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(frame.id); out.array_length = static_cast<int>(mz.size()); out.level = frame.msms_type == 0 ? 1 : 2; out.mode = frame.scan_mode; out.polarity = frame.polarity == "+" ? 1 : frame.polarity == "-" ? -1 : 0; out.lowmz = 95.0f; out.highmz = 2505.0f; out.bpint = static_cast<float>(frame.max_intensity); out.tic = static_cast<float>(frame.summed_intensities); out.rt = static_cast<float>(frame.retention_time); if (info) { out.window_mz = static_cast<float>(info->trigger_mass); out.window_mzlow = static_cast<float>(info->trigger_mass - info->isolation_width / 2.0); out.window_mzhigh = static_cast<float>(info->trigger_mass + info->isolation_width / 2.0); out.precursor_mz = static_cast<float>(info->trigger_mass); out.precursor_charge = info->precursor_charge; out.activation_ce = static_cast<float>(info->collision_energy); } out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].reserve(mz.size()); out.binary_data[1].reserve(raw.intensity.size()); for (std::size_t n = 0; n < mz.size(); ++n) { out.binary_data[0].push_back(static_cast<float>(mz[n])); out.binary_data[1].push_back(static_cast<float>(raw.intensity[n])); } return out;
+    const auto &frame = frames_.at(static_cast<std::size_t>(index)); const auto raw = read_tsf_line_spectrum(file_, frame); const auto calibration = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(calibration, frame.t1, frame.t2, raw.tof); const auto *info = find_msms(frame.id); MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(frame.id); out.array_length = static_cast<int>(mz.size()); out.level = frame.msms_type == 0 ? 1 : 2; out.mode = 1; out.polarity = frame.polarity == "+" ? 1 : frame.polarity == "-" ? -1 : 0; out.lowmz = 95.0f; out.highmz = 2505.0f; out.bpint = static_cast<float>(frame.max_intensity); out.tic = static_cast<float>(frame.summed_intensities); out.rt = static_cast<float>(frame.retention_time); if (info) { out.window_mz = static_cast<float>(info->trigger_mass); out.window_mzlow = static_cast<float>(info->trigger_mass - info->isolation_width / 2.0); out.window_mzhigh = static_cast<float>(info->trigger_mass + info->isolation_width / 2.0); out.precursor_mz = static_cast<float>(info->trigger_mass); out.precursor_charge = info->precursor_charge; out.activation_ce = static_cast<float>(info->collision_energy); } out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].reserve(mz.size()); out.binary_data[1].reserve(raw.intensity.size()); for (std::size_t n = 0; n < mz.size(); ++n) { out.binary_data[0].push_back(static_cast<float>(mz[n])); out.binary_data[1].push_back(raw.intensity[n]); } return out;
   }
 private:
   std::vector<int> normalize(std::vector<int> indices) const { if (indices.empty()) { indices.resize(frames_.size()); std::iota(indices.begin(), indices.end(), 0); } return indices; }
@@ -576,7 +679,7 @@ private:
   template <typename F> std::vector<float> values_float(const std::vector<int> &indices, F f) const { std::vector<float> out; for (const auto i : normalize(indices)) out.push_back(f(frames_.at(i))); return out; }
   template <typename F> std::vector<int> metadata_int(F f) const { return values({}, f); }
   const TsfMsMsInfo *find_msms(std::int64_t frame) const { for (const auto &i : msms_) if (i.frame == frame) return &i; return nullptr; }
-  float base_peak_mz(const TsfFrame &frame) const { const auto raw = read_tsf_line_spectrum(file_, frame); const auto cal = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(cal, raw.tof); const auto it = std::max_element(raw.intensity.begin(), raw.intensity.end()); return it == raw.intensity.end() ? 0.0f : static_cast<float>(mz[static_cast<std::size_t>(std::distance(raw.intensity.begin(), it))]); }
+  float base_peak_mz(const TsfFrame &frame) const { const auto raw = read_tsf_line_spectrum(file_, frame); const auto cal = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(cal, frame.t1, frame.t2, raw.tof); const auto it = std::max_element(raw.intensity.begin(), raw.intensity.end()); return it == raw.intensity.end() ? 0.0f : static_cast<float>(mz[static_cast<std::size_t>(std::distance(raw.intensity.begin(), it))]); }
   std::vector<TsfFrame> frames_; std::vector<TsfMsMsInfo> msms_;
 };
 
@@ -614,11 +717,11 @@ public:
   std::string get_type() override { return "MS"; }
   std::string get_time_stamp() override { return {}; }
   std::vector<int> get_polarity() override { return values([](const auto &s) { return s.polarity; }); }
-  std::vector<int> get_mode() override { return values([](const auto &s) { return s.scan_mode; }); }
-  std::vector<int> get_level() override { return values([](const auto &s) { return s.ms_level; }); }
-  std::vector<int> get_configuration() override { return values([](const auto &s) { return s.acquisition_mode; }); }
-  float get_min_mz() override { return static_cast<float>(spectra_.front().mz_lower); }
-  float get_max_mz() override { return static_cast<float>(spectra_.front().mz_upper); }
+  std::vector<int> get_mode() override { return values([](const auto &) { return 0; }); }
+  std::vector<int> get_level() override { return values([](const auto &s) { return s.ms_level + 1; }); }
+  std::vector<int> get_configuration() override { return values([](const auto &) { return 0; }); }
+  float get_min_mz() override { return calibrated_lowmz(spectra_.front()); }
+  float get_max_mz() override { return calibrated_highmz(spectra_.front()); }
   float get_start_rt() override { return static_cast<float>(spectra_.front().retention_time); }
   float get_end_rt() override { return static_cast<float>(spectra_.back().retention_time); }
   bool has_ion_mobility() override { return false; }
@@ -630,35 +733,35 @@ public:
     s.has_ion_mobility = false; s.polarity = get_polarity(); s.mode = get_mode(); s.level = get_level(); s.configuration = get_configuration(); return s;
   }
   std::vector<int> get_spectra_index(std::vector<int> indices = {}) override { return normalize(indices); }
-  std::vector<int> get_spectra_scan_number(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return static_cast<int>(s.id); }); }
+  std::vector<int> get_spectra_scan_number(std::vector<int> indices = {}) override { return normalize(std::move(indices)); }
   std::vector<int> get_spectra_array_length(std::vector<int> indices = {}) override { return selected(indices, [this](const auto &s) { return static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id)); }); }
-  std::vector<int> get_spectra_level(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.ms_level; }); }
-  std::vector<int> get_spectra_configuration(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.acquisition_mode; }); }
-  std::vector<int> get_spectra_mode(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.scan_mode; }); }
+  std::vector<int> get_spectra_level(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.ms_level + 1; }); }
+  std::vector<int> get_spectra_configuration(std::vector<int> indices = {}) override { return selected(indices, [](const auto &) { return 0; }); }
+  std::vector<int> get_spectra_mode(std::vector<int> indices = {}) override { return selected(indices, [](const auto &) { return 0; }); }
   std::vector<int> get_spectra_polarity(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.polarity; }); }
-  std::vector<float> get_spectra_lowmz(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.mz_lower); }); }
-  std::vector<float> get_spectra_highmz(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.mz_upper); }); }
+  std::vector<float> get_spectra_lowmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return calibrated_lowmz(s); }); }
+  std::vector<float> get_spectra_highmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return calibrated_highmz(s); }); }
   std::vector<float> get_spectra_bpmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return base_peak_mz(s); }); }
   std::vector<float> get_spectra_bpint(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.maximum_intensity); }); }
   std::vector<float> get_spectra_tic(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.summed_intensity); }); }
   std::vector<float> get_spectra_rt(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.retention_time); }); }
   std::vector<float> get_spectra_mobility(std::vector<int> indices = {}) override { return std::vector<float>(normalize(std::move(indices)).size(), 0.0f); }
   std::vector<int> get_spectra_precursor_scan(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return static_cast<int>(s.parent); }); }
-  std::vector<float> get_spectra_precursor_mz(std::vector<int> indices = {}) override { return std::vector<float>(normalize(indices).size(), 0.0f); }
+  std::vector<float> get_spectra_precursor_mz(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.precursor_mz); }); }
   std::vector<float> get_spectra_precursor_window_mz(std::vector<int> indices = {}) override { return get_spectra_precursor_mz(indices); }
-  std::vector<float> get_spectra_precursor_window_mzlow(std::vector<int> indices = {}) override { return get_spectra_precursor_mz(indices); }
-  std::vector<float> get_spectra_precursor_window_mzhigh(std::vector<int> indices = {}) override { return get_spectra_precursor_mz(indices); }
-  std::vector<float> get_spectra_collision_energy(std::vector<int> indices = {}) override { return std::vector<float>(normalize(indices).size(), 0.0f); }
+  std::vector<float> get_spectra_precursor_window_mzlow(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); }); }
+  std::vector<float> get_spectra_precursor_window_mzhigh(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); }); }
+  std::vector<float> get_spectra_collision_energy(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.activation_ce); }); }
   MASS_SPEC_SPECTRA_HEADERS get_spectra_headers(std::vector<int> indices = {}, bool = false) override
   {
     const auto selected_indices = normalize(indices); MASS_SPEC_SPECTRA_HEADERS out; out.resize_all(selected_indices.size());
     for (std::size_t n = 0; n < selected_indices.size(); ++n)
     {
       const auto &s = spectra_.at(selected_indices[n]); const auto length = static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id));
-      out.index[n] = static_cast<int>(selected_indices[n]); out.scan[n] = static_cast<int>(s.id); out.array_length[n] = length;
-      out.level[n] = s.ms_level; out.mode[n] = s.scan_mode; out.polarity[n] = s.polarity; out.configuration[n] = s.acquisition_mode;
-      out.lowmz[n] = static_cast<float>(s.mz_lower); out.highmz[n] = static_cast<float>(s.mz_upper); out.bpint[n] = static_cast<float>(s.maximum_intensity);
-      out.tic[n] = static_cast<float>(s.summed_intensity); out.rt[n] = static_cast<float>(s.retention_time); out.precursor_charge[n] = 0;
+      out.index[n] = static_cast<int>(selected_indices[n]); out.scan[n] = static_cast<int>(selected_indices[n]); out.array_length[n] = length;
+      out.level[n] = s.ms_level + 1; out.mode[n] = 0; out.polarity[n] = s.polarity; out.configuration[n] = 0;
+      out.lowmz[n] = calibrated_lowmz(s); out.highmz[n] = calibrated_highmz(s); out.bpmz[n] = base_peak_mz(s); out.bpint[n] = static_cast<float>(s.maximum_intensity);
+      out.tic[n] = static_cast<float>(s.summed_intensity); out.rt[n] = static_cast<float>(s.retention_time); out.precursor_mz[n] = static_cast<float>(s.precursor_mz); out.window_mz[n] = static_cast<float>(s.precursor_mz); out.window_mzlow[n] = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(s.activation_ce); out.precursor_charge[n] = s.precursor_charge;
     }
     return out;
   }
@@ -671,19 +774,38 @@ public:
   {
     trace_spectrum_decode(index);
     const auto &s = spectra_.at(static_cast<std::size_t>(index)); const auto profile = read_baf_profile_spectrum(file_, s.profile_intensity_id);
-    MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(s.id); out.array_length = static_cast<int>(profile.intensity.size()); out.level = s.ms_level;
-    out.mode = s.scan_mode; out.polarity = s.polarity; out.lowmz = static_cast<float>(s.mz_lower); out.highmz = static_cast<float>(s.mz_upper);
-    out.bpint = static_cast<float>(s.maximum_intensity); out.tic = static_cast<float>(s.summed_intensity); out.rt = static_cast<float>(s.retention_time);
+    MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = index; out.array_length = static_cast<int>(profile.intensity.size()); out.level = s.ms_level + 1;
+    out.mode = 0; out.polarity = s.polarity; out.lowmz = calibrated_lowmz(s); out.highmz = calibrated_highmz(s);
+    out.bpint = static_cast<float>(s.maximum_intensity); out.tic = static_cast<float>(s.summed_intensity); out.rt = static_cast<float>(s.retention_time); out.precursor_mz = static_cast<float>(s.precursor_mz); out.window_mz = static_cast<float>(s.precursor_mz); out.window_mzlow = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce = static_cast<float>(s.activation_ce); out.precursor_charge = s.precursor_charge;
     out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].resize(profile.intensity.size()); out.binary_data[1].resize(profile.intensity.size());
-    const auto step = profile.intensity.size() > 1 ? static_cast<double>(s.mz_upper - s.mz_lower) / static_cast<double>(profile.intensity.size() - 1) : 0.0;
-    double decoded_tic = 0.0; for (std::size_t n = 0; n < profile.intensity.size(); ++n) { out.binary_data[0][n] = static_cast<float>(s.mz_lower + step * static_cast<double>(n)); out.binary_data[1][n] = static_cast<float>(profile.intensity[n]); decoded_tic += profile.intensity[n]; } out.tic = static_cast<float>(decoded_tic); return out;
+
+    double decoded_tic = 0.0; for (std::size_t n = 0; n < profile.intensity.size(); ++n) { out.binary_data[0][n] = static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(n))); out.binary_data[1][n] = static_cast<float>(profile.intensity[n]); decoded_tic += profile.intensity[n]; } out.tic = static_cast<float>(decoded_tic); return out;
   }
 private:
   std::vector<int> normalize(std::vector<int> indices) const { if (indices.empty()) { indices.resize(spectra_.size()); std::iota(indices.begin(), indices.end(), 0); } return indices; }
   template <typename F> std::vector<int> selected(const std::vector<int> &indices, F f) const { std::vector<int> out; for (const auto i : normalize(indices)) out.push_back(f(spectra_.at(static_cast<std::size_t>(i)))); return out; }
   template <typename F> std::vector<float> selected_float(const std::vector<int> &indices, F f) const { std::vector<float> out; for (const auto i : normalize(indices)) out.push_back(f(spectra_.at(static_cast<std::size_t>(i)))); return out; }
   template <typename F> std::vector<int> values(F f) const { return selected({}, f); }
-  float base_peak_mz(const BafSpectrumMetadata &s) const { const auto values = read_baf_profile_spectrum(file_, s.profile_intensity_id).intensity; const auto it = std::max_element(values.begin(), values.end()); if (it == values.end()) return 0.0f; const auto index = static_cast<std::size_t>(std::distance(values.begin(), it)); return static_cast<float>(s.mz_lower + (s.mz_upper - s.mz_lower) * static_cast<double>(index) / static_cast<double>(values.size() - 1)); }
+  float calibrated_lowmz(const BafSpectrumMetadata &s) const { return static_cast<float>(detail::baf_index_to_mz(s.calibration, 0.0)); }
+  float calibrated_highmz(const BafSpectrumMetadata &s) const { const auto count = baf_profile_point_count(file_, s.profile_intensity_id); return count == 0 ? 0.0f : static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(count - 1))); }
+  float base_peak_mz(const BafSpectrumMetadata &s) const
+  {
+    try
+    {
+      const auto line = read_baf_line_spectrum(file_, s.line_intensity_id);
+      const auto it = std::max_element(line.intensity.begin(), line.intensity.end());
+      if (it != line.intensity.end())
+        return static_cast<float>(line.coordinate[static_cast<std::size_t>(std::distance(line.intensity.begin(), it))]);
+    }
+    catch (const std::exception &)
+    {
+      const auto values = read_baf_profile_spectrum(file_, s.profile_intensity_id).intensity;
+      const auto profile_it = std::max_element(values.begin(), values.end());
+      if (profile_it == values.end()) return 0.0f;
+      return static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(std::distance(values.begin(), profile_it))));
+    }
+    return 0.0f;
+  }
   std::vector<BafSpectrumMetadata> spectra_;
 };
 
