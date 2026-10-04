@@ -717,11 +717,11 @@ public:
   std::string get_type() override { return "MS"; }
   std::string get_time_stamp() override { return {}; }
   std::vector<int> get_polarity() override { return values([](const auto &s) { return s.polarity; }); }
-  std::vector<int> get_mode() override { return values([](const auto &) { return 0; }); }
+  std::vector<int> get_mode() override { return values([this](const auto &s) { return has_line_data(s) ? 1 : 0; }); }
   std::vector<int> get_level() override { return values([](const auto &s) { return s.ms_level + 1; }); }
   std::vector<int> get_configuration() override { return values([](const auto &) { return 0; }); }
-  float get_min_mz() override { return calibrated_lowmz(spectra_.front()); }
-  float get_max_mz() override { return calibrated_highmz(spectra_.front()); }
+  float get_min_mz() override { return spectrum_lowmz(spectra_.front()); }
+  float get_max_mz() override { return spectrum_highmz(spectra_.front()); }
   float get_start_rt() override { return static_cast<float>(spectra_.front().retention_time); }
   float get_end_rt() override { return static_cast<float>(spectra_.back().retention_time); }
   bool has_ion_mobility() override { return false; }
@@ -734,16 +734,16 @@ public:
   }
   std::vector<int> get_spectra_index(std::vector<int> indices = {}) override { return normalize(indices); }
   std::vector<int> get_spectra_scan_number(std::vector<int> indices = {}) override { return normalize(std::move(indices)); }
-  std::vector<int> get_spectra_array_length(std::vector<int> indices = {}) override { return selected(indices, [this](const auto &s) { return static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id)); }); }
+  std::vector<int> get_spectra_array_length(std::vector<int> indices = {}) override { return selected(indices, [this](const auto &s) { BafLineSpectrum line; return has_line_data(s, &line) ? static_cast<int>(line.intensity.size()) : static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id)); }); }
   std::vector<int> get_spectra_level(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.ms_level + 1; }); }
   std::vector<int> get_spectra_configuration(std::vector<int> indices = {}) override { return selected(indices, [](const auto &) { return 0; }); }
-  std::vector<int> get_spectra_mode(std::vector<int> indices = {}) override { return selected(indices, [](const auto &) { return 0; }); }
+  std::vector<int> get_spectra_mode(std::vector<int> indices = {}) override { return selected(indices, [this](const auto &s) { return has_line_data(s) ? 1 : 0; }); }
   std::vector<int> get_spectra_polarity(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return s.polarity; }); }
-  std::vector<float> get_spectra_lowmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return calibrated_lowmz(s); }); }
-  std::vector<float> get_spectra_highmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return calibrated_highmz(s); }); }
+  std::vector<float> get_spectra_lowmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return spectrum_lowmz(s); }); }
+  std::vector<float> get_spectra_highmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return spectrum_highmz(s); }); }
   std::vector<float> get_spectra_bpmz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return base_peak_mz(s); }); }
-  std::vector<float> get_spectra_bpint(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.maximum_intensity); }); }
-  std::vector<float> get_spectra_tic(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.summed_intensity); }); }
+  std::vector<float> get_spectra_bpint(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return base_peak_intensity(s); }); }
+  std::vector<float> get_spectra_tic(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return total_intensity(s); }); }
   std::vector<float> get_spectra_rt(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.retention_time); }); }
   std::vector<float> get_spectra_mobility(std::vector<int> indices = {}) override { return std::vector<float>(normalize(std::move(indices)).size(), 0.0f); }
   std::vector<int> get_spectra_precursor_scan(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return static_cast<int>(s.parent); }); }
@@ -757,11 +757,11 @@ public:
     const auto selected_indices = normalize(indices); MASS_SPEC_SPECTRA_HEADERS out; out.resize_all(selected_indices.size());
     for (std::size_t n = 0; n < selected_indices.size(); ++n)
     {
-      const auto &s = spectra_.at(selected_indices[n]); const auto length = static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id));
+      const auto &s = spectra_.at(selected_indices[n]); BafLineSpectrum line; const auto has_line = has_line_data(s, &line); const auto length = has_line ? static_cast<int>(line.intensity.size()) : static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id));
       out.index[n] = static_cast<int>(selected_indices[n]); out.scan[n] = static_cast<int>(selected_indices[n]); out.array_length[n] = length;
-      out.level[n] = s.ms_level + 1; out.mode[n] = 0; out.polarity[n] = s.polarity; out.configuration[n] = 0;
-      out.lowmz[n] = calibrated_lowmz(s); out.highmz[n] = calibrated_highmz(s); out.bpmz[n] = base_peak_mz(s); out.bpint[n] = static_cast<float>(s.maximum_intensity);
-      out.tic[n] = static_cast<float>(s.summed_intensity); out.rt[n] = static_cast<float>(s.retention_time); out.precursor_mz[n] = static_cast<float>(s.precursor_mz); out.window_mz[n] = static_cast<float>(s.precursor_mz); out.window_mzlow[n] = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(s.activation_ce); out.precursor_charge[n] = s.precursor_charge;
+      out.level[n] = s.ms_level + 1; out.mode[n] = has_line ? 1 : 0; out.polarity[n] = s.polarity; out.configuration[n] = 0;
+      out.lowmz[n] = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.front())) : calibrated_lowmz(s); out.highmz[n] = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.back())) : calibrated_highmz(s); out.bpmz[n] = base_peak_mz(s); out.bpint[n] = base_peak_intensity(s);
+      out.tic[n] = total_intensity(s); out.rt[n] = static_cast<float>(s.retention_time); out.precursor_mz[n] = static_cast<float>(s.precursor_mz); out.window_mz[n] = static_cast<float>(s.precursor_mz); out.window_mzlow[n] = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(s.activation_ce); out.precursor_charge[n] = s.precursor_charge;
     }
     return out;
   }
@@ -773,19 +773,48 @@ public:
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
     trace_spectrum_decode(index);
-    const auto &s = spectra_.at(static_cast<std::size_t>(index)); const auto profile = read_baf_profile_spectrum(file_, s.profile_intensity_id);
-    MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = index; out.array_length = static_cast<int>(profile.intensity.size()); out.level = s.ms_level + 1;
-    out.mode = 0; out.polarity = s.polarity; out.lowmz = calibrated_lowmz(s); out.highmz = calibrated_highmz(s);
+    const auto &s = spectra_.at(static_cast<std::size_t>(index)); BafLineSpectrum line; const auto has_line = has_line_data(s, &line);
+    const auto profile = has_line ? BafProfileSpectrum{} : read_baf_profile_spectrum(file_, s.profile_intensity_id);
+    MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = index; out.array_length = has_line ? static_cast<int>(line.intensity.size()) : static_cast<int>(profile.intensity.size()); out.level = s.ms_level + 1;
+    out.mode = has_line ? 1 : 0; out.polarity = s.polarity; out.lowmz = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.front())) : calibrated_lowmz(s); out.highmz = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.back())) : calibrated_highmz(s);
     out.bpint = static_cast<float>(s.maximum_intensity); out.tic = static_cast<float>(s.summed_intensity); out.rt = static_cast<float>(s.retention_time); out.precursor_mz = static_cast<float>(s.precursor_mz); out.window_mz = static_cast<float>(s.precursor_mz); out.window_mzlow = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce = static_cast<float>(s.activation_ce); out.precursor_charge = s.precursor_charge;
-    out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].resize(profile.intensity.size()); out.binary_data[1].resize(profile.intensity.size());
+    out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].resize(out.array_length); out.binary_data[1].resize(out.array_length);
 
-    double decoded_tic = 0.0; for (std::size_t n = 0; n < profile.intensity.size(); ++n) { out.binary_data[0][n] = static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(n))); out.binary_data[1][n] = static_cast<float>(profile.intensity[n]); decoded_tic += profile.intensity[n]; } out.tic = static_cast<float>(decoded_tic); return out;
+    double decoded_tic = 0.0; for (std::size_t n = 0; n < static_cast<std::size_t>(out.array_length); ++n) { const auto coordinate = has_line ? line.coordinate[n] : static_cast<double>(n); const auto intensity = has_line ? line.intensity[n] : static_cast<float>(profile.intensity[n]); out.binary_data[0][n] = static_cast<float>(detail::baf_index_to_mz(s.calibration, coordinate)); out.binary_data[1][n] = intensity; decoded_tic += intensity; } out.tic = has_line ? static_cast<float>(decoded_tic) : static_cast<float>(decoded_tic); return out;
   }
 private:
   std::vector<int> normalize(std::vector<int> indices) const { if (indices.empty()) { indices.resize(spectra_.size()); std::iota(indices.begin(), indices.end(), 0); } return indices; }
   template <typename F> std::vector<int> selected(const std::vector<int> &indices, F f) const { std::vector<int> out; for (const auto i : normalize(indices)) out.push_back(f(spectra_.at(static_cast<std::size_t>(i)))); return out; }
   template <typename F> std::vector<float> selected_float(const std::vector<int> &indices, F f) const { std::vector<float> out; for (const auto i : normalize(indices)) out.push_back(f(spectra_.at(static_cast<std::size_t>(i)))); return out; }
   template <typename F> std::vector<int> values(F f) const { return selected({}, f); }
+  bool has_line_data(const BafSpectrumMetadata &s, BafLineSpectrum *output = nullptr) const
+  {
+    try
+    {
+      auto line = read_baf_line_spectrum(file_, s.line_intensity_id);
+      if (line.coordinate.empty() || line.coordinate.size() != line.intensity.size()) return false;
+      if (output != nullptr) *output = std::move(line);
+      return true;
+    }
+    catch (const std::exception &)
+    {
+      return false;
+    }
+  }
+  float spectrum_lowmz(const BafSpectrumMetadata &s) const { BafLineSpectrum line; return has_line_data(s, &line) && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.front())) : calibrated_lowmz(s); }
+  float spectrum_highmz(const BafSpectrumMetadata &s) const { BafLineSpectrum line; return has_line_data(s, &line) && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.back())) : calibrated_highmz(s); }
+  float base_peak_intensity(const BafSpectrumMetadata &s) const
+  {
+    BafLineSpectrum line;
+    if (has_line_data(s, &line) && !line.intensity.empty()) return *std::max_element(line.intensity.begin(), line.intensity.end());
+    return static_cast<float>(s.maximum_intensity);
+  }
+  float total_intensity(const BafSpectrumMetadata &s) const
+  {
+    BafLineSpectrum line;
+    if (has_line_data(s, &line)) return std::accumulate(line.intensity.begin(), line.intensity.end(), 0.0f);
+    return static_cast<float>(s.summed_intensity);
+  }
   float calibrated_lowmz(const BafSpectrumMetadata &s) const { return static_cast<float>(detail::baf_index_to_mz(s.calibration, 0.0)); }
   float calibrated_highmz(const BafSpectrumMetadata &s) const { const auto count = baf_profile_point_count(file_, s.profile_intensity_id); return count == 0 ? 0.0f : static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(count - 1))); }
   float base_peak_mz(const BafSpectrumMetadata &s) const
@@ -795,7 +824,8 @@ private:
       const auto line = read_baf_line_spectrum(file_, s.line_intensity_id);
       const auto it = std::max_element(line.intensity.begin(), line.intensity.end());
       if (it != line.intensity.end())
-        return static_cast<float>(line.coordinate[static_cast<std::size_t>(std::distance(line.intensity.begin(), it))]);
+        return static_cast<float>(detail::baf_index_to_mz(
+            s.calibration, line.coordinate[static_cast<std::size_t>(std::distance(line.intensity.begin(), it))]));
     }
     catch (const std::exception &)
     {
