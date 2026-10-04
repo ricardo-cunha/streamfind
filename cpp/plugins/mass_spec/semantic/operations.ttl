@@ -16,6 +16,28 @@ sfms:readMassSpecFiles
     sf:hasParameter sfms:sourcePathsParameter ;
     sf:hasOutputPort sfms:analysesTable, sfms:spectraHeadersTable, sfms:chromatogramsHeadersTable, sfcore:operationSuccessSignal .
 
+sfms:readCsvTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.read_csv_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Read CSV targets" ;
+    skos:definition "Read a target CSV, validate numeric matching fields, normalize optional chemical structures with Open Babel, and publish a reusable targetsTable artifact." ;
+    sf:category "mass-spec-ingestion" ;
+    sf:hasParameter sfms:targetsCsvPathParameter ;
+    sf:hasOutputPort sfms:targetsTable, sfcore:operationSuccessSignal .
+
+sfms:readCsvSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.read_csv_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Read CSV suspect targets" ;
+    skos:definition "Read a suspect-target CSV, require chemical identity fields, normalize them with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
+    sf:category "nta-identification" ;
+    sf:hasParameter sfms:suspectTargetsCsvPathParameter ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
 sfms:removeAnalyses
     a sf:Operation ;
     sf:operationId "mass_spec.remove_analyses" ;
@@ -468,10 +490,9 @@ sfms:findFeatures
     skos:prefLabel "Find mass spectrometry features" ;
     skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
     sf:category "nta-feature-detection" ;
-    sf:guidance "Connect analysesTable. spectraHeadersTable is optional and acts as a performance optimization when persisted headers match the same analysis names and indices; otherwise headers are read directly from the source files. The operation processes every analysis in analysesTable. rt_windows_min and rt_windows_max must be arrays of equal length." ;
+    sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range." ;
     sf:hasParameter
-        sfms:rtWindowsMinParameter,
-        sfms:rtWindowsMaxParameter,
+        sfms:rtWindowsParameter,
         sfms:ppmThresholdParameter,
         sfms:noiseThresholdParameter,
         sfms:minSnrParameter,
@@ -495,7 +516,7 @@ sfms:loadFeaturesMs1
     skos:prefLabel "Load MS1 spectra for features" ;
     skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
-    sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
+    sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
     sf:hasParameter
         sfms:filteredParameter,
         sfms:rtWindowParameter,
@@ -504,6 +525,7 @@ sfms:loadFeaturesMs1
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -515,7 +537,7 @@ sfms:loadFeaturesMs2
     skos:prefLabel "Load MS2 spectra for features" ;
     skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
-    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table; it updates ms2_size, ms2_mz, and ms2_intensity without requiring a separate spectraHeadersTable input." ;
+    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. It updates ms2_size, ms2_mz, and ms2_intensity." ;
     sf:hasParameter
         sfms:filteredParameter,
         sfms:minTracesIntensityParameter,
@@ -523,6 +545,7 @@ sfms:loadFeaturesMs2
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -532,14 +555,14 @@ sfms:subtractBlank
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Subtract blank features" ;
-    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows. Requires analysesTable for native source paths and blank metadata." ;
-    sf:guidance "Connect analysesTable and featuresTable. The analysesTable supplies native source paths, analysis indices, replicate labels, and blank labels required to read blank spectra." ;
+    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows. The operation processes every analysis and resolves its associated blank replicate from analysesTable." ;
+    sf:guidance "Connect analysesTable and featuresTable. The replicate and blank columns in featuresTable describe feature rows but do not replace analysesTable: analysesTable remains required because it supplies authoritative native source paths and analysis indices needed to load each associated blank spectrum. Every analysis is processed using its blank assignment. Optionally connect spectraHeadersTable to reuse persisted spectra headers for RT/m/z targeting. Matching persisted headers avoid reparsing source headers; missing or stale rows fall back to native header loading." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:blankThresholdParameter,
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -551,7 +574,6 @@ sfms:filterFeatures
     skos:prefLabel "Filter features" ;
     skos:definition "Remove or flag features failing signal, shape, and quality criteria." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:minSnParameter,
         sfms:minIntensityParameter,
         sfms:minAreaParameter,
@@ -574,7 +596,6 @@ sfms:filterFeatures
         sfms:maxAsymmetryParameter,
         sfms:maxModalityParameter,
         sfms:minPlatesParameter,
-        sfms:onlyFilledParameter,
         sfms:removeFilledParameter,
         sfms:minSizeEicParameter,
         sfms:minSizeMs1Parameter,
@@ -706,6 +727,7 @@ sfms:suspectScreening
         sfms:minSharedFragmentsParameter,
         sfms:filteredParameter ;
     sf:hasInputPort sfms:featuresTable ;
+    sf:optionalInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 

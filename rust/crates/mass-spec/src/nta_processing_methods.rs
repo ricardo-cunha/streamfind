@@ -769,18 +769,15 @@ fn row_sql(f: &Feature) -> String {
 }
 
 pub fn find_features(project: &mut Project, p: &Value) -> Result<Value> {
-    let mins = p
-        .get("rt_windows_min")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid("rt_windows_min is required"))?;
-    let maxs = p
-        .get("rt_windows_max")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid("rt_windows_max is required"))?;
-    if mins.len() != maxs.len() {
-        return Err(invalid(
-            "rt_windows_min and rt_windows_max must have equal lengths.",
-        ));
+    let windows = p.get("rt_windows").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut mins = Vec::with_capacity(windows.len());
+    let mut maxs = Vec::with_capacity(windows.len());
+    for row in windows {
+        let Some(row) = row.as_object() else { return Err(invalid("rt_windows rows must be objects")); };
+        let Some(min) = row.get("rtmin").and_then(Value::as_f64) else { return Err(invalid("rt_windows rows must contain numeric rtmin")); };
+        let Some(max) = row.get("rtmax").and_then(Value::as_f64) else { return Err(invalid("rt_windows rows must contain numeric rtmax")); };
+        mins.push(min as f32);
+        maxs.push(max as f32);
     }
     let ppm = p
         .get("ppm_threshold")
@@ -2149,14 +2146,6 @@ pub fn subtract_blank(project: &mut Project, p: &Value) -> Result<Value> {
 
 pub fn filter_features(project: &mut Project, p: &Value) -> Result<Value> {
     // Optional numeric filters: null/absent (R NA) disable the filter via NaN.
-    let mut has_only_filled = false;
-    let mut only_filled_value = false;
-    if let Some(v) = p.get("only_filled") {
-        if !v.is_null() {
-            has_only_filled = true;
-            only_filled_value = v.as_bool().unwrap_or(false);
-        }
-    }
     let mut data = load_analysis_features(project, p)?;
     crate::nta_filters::filter_features_impl(
         &mut data,
@@ -2183,8 +2172,6 @@ pub fn filter_features(project: &mut Project, p: &Value) -> Result<Value> {
         opt_int(p, "max_modality"),
         has_param(p, "max_modality"),
         opt_real(p, "min_plates"),
-        has_only_filled,
-        only_filled_value,
         p.get("remove_filled")
             .and_then(Value::as_bool)
             .unwrap_or(false),

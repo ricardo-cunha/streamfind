@@ -478,7 +478,7 @@ using Json = nlohmann::json;
             min_cosine_similarity > 1 || min_shared_fragments < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid suspect screening parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
-        const auto suspects = utils::detail::parse_suspect_targets(parameters);
+        const auto suspects = utils::detail::parse_suspect_targets(access, parameters);
         ::streamfind::mass_spec::nta::suspect_screening::suspect_screening_impl(data, data.analysis_names(), suspects,
                                                        ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, filtered);
         utils::detail::emit_features(access, data);
@@ -504,7 +504,7 @@ using Json = nlohmann::json;
             min_cosine_similarity > 1 || min_shared_fragments < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid internal standard parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
-        const auto suspects = utils::detail::parse_suspect_targets(parameters);
+        const auto suspects = utils::detail::parse_suspect_targets(access, parameters);
         ::streamfind::mass_spec::nta::suspect_screening::find_internal_standards_impl(data, data.analysis_names(), suspects,
                                                              ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, filtered);
         utils::detail::emit_features(access, data);

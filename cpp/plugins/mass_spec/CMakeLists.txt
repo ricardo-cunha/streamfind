@@ -24,10 +24,12 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/nta/nta_gap_filling.cpp
     src/operations/nta/nta_metfrag_runner.cpp
     src/operations/nta/nta_suspect_screening.cpp
+    src/operations/nta/nta_read_csv_suspect_targets.cpp
     src/operations/nta/nta_load_features_ms1.cpp
     src/operations/nta/nta_load_features_ms2.cpp
 
     src/utils/base.cpp
+    src/utils/target_csv.cpp
     src/utils/chromatograms.cpp
     src/utils/nta.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"

@@ -546,6 +546,19 @@ sfms:targetsTable
         sfms:inChIColumn,
         sfms:inChIKeyColumn .
 
+sfms:rtWindowsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Retention-time windows table" ;
+    skos:definition "Optional rows defining inclusive retention-time windows for mass-spectrometry feature detection." ;
+    sf:tableContractName "MASS_SPEC_RT_WINDOWS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:rtMinColumn,
+        sfms:rtMaxColumn .
+
 sfms:suspectTargetsTable
     a sf:Table ;
     sf:availableInDomain sfms:mass_spec ;

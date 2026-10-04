@@ -1,6 +1,8 @@
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 
 #include <atomic>
+#include <algorithm>
+#include <cmath>
 
 #include <cstring>
 #include <optional>
@@ -160,8 +162,10 @@ Json invoke_dynamic(
         context.database_path = project.get_database_path();
         context.operation_instance = workflow_instance;
         context.cancelled = &cancelled;
-        context.progress = [&project](double, std::string_view message) {
-            if (!message.empty()) project.log_operation(message);
+        context.progress = [&project](double fraction, std::string_view message) {
+            if (message.empty()) return;
+            const auto percent = static_cast<int>(std::round(std::clamp(fraction, 0.0, 1.0) * 100.0));
+            project.log_operation("[" + std::to_string(percent) + "%] " + std::string(message));
         };
         plugin.runtime_diagnostics.clear();
         context.report_error = [&plugin](std::string_view message) {

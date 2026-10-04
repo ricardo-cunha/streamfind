@@ -60,7 +60,10 @@ export function parameterTypeKey(parameter: CapabilityParameter): string {
 export function schemaShape(schema: JsonSchema | undefined): string {
   if (!schema) return '';
   const normalized: Record<string, unknown> = {};
+  const schemaType = schema.type ?? (schema.properties ? 'table' : undefined);
   for (const key of ['type', 'properties', 'items', 'required', 'additionalProperties', 'enum']) {
+    if (key === 'type' && schemaType !== undefined) normalized.type = schemaType;
+    if (key === 'additionalProperties' && schemaType === 'table') continue;
     if (schema[key] !== undefined) normalized[key] = schema[key];
   }
   if (normalized.properties && typeof normalized.properties === 'object') {
@@ -165,5 +168,6 @@ export function portMatchesParameter(sourcePort: NodePort, parameter: Capability
       : parameter.schema.type === 'object' || parameter.schema.type === 'array'
         ? 'structured_value'
         : parameter.schema.type;
-  return schemaShape(sourcePort.schema) === schemaShape(parameter.schema) && sourcePort.dataKind === parameterKind;
+  const sourceKind = sourcePort.dataKind === 'duckdb_table' ? 'table' : sourcePort.dataKind;
+  return schemaShape(sourcePort.schema) === schemaShape(parameter.schema) && sourceKind === parameterKind;
 }

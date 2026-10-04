@@ -128,9 +128,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           (!hasSelectionValue(row, 'feature_group') || !hasSelectionValue(row, 'feature_component')))
       )
         return false;
-      const text = Object.values(row).join(' ');
-      if (searchPattern && !searchPattern.test(text)) return false;
-      if (search && !searchPattern && !text.toLowerCase().includes(search.toLowerCase())) return false;
+      if (searchPattern && !matchesFeatureSearch(row, searchPattern)) return false;
+      if (search && !searchPattern && !matchesFeatureSearch(row, new RegExp(escapeRegExp(search), 'i'))) return false;
       return (
         filterColumns.numeric.every((column) =>
           withinRange(
@@ -140,10 +139,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             numericFilters[column.name]?.max ?? '',
           ),
         ) &&
-        filterColumns.boolean.every((column) => {
-          if (!booleanFilters[column.name]) return true;
-          return booleanValue(row[column.name]) === true;
-        })
+        filterColumns.boolean.every((column) => booleanFilters[column.name] || booleanValue(row[column.name]) !== true)
       );
     });
   }, [booleanFilters, filterColumns, numericFilters, rows, search, selectBy]);
@@ -666,6 +662,10 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
   type NetworkNode = FeatureNetworkModel['nodes'][number] & d3.SimulationNodeDatum;
   type NetworkLink = { source: string | NetworkNode; target: string | NetworkNode; weight: number };
   const svgRef = useRef<SVGSVGElement>(null);
+  const fitNetworkRef = useRef<(() => void) | null>(null);
+  const zoomInRef = useRef<(() => void) | null>(null);
+  const zoomOutRef = useRef<(() => void) | null>(null);
+  const [zoomPercent, setZoomPercent] = useState(100);
   useEffect(() => {
     const element = svgRef.current;
     if (!element) return;
@@ -683,8 +683,13 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
         const modeScale = wheelEvent.deltaMode === 1 ? 0.01 : wheelEvent.deltaMode === 2 ? 0.1 : 0.0002;
         return -wheelEvent.deltaY * modeScale;
       })
-      .on('zoom', (event) => viewport.attr('transform', event.transform));
+      .on('zoom', (event) => {
+        viewport.attr('transform', event.transform);
+        setZoomPercent(Math.round(event.transform.k * 100));
+      });
     svg.call(zoom);
+    zoomInRef.current = () => svg.call(zoom.scaleBy, 1.2);
+    zoomOutRef.current = () => svg.call(zoom.scaleBy, 1 / 1.2);
     const handlePan = (event: WheelEvent) => {
       if (event.ctrlKey) return;
       event.preventDefault();
@@ -752,20 +757,52 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
         };
     node
       .append('rect')
-      .attr('x', (item) => -((item.tag.length * 7.2 + 18) / 2))
-      .attr('y', -12)
-      .attr('width', (item) => item.tag.length * 7.2 + 18)
-      .attr('height', 24)
+      .attr(
+        'x',
+        (item) => -((Math.max(item.tag.length, item.tagKind === 'main' ? item.label.length : 0) * 7.2 + 18) / 2),
+      )
+      .attr('y', (item) => (item.tagKind === 'main' ? -22 : -12))
+      .attr('width', (item) => Math.max(item.tag.length, item.tagKind === 'main' ? item.label.length : 0) * 7.2 + 18)
+      .attr('height', (item) => (item.tagKind === 'main' ? 44 : 24))
       .attr('rx', 7)
       .attr('fill', (item) => palette[item.tagKind].fill)
       .attr('stroke', (item) => palette[item.tagKind].text);
-    node
+    const nodeText = node
       .append('text')
       .attr('text-anchor', 'middle')
-      .attr('dy', '.35em')
       .attr('fill', (item) => palette[item.tagKind].text)
+      .attr('font-size', 12);
+    nodeText
+      .append('tspan')
+      .attr('x', 0)
+      .attr('dy', (item) => (item.tagKind === 'main' ? '-0.1em' : '0.35em'))
       .text((item) => item.tag);
+    nodeText
+      .filter((item) => item.tagKind === 'main')
+      .append('tspan')
+      .attr('x', 0)
+      .attr('dy', '1.15em')
+      .attr('font-size', 10)
+      .text((item) => item.label);
     node.append('title').text((item) => item.details);
+    fitNetworkRef.current = () => {
+      const positioned = nodes.filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y));
+      if (!positioned.length) return;
+      const padding = 36;
+      const xValues = positioned.map((item) => item.x ?? 0);
+      const yValues = positioned.map((item) => item.y ?? 0);
+      const minX = Math.min(...xValues) - 70;
+      const maxX = Math.max(...xValues) + 70;
+      const minY = Math.min(...yValues) - 35;
+      const maxY = Math.max(...yValues) + 35;
+      const scale = Math.max(
+        0.35,
+        Math.min(4, (width - padding * 2) / (maxX - minX || 1), (height - padding * 2) / (maxY - minY || 1)),
+      );
+      const tx = width / 2 - ((minX + maxX) / 2) * scale;
+      const ty = height / 2 - ((minY + maxY) / 2) * scale;
+      svg.transition().duration(250).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    };
     simulation.on('tick', () => {
       link
         .attr('x1', (edge) => (edge.source as (typeof nodes)[number]).x ?? 0)
@@ -780,7 +817,41 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
       svg.on('.zoom', null);
     };
   }, [darkMode, model]);
-  return <svg ref={svgRef} className="sf-feature-network" role="img" aria-label="Feature network" />;
+  return (
+    <div className="sf-feature-network-wrap">
+      <div className="sf-feature-network-toolbar" onMouseDown={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className="sf-canvas-control"
+          onClick={() => zoomInRef.current?.()}
+          title="Zoom in"
+          aria-label="Zoom in"
+        >
+          <i className="fa-solid fa-plus" />
+        </button>
+        <span className="sf-canvas-zoom">{zoomPercent}%</span>
+        <button
+          type="button"
+          className="sf-canvas-control"
+          onClick={() => zoomOutRef.current?.()}
+          title="Zoom out"
+          aria-label="Zoom out"
+        >
+          <i className="fa-solid fa-minus" />
+        </button>
+        <button
+          type="button"
+          className="sf-canvas-control"
+          onClick={() => fitNetworkRef.current?.()}
+          title="Center and fit all nodes"
+          aria-label="Center and fit all nodes"
+        >
+          <i className="fa-solid fa-crosshairs" />
+        </button>
+      </div>
+      <svg ref={svgRef} className="sf-feature-network" role="img" aria-label="Feature network" />
+    </div>
+  );
 }
 
 function FeatureSignalPlot({
@@ -804,17 +875,35 @@ function FeatureSignalPlot({
     if (!x.length || !y.length) return [];
     const label = String(row.feature ?? row.feature_id ?? row.name ?? 'feature');
     const color = colorFor(label, categories);
+    const isSpectrum = kind === 'ms1' || kind === 'ms2';
     return [
       {
         type: 'scattergl',
-        mode: 'lines',
+        mode: isSpectrum ? 'lines' : 'lines',
         name: label,
-        x,
-        y,
-        line: { color },
+        x: isSpectrum ? x.flatMap((value) => [value, value, null]) : x,
+        y: isSpectrum ? y.flatMap((value) => [0, value, null]) : y,
+        line: { color, width: isSpectrum ? 1 : 2 },
         ...(kind === 'eic' ? { fill: 'tozeroy', fillcolor: withAlpha(color, 0.4) } : {}),
         hovertemplate: buildSignalHoverTemplate(row, label, kind),
       },
+      ...(isSpectrum
+        ? [
+            {
+              type: 'scattergl',
+              mode: 'markers+text',
+              name: label,
+              x,
+              y,
+              marker: { size: 4, color },
+              text: x.map((value) => value.toFixed(4)),
+              textposition: 'top center',
+              textfont: { size: 9, color },
+              hovertemplate: buildSignalHoverTemplate(row, label, kind),
+              showlegend: false,
+            },
+          ]
+        : []),
     ];
   });
   if (!traces.length)
@@ -1021,6 +1110,17 @@ function selectionKey(row: FeatureRow, mode: SelectionMode): string {
 
 function hasSelectionValue(row: FeatureRow, field: string): boolean {
   return String(row[field] ?? '').trim() !== '';
+}
+
+function matchesFeatureSearch(row: FeatureRow, pattern: RegExp): boolean {
+  return Object.values(row).some((value) => {
+    pattern.lastIndex = 0;
+    return pattern.test(String(value ?? ''));
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function withinRange(row: FeatureRow, names: string[], min: string, max: string): boolean {

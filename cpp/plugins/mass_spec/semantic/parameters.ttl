@@ -156,31 +156,19 @@ sfms:indicesParameter
     sf:items sfcore:integerItemParameter ;
     sf:example "[0,2]" .
 
-sfms:rtWindowsMinParameter
+sfms:rtWindowsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Feature RT window minimums" ;
-    skos:definition "Lower retention-time bounds for feature detection windows; omitted or empty means the full retention-time range." ;
-    sf:type "array" ;
+    skos:prefLabel "Retention-time windows" ;
+    skos:definition "Optional retention-time windows for feature detection. Each row contains an inclusive lower bound in rtmin and upper bound in rtmax; omitted or empty means the full retention-time range." ;
+    sf:type "table" ;
+    sf:tableContract sfms:rtWindowsTable ;
     sf:required false ;
     sf:defaultRequired true ;
     sf:default "[]" ;
-    sf:items sfcore:realItemParameter ;
-    sf:example "[0.0]" .
+    sf:example "[{\"rtmin\":0,\"rtmax\":1800}]" .
 
-sfms:rtWindowsMaxParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Feature RT window maximums" ;
-    skos:definition "Upper retention-time bounds for feature detection windows; omitted or empty means the full retention-time range." ;
-    sf:type "array" ;
-    sf:required false ;
-    sf:defaultRequired true ;
-    sf:default "[]" ;
-    sf:items sfcore:realItemParameter ;
-    sf:example "[1800.0]" .
 
 sfms:methodParameter
     a sf:Parameter ;
@@ -290,6 +278,32 @@ sfms:targetsParameter
     sf:required false ;
     sf:default "[]" ;
     sf:example "[{\"name\":\"caffeine\",\"mass\":194.0804},{\"name\":\"acetaminophen\",\"mass\":151.0633}]" .
+
+sfms:targetsCsvPathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Targets CSV path" ;
+    skos:definition "CSV file containing target rows. A target requires mass or mz, while optional chemical structure columns are normalized with Open Babel when supplied." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:defaultRequired true ;
+    sf:default "" ;
+    sf:extensions ".csv" ;
+    sf:example "bindings/r/dev/dev_duckdb/suspects.csv" .
+
+sfms:suspectTargetsCsvPathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Suspect targets CSV path" ;
+    skos:definition "CSV file containing validated suspect chemical identities and optional positive- and negative-mode MS2 reference peaks." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:defaultRequired true ;
+    sf:default "" ;
+    sf:extensions ".csv" ;
+    sf:example "bindings/r/dev/dev_duckdb/suspects.csv" .
 
 sfms:suspectTargetsParameter
     a sf:Parameter ;
@@ -882,7 +896,7 @@ sfms:minFwhmRtParameter
     skos:definition "Optional minimum RT full width at half maximum; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 1.0 ;
+    sf:default "null" ;
     sf:example 1.0 .
 
 sfms:maxFwhmRtParameter
@@ -893,7 +907,7 @@ sfms:maxFwhmRtParameter
     skos:definition "Optional maximum RT full width at half maximum; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 100.0 ;
+    sf:default "null" ;
     sf:example 100.0 .
 
 sfms:minFwhmMzParameter
@@ -926,7 +940,7 @@ sfms:minGaussianAParameter
     skos:definition "Optional minimum fitted Gaussian amplitude; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.0 .
 
 sfms:minGaussianMuParameter
@@ -937,7 +951,7 @@ sfms:minGaussianMuParameter
     skos:definition "Optional minimum fitted Gaussian centre; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.0 .
 
 sfms:maxGaussianMuParameter
@@ -959,7 +973,7 @@ sfms:minGaussianSigmaParameter
     skos:definition "Optional minimum fitted Gaussian sigma; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.0 .
 
 sfms:maxGaussianSigmaParameter
@@ -967,10 +981,10 @@ sfms:maxGaussianSigmaParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum Gaussian sigma" ;
-    skos:definition "Optional maximum fitted Gaussian sigma; null disables." ;
+    skos:definition "Optional maximum Gaussian sigma; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 100.0 .
 
 sfms:minGaussianR2Parameter
@@ -981,7 +995,7 @@ sfms:minGaussianR2Parameter
     skos:definition "Optional minimum Gaussian fit R-squared; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.8 .
 
 sfms:maxJaggednessParameter
@@ -992,7 +1006,7 @@ sfms:maxJaggednessParameter
     skos:definition "Optional maximum permitted peak jaggedness; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 100.0 .
 
 sfms:minSharpnessParameter
@@ -1003,7 +1017,7 @@ sfms:minSharpnessParameter
     skos:definition "Optional minimum peak sharpness; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.0 .
 
 sfms:minAsymmetryParameter
@@ -1014,7 +1028,7 @@ sfms:minAsymmetryParameter
     skos:definition "Optional minimum accepted peak asymmetry; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.0 .
 
 sfms:maxAsymmetryParameter
@@ -1025,7 +1039,7 @@ sfms:maxAsymmetryParameter
     skos:definition "Optional maximum accepted peak asymmetry; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 100.0 .
 
 sfms:maxModalityParameter
@@ -1047,19 +1061,9 @@ sfms:minPlatesParameter
     skos:definition "Optional minimum theoretical plate count; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 100.0 .
 
-sfms:onlyFilledParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Only filled features" ;
-    skos:definition "Tri-state: true keeps only filled, false keeps only non-filled, null disables." ;
-    sf:type "boolean" ;
-    sf:required false ;
-    sf:default false ;
-    sf:example true .
 
 sfms:removeFilledParameter
     a sf:Parameter ;
@@ -1080,7 +1084,7 @@ sfms:minSizeEicParameter
     skos:definition "Optional minimum number of points in the stored extracted-ion chromatogram; null disables." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default 0 ;
+    sf:default "null" ;
     sf:example 5 .
 
 sfms:minSizeMs1Parameter
@@ -1091,7 +1095,7 @@ sfms:minSizeMs1Parameter
     skos:definition "Optional minimum number of stored MS1 points; null disables." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default 0 ;
+    sf:default "null" ;
     sf:example 5 .
 
 sfms:minSizeMs2Parameter
@@ -1102,7 +1106,7 @@ sfms:minSizeMs2Parameter
     skos:definition "Optional minimum number of stored MS2 fragment peaks; null disables." ;
     sf:type "integer" ;
     sf:required false ;
-    sf:default 0 ;
+    sf:default "null" ;
     sf:example 5 .
 
 sfms:minRelPresenceReplicateParameter
@@ -1113,7 +1117,7 @@ sfms:minRelPresenceReplicateParameter
     skos:definition "Optional minimum relative presence within replicate analyses; null disables." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 0.8 .
 
 sfms:removeIsotopesParameter

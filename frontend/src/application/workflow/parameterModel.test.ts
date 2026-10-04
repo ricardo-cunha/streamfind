@@ -4,7 +4,9 @@ import {
   defaultParameters,
   isFileListParameter,
   isJsonParameter,
+  isSimplePathParameter,
   isPathListParameter,
+  parameterInputValue,
   scalarInputValue,
   schemaTypeLabel,
   schemaPropertyOrder,
@@ -23,8 +25,12 @@ const numberParameter: CapabilityParameter = {
 describe('workflow parameter model', () => {
   it('derives defaults and scalar input values from backend schemas', () => {
     const capability = { parameters: [numberParameter] } as BackendCapability;
-    expect(defaultParameters(capability)).toEqual({ threshold: '' });
+    expect(defaultParameters(capability)).toEqual({ threshold: null });
     expect(scalarInputValue(numberParameter, '2.5')).toBe(2.5);
+    expect(scalarInputValue(numberParameter, '')).toBeNull();
+    expect(parameterInputValue({ ...numberParameter, default: 0 }, undefined)).toBe('0');
+    expect(parameterInputValue({ ...numberParameter, default: 0 }, null)).toBe('');
+    expect(parameterInputValue({ ...numberParameter, default: 0 }, 2.5)).toBe('2.5');
   });
 
   it('formats nested schema labels and identifies path/json parameters', () => {
@@ -36,6 +42,14 @@ describe('workflow parameter model', () => {
     expect(isFileListParameter(pathParameter)).toBe(false);
     expect(isPathListParameter(pathParameter)).toBe(true);
     expect(isJsonParameter(pathParameter)).toBe(true);
+    const csvPathParameter: CapabilityParameter = {
+      ...numberParameter,
+      schema: { type: 'string', extensions: ['.csv'] },
+      extensions: ['.csv'],
+    };
+    expect(isSimplePathParameter(csvPathParameter)).toBe(true);
+    expect(isPathListParameter(csvPathParameter)).toBe(true);
+    expect(isJsonParameter(csvPathParameter)).toBe(false);
   });
 
   it('normalizes persisted table values for the workflow editor', () => {
@@ -47,6 +61,9 @@ describe('workflow parameter model', () => {
         stale: 'ignored',
       }),
     ).toEqual({ known: 'value' });
+    expect(
+      wireParameters({ parameters: [{ name: 'min_sn', schema: { type: 'real' } }] } as never, { min_sn: '' }),
+    ).toEqual({});
     expect(schemaPropertyOrder({ properties: { b: {}, a: {} }, 'x-streamfind-property-order': ['a'] })).toEqual([
       'a',
       'b',

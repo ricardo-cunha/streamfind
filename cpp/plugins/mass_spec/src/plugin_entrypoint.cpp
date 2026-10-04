@@ -29,6 +29,7 @@ void report_error(const streamfind_plugin_host_api *host, const std::string &mes
 const sdk::CapabilityRegistry &capabilities() {
     static const sdk::CapabilityRegistry registry{
         {"mass_spec.read_mass_spec_files", sdk::CapabilityKind::Operation, &base::read_mass_spec_files},
+        {"mass_spec.read_csv_targets", sdk::CapabilityKind::Operation, &base::read_csv_targets},
 
         {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &base::remove_analyses},
         {"mass_spec.get_analyses", sdk::CapabilityKind::Operation, &base::get_analyses},
@@ -66,6 +67,7 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.create_components", sdk::CapabilityKind::Operation, &nta::create_components::run},
         {"mass_spec.annotate_components", sdk::CapabilityKind::Operation, &nta::annotate_components::run},
         {"mass_spec.suspect_screening", sdk::CapabilityKind::Operation, &nta::suspect_screening::run},
+        {"mass_spec.read_csv_suspect_targets", sdk::CapabilityKind::Operation, &nta::read_csv_suspect_targets::run},
         {"mass_spec.find_internal_standards", sdk::CapabilityKind::Operation, &nta::find_internal_standards::run},
         {"mass_spec.filter_suspects", sdk::CapabilityKind::Operation, &nta::filter_suspects::run},
         {"mass_spec.filter_internal_standards", sdk::CapabilityKind::Operation, &nta::filter_internal_standards::run},

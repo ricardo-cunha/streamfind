@@ -261,4 +261,66 @@ describe('FeatureInspector', () => {
     expect(artifactData).toHaveBeenNthCalledWith(1, 'session-1', expect.objectContaining({ offset: 0, limit: 1000 }));
     expect(artifactData).toHaveBeenNthCalledWith(2, 'session-1', expect.objectContaining({ offset: 1, limit: 1000 }));
   });
+
+  it('matches the regex against every persisted feature-table cell', async () => {
+    if (!visualizationRegistry.has('core.plotly'))
+      visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
+    const artifactData = vi.fn().mockResolvedValue({
+      artifact_id: artifact.artifact_id,
+      columns: [],
+      rows: [
+        { feature_id: 'F1', analysis: 'sample-a', replicate: 'sample', blank: 'blank', mz: '100', rt: '10' },
+        { feature_id: 'F2', analysis: 'control-a', replicate: 'blank', blank: 'blank', mz: '200', rt: '20' },
+      ],
+      offset: 0,
+      limit: 1000,
+      total_rows: 2,
+    });
+    render(
+      <FeatureInspector
+        context={{
+          sessionId: 'session-1',
+          artifactId: artifact.artifact_id,
+          semanticType: artifact.contract_id,
+          artifact,
+          pluginApi: { client: { artifactData } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
+        }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText('Features 2 / 2')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('Filter features (regex)'), { target: { value: 'blank' } });
+    expect(screen.getByText('Features 2 / 2')).toBeInTheDocument();
+  });
+
+  it('hides flagged features until the filtered checkbox is enabled', async () => {
+    if (!visualizationRegistry.has('core.plotly'))
+      visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
+    const artifactData = vi.fn().mockResolvedValue({
+      artifact_id: artifact.artifact_id,
+      columns: [],
+      rows: [
+        { feature_id: 'F1', analysis: 'sample-a', filtered: 'false', mz: '100', rt: '10' },
+        { feature_id: 'F2', analysis: 'blank-a', filtered: 'true', mz: '200', rt: '20' },
+      ],
+      offset: 0,
+      limit: 1000,
+      total_rows: 2,
+    });
+    render(
+      <FeatureInspector
+        context={{
+          sessionId: 'session-1',
+          artifactId: artifact.artifact_id,
+          semanticType: artifact.contract_id,
+          artifact,
+          pluginApi: { client: { artifactData } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
+        }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText('Features 1 / 2')).toBeInTheDocument());
+    const filteredCheckbox = screen.getByLabelText('filtered') as HTMLInputElement;
+    expect(filteredCheckbox.checked).toBe(false);
+    fireEvent.click(filteredCheckbox);
+    expect(screen.getByText('Features 2 / 2')).toBeInTheDocument();
+  });
 });

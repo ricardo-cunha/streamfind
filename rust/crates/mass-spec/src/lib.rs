@@ -1930,33 +1930,24 @@ fn validate_find_features(p: &Value) -> Result<()> {
     gt0(p, ID, "baseline_window")?;
     gt0(p, ID, "max_feature_width")?;
     in_unit_interval(p, ID, "base_quantile")?;
-    if p.get("rt_windows_min").is_some() || p.get("rt_windows_max").is_some() {
-        let (Some(min), Some(max)) = (
-            p.get("rt_windows_min").and_then(Value::as_array),
-            p.get("rt_windows_max").and_then(Value::as_array),
-        ) else {
-            return Err(invalid_message(
-                ID,
-                "rt_windows_min and rt_windows_max must be provided together",
-            ));
+    if let Some(windows) = p.get("rt_windows") {
+        let Some(windows) = windows.as_array() else {
+            return Err(invalid_message(ID, "rt_windows must be an array of rows"));
         };
-        if min.len() != max.len() {
-            return Err(invalid_message(
-                ID,
-                "rt_windows_min and rt_windows_max must have the same length",
-            ));
-        }
-        for (min, max) in min.iter().zip(max.iter()) {
-            let (Some(min), Some(max)) = (min.as_f64(), max.as_f64()) else {
-                return Err(invalid_message(
-                    ID,
-                    "rt_windows_min and rt_windows_max must contain numbers",
-                ));
+        for row in windows {
+            let Some(row) = row.as_object() else {
+                return Err(invalid_message(ID, "rt_windows rows must be objects"));
+            };
+            let (Some(min), Some(max)) = (
+                row.get("rtmin").and_then(Value::as_f64),
+                row.get("rtmax").and_then(Value::as_f64),
+            ) else {
+                return Err(invalid_message(ID, "rt_windows rows must contain numeric rtmin and rtmax"));
             };
             if min > max {
                 return Err(invalid_message(
                     ID,
-                    "rt_windows_min values must not exceed rt_windows_max values",
+                    "rt_windows rtmin values must not exceed rtmax values",
                 ));
             }
         }

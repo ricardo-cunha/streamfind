@@ -106,6 +106,7 @@ export function canvasWorkflow(
     .map((node) => ({
       id: node.id,
       operation: node.capabilityId as string,
+      inputs: {},
       parameters: wireParameters(
         capabilities.operations.find((capability) => capability.canonical_id === node.capabilityId),
         node.parameters || {},

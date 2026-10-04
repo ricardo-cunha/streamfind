@@ -1989,6 +1989,31 @@ h2 {
   padding: 5px 6px;
   font-size: 0.7rem;
 }
+.sf-canvas-scalar-path-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.sf-canvas-scalar-path-row input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.sf-canvas-path-picker {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sf-text-secondary);
+}
+.sf-canvas-path-picker:hover,
+.sf-canvas-path-picker:focus-visible {
+  border: 0;
+  background: transparent;
+  color: var(--sf-accent);
+}
 .sf-canvas-file-summary {
   color: var(--sf-text-muted);
   font-size: 0.68rem;

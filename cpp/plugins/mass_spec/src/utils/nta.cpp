@@ -292,6 +292,38 @@ namespace streamfind::mass_spec::nta::utils
         return value.empty() ? 0.0 : std::stod(value);
     }
 
+    std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_spectra_headers(
+        const std::vector<nlohmann::json> &rows)
+    {
+        std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
+        for (const auto &row : rows)
+        {
+            auto &header = headers[text(row, "analysis")];
+            header.index.push_back(integer(row, "index"));
+            header.scan.push_back(integer(row, "scan"));
+            header.array_length.push_back(integer(row, "array_length"));
+            header.level.push_back(integer(row, "level"));
+            header.mode.push_back(integer(row, "mode"));
+            header.polarity.push_back(integer(row, "polarity"));
+            header.configuration.push_back(integer(row, "configuration"));
+            header.lowmz.push_back(static_cast<float>(real(row, "lowmz")));
+            header.highmz.push_back(static_cast<float>(real(row, "highmz")));
+            header.bpmz.push_back(static_cast<float>(real(row, "bpmz")));
+            header.bpint.push_back(static_cast<float>(real(row, "bpint")));
+            header.tic.push_back(static_cast<float>(real(row, "tic")));
+            header.rt.push_back(static_cast<float>(real(row, "rt")));
+            header.mobility.push_back(static_cast<float>(real(row, "mobility")));
+            header.window_mz.push_back(static_cast<float>(real(row, "window_mz")));
+            header.window_mzlow.push_back(static_cast<float>(real(row, "window_mzlow")));
+            header.window_mzhigh.push_back(static_cast<float>(real(row, "window_mzhigh")));
+            header.precursor_mz.push_back(static_cast<float>(real(row, "precursor_mz")));
+            header.precursor_intensity.push_back(static_cast<float>(real(row, "precursor_intensity")));
+            header.precursor_charge.push_back(integer(row, "precursor_charge"));
+            header.activation_ce.push_back(static_cast<float>(real(row, "activation_ce")));
+        }
+        return headers;
+    }
+
     const std::vector<std::string> &feature_columns()
     {
         static const std::vector<std::string> columns = {
@@ -519,7 +551,16 @@ namespace streamfind::mass_spec::nta::utils::detail
             std::vector<std::string> names, paths, blanks, replicates;
             std::vector<int> indices;
             std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
+            std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_headers;
             const auto wanted = parameters.value("analysis_names", Json::array());
+            const auto inputs = parameters.value("_inputs", Json::object());
+            const auto spectra_input = inputs.find("spectraHeadersTable");
+            if (spectra_input != inputs.end() && spectra_input->is_object())
+            {
+                persisted_headers = persisted_spectra_headers(access.query(
+                    "SELECT analysis,index,scan,array_length,level,mode,polarity,configuration,lowmz,highmz,bpmz,bpint,tic,rt,mobility,window_mz,window_mzlow,window_mzhigh,precursor_mz,precursor_intensity,precursor_charge,activation_ce FROM "
+                    + spectra_input->at("physical_table").get<std::string>() + " ORDER BY analysis,index"));
+            }
             // query_json stringifies every column; parse the analysis index tolerantly.
             auto analysis_index_of = [&](const Json &row)
             {
@@ -576,6 +617,12 @@ namespace streamfind::mass_spec::nta::utils::detail
                     replicates.emplace_back();
                 }
                 headers.resize(names.size());
+            }
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                const auto persisted = persisted_headers.find(names[i]);
+                if (persisted != persisted_headers.end() && !persisted->second.index.empty())
+                    headers[i] = persisted->second;
             }
             ::streamfind::mass_spec::nta::NtaProjectData data(std::move(names), std::move(paths), std::move(headers));
             data.set_analysis_indices(std::move(indices));
@@ -695,10 +742,25 @@ namespace streamfind::mass_spec::nta::utils::detail
         }
 
         // Map the JSON `suspect_targets` array into SuspectQuery objects.
-        std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(const Json &parameters)
+        std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
         {
+            Json targets = parameters.value("suspect_targets", Json::array());
+            const auto inputs = parameters.value("_inputs", Json::object());
+            const auto input_it = inputs.find("suspectTargetsTable");
+            if (input_it != inputs.end())
+            {
+                const auto table = input_it->at("physical_table").get<std::string>();
+                targets = Json::array();
+                const std::vector<std::string> columns = {"name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "database_id", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+                for (auto row : access.read(table, columns, "name"))
+                {
+                    for (const auto &key : {"fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"})
+                        if (row.contains(key) && row[key].is_string() && !row[key].get<std::string>().empty())
+                            row[key] = Json::parse(row[key].get<std::string>());
+                    targets.push_back(std::move(row));
+                }
+            }
             std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> out;
-            const auto targets = parameters.value("suspect_targets", Json::array());
             for (const auto &t : targets)
             {
                 ::streamfind::mass_spec::nta::suspect_screening::SuspectQuery q;

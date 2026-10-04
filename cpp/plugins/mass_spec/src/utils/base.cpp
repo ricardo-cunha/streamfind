@@ -10,6 +10,7 @@
 
 namespace streamfind::mass_spec::base::utils
 {
+
 nlohmann::json summarize_eic(const nlohmann::json &rows)
 {
     std::map<std::tuple<std::string, int, std::string, double>, nlohmann::json> grouped;

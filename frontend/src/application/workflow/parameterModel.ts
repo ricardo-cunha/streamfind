@@ -4,9 +4,17 @@ export function defaultParameters(capability: BackendCapability): Record<string,
   return Object.fromEntries(
     capability.parameters.map((parameter) => [
       parameter.name,
-      parameter.default ??
-        parameter.schema.default ??
-        (parameter.schema.type === 'array' || parameter.schema.type === 'table' ? [] : ''),
+      parameter.default !== undefined
+        ? parameter.default
+        : parameter.schema.default !== undefined
+          ? parameter.schema.default
+          : parameter.schema.type === 'array' || parameter.schema.type === 'table'
+            ? []
+            : parameter.schema.type === 'boolean'
+              ? false
+              : ['integer', 'number', 'real', 'float', 'double'].includes(String(parameter.schema.type))
+                ? null
+                : '',
     ]),
   );
 }
@@ -25,6 +33,16 @@ export function fileParameterExtensions(parameter: CapabilityParameter): string[
 }
 
 export function isSimplePathParameter(parameter: CapabilityParameter): boolean {
+  const type = Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type;
+  if (type === 'string' || type === 'path') {
+    return Boolean(
+      parameter.extensions?.length ||
+      parameter.path_kind ||
+      (Array.isArray(parameter.schema.extensions) && parameter.schema.extensions.length > 0) ||
+      Boolean(parameter.schema.path_kind) ||
+      Array.isArray(parameter.schema['x-streamfind-file-extensions']),
+    );
+  }
   return (
     parameter.schema.type === 'array' &&
     parameter.schema.items?.type !== 'object' &&
@@ -66,11 +84,16 @@ export function isJsonParameter(parameter: CapabilityParameter): boolean {
 
 export function scalarInputValue(parameter: CapabilityParameter, raw: string): unknown {
   const type = Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type;
-  if (type === 'integer') return raw === '' ? '' : Number.parseInt(raw, 10);
+  if (type === 'integer') return raw === '' ? null : Number.parseInt(raw, 10);
   if (type === 'number' || type === 'real' || type === 'float' || type === 'double')
-    return raw === '' ? '' : Number.parseFloat(raw);
+    return raw === '' ? null : Number.parseFloat(raw);
   if (type === 'boolean') return raw === 'true';
   return raw;
+}
+
+export function parameterInputValue(parameter: CapabilityParameter, value: unknown): string {
+  const initialValue = parameter.default ?? parameter.schema.default;
+  return String(value === undefined ? (initialValue ?? '') : (value ?? ''));
 }
 
 export function wireTableToRows(value: unknown): unknown {
@@ -107,7 +130,20 @@ export function wireParameters(
 ): Record<string, JsonValue> {
   if (!capability) return JSON.parse(JSON.stringify(parameters)) as Record<string, JsonValue>;
   return Object.fromEntries(
-    Object.entries(parameters).filter(([name]) => capability.parameters.some((candidate) => candidate.name === name)),
+    Object.entries(parameters)
+      .map(([name, value]) => {
+        const parameter = capability.parameters.find((candidate) => candidate.name === name);
+        if (!parameter) return null;
+        if (value === null && !parameter.required) return null;
+        const type = Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type;
+        if (typeof value === 'string' && (type === 'integer' || type === 'number' || type === 'real')) {
+          const normalized = scalarInputValue(parameter, value);
+          return normalized === null && !parameter.required ? null : [name, normalized];
+        }
+        if (typeof value === 'string' && type === 'boolean') return [name, value === 'true'];
+        return [name, value];
+      })
+      .filter((entry): entry is [string, unknown] => entry !== null),
   ) as Record<string, JsonValue>;
 }
 

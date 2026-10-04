@@ -129,6 +129,22 @@
   flex: 1 1 auto;
   background: transparent;
 }
+.sf-feature-network-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.sf-feature-network-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
 .sf-feature-scatter line {
   stroke: var(--sf-border);
   stroke-width: 1;

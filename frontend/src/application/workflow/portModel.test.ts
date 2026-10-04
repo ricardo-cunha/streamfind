@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { nodePorts, parameterTypeKey, portTypeKey, schemaShape, typeClass, typeIcon } from './portModel';
+import {
+  nodePorts,
+  parameterTypeKey,
+  portMatchesParameter,
+  portTypeKey,
+  schemaShape,
+  typeClass,
+  typeIcon,
+} from './portModel';
 
 describe('workflow port model', () => {
   it('normalizes backend ports and derives stable type metadata', () => {
@@ -25,6 +33,30 @@ describe('workflow port model', () => {
   it('preserves top-level output_ports returned by the capability endpoint', () => {
     const ports = nodePorts({ output_ports: [{ id: 'result', label: 'Result', direction: 'output' }] } as never);
     expect(ports.outputs.map((port) => port.id)).toEqual(['result']);
+  });
+
+  it('allows persisted table outputs to connect to table parameters', () => {
+    expect(
+      portMatchesParameter(
+        {
+          id: 'targetsTable',
+          label: 'Targets',
+          dataKind: 'duckdb_table',
+          schema: {
+            properties: { mass: { type: 'array', items: { type: 'number' } } },
+          },
+          typeKey: 'duckdb_table:targetsTable',
+        },
+        {
+          name: 'targets',
+          schema: {
+            type: 'table',
+            additionalProperties: false,
+            properties: { mass: { type: 'array', items: { type: 'number' } } },
+          },
+        },
+      ),
+    ).toBe(true);
   });
 
   it('keeps optional input ports when capability shapes expose both input arrays', () => {

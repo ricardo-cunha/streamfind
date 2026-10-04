@@ -1,6 +1,7 @@
 #include "operations/base.hpp"
 #include "readers/reader.hpp"
 #include "utils/base.hpp"
+#include "utils/target_csv.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -225,6 +226,39 @@ namespace streamfind::mass_spec::base
             access.emit_table_rows("chromatogramsHeadersTable", chromatogram_columns, chromatogram_types,
                                    typed_rows(chromatogram_rows, chromatogram_columns, chromatogram_types));
         return added;
+    }
+
+    Json read_csv_targets(sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const auto path = parameters.value("targets_csv_path", std::string{});
+        if (path.empty()) throw std::invalid_argument("targets_csv_path must be a non-empty CSV file path");
+        const auto parsed = target_csv::read_targets_csv(path, false);
+        const std::vector<std::string> columns = {
+            "name", "analysis", "polarity", "level", "mass", "mass_min", "mass_max",
+            "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax", "formula", "SMILES", "InChI", "InChIKey"};
+        const std::vector<std::string> types = {
+            "string", "string", "integer", "integer", "real", "real", "real", "real", "real",
+            "real", "real", "real", "real", "string", "string", "string", "string"};
+        Json rows = Json::array();
+        for (const auto &source : parsed)
+        {
+            Json row = Json::object();
+            for (const auto &column : columns) row[column] = nullptr;
+            for (const auto &key : {"name", "analysis", "formula", "SMILES", "InChI", "InChIKey"})
+                if (source.contains(key)) row[key] = source.at(key);
+            for (const auto &key : {"polarity", "level", "mass", "mass_min", "mass_max", "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"})
+            {
+                const auto alternate = std::string(key) == "mzmin" ? "mz_min" :
+                                       std::string(key) == "mzmax" ? "mz_max" :
+                                       std::string(key) == "rtmin" ? "rt_min" :
+                                       std::string(key) == "rtmax" ? "rt_max" : std::string(key);
+                if (source.contains(key)) row[key] = source.at(key);
+                else if (source.contains(alternate)) row[key] = source.at(alternate);
+            }
+            rows.push_back(std::move(row));
+        }
+        access.emit_table_rows("targetsTable", columns, types, rows);
+        return {{"rows", rows.size()}, {"path", path}};
     }
 
 
@@ -581,9 +615,10 @@ namespace streamfind::mass_spec::base
 
     Json get_raw_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto analyses = selected_analysis_rows(access, parameters);
-        const auto targets = base::utils::normalize_targets(parameters);
-        const auto requested_targets = parameters.value("targets", Json::array());
+        const auto &effective_parameters = parameters;
+        const auto analyses = selected_analysis_rows(access, effective_parameters);
+        const auto targets = base::utils::normalize_targets(effective_parameters);
+        const auto requested_targets = effective_parameters.value("targets", Json::array());
         const bool has_requested_targets = requested_targets.is_array() && !requested_targets.empty();
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();

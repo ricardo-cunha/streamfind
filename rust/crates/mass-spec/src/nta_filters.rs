@@ -44,7 +44,6 @@ struct FilterParams {
     max_asymmetry: Option<f32>,
     max_modality: Option<i32>,
     min_plates: Option<f32>,
-    only_filled: Option<bool>,
     remove_filled: bool,
     min_size_eic: Option<i32>,
     min_size_ms1: Option<i32>,
@@ -80,7 +79,6 @@ impl Default for FilterParams {
             max_asymmetry: None,
             max_modality: None,
             min_plates: None,
-            only_filled: None,
             remove_filled: false,
             min_size_eic: None,
             min_size_ms1: None,
@@ -157,8 +155,6 @@ pub fn filter_features_impl(
     max_modality: i32,
     has_max_modality: bool,
     min_plates: f64,
-    has_only_filled: bool,
-    only_filled_value: bool,
     remove_filled: bool,
     min_size_eic: i32,
     has_min_size_eic: bool,
@@ -245,9 +241,6 @@ pub fn filter_features_impl(
     }
     if !min_plates.is_nan() {
         params.min_plates = Some(min_plates as f32);
-    }
-    if has_only_filled {
-        params.only_filled = Some(only_filled_value);
     }
     params.remove_filled = remove_filled;
     if has_min_size_eic {
@@ -507,23 +500,6 @@ pub fn filter_features_impl(
         );
     }
 
-    if let Some(only_filled) = params.only_filled {
-        if only_filled {
-            apply_filter(
-                feature_buffers,
-                &replicate_names,
-                "onlyFilled",
-                |fts, i, _| !fts.filled[i],
-            );
-        } else {
-            apply_filter(
-                feature_buffers,
-                &replicate_names,
-                "notFilled",
-                |fts, i, _| fts.filled[i],
-            );
-        }
-    }
 
     if params.remove_filled {
         apply_filter(

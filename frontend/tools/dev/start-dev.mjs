@@ -6,8 +6,17 @@ import { fileURLToPath, URL } from 'node:url';
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const worktreeRoot = resolve(frontendRoot, '..');
-const buildRoot = resolve(worktreeRoot, 'tmp', 'build', 'mingw-ucrt64');
-const serviceExecutable = resolve(buildRoot, 'streamfind_service.exe');
+const configuredBuildRoot = process.env.STREAMFIND_NATIVE_BUILD_DIR
+  ? resolve(worktreeRoot, process.env.STREAMFIND_NATIVE_BUILD_DIR)
+  : undefined;
+const buildRoots = [
+  configuredBuildRoot,
+  resolve(worktreeRoot, 'tmp', 'build', 'mingw-ucrt64'),
+  resolve(worktreeRoot, 'tmp', 'build', 'mingw-release-cpp'),
+].filter((root, index, roots) => root && roots.indexOf(root) === index);
+const serviceLocation = buildRoots
+  .map((root) => ({ root, executable: resolve(root, 'streamfind_service.exe') }))
+  .find(({ executable }) => existsSync(executable));
 const serviceUrl = process.env.STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790';
 const servicePort = new URL(serviceUrl).port || '8790';
 const children = [];
@@ -29,9 +38,10 @@ async function serviceReady() {
 }
 
 function startService() {
-  if (!existsSync(serviceExecutable)) {
-    throw new Error(`Native service was not found at ${serviceExecutable}. Build streamfind_service first.`);
+  if (!serviceLocation) {
+    throw new Error(`Native service was not found. Build streamfind_service in one of: ${buildRoots.join(', ')}`);
   }
+  const { root: buildRoot, executable: serviceExecutable } = serviceLocation;
   const pathEntries = [buildRoot, 'C:/msys64/ucrt64/bin', 'C:/msys64/usr/bin', process.env.PATH || ''];
   const child = spawn(serviceExecutable, [servicePort], {
     cwd: buildRoot,

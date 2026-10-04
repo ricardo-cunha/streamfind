@@ -1253,7 +1253,7 @@ std::string sql(const std::string &);
 MZ_INTENSITY merge_nta_feature_spectra(const ::mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA &, float, float);
 std::string encode_float_array(const std::vector<float> &);
 ::streamfind::mass_spec::nta::NtaProjectData load_analysis_features(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
-std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(const nlohmann::json &);
+std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
 bool excluded_feature(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &, bool);
 bool already_had(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &, int);
 void emit_features(streamfind::sdk::PluginProjectAccess &, ::streamfind::mass_spec::nta::NtaProjectData &);

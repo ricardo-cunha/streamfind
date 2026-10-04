@@ -26,6 +26,7 @@
 #include <set>
 #include <string_view>
 #include <sstream>
+
 #include <iomanip>
 #include <zlib.h>
 
@@ -3948,14 +3949,11 @@ namespace mass_spec
     mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA MASS_SPEC_FILE::get_spectra_targets(const mass_spec::spectra::MASS_SPEC_TARGETS &targets, const MASS_SPEC_SPECTRA_HEADERS &hd, const float &minIntLv1, const float &minIntLv2)
     {
       mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA out;
-      const std::vector<int> all_indices = [](size_t n)
-      {
-        std::vector<int> idx(n);
-        std::iota(idx.begin(), idx.end(), 0);
-        return idx;
-      }(hd.size());
-
-      auto raw = ms->get_spectra(all_indices);
+      // Build the scan-to-target index before touching peak arrays. The previous
+      // implementation traversed each scan's peak list once per target. This
+      // keeps the matching rules unchanged, but lets each scan/peak array be
+      // decoded and traversed once while retaining target-order output.
+      std::vector<std::vector<size_t>> targets_by_scan(hd.size());
       for (size_t t = 0; t < targets.id.size(); ++t)
       {
         const bool precursor = t < targets.precursor.size() ? targets.precursor[t] : false;
@@ -3968,64 +3966,81 @@ namespace mass_spec
         const float mzcenter = t < targets.mz.size() ? targets.mz[t] : 0.0f;
         const float mmin = mzmin == 0.0f && mzmax == 0.0f ? mzcenter - 0.01f : mzmin;
         const float mmax = mzmin == 0.0f && mzmax == 0.0f ? mzcenter + 0.01f : mzmax;
-
-        for (size_t i = 0; i < hd.rt.size(); ++i)
+        for (size_t i = 0; i < hd.rt.size() && i < hd.level.size() && i < hd.polarity.size(); ++i)
         {
-          if (i >= hd.level.size() || i >= hd.polarity.size())
-            continue;
-          if (level != 0 && hd.level[i] != level)
-            continue;
-          // Select all matching scans and concatenate peak lists.
-          if (i >= hd.level.size() || i >= hd.polarity.size())
-            continue;
-          if (level != 0 && hd.level[i] != level)
-            continue;
-          if (polarity != 0 && hd.polarity[i] != polarity)
-            continue;
-          if (rtmin != 0.0f && hd.rt[i] < rtmin)
-            continue;
-          if (rtmax != 0.0f && hd.rt[i] > rtmax)
-            continue;
-          if (precursor && (i < hd.precursor_mz.size()))
+          if (level != 0 && hd.level[i] != level) continue;
+          if (polarity != 0 && hd.polarity[i] != polarity) continue;
+          if (rtmin != 0.0f && hd.rt[i] < rtmin) continue;
+          if (rtmax != 0.0f && hd.rt[i] > rtmax) continue;
+          if (precursor && i < hd.precursor_mz.size() && (mmin != 0.0f || mmax != 0.0f))
           {
             const float pmz = hd.precursor_mz[i];
-            if (mmin != 0.0f || mmax != 0.0f)
-            {
-              if (pmz < mmin || pmz > mmax)
-                continue;
-            }
+            if (pmz < mmin || pmz > mmax) continue;
           }
-          if (i >= raw.size())
-            continue;
-          const auto &scan = raw[i];
-          if (scan.size() < 2)
-            continue;
-          const float scan_rt = i < hd.rt.size() ? hd.rt[i] : (t < targets.rt.size() ? targets.rt[t] : 0.0f);
+          targets_by_scan[i].push_back(t);
+        }
+      }
+
+      // Decode only scans that can satisfy at least one target. Header-only
+      // filtering above avoids materializing unrelated profile/fragment arrays.
+      std::vector<int> candidate_indices;
+      candidate_indices.reserve(hd.size());
+      for (size_t i = 0; i < targets_by_scan.size(); ++i)
+        if (!targets_by_scan[i].empty()) candidate_indices.push_back(static_cast<int>(i));
+      const auto raw = ms->get_spectra(candidate_indices);
+      std::vector<mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA> per_target(targets.id.size());
+      for (size_t raw_index = 0; raw_index < raw.size() && raw_index < candidate_indices.size(); ++raw_index)
+      {
+        const size_t i = static_cast<size_t>(candidate_indices[raw_index]);
+        const auto &scan = raw[raw_index];
+        if (scan.size() < 2) continue;
+        for (const size_t t : targets_by_scan[i])
+        {
+          const bool precursor = t < targets.precursor.size() ? targets.precursor[t] : false;
+          const int level = t < targets.level.size() ? targets.level[t] : 0;
+          const int polarity = t < targets.polarity.size() ? targets.polarity[t] : 0;
+          const float mzmin = t < targets.mzmin.size() ? targets.mzmin[t] : 0.0f;
+          const float mzmax = t < targets.mzmax.size() ? targets.mzmax[t] : 0.0f;
+          const float mzcenter = t < targets.mz.size() ? targets.mz[t] : 0.0f;
+          const float mmin = mzmin == 0.0f && mzmax == 0.0f ? mzcenter - 0.01f : mzmin;
+          const float mmax = mzmin == 0.0f && mzmax == 0.0f ? mzcenter + 0.01f : mzmax;
           const float scan_pre_mz = (precursor && i < hd.precursor_mz.size()) ? hd.precursor_mz[i] : mzcenter;
           const float scan_mobility = i < hd.mobility.size() ? hd.mobility[i] : (t < targets.mobility.size() ? targets.mobility[t] : 0.0f);
+          auto &matched = per_target[t];
           for (size_t k = 0; k < scan[0].size(); ++k)
           {
             const float mzv = scan[0][k];
             const float inv = scan[1][k];
-            if (level == 1 && inv < minIntLv1)
-              continue;
-            if (level >= 2 && inv < minIntLv2)
-              continue;
-            if (!precursor && (mzv < mmin || mzv > mmax))
-              continue;
-            out.id.push_back(targets.id[t]);
-            out.polarity.push_back(polarity);
-            out.level.push_back(level);
-            out.pre_mz.push_back(scan_pre_mz);
-            out.pre_mzlow.push_back(mmin);
-            out.pre_mzhigh.push_back(mmax);
-            out.pre_ce.push_back(i < hd.activation_ce.size() ? hd.activation_ce[i] : 0.0f);
-            out.rt.push_back(scan_rt);
-            out.mobility.push_back(scan_mobility);
-            out.mz.push_back(mzv);
-            out.intensity.push_back(inv);
+            if (level == 1 && inv < minIntLv1) continue;
+            if (level >= 2 && inv < minIntLv2) continue;
+            if (!precursor && (mzv < mmin || mzv > mmax)) continue;
+            matched.id.push_back(targets.id[t]);
+            matched.polarity.push_back(polarity);
+            matched.level.push_back(level);
+            matched.pre_mz.push_back(scan_pre_mz);
+            matched.pre_mzlow.push_back(mmin);
+            matched.pre_mzhigh.push_back(mmax);
+            matched.pre_ce.push_back(i < hd.activation_ce.size() ? hd.activation_ce[i] : 0.0f);
+            matched.rt.push_back(hd.rt[i]);
+            matched.mobility.push_back(scan_mobility);
+            matched.mz.push_back(mzv);
+            matched.intensity.push_back(inv);
           }
         }
+      }
+      for (auto &matched : per_target)
+      {
+        out.id.insert(out.id.end(), matched.id.begin(), matched.id.end());
+        out.polarity.insert(out.polarity.end(), matched.polarity.begin(), matched.polarity.end());
+        out.level.insert(out.level.end(), matched.level.begin(), matched.level.end());
+        out.pre_mz.insert(out.pre_mz.end(), matched.pre_mz.begin(), matched.pre_mz.end());
+        out.pre_mzlow.insert(out.pre_mzlow.end(), matched.pre_mzlow.begin(), matched.pre_mzlow.end());
+        out.pre_mzhigh.insert(out.pre_mzhigh.end(), matched.pre_mzhigh.begin(), matched.pre_mzhigh.end());
+        out.pre_ce.insert(out.pre_ce.end(), matched.pre_ce.begin(), matched.pre_ce.end());
+        out.rt.insert(out.rt.end(), matched.rt.begin(), matched.rt.end());
+        out.mobility.insert(out.mobility.end(), matched.mobility.begin(), matched.mobility.end());
+        out.mz.insert(out.mz.end(), matched.mz.begin(), matched.mz.end());
+        out.intensity.insert(out.intensity.end(), matched.intensity.begin(), matched.intensity.end());
       }
       return out;
     }

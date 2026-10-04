@@ -40,7 +40,6 @@ namespace streamfind::mass_spec::nta::filter_features
       std::optional<int> maxModality;
       std::optional<float> minPlates;
 
-      std::optional<bool> onlyFilled; // TRUE: filter not filled, FALSE: filter filled
       bool removeFilled = false;
 
       std::optional<int> minSizeEIC;
@@ -98,8 +97,6 @@ namespace streamfind::mass_spec::nta::filter_features
       int maxModality,
       bool hasMaxModality,
       double minPlates,
-      bool hasOnlyFilled,
-      bool onlyFilledValue,
       bool removeFilled,
       int minSizeEIC,
       bool hasMinSizeEIC,
@@ -142,7 +139,6 @@ namespace streamfind::mass_spec::nta::filter_features
     if (!std::isnan(maxAsymmetry)) params.maxAsymmetry = static_cast<float>(maxAsymmetry);
     if (hasMaxModality) params.maxModality = maxModality;
     if (!std::isnan(minPlates)) params.minPlates = static_cast<float>(minPlates);
-    if (hasOnlyFilled) params.onlyFilled = onlyFilledValue;
     params.removeFilled = removeFilled;
     if (hasMinSizeEIC) params.minSizeEIC = minSizeEIC;
     if (hasMinSizeMS1) params.minSizeMS1 = minSizeMS1;
@@ -411,22 +407,6 @@ namespace streamfind::mass_spec::nta::filter_features
       });
     }
 
-    if (params.onlyFilled.has_value())
-    {
-      bool onlyFilled = params.onlyFilled.value();
-      if (onlyFilled)
-      {
-        apply_filter("onlyFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
-          return !fts.filled[i];
-        });
-      }
-      else
-      {
-        apply_filter("notFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
-          return fts.filled[i];
-        });
-      }
-    }
 
     if (params.removeFilled)
     {
@@ -1139,14 +1119,6 @@ using Json = nlohmann::json;
         const int minSizeMS2 = opt_int("min_size_ms2");
         const bool hasMinSizeMS2 = has("min_size_ms2");
 
-        // only_filled is tri-state: true=keep only filled, false=keep only non-filled,
-        // null/absent=disabled (matches R onlyFilled=NA).
-        bool hasOnlyFilled = false, onlyFilledValue = false;
-        if (auto it = parameters.find("only_filled"); it != parameters.end() && !it->is_null())
-        {
-            hasOnlyFilled = true;
-            onlyFilledValue = it->get<bool>();
-        }
         const bool removeFilled = parameters.value("remove_filled", false);
         const bool removeIsotopes = parameters.value("remove_isotopes", false);
         const bool removeAdducts = parameters.value("remove_adducts", false);
@@ -1160,7 +1132,7 @@ using Json = nlohmann::json;
             minGaussianA, minGaussianMu, maxGaussianMu, minGaussianSigma, maxGaussianSigma, minGaussianR2,
             maxJaggedness, minSharpness, minAsymmetry, maxAsymmetry,
             maxModality, hasMaxModality, minPlates,
-            hasOnlyFilled, onlyFilledValue, removeFilled,
+            removeFilled,
             minSizeEIC, hasMinSizeEIC, minSizeMS1, hasMinSizeMS1, minSizeMS2, hasMinSizeMS2,
             minRelPresenceReplicate,
             removeIsotopes, removeAdducts, removeLosses);

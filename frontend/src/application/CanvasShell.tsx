@@ -49,6 +49,7 @@ import {
   isSimplePathParameter,
   isTableParameter,
   normalizeInlineTableRows,
+  parameterInputValue,
   parseCsvRows,
   scalarInputValue,
   schemaTypeLabel,
@@ -168,6 +169,7 @@ export default function CanvasShell({
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
+  const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -478,7 +480,7 @@ export default function CanvasShell({
     return () => {
       active = false;
     };
-  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface]);
+  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface, workflowReloadNonce]);
 
   useLayoutEffect(() => {
     if (!workflowLoaded || !nodes.length || initialViewportFittedRef.current) return undefined;
@@ -551,6 +553,13 @@ export default function CanvasShell({
     } finally {
       setWorkflowBusy(false);
     }
+  };
+
+  const discardWorkflowChanges = () => {
+    if (!workflowDirty || workflowBusy) return;
+    setStatus('Discarding changes and loading the saved workflow...');
+    setWorkflowLoaded(false);
+    setWorkflowReloadNonce((value) => value + 1);
   };
 
   const saveCurrentWorkflow = async (): Promise<boolean> => {
@@ -1242,6 +1251,18 @@ export default function CanvasShell({
       setStatus(error instanceof Error ? error.message : 'Path selection failed.');
     }
   };
+  const chooseSinglePath = async (node: CanvasNode, parameter: CapabilityParameter) => {
+    if (!client) return;
+    try {
+      const paths =
+        parameter.path_kind === 'directory'
+          ? await client.pickFolders()
+          : await client.pickFiles(fileParameterExtensions(parameter));
+      if (paths[0]) updateNodeParameter(node.id, parameter.name, paths[0]);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Path selection failed.');
+    }
+  };
   const openTableEditorFromJsonEditor = () => {
     if (!jsonEditor) return;
     try {
@@ -1529,6 +1550,16 @@ export default function CanvasShell({
               aria-label="Save workflow"
             >
               <i className="fa-solid fa-floppy-disk" />
+            </button>
+            <button
+              type="button"
+              className="sf-canvas-control"
+              onClick={discardWorkflowChanges}
+              disabled={workflowBusy || !workflowLoaded || !workflowDirty}
+              title="Discard changes and reload saved workflow"
+              aria-label="Discard workflow changes"
+            >
+              <i className="fa-solid fa-rotate-left" />
             </button>
             <button
               type="button"
@@ -2156,27 +2187,61 @@ export default function CanvasShell({
                                   </button>
                                 </div>
                               ) : (
-                                <input
-                                  type={
-                                    ['integer', 'number', 'real', 'float', 'double'].includes(
+                                <div
+                                  className={isSimplePathParameter(parameter) ? 'sf-canvas-scalar-path-row' : undefined}
+                                >
+                                  <input
+                                    type={
                                       String(
                                         Array.isArray(parameter.schema.type)
                                           ? parameter.schema.type[0]
                                           : parameter.schema.type,
-                                      ),
-                                    )
-                                      ? 'number'
-                                      : 'text'
-                                  }
-                                  value={String(value ?? parameter.default ?? parameter.schema.default ?? '')}
-                                  onChange={(event) =>
-                                    updateNodeParameter(
-                                      node.id,
-                                      parameter.name,
-                                      scalarInputValue(parameter, event.target.value),
-                                    )
-                                  }
-                                />
+                                      ) === 'boolean'
+                                        ? 'checkbox'
+                                        : ['integer', 'number', 'real', 'float', 'double'].includes(
+                                              String(
+                                                Array.isArray(parameter.schema.type)
+                                                  ? parameter.schema.type[0]
+                                                  : parameter.schema.type,
+                                              ),
+                                            )
+                                          ? 'number'
+                                          : 'text'
+                                    }
+                                    {...(String(
+                                      Array.isArray(parameter.schema.type)
+                                        ? parameter.schema.type[0]
+                                        : parameter.schema.type,
+                                    ) === 'boolean'
+                                      ? {
+                                          checked: Boolean(
+                                            value ?? parameter.default ?? parameter.schema.default ?? false,
+                                          ),
+                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                            updateNodeParameter(node.id, parameter.name, event.target.checked),
+                                        }
+                                      : {
+                                          value: parameterInputValue(parameter, value),
+                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                            updateNodeParameter(
+                                              node.id,
+                                              parameter.name,
+                                              scalarInputValue(parameter, event.target.value),
+                                            ),
+                                        })}
+                                  />
+                                  {isSimplePathParameter(parameter) ? (
+                                    <button
+                                      type="button"
+                                      className="sf-icon-button sf-canvas-path-picker"
+                                      aria-label={`Choose ${parameter.label || parameter.name}`}
+                                      title="Choose file or folder"
+                                      onClick={() => void chooseSinglePath(node, parameter)}
+                                    >
+                                      <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                                    </button>
+                                  ) : null}
+                                </div>
                               )}
                             </div>
                           );
