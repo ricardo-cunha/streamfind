@@ -88,32 +88,40 @@ namespace streamfind::mass_spec::target_csv
             if (!present(row, to) && present(row, from)) row[to] = row[from];
         }
 
-        nlohmann::json parse_fragment_pairs(const std::string &value)
+        nlohmann::json parse_fragment_array(const nlohmann::json &row, const char *key)
         {
-            nlohmann::json result = nlohmann::json::array();
-            std::string pair;
-            std::stringstream pairs(value);
-            while (std::getline(pairs, pair, ';'))
+            const auto it = row.find(key);
+            if (it == row.end() || it->is_null()) return nlohmann::json::array();
+
+            nlohmann::json value = *it;
+            if (value.is_string())
             {
-                std::stringstream values(trim(pair));
-                double mz = 0.0, intensity = 0.0;
-                if (values >> mz >> intensity) result.push_back({mz, intensity});
+                try { value = nlohmann::json::parse(trim(value.get<std::string>())); }
+                catch (...) { throw std::invalid_argument(std::string("CSV column '") + key + "' must be a JSON array of numbers"); }
             }
-            return result;
+
+            if (!value.is_array())
+                throw std::invalid_argument(std::string("CSV column '") + key + "' must be a JSON array of numbers");
+            for (const auto &item : value)
+            {
+                if (!item.is_number() || !std::isfinite(item.get<double>()))
+                    throw std::invalid_argument(std::string("CSV column '") + key + "' must contain only finite numbers");
+            }
+            return value;
         }
 
-        void set_fragment_columns(nlohmann::json &row, const char *source, const char *mz_column, const char *int_column)
+        void validate_fragment_pair(nlohmann::json &row, const char *mz_column, const char *int_column)
         {
-            const auto value = text(row, source);
-            if (value.empty()) return;
-            const auto pairs = parse_fragment_pairs(value);
-            row[mz_column] = nlohmann::json::array();
-            row[int_column] = nlohmann::json::array();
-            for (const auto &pair : pairs)
-            {
-                row[mz_column].push_back(pair[0]);
-                row[int_column].push_back(pair[1]);
-            }
+            const bool has_mz = present(row, mz_column);
+            const bool has_intensity = present(row, int_column);
+            if (has_mz != has_intensity)
+                throw std::invalid_argument(std::string("CSV columns '") + mz_column + "' and '" + int_column + "' must be supplied together");
+            if (!has_mz) return;
+
+            row[mz_column] = parse_fragment_array(row, mz_column);
+            row[int_column] = parse_fragment_array(row, int_column);
+            if (row[mz_column].size() != row[int_column].size())
+                throw std::invalid_argument(std::string("CSV columns '") + mz_column + "' and '" + int_column + "' must have equal lengths");
         }
 
         void normalize_structure(nlohmann::json &row, bool suspect_targets)
@@ -129,8 +137,8 @@ namespace streamfind::mass_spec::target_csv
             rename_alias(row, "massmin", "mass_min");
             rename_alias(row, "massmax", "mass_max");
             rename_alias(row, "database_id", "database_id");
-            set_fragment_columns(row, "ms2_positive", "fragments_mz_pos", "fragments_intensity_pos");
-            set_fragment_columns(row, "ms2_negative", "fragments_mz_neg", "fragments_intensity_neg");
+            validate_fragment_pair(row, "fragments_mz_pos", "fragments_intensity_pos");
+            validate_fragment_pair(row, "fragments_mz_neg", "fragments_intensity_neg");
 
             const std::string smiles = text(row, "SMILES");
             const std::string inchi = text(row, "InChI");
@@ -170,8 +178,6 @@ namespace streamfind::mass_spec::target_csv
 
         nlohmann::json canonical_row(nlohmann::json row, bool suspect_targets, std::size_t index)
         {
-            if (suspect_targets && !present(row, "formula"))
-                throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires formula");
             normalize_structure(row, suspect_targets);
             if (!present(row, "mass") && !present(row, "mz"))
                 throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires mass or mz");
@@ -212,11 +218,13 @@ namespace streamfind::mass_spec::target_csv
             static const std::unordered_set<std::string> target_columns = {
                 "name", "analysis", "analysis_name", "polarity", "level", "mass", "mass_min", "mass_max",
                 "mz", "mz_min", "mz_max", "rt", "rtmin", "rtmax", "rt_min", "rt_max", "formula",
-                "smiles", "inchi", "inchikey", "xlogp", "database_id", "ms2_positive", "ms2_negative",
+                "smiles", "inchi", "inchikey", "xlogp", "database_id",
                 "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
             for (std::size_t i = 0; i < header.size(); ++i)
             {
                 const auto key = detail::lower(detail::trim(header[i]));
+                if (key == "ms2_positive" || key == "ms2_negative")
+                    throw std::invalid_argument("CSV MS2 columns must use the schema names fragments_mz_pos, fragments_intensity_pos, fragments_mz_neg, and fragments_intensity_neg");
                 if (!key.empty() && target_columns.contains(key) && !fields[i].empty()) row[key] = fields[i];
             }
             rows.push_back(detail::canonical_row(std::move(row), suspect_targets, rows.size()));

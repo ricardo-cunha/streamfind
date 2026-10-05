@@ -2097,6 +2097,31 @@ h2 {
   color: #fff;
   border-color: var(--sf-error);
 }
+.sf-canvas-workflow-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--sf-bg) 78%, transparent);
+  color: var(--sf-text);
+  pointer-events: auto;
+}
+.sf-canvas-workflow-loading img {
+  width: min(150px, 24vw);
+  height: auto;
+  animation: sf-rotate 3s ease-in-out infinite;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--sf-text) 18%, transparent));
+}
+.sf-canvas-workflow-loading strong {
+  font-size: 0.95rem;
+}
+.sf-canvas-workflow-loading span {
+  color: var(--sf-text-muted);
+  font-size: 0.74rem;
+}
 .sf-empty-workflow-prompt {
   position: absolute;
   top: 50%;
@@ -2642,6 +2667,8 @@ h2 {
   justify-items: start;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  cursor: text;
+  user-select: text;
 }
 .sf-node-port-row.output:hover .sf-output-artifact-popover {
   opacity: 1;
@@ -2670,6 +2697,16 @@ h2 {
   color: var(--sf-text-secondary);
   font-size: 0.72rem;
   text-align: left;
+}
+.sf-output-artifact-popover .sf-output-artifact-id {
+  color: var(--sf-text);
+  font-size: 0.72rem;
+  user-select: text;
+}
+.sf-output-artifact-popover .sf-output-artifact-id code {
+  color: inherit;
+  font: inherit;
+  user-select: text;
 }
 .sf-artifact-viewer-backdrop {
   position: fixed;

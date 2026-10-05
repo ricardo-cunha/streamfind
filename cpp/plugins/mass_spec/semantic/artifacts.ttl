@@ -244,6 +244,7 @@ sfms:suspectsTable
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
         sfms:featureColumn,
         sfms:featureGroupColumn,
         sfms:candidateRankColumn,
@@ -272,9 +273,22 @@ sfms:suspectsTable
         sfms:dbMs2IntensityColumn,
         sfms:dbMs2FormulaColumn,
         sfms:dbMs2SmilesColumn,
-        sfms:expMs2SizeColumn,
-        sfms:expMs2MzColumn,
-        sfms:expMs2IntensityColumn .
+        sfms:eicSizeColumn,
+        sfms:eicRtColumn,
+        sfms:eicMzColumn,
+        sfms:eicIntensityColumn,
+        sfms:eicBaselineColumn,
+        sfms:eicSmoothedColumn,
+        sfms:ms1SizeColumn,
+        sfms:ms1MzColumn,
+        sfms:ms1IntensityColumn,
+        sfms:ms2SizeColumn,
+        sfms:ms2MzColumn,
+        sfms:ms2IntensityColumn,
+        sfms:isotopeTheoreticalPeaksColumn,
+        sfms:isotopeMatchedPeaksColumn,
+        sfms:isotopeSimilarityColumn,
+        sfms:isotopeMatchColumn .
 
 sfms:internalStandardsTable
     a sf:Table ;
@@ -565,7 +579,7 @@ sfms:suspectTargetsTable
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspect targets table" ;
-    skos:definition "Schema for suspect rows matched against detected features and optional MS2 reference spectra during suspect screening." ;
+    skos:definition "Schema for suspect or MetFrag candidate rows. Chemical identity is sufficient; retention time and positive- or negative-mode MS2 reference spectra are optional." ;
     sf:tableContractName "MASS_SPEC_SUSPECT_TARGETS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -614,22 +628,4 @@ sfms:transformationProductCandidatesTable
         sfms:smilesColumn,
         sfms:inChIColumn,
         sfms:inChIKeyColumn .
-
-sfms:databaseCandidatesTable
-    a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
-    sf:providedByModule sfms:ntaModule ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "MetFrag candidate database table" ;
-    skos:definition "Schema for local candidate database rows supplied to MetFrag." ;
-    sf:tableContractName "MASS_SPEC_DATABASE_CANDIDATES" ;
-    sf:dataKind "duckdb_table" ;
-    sf:hasColumn
-        sfms:suspectNameColumn,
-        sfms:formulaColumn,
-        sfms:massColumn,
-        sfms:smilesColumn,
-        sfms:inChIColumn,
-        sfms:inChIKeyColumn,
-        sfms:xLogPColumn .
 

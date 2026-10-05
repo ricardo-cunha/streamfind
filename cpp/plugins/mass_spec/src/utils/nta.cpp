@@ -742,11 +742,11 @@ namespace streamfind::mass_spec::nta::utils::detail
         }
 
         // Map the JSON `suspect_targets` array into SuspectQuery objects.
-        std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+        std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters, bool allow_table_input)
         {
             Json targets = parameters.value("suspect_targets", Json::array());
             const auto inputs = parameters.value("_inputs", Json::object());
-            const auto input_it = inputs.find("suspectTargetsTable");
+            const auto input_it = allow_table_input ? inputs.find("suspectTargetsTable") : inputs.end();
             if (input_it != inputs.end())
             {
                 const auto table = input_it->at("physical_table").get<std::string>();
@@ -890,11 +890,13 @@ namespace streamfind::mass_spec::nta::utils::detail
         const std::vector<std::string> &suspects_columns()
         {
             static const std::vector<std::string> cols = {
-                "analysis", "feature", "feature_group", "candidate_rank", "name", "polarity",
+                "analysis", "replicate", "feature", "feature_group", "candidate_rank", "name", "polarity",
                 "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area",
                 "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "SMILES", "InChI", "InChIKey",
                 "xLogP", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
-                "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+                "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed",
+                "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
+                "isotope_theoretical_peaks", "isotope_matched_peaks", "isotope_similarity", "isotope_match"};
             return cols;
         }
 
@@ -946,14 +948,36 @@ namespace streamfind::mass_spec::nta::utils::detail
 
         Json suspect_json(const ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW &r)
         {
-            return Json{{"analysis",r.analysis},{"feature",r.feature},{"feature_group",r.feature_group},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"database_id",r.database_id},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"exp_ms2_size",r.exp_ms2_size},{"exp_ms2_mz",r.exp_ms2_mz},{"exp_ms2_intensity",r.exp_ms2_intensity}};
+            return Json{{"analysis",r.analysis},{"replicate", ""},{"feature",r.feature},{"feature_group",r.feature_group},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"database_id",r.database_id},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"eic_size",0},{"eic_rt", ""},{"eic_mz", ""},{"eic_intensity", ""},{"eic_baseline", ""},{"eic_smoothed", ""},{"ms1_size",0},{"ms1_mz", ""},{"ms1_intensity", ""},{"ms2_size",0},{"ms2_mz", ""},{"ms2_intensity", ""},{"isotope_theoretical_peaks",r.isotope_theoretical_peaks},{"isotope_matched_peaks",r.isotope_matched_peaks},{"isotope_similarity",r.isotope_similarity},{"isotope_match",r.isotope_match}};
+        }
+
+        void enrich_suspect_with_feature(Json &suspect, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
+        {
+            const auto feature_payload = ::streamfind::mass_spec::nta::utils::feature_row(feature);
+            for (const auto *column : {"replicate", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline",
+                                       "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity"})
+                suspect[column] = feature_payload.at(column);
         }
 
         void emit_suspects(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
         {
             Json rows = Json::array();
-            for (const auto &buffer : data.suspect_buffers()) for (int i=0; i<buffer.size(); ++i) rows.push_back(suspect_json(buffer.get_suspect(i)));
-            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","string","integer","string","string","string","string","integer","string","string"}, rows);
+            for (std::size_t analysis_index = 0; analysis_index < data.suspect_buffers().size(); ++analysis_index) {
+                const auto &buffer = data.suspect_buffers()[analysis_index];
+                const auto &features = data.feature_buffers()[analysis_index];
+                for (int i = 0; i < buffer.size(); ++i) {
+                    const auto suspect = buffer.get_suspect(i);
+                    auto row = suspect_json(suspect);
+                    for (int feature_index = 0; feature_index < features.size(); ++feature_index) {
+                        const auto feature = features.get_feature(feature_index);
+                        if (feature.feature != suspect.feature) continue;
+                        enrich_suspect_with_feature(row, feature);
+                        break;
+                    }
+                    rows.push_back(std::move(row));
+                }
+            }
+            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","string","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
         }
 
         Json internal_standard_json(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)

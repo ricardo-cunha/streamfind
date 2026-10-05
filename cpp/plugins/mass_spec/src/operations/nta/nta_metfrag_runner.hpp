@@ -54,16 +54,14 @@ namespace streamfind::mass_spec::nta
     std::string resolve_run_dir(const MetFragParams &params);
 
     /**
-     * Run MetFragCL screening for all (or selected) analyses in nta_data.
+     * Run MetFragCL screening for all analyses in nta_data.
      * Results are written to nta_data.suspects[i] for each analysis index i.
      *
      * @param nta_data     NTS data with loaded features.
-     * @param analyses     If non-empty, only these analysis names are processed.
      * @param params       MetFrag runner configuration.
      */
     void metfrag_screening_impl(
       NtaProjectData &nta_data,
-        const std::vector<std::string> &analyses,
         const MetFragParams &params);
 
   } // namespace metfrag_runner

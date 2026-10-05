@@ -50,4 +50,21 @@ function(streamfind_stage_mingw_plugin_runtime target domain)
         install(FILES "${STREAMFIND_DUCKDB_RUNTIME}"
             DESTINATION "plugins/${domain}")
     endif()
+    if(domain STREQUAL "mass_spec" AND TARGET streamfind_openbabel_runtime)
+        add_dependencies(${target} streamfind_openbabel_runtime)
+        set(_streamfind_openbabel_runtime_dir "${CMAKE_BINARY_DIR}/core/vendors/openbabel")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${_streamfind_openbabel_runtime_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:streamfind_openbabel_runtime>"
+                "${_streamfind_openbabel_runtime_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${STREAMFIND_OPENBABEL_DATA_DIR}"
+                "${_streamfind_openbabel_runtime_dir}/data")
+        install(FILES "$<TARGET_FILE:streamfind_openbabel_runtime>"
+            DESTINATION "core/vendors/openbabel")
+        install(DIRECTORY "${STREAMFIND_OPENBABEL_DATA_DIR}/"
+            DESTINATION "core/vendors/openbabel/data")
+    endif()
 endfunction()

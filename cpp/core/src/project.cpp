@@ -2110,7 +2110,7 @@ namespace streamfind
             std::string selected_created_at;
             std::string selected_artifact_id;
             for (const auto &artifact : inventory) {
-                if (selected != nullptr)
+                if (!current_artifact_id.empty() && selected != nullptr)
                     break;
                 const auto contract = artifact.value("contract_id", "");
                 const bool port_matches = contract == connection.source_port ||
@@ -2147,8 +2147,21 @@ namespace streamfind
                 const auto &artifact_payload = selected->at("payload");
                 if (artifact_payload.is_string())
                     resolved[connection.target_port] = Json::parse(artifact_payload.get<std::string>());
-                else
+                else if (!artifact_payload.is_null())
                     resolved[connection.target_port] = artifact_payload;
+                else if (selected->value("representation", "") == "table") {
+                    const auto physical_table = selected->value("physical_table", std::string{});
+                    if (physical_table.empty())
+                        throw Error(ErrorCode::WorkflowValidation,
+                                    "Table artifact has no physical table for connection " +
+                                    connection.source_operation + "." + connection.source_port);
+                    std::string quoted_table = "\"";
+                    for (const char character : physical_table)
+                        quoted_table += character == '\"' ? "\"\"" : std::string(1, character);
+                    quoted_table += "\"";
+                    resolved[connection.target_port] = query_json("SELECT * FROM " + quoted_table);
+                } else
+                    resolved[connection.target_port] = nullptr;
             } else {
                 resolved[connection.target_port] = *selected;
             }
@@ -2391,7 +2404,10 @@ namespace streamfind
                 process_lock.emplace(impl_->options.database_path);
                 if (!process_lock->healthy())
                     throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
-                const auto inputs = provided_inputs.is_null() ? resolve_workflow_inputs(instance) : provided_inputs;
+                auto inputs = resolve_workflow_inputs(instance);
+                if (!provided_inputs.is_null() && provided_inputs.is_object())
+                    for (auto it = provided_inputs.begin(); it != provided_inputs.end(); ++it)
+                        inputs[it.key()] = it.value();
                 Json effective_parameters = parameters;
                 for (auto it = inputs.begin(); it != inputs.end(); ++it) {
                     if (it.key().rfind("parameter:", 0) != 0) continue;

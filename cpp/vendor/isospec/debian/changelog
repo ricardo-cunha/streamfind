@@ -1,0 +1,221 @@
+isospec (2.3.3-1) unstable; urgency=medium
+
+  * New upstream release.
+
+  * Fix cross-build in MXE cross-compilation environment.
+  * Remove no more needed comment in debian/copyright.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Thu, 13 Nov 2025 14:26:01 +0100
+
+isospec (2.3.2-1) unstable; urgency=medium
+
+  * New upstream release.
+
+  * Steer away from graphicsmagick and replace by librsvg2-bin for
+    conversion of svg to png.
+
+  * libisospec++-dev: Drop Multi-Arch: same (Janitor pull request).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 05 Nov 2025 23:00:09 +0100
+
+isospec (2.3.1-2) unstable; urgency=medium
+
+  * Fix missing dh_quilt_patch at configure target. Odd because in my
+    chroot the package builds fine.
+
+  * libisospec++-dev: Drop Multi-Arch: same (Janitor pull request).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 29 Oct 2025 12:32:42 +0100
+
+isospec (2.3.1-1) unstable; urgency=medium
+
+  * New upstream release with source configuration and Debian packaging
+    worked alongside upstream (thank you michalsta !).
+
+  * Disabled production of the refman.pdf file due to bug in Doxygen
+    (Closes: #1114157).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 22 Oct 2025 21:06:59 +0200
+
+isospec (2.2.3+cleaned2-1) UNRELEASED; urgency=medium
+
+  * Disabled production of the refman.pdf file due to bug in Doxygen
+    (Closes: #1114157) and synchronize the git repos.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 22 Oct 2025 12:14:20 +0200
+
+isospec (2.2.3+cleaned1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Standards-Version: 4.7.2
+
+ -- Filippo Rusconi <lopippo@debian.org>  Thu, 16 Oct 2025 11:52:51 +0200
+
+isospec (2.2.1-4.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Rename libraries for 64-bit time_t transition.  Closes: #1062459
+
+ -- Lukas Märdian <slyon@debian.org>  Wed, 28 Feb 2024 11:50:05 +0000
+
+isospec (2.2.1-4) unstable; urgency=low
+
+  * Fixes as suggested by Janitor. See below.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Fri, 25 Aug 2023 12:18:04 +0200
+
+isospec (2.2.1-3) unstable; urgency=low
+
+  * Fix the Bug#1047034: isospec: Fails to build source after successful build
+    by improving the override_dh_clean target in d/rules. Thanks to Lucas
+    Nussbaum <lucas@debian.org> for reporting. Closes: #1047034.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Fri, 25 Aug 2023 11:42:48 +0200
+
+isospec (2.2.1-2) UNRELEASED; urgency=medium
+
+  * Remove constraints unnecessary since buster (oldstable):
+    + Build-Depends: Drop versioned constraint on cmake, d-shlibs, dh-exec and
+      dpkg-dev.
+
+ -- Debian Janitor <janitor@jelmer.uk>  Mon, 31 Oct 2022 15:36:43 -0000
+
+isospec (2.2.1-1) unstable; urgency=low
+
+  * New upstream version.
+
+  * Updates to patches.
+
+  * Standards-Version: 4.6.1 (routine update).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Sat, 12 Nov 2022 22:05:29 +0100
+
+isospec (2.1.3-1) unstable; urgency=low
+
+  * New upstream 2.1.3 release.
+
+  * d/copyright: remove stanza on exclusion of files because these are now
+    removed from upstream following my own recommendation, yay! Also, no more
+    dfsg suffix to the package name.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Thu, 15 Oct 2020 16:04:44 +0200
+
+isospec (2.1.2+dfsg1-3) unstable; urgency=low
+
+  * Remove the r-cran-isospec package as it is alreay packaged by Dylan Aîssi
+    <daissi@debian.org>.
+    See https://salsa.debian.org/r-pkg-team/r-cran-isospecr.
+
+  * Closes: #962130 by Dylan Aîssi although we'll need to sort out
+    how to provide the R package basing it on the R-cran repository
+    IsoSpecR package (see mail in the bug). Dylan, if you are listening,
+    maybe you could open an ITP bug?
+
+ -- Filippo Rusconi <lopippo@debian.org>  Mon, 24 Aug 2020 12:59:00 +0200
+
+isospec (2.1.2+dfsg1-2) unstable; urgency=low
+
+  * Remove unversioned Python (Closes: #967147), thanks to
+    Matthias Klose <doko@debian.org> for the report. Nothing more to do than
+    remove the python* build-depends packages.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Tue, 04 Aug 2020 18:10:59 +0200
+
+isospec (2.1.2+dfsg1-1) unstable; urgency=low
+
+  * Upstream 2.1.2 release (git commit :
+    622281caab9d78a75379f56295204bd40a77e6f0;
+
+  * New packaging with all the Filippo Rusconi's CMake-based build system
+    integrated upstream and some last-moment patches.
+
+  * Many other modifications to improve the quality of the package.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Mon, 20 Jul 2020 18:23:29 +0200
+
+isospec (2.1.0+dfsg1-1) UNRELEASED; urgency=low
+
+  * New upstream version.
+
+  * Patches to implement more complete CMake-based build system,
+    that upstream intends to adopt.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Mon, 08 Jun 2020 16:43:14 +0200
+
+isospec (2.0.2+dfsg1-4) UNRELEASED; urgency=low
+
+  * Multi-arch installment.
+
+  *  /*attention check source-only-upload with
+     dpkg-buildpackage --changes-option=-S */
+
+ -- Filippo Rusconi <lopippo@debian.org>  Mon, 08 Jun 2020 11:42:02 +0200
+
+isospec (2.0.2+dfsg1-3) unstable; urgency=low
+
+  *  Since July 2019, binaries uploaded by maintainers are not allowed to
+     migrate to testing. In other words, packages must have source-only uploads
+     before they can reach the next release
+     (Thanks to Boyuan Yang <byang@debian.org> ; Closes: #961023).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Tue, 19 May 2020 16:10:00 +0200
+
+isospec (2.0.2+dfsg1-2) unstable; urgency=low
+
+  * Reinstate the -mtune -march build flags path for the
+    build  of the C++ extension of the Python module. (Closes: #960340).
+    Thanks to Sebastian Ramacher <sramacher@debian.org> for the bug report.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 13 May 2020 14:40:03 +0200
+
+isospec (2.0.2+dfsg1-1) unstable; urgency=low
+
+  * New upstream version including the CMakeLists.txt file that
+    upstream accecpted from me (and also modified later).
+
+  * Standards-Version: 4.5.0 (no changes needed).
+
+  * Add d/watch.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Thu, 07 May 2020 11:07:23 +0200
+
+isospec (1.9.1-5) unstable; urgency=low
+
+  * patch: Fix the IsoSpec++ build command line flags for riscv64 as it did not
+    recognize the -march flag. I removed it, like I did before for m68k, for
+    example.
+
+  * patch: Remove the -march=native compile flag for IsoSpec++ as it is
+    considered erroneous to use if cross-builds are performed (Debian QA
+    error: E march-native).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 06 Mar 2019 17:23:44 +0100
+
+isospec (1.9.1-4) unstable; urgency=low
+
+  * Remove -mtune -march build flags for the build of the C++ extension of the
+    Python module.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 06 Mar 2019 14:56:10 +0100
+
+isospec (1.9.1-3) unstable; urgency=low
+
+  * Add ifeq statements in IsoSpec++/Makefile's patch to fix many
+    arch-specific problems with -march -mtune flags to the compiler
+    command line.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 06 Mar 2019 11:41:44 +0100
+
+isospec (1.9.1-2) unstable; urgency=low
+
+  * Fix Vcs URLs.
+
+ -- Filippo Rusconi <lopippo@debian.org>  Wed, 06 Feb 2019 10:07:16 +0100
+
+
+isospec (1.9.1-1) unstable; urgency=medium
+
+  * Initial release (Closes: #916218).
+
+ -- Filippo Rusconi <lopippo@debian.org>  Sat, 19 Jan 2019 13:56:13 +0100
+

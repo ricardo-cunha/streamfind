@@ -44,8 +44,9 @@ target_include_directories(streamfind_mass_spec_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/pugixml-1.14/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/isospec/src/IsoSpec++"
 )
-target_link_libraries(streamfind_mass_spec_plugin PRIVATE streamfind::cpp_sdk streamfind::zstd)
+target_link_libraries(streamfind_mass_spec_plugin PRIVATE streamfind::cpp_sdk streamfind::zstd IsoSpec++-static)
 
 set_target_properties(streamfind_mass_spec_plugin PROPERTIES OUTPUT_NAME "streamfind_mass_spec")
 if(WIN32)

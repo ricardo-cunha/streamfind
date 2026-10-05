@@ -26,7 +26,7 @@ STREAMFIND_DOMAIN_API std::optional<std::pair<std::string, std::string>> resolve
 /// Installs Temurin JDK 21 into `<tools>/java/` using staged extraction and an atomic directory move.
 STREAMFIND_DOMAIN_API std::string install_java();
 
-/// Explicit setup check for MetFrag. Does not download or modify the filesystem.
+/// Downloads MetFragCL 2.6.11 into `<tools>/metfrag/` using staged installation.
 STREAMFIND_DOMAIN_API std::string install_metfrag();
 
 /// Human-readable tool status (paths or "not found").

@@ -16,6 +16,8 @@ public:
     ServicePluginRuntime &operator=(const ServicePluginRuntime &) = delete;
 
     void load(const std::filesystem::path &configuration_path, MethodRegistry &methods, OperationRegistry &operations);
+    Json dependencies() const;
+    Json install_dependencies(const Json &request) const;
 
 private:
     struct LoadedPlugin {

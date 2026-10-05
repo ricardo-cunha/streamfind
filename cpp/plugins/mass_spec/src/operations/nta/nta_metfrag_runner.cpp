@@ -1062,7 +1062,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
   void metfrag_screening_impl(
     NtaProjectData &nta_data,
-    const std::vector<std::string> &analyses_sel,
     const MetFragParams &p)
   {
     const MetFragParams params = canonicalize_and_validate_params(p);
@@ -1100,10 +1099,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     for (size_t ai = 0; ai < n_ana; ++ai)
     {
       const std::string &ana = analysis_names[ai];
-
-      if (!analyses_sel.empty() &&
-          std::find(analyses_sel.begin(), analyses_sel.end(), ana) == analyses_sel.end())
-        continue;
 
       ::streamfind::mass_spec::nta::api::NTA_FEATURES &feats = feature_buffers[ai];
       const int n_feat = feats.size();
@@ -1292,13 +1287,13 @@ using Json = nlohmann::json;
         const auto tool = ::streamfind::mass_spec::tools::resolve_metfrag();
         if (!tool)
             throw Error(ErrorCode::MethodExecution,
-                        "MetFrag screening requires Java 21 and MetFragCL. Install them explicitly with "
-                        "streamfind-cli tools install java and streamfind-cli tools install metfrag, then retry. "
-                        "Expected managed locations are %USERPROFILE%\\.streamfind\\tools on Windows "
-                        "or $HOME/.streamfind/tools on Linux/macOS.");
+                        "MetFrag screening dependencies are unavailable. " +
+                        ::streamfind::mass_spec::tools::tool_status() +
+                        "Install Java 21 under <streamfind-home>/tools/java/jdk-*/bin/ and MetFragCL 2.6.11 as "
+                        "<streamfind-home>/tools/metfrag/MetFragCL.jar, then retry. "
+                        "MetFragCL download: https://github.com/ipb-halle/MetFragRelaunched/releases/download/v2.6.11/"
+                        "MetFragCommandLine-2.6.11.jar");
 
-        const std::string database_type = utils::detail::normalize_metfrag_database_type(
-            parameters.value("database_type", std::string("PubChem")));
         // R method defaults.
         const double ppm = parameters.value("ppm", 5.0);
         const double sec = parameters.value("sec", 10.0);
@@ -1336,11 +1331,41 @@ using Json = nlohmann::json;
         if (score_types.size() != score_weights.size())
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
 
+        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, true);
+        if (suspect_targets.empty())
+            throw Error(ErrorCode::InvalidArgument,
+                        "metfrag_screening requires at least one suspect_targets row with chemical identity.");
+
+        Json local_database = Json::array();
+        for (const auto &target : suspect_targets)
+        {
+            std::string smiles = target.SMILES;
+            std::string inchi = target.InChI;
+            std::string inchikey = target.InChIKey;
+            std::string formula = target.formula;
+            double mass = target.has_mass ? target.mass : std::numeric_limits<double>::quiet_NaN();
+            double xlogp = target.has_xLogP ? target.xLogP : std::numeric_limits<double>::quiet_NaN();
+            const bool normalized = metfrag_runner::normalize_structure_fields(smiles, inchi, inchikey, formula, mass, xlogp);
+            if (!target.has_mass && !normalized)
+                throw Error(ErrorCode::InvalidArgument,
+                            "metfrag_screening suspect_targets rows must provide mass or a valid SMILES/InChI.");
+
+            Json row = Json::object();
+            row["name"] = target.name;
+            row["formula"] = formula;
+            row["mass"] = mass;
+            row["SMILES"] = smiles;
+            row["InChI"] = inchi;
+            row["InChIKey"] = inchikey;
+            row["xLogP"] = xlogp;
+            local_database.push_back(std::move(row));
+        }
+
         auto data = utils::detail::load_analysis_features(access, parameters);
         ::streamfind::mass_spec::nta::metfrag_runner::MetFragParams p;
         p.metfrag_path = tool->second; // MetFragCL.jar
         p.java_path = tool->first;     // java executable
-        p.database_type = database_type;
+        p.database_type = "LocalCSV";
         p.ppm = ppm;
         p.sec = sec;
         p.ppmMS2 = ppm_ms2;
@@ -1356,13 +1381,9 @@ using Json = nlohmann::json;
         p.use_smiles = use_smiles;
         p.filtered = filtered;
         p.run_dir = ::streamfind::mass_spec::nta::metfrag_runner::resolve_run_dir(p);
-        if (p.database_type == "LocalCSV")
-        {
-            std::filesystem::create_directories(p.run_dir);
-            p.database_path = utils::detail::write_local_metfrag_database(
-                parameters.value("database", Json::array()), p.run_dir);
-        }
-        ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(data, data.analysis_names(), p);
+        std::filesystem::create_directories(p.run_dir);
+        p.database_path = utils::detail::write_local_metfrag_database(local_database, p.run_dir);
+        ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(data, p);
         utils::detail::emit_suspects(access, data);
         return Json{{"status", "finished"}, {"info", "MetFrag screening completed."}};
     }

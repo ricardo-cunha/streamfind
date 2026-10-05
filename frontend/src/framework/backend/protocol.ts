@@ -321,3 +321,22 @@ export type ServiceCapabilities = {
   frontend_nodes?: FrontendNodeCapability[];
   endpoints: string[];
 };
+
+export type DependencyDescriptor = {
+  id: string;
+  label: string;
+  version: string;
+  kind: string;
+  required_by?: string[];
+  managed_path: string;
+  installable: boolean;
+  network_required: boolean;
+  available?: boolean;
+};
+
+export type DependencyInstallResult = {
+  dependency_id: string;
+  status: string;
+  path?: string;
+  message?: string;
+};

@@ -305,12 +305,25 @@ sfms:suspectTargetsCsvPathParameter
     sf:extensions ".csv" ;
     sf:example "bindings/r/dev/dev_duckdb/suspects.csv" .
 
+sfms:molFilePathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MOL file path" ;
+    skos:definition "Path to one MDL MOL file containing a chemical structure. Open Babel reads the structure and derives the canonical SMILES, formula, InChI, InChIKey, exact mass, and optional xLogP." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:defaultRequired true ;
+    sf:default "" ;
+    sf:extensions ".mol" ;
+    sf:example "structures/caffeine.mol" .
+
 sfms:suspectTargetsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspect targets" ;
-    skos:definition "Optional suspect rows supplied inline or through a persisted suspect-targets table. Rows may include mass, m/z, retention-time, chemical-identity, and optional MS2 reference-fragment fields for suspect screening." ;
+    skos:definition "Optional suspect or candidate rows supplied inline or through a persisted suspect-targets table. Rows may provide chemical identity through SMILES, InChI, formula, mass, or m/z; retention time and positive- or negative-mode MS2 reference fragments are optional." ;
     sf:type "table" ;
     sf:tableContract sfms:suspectTargetsTable ;
     sf:required false ;
@@ -700,6 +713,39 @@ sfms:secParameter
     sf:required false ;
     sf:default 10.0 ;
     sf:example 10.0 .
+
+sfms:isotopePpmParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Isotope m/z tolerance" ;
+    skos:definition "m/z tolerance in ppm used when matching theoretical isotope peaks to observed MS1 peaks." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 5.0 ;
+    sf:example 5.0 .
+
+sfms:minIsotopePeaksParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum isotope peaks" ;
+    skos:definition "Minimum number of matched isotope peaks required for an isotope-pattern match." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default 2 ;
+    sf:example 2 .
+
+sfms:minIsotopeSimilarityParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum isotope similarity" ;
+    skos:definition "Minimum cosine similarity between theoretical and observed isotope intensities." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 0.5 ;
+    sf:example 0.5 .
 
 sfms:ppmMs2Parameter
     a sf:Parameter ;
@@ -1233,29 +1279,6 @@ sfms:chromatographicPhaseParameter
     sf:default "" ;
     sf:constraints "reverse_phase|hilic" ;
     sf:example "reverse_phase" .
-
-sfms:databaseTypeParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "MetFrag database type" ;
-    skos:definition "MetFrag candidate database: PubChem, CS, ChemSpider, LocalCSV, ... (R .normalize_metfrag_database_type)." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "" ;
-    sf:example "PubChem" .
-
-sfms:databaseParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "MetFrag candidate database" ;
-    skos:definition "Optional candidate database rows supplied inline as schema-validated JSON or through a persisted table connection." ;
-    sf:type "table" ;
-    sf:tableContract sfms:databaseCandidatesTable ;
-    sf:required false ;
-    sf:default "[]" ;
-    sf:example "[{\"name\":\"Metoprolol\",\"formula\":\"C15H25NO3\",\"mass\":267.1834}]" .
 
 sfms:topNParameter
     a sf:Parameter ;

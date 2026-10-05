@@ -1,5 +1,6 @@
 #include "operations/base.hpp"
 #include "readers/reader.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
 #include "utils/base.hpp"
 #include "utils/target_csv.hpp"
 
@@ -9,6 +10,7 @@
 #include <ctime>
 #include <filesystem>
 #include <cmath>
+#include <fstream>
 #include <map>
 #include <optional>
 #include <regex>
@@ -38,6 +40,15 @@ namespace streamfind::mass_spec::base
                            [](unsigned char character)
                            { return static_cast<char>(std::tolower(character)); });
             return value;
+        }
+
+        std::string trim(std::string value)
+        {
+            auto first = value.begin();
+            while (first != value.end() && std::isspace(static_cast<unsigned char>(*first))) ++first;
+            auto last = value.end();
+            while (last != first && std::isspace(static_cast<unsigned char>(*(last - 1)))) --last;
+            return std::string(first, last);
         }
 
         std::string utc_now()
@@ -259,6 +270,43 @@ namespace streamfind::mass_spec::base
         }
         access.emit_table_rows("targetsTable", columns, types, rows);
         return {{"rows", rows.size()}, {"path", path}};
+    }
+
+    Json read_mol_suspect_target(sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const auto path = parameters.value("mol_file_path", std::string{});
+        if (path.empty()) throw std::invalid_argument("mol_file_path must be a non-empty MOL file path");
+
+        std::ifstream input(path);
+        if (!input) throw std::invalid_argument("Cannot open MOL file: " + path);
+        std::string name;
+        std::getline(input, name);
+        name = trim(name);
+        if (name.empty()) name = "Compound";
+
+        const auto structure = ::streamfind::core::vendors::openbabel::normalize_structure_from_mol_file(path);
+        if (!structure.ok)
+            throw std::invalid_argument("Could not normalize MOL structure: " + structure.error);
+
+        const std::vector<std::string> columns = {
+            "name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
+            "database_id", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+        const std::vector<std::string> types = {
+            "string", "real", "integer", "real", "real", "string", "string", "string", "string", "real",
+            "string", "array", "array", "array", "array"};
+        Json row = Json::object();
+        for (const auto &column : columns) row[column] = nullptr;
+        row["name"] = name;
+        row["mass"] = structure.exact_mass;
+        row["formula"] = structure.formula;
+        row["SMILES"] = structure.canonical_smiles;
+        row["InChI"] = structure.inchi;
+        row["InChIKey"] = structure.inchikey;
+        if (structure.has_xlogp) row["xLogP"] = structure.xlogp;
+
+        const Json rows = Json::array({row});
+        access.emit_table_rows("suspectTargetsTable", columns, types, rows);
+        return {{"rows", 1}, {"path", path}};
     }
 
 

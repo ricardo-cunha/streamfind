@@ -343,7 +343,8 @@ sfms:rtColumn
     skos:definition "Retention time." ;
     sf:columnName "rt" ;
     sf:type "real" ;
-    sf:storageType "DOUBLE" .
+    sf:storageType "DOUBLE" ;
+    sf:required false .
 
 sfms:mobilityColumn
     a sf:Column ;
@@ -998,6 +999,42 @@ sfms:ms2IntensityColumn
     sf:columnName "ms2_intensity" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
+
+sfms:isotopeTheoreticalPeaksColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Theoretical isotope peaks" ;
+    skos:definition "Number of theoretical isotope peaks retained for suspect matching." ;
+    sf:columnName "isotope_theoretical_peaks" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:isotopeMatchedPeaksColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Matched isotope peaks" ;
+    skos:definition "Number of theoretical isotope peaks matched in the observed MS1 spectrum." ;
+    sf:columnName "isotope_matched_peaks" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:isotopeSimilarityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Isotope similarity" ;
+    skos:definition "Cosine similarity between theoretical and observed isotope intensities." ;
+    sf:columnName "isotope_similarity" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:isotopeMatchColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Isotope match" ;
+    skos:definition "Whether the observed MS1 isotope pattern satisfies the configured suspect match thresholds." ;
+    sf:columnName "isotope_match" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
 
 sfms:annotationCategoryColumn
     a sf:Column ;
@@ -1702,18 +1739,6 @@ sfms:fragmentsIntensityNegColumn
     sf:required false ;
     sf:items sfcore:realItemParameter ;
     sf:example "[100.0]" .
-
-sfms:suspectNameColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Suspect name" ;
-    skos:definition "Suspect display name used in assignment rows and filtering; an alias of the target identifier." ;
-    sf:columnName "name" ;
-    sf:storageType "VARCHAR" ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:example "caffeine" .
 
 sfms:tpProductNameColumn
     a sf:Column ;

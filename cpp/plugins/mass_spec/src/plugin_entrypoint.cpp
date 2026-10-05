@@ -5,6 +5,7 @@
 #include "operations/nta/nta_deconvolution.hpp"
 #include "operations/nta/operations.hpp"
 #include "streamfind/plugin_abi.h"
+#include "utils/tools_resolver.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -30,6 +31,7 @@ const sdk::CapabilityRegistry &capabilities() {
     static const sdk::CapabilityRegistry registry{
         {"mass_spec.read_mass_spec_files", sdk::CapabilityKind::Operation, &base::read_mass_spec_files},
         {"mass_spec.read_csv_targets", sdk::CapabilityKind::Operation, &base::read_csv_targets},
+        {"mass_spec.read_mol_suspect_target", sdk::CapabilityKind::Operation, &base::read_mol_suspect_target},
 
         {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &base::remove_analyses},
         {"mass_spec.get_analyses", sdk::CapabilityKind::Operation, &base::get_analyses},
@@ -122,6 +124,55 @@ void release_buffer(streamfind_plugin_buffer *buffer, void *user_data) {
     buffer->size = 0;
 }
 
+streamfind_plugin_status write_dependency_result(
+    const Json &value, streamfind_plugin_buffer *result_json,
+    const streamfind_plugin_host_api *host) {
+    if (result_json == nullptr || host == nullptr || host->allocate == nullptr)
+        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    const auto text = value.dump();
+    auto *buffer = static_cast<char *>(host->allocate(text.size(), alignof(char), host->user_data));
+    if (buffer == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    std::memcpy(buffer, text.data(), text.size());
+    result_json->data = buffer;
+    result_json->size = static_cast<uint32_t>(text.size());
+    return STREAMFIND_PLUGIN_OK;
+}
+
+streamfind_plugin_status describe_dependencies(streamfind_plugin_buffer *result_json, void *user_data) {
+    const auto *host = static_cast<const streamfind_plugin_host_api *>(user_data);
+    return write_dependency_result(Json::array({
+        {{"id", "runtime.java"}, {"label", "Java Runtime"}, {"version", "21"}, {"kind", "runtime"},
+         {"required_by", Json::array({"mass_spec.metfrag_screening"})}, {"managed_path", ".streamfind/tools/java"},
+         {"installable", true}, {"network_required", true},
+         {"available", ::streamfind::mass_spec::tools::resolve_java().has_value()}},
+        {{"id", "mass_spec.metfrag"}, {"label", "MetFragCL"}, {"version", "2.6.11"}, {"kind", "jar"},
+         {"required_by", Json::array({"mass_spec.metfrag_screening"})}, {"managed_path", ".streamfind/tools/metfrag/MetFragCL.jar"},
+         {"installable", true}, {"network_required", true},
+         {"available", ::streamfind::mass_spec::tools::resolve_metfrag_jar().has_value()}}}), result_json, host);
+}
+
+streamfind_plugin_status install_dependencies(
+    const char *request_json, uint32_t request_size,
+    streamfind_plugin_buffer *result_json, void *user_data) {
+    const auto *host = static_cast<const streamfind_plugin_host_api *>(user_data);
+    try {
+        const auto request = Json::parse(std::string(request_json == nullptr ? "" : request_json, request_size));
+        Json results = Json::array();
+        for (const auto &value : request.value("dependency_ids", Json::array())) {
+            const auto id = value.get<std::string>();
+            std::string path;
+            if (id == "runtime.java") path = ::streamfind::mass_spec::tools::install_java();
+            else if (id == "mass_spec.metfrag") path = ::streamfind::mass_spec::tools::install_metfrag();
+            else throw std::invalid_argument("mass_spec does not provide dependency " + id);
+            results.push_back({{"dependency_id", id}, {"status", "installed"}, {"path", path}});
+        }
+        return write_dependency_result(Json{{"results", results}}, result_json, host);
+    } catch (const std::exception &error) {
+        report_error(host, error.what());
+        return STREAMFIND_PLUGIN_ERROR;
+    }
+}
+
 streamfind_plugin_status register_plugin(
     const streamfind_plugin_host_api *host, streamfind_plugin_api *plugin, void *) {
     if (host == nullptr || plugin == nullptr) return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
@@ -129,6 +180,8 @@ streamfind_plugin_status register_plugin(
     plugin->domain_id = "mass_spec";
     plugin->invoke = &invoke;
     plugin->release_buffer = &release_buffer;
+    plugin->describe_dependencies = &describe_dependencies;
+    plugin->install_dependencies = &install_dependencies;
     plugin->user_data = const_cast<streamfind_plugin_host_api *>(host);
     return STREAMFIND_PLUGIN_OK;
 }
@@ -149,7 +202,7 @@ streamfind_plugin_get_descriptor(
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "mass_spec";
-    descriptor->plugin_version = "0.4.0";
+    descriptor->plugin_version = "0.4.1";
     descriptor->register_plugin = &streamfind::mass_spec::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::mass_spec::dynamic_detail::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;

@@ -12,6 +12,8 @@ import type {
   CapabilityOperationSummary,
   CapabilityOperationsRequest,
   BackendCapability,
+  DependencyDescriptor,
+  DependencyInstallResult,
 } from './protocol';
 
 export type { ProjectSession, ServiceCapabilities } from './protocol';
@@ -102,6 +104,24 @@ export class StreamFindApiClient {
     const response = await fetch(`${this.baseUrl}/capabilities`);
     if (!response.ok) throw new Error(`Capabilities request failed (${response.status})`);
     return response.json() as Promise<CapabilitiesResponse>;
+  }
+
+  async dependencies(): Promise<DependencyDescriptor[]> {
+    const response = await fetch(`${this.baseUrl}/dependencies`);
+    if (!response.ok) throw new Error(`Dependency discovery request failed (${response.status})`);
+    const result = (await response.json()) as { dependencies?: DependencyDescriptor[] };
+    return result.dependencies || [];
+  }
+
+  async installDependencies(dependencyIds: string[], allowNetwork = false): Promise<DependencyInstallResult[]> {
+    const response = await fetch(`${this.baseUrl}/dependencies/install`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dependency_ids: dependencyIds, allow_network: allowNetwork }),
+    });
+    const result = (await response.json()) as { results?: DependencyInstallResult[]; error?: string };
+    if (!response.ok) throw new Error(result.error || `Dependency installation request failed (${response.status})`);
+    return result.results || [];
   }
 
   async capabilitiesIndex(): Promise<CapabilityIndexResponse> {

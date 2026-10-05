@@ -44,6 +44,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfind_semantic_catalogue.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfind_plugin_validation.cmake)
 streamfind_configure_dependencies(${CMAKE_CURRENT_SOURCE_DIR}/vendor)
 streamfind_add_openbabel(${CMAKE_CURRENT_SOURCE_DIR}/vendor)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/vendor/isospec EXCLUDE_FROM_ALL)
 
 add_library(streamfind_openbabel_runtime SHARED
     core/src/vendors/openbabel/openbabel_c_api.cpp)

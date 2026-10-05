@@ -14,6 +14,7 @@ import {
   type ArtifactRecord,
   type ProjectSession,
 } from '../framework/backend/StreamFindApiClient';
+import logo from '../assets/streamfind.png';
 
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from '../framework/notifications/notificationBus';
@@ -1349,6 +1350,18 @@ export default function CanvasShell({
       const saved = await saveCurrentWorkflow();
       if (!saved) return;
     }
+    const dependencies = await client.dependencies();
+    const missing = dependencies.filter(
+      (dependency) => dependency.available === false && dependency.required_by?.includes(capability.canonical_id),
+    );
+    if (missing.length > 0) {
+      const names = missing.map((dependency) => `${dependency.label} ${dependency.version}`).join(', ');
+      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`)) return;
+      await client.installDependencies(
+        missing.map((dependency) => dependency.id),
+        true,
+      );
+    }
     setNodes((current) => current.map((item) => (item.id === node.id ? { ...item, executionState: 'running' } : item)));
     try {
       const result = await client.runOperation(
@@ -1667,6 +1680,13 @@ export default function CanvasShell({
           </>
         ) : null}
       </div>
+      {surface === 'workflow' && !workflowLoaded ? (
+        <div className="sf-canvas-workflow-loading" role="status" aria-live="polite">
+          <img src={logo} alt="streamfind" />
+          <strong>Loading workflow</strong>
+          <span>Restoring nodes and connections…</span>
+        </div>
+      ) : null}
       {surface === 'workflow' && workflowLoaded && nodes.length === 0 ? (
         <div className="sf-empty-workflow-prompt" onMouseDown={(event) => event.stopPropagation()}>
           <button type="button" onClick={openStandalonePicker} aria-label="Add operation">
@@ -1834,7 +1854,7 @@ export default function CanvasShell({
                 <section className="sf-node-section sf-node-inputs">
                   <h4>Inputs</h4>
                   {nodePorts(capability).inputs.map((port) => (
-                    <div className="sf-node-port-row" key={port.id} title={port.description}>
+                    <div className="sf-node-port-row" key={port.id}>
                       <button
                         type="button"
                         className={`sf-node-port input ${typeClass(visualPortTypeKey(port))}`}
@@ -1868,7 +1888,6 @@ export default function CanvasShell({
                     <div
                       className={`sf-node-port-row output ${outputArtifact(port) ? 'has-artifact' : ''}`}
                       key={port.id}
-                      title={port.description}
                       onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
                       onMouseLeave={hideOutputRendererMenu}
                     >
@@ -1913,10 +1932,14 @@ export default function CanvasShell({
                           className="sf-output-artifact-popover sf-output-renderer-menu"
                           role="dialog"
                           aria-label={`Render ${port.label}`}
+                          onMouseDown={(event) => event.stopPropagation()}
                           onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
                           onMouseLeave={hideOutputRendererMenu}
                         >
                           <strong>{port.label}</strong>
+                          <span className="sf-output-artifact-id">
+                            <b>Artifact ID:</b> <code>{(outputArtifact(port) as ArtifactRecord).artifact_id}</code>
+                          </span>
                           <span>{artifactSummary(outputArtifact(port) as ArtifactRecord)}</span>
                           {(() => {
                             const artifact = outputArtifact(port) as ArtifactRecord;
@@ -1941,7 +1964,6 @@ export default function CanvasShell({
                               </>
                             ) : null;
                           })()}
-                          <small>Double-click the anchor to open the default renderer</small>
                         </div>
                       ) : null}
                     </div>

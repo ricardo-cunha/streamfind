@@ -7,6 +7,7 @@
 #include <array>
 #include <cctype>
 #include <set>
+#include <utility>
 
 namespace streamfind::mcp {
 
@@ -70,6 +71,12 @@ Json tools() {
                                {"operation_instance", {{"type", "string"}}},
                                {"inputs", {{"type", "object"}}}},
                           Json::array({"operation", "database_path"})));
+    result.push_back(tool("get_dependencies", "List plugin-provided external dependencies and their current availability.",
+                          Json{{"operation", {{"type", "string"}}}}, Json::array()));
+    result.push_back(tool("install_dependencies", "Explicitly install selected plugin dependencies after reviewing their network and license requirements.",
+                          Json{{"dependency_ids", {{"type", "array"}, {"items", {{"type", "string"}}}}},
+                               {"allow_network", {{"type", "boolean"}}}},
+                          Json::array({"dependency_ids"})));
 
     // Core project commands are catalogue entries, but their shared project
     // scope is enforced by the MCP dispatcher rather than by an ontology
@@ -213,7 +220,9 @@ Json workflow_result(const Json &value) {
 }
 }
 
-Session::Session(const OperationRegistry &operations) : operations_(operations) {}
+Session::Session(const OperationRegistry &operations, DependencyList dependencies,
+                 DependencyInstaller installer)
+    : operations_(operations), dependencies_(std::move(dependencies)), installer_(std::move(installer)) {}
 
 Json Session::handle(const Json &request) {
     const auto id = request.value("id", Json(nullptr));
@@ -227,6 +236,17 @@ Json Session::handle(const Json &request) {
 
     if (method != "tools/call") return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32601}, {"message", "Unsupported MCP method"}}}};
     const auto name = request.at("params").value("name", "");
+    if (name == "get_dependencies") {
+        if (!dependencies_) return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(Json{{"dependencies", Json::array()}})}};
+        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(dependencies_())}};
+    }
+    if (name == "install_dependencies") {
+        if (!installer_) throw Error(ErrorCode::MethodExecution, "dependency installation is unavailable");
+        const auto arguments = request.at("params").value("arguments", Json::object());
+        if (!arguments.value("allow_network", false))
+            throw Error(ErrorCode::InvalidArgument, "install_dependencies requires allow_network=true");
+        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(installer_(arguments))}};
+    }
     if (name == "connect") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());

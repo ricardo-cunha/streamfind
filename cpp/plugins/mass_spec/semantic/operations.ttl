@@ -38,6 +38,18 @@ sfms:readCsvSuspectTargets
     sf:hasParameter sfms:suspectTargetsCsvPathParameter ;
     sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
 
+sfms:readMolSuspectTarget
+    a sf:Operation ;
+    sf:operationId "mass_spec.read_mol_suspect_target" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Read MOL suspect target" ;
+    skos:definition "Read one MDL MOL file, normalize its chemical structure with Open Babel, and publish all derived chemical descriptors as a reusable suspectTargetsTable artifact." ;
+    sf:category "mass-spec-ingestion" ;
+    sf:guidance "The MOL title line is used as the target name when it is non-empty; otherwise the name is Compound. The operation does not invent MS2 reference peaks, retention time, polarity, or database identifiers." ;
+    sf:hasParameter sfms:molFilePathParameter ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
 sfms:removeAnalyses
     a sf:Operation ;
     sf:operationId "mass_spec.remove_analyses" ;
@@ -713,9 +725,9 @@ sfms:suspectScreening
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Screen suspect features" ;
-    skos:definition "Match detected features against suspect targets by accurate mass, retention time, and optional MS2 similarity, persist candidate assignments, and attach the best assignments to the feature records." ;
+    skos:definition "Match detected features against suspect targets by structure-derived or supplied accurate mass, with optional retention-time, isotope, and MS2 evidence, and persist candidate assignments in a suspectsTable." ;
     sf:category "nta-identification" ;
-    sf:guidance "Run after load_features_ms2 when MS2 assignment is required. Each target should provide a name, mass or formula, optional retention time, and optional MS2 reference peaks. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; an empty analysis_names array processes every analysis." ;
+    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and MS2 reference peaks are optional. Structure-only matches receive the lowest identification category; add retention-time, isotope, or MS2 evidence for stronger assignments. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm, min_isotope_peaks, and min_isotope_similarity control MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
@@ -725,10 +737,12 @@ sfms:suspectScreening
         sfms:mzrMs2Parameter,
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
+        sfms:isotopePpmParameter,
+        sfms:minIsotopePeaksParameter,
+        sfms:minIsotopeSimilarityParameter,
         sfms:filteredParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:optionalInputPort sfms:suspectTargetsTable ;
-    sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 
 sfms:findInternalStandards
@@ -829,12 +843,10 @@ sfms:metfragScreening
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Screen features with MetFrag" ;
-    skos:definition "Run in-silico MetFrag fragmenter screening for detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit and never automatic: run 'streamfind-cli tools install java' and 'streamfind-cli tools install metfrag', then retry this method." ;
+    skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
-        sfms:databaseTypeParameter,
-        sfms:databaseParameter,
+        sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
@@ -850,4 +862,4 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .

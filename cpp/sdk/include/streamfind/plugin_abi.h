@@ -186,6 +186,16 @@ typedef void (*streamfind_plugin_release_buffer_fn)(
     streamfind_plugin_buffer *buffer,
     void *user_data);
 
+typedef streamfind_plugin_status (*streamfind_plugin_describe_dependencies_fn)(
+    streamfind_plugin_buffer *result_json,
+    void *user_data);
+
+typedef streamfind_plugin_status (*streamfind_plugin_install_dependencies_fn)(
+    const char *request_json,
+    uint32_t request_size,
+    streamfind_plugin_buffer *result_json,
+    void *user_data);
+
 typedef streamfind_plugin_status (*streamfind_plugin_register_fn)(
     const streamfind_plugin_host_api *host,
     streamfind_plugin_api *plugin,
@@ -225,6 +235,8 @@ struct streamfind_plugin_api {
     streamfind_plugin_invoke_fn invoke;
     streamfind_plugin_release_buffer_fn release_buffer;
     void *user_data;
+    streamfind_plugin_describe_dependencies_fn describe_dependencies;
+    streamfind_plugin_install_dependencies_fn install_dependencies;
 };
 
 struct streamfind_plugin_buffer {

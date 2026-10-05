@@ -27,6 +27,9 @@ namespace streamfind::mass_spec::nta
         double mzrMS2,
         double minCosineSimilarity,
         int minSharedFragments,
+        double isotopePpm,
+        int minIsotopePeaks,
+        double minIsotopeSimilarity,
         bool filtered);
 
     void find_internal_standards_impl(

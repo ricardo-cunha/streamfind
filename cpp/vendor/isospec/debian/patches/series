@@ -1,0 +1,4 @@
+library-version.patch
+header-file-inclusion.patch
+disable-pdf-refman-generation.patch
+

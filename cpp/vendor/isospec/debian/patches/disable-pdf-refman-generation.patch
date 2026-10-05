@@ -1,0 +1,17 @@
+diff --git a/man/CMakeLists.txt b/man/CMakeLists.txt
+index 7511860..ef07d8f 100644
+--- a/man/CMakeLists.txt
++++ b/man/CMakeLists.txt
+@@ -54,8 +54,10 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/images
+ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/html
+ 	DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/doc/isospec)
+ 
+-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/latex/refman.pdf
+-  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/doc/isospec/pdf)
++# As of 20251020 the Doxygen-based generation of the pdf
++# man page via pdflatex fails.
++# install(FILES ${CMAKE_CURRENT_BINARY_DIR}/latex/refman.pdf
++# 	DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/doc/isospec/pdf)
+ 
+ # Install the man pages
+ install(

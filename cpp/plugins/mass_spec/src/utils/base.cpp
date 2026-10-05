@@ -66,6 +66,8 @@ nlohmann::json merge_ms_rows(const nlohmann::json &rows, double mz_cluster, doub
     return result;
 }
 
+static double row_real_or(const nlohmann::json &row, const char *column, double fallback);
+
 std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
 {
     std::vector<TargetRange> result;
@@ -107,15 +109,17 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
         else if (levels.is_array())
             target.levels = levels.get<std::vector<int>>();
         const double ppm = parameters.value("ppm", 20.0);
-        const double mass = source.value("mass", 0.0), mz = source.value("mz", 0.0), rt = source.value("rt", 0.0);
-        target.has_mass = source.contains("mass") || source.contains("mass_min") || source.contains("mass_max");
-        target.mass_min = source.value("mass_min", mass == 0.0 ? -std::numeric_limits<double>::infinity() : mass - mass * ppm / 1e6);
-        target.mass_max = source.value("mass_max", mass == 0.0 ? std::numeric_limits<double>::infinity() : mass + mass * ppm / 1e6);
-        target.mz_min = source.value("mz_min", mz == 0.0 ? -std::numeric_limits<double>::infinity() : mz - mz * ppm / 1e6);
-        target.mz_max = source.value("mz_max", mz == 0.0 ? std::numeric_limits<double>::infinity() : mz + mz * ppm / 1e6);
+        const double mass = row_real_or(source, "mass", 0.0), mz = row_real_or(source, "mz", 0.0), rt = row_real_or(source, "rt", 0.0);
+        const bool has_mass_min = source.contains("mass_min") && !source.at("mass_min").is_null();
+        const bool has_mass_max = source.contains("mass_max") && !source.at("mass_max").is_null();
+        target.has_mass = (source.contains("mass") && !source.at("mass").is_null()) || has_mass_min || has_mass_max;
+        target.mass_min = row_real_or(source, "mass_min", mass == 0.0 ? -std::numeric_limits<double>::infinity() : mass - mass * ppm / 1e6);
+        target.mass_max = row_real_or(source, "mass_max", mass == 0.0 ? std::numeric_limits<double>::infinity() : mass + mass * ppm / 1e6);
+        target.mz_min = row_real_or(source, "mz_min", mz == 0.0 ? -std::numeric_limits<double>::infinity() : mz - mz * ppm / 1e6);
+        target.mz_max = row_real_or(source, "mz_max", mz == 0.0 ? std::numeric_limits<double>::infinity() : mz + mz * ppm / 1e6);
         const double tolerance = parameters.value("rt_tolerance", 60.0);
-        target.rt_min = source.value("rt_min", rt == 0.0 ? -std::numeric_limits<double>::infinity() : rt - tolerance);
-        target.rt_max = source.value("rt_max", rt == 0.0 ? std::numeric_limits<double>::infinity() : rt + tolerance);
+        target.rt_min = row_real_or(source, "rt_min", rt == 0.0 ? -std::numeric_limits<double>::infinity() : rt - tolerance);
+        target.rt_max = row_real_or(source, "rt_max", rt == 0.0 ? std::numeric_limits<double>::infinity() : rt + tolerance);
         result.push_back(std::move(target));
     }
     return result;
@@ -154,6 +158,15 @@ static int row_integer(const nlohmann::json &row, const char *column)
     if (value == "true" || value == "TRUE") return 1;
     if (value == "false" || value == "FALSE") return 0;
     return value.empty() ? 0 : std::stoi(value);
+}
+
+static double row_real_or(const nlohmann::json &row, const char *column, double fallback)
+{
+    const auto it = row.find(column);
+    if (it == row.end() || it->is_null()) return fallback;
+    if (it->is_number()) return it->get<double>();
+    if (it->is_string()) return it->get<std::string>().empty() ? fallback : std::stod(it->get<std::string>());
+    return fallback;
 }
 
 nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::json &parameters,

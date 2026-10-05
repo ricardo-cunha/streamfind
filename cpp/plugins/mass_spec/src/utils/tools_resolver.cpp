@@ -24,6 +24,8 @@ namespace {
 
 constexpr const char* kJdkUrlTemplate =
     "https://api.adoptium.net/v3/binary/latest/21/ga/{os}/{arch}/jdk/hotspot/normal/eclipse";
+constexpr const char* kMetFragUrl =
+    "https://github.com/ipb-halle/MetFragRelaunched/releases/download/v2.6.11/MetFragCommandLine-2.6.11.jar";
 
 #ifdef _WIN32
 std::wstring widen(const std::string& value) { return {value.begin(), value.end()}; }
@@ -98,7 +100,8 @@ std::optional<std::string> resolve_java() {
 
 std::optional<std::string> resolve_metfrag_jar() {
     auto jar = fs::path(tools_dir()) / "metfrag" / "MetFragCL.jar";
-    if (fs::is_regular_file(jar)) return jar.string();
+    std::error_code error;
+    if (fs::is_regular_file(jar, error) && fs::file_size(jar, error) > 0) return jar.string();
     return std::nullopt;
 }
 
@@ -110,9 +113,31 @@ std::optional<std::pair<std::string, std::string>> resolve_metfrag() {
 }
 
 std::string install_metfrag() {
-    throw std::runtime_error("MetFrag is not installed. Install MetFragCL 2.6.11 into " +
-                             (fs::path(tools_dir()) / "metfrag" / "MetFragCL.jar").string() +
-                             " and rerun the operation.");
+    if (auto jar = resolve_metfrag_jar()) return *jar;
+    const auto metfrag_root = fs::path(tools_dir()) / "metfrag";
+    const auto staging = fs::path(tools_dir()) / ".metfrag-installing";
+    const auto archive = staging / "MetFragCommandLine-2.6.11.jar";
+    fs::remove_all(staging);
+    fs::create_directories(staging);
+    if (run_process("curl", {"--fail", "--location", "--silent", "--show-error", "--output",
+                               archive.generic_string(), kMetFragUrl}) != 0) {
+        fs::remove_all(staging);
+        throw std::runtime_error("MetFragCL download failed; install MetFragCL 2.6.11 manually into " +
+                                 (metfrag_root / "MetFragCL.jar").string());
+    }
+    std::error_code error;
+    if (!fs::is_regular_file(archive, error) || fs::file_size(archive, error) == 0) {
+        fs::remove_all(staging);
+        throw std::runtime_error("MetFragCL download produced no usable JAR");
+    }
+    fs::create_directories(metfrag_root);
+    const auto installed = metfrag_root / "MetFragCL.jar";
+    fs::remove(installed, error);
+    fs::rename(archive, installed, error);
+    fs::remove_all(staging);
+    if (error || !resolve_metfrag_jar())
+        throw std::runtime_error("MetFragCL installation completed but the managed JAR was not found at " + installed.string());
+    return installed.string();
 }
 
 std::string install_java() {

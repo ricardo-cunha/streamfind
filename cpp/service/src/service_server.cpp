@@ -456,6 +456,14 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
             else if (method == "GET" && std::filesystem::exists(application_root_) && (path == "/" || path.rfind("/assets/", 0) == 0)) detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
+            else if (method == "GET" && path == "/dependencies")
+                detail::send_http(socket, 200, Json{{"dependencies", plugin_runtime_.dependencies()}});
+            else if (method == "POST" && path == "/dependencies/install") {
+                const auto request = Json::parse(body);
+                if (!request.value("allow_network", false))
+                    throw std::invalid_argument("dependency installation requires allow_network=true");
+                detail::send_http(socket, 200, plugin_runtime_.install_dependencies(request));
+            }
             else if (method == "GET" && route == "/capabilities/index") detail::send_http(socket, 200, capability_index_json());
             else if (method == "GET" && route.rfind("/capabilities/domains/", 0) == 0 && route.ends_with("/modules")) {
                 const auto domain = detail::percent_decode(route.substr(std::string("/capabilities/domains/").size(), route.size() - std::string("/capabilities/domains/").size() - std::string("/modules").size()));

@@ -94,4 +94,50 @@ void ServicePluginRuntime::load(const std::filesystem::path &configuration_path,
         sdk::register_dynamic_plugin_capabilities(loaded->plugin, loaded->catalogue.at("entries"), methods, operations);
 }
 
+Json ServicePluginRuntime::dependencies() const {
+    Json result = Json::array();
+    for (const auto &loaded : plugins_) {
+        if (loaded->plugin.plugin.describe_dependencies == nullptr) continue;
+        streamfind_plugin_buffer buffer{};
+        if (loaded->plugin.plugin.describe_dependencies(&buffer, loaded->plugin.plugin.user_data) != STREAMFIND_PLUGIN_OK)
+            throw std::runtime_error("plugin dependency discovery failed for " + loaded->plugin.manifest.plugin_id);
+        try {
+            const auto values = Json::parse(std::string(buffer.data, buffer.size));
+            if (values.is_array()) for (const auto &value : values) result.push_back(value);
+        } catch (...) {
+            loaded->plugin.plugin.release_buffer(&buffer, loaded->plugin.plugin.user_data);
+            throw;
+        }
+        loaded->plugin.plugin.release_buffer(&buffer, loaded->plugin.plugin.user_data);
+    }
+    return result;
+}
+
+Json ServicePluginRuntime::install_dependencies(const Json &request) const {
+    if (!request.is_object() || !request.contains("dependency_ids") || !request.at("dependency_ids").is_array())
+        throw std::invalid_argument("dependency_ids must be an array");
+    Json result = Json::array();
+    for (const auto &loaded : plugins_) {
+        if (loaded->plugin.plugin.install_dependencies == nullptr) continue;
+        streamfind_plugin_buffer buffer{};
+        const auto text = request.dump();
+        const auto status = loaded->plugin.plugin.install_dependencies(
+            text.data(), static_cast<uint32_t>(text.size()), &buffer, loaded->plugin.plugin.user_data);
+        if (status == STREAMFIND_PLUGIN_INVALID_ARGUMENT) continue;
+        if (status != STREAMFIND_PLUGIN_OK)
+            throw std::runtime_error("plugin dependency installation failed for " + loaded->plugin.manifest.plugin_id +
+                                     ": " + loaded->plugin.runtime_diagnostics);
+        try {
+            const auto values = Json::parse(std::string(buffer.data, buffer.size));
+            if (values.contains("results") && values.at("results").is_array())
+                for (const auto &value : values.at("results")) result.push_back(value);
+        } catch (...) {
+            loaded->plugin.plugin.release_buffer(&buffer, loaded->plugin.plugin.user_data);
+            throw;
+        }
+        loaded->plugin.plugin.release_buffer(&buffer, loaded->plugin.plugin.user_data);
+    }
+    return Json{{"results", result}};
+}
+
 }  // namespace streamfind::service
