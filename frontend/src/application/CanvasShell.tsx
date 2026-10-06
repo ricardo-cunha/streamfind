@@ -14,6 +14,7 @@ import {
   type ArtifactRecord,
   type ProjectSession,
 } from '../framework/backend/StreamFindApiClient';
+import type { WorkflowMetadata } from '../framework/backend/protocol';
 import logo from '../assets/streamfind.png';
 
 import { PathFileManager } from './PathFileManager';
@@ -164,6 +165,10 @@ export default function CanvasShell({
   const [csvPreview, setCsvPreview] = useState<{ rows: Record<string, unknown>[]; error?: string } | null>(null);
   const [jsonEditorText, setJsonEditorText] = useState('');
   const [jsonEditorError, setJsonEditorError] = useState<string | null>(null);
+  const [workflowMetadata, setWorkflowMetadata] = useState<WorkflowMetadata>({});
+  const [metadataEditorOpen, setMetadataEditorOpen] = useState(false);
+  const [metadataEditorText, setMetadataEditorText] = useState('');
+  const [metadataEditorError, setMetadataEditorError] = useState<string | null>(null);
   const [gridVisible, setGridVisible] = useState(false);
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
   const [, setWorkflowProgress] = useState({ completed: 0, total: 0, current_step: 0 });
@@ -280,8 +285,8 @@ export default function CanvasShell({
   }, [artifactViewer, jsonEditor, pathWizard, picker, pickerCapabilityId, selectedNodeId, tableEditor]);
   const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
-    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision),
-    [capabilities, edges, nodes, workflowRevision],
+    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata),
+    [capabilities, edges, nodes, workflowMetadata, workflowRevision],
   );
   const currentWorkflowFingerprint = useMemo(() => workflowFingerprint(currentWorkflow), [currentWorkflow]);
 
@@ -386,10 +391,10 @@ export default function CanvasShell({
   }, [appendLog, client, project.session_id, refreshArtifacts]);
 
   useEffect(() => {
-    if (!client) return undefined;
+    if (!client || surface === 'workflow') return undefined;
     void refreshArtifacts();
     return undefined;
-  }, [client, refreshArtifacts]);
+  }, [client, refreshArtifacts, surface]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client) return undefined;
@@ -428,6 +433,7 @@ export default function CanvasShell({
         if (!active) return;
         initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
+        if (result.workflow.metadata) setWorkflowMetadata(result.workflow.metadata);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
           setStatus(`Saved workflow is invalid: ${result.diagnostics.map((item) => item.message).join('; ')}`);
@@ -468,9 +474,9 @@ export default function CanvasShell({
           width: Math.max(current.width, ...loadedNodes.map((node) => node.x + NODE_WIDTH + 800)),
           height: Math.max(current.height, ...loadedNodes.map((node) => node.y + NODE_HEIGHT + 600)),
         }));
-        void refreshArtifacts();
         setWorkflowLoaded(true);
         setStatus('Workflow loaded from the project.');
+        window.setTimeout(() => void refreshArtifacts(), 0);
       })
       .catch((error) => {
         if (active) {
@@ -563,18 +569,18 @@ export default function CanvasShell({
     setWorkflowReloadNonce((value) => value + 1);
   };
 
-  const saveCurrentWorkflow = async (): Promise<boolean> => {
+  const saveCurrentWorkflow = async (workflowToSave: WorkflowDefinition = currentWorkflow): Promise<boolean> => {
     if (!client || !workflowLoaded) return false;
     setWorkflowBusy(true);
     try {
-      const validation = await client.validateWorkflow(project.session_id, currentWorkflow);
+      const validation = await client.validateWorkflow(project.session_id, workflowToSave);
       if (!validation.valid) {
         setStatus(`Workflow was not saved: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
         return false;
       }
-      const result = await client.saveWorkflow(project.session_id, currentWorkflow);
+      const result = await client.saveWorkflow(project.session_id, workflowToSave);
       setWorkflowRevision(result.workflow.version);
-      setSavedWorkflowFingerprint(currentWorkflowFingerprint);
+      setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
 
       setStatus(`Workflow saved (revision ${result.workflow.version}).`);
       return true;
@@ -583,6 +589,31 @@ export default function CanvasShell({
       return false;
     } finally {
       setWorkflowBusy(false);
+    }
+  };
+
+  const openWorkflowMetadataEditor = () => {
+    setMetadataEditorText(JSON.stringify(workflowMetadata, null, 2));
+    setMetadataEditorError(null);
+    setMetadataEditorOpen(true);
+  };
+
+  const saveWorkflowMetadata = async () => {
+    try {
+      const parsed = JSON.parse(metadataEditorText) as WorkflowMetadata;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error('Workflow metadata must be a JSON object.');
+      if (client) {
+        const validation = await client.validateWorkflow(project.session_id, { ...currentWorkflow, metadata: parsed });
+        if (!validation.valid) throw new Error(validation.diagnostics.map((item) => item.message).join('; '));
+      }
+      const saved = await saveCurrentWorkflow({ ...currentWorkflow, metadata: parsed });
+      if (!saved) return;
+      setWorkflowMetadata(parsed);
+      setMetadataEditorOpen(false);
+      setStatus('Workflow metadata updated and saved.');
+    } catch (error) {
+      setMetadataEditorError(error instanceof Error ? error.message : 'Metadata JSON is invalid.');
     }
   };
 
@@ -654,6 +685,7 @@ export default function CanvasShell({
         workflow_id: parsed.workflow_id,
         name: parsed.name,
         version: workflowRevision,
+        metadata: parsed.metadata || workflowMetadata,
         operations: parsed.operations,
         connections: parsed.connections,
       };
@@ -1567,6 +1599,16 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
+              onClick={openWorkflowMetadataEditor}
+              disabled={workflowBusy || !workflowLoaded}
+              title="Edit workflow metadata JSON"
+              aria-label="Edit workflow metadata"
+            >
+              <i className="fa-solid fa-tag" />
+            </button>
+            <button
+              type="button"
+              className="sf-canvas-control"
               onClick={discardWorkflowChanges}
               disabled={workflowBusy || !workflowLoaded || !workflowDirty}
               title="Discard changes and reload saved workflow"
@@ -2276,6 +2318,44 @@ export default function CanvasShell({
           );
         })}
       </div>
+      {metadataEditorOpen ? (
+        <div className="sf-json-editor-overlay" onMouseDown={() => setMetadataEditorOpen(false)}>
+          <section className="sf-json-editor-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <h2>Workflow metadata</h2>
+                <small>Edit workflow metadata or add any extra JSON entries.</small>
+              </div>
+              <button
+                type="button"
+                className="sf-icon-button"
+                onClick={() => setMetadataEditorOpen(false)}
+                aria-label="Close metadata editor"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </header>
+            <textarea
+              value={metadataEditorText}
+              onChange={(event) => {
+                setMetadataEditorText(event.target.value);
+                setMetadataEditorError(null);
+              }}
+              spellCheck={false}
+              aria-label="Workflow metadata JSON"
+            />
+            {metadataEditorError ? <p className="sf-json-editor-error">{metadataEditorError}</p> : null}
+            <footer>
+              <button type="button" className="sf-button secondary" onClick={() => setMetadataEditorOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="sf-button primary" onClick={() => void saveWorkflowMetadata()}>
+                Validate and apply
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {tableEditor ? (
         <div className="sf-json-editor-overlay" onMouseDown={() => setTableEditor(null)}>
           <section

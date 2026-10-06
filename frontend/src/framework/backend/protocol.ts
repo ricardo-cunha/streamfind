@@ -73,9 +73,23 @@ export type WorkflowDefinition = {
   workflow_id?: string;
   name?: string;
   version: number;
+  metadata?: WorkflowMetadata;
   operations: WorkflowOperationDefinition[];
   connections: WorkflowConnectionDefinition[];
 };
+
+export type WorkflowDemoMetadata = {
+  id: string;
+  name: string;
+  description: string;
+  use_case?: string;
+  domain?: string;
+  version?: number;
+  workflow: WorkflowDefinition;
+  [key: string]: JsonValue | WorkflowDefinition | undefined;
+};
+
+export type WorkflowMetadata = Record<string, JsonValue>;
 
 export type WorkflowDiagnostic = { message: string };
 

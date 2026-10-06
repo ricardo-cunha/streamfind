@@ -323,6 +323,8 @@ public:
     std::string name;
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
+    /// Ontology-backed workflow description; additional JSON keys are preserved.
+    Json metadata{Json::object()};
     /// Operation instances forming the backend execution graph.
     std::vector<WorkflowOperation> operations;
     /// Explicit typed-port dataflow connections.
@@ -384,6 +386,8 @@ struct STREAMFIND_CORE_API ProjectOptions {
     std::filesystem::path database_path;
     /// Project-owned metadata initialized on creation.
     Json metadata{Json::object()};
+    /// User-defined metadata for the initial workflow definition.
+    Json workflow_metadata{Json::object()};
 };
 
 /** @brief Persisted identity and metadata for an open Project. */

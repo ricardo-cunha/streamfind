@@ -5,13 +5,14 @@
   "description": "A reusable, versioned workflow graph. Runtime execution records, artifact inventory, and physical table locations are intentionally excluded.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "workflow_id", "version", "domain", "operations", "connections"],
+  "required": ["schema_version", "workflow_id", "version", "metadata", "operations", "connections"],
   "properties": {
     "schema_version": { "const": 1 },
     "workflow_id": { "type": "string", "minLength": 1 },
     "name": { "type": "string" },
     "version": { "type": "integer", "minimum": 1 },
     "domain": { "type": "string", "minLength": 1 },
+    "metadata": { "$ref": "#/$defs/metadata" },
     "operations": {
       "type": "array",
       "items": { "$ref": "#/$defs/operation" }
@@ -22,6 +23,12 @@
     }
   },
   "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "User-defined workflow metadata. The workflow revision is stored in the top-level version field and is not duplicated here.",
+      "properties": {}
+    },
     "operation": {
       "type": "object",
       "additionalProperties": false,

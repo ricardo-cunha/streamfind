@@ -37,9 +37,11 @@ public:
     std::uint16_t port() const noexcept { return port_; }
 
 private:
+    Json workflow_demos() const;
     void handle_client(std::intptr_t socket);
     std::uint16_t port_;
     std::filesystem::path application_root_;
+    std::filesystem::path runtime_root_;
     std::atomic<bool> stopping_{false};
     std::intptr_t listener_{-1};
     MethodRegistry methods_;

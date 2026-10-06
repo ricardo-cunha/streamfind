@@ -21,6 +21,7 @@ ProjectOptions options_from_request(const Json &request, bool read_only = false)
     }
     ProjectOptions options;
     options.database_path = request.at("database_path").get<std::string>();
+    if (request.contains("workflow_metadata")) options.workflow_metadata = request.at("workflow_metadata");
     return options;
 }
 

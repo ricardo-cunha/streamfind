@@ -55,6 +55,16 @@ describe('workflow model', () => {
     ]);
   });
 
+  it('updates arbitrary workflow metadata without duplicating the workflow revision', () => {
+    const workflow = canvasWorkflow([], [], { operations: [] } as never, 15, {
+      owner: 'web-app',
+      purpose: 'metadata update test',
+    });
+    expect(workflow.metadata).toEqual({ owner: 'web-app', purpose: 'metadata update test' });
+    expect(workflow.version).toBe(15);
+    expect(workflow.metadata).not.toHaveProperty('version');
+  });
+
   it('hydrates canvas nodes from a workflow using capability metadata', () => {
     const result = workflowToCanvas(
       {

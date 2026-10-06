@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <set>
 #include <stdexcept>
 #include <string>
 
 #include "streamfind/mcp.hpp"
+#include "../tmp_projects.hpp"
 
 namespace {
 
@@ -53,8 +55,9 @@ int main() {
         bool has_set_workflow = false;
         bool has_request_artifact = false;
         bool has_current_artifact_inventory = false;
+        bool has_workflow_demos = false;
         for (const auto &tool : tools) {
-            const auto name = tool.value("name", "");
+            const auto name = tool.value("name", tool.value("canonical_id", ""));
             require(name.rfind("mass_spec.", 0) != 0, "operation-specific MCP tool leaked into tools/list");
             require(name != "add_method" && name != "remove_method" && name != "get_available_methods" &&
                         name != "run_method",
@@ -70,6 +73,7 @@ int main() {
             has_set_workflow = has_set_workflow || name == "set_workflow";
             has_request_artifact = has_request_artifact || name == "request_artifact";
             has_current_artifact_inventory = has_current_artifact_inventory || name == "get_current_artifact_inventory";
+            has_workflow_demos = has_workflow_demos || name == "list_workflow_demos";
         }
         require(has_domains && has_modules && has_operations && has_operation && has_run_operation,
                 "stable MCP discovery tools are incomplete");
@@ -77,8 +81,9 @@ int main() {
                 "operation-graph MCP tools are incomplete");
         require(has_request_artifact, "artifact request MCP tool is missing");
         require(has_current_artifact_inventory, "current artifact inventory MCP tool is missing");
+        require(has_workflow_demos, "workflow demo discovery MCP tool is missing");
         for (const auto &tool : tools) {
-            const auto name = tool.value("name", "");
+            const auto name = tool.value("name", tool.value("canonical_id", ""));
             if (name == "create")
                 require(tool.at("inputSchema").at("required") == streamfind::Json::array({"database_path"}),
                         "create schema does not require database_path");
@@ -105,6 +110,24 @@ int main() {
                         "request_artifact offset schema is not a valid non-negative integer schema");
             }
         }
+
+        const auto metadata_path = streamfind::test::tmp_projects_dir() / "mcp-workflow-metadata-contract.duckdb";
+        std::filesystem::remove(metadata_path);
+        const auto created = call(session, 6, "create", {{"database_path", metadata_path.string()}});
+        require(!created.at("result").value("isError", false), "MCP create rejected metadata-optional workflow creation");
+        const auto updated = call(session, 7, "set_workflow",
+                                  {{"database_path", metadata_path.string()},
+                                   {"workflow", {{"schema_version", 1}, {"workflow_id", "workflow"},
+                                                  {"name", "Workflow"}, {"version", 1},
+                                                  {"metadata", {{"owner", "mcp"}, {"purpose", "contract test"}}},
+                                                  {"operations", streamfind::Json::array()},
+                                                  {"connections", streamfind::Json::array()}}}});
+        require(!updated.at("result").value("isError", false), "MCP workflow metadata update failed");
+        const auto saved_metadata = text_json(call(session, 8, "get_workflow", {{"database_path", metadata_path.string()}}));
+        require(saved_metadata.at("metadata") ==
+                            streamfind::Json({{"owner", "mcp"}, {"purpose", "contract test"}}),
+                "MCP workflow metadata update was not persisted");
+        std::filesystem::remove(metadata_path);
 
         const auto domains = text_json(call(session, 2, "get_domains"));
         require(domains.is_array() && std::find(domains.begin(), domains.end(), "mass_spec") != domains.end(),

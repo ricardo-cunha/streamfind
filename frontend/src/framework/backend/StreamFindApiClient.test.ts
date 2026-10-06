@@ -54,6 +54,26 @@ describe('StreamFindApiClient capability discovery', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://service/capabilities/operations/core%3Aio%2Fread');
   });
 
+  it('loads validated workflow demos from the service', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response({
+        workflows: [
+          {
+            id: 'demo',
+            name: 'Demo',
+            description: 'Example',
+            workflow: { schema_version: 1, version: 1, operations: [], connections: [] },
+          },
+        ],
+      }),
+    );
+
+    const result = await new StreamFindApiClient('http://service').workflowDemos();
+
+    expect(fetchMock).toHaveBeenCalledWith('http://service/workflow-demos');
+    expect(result[0].id).toBe('demo');
+  });
+
   it('reports capability endpoint failures', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({}, false, 503));
 

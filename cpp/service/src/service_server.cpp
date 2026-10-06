@@ -324,6 +324,27 @@ bool receive_exact(std::intptr_t socket, unsigned char *buffer, std::size_t size
     return true;
 }
 
+std::string read_text_file(const std::filesystem::path &path) {
+    std::ifstream input(path);
+    if (!input) throw std::runtime_error("unable to read workflow demo: " + path.string());
+    return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+}
+
+std::vector<std::filesystem::path> workflow_demo_files(const std::filesystem::path &package_root) {
+    std::vector<std::filesystem::path> files;
+    const auto plugins = package_root / "plugins";
+    if (!std::filesystem::exists(plugins)) return files;
+    for (const auto &plugin : std::filesystem::directory_iterator(plugins)) {
+        if (!plugin.is_directory()) continue;
+        const auto workflows = plugin.path() / "resources" / "workflows";
+        if (!std::filesystem::exists(workflows)) continue;
+        for (const auto &entry : std::filesystem::directory_iterator(workflows))
+            if (entry.is_regular_file() && entry.path().extension() == ".json") files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
 }  // namespace detail
 
 void EventBroker::add(std::intptr_t socket) { std::lock_guard lock(mutex_); clients_.push_back(socket); }
@@ -337,7 +358,7 @@ void EventBroker::publish(const Json &event) {
 
 ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
     const std::filesystem::path &application_root)
-    : port_(port), application_root_(application_root), projects_(operations_) {
+    : port_(port), application_root_(application_root), runtime_root_(configuration_path.parent_path()), projects_(operations_) {
     projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view message) {
         events_.publish(Json{{"type", "operation.log"}, {"project", session_id},
                              {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}});
@@ -352,6 +373,32 @@ ServiceServer::~ServiceServer() { stop();
 #ifdef _WIN32
     WSACleanup();
 #endif
+}
+
+Json ServiceServer::workflow_demos() const {
+    Json workflows = Json::array();
+    auto files = detail::workflow_demo_files(application_root_.parent_path());
+    if (files.empty() && runtime_root_ != application_root_.parent_path())
+        files = detail::workflow_demo_files(runtime_root_);
+    for (const auto &file : files) {
+        try {
+            const auto document = Json::parse(detail::read_text_file(file));
+            const auto workflow = document.contains("workflow") ? document.at("workflow") : document;
+            auto parsed = Workflow::from_json(workflow);
+            parsed.validate(operations_);
+            Json metadata = document.value("metadata", Json::object());
+            const auto id = metadata.value("id", file.stem().string());
+            workflows.push_back({
+                {"id", id},
+                {"name", metadata.value("name", parsed.name.empty() ? id : parsed.name)},
+                {"metadata", metadata},
+                {"workflow", parsed.to_json()}
+            });
+        } catch (const std::exception &) {
+            // Invalid demos are not exposed; release validation should catch them.
+        }
+    }
+    return workflows;
 }
 
 void ServiceServer::stop() { stopping_ = true; if (listener_ != -1) detail::close_socket(listener_); }
@@ -587,6 +634,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     }
                 if (!found) detail::send_http(socket, 404, Json{{"error", "operation not found"}, {"operation", operation_id}});
             }
+            else if (method == "GET" && path == "/workflow-demos") detail::send_http(socket, 200, Json{{"workflows", workflow_demos()}});
             else if (method == "GET" && path == "/capabilities") detail::send_http(socket, 200, capabilities_json());
             else if (method == "GET" && path == "/projects") {
                 Json result = Json::array(); for (const auto &project : projects_.list()) result.push_back(project); detail::send_http(socket, 200, Json{{"projects", result}});
@@ -737,7 +785,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 detail::send_http(socket, 200, project);
             } else if (method == "POST" && path == "/projects") {
                 const auto input = Json::parse(body);
-                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object())};
+                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object()), input.value("workflow_metadata", ProjectOptions{}.workflow_metadata)};
                 const auto session_id = input.at("session_id").get<std::string>();
                 const auto project = input.value("mode", "create") == "open"
                                          ? projects_.open(session_id, options)

@@ -48,6 +48,17 @@ sfcore:metadataParameter
     sf:default "{}" ;
     sf:example "{}" .
 
+sfcore:workflowMetadataParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow metadata" ;
+    skos:definition "User-defined JSON metadata for a workflow. Workflow revision is tracked separately by the top-level workflow version." ;
+    sf:type "object" ;
+    sf:required false ;
+    sf:default "{}" ;
+    sf:example "{\"owner\":\"research\",\"purpose\":\"feature extraction\"}" .
+
 sfcore:workflowParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;

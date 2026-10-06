@@ -8,9 +8,13 @@
 
 sfcore:SemanticEntryShape
     a sh:NodeShape ;
-    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:Parameter, sf:OperationResult, sf:Error, sf:Table, sf:Field, sf:Column, sf:PrimitiveType, sf:SemanticType, sf:ArrayType, sf:ApiCommandResult ;
+    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:WorkflowMetadata, sf:Parameter, sf:OperationResult, sf:Error, sf:Table, sf:Field, sf:Column, sf:PrimitiveType, sf:SemanticType, sf:ArrayType, sf:ApiCommandResult ;
     sh:property [ sh:path skos:prefLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path skos:definition ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
+
+sfcore:WorkflowMetadataShape
+    a sh:NodeShape ;
+    sh:targetClass sf:WorkflowMetadata .
 
 sfcore:ApiCommandShape
     a sh:NodeShape ;

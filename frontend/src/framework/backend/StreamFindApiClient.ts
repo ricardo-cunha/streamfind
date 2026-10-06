@@ -14,6 +14,7 @@ import type {
   BackendCapability,
   DependencyDescriptor,
   DependencyInstallResult,
+  WorkflowDemoMetadata,
 } from './protocol';
 
 export type { ProjectSession, ServiceCapabilities } from './protocol';
@@ -313,6 +314,13 @@ export class StreamFindApiClient {
     return response.json() as Promise<WorkflowDefinitionResponse>;
   }
 
+  async workflowDemos(): Promise<WorkflowDemoMetadata[]> {
+    const response = await fetch(`${this.baseUrl}/workflow-demos`);
+    if (!response.ok) throw new Error(`Workflow demo list request failed (${response.status})`);
+    const result = (await response.json()) as { workflows?: WorkflowDemoMetadata[] };
+    return result.workflows || [];
+  }
+
   async validateWorkflow(sessionId: string, workflow: WorkflowDefinition): Promise<WorkflowDefinitionResponse> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/validate`, {
       method: 'POST',
@@ -415,6 +423,7 @@ export class StreamFindApiClient {
     session_id: string;
     database_path: string;
     metadata?: Record<string, unknown>;
+    workflow_metadata?: Record<string, unknown>;
     mode?: 'create' | 'open';
   }): Promise<ProjectSession> {
     const response = await fetch(`${this.baseUrl}/projects`, {

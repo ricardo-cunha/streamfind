@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <utility>
 
@@ -49,6 +51,42 @@ Json operation_summary(const Json &entry) {
                 {"definition", entry.value("definition", "")}};
 }
 
+Json workflow_demos(const OperationRegistry &registry) {
+    Json result = Json::array();
+    std::vector<std::filesystem::path> roots;
+    if (const auto *configured = std::getenv("STREAMFIND_WORKFLOW_RESOURCES")) roots.emplace_back(configured);
+    roots.push_back(std::filesystem::current_path() / "plugins");
+    roots.push_back(std::filesystem::current_path().parent_path() / "plugins");
+    std::set<std::filesystem::path> files;
+    for (const auto &root : roots) {
+        if (!std::filesystem::exists(root)) continue;
+        for (const auto &plugin : std::filesystem::directory_iterator(root)) {
+            if (!plugin.is_directory()) continue;
+            const auto workflows = plugin.path() / "resources" / "workflows";
+            if (!std::filesystem::exists(workflows)) continue;
+            for (const auto &file : std::filesystem::directory_iterator(workflows))
+                if (file.is_regular_file() && file.path().extension() == ".json") files.insert(file.path());
+        }
+    }
+    for (const auto &file : files) {
+        try {
+            std::ifstream input(file);
+            const auto document = Json::parse(std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()));
+            const auto workflow_json = document.contains("workflow") ? document.at("workflow") : document;
+            auto workflow = Workflow::from_json(workflow_json);
+            workflow.validate(registry);
+            const auto metadata = document.value("metadata", Json::object());
+            const auto id = metadata.value("id", file.stem().string());
+            result.push_back({{"id", id}, {"name", metadata.value("name", workflow.name.empty() ? id : workflow.name)},
+                              {"description", metadata.value("description", "Workflow demonstration")},
+                              {"use_case", metadata.value("use_case", "")}, {"domain", metadata.value("domain", "")},
+                              {"workflow", workflow.to_json()}});
+        } catch (const std::exception &) {
+        }
+    }
+    return result;
+}
+
 Json tools() {
     // Keep the initial MCP surface stable and small. Domain operations are
     // discovered through the query tools below and invoked through
@@ -64,6 +102,7 @@ Json tools() {
                           Json::array({"domain"})));
     result.push_back(tool("get_operation", "Return the full catalogue definition for one operation.",
                           Json{{"operation", {{"type", "string"}}}}, Json::array({"operation"})));
+    result.push_back(tool("list_workflow_demos", "List validated workflow demos registered by installed plugins, including metadata and portable workflow definitions.", Json::object(), Json::array()));
     result.push_back(tool("run_operation", "Run one canonical domain operation against a project database. Entry operations may run directly; operations with typed inputs require an existing graph binding or explicit inputs.",
                           Json{{"operation", {{"type", "string"}}},
                                {"database_path", {{"type", "string"}}},
@@ -87,6 +126,10 @@ Json tools() {
     };
     const Json database_path = {{"type", "string"}, {"description", "Path to the project DuckDB database."}};
     const Json project_path_schema = schema(Json{{"database_path", database_path}}, Json::array({"database_path"}));
+    const Json workflow_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
+        {"description", "User-defined workflow metadata. Workflow revision is tracked by the top-level workflow version."}};
+    const Json create_schema = schema(Json{{"database_path", database_path}, {"workflow_metadata", workflow_metadata_schema}},
+                                      Json::array({"database_path"}));
     const Json workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
                                         Json::array({"database_path"}));
     const Json set_workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
@@ -113,7 +156,8 @@ Json tools() {
         Json::array({"database_path"}));
     for (auto &entry : result) {
         const auto name = entry.value("name", "");
-        if (name == "create" || name == "describe" || name == "connect" || name == "validate" ||
+        if (name == "create") entry["inputSchema"] = create_schema;
+        else if (name == "describe" || name == "connect" || name == "validate" ||
             name == "get_project_domains" || name == "get_metadata" || name == "set_metadata" ||
             name == "get_workflow" || name == "get_workflow_execution" || name == "create_workflow_execution" ||
             name == "get_execution" || name == "list_executions" || name == "transition_execution" ||
@@ -236,6 +280,9 @@ Json Session::handle(const Json &request) {
 
     if (method != "tools/call") return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32601}, {"message", "Unsupported MCP method"}}}};
     const auto name = request.at("params").value("name", "");
+    if (name == "list_workflow_demos") {
+        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(detail::workflow_demos(operations_))}};
+    }
     if (name == "get_dependencies") {
         if (!dependencies_) return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(Json{{"dependencies", Json::array()}})}};
         return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(dependencies_())}};

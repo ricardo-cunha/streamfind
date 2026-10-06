@@ -1272,6 +1272,9 @@ namespace streamfind
         if (schema_version != 1)
             throw Error(ErrorCode::SchemaMismatch,
                         "Unsupported workflow schema version: " + std::to_string(schema_version));
+        if (!metadata.is_object())
+            throw Error(ErrorCode::WorkflowValidation, "Workflow metadata must be an object");
+
         if (operations.empty() && connections.empty()) return;
 
         std::set<std::string> operation_ids;
@@ -1356,6 +1359,7 @@ namespace streamfind
     {
         Json output = {{"schema_version", schema_version}, {"workflow_id", workflow_id},
                        {"name", name}, {"version", version},
+                       {"metadata", metadata},
                        {"operations", Json::array()}, {"connections", Json::array()}};
         for (const auto &operation : operations)
             output["operations"].push_back(operation.to_json());
@@ -1381,6 +1385,7 @@ namespace streamfind
         workflow.schema_version = value.value("schema_version", 1);
         workflow.workflow_id = value.value("workflow_id", "");
         workflow.version = value.value("version", 1);
+        workflow.metadata = value.value("metadata", Json::object());
         for (const auto &item : value.value("operations", Json::array()))
             workflow.operations.push_back(WorkflowOperation::from_json(item));
         for (const auto &item : value.value("connections", Json::array()))
@@ -1506,8 +1511,14 @@ namespace streamfind
             throw Error(ErrorCode::ProjectAlreadyExists, "DuckDB file already contains a project");
         if (creating)
         {
-            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, '{\"schema_version\":1,\"operations\":[],\"connections\":[]}')", "create PROJECT row", [&](Statement statement)
-                     { bind_text(statement, 1, json_text(options.metadata)); }, [](duckdb_result &) {});
+            Json initial_workflow = {{"schema_version", 1},
+                                     {"workflow_id", "workflow"},
+                                     {"name", "Workflow"},
+                                     {"version", 1},
+                                     {"metadata", options.workflow_metadata},
+                                     {"operations", Json::array()}, {"connections", Json::array()}};
+            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, ?)", "create PROJECT row", [&](Statement statement)
+                     { bind_text(statement, 1, json_text(options.metadata)); bind_text(statement, 2, json_text(initial_workflow)); }, [](duckdb_result &) {});
         }
         impl->info = read_info(connection.get());
         audit(connection.get(), creating ? "create" : "open", "project", Json::object());

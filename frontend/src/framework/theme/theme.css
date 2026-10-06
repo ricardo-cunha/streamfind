@@ -690,6 +690,51 @@ h2 {
   color: var(--sf-text-secondary);
   line-height: 1.45;
 }
+.sf-card-hint {
+  color: var(--sf-text-secondary);
+  font-size: 0.82rem;
+}
+.sf-workflow-demo-dialog {
+  width: 95vw;
+  height: 95vh;
+  max-width: none;
+  max-height: none;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.sf-demo-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+}
+.sf-demo-list-item {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-height: 170px;
+  padding: 16px;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius);
+  color: var(--sf-text);
+  background: var(--sf-surface);
+  text-align: left;
+  cursor: pointer;
+}
+.sf-demo-list-item:hover {
+  border-color: var(--sf-accent);
+}
+.sf-demo-list-item > span:last-child {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+.sf-demo-list-item small {
+  color: var(--sf-text-secondary);
+  line-height: 1.35;
+}
 .sf-card-icon {
   color: var(--sf-accent);
   font-size: 2rem;
@@ -769,17 +814,52 @@ h2 {
   display: grid;
   gap: 10px;
   width: min(460px, 100%);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
   padding: 15px;
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
   background: var(--sf-surface-raised);
   box-shadow: var(--sf-shadow);
 }
+.sf-create-workflow-dialog {
+  inline-size: 95vw;
+  block-size: 95vh;
+  max-width: none;
+  max-height: none;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+.sf-dialog.sf-workflow-demo-dialog {
+  inline-size: 95vw;
+  block-size: 95vh;
+  max-inline-size: none;
+  max-block-size: none;
+}
+.sf-create-workflow-dialog > label {
+  min-width: 0;
+  min-height: 0;
+}
+.sf-create-workflow-dialog > label:last-of-type {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.sf-create-workflow-dialog textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  resize: both;
+}
 .sf-dialog-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+.sf-dialog-heading-actions-only {
+  justify-content: flex-end;
 }
 .sf-dialog label {
   display: grid;
@@ -1687,7 +1767,19 @@ h2 {
   color: var(--sf-accent-hover);
 }
 .sf-project-preview {
-  width: min(460px, 100%);
+  width: 95vw;
+  height: 95vh;
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
+  border: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+.sf-project-preview .sf-icon-button,
+.sf-project-preview .sf-dialog-actions .sf-button {
+  border: 0;
+  background: transparent;
 }
 .sf-project-preview-domain {
   color: var(--sf-text-muted);
@@ -1701,6 +1793,107 @@ h2 {
   color: var(--sf-text-secondary);
   line-height: 1.4;
   word-break: break-word;
+}
+.sf-project-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.8fr);
+  gap: 16px;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.sf-project-overview-details,
+.sf-project-overview-graph {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.sf-project-overview-details {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+  background: var(--sf-surface);
+}
+.sf-project-overview-details h3 {
+  margin: 8px 0 0;
+  color: var(--sf-text);
+  font-size: 0.9rem;
+}
+.sf-workflow-metadata-json {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--sf-text);
+  background: var(--sf-surface-raised);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sf-project-overview-graph {
+  display: grid;
+  place-items: stretch;
+  align-content: stretch;
+  justify-content: stretch;
+  height: 100%;
+  padding: 8px;
+  background: var(--sf-surface);
+}
+.sf-workflow-overview-graph {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.sf-workflow-overview-graph svg {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: auto;
+}
+.sf-workflow-graph-edges path {
+  fill: none;
+  stroke: var(--sf-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.65;
+}
+.sf-workflow-overview-node {
+  --sf-overview-node-base: var(--sf-accent);
+}
+.sf-workflow-overview-node.sf-domain-mass-spec {
+  --sf-overview-node-base: #166534;
+}
+.sf-workflow-overview-node > rect:first-child {
+  fill: var(--sf-overview-node-base);
+  stroke: var(--sf-overview-node-base);
+  stroke-width: 1;
+}
+.sf-workflow-overview-node-label {
+  fill: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+.sf-workflow-graph-empty {
+  align-self: center;
+  justify-self: center;
+  color: var(--sf-text-secondary);
+}
+@media (max-width: 900px) {
+  .sf-project-overview-grid {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .sf-project-overview-graph {
+    min-height: 360px;
+  }
 }
 .sf-project-workspace {
   min-height: 100%;
@@ -3750,6 +3943,12 @@ h2 {
 .sf-json-editor-modal > header > .sf-icon-button,
 .sf-json-editor-modal > footer > .sf-button {
   border: 0;
+}
+.sf-json-editor-modal > footer > .sf-button {
+  background: transparent;
+}
+.sf-json-editor-modal > footer > .sf-button.primary {
+  color: var(--sf-accent);
 }
 .sf-json-editor-modal > header > .sf-icon-button {
   background: transparent;

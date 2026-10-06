@@ -11,7 +11,9 @@ sfcore:create
     sf:category "project-management" ;
     sf:guidance "Use create once for a new database. Then use describe to inspect it. Do not call create to open an existing project; use describe or connect instead." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:workflowMetadataParameter ;
     sf:returns sfcore:projectDescriptorResult ;
     sf:mutatesProject true .
 

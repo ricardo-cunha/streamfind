@@ -60,9 +60,14 @@ add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
         "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
-        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/catalogue.duckdb")
+        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/catalogue.duckdb"
+    )
 streamfind_validate_plugin_build(streamfind_mass_spec_plugin mass_spec)
 streamfind_stage_mingw_plugin_runtime(streamfind_mass_spec_plugin mass_spec)
+add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/resources")
 if(MSVC)
     target_compile_definitions(streamfind_mass_spec_plugin PRIVATE
         NOMINMAX
@@ -96,3 +101,5 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/mass_spec/ontology)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/mass_spec)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
+    DESTINATION plugins/mass_spec/resources)

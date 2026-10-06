@@ -22,6 +22,33 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return { protocol_version: '1.0', operations: [], domains: ['core'], endpoints: [] };
     }
 
+    async workflowDemos() {
+      return [
+        {
+          id: 'demo',
+          name: 'Demo workflow',
+          description: 'A demo workflow.',
+          use_case: 'Show the workflow demo picker.',
+          workflow: {
+            schema_version: 1 as const,
+            workflow_id: 'demo',
+            name: 'Demo workflow',
+            version: 1,
+            operations: [],
+            connections: [],
+          },
+        },
+      ];
+    }
+
+    async saveWorkflow() {
+      return {
+        workflow: { schema_version: 1 as const, workflow_id: 'demo', version: 1, operations: [], connections: [] },
+        valid: true,
+        diagnostics: [],
+      };
+    }
+
     async projects() {
       return [project];
     }
@@ -105,6 +132,29 @@ describe('application shell', () => {
     });
 
     expect(screen.getByText('Create workflow')).toBeInTheDocument();
+  });
+
+  it('lists registered workflow demos from the backend', async () => {
+    await showWorkspace();
+    expect(screen.getByText('Workflow demos')).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole('button', { name: /Workflow demos/ }).click();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Demo workflow')).toBeInTheDocument();
+    expect(screen.getByText('Show the workflow demo picker.')).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole('button', { name: /Demo workflow/ }).click();
+    });
+    expect((screen.getByLabelText('Workflow metadata JSON') as HTMLTextAreaElement).value).toBe('{}');
+    await act(async () => {
+      screen.getByRole('button', { name: 'Cancel' }).click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create workflow' }).click();
+    });
+    expect((screen.getByLabelText('Workflow metadata JSON') as HTMLTextAreaElement).value).toBe('{}');
   });
 
   it('renders fixed project actions and discovered project cards', async () => {

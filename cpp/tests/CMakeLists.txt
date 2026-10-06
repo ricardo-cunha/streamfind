@@ -99,6 +99,13 @@ add_test(NAME streamfind_mcp_discovery_contract COMMAND streamfind_mcp_discovery
 set_tests_properties(streamfind_mcp_discovery_contract PROPERTIES
     LABELS "framework"
     ENVIRONMENT "STREAMFIND_CATALOGUE=${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb")
+if(WIN32)
+    add_custom_command(TARGET streamfind_mcp_discovery_contract POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:streamfind::duckdb>"
+            "$<TARGET_FILE_DIR:streamfind_mcp_discovery_contract>"
+    )
+endif()
 
 add_executable(streamfind_artifact_publication_contract unit/artifact_publication_contract.cpp)
 target_link_libraries(streamfind_artifact_publication_contract PRIVATE streamfind::cpp_core)

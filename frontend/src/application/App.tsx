@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Component, memo, type ErrorInfo, type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import logo from '../assets/streamfind.png';
 
 import WorkflowCanvas from './WorkflowCanvas';
@@ -13,6 +13,8 @@ import type {
   TableColumnContract,
   TableContract,
   WorkflowState,
+  WorkflowDemoMetadata,
+  WorkflowDefinition,
 } from '../framework/backend/protocol';
 import { notifyApp } from '../framework/notifications/notificationBus';
 import {
@@ -36,8 +38,10 @@ type WorkflowSummary = {
   operationCount: number;
   revision: number;
   state: WorkflowState;
-  artifactCount: number;
+  artifactCount?: number;
 };
+const defaultWorkflowMetadata: Record<string, never> = {};
+const defaultWorkflowMetadataText = JSON.stringify(defaultWorkflowMetadata, null, 2);
 type OntologyEntry = {
   id: string;
   label: string;
@@ -685,7 +689,7 @@ function ProjectCard({
                 {summary.operationCount} operations · Revision {summary.revision}
               </span>
               <span>Run: {summary.state}</span>
-              <span>Artifacts: {summary.artifactCount} published</span>
+              {summary.artifactCount !== undefined ? <span>Artifacts: {summary.artifactCount} published</span> : null}
             </>
           ) : (
             <span>Loading workflow summary…</span>
@@ -724,15 +728,139 @@ function ProjectCard({
     </article>
   );
 }
+const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: { workflow: WorkflowDefinition }) {
+  const nodeWidth = 224;
+  const nodeHeight = 126;
+  const fallbackGap = 80;
+  const fallbackColumns = Math.max(1, Math.ceil(Math.sqrt(workflow.operations.length)));
+  const positions = new Map(
+    workflow.operations.map((operation, index) => [
+      operation.id,
+      operation.position && Number.isFinite(operation.position.x) && Number.isFinite(operation.position.y)
+        ? operation.position
+        : {
+            x: (index % fallbackColumns) * (nodeWidth + fallbackGap),
+            y: Math.floor(index / fallbackColumns) * (nodeHeight + fallbackGap),
+          },
+    ]),
+  );
+  const padding = 80;
+  const minX = Math.min(...[...positions.values()].map((position) => position.x), 0) - padding;
+  const minY = Math.min(...[...positions.values()].map((position) => position.y), 0) - padding;
+  const maxX = Math.max(...[...positions.values()].map((position) => position.x + nodeWidth), nodeWidth) + padding;
+  const maxY = Math.max(...[...positions.values()].map((position) => position.y + nodeHeight), nodeHeight) + padding;
+  const width = Math.max(520, maxX - minX);
+  const height = Math.max(320, maxY - minY);
+  const labelLines = (value: string) => {
+    const words = value.split(/[._]/).filter(Boolean);
+    const lines: string[] = [];
+    let current = '';
+    for (const word of words) {
+      const next = current ? `${current}_${word}` : word;
+      if (next.length > 25 && current) {
+        lines.push(current);
+        current = word;
+      } else current = next;
+    }
+    if (current) lines.push(current);
+    return lines.slice(0, 3);
+  };
+  return (
+    <div className="sf-workflow-overview-graph" aria-label="Workflow graph overview">
+      {workflow.operations.length === 0 ? (
+        <p className="sf-workflow-graph-empty">No workflow operations are defined.</p>
+      ) : (
+        <svg
+          viewBox={`${minX} ${minY} ${width} ${height}`}
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label="Workflow nodes and connections"
+        >
+          <g className="sf-workflow-graph-edges">
+            {workflow.connections.map((connection) => {
+              const source = positions.get(connection.source_operation);
+              const target = positions.get(connection.target_operation);
+              if (!source || !target) return null;
+              return (
+                <path
+                  key={`${connection.source_operation}:${connection.target_operation}:${connection.source_port}:${connection.target_port}`}
+                  d={`M ${source.x + nodeWidth} ${source.y + nodeHeight / 2} C ${source.x + nodeWidth + Math.max(70, Math.abs(target.x - source.x) * 0.45)} ${source.y + nodeHeight / 2}, ${target.x - Math.max(70, Math.abs(target.x - source.x) * 0.45)} ${target.y + nodeHeight / 2}, ${target.x} ${target.y + nodeHeight / 2}`}
+                />
+              );
+            })}
+          </g>
+          <g className="sf-workflow-graph-nodes">
+            {workflow.operations.map((operation) => {
+              const position = positions.get(operation.id);
+              if (!position) return null;
+              return (
+                <g
+                  key={operation.id}
+                  className={`sf-workflow-overview-node ${operation.operation.includes('mass_spec') ? 'sf-domain-mass-spec' : ''}`}
+                  transform={`translate(${position.x}, ${position.y})`}
+                >
+                  <rect width={nodeWidth} height={nodeHeight} rx="8" />
+                  <text className="sf-workflow-overview-node-label" x="14" y="29">
+                    {labelLines(operation.operation || operation.id).map((line, index) => (
+                      <tspan key={`${operation.id}-${line}`} x="14" dy={index === 0 ? 0 : 16}>
+                        {line}
+                      </tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      )}
+    </div>
+  );
+});
+
 function ProjectPreview({
   project,
+  client,
   onOpenWorkflow,
   onClose,
 }: {
   project: ProjectSession;
+  client: StreamFindApiClient;
   onOpenWorkflow: (project: ProjectSession) => void;
   onClose: () => void;
 }) {
+  const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
+  const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null);
+  const [artifactCount, setArtifactCount] = useState(0);
+  const metadata = workflow?.metadata || {};
+  useEffect(() => {
+    let active = true;
+    client
+      .workflowDefinition(project.session_id)
+      .then((definition) => {
+        if (active) setWorkflow(definition.workflow);
+      })
+      .catch(() => {
+        if (active) setWorkflow(null);
+      });
+    client
+      .workflowState(project.session_id)
+      .then((state) => {
+        if (active) setWorkflowState(state.state);
+      })
+      .catch(() => undefined);
+    const artifactTimer = window.setTimeout(() => {
+      void client
+        .artifacts(project.session_id)
+        .then((artifacts) => {
+          if (active) setArtifactCount(artifacts.filter((artifact) => artifact.status === 'published').length);
+        })
+        .catch(() => undefined);
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(artifactTimer);
+    };
+  }, [client, project.session_id]);
   return (
     <div
       className="sf-dialog-backdrop"
@@ -743,15 +871,31 @@ function ProjectPreview({
       <aside className="sf-dialog sf-project-preview">
         <div className="sf-dialog-heading">
           <div>
-            <span className="sf-eyebrow">Project preview</span>
             <h2>{projectFileName(project)}</h2>
           </div>
           <button type="button" className="sf-icon-button" onClick={onClose} aria-label="Close project preview">
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
-        <span className="sf-project-preview-domain">{project.domains?.join(', ') || 'No domains'}</span>
-        <code>{project.database_path}</code>
+        <div className="sf-project-overview-grid">
+          <section className="sf-project-overview-details">
+            <span className="sf-project-preview-domain">{project.domains?.join(', ') || 'No domains'}</span>
+            <code>{project.database_path}</code>
+            <div className="sf-workflow-summary">
+              <span>
+                {workflow?.operations.length ?? 0} operations · Revision {workflow?.version ?? 0}
+              </span>
+              <span>Run: {workflowState || 'loading'}</span>
+              <span>Artifacts: {artifactCount} published</span>
+              <span>{formatDatabaseSize(project.database_size_bytes)}</span>
+            </div>
+            <h3>Workflow metadata</h3>
+            <pre className="sf-workflow-metadata-json">{JSON.stringify(metadata, null, 2)}</pre>
+          </section>
+          <section className="sf-project-overview-graph">
+            {workflow ? <WorkflowOverviewGraph workflow={workflow} /> : <p>Loading workflow overview…</p>}
+          </section>
+        </div>
         <div className="sf-dialog-actions">
           <button type="button" className="sf-button secondary" onClick={onClose}>
             Close
@@ -814,25 +958,46 @@ function ProjectHub({
   const [databasePath, setDatabasePath] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, WorkflowSummary>>({});
+  const [demos, setDemos] = useState<WorkflowDemoMetadata[]>([]);
+  const [demosOpen, setDemosOpen] = useState(false);
+  const [selectedDemo, setSelectedDemo] = useState<WorkflowDemoMetadata | null>(null);
+  const [workflowMetadataText, setWorkflowMetadataText] = useState(defaultWorkflowMetadataText);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMode(null);
+      if (event.key !== 'Escape') return;
+      if (demosOpen) setDemosOpen(false);
+      else setMode(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, []);
+  }, [demosOpen]);
+
+  useEffect(() => {
+    let active = true;
+    if (!client || !demosOpen) return undefined;
+    client
+      .workflowDemos()
+      .then((items) => {
+        if (active) setDemos(items);
+      })
+      .catch(() => {
+        if (active) setDemos([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, demosOpen]);
 
   useEffect(() => {
     let active = true;
     if (!client) return undefined;
-    Promise.all(
+    const loadSummaries = Promise.all(
       projects.map(async (project) => {
         try {
-          const [workflow, state, artifacts] = await Promise.all([
+          const [workflow, state] = await Promise.all([
             client.workflowDefinition(project.session_id),
             client.workflowState(project.session_id),
-            client.artifacts(project.session_id),
           ]);
           return [
             project.session_id,
@@ -840,22 +1005,45 @@ function ProjectHub({
               operationCount: workflow.workflow.operations.length,
               revision: workflow.workflow.version,
               state: state.state,
-              artifactCount: artifacts.filter((artifact) => artifact.status === 'published').length,
             },
           ] as const;
         } catch {
           return null;
         }
       }),
-    ).then((entries) => {
+    );
+    loadSummaries.then((entries) => {
       if (active) {
         setSummaries(
           Object.fromEntries(entries.filter((entry): entry is readonly [string, WorkflowSummary] => entry !== null)),
         );
       }
     });
+    const artifactTimer = window.setTimeout(() => {
+      void Promise.all(
+        projects.map(async (project) => {
+          try {
+            const artifacts = await client.artifacts(project.session_id);
+            return [
+              project.session_id,
+              artifacts.filter((artifact) => artifact.status === 'published').length,
+            ] as const;
+          } catch {
+            return null;
+          }
+        }),
+      ).then((entries) => {
+        if (!active) return;
+        setSummaries((current) => {
+          const next = { ...current };
+          for (const entry of entries) if (entry) next[entry[0]] = { ...next[entry[0]], artifactCount: entry[1] };
+          return next;
+        });
+      });
+    }, 1500);
     return () => {
       active = false;
+      window.clearTimeout(artifactTimer);
     };
   }, [client, projects]);
   const submit = async (event: FormEvent) => {
@@ -866,13 +1054,31 @@ function ProjectHub({
       const selectedPath = mode === 'create' ? forceDuckDbPath(databasePath) : databasePath.trim();
       const projectName = projectNameFromPath(selectedPath);
       const sessionId = mode === 'create' ? uniqueSessionId(projectName, projects) : projectName;
+      const workflowMetadata =
+        mode === 'create' ? (JSON.parse(workflowMetadataText) as Record<string, unknown>) : undefined;
+      if (
+        mode === 'create' &&
+        (!workflowMetadata || typeof workflowMetadata !== 'object' || Array.isArray(workflowMetadata))
+      )
+        throw new Error('Workflow metadata must be a JSON object.');
       const project = await client.createProject({
         session_id: sessionId,
         database_path: selectedPath,
         mode,
+        workflow_metadata: workflowMetadata,
       });
+      if (selectedDemo && mode === 'create') {
+        const validation = await client.validateWorkflow(project.session_id, selectedDemo.workflow);
+        if (!validation.valid)
+          throw new Error(validation.diagnostics.map((item) => item.message).join('; ') || 'Workflow demo is invalid.');
+        await client.saveWorkflow(project.session_id, selectedDemo.workflow);
+      }
       (mode === 'open' ? onAdded : onOpened)(project);
-      notifyApp({ kind: 'success', message: `${mode === 'create' ? 'Created' : 'Opened'} project ${projectName}.` });
+      notifyApp({
+        kind: 'success',
+        message: `${selectedDemo ? 'Saved' : mode === 'create' ? 'Created' : 'Opened'} project ${projectName}${selectedDemo ? ` with ${selectedDemo.name}` : ''}.`,
+      });
+      setSelectedDemo(null);
       setMode(null);
     } catch (error) {
       notifyApp({ kind: 'error', message: error instanceof Error ? error.message : 'Project request failed.' });
@@ -889,6 +1095,8 @@ function ProjectHub({
           disabled={!canInteract}
           onClick={() => {
             setDatabasePath('');
+            setSelectedDemo(null);
+            setWorkflowMetadataText(defaultWorkflowMetadataText);
             setMode('create');
           }}
         >
@@ -929,6 +1137,12 @@ function ProjectHub({
           </span>
           <strong>Open workflow</strong>
         </button>
+        <button className="sf-card action-card" disabled={!canInteract} onClick={() => setDemosOpen(true)}>
+          <span className="sf-card-icon">
+            <i className="fa-solid fa-list-check" />
+          </span>
+          <strong>Workflow demos</strong>
+        </button>
         {projects.map((project) => (
           <ProjectCard
             key={project.session_id}
@@ -940,6 +1154,57 @@ function ProjectHub({
           />
         ))}
       </div>
+      {demosOpen ? (
+        <div
+          className="sf-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDemosOpen(false);
+          }}
+        >
+          <div className="sf-dialog sf-workflow-demo-dialog">
+            <div className="sf-dialog-heading sf-dialog-heading-actions-only">
+              <button
+                type="button"
+                className="sf-icon-button sf-close-button"
+                onClick={() => setDemosOpen(false)}
+                aria-label="Close workflow demos"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+            <div className="sf-demo-list">
+              {demos.length === 0 ? (
+                <p>No valid workflow demos are registered in the installed plugins.</p>
+              ) : (
+                demos.map((demo) => (
+                  <button
+                    key={demo.id}
+                    type="button"
+                    className="sf-demo-list-item"
+                    onClick={() => {
+                      const metadata = demo.workflow.metadata ?? {};
+                      setSelectedDemo(demo);
+                      setWorkflowMetadataText(JSON.stringify(metadata, null, 2));
+                      setDatabasePath('');
+                      setDemosOpen(false);
+                      setMode('create');
+                    }}
+                  >
+                    <span className="sf-card-icon">
+                      <i className="fa-solid fa-diagram-project" />
+                    </span>
+                    <span>
+                      <strong>{demo.name}</strong>
+                      <small>{demo.description}</small>
+                      {demo.use_case ? <small>{demo.use_case}</small> : null}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {mode ? (
         <div
           className="sf-dialog-backdrop"
@@ -947,7 +1212,7 @@ function ProjectHub({
             if (event.target === event.currentTarget && !submitting) setMode(null);
           }}
         >
-          <form className="sf-dialog" onSubmit={submit}>
+          <form className={`sf-dialog ${mode === 'create' ? 'sf-create-workflow-dialog' : ''}`} onSubmit={submit}>
             <div className="sf-dialog-heading">
               <div>
                 <h2>{mode === 'create' ? 'Create project' : 'Open project'}</h2>
@@ -1000,6 +1265,21 @@ function ProjectHub({
                 />
               </label>
             )}
+
+            {mode === 'create' ? (
+              <label>
+                Workflow metadata JSON
+                <textarea
+                  value={workflowMetadataText}
+                  onChange={(event) => setWorkflowMetadataText(event.target.value)}
+                  rows={8}
+                  spellCheck={false}
+                  aria-label="Workflow metadata JSON"
+                  required
+                />
+                <small>Add or edit any JSON metadata entries before creation.</small>
+              </label>
+            ) : null}
 
             <div className="sf-dialog-actions">
               <button type="button" className="sf-button secondary" onClick={() => setMode(null)} disabled={submitting}>
@@ -1444,7 +1724,12 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
         ) : null}
       </main>
       {previewProject ? (
-        <ProjectPreview project={previewProject} onOpenWorkflow={openProject} onClose={() => setPreviewProject(null)} />
+        <ProjectPreview
+          project={previewProject}
+          client={client}
+          onOpenWorkflow={openProject}
+          onClose={() => setPreviewProject(null)}
+        />
       ) : null}
       {settingsOpen ? (
         <SettingsPane

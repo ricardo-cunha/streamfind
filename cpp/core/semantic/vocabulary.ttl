@@ -55,6 +55,19 @@ sf:Workflow
     skos:prefLabel "Workflow" ;
     skos:definition "A versioned project workflow of operations and typed port connections." .
 
+sf:WorkflowMetadata
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Workflow metadata" ;
+    skos:definition "User-defined JSON metadata stored with a workflow; the workflow revision is tracked separately by sf:version." .
+
+sf:workflowMetadata
+    a rdf:Property ;
+    rdfs:domain sf:Workflow ;
+    rdfs:range sf:WorkflowMetadata ;
+    skos:prefLabel "workflow metadata" ;
+    skos:definition "Arbitrary user-defined JSON metadata associated with a workflow." .
+
 sf:Parameter
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
