@@ -18,6 +18,7 @@ std::string sql_type(const std::string &kind) {
     if (name == "integer") return "INTEGER";
     if (name == "real") return "DOUBLE";
     if (name == "timestamp") return "TIMESTAMP";
+    if (name == "array" || name == "object") return "JSON";
     return "VARCHAR";
 }
 

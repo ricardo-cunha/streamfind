@@ -169,5 +169,17 @@ foreach(_test_target IN ITEMS
                 "$<TARGET_FILE:streamfind::duckdb>"
                 "$<TARGET_FILE_DIR:${_test_target}>"
         )
+        if(MINGW)
+            foreach(_mingw_runtime IN ITEMS
+                libgcc_s_seh-1.dll
+                libstdc++-6.dll
+                libwinpthread-1.dll)
+                add_custom_command(TARGET ${_test_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                        "$<TARGET_FILE_DIR:${_test_target}>"
+                )
+            endforeach()
+        endif()
     endif()
 endforeach()

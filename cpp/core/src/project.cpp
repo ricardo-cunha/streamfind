@@ -1387,6 +1387,14 @@ namespace streamfind
         workflow.version = value.value("version", 1);
         workflow.metadata = value.value("metadata", Json::object());
         if (workflow.metadata.is_null()) workflow.metadata = Json::object();
+        if (workflow.metadata.is_string()) {
+            try {
+                const auto parsed = Json::parse(workflow.metadata.get<std::string>());
+                if (parsed.is_object()) workflow.metadata = parsed;
+            } catch (const std::exception &) {
+            }
+        }
+
         for (const auto &item : value.value("operations", Json::array()))
             workflow.operations.push_back(WorkflowOperation::from_json(item));
         for (const auto &item : value.value("connections", Json::array()))

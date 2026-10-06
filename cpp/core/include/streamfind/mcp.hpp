@@ -20,7 +20,7 @@ private:
     const OperationRegistry &operations_;
     DependencyList dependencies_;
     DependencyInstaller installer_;
-    Json project_{Json::object()};
+    Json project_ = Json::object();
 
 };
 

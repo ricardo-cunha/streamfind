@@ -38,8 +38,20 @@ std::string lower(std::string value) {
 bool matches_search(const Json &entry, const std::string &search) {
     if (search.empty()) return true;
     const auto query = lower(search);
-    for (const auto &field : {"canonical_id", "label", "definition", "module_id"})
-        if (lower(entry.value(field, "")).find(query) != std::string::npos) return true;
+    for (const auto &field : {"canonical_id", "label", "module_id"}) {
+        const auto value = lower(entry.value(field, ""));
+        if (value.find(query) == std::string::npos) continue;
+        if (query.size() >= 4) return true;
+        std::string token;
+        for (const char character : value + " ") {
+            if (std::isalnum(static_cast<unsigned char>(character))) {
+                token += character;
+            } else {
+                if (token == query) return true;
+                token.clear();
+            }
+        }
+    }
     return false;
 }
 

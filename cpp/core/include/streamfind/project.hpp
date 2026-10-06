@@ -121,9 +121,9 @@ struct STREAMFIND_CORE_API ParameterDefinition {
     /// Representative value shown in generated tool documentation.
     Json example{nullptr};
     /// Machine-readable validation constraints.
-    Json constraints{Json::object()};
+    Json constraints = Json::object();
     /// UI hints that do not affect execution semantics.
-    Json ui{Json::object()};
+    Json ui = Json::object();
 
     /** @brief Export this parameter definition as JSON. */
     Json to_json() const;
@@ -147,7 +147,7 @@ struct STREAMFIND_CORE_API ParameterSchema {
 /** @brief Runtime parameter values without documentation metadata. */
 struct STREAMFIND_CORE_API ParameterValues {
     /// Runtime values only; definitions live in MethodDefinition.
-    Json values{Json::object()};
+    Json values = Json::object();
 
     /** @brief Export the runtime values as a JSON object. */
     Json to_json() const;
@@ -292,9 +292,9 @@ struct STREAMFIND_CORE_API WorkflowOperation {
     std::string id;
     std::string operation;
     ParameterValues parameters;
-    Json inputs{Json::object()};
+    Json inputs = Json::object();
     /// Optional canvas presentation coordinates; omitted for portable/API-created workflows.
-    Json position{Json::object()};
+    Json position = Json::object();
 
     Json to_json() const;
     static WorkflowOperation from_json(const Json &value);
@@ -324,7 +324,7 @@ public:
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
     /// Ontology-backed workflow description; additional JSON keys are preserved.
-    Json metadata{Json::object()};
+    Json metadata = Json::object();
     /// Operation instances forming the backend execution graph.
     std::vector<WorkflowOperation> operations;
     /// Explicit typed-port dataflow connections.
@@ -385,9 +385,9 @@ struct STREAMFIND_CORE_API ProjectOptions {
     /// DuckDB file to create or open.
     std::filesystem::path database_path;
     /// Project-owned metadata initialized on creation.
-    Json metadata{Json::object()};
+    Json metadata = Json::object();
     /// User-defined metadata for the initial workflow definition.
-    Json workflow_metadata{Json::object()};
+    Json workflow_metadata = Json::object();
 };
 
 /** @brief Persisted identity and metadata for an open Project. */
@@ -395,7 +395,7 @@ struct STREAMFIND_CORE_API ProjectInfo {
     /// Domains represented by persisted workflow operations.
     std::vector<std::string> domains;
     /// Project-owned metadata.
-    Json metadata{Json::object()};
+    Json metadata = Json::object();
     int schema_version{1};
     std::string framework_version;
     std::string created_at;
@@ -409,7 +409,7 @@ struct STREAMFIND_CORE_API AuditEntry {
     /// Audited object category.
     std::string object_type;
     /// Structured event details.
-    Json details{Json::object()};
+    Json details = Json::object();
     std::string created_at;
 };
 
