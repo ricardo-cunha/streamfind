@@ -15,9 +15,11 @@ const plugins = (await discoverPluginManifests(pluginsRoot)).map((registration) 
   const manifest = { ...registration };
   delete manifest.activation;
   delete manifest.source;
-  const entry = viteManifest[source]?.file;
+  const viteEntry = viteManifest[source];
+  const entry = viteEntry?.file;
   if (!entry) throw new Error(`Vite manifest did not emit plugin entry: ${source}`);
-  return { ...manifest, entry: `/${entry}` };
+  const css = viteEntry.css?.map((asset) => `/${asset}`) ?? [];
+  return { ...manifest, entry: `/${entry}`, ...(css.length ? { css } : {}) };
 });
 await writeFile(outputPath, `${JSON.stringify({ plugins }, null, 2)}\n`);
 console.log(`Wrote ${outputPath}`);

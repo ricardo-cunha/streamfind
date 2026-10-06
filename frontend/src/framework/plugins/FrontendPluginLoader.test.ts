@@ -12,6 +12,12 @@ const manifest: RuntimeFrontendPluginManifest = {
   entry: '/plugins/runtime-test.js',
 };
 
+function dispatchStylesheetLoad(): void {
+  for (const link of document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')) {
+    link.dispatchEvent(new Event('load'));
+  }
+}
+
 const plugin: FrontendPlugin = {
   manifest,
   setup(api) {
@@ -40,6 +46,20 @@ describe('frontend plugin loader', () => {
     expect(viewers.resolve('sf:table')?.id).toBe('runtime.test.viewer');
     await expect(loader.load(manifest)).resolves.toBe(true);
     expect(importer).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads packaged plugin stylesheets before importing the plugin', async () => {
+    const registry = new FrontendPluginRegistry(new ViewerRegistry());
+    const importer = vi.fn().mockResolvedValue({ default: plugin });
+    const loader = new FrontendPluginLoader(registry, importer, new Set([window.location.origin]));
+    const result = loader.load({ ...manifest, css: ['/assets/mass-spec.css'] });
+    dispatchStylesheetLoad();
+
+    await expect(result).resolves.toBe(true);
+    expect(document.querySelector<HTMLLinkElement>('link[data-streamfind-plugin="runtime.test"]')?.href).toBe(
+      `${window.location.origin}/assets/mass-spec.css`,
+    );
+    expect(importer).toHaveBeenCalledWith('/plugins/runtime-test.js');
   });
 
   it('rejects a cross-origin entry without importing it', async () => {

@@ -217,6 +217,34 @@ describe('FeatureInspector', () => {
     await waitFor(() => expect(screen.queryByText(/No encoded EIC data/)).not.toBeInTheDocument());
   });
 
+  it('renders resizers for both the filter and details panes', async () => {
+    if (!visualizationRegistry.has('core.plotly'))
+      visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
+    const artifactData = vi.fn().mockResolvedValue({
+      artifact_id: artifact.artifact_id,
+      columns: [],
+      rows: [{ feature_id: 'F1', analysis: 'sample-a', mz: '275.2', rt: '12.5' }],
+      offset: 0,
+      limit: 1000,
+      total_rows: 1,
+    });
+    render(
+      <FeatureInspector
+        context={{
+          sessionId: 'session-1',
+          artifactId: artifact.artifact_id,
+          semanticType: artifact.contract_id,
+          artifact,
+          pluginApi: { client: { artifactData } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('Features 1 / 1')).toBeInTheDocument());
+    expect(screen.getByRole('separator', { name: 'Resize feature filters panel' })).toBeInTheDocument();
+    expect(screen.getByRole('separator', { name: 'Resize feature details panel' })).toBeInTheDocument();
+  });
+
   it('loads all artifact pages and filters empty component values in component mode', async () => {
     if (!visualizationRegistry.has('core.plotly'))
       visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);

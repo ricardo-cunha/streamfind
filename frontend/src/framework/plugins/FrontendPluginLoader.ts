@@ -4,6 +4,7 @@ import { notifyApp } from '../notifications/notificationBus';
 
 export type RuntimeFrontendPluginManifest = FrontendPluginManifest & {
   entry: string;
+  css?: string[];
 };
 
 type PluginModule = { default?: FrontendPlugin; plugin?: FrontendPlugin };
@@ -55,6 +56,7 @@ export class FrontendPluginLoader {
     try {
       validateManifest(manifest, this.allowedOrigins);
       if (this.loaded.has(manifest.id)) return true;
+      await loadStylesheets(manifest);
       const module = await this.importer(manifest.entry);
       const plugin = module.default ?? module.plugin;
       if (!plugin) throw new Error(`Frontend plugin module has no plugin export: ${manifest.id}`);
@@ -86,6 +88,12 @@ function validateManifest(manifest: RuntimeFrontendPluginManifest, allowedOrigin
   }
   if (typeof manifest.entry !== 'string' || !manifest.entry.trim())
     throw new Error(`Frontend plugin entry must not be empty: ${manifest.id}`);
+  if (
+    manifest.css !== undefined &&
+    (!Array.isArray(manifest.css) || manifest.css.some((item) => typeof item !== 'string'))
+  ) {
+    throw new Error(`Frontend plugin css must be a string array: ${manifest.id}.css`);
+  }
   for (const field of ['domains', 'artifactContracts', 'artifactRepresentations', 'visualizationTypes']) {
     const value = manifest[field as keyof RuntimeFrontendPluginManifest];
     if (value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
@@ -99,5 +107,37 @@ function validateManifest(manifest: RuntimeFrontendPluginManifest, allowedOrigin
   }
   if (allowedOrigins.size && !allowedOrigins.has(url.origin)) {
     throw new Error(`Frontend plugin entry origin is not allowed: ${url.origin}`);
+  }
+  for (const stylesheet of manifest.css ?? []) {
+    const stylesheetUrl = new URL(
+      stylesheet,
+      typeof window === 'undefined' ? 'http://localhost/' : window.location.href,
+    );
+    if (stylesheetUrl.protocol !== 'http:' && stylesheetUrl.protocol !== 'https:') {
+      throw new Error(`Unsupported frontend plugin stylesheet protocol: ${stylesheetUrl.protocol}`);
+    }
+    if (allowedOrigins.size && !allowedOrigins.has(stylesheetUrl.origin)) {
+      throw new Error(`Frontend plugin stylesheet origin is not allowed: ${manifest.id}`);
+    }
+  }
+}
+
+async function loadStylesheets(manifest: RuntimeFrontendPluginManifest): Promise<void> {
+  for (const stylesheet of manifest.css ?? []) {
+    const url = new URL(stylesheet, window.location.href);
+    const existing = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).find(
+      (link) => link.href === url.href,
+    );
+    if (existing) continue;
+
+    await new Promise<void>((resolve, reject) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = url.href;
+      link.dataset.streamfindPlugin = manifest.id;
+      link.onload = () => resolve();
+      link.onerror = () => reject(new Error(`Frontend plugin stylesheet failed to load: ${stylesheet}`));
+      document.head.appendChild(link);
+    });
   }
 }

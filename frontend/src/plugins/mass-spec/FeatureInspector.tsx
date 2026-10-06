@@ -36,7 +36,24 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [activeTab, setActiveTab] = useState<DetailTab>('eic');
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const inspectorRef = useRef<HTMLDivElement>(null);
+  const [filtersWidth, setFiltersWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
+
+  const resizeFilters = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const move = (moveEvent: PointerEvent) => {
+      const bounds = inspectorRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+      const maximum = Math.max(260, bounds.width - 320 - 6 - 6 - detailsWidth);
+      setFiltersWidth(Math.max(180, Math.min(maximum, moveEvent.clientX - bounds.left)));
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  };
 
   const resizeDetails = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -175,7 +192,12 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     <div
       ref={inspectorRef}
       className="sf-feature-inspector"
-      style={{ '--sf-feature-details-width': `${detailsWidth}px` } as CSSProperties}
+      style={
+        {
+          '--sf-feature-filters-width': `${filtersWidth}px`,
+          '--sf-feature-details-width': `${detailsWidth}px`,
+        } as CSSProperties
+      }
     >
       <aside className="sf-feature-inspector-filters" aria-label="Feature filters">
         <header>
@@ -261,6 +283,13 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           ))}
         </div>
       </aside>
+      <div
+        className="sf-feature-inspector-splitter sf-feature-inspector-filters-splitter"
+        role="separator"
+        aria-label="Resize feature filters panel"
+        aria-orientation="vertical"
+        onPointerDown={resizeFilters}
+      />
       <main className="sf-feature-inspector-plot" aria-label="Feature scatter plot">
         <header>
           <strong>Feature map</strong>
@@ -277,7 +306,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         />
       </main>
       <div
-        className="sf-feature-inspector-splitter"
+        className="sf-feature-inspector-splitter sf-feature-inspector-details-splitter"
         role="separator"
         aria-label="Resize feature details panel"
         aria-orientation="vertical"
