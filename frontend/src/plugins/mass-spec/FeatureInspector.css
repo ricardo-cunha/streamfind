@@ -1,9 +1,10 @@
 .sf-feature-inspector {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) minmax(260px, 0.42fr);
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr) 6px minmax(240px, var(--sf-feature-details-width, 380px));
   gap: 14px;
   height: 100%;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 .sf-feature-inspector-filters,
@@ -237,6 +238,38 @@
 .sf-feature-inspector-details nav button:hover {
   border-bottom-color: var(--sf-accent);
   color: var(--sf-text);
+}
+
+@media (max-width: 1100px) {
+  .sf-feature-inspector {
+    grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.3fr);
+    grid-template-rows: minmax(280px, 1fr) minmax(240px, 0.8fr);
+    overflow: auto;
+  }
+
+  .sf-feature-inspector-filters {
+    grid-row: 1 / -1;
+  }
+
+  .sf-feature-inspector-plot {
+    min-width: 0;
+  }
+
+  .sf-feature-inspector-splitter {
+    display: none;
+  }
+
+  .sf-feature-inspector-details {
+    grid-column: 2;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .sf-feature-inspector {
+    grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr);
+    gap: 8px;
+  }
 }
 .sf-feature-details {
   display: grid;

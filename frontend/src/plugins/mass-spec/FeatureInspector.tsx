@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import * as d3 from 'd3';
 import logo from '../../assets/streamfind.png';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
@@ -167,7 +175,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     <div
       ref={inspectorRef}
       className="sf-feature-inspector"
-      style={{ gridTemplateColumns: `320px minmax(320px, 1fr) 6px ${detailsWidth}px` }}
+      style={{ '--sf-feature-details-width': `${detailsWidth}px` } as CSSProperties}
     >
       <aside className="sf-feature-inspector-filters" aria-label="Feature filters">
         <header>
