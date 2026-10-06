@@ -151,7 +151,15 @@ set_tests_properties(streamfind_dependency_smoke PROPERTIES
 )
 
 foreach(_test_target IN ITEMS
+    streamfind_project_lifecycle_contract
+    streamfind_fingerprint_contract
+    streamfind_plugin_loader_failure_contract
+    streamfind_plugin_configuration_validation
+    streamfind_dynamic_schema_contract
     streamfind_project_table_store_manifest_contract
+    streamfind_execution_lifecycle_contract
+    streamfind_mcp_discovery_contract
+    streamfind_mixed_domain_workflow_artifact_contract
     streamfind_project_isolation_contract
 )
     add_dependencies(${_test_target} streamfind_aggregate_catalogue)

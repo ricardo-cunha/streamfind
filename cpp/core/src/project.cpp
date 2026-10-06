@@ -1386,6 +1386,7 @@ namespace streamfind
         workflow.workflow_id = value.value("workflow_id", "");
         workflow.version = value.value("version", 1);
         workflow.metadata = value.value("metadata", Json::object());
+        if (workflow.metadata.is_null()) workflow.metadata = Json::object();
         for (const auto &item : value.value("operations", Json::array()))
             workflow.operations.push_back(WorkflowOperation::from_json(item));
         for (const auto &item : value.value("connections", Json::array()))
