@@ -61,6 +61,7 @@ rust/.cargo/
 **/*.rds
 **/*.sf
 **/*.html
+!/frontend/index.html
 !/slides/**/*.html
 !/docs/**/*.html
 /log/
