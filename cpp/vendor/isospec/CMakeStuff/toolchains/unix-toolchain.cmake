@@ -34,9 +34,15 @@ configure_file(${CMAKE_MODULE_PATH}/pkgconfig/libisospec++.pc.in
 install(FILES ${CMAKE_BINARY_DIR}/libisospec++.pc 
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-# Now deal with the manual doc stuff
-add_subdirectory(man)
+# Documentation and examples require source assets that are not part of the
+# vendored runtime library payload. Keep them opt-in for downstream builds.
+option(ISOSPEC_BUILD_DOCUMENTATION "Build IsoSpec documentation" OFF)
+if(ISOSPEC_BUILD_DOCUMENTATION)
+  add_subdirectory(man)
+endif()
 
-# Now deal with the example  stuff
-add_subdirectory(Examples)
+option(ISOSPEC_BUILD_EXAMPLES "Build IsoSpec examples" OFF)
+if(ISOSPEC_BUILD_EXAMPLES)
+  add_subdirectory(Examples)
+endif()
 
