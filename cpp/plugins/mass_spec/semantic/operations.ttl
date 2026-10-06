@@ -846,7 +846,7 @@ sfms:metfragScreening
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Screen features with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Optionally connect suspectTargetsTable, for example from mass_spec.fragmentation_to_suspect_targets; when connected, it supplies the candidate structures used for screening instead of the suspect_targets parameter." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -864,4 +864,30 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
+    sf:optionalInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
+
+sfms:fragmentSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.fragment_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Generate suspect fragmentation trees" ;
+    skos:definition "Generate a structural top-down fragmentation tree for every SMILES in the connected suspectTargetsTable using the standalone MetFrag Fragmenter CLI, preserving MetFrag-generated parent links and exposed structure metadata." ;
+    sf:category "structure-fragmentation" ;
+    sf:guidance "Connect suspectTargetsTable. Rows without SMILES are skipped. Requires Java 21 and the streamfind MetFrag Fragmenter JAR. Install dependency mass_spec.metfrag_fragmenter to download the pinned public v0.1.0 release into <streamfind-home>/tools/metfrag/streamfind-metfrag-fragmenter.jar, or set STREAMFIND_METFRAG_FRAGMENTER_JAR to a local JAR path. Parent links describe the generator's top-down traversal, not experimentally observed MS/MS transitions. Neutral-loss structures are limited to matches exposed by MetFrag." ;
+    sf:hasParameter sfms:fragmentationDepthParameter ;
+    sf:hasInputPort sfms:suspectTargetsTable ;
+    sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .
+
+sfms:fragmentationToSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.fragmentation_to_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Convert fragments to suspect targets" ;
+    skos:definition "Convert each generated fragmentationTreeTable row into a chemical candidate row in suspectTargetsTable for downstream suspect screening, normalizing SMILES-derived descriptors with Open Babel when available." ;
+    sf:category "structure-conversion" ;
+    sf:guidance "Connect a MetFrag fragmentationTreeTable. Each fragment with a non-empty SMILES becomes one suspect target, with its fragment identifier appended to the source name. Open Babel canonicalizes the SMILES and derives formula, exact mass, InChI, InChIKey, and xLogP when available. Fragment parent/provenance fields remain in the source fragmentation artifact." ;
+    sf:hasInputPort sfms:fragmentationTreeTable ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .

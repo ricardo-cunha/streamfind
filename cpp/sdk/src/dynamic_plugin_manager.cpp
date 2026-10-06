@@ -207,10 +207,13 @@ Json invoke_dynamic(
                         const auto name = column.value("name", std::string{});
                         if (name.empty()) continue;
                         context.readable_columns[physical_table].insert(name);
-                        context.column_types[physical_table][name] =
-                            column.value("type", std::string{}) == "integer"
-                                ? STREAMFIND_PLUGIN_COLUMN_INT64
-                                : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                        const auto semantic_type = column.value("type", std::string{});
+                        context.column_types[physical_table][name] = semantic_type == "integer"
+                            ? STREAMFIND_PLUGIN_COLUMN_INT64
+                            : semantic_type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
+                            : semantic_type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
+                            : semantic_type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
+                            : STREAMFIND_PLUGIN_COLUMN_UTF8;
                     }
                     break;
                 }

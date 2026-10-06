@@ -764,28 +764,49 @@ namespace streamfind::mass_spec::nta::utils::detail
             for (const auto &t : targets)
             {
                 ::streamfind::mass_spec::nta::suspect_screening::SuspectQuery q;
-                q.name = t.value("name", "");
-                if (t.contains("mass"))
+                const auto string_value = [](const Json &row, const char *key) {
+                    const auto value = row.find(key);
+                    return value != row.end() && value->is_string()
+                        ? value->get<std::string>() : std::string{};
+                };
+                const auto number_value = [](const Json &row, const char *key) -> std::optional<double> {
+                    const auto value = row.find(key);
+                    if (value == row.end() || value->is_null()) return std::nullopt;
+                    if (value->is_number()) return value->get<double>();
+                    if (value->is_string()) {
+                        try {
+                            std::size_t consumed = 0;
+                            const auto number = std::stod(value->get<std::string>(), &consumed);
+                            if (consumed == value->get<std::string>().size()) return number;
+                        } catch (...) {}
+                    }
+                    return std::nullopt;
+                };
+                q.name = string_value(t, "name");
+                if (const auto mass = number_value(t, "mass"))
                 {
                     q.has_mass = true;
-                    q.mass = t.at("mass").get<double>();
+                    q.mass = *mass;
                 }
-                else if (t.contains("mz"))
+                else if (const auto mz = number_value(t, "mz"))
                 {
                     q.has_mass = true;
-                    q.mass = t.at("mz").get<double>();
+                    q.mass = *mz;
                 }
-                q.rt = t.value("rt", 0.0);
-                q.formula = t.value("formula", "");
-                q.SMILES = t.value("SMILES", t.value("smiles", ""));
-                q.InChI = t.value("InChI", t.value("inchi", ""));
-                q.InChIKey = t.value("InChIKey", t.value("inchikey", ""));
-                q.database_id = t.value("database_id", "");
-                q.score = t.value("score", 0.0);
-                if (t.contains("xLogP"))
+                q.rt = number_value(t, "rt").value_or(0.0);
+                q.formula = string_value(t, "formula");
+                q.SMILES = string_value(t, "SMILES");
+                if (q.SMILES.empty()) q.SMILES = string_value(t, "smiles");
+                q.InChI = string_value(t, "InChI");
+                if (q.InChI.empty()) q.InChI = string_value(t, "inchi");
+                q.InChIKey = string_value(t, "InChIKey");
+                if (q.InChIKey.empty()) q.InChIKey = string_value(t, "inchikey");
+                q.database_id = string_value(t, "database_id");
+                q.score = number_value(t, "score").value_or(0.0);
+                if (const auto xlogp = number_value(t, "xLogP"))
                 {
                     q.has_xLogP = true;
-                    q.xLogP = t.at("xLogP").get<double>();
+                    q.xLogP = *xlogp;
                 }
                 // Preserve both modes from the CSV adapter; older callers may provide
                 // the compact `fragments_mz`/`fragments_intensity` positive aliases.
@@ -797,14 +818,10 @@ namespace streamfind::mass_spec::nta::utils::detail
                                                  t.value("fragments_mz_neg", Json::array()));
                 const auto negative_int = t.value("fragments_intensity_negative",
                                                   t.value("fragments_intensity_neg", Json::array()));
-                for (const auto &v : positive_mz)
-                    q.fragments_mz_pos.push_back(v.get<double>());
-                for (const auto &v : positive_int)
-                    q.fragments_intensity_pos.push_back(v.get<double>());
-                for (const auto &v : negative_mz)
-                    q.fragments_mz_neg.push_back(v.get<double>());
-                for (const auto &v : negative_int)
-                    q.fragments_intensity_neg.push_back(v.get<double>());
+                for (const auto &v : positive_mz) if (v.is_number()) q.fragments_mz_pos.push_back(v.get<double>());
+                for (const auto &v : positive_int) if (v.is_number()) q.fragments_intensity_pos.push_back(v.get<double>());
+                for (const auto &v : negative_mz) if (v.is_number()) q.fragments_mz_neg.push_back(v.get<double>());
+                for (const auto &v : negative_int) if (v.is_number()) q.fragments_intensity_neg.push_back(v.get<double>());
                 out.push_back(std::move(q));
             }
             return out;

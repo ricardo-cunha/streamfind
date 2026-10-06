@@ -629,3 +629,25 @@ sfms:transformationProductCandidatesTable
         sfms:inChIColumn,
         sfms:inChIKeyColumn .
 
+
+sfms:fragmentationTreeTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag fragmentation tree table" ;
+    skos:definition "One row per generated MetFrag fragment. The shared name column identifies the source suspect; the shared SMILES, formula, and mass columns describe the fragment. Parent references, tree depth, atom/bond provenance, and matched neutral-loss data are also retained." ;
+    sf:tableContractName "MASS_SPEC_FRAGMENTATION_TREE" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:nameColumn,
+        sfms:fragmentIdColumn,
+        sfms:fragmentParentIdColumn,
+        sfms:smilesColumn,
+        sfms:formulaColumn,
+        sfms:massColumn,
+        sfms:fragmentDepthColumn,
+        sfms:fragmentAtomIndicesColumn,
+        sfms:fragmentBrokenBondIndicesColumn,
+        sfms:fragmentNeutralLossesColumn,
+        sfms:fragmentDataColumn .

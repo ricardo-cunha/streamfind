@@ -1,12 +1,15 @@
 // User-scoped external tool provisioning mirroring `bindings/r`:
-// `~/.streamfind/tools/{java/jdk-*,metfrag/MetFragCL.jar}`.
+// `~/.streamfind/tools/{java/jdk-*,metfrag/{MetFragCL.jar,streamfind-metfrag-fragmenter.jar}}`.
 #include "utils/tools_resolver.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 
 #include <stdexcept>
+#include <thread>
 #include <vector>
 #ifdef _WIN32
 #include <windows.h>
@@ -26,6 +29,8 @@ constexpr const char* kJdkUrlTemplate =
     "https://api.adoptium.net/v3/binary/latest/21/ga/{os}/{arch}/jdk/hotspot/normal/eclipse";
 constexpr const char* kMetFragUrl =
     "https://github.com/ipb-halle/MetFragRelaunched/releases/download/v2.6.11/MetFragCommandLine-2.6.11.jar";
+constexpr const char* kMetFragFragmenterUrl =
+    "https://github.com/ricardo-cunha/streamfind-metfrag-tools/releases/download/v0.1.0/streamfind-metfrag-fragmenter-0.1.0.jar";
 
 #ifdef _WIN32
 std::wstring widen(const std::string& value) { return {value.begin(), value.end()}; }
@@ -103,6 +108,80 @@ std::optional<std::string> resolve_metfrag_jar() {
     std::error_code error;
     if (fs::is_regular_file(jar, error) && fs::file_size(jar, error) > 0) return jar.string();
     return std::nullopt;
+}
+
+std::optional<std::string> resolve_metfrag_fragmenter_jar() {
+    if (const char* override_path = std::getenv("STREAMFIND_METFRAG_FRAGMENTER_JAR");
+        override_path && *override_path) {
+        std::error_code error;
+        if (fs::is_regular_file(override_path, error) && fs::file_size(override_path, error) > 0)
+            return std::string(override_path);
+        return std::nullopt;
+    }
+    const auto jar = fs::path(tools_dir()) / "metfrag" / "streamfind-metfrag-fragmenter.jar";
+    std::error_code error;
+    if (fs::is_regular_file(jar, error) && fs::file_size(jar, error) > 0) return jar.string();
+    return std::nullopt;
+}
+
+std::string install_metfrag_fragmenter() {
+    if (auto jar = resolve_metfrag_fragmenter_jar()) return *jar;
+    const auto metfrag_root = fs::path(tools_dir()) / "metfrag";
+    const auto staging = fs::path(tools_dir()) / ".metfrag-fragmenter-installing";
+    const auto staged_jar = staging / "streamfind-metfrag-fragmenter-0.1.0.jar";
+    std::error_code error;
+    fs::remove_all(staging, error);
+    error.clear();
+    fs::create_directories(staging, error);
+    if (error) throw std::runtime_error("Could not create MetFrag Fragmenter staging directory: " + error.message());
+    if (run_process("curl", {"--fail", "--location", "--silent", "--show-error", "--retry", "3",
+                              "--output", staged_jar.generic_string(), kMetFragFragmenterUrl}) != 0) {
+        fs::remove_all(staging, error);
+        throw std::runtime_error("MetFrag Fragmenter download failed from the public v0.1.0 release; check network access or install the JAR manually under " +
+                                 (metfrag_root / "streamfind-metfrag-fragmenter.jar").string());
+    }
+    const auto size = fs::file_size(staged_jar, error);
+    if (error || size < 1024 * 1024) {
+        fs::remove_all(staging, error);
+        throw std::runtime_error("MetFrag Fragmenter download did not produce a usable JAR");
+    }
+    std::ifstream input(staged_jar, std::ios::binary);
+    char signature[4]{};
+    input.read(signature, sizeof(signature));
+    if (input.gcount() != sizeof(signature) || signature[0] != 'P' || signature[1] != 'K' ||
+        signature[2] != 3 || signature[3] != 4) {
+        fs::remove_all(staging, error);
+        throw std::runtime_error("MetFrag Fragmenter download is not a valid ZIP/JAR archive");
+    }
+    fs::create_directories(metfrag_root, error);
+    if (error) {
+        fs::remove_all(staging, error);
+        throw std::runtime_error("Could not create MetFrag tools directory: " + error.message());
+    }
+    const auto installed = metfrag_root / "streamfind-metfrag-fragmenter.jar";
+    fs::remove(installed, error);
+    error.clear();
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        error.clear();
+        fs::rename(staged_jar, installed, error);
+        if (!error) break;
+        if (attempt < 39) std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+    if (error) {
+        error.clear();
+        fs::copy_file(staged_jar, installed, fs::copy_options::overwrite_existing, error);
+        if (error) {
+            const auto copy_error = error.message();
+            std::error_code cleanup_error;
+            fs::remove(installed, cleanup_error);
+            fs::remove_all(staging, cleanup_error);
+            throw std::runtime_error("Could not install MetFrag Fragmenter JAR: " + copy_error);
+        }
+    }
+    fs::remove_all(staging, error);
+    if (!resolve_metfrag_fragmenter_jar())
+        throw std::runtime_error("MetFrag Fragmenter installation completed but the managed JAR was not found at " + installed.string());
+    return installed.string();
 }
 
 std::optional<std::pair<std::string, std::string>> resolve_metfrag() {
@@ -198,6 +277,10 @@ std::string tool_status() {
         out << "metfrag: " << *jar << "\n";
     else
         out << "metfrag: not found\n";
+    if (auto fragmenter = resolve_metfrag_fragmenter_jar())
+        out << "metfrag_fragmenter: " << *fragmenter << "\n";
+    else
+        out << "metfrag_fragmenter: not found\n";
     return out.str();
 }
 

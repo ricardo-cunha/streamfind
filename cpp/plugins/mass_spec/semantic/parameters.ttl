@@ -1557,3 +1557,25 @@ sfms:sourcePathsParameter
     sf:items sfms:filePathColumn ;
     sf:default "[]" ;
     sf:example "[\"data/sample.wiff\",\"data/control.mzML\",\"data/batch.d\"]" .
+
+sfms:fragmentationDepthParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fragmentation depth" ;
+    skos:definition "Maximum top-down MetFrag fragmentation depth for each suspect target structure." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 2 ;
+    sf:example 2 .
+sfms:neutralLossItemParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Neutral-loss JSON item" ;
+    skos:definition "One MetFrag-matched neutral-loss record in the fragmentation table." ;
+    sf:type "object" ;
+    sf:required true ;
+    sf:default "{}" ;
+    sf:example "{\"smiles\":\"O\",\"formula\":\"H2O\"}" .

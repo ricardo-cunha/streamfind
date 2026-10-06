@@ -11,6 +11,8 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/readers/reader_sciex.cpp
     src/readers/reader_thermo.cpp
     src/operations/base.cpp
+    src/operations/fragmentation/fragment_suspect_targets.cpp
+    src/operations/fragmentation/fragmentation_to_suspect_targets.cpp
     src/operations/chromatograms/operations.cpp
     src/operations/nta/operations.cpp
     src/operations/nta/nta_deconvolution.cpp

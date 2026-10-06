@@ -1,6 +1,8 @@
 #include "streamfind/sdk/plugin_host_access.hpp"
 #include "streamfind/sdk/capability_registry.hpp"
 #include "operations/base.hpp"
+#include "operations/fragmentation/fragment_suspect_targets.hpp"
+#include "operations/fragmentation/fragmentation_to_suspect_targets.hpp"
 #include "operations/chromatograms/operations.hpp"
 #include "operations/nta/nta_deconvolution.hpp"
 #include "operations/nta/operations.hpp"
@@ -32,6 +34,8 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.read_mass_spec_files", sdk::CapabilityKind::Operation, &base::read_mass_spec_files},
         {"mass_spec.read_csv_targets", sdk::CapabilityKind::Operation, &base::read_csv_targets},
         {"mass_spec.read_mol_suspect_target", sdk::CapabilityKind::Operation, &base::read_mol_suspect_target},
+        {"mass_spec.fragment_suspect_targets", sdk::CapabilityKind::Operation, &fragmentation::fragment_suspect_targets::run},
+        {"mass_spec.fragmentation_to_suspect_targets", sdk::CapabilityKind::Operation, &fragmentation::fragmentation_to_suspect_targets::run},
 
         {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &base::remove_analyses},
         {"mass_spec.get_analyses", sdk::CapabilityKind::Operation, &base::get_analyses},
@@ -142,9 +146,13 @@ streamfind_plugin_status describe_dependencies(streamfind_plugin_buffer *result_
     const auto *host = static_cast<const streamfind_plugin_host_api *>(user_data);
     return write_dependency_result(Json::array({
         {{"id", "runtime.java"}, {"label", "Java Runtime"}, {"version", "21"}, {"kind", "runtime"},
-         {"required_by", Json::array({"mass_spec.metfrag_screening"})}, {"managed_path", ".streamfind/tools/java"},
+         {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/java"},
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_java().has_value()}},
+        {{"id", "mass_spec.metfrag_fragmenter"}, {"label", "MetFrag Fragmenter"}, {"version", "0.1.0"}, {"kind", "jar"},
+         {"required_by", Json::array({"mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/metfrag/streamfind-metfrag-fragmenter.jar"},
+         {"installable", true}, {"network_required", true},
+         {"available", ::streamfind::mass_spec::tools::resolve_metfrag_fragmenter_jar().has_value()}},
         {{"id", "mass_spec.metfrag"}, {"label", "MetFragCL"}, {"version", "2.6.11"}, {"kind", "jar"},
          {"required_by", Json::array({"mass_spec.metfrag_screening"})}, {"managed_path", ".streamfind/tools/metfrag/MetFragCL.jar"},
          {"installable", true}, {"network_required", true},
@@ -163,6 +171,7 @@ streamfind_plugin_status install_dependencies(
             std::string path;
             if (id == "runtime.java") path = ::streamfind::mass_spec::tools::install_java();
             else if (id == "mass_spec.metfrag") path = ::streamfind::mass_spec::tools::install_metfrag();
+            else if (id == "mass_spec.metfrag_fragmenter") path = ::streamfind::mass_spec::tools::install_metfrag_fragmenter();
             else throw std::invalid_argument("mass_spec does not provide dependency " + id);
             results.push_back({{"dependency_id", id}, {"status", "installed"}, {"path", path}});
         }

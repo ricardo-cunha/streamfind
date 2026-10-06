@@ -2011,3 +2011,48 @@ sfms:expMs2IntensityColumn
     sf:columnName "exp_ms2_intensity" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
+
+sfms:fragmentIdColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Fragment identifier" ;
+    skos:definition "MetFrag identifier for this generated fragment." ;
+    sf:columnName "fragment_id" ; sf:type "string" ; sf:storageType "VARCHAR" .
+
+sfms:fragmentParentIdColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Parent fragment identifier" ;
+    skos:definition "Identifier of the MetFrag-generated parent fragment, when the CLI exposes it." ;
+    sf:columnName "parent_id" ; sf:type "string" ; sf:storageType "VARCHAR" .
+
+sfms:fragmentDepthColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Fragmentation depth" ;
+    skos:definition "Top-down tree depth assigned by MetFrag." ;
+    sf:columnName "depth" ; sf:type "integer" ; sf:storageType "INTEGER" .
+
+sfms:fragmentAtomIndicesColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Precursor atom indices" ;
+    skos:definition "JSON array of precursor-relative atom indices retained in the fragment, when available." ;
+    sf:columnName "atom_indices" ; sf:type "array" ; sf:storageType "JSON" ;
+    sf:items sfcore:integerItemParameter .
+
+sfms:fragmentBrokenBondIndicesColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Broken bond indices" ;
+    skos:definition "JSON array of precursor-relative bond indices broken to generate the fragment, when available." ;
+    sf:columnName "broken_bond_indices" ; sf:type "array" ; sf:storageType "JSON" ;
+    sf:items sfcore:integerItemParameter .
+
+sfms:fragmentNeutralLossesColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Matched neutral losses" ;
+    skos:definition "JSON array of neutral-loss structures matched to MetFrag patterns, when available." ;
+    sf:columnName "neutral_losses" ; sf:type "array" ; sf:storageType "JSON" ;
+    sf:items sfms:neutralLossItemParameter .
+
+sfms:fragmentDataColumn
+    a sf:Column ; sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ; skos:prefLabel "Fragment data" ;
+    skos:definition "Complete JSON object emitted for this fragment by the MetFrag Fragmenter CLI, preserving additional reported metadata." ;
+    sf:columnName "fragment_data" ; sf:type "object" ; sf:storageType "JSON" .

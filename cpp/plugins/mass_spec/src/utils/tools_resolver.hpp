@@ -20,6 +20,12 @@ STREAMFIND_DOMAIN_API std::optional<std::string> resolve_java();
 /// Locates the MetFrag command-line jar: `<tools>/metfrag/MetFragCL.jar`.
 STREAMFIND_DOMAIN_API std::optional<std::string> resolve_metfrag_jar();
 
+/// Locates the standalone streamfind MetFrag Fragmenter CLI JAR.
+STREAMFIND_DOMAIN_API std::optional<std::string> resolve_metfrag_fragmenter_jar();
+
+/// Downloads the pinned MetFrag Fragmenter release into `<tools>/metfrag/` using staged installation.
+STREAMFIND_DOMAIN_API std::string install_metfrag_fragmenter();
+
 /// `java` + jar when both are installed.
 STREAMFIND_DOMAIN_API std::optional<std::pair<std::string, std::string>> resolve_metfrag();
 
