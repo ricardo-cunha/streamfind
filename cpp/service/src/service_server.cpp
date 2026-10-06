@@ -1,5 +1,8 @@
 #include "streamfind/service/service_server.hpp"
 #include "streamfind/service/service_protocol.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
+#include "fixedEnvelopes.h"
+#include "element_tables.h"
 
 #include <algorithm>
 #include <array>
@@ -11,6 +14,7 @@
 #include <filesystem>
 #include <functional>
 #include <fstream>
+#include <memory>
 #include <random>
 #include <set>
 #include <sstream>
@@ -456,6 +460,94 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
             else if (method == "GET" && std::filesystem::exists(application_root_) && (path == "/" || path.rfind("/assets/", 0) == 0)) detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
+            else if (method == "POST" && path == "/chemistry/structure-svg") {
+                const auto input = Json::parse(body);
+                const auto result = ::streamfind::core::vendors::openbabel::render_structure_svg(
+                    input.value("smiles", std::string{}),
+                    input.value("inchi", std::string{}),
+                    std::clamp(input.value("width", 320), 80, 1600),
+                    std::clamp(input.value("height", 240), 80, 1200),
+                    input.value("bond_color", std::string{}));
+                if (!result.ok) detail::send_http(socket, 422, Json{{"error", result.error}});
+                else detail::send_http(socket, 200, Json{{"svg", result.svg}});
+            }
+            else if (method == "POST" && path == "/chemistry/isotope-pattern") {
+                const auto input = Json::parse(body);
+                const auto formula = input.value("formula", std::string{});
+                if (formula.empty()) throw std::invalid_argument("formula is required");
+                std::string normalized_formula;
+                std::vector<std::string> element_symbols;
+                for (std::size_t index = 0; index < formula.size();) {
+                    if (formula[index] < 'A' || formula[index] > 'Z')
+                        throw std::invalid_argument("invalid formula");
+                    const auto symbol_start = index;
+                    normalized_formula.push_back(formula[index++]);
+                    if (index < formula.size() && formula[index] >= 'a' && formula[index] <= 'z')
+                        normalized_formula.push_back(formula[index++]);
+                    element_symbols.push_back(formula.substr(symbol_start, index - symbol_start));
+                    const auto count_start = index;
+                    while (index < formula.size() && formula[index] >= '0' && formula[index] <= '9')
+                        normalized_formula.push_back(formula[index++]);
+                    if (index == count_start) normalized_formula.push_back('1');
+                }
+                IsoSpec::Iso isotope_model(normalized_formula);
+                auto envelope = IsoSpec::FixedEnvelope::FromTotalProb(
+                    isotope_model, input.value("probability", 0.999), true, true);
+                envelope.sort_by_mass();
+                const auto max_peaks = static_cast<std::size_t>(std::clamp(input.value("max_peaks", 12), 2, 64));
+                const auto charge = input.value("charge", 0);
+                const double ion_offset = static_cast<double>(charge) * 1.007276466621;
+                Json masses = Json::array();
+                Json probabilities = Json::array();
+                Json labels = Json::array();
+                std::vector<double> isotope_masses;
+                std::vector<double> isotope_probabilities;
+                int *isotope_numbers = nullptr;
+                int *atom_counts = nullptr;
+                unsigned int conf_size = 0;
+                const auto dimensions = IsoSpec::parse_formula(
+                    normalized_formula.c_str(), isotope_masses, isotope_probabilities,
+                    &isotope_numbers, &atom_counts, &conf_size, false);
+                std::unique_ptr<int[]> isotope_numbers_owner(isotope_numbers);
+                std::unique_ptr<int[]> atom_counts_owner(atom_counts);
+                for (std::size_t index = 0; index < envelope.confs_no() && masses.size() < max_peaks; ++index) {
+                    if (envelope.prob(index) < 1e-5) continue;
+                    masses.push_back(envelope.mass(index) + ion_offset);
+                    probabilities.push_back(envelope.prob(index));
+                    std::vector<std::string> heavy_isotopes;
+                    const auto *configuration = envelope.conf(index);
+                    std::size_t isotope_offset = 0;
+                    for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
+                        for (int isotope = 0; isotope < isotope_numbers[dimension]; ++isotope) {
+                            const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
+                            if (isotope == 0 || count <= 0) continue;
+                            const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
+                            int table_index = -1;
+                            for (int candidate = 0; candidate < ISOSPEC_NUMBER_OF_ISOTOPIC_ENTRIES; ++candidate) {
+                                if (std::string(IsoSpec::elem_table_symbol[candidate]) == element_symbols[dimension] &&
+                                    std::abs(IsoSpec::elem_table_mass[candidate] - mass) < 1e-8) {
+                                    table_index = candidate;
+                                    break;
+                                }
+                            }
+                            const auto label = table_index >= 0
+                                ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) + element_symbols[dimension]
+                                : element_symbols[dimension];
+                            for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
+                        }
+                        isotope_offset += static_cast<std::size_t>(isotope_numbers[dimension]);
+                    }
+                    labels.push_back(heavy_isotopes.empty() ? "M" : [&heavy_isotopes]() {
+                        std::string combined;
+                        for (const auto &label : heavy_isotopes) {
+                            if (!combined.empty()) combined += "-";
+                            combined += label;
+                        }
+                        return combined;
+                    }());
+                }
+                detail::send_http(socket, 200, Json{{"formula", formula}, {"mz", masses}, {"probability", probabilities}, {"labels", labels}});
+            }
             else if (method == "GET" && path == "/dependencies")
                 detail::send_http(socket, 200, Json{{"dependencies", plugin_runtime_.dependencies()}});
             else if (method == "POST" && path == "/dependencies/install") {

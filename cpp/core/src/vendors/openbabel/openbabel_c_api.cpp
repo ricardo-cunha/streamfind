@@ -26,6 +26,10 @@
 
 namespace streamfind::obabel_detail
 {
+  // Open Babel's conversion registry and error logger are process-global and
+  // are not safe to use concurrently from service request threads.
+  std::mutex structure_render_mutex;
+
 #ifdef _WIN32
   std::wstring widen_path(const std::string &path)
   {
@@ -848,6 +852,7 @@ extern "C"
     const char *bond_color,
     streamfind_ob_svg_result *out)
   {
+    const std::lock_guard<std::mutex> render_lock(streamfind::obabel_detail::structure_render_mutex);
     zero_svg_result(out);
     if (out == nullptr)
       return 0;

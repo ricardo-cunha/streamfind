@@ -279,9 +279,13 @@ namespace streamfind::mass_spec::base
 
         std::ifstream input(path);
         if (!input) throw std::invalid_argument("Cannot open MOL file: " + path);
-        std::string name;
-        std::getline(input, name);
-        name = trim(name);
+        std::string name = trim(parameters.value("compound_name", std::string{}));
+        std::string mol_title;
+        std::getline(input, mol_title);
+        if (name.empty())
+        {
+            name = trim(mol_title);
+        }
         if (name.empty()) name = "Compound";
 
         const auto structure = ::streamfind::core::vendors::openbabel::normalize_structure_from_mol_file(path);

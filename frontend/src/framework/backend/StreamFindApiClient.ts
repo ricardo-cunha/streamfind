@@ -58,6 +58,25 @@ export type ArtifactDataResponse = {
   limit: number;
   total_rows: number;
 };
+export type StructureSvgRequest = {
+  smiles?: string | null;
+  inchi?: string | null;
+  width?: number;
+  height?: number;
+  bond_color?: string;
+};
+export type IsotopePatternRequest = {
+  formula: string;
+  charge?: number;
+  probability?: number;
+  max_peaks?: number;
+};
+export type IsotopePatternResponse = {
+  formula: string;
+  mz: number[];
+  probability: number[];
+  labels: string[];
+};
 
 type EventHandler = (event: StreamFindEvent) => void;
 
@@ -257,6 +276,35 @@ export class StreamFindApiClient {
     });
     if (!response.ok) throw new Error(`Artifact data request failed (${response.status})`);
     return (await response.json()) as ArtifactDataResponse;
+  }
+
+  async structureSvg(request: StructureSvgRequest): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/chemistry/structure-svg`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    const result = (await response.json()) as { svg?: string; error?: string };
+    if (!response.ok || !result.svg)
+      throw new Error(result.error || `Structure rendering request failed (${response.status})`);
+    return result.svg;
+  }
+
+  async isotopePattern(request: IsotopePatternRequest): Promise<IsotopePatternResponse> {
+    const response = await fetch(`${this.baseUrl}/chemistry/isotope-pattern`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    const result = (await response.json()) as IsotopePatternResponse & { error?: string };
+    if (
+      !response.ok ||
+      !Array.isArray(result.mz) ||
+      !Array.isArray(result.probability) ||
+      !Array.isArray(result.labels)
+    )
+      throw new Error(result.error || `Isotope pattern request failed (${response.status})`);
+    return result;
   }
 
   async workflowDefinition(sessionId: string): Promise<WorkflowDefinitionResponse> {

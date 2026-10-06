@@ -64,6 +64,21 @@ target_include_directories(streamfind_openbabel_runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/vendor/openbabel/openbabel-3-2-0/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/vendor/simdutf")
 target_link_libraries(streamfind_openbabel_runtime PRIVATE streamfind::openbabel)
+if(WIN32)
+    # The service loads the development runtime from the packaged vendor
+    # layout. Keep that copy synchronized whenever the runtime DLL itself is
+    # rebuilt; plugin post-build hooks do not run when only this target changes.
+    set(_streamfind_openbabel_dev_dir "${CMAKE_BINARY_DIR}/core/vendors/openbabel")
+    add_custom_command(TARGET streamfind_openbabel_runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${_streamfind_openbabel_dev_dir}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:streamfind_openbabel_runtime>"
+            "${_streamfind_openbabel_dev_dir}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${STREAMFIND_OPENBABEL_DATA_DIR}"
+            "${_streamfind_openbabel_dev_dir}/data")
+endif()
 if(MSVC)
     target_link_options(streamfind_openbabel_runtime PRIVATE
         "/WHOLEARCHIVE:$<TARGET_FILE:streamfind_openbabel>")
@@ -391,7 +406,10 @@ add_executable(streamfind_service
 add_dependencies(streamfind_service streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_service PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
-target_include_directories(streamfind_service PRIVATE service/include)
+target_include_directories(streamfind_service PRIVATE
+    service/include
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/isospec/src/IsoSpec++")
+target_link_libraries(streamfind_service PRIVATE IsoSpec++-static)
 if(WIN32)
     target_link_libraries(streamfind_service PRIVATE ws2_32 comdlg32 shell32 ole32)
 endif()

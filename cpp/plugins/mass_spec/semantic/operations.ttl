@@ -46,8 +46,10 @@ sfms:readMolSuspectTarget
     skos:prefLabel "Read MOL suspect target" ;
     skos:definition "Read one MDL MOL file, normalize its chemical structure with Open Babel, and publish all derived chemical descriptors as a reusable suspectTargetsTable artifact." ;
     sf:category "mass-spec-ingestion" ;
-    sf:guidance "The MOL title line is used as the target name when it is non-empty; otherwise the name is Compound. The operation does not invent MS2 reference peaks, retention time, polarity, or database identifiers." ;
-    sf:hasParameter sfms:molFilePathParameter ;
+    sf:guidance "The optional compound_name overrides the MOL title; when omitted or empty, the MOL title is used and then Compound is used as a fallback. The operation does not invent MS2 reference peaks, retention time, polarity, or database identifiers." ;
+    sf:hasParameter
+        sfms:molFilePathParameter,
+        sfms:compoundNameParameter ;
     sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
 
 sfms:removeAnalyses

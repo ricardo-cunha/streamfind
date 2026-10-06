@@ -318,6 +318,18 @@ sfms:molFilePathParameter
     sf:extensions ".mol" ;
     sf:example "structures/caffeine.mol" .
 
+sfms:compoundNameParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Compound name" ;
+    skos:definition "Optional name assigned to the suspect target. When empty, the MOL title is used and then Compound is used as a fallback." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default "Compound" ;
+    sf:example "Caffeine" .
+
 sfms:suspectTargetsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

@@ -1,6 +1,8 @@
 import { FRONTEND_PLUGIN_API_VERSION, type FrontendPlugin } from '../../framework/plugins/pluginTypes';
 import { FeatureInspector } from './FeatureInspector';
 import './FeatureInspector.css';
+import { SuspectTargetsViewer } from './SuspectTargetsViewer';
+import './SuspectTargetsViewer.css';
 
 export const massSpecFrontendPlugin: FrontendPlugin = {
   manifest: {
@@ -9,8 +11,8 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
     domains: ['mass_spec'],
-    artifactContracts: ['featuresTable'],
-    capabilities: ['feature-inspector'],
+    artifactContracts: ['featuresTable', 'suspectTargetsTable'],
+    capabilities: ['feature-inspector', 'suspect-targets-viewer'],
   },
   setup(api) {
     api.registerViewer({
@@ -18,6 +20,12 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       label: 'Mass-spec feature inspector',
       accepts: ['featuresTable'],
       component: FeatureInspector,
+    });
+    api.registerViewer({
+      id: 'mass-spec.suspect-targets-viewer',
+      label: 'Suspect targets',
+      accepts: ['suspectTargetsTable'],
+      component: SuspectTargetsViewer,
     });
   },
 };
