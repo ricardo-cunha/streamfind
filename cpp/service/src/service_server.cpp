@@ -298,7 +298,7 @@ void send_file(std::intptr_t socket, const std::filesystem::path &root, const st
     std::ifstream input(file, std::ios::binary);
     const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     const auto extension = file.extension().string();
-    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : extension == ".js" ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
+    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : extension == ".js" ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".json" ? "application/json; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
     send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: " + std::string(content_type) + "\r\nContent-Length: " + std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
 }
 
@@ -458,7 +458,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             const auto body_start = separator + 4;
             const auto body = body_start < request.size() ? request.substr(body_start) : std::string{};
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
-            else if (method == "GET" && std::filesystem::exists(application_root_) && (path == "/" || path.rfind("/assets/", 0) == 0)) detail::send_file(socket, application_root_, path);
+            else if (method == "GET" && std::filesystem::exists(application_root_) &&
+                     (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
+                detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
             else if (method == "POST" && path == "/chemistry/structure-svg") {
                 const auto input = Json::parse(body);
