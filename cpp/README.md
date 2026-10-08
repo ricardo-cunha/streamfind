@@ -234,3 +234,188 @@ from CTest. A verified 18-analysis run produced approximately 20.5k feature
 rows, 4.4k features with MS2 payloads, 123 suspect rows, and 25 suspects with
 cosine similarity at or above `0.7`; exact counts can vary slightly between
 native platforms.
+
+## Current state
+
+The C++ backend is the authoritative native implementation. The current workspace version is `0.5.0`.
+
+The normal C++ runtime package is intentionally lean. It contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, and runtime vendors. It does **not** contain `sdk/`.
+
+The `cpp/sdk/` tree remains an internal framework layer used to define the plugin ABI, host access services, catalogue projection, package validation, and built-in plugin integration. An optional developer kit can install that framework for external plugin development; it is separate from the runtime release.
+
+Runtime vendor files are centralized under:
+
+```text
+core/vendors/
+├── duckdb/
+├── mingw/
+└── openbabel/
+```
+
+Do not copy vendor DLLs beside individual plugins or into `bin/`. The packaged launcher and host configure package-relative native library search paths.
+
+The shipped plugin domains are:
+
+| Domain | Current state |
+| --- | --- |
+| `mass_spec` | Native readers and NTA methods; primary production domain |
+| `raman` | Dynamic plugin boundary; processing remains incomplete |
+| `sensors` | Dynamic empty domain; no executable capabilities yet |
+
+
+
+## Requirements
+
+### Windows
+
+- Windows 10/11 x64.
+- Git.
+- MSYS2 installed at `C:\msys64`, or another root selected with `STREAMFIND_MSYS2_ROOT`.
+- MSYS2 UCRT64 packages for CMake, Ninja, GCC, and G++.
+- Node.js and npm for building frontend assets.
+- A repository-local Python environment at `.venv` for validation scripts.
+
+The build scripts use one MSYS2 installation for the complete native toolchain. They prefer `STREAMFIND_MSYS2_ROOT`, then `STREAMFIND_MINGW_ROOT`, and finally `C:\msys64`. Missing UCRT64 CMake/Ninja/compiler packages are installed through that installation's `pacman` when the release/build helper is used.
+
+### Linux
+
+- GCC and G++.
+- CMake and Ninja.
+- `tar` and `sha256sum` for release validation.
+- Node.js and npm for frontend packaging.
+- Python in `.venv` for dependency and MCP validation.
+- PowerShell 7 (`pwsh`) only for the full NTA development workflow.
+
+Do not use the system Python for repository scripts. Use `.venv/bin/python` on Linux or `.venv\\Scripts\\python.exe` on Windows.
+
+## Build and test routines
+
+### Windows MSYS2 UCRT64 build
+
+Run from the repository root in PowerShell:
+
+```powershell
+$env:STREAMFIND_MSYS2_ROOT = 'C:\msys64'
+cmake --preset mingw-ucrt64
+cmake --build tmp\\build\\mingw-ucrt64 --parallel 8
+ctest --test-dir tmp\\build\\mingw-ucrt64 --output-on-failure
+```
+
+The preset uses the UCRT64 GCC/G++ compiler and Ninja from the selected MSYS2 root. For a developer-kit configuration:
+
+```powershell
+cmake --preset mingw-ucrt64-devkit
+cmake --build tmp\\build\\mingw-ucrt64-devkit --parallel 8
+cmake --install tmp\\build\\mingw-ucrt64-devkit --prefix tmp\\build\\mingw-ucrt64-devkit\\install
+```
+
+### Linux GCC build
+
+```bash
+cmake --preset linux-gcc
+cmake --build tmp/build/linux-gcc --parallel
+ctest --test-dir tmp/build/linux-gcc --output-on-failure
+```
+
+### Frontend assets
+
+The C++ package expects a built frontend when creating a complete application package:
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+```
+
+### Native release validation
+
+The Windows runtime release builds the frontend and native package, runs CTest, extracts the archive, checks the runtime payload, validates the recursive PE dependency closure, and starts the packaged MCP server:
+
+```powershell
+scripts\\release\\cpp\\release-cpp.ps1 -Version 0.5.0
+```
+
+The Linux runtime release performs the equivalent extracted-package checks, including recursive ELF dependency validation and packaged MCP startup:
+
+```bash
+bash scripts/release/cpp/release-cpp-linux.sh 0.5.0
+```
+
+Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
+
+## Plugin development routine
+
+Generate a backend/frontend project scaffold:
+
+```powershell
+.venv\\Scripts\\python.exe scripts\\dev\\plugin_generator.py init tmp\\scratch\\my-plugin --kind full --domain example --name my-plugin
+```
+
+Build the generated backend against an installed developer kit:
+
+```powershell
+cmake -G Ninja -S tmp\\scratch\\my-plugin\\backend -B tmp\\build\\my-plugin `
+  -DCMAKE_PREFIX_PATH="$PWD\\tmp\\build\\mingw-ucrt64-devkit\\install\\sdk\\cmake" `
+  -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/ninja.exe `
+  -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe
+cmake --build tmp\\build\\my-plugin
+```
+
+The first-party out-of-tree consumer check is:
+
+```powershell
+.venv\\Scripts\\python.exe scripts\\dev\\test_plugin_consumer.py --source cpp\\sdk\\examples\\minimal_plugin --prefix tmp\\build\\mingw-ucrt64-devkit\\install --build tmp\\build\\plugin-consumer --cmake C:/msys64/ucrt64/bin/cmake.exe --ninja C:/msys64/ucrt64/bin/ninja.exe
+```
+
+For a distributable developer kit, use:
+
+```powershell
+scripts\\release\\cpp\\package-plugin-devkit.ps1 -Version 0.5.0
+```
+
+The developer-kit command configures, builds, installs, packages, and validates an out-of-tree C++ consumer. Frontend plugins use the generated TypeScript contract and do not require the C++ SDK headers.
+
+## Using a packaged C++ runtime
+
+After extracting a runtime archive, keep its directory layout intact. The important paths are:
+
+```text
+streamfind-core-cpp-<version>-<platform>/
+├── streamfind(.exe)          # browser-facing launcher
+├── bin/                      # MCP, service, CLI, and launcher binaries
+├── core/
+│   ├── catalogue.duckdb
+│   ├── ontology/
+│   └── vendors/
+└── plugins/                  # plugin.json, catalogue.duckdb, shared libraries
+```
+
+For the local browser application, run the root launcher:
+
+```powershell
+.\\streamfind.exe
+```
+
+For MCP or service integration, use the executable under `bin/` and communicate through newline-delimited JSON-RPC over standard input/output. Start with `initialize`, then discover operations with `tools/list`. Runtime plugin loading is allowlisted through the package configuration; merely placing a plugin under `plugins/` does not enable it.
+
+For a development-tree host, place `streamfind.json` beside `streamfind_mcp.exe`:
+
+```json
+{
+  "plugin_roots": ["C:/path/to/plugins"],
+  "enabled_plugins": ["mass_spec", "raman"]
+}
+```
+
+## Routine checks before submitting C++ changes
+
+1. Keep changes within the owning layer: core owns projects, transactions, workflow execution, and lifecycle; SDK owns generic plugin contracts; plugins own domain readers, algorithms, semantics, and operations.
+2. If semantic Turtle or catalogue inputs change, format/validate them and rebuild the native catalogue before testing MCP discovery.
+3. Run the narrowest affected C++ build and CTest target first.
+4. Run the complete CTest suite for framework, plugin, MCP, dependency, mass-spec, and NTA interface changes.
+5. For package or SDK changes, run an installed out-of-tree consumer and the extracted package MCP smoke test; build-tree success alone is insufficient.
+6. Run `git diff --check` and inspect package contents before reporting completion.
+7. Keep disposable builds, projects, and scratch data under `tmp/`; do not add generated artifacts to source directories and do not remove existing user fixtures from `tmp/`.
+
+Do not add vendor SDKs, proprietary DLLs, mzML conversion fallbacks, or a second legacy execution path to make a native reader or plugin pass. Preserve the native processing level and keep public mass-spectrometry retention times in seconds.

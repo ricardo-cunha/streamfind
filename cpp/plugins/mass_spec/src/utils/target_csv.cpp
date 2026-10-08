@@ -136,7 +136,7 @@ namespace streamfind::mass_spec::target_csv
             rename_alias(row, "rt_max", "rtmax");
             rename_alias(row, "massmin", "mass_min");
             rename_alias(row, "massmax", "mass_max");
-            rename_alias(row, "database_id", "database_id");
+
             validate_fragment_pair(row, "fragments_mz_pos", "fragments_intensity_pos");
             validate_fragment_pair(row, "fragments_mz_neg", "fragments_intensity_neg");
 
@@ -218,7 +218,7 @@ namespace streamfind::mass_spec::target_csv
             static const std::unordered_set<std::string> target_columns = {
                 "name", "analysis", "analysis_name", "polarity", "level", "mass", "mass_min", "mass_max",
                 "mz", "mz_min", "mz_max", "rt", "rtmin", "rtmax", "rt_min", "rt_max", "formula",
-                "smiles", "inchi", "inchikey", "xlogp", "database_id",
+                "smiles", "inchi", "inchikey", "xlogp",
                 "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
             for (std::size_t i = 0; i < header.size(); ++i)
             {

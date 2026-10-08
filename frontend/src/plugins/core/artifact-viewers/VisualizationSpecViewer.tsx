@@ -96,11 +96,14 @@ function isRecord(value: unknown): value is Record<string, never> {
 }
 
 function getPlotTheme(darkMode: boolean): { text: string; grid: string; background: string } {
-  const modalBackground = getComputedStyle(document.documentElement).getPropertyValue('--sf-surface-raised').trim();
-  const background = modalBackground || (darkMode ? '#132226' : '#ffffff');
-  return darkMode
-    ? { text: '#ffffff', grid: 'rgba(255, 255, 255, 0.16)', background }
-    : { text: '#000000', grid: 'rgba(0, 0, 0, 0.14)', background };
+  const readThemeColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  void darkMode;
+  return {
+    text: readThemeColor('--sf-text', 'currentColor'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+  };
 }
 
 function parseSpec(artifact: ArtifactRecord) {

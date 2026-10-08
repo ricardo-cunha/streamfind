@@ -17,10 +17,10 @@ import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 type FeatureRow = Record<string, string | null>;
 type QueryKind = 'eic' | 'ms1' | 'ms2';
 type DetailTab = 'details' | QueryKind | 'network';
-type SelectionMode = 'feature' | 'feature_group' | 'feature_component' | 'feature_group_component';
+export type SelectionMode = 'feature' | 'feature_group' | 'feature_component' | 'feature_group_component';
 type FeatureColumn = { name: string; type: string };
 type NumericFilter = { min: string; max: string };
-type Point = { row: FeatureRow; index: number; color: string; intensity: number };
+export type FeaturePlotPoint = { row: FeatureRow; index: number; color: string; intensity: number };
 
 export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [rows, setRows] = useState<FeatureRow[]>([]);
@@ -347,7 +347,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   );
 }
 
-function FeaturePlot({
+export function FeaturePlot({
   artifactId,
   points,
   selectBy,
@@ -357,7 +357,7 @@ function FeaturePlot({
   onClearSelection,
 }: {
   artifactId: string;
-  points: Point[];
+  points: FeaturePlotPoint[];
   selectBy: SelectionMode;
   selectedKey: string | null;
   darkMode: boolean;
@@ -392,7 +392,7 @@ function FeaturePlot({
 
 function featureScatterSpec(
   artifactId: string,
-  points: Point[],
+  points: FeaturePlotPoint[],
   selectBy: SelectionMode,
   selectedKey: string | null,
   darkMode: boolean,
@@ -430,11 +430,16 @@ function featureScatterSpec(
             opacity: markerOpacity,
             line: { color: plotTheme.text, width: markerLineWidth },
           },
-          text: points.map((point) => point.row.feature_id ?? point.row.feature ?? point.row.id ?? ''),
+          text: points.map((point) => {
+            const analysis = String(point.row.analysis ?? '');
+            const feature = String(point.row.feature_id ?? point.row.feature ?? point.row.id ?? '');
+            return `Analysis: ${analysis}<br>Feature: ${feature}`;
+          }),
           hovertemplate: '%{text}<br>RT %{x}<br>m/z %{y}<extra></extra>',
         },
       ],
       layout: {
+        uirevision: `feature-scatter-${artifactId}`,
         margin: { l: 50, r: 30, t: 30, b: 50 },
         xaxis: {
           title: { text: 'Retention time (s)' },
@@ -1117,7 +1122,7 @@ function booleanValue(value: string | null | undefined): boolean | undefined {
   return undefined;
 }
 
-function makePoints(rows: FeatureRow[], groupBy: string): Point[] {
+function makePoints(rows: FeatureRow[], groupBy: string): FeaturePlotPoint[] {
   const categories = Array.from(
     new Set(rows.map((row, index) => String(row[groupBy] ?? row.analysis ?? index))),
   ).sort();
@@ -1167,14 +1172,16 @@ function withinRange(row: FeatureRow, names: string[], min: string, max: string)
 }
 
 function getPlotTheme(darkMode: boolean): { text: string; grid: string; background: string } {
-  const modalBackground =
+  const readThemeColor = (name: string, fallback: string) =>
     typeof document !== 'undefined'
-      ? getComputedStyle(document.documentElement).getPropertyValue('--sf-surface-raised').trim()
-      : '';
-  const background = modalBackground || (darkMode ? '#132226' : '#ffffff');
-  return darkMode
-    ? { text: '#ffffff', grid: 'rgba(255, 255, 255, 0.16)', background }
-    : { text: '#000000', grid: 'rgba(0, 0, 0, 0.14)', background };
+      ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+      : fallback;
+  void darkMode;
+  return {
+    text: readThemeColor('--sf-text', 'currentColor'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+  };
 }
 
 function numericValue(row: FeatureRow, names: string[]): number | undefined {
@@ -1184,7 +1191,8 @@ function numericValue(row: FeatureRow, names: string[]): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-function colorFor(value: string, categories: string[] = [value]): string {
+// eslint-disable-next-line react-refresh/only-export-components
+export function colorFor(value: string, categories: string[] = [value]): string {
   const palette = [
     '#11696f',
     '#0f9f6e',

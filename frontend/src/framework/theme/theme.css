@@ -5,7 +5,10 @@
   --sf-bg-deep: #b9d0ca;
   --sf-surface: #f9fcfb;
   --sf-surface-raised: #ffffff;
+  --sf-surface-inset: #edf6f3;
   --sf-surface-hover: #e6f1ee;
+  --sf-overlay: #061314;
+  --sf-text-on-accent: #ffffff;
   --sf-border: rgba(10, 48, 51, 0.14);
   --sf-text: #061314;
   --sf-text-secondary: #465d5e;
@@ -25,7 +28,10 @@
   --sf-bg-deep: #122a2e;
   --sf-surface: #0c1719;
   --sf-surface-raised: #132226;
+  --sf-surface-inset: #091517;
   --sf-surface-hover: #1b3034;
+  --sf-overlay: #000809;
+  --sf-text-on-accent: #061314;
   --sf-border: rgba(225, 240, 236, 0.14);
   --sf-text: #f4fbfa;
   --sf-text-secondary: #bbcbc9;
@@ -45,6 +51,7 @@ html,
 body,
 #root {
   height: 100%;
+  cursor: auto;
 }
 body {
   margin: 0;
@@ -63,8 +70,8 @@ button {
   place-content: center;
   justify-items: center;
   gap: 14px;
-  color: #111;
-  background: #fff;
+  color: var(--sf-text);
+  background: var(--sf-surface);
   animation: sf-splash-in 220ms ease-out both;
 }
 .sf-splash-exit {
@@ -801,6 +808,27 @@ h2 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.sf-workflow-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sf-text-secondary) !important;
+  font-weight: 600;
+}
+.sf-workflow-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sf-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-success) 18%, transparent);
+}
+.sf-workflow-status--failed {
+  color: var(--sf-error) !important;
+}
+.sf-workflow-status--failed i {
+  background: var(--sf-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-error) 18%, transparent);
+}
 .sf-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -1033,7 +1061,7 @@ h2 {
   inset: 0;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 20, 21, 0.24);
+  background: color-mix(in srgb, var(--sf-overlay) 24%, transparent);
 }
 .sf-side-pane {
   width: min(390px, 100vw);
@@ -1047,7 +1075,7 @@ h2 {
   z-index: 10;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 20, 21, 0.24);
+  background: color-mix(in srgb, var(--sf-overlay) 24%, transparent);
 }
 .sf-settings-pane {
   width: min(390px, 100vw);
@@ -1056,7 +1084,7 @@ h2 {
   padding: 15px;
   border-left: 1px solid var(--sf-border);
   background: var(--sf-surface-raised);
-  box-shadow: -18px 0 42px rgba(6, 38, 39, 0.18);
+  box-shadow: -18px 0 42px color-mix(in srgb, var(--sf-overlay) 18%, transparent);
 }
 .sf-settings-heading {
   display: flex;
@@ -1335,7 +1363,7 @@ h2 {
   z-index: 15;
   display: flex;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.22);
+  background: color-mix(in srgb, var(--sf-overlay) 22%, transparent);
 }
 .sf-backend-pane {
   width: min(390px, 100vw);
@@ -1343,7 +1371,7 @@ h2 {
   padding: 15px;
   border-left: 1px solid var(--sf-border);
   background: var(--sf-surface-raised);
-  box-shadow: -18px 0 42px rgba(0, 0, 0, 0.18);
+  box-shadow: -18px 0 42px color-mix(in srgb, var(--sf-overlay) 18%, transparent);
 }
 .sf-backend-heading {
   display: flex;
@@ -1430,7 +1458,7 @@ h2 {
   z-index: 10;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 20, 21, 0.24);
+  background: color-mix(in srgb, var(--sf-overlay) 24%, transparent);
 }
 .sf-notifications-pane {
   width: min(390px, 100vw);
@@ -1439,7 +1467,7 @@ h2 {
   padding: 15px;
   border-left: 1px solid var(--sf-border);
   background: var(--sf-surface-raised);
-  box-shadow: -18px 0 42px rgba(6, 38, 39, 0.18);
+  box-shadow: -18px 0 42px color-mix(in srgb, var(--sf-overlay) 18%, transparent);
 }
 .sf-notifications-heading {
   display: flex;
@@ -2837,7 +2865,7 @@ h2 {
 .sf-output-artifact-popover {
   position: absolute;
   z-index: 20;
-  right: -12px;
+  left: calc(100% + 8px);
   bottom: calc(100% + 9px);
   display: grid;
   gap: 4px;
@@ -2863,7 +2891,7 @@ h2 {
   cursor: text;
   user-select: text;
 }
-.sf-node-port-row.output:hover .sf-output-artifact-popover {
+.sf-output-artifact-popover.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -2908,7 +2936,7 @@ h2 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in srgb, #020617 52%, transparent);
+  background: color-mix(in srgb, var(--sf-overlay) 52%, transparent);
 }
 .sf-artifact-viewer {
   display: grid;
@@ -3145,7 +3173,7 @@ h2 {
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  background: var(--card);
+  background: var(--sf-surface-raised);
   color: var(--foreground);
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 18%);
 }
@@ -3347,7 +3375,7 @@ h2 {
   z-index: 10;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 20, 21, 0.24);
+  background: color-mix(in srgb, var(--sf-overlay) 24%, transparent);
 }
 .sf-node-info-pane {
   position: relative;
@@ -3523,10 +3551,10 @@ h2 {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border: 1px solid #454545;
+  border: 1px solid var(--sf-border);
   border-radius: 3px;
-  background: #1f1f1f;
-  color: #f1f1f1;
+  background: var(--sf-surface);
+  color: var(--sf-text);
   font-size: 0.76rem;
 }
 .sf-windows-toolbar,
@@ -3536,8 +3564,8 @@ h2 {
   align-items: center;
   gap: 7px;
   padding: 5px 8px;
-  border-bottom: 1px solid #3b3b3b;
-  background: #252525;
+  border-bottom: 1px solid var(--sf-border);
+  background: var(--sf-surface-raised);
 }
 .sf-windows-toolbar > button,
 .sf-windows-command-bar button {
@@ -3553,7 +3581,7 @@ h2 {
 }
 .sf-windows-toolbar > button:hover:not(:disabled),
 .sf-windows-command-bar button:hover {
-  background: #3a3a3a;
+  background: var(--sf-surface-hover);
 }
 .sf-windows-toolbar button:disabled {
   color: #707070;
@@ -3565,9 +3593,9 @@ h2 {
   align-items: center;
   min-width: 0;
   height: 30px;
-  border: 1px solid #555;
+  border: 1px solid var(--sf-border);
   border-radius: 3px;
-  background: #181818;
+  background: var(--sf-surface-inset);
 }
 .sf-windows-address-bar {
   flex: 1;
@@ -3579,13 +3607,13 @@ h2 {
 .sf-windows-breadcrumb button {
   border: 0;
   background: transparent;
-  color: #f1f1f1;
+  color: var(--sf-text);
   cursor: pointer;
   white-space: nowrap;
 }
 .sf-windows-address-root:hover,
 .sf-windows-breadcrumb button:hover {
-  background: #3a3a3a;
+  background: var(--sf-surface-hover);
 }
 .sf-windows-breadcrumb {
   display: inline-flex;
@@ -3607,15 +3635,15 @@ h2 {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #f1f1f1;
+  color: var(--sf-text);
 }
 .sf-windows-command-bar {
   gap: 16px;
-  border-bottom-color: #353535;
+  border-bottom-color: var(--sf-border);
   color: #ddd;
 }
 .sf-windows-command-bar > span:first-child {
-  color: #f1f1f1;
+  color: var(--sf-text);
 }
 .sf-windows-command-bar button {
   width: auto;
@@ -3638,7 +3666,7 @@ h2 {
   overflow: auto;
   padding: 8px 5px;
   border-right: 1px solid #414141;
-  background: #252525;
+  background: var(--sf-surface-raised);
 }
 .sf-windows-sidebar-section {
   display: grid;
@@ -3668,7 +3696,7 @@ h2 {
   cursor: pointer;
 }
 .sf-windows-sidebar-section button:hover {
-  background: #373737;
+  background: var(--sf-surface-hover);
 }
 .sf-windows-sidebar-section i {
   width: 16px;
@@ -3682,7 +3710,7 @@ h2 {
 .sf-windows-file-list {
   min-width: 0;
   overflow: auto;
-  background: #191919;
+  background: var(--sf-surface-inset);
 }
 .sf-windows-file-list-header,
 .sf-windows-file-row {
@@ -3698,8 +3726,8 @@ h2 {
 .sf-windows-file-list-header {
   position: sticky;
   top: 0;
-  border-bottom: 1px solid #444;
-  background: #252525;
+  border-bottom: 1px solid var(--sf-border);
+  background: var(--sf-surface-raised);
   color: #eee;
   font-weight: 600;
 }
@@ -3712,7 +3740,7 @@ h2 {
 }
 .sf-windows-file-row:hover,
 .sf-windows-file-row.selected {
-  background: #394f68;
+  background: color-mix(in srgb, var(--sf-accent) 28%, var(--sf-surface-hover));
 }
 .sf-windows-file-row > span {
   overflow: hidden;
@@ -3743,10 +3771,10 @@ h2 {
 .sf-windows-file-name-bar input,
 .sf-windows-file-name-bar select {
   height: 28px;
-  border: 1px solid #555;
+  border: 1px solid var(--sf-border);
   border-radius: 2px;
-  background: #181818;
-  color: #f1f1f1;
+  background: var(--sf-surface-inset);
+  color: var(--sf-text);
 }
 .sf-windows-file-name-bar input {
   flex: 1;

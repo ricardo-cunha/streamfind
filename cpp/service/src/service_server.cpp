@@ -391,6 +391,9 @@ Json ServiceServer::workflow_demos() const {
             workflows.push_back({
                 {"id", id},
                 {"name", metadata.value("name", parsed.name.empty() ? id : parsed.name)},
+                {"description", metadata.value("description", "Workflow demonstration")},
+                {"use_case", metadata.value("use_case", "")},
+                {"domain", metadata.value("domain", "")},
                 {"metadata", metadata},
                 {"workflow", parsed.to_json()}
             });
@@ -742,8 +745,6 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 events_.publish(Json{{"type", "workflow.cancelled"}, {"project", session_id},
                                      {"payload", Json{{"message", "Workflow cancellation requested."}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}});
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/pause")) {
-                detail::send_http(socket, 501, Json{{"error", "workflow pause is not supported by the current execution engine"}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.find("/operations/") != std::string::npos) {
                 const auto prefix = std::string("/projects/");
                 const auto marker = std::string("/operations/");

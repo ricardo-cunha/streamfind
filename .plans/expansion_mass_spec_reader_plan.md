@@ -16,7 +16,7 @@ Persisted operations must bind source files and analysis selections through type
 3. Verify lazy indexed decoding, profile/centroid/line representations, calibration metadata, truncation, overflow, and sparse payload handling.
 4. Complete chromatogram header/point contracts and persistence/reopen tests.
 5. Add operation-level tests for spectra headers, chromatogram headers, TIC/raw arrays, and bounded flattened results.
-6. Keep C++ reader implementations and semantic contracts aligned; add Rust only when the separate backend is explicitly reopened.
+6. Keep C++ reader implementations and semantic contracts aligned; reopen any alternative backend only through a separately approved plan.
 7. Validate readers through packaged MCP operation graphs, not only direct library tests.
 
 ## Acceptance

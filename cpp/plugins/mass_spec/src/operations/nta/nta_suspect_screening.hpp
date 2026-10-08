@@ -17,6 +17,21 @@ namespace streamfind::mass_spec::nta
   {
     using SuspectQuery = ::streamfind::mass_spec::nta::SuspectQuery;
 
+    struct IsotopeMatch
+    {
+      int theoretical_peaks = 0;
+      int matched_peaks = 0;
+      double similarity = 0.0;
+      bool evaluated = false;
+      bool matched = true;
+    };
+
+    IsotopeMatch matches_isotope_pattern(
+      const SuspectQuery &suspect,
+      const ::streamfind::mass_spec::nta::api::NTA_FEATURES &features,
+      size_t feature_index,
+      double ppm);
+
     void suspect_screening_impl(
       NtaProjectData &nta_data,
         const std::vector<std::string> &analyses,
@@ -28,8 +43,6 @@ namespace streamfind::mass_spec::nta
         double minCosineSimilarity,
         int minSharedFragments,
         double isotopePpm,
-        int minIsotopePeaks,
-        double minIsotopeSimilarity,
         bool filtered);
 
     void find_internal_standards_impl(

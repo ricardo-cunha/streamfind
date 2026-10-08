@@ -112,6 +112,7 @@ public:
             loaded->host.has_table = &sdk::plugin_has_table;
             loaded->host.clear_table = &sdk::plugin_clear_table;
             loaded->host.read_batch = &sdk::plugin_read_batch;
+            loaded->host.count_rows = &sdk::plugin_count_rows;
             loaded->host.append_batch = &sdk::plugin_append_batch;
             loaded->host.emit_table_batch = &sdk::plugin_emit_table_batch;
             loaded->host.emit_result = &sdk::plugin_emit_result;

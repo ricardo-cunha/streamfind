@@ -1,8 +1,8 @@
 # Compatibility and support
 
-The native C++ package is the preview backend for Windows x64 and Linux
-x86_64. The Rust package is a stale development backend. The existing R package
-is a legacy interface.
+The native C++ package is the preview platform for Windows x64 and Linux
+x86_64. It provides the runtime, MCP server, browser application, semantic
+catalogues, and built-in domain plugins.
 
 ## Native package scope
 
@@ -26,12 +26,10 @@ not automatically installed by the native packages.
 ## Interface selection
 
 - Use the C++ package for native C++ applications or the C++ MCP server.
-- Use the Rust package only for existing Rust compatibility work.
-- Use the R package only for existing R and Shiny workflows.
-- The Python package and Cogniflow integration are not currently released.
+- Use the R package for R and Shiny workflows.
+- The native distribution does not include a Python package or Cogniflow integration.
 
-The native packages do not yet provide stable cross-version C++ ABI or Rust API
-compatibility guarantees.
+The native packages do not yet provide a stable cross-version C++ ABI.
 
 ## Development priority
 

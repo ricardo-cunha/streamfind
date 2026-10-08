@@ -380,7 +380,9 @@ export default function CanvasShell({
           );
         }
       }
-      appendLog(detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`, level);
+      if (event.type !== 'workflow.completed') {
+        appendLog(detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`, level);
+      }
       if (
         event.type === 'operation.completed' ||
         event.type === 'workflow.completed' ||
@@ -408,10 +410,6 @@ export default function CanvasShell({
             if (result.progress) setWorkflowProgress(result.progress);
             if (result.state === 'completed' || result.state === 'failed' || result.state === 'cancelled') {
               void refreshArtifacts();
-              appendLog(
-                `workflow ${result.state}: ${result.progress?.completed ?? 0}/${result.progress?.total ?? 0}`,
-                result.state === 'failed' ? 'error' : result.state === 'completed' ? 'success' : 'info',
-              );
             }
           }
         })
@@ -517,7 +515,7 @@ export default function CanvasShell({
     return undefined;
   }, [nodes, workflowLoaded]);
 
-  const workflowAction = async (action: 'run' | 'pause' | 'cancel') => {
+  const workflowAction = async (action: 'run' | 'cancel') => {
     if (!client) return;
     if (action === 'run' && workflowDirty) {
       setStatus('Save the workflow before running it.');
@@ -528,9 +526,7 @@ export default function CanvasShell({
       const result =
         action === 'run'
           ? await client.runWorkflow(project.session_id)
-          : action === 'pause'
-            ? await client.pauseWorkflow(project.session_id)
-            : await client.cancelWorkflow(project.session_id);
+          : await client.cancelWorkflow(project.session_id);
       setWorkflowState(result.state);
       if (result.progress) setWorkflowProgress(result.progress);
       setStatus(`Workflow ${action} request accepted.`);
@@ -1455,9 +1451,7 @@ export default function CanvasShell({
       await client.cancelWorkflow(project.session_id);
       setNodes((current) =>
         current.map((item) =>
-          item.id === node.id
-            ? { ...item, executionState: 'idle', executionMessage: 'Operation cancellation requested.' }
-            : item,
+          item.id === node.id ? { ...item, executionMessage: 'Operation cancellation requested.' } : item,
         ),
       );
       setStatus('Operation cancellation requested.');
@@ -1465,6 +1459,10 @@ export default function CanvasShell({
       setStatus(error instanceof Error ? error.message : 'Operation cancellation failed.');
     }
   };
+  const workflowExecutionActive = ['queued', 'running', 'cancelling'].includes(workflowState);
+  const runningNodeId = nodes.find((node) => node.executionState === 'running')?.id ?? null;
+  const nodeExecutionActive = runningNodeId !== null;
+  const nodeControlsLocked = workflowBusy || workflowExecutionActive || nodeExecutionActive;
   const selectedNode = selectedNodeId ? nodeMap.get(selectedNodeId) : undefined;
   const selectedCapability = selectedNode ? nodeCapability(selectedNode) : undefined;
   const pickerCapability = pickerCapabilityId
@@ -1696,7 +1694,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={() => void workflowAction('run')}
-              disabled={workflowBusy}
+              disabled={nodeControlsLocked}
               title="Run workflow"
             >
               <i className="fa-solid fa-play" />
@@ -1704,17 +1702,8 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
-              onClick={() => void workflowAction('pause')}
-              disabled={workflowBusy}
-              title="Pause workflow"
-            >
-              <i className="fa-solid fa-pause" />
-            </button>
-            <button
-              type="button"
-              className="sf-canvas-control"
               onClick={() => void workflowAction('cancel')}
-              disabled={workflowBusy}
+              disabled={!workflowExecutionActive || workflowBusy}
               title="Cancel workflow"
             >
               <i className="fa-solid fa-stop" />
@@ -1852,7 +1841,7 @@ export default function CanvasShell({
                     className="sf-node-info sf-node-run"
                     aria-label={`Run ${node.title}`}
                     title="Run operation"
-                    disabled={!capability || node.executionState === 'running'}
+                    disabled={!capability || nodeControlsLocked}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -1866,7 +1855,7 @@ export default function CanvasShell({
                     className="sf-node-info sf-node-stop"
                     aria-label={`Stop ${node.title}`}
                     title="Stop operation"
-                    disabled={node.executionState !== 'running'}
+                    disabled={workflowExecutionActive || runningNodeId !== node.id}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -1930,8 +1919,6 @@ export default function CanvasShell({
                     <div
                       className={`sf-node-port-row output ${outputArtifact(port) ? 'has-artifact' : ''}`}
                       key={port.id}
-                      onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
-                      onMouseLeave={hideOutputRendererMenu}
                     >
                       <button
                         type="button"
@@ -1950,6 +1937,8 @@ export default function CanvasShell({
                         data-canvas-anchor={`${node.id}|output|${port.id}`}
                         aria-label={`Connect from ${node.title} output ${port.label}`}
                         onMouseDown={(event) => beginConnection(event, node, port.id)}
+                        onMouseEnter={() => showOutputRendererMenu(`${node.id}|${port.id}`)}
+                        onMouseLeave={hideOutputRendererMenu}
                         onMouseUp={(event) => event.stopPropagation()}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
@@ -1971,7 +1960,7 @@ export default function CanvasShell({
                       </button>
                       {outputArtifact(port) && hoveredOutputAnchor === `${node.id}|${port.id}` ? (
                         <div
-                          className="sf-output-artifact-popover sf-output-renderer-menu"
+                          className="sf-output-artifact-popover sf-output-renderer-menu is-visible"
                           role="dialog"
                           aria-label={`Render ${port.label}`}
                           onMouseDown={(event) => event.stopPropagation()}

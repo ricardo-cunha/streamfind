@@ -139,6 +139,9 @@ Json tools() {
     const Json database_path = {{"type", "string"}, {"description", "Path to the project DuckDB database."}};
     const Json project_path_schema = schema(Json{{"database_path", database_path}}, Json::array({"database_path"}));
     const Json workflow_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
+        {"required", Json::array({"name", "description"})},
+        {"properties", Json{{"name", Json{{"type", "string"}, {"minLength", 1}}},
+                             {"description", Json{{"type", "string"}, {"minLength", 1}}}}},
         {"description", "User-defined workflow metadata. Workflow revision is tracked by the top-level workflow version."}};
     const Json create_schema = schema(Json{{"database_path", database_path}, {"workflow_metadata", workflow_metadata_schema}},
                                       Json::array({"database_path"}));

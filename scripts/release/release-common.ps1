@@ -23,7 +23,7 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
     }
 }
 
-function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk) {
+function Assert-CppDistributionPayload([string]$PackageRoot) {
     Assert-DistributionPayload $PackageRoot
     $required = @(
         'streamfind.exe',
@@ -46,6 +46,9 @@ function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk
         'core/ontology/operations.ttl',
         'core/vendors/openbabel/openbabel_streamfind.dll',
         'core/vendors/duckdb/duckdb.dll',
+        'core/vendors/mingw/libgcc_s_seh-1.dll',
+        'core/vendors/mingw/libstdc++-6.dll',
+        'core/vendors/mingw/libwinpthread-1.dll',
         'core/vendors/openbabel/data/logp.txt',
         'app/index.html'
     )
@@ -54,11 +57,7 @@ function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk
             throw "C++ distribution payload is missing $relative"
         }
     }
-    $binVendorFiles = @(Get-ChildItem -Path (Join-Path $PackageRoot 'bin') -File |
-        Where-Object { $_.Name -match '(?i)^(duckdb|libgcc|libstdc\+\+|libwinpthread).*\.dll$' })
-    if ($binVendorFiles.Count -ne 0) {
-        throw "Vendor runtime DLLs must not be installed directly under bin: $($binVendorFiles.Name -join ', ')"
-    }
+
     $pluginRoot = Join-Path $PackageRoot 'plugins'
     $pluginDirectories = @(Get-ChildItem -Path $pluginRoot -Directory)
     if ($pluginDirectories.Count -eq 0) {
@@ -89,24 +88,9 @@ function Assert-CppDistributionPayload([string]$PackageRoot, [switch]$RequireSdk
             }
         }
     }
-    if ($RequireSdk) {
-        foreach ($relative in @(
-            'sdk/bin/streamfind_sdk_catalogue.exe',
-            'sdk/bin/streamfind_sdk_plugin_validator.exe',
-            'sdk/include/streamfind/sdk/catalogue_builder.hpp',
-            'sdk/cmake/streamfind/streamfindConfig.cmake',
-            'sdk/cmake/streamfind/streamfind-cpp-targets.cmake',
-            'sdk/tools/jena/bat/arq.bat')) {
-            if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
-                throw "C++ SDK distribution payload is missing $relative"
-            }
-        }
-        $sdkLibraryCandidates = @(
-            (Join-Path $PackageRoot 'sdk/lib/streamfind_cpp_sdk.lib'),
-            (Join-Path $PackageRoot 'sdk/lib/libstreamfind_cpp_sdk.a'))
-        if (-not ($sdkLibraryCandidates | Where-Object { Test-Path $_ })) {
-            throw "C++ SDK distribution payload is missing the SDK library archive"
-        }
+    $sdkDirectory = Join-Path $PackageRoot 'sdk'
+    if (Test-Path $sdkDirectory) {
+        throw "Runtime C++ distribution must not contain the SDK directory: $sdkDirectory"
     }
 }
 
@@ -118,5 +102,9 @@ function Write-ReleaseChecksums {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
         }
-    $sums | Set-Content (Join-Path $Script:RELEASE_OUTPUT 'sha256sums.txt')
+    [System.IO.File]::WriteAllText(
+        (Join-Path $Script:RELEASE_OUTPUT 'sha256sums.txt'),
+        (($sums -join "`n") + "`n"),
+        [System.Text.UTF8Encoding]::new($false)
+    )
 }

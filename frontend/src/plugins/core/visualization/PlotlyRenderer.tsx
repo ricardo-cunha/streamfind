@@ -9,6 +9,12 @@ export type PlotlyRuntime = {
     layout?: PlotlyPayload['layout'],
     config?: PlotlyPayload['config'],
   ) => void | Promise<unknown>;
+  react?: (
+    element: HTMLElement,
+    data: PlotlyPayload['data'],
+    layout?: PlotlyPayload['layout'],
+    config?: PlotlyPayload['config'],
+  ) => void | Promise<unknown>;
   purge?: (element: HTMLElement) => void;
   resize?: (element: HTMLElement) => void | Promise<unknown>;
 };
@@ -30,6 +36,7 @@ export function PlotlyRenderer({
   onDoubleClick,
 }: PlotlyRendererProps & { runtime: PlotlyRuntime }): ReactElement {
   const chartRef = useRef<HTMLDivElement | null>(null);
+  const renderedElementRef = useRef<HTMLElement | null>(null);
   const pointClickRef = useRef(onPointClick);
   const plotClickRef = useRef(onPlotClick);
   const doubleClickRef = useRef(onDoubleClick);
@@ -47,6 +54,7 @@ export function PlotlyRenderer({
   useEffect(() => {
     const element = chartRef.current;
     if (!element) return undefined;
+    renderedElementRef.current = element;
     let active = true;
     const eventElement = element as HTMLDivElement & {
       on?: (event: string, handler: (event: { points?: VisualizationPointClick[] }) => void) => void;
@@ -64,7 +72,8 @@ export function PlotlyRenderer({
     const handleDoubleClick = () => doubleClickRef.current?.();
     setError(null);
     const layout = { ...spec.payload.layout, autosize: true };
-    Promise.resolve(runtime.newPlot(element, spec.payload.data, layout, spec.payload.config))
+    const render = runtime.react ?? runtime.newPlot;
+    Promise.resolve(render(element, spec.payload.data, layout, spec.payload.config))
       .then(() => {
         eventElement.on?.('plotly_click', handlePointClick);
         eventElement.on?.('plotly_doubleclick', handleDoubleClick);
@@ -76,9 +85,14 @@ export function PlotlyRenderer({
       active = false;
       eventElement.removeListener?.('plotly_click', handlePointClick);
       eventElement.removeListener?.('plotly_doubleclick', handleDoubleClick);
-      runtime.purge?.(element);
     };
   }, [renderKey, runtime]);
+
+  useEffect(() => {
+    return () => {
+      if (renderedElementRef.current) runtime.purge?.(renderedElementRef.current);
+    };
+  }, [runtime]);
 
   useEffect(() => {
     const element = chartRef.current;

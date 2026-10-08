@@ -346,10 +346,6 @@ export class StreamFindApiClient {
     return this.workflowAction<WorkflowStateResponse>(sessionId, 'run');
   }
 
-  async pauseWorkflow(sessionId: string): Promise<WorkflowStateResponse> {
-    return this.workflowAction<WorkflowStateResponse>(sessionId, 'pause');
-  }
-
   async cancelWorkflow(sessionId: string): Promise<WorkflowStateResponse> {
     return this.workflowAction<WorkflowStateResponse>(sessionId, 'cancel');
   }

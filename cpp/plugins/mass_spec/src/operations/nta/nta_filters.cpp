@@ -598,7 +598,7 @@ namespace streamfind::mass_spec::nta::filter_suspects
           s.InChI = sus.InChI[i];
           s.InChIKey = sus.InChIKey[i];
           s.xLogP = sus.xLogP[i];
-          s.database_id = sus.database_id[i];
+
           s.db_ms2_size = sus.db_ms2_size[i];
           s.db_ms2_mz = sus.db_ms2_mz[i];
           s.db_ms2_intensity = sus.db_ms2_intensity[i];
@@ -737,7 +737,7 @@ namespace streamfind::mass_spec::nta::filter_internal_standards
           is.InChI = istd.InChI[i];
           is.InChIKey = istd.InChIKey[i];
           is.xLogP = istd.xLogP[i];
-          is.database_id = istd.database_id[i];
+
           is.db_ms2_size = istd.db_ms2_size[i];
           is.db_ms2_mz = istd.db_ms2_mz[i];
           is.db_ms2_intensity = istd.db_ms2_intensity[i];

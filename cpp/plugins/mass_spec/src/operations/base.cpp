@@ -294,10 +294,10 @@ namespace streamfind::mass_spec::base
 
         const std::vector<std::string> columns = {
             "name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-            "database_id", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+            "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
         const std::vector<std::string> types = {
             "string", "real", "integer", "real", "real", "string", "string", "string", "string", "real",
-            "string", "array", "array", "array", "array"};
+            "array", "array", "array", "array"};
         Json row = Json::object();
         for (const auto &column : columns) row[column] = nullptr;
         row["name"] = name;

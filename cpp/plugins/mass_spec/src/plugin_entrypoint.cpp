@@ -115,6 +115,9 @@ streamfind_plugin_status invoke(
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::exception &error) {
         report_error(host, error.what());
+        if (host->is_cancelled != nullptr &&
+            host->is_cancelled(execution_context, host->user_data) != 0)
+            return STREAMFIND_PLUGIN_CANCELLED;
         return STREAMFIND_PLUGIN_ERROR;
     }
 }
@@ -211,7 +214,7 @@ streamfind_plugin_get_descriptor(
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "mass_spec";
-    descriptor->plugin_version = "0.4.1";
+    descriptor->plugin_version = "0.5.0";
     descriptor->register_plugin = &streamfind::mass_spec::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::mass_spec::dynamic_detail::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;

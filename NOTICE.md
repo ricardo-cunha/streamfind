@@ -35,14 +35,13 @@ before redistributing vendor-format data or software.
 ## Third-party components
 
 The exact C++/vendored-library licence texts are kept alongside their owning
-vendor directories under `cpp/vendor/`. The Rust dependency inventory is provided under
-`rust/LICENSES.md`. Component versions and inclusion can vary by backend and
-platform; the release manifest is authoritative for a particular archive.
+vendor directories under `cpp/vendor/`. Component versions and inclusion can
+vary by platform; the release manifest is authoritative for a particular
+archive.
 
 | Component | Version in the current native source/package | Licence | Source or retained notice |
 | --- | --- | --- | --- |
 | DuckDB C++ static package | v1.5.2 | MIT | `cpp/vendor/duckdb/LICENSE` |
-| DuckDB Rust crate/bundled backend | `duckdb` crate 1.10505.0; bundled backend requires separate verification | MIT metadata plus bundled upstream components | C++: `cpp/vendor/duckdb/LICENSE`; Rust: `rust/LICENSES.md` |
 | Open Babel | 3.2.0 | GPLv2 | `cpp/vendor/openbabel/openbabel-3-2-0/COPYING` |
 | Zstandard | 1.5.7 | BSD or GPLv2 | `cpp/vendor/zstd/LICENSE`, `cpp/vendor/zstd/COPYING` |
 | zlib | 1.3.2.1-motley | zlib licence | `cpp/vendor/zlib/zlib-develop/LICENSE` |
@@ -51,7 +50,7 @@ platform; the release manifest is authoritative for a particular archive.
 | nlohmann JSON | 3.12.0 | MIT | `cpp/vendor/nlohmann/LICENSE` |
 | JSON Schema Validator | vendored version; see source README | MIT | `cpp/vendor/json-schema-validator/LICENSE` |
 | Apache Jena | 6.2.0 | Apache-2.0 | `cpp/vendor/apache-jena/LICENSE`, `cpp/vendor/apache-jena/NOTICE` |
-| Rust dependencies | see `rust/Cargo.lock` and release manifest | package-specific MIT/Apache-2.0 and other declared terms | `rust/LICENSES.md` |
+
 
 The project must keep the original copyright and licence terms for every
 component when redistributing source or binaries. The presence of a component
@@ -60,11 +59,11 @@ combined works, source-code offers, or downstream redistribution.
 
 ## Native-reader process and format boundaries
 
-The native vendor readers are independently implemented in C++ and Rust from
-analysis of lawfully obtained data files, publicly available information, and
-observable program output. This describes the project's engineering process; it
-is not a legal opinion, warranty, or certification that every use is permitted
-under a particular vendor agreement or jurisdiction.
+The native vendor readers are independently implemented in C++ from analysis of
+lawfully obtained data files, publicly available information, and observable
+program output. This describes the project's engineering process; it is not a
+legal opinion, warranty, or certification that every use is permitted under a
+particular vendor agreement or jurisdiction.
 
 Vendor SDKs, DLLs, debugger traces, paired conversion outputs, proprietary
 documentation, confidential traces, and restricted vendor sample files are
@@ -85,8 +84,7 @@ Before distributing a native archive, verify that it contains:
 
 - `NOTICE.md` and `LICENSE.md` at the package root;
 - the C++ attribution payload assembled from the vendor-specific licence files
-  kept beside their owning libraries under `cpp/vendor/`, or the Rust
-  `LICENSES.md` dependency inventory;
+  kept beside their owning libraries under `cpp/vendor/`;
 - only the runtime files and dependencies intended for that backend and platform.
 
 Verify the notice and attribution payload against the exact build inputs for

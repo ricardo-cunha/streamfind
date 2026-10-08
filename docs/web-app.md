@@ -6,7 +6,7 @@ load native plugins, or implement domain processing in the browser.
 
 ## Release package support
 
-The 0.4.0 native archives include the same browser application layout:
+The 0.5.0 native archives include the same browser application layout:
 
 | Package | Web app contents | How to start |
 | --- | --- | --- |
@@ -26,8 +26,8 @@ by the launcher into a browser manually.
 
 ## Windows release
 
-1. Download and extract `streamfind-core-cpp-0.4.0-Windows-x86_64.zip` from the
-   [GitHub release](https://github.com/ricardo-cunha/streamfind/releases/tag/v0.4.0).
+1. Download and extract `streamfind-core-cpp-0.5.0-Windows-x86_64.zip` from the
+   release assets.
 2. Open the extracted package directory.
 3. Run `streamfind.exe`.
 4. Allow the browser to open the displayed local URL.
@@ -39,8 +39,8 @@ and vendor-runtime paths relative to the package layout.
 
 ## Linux release
 
-1. Download and extract `streamfind-core-cpp-0.4.0-Linux-x86_64.tgz` from the
-   [GitHub release](https://github.com/ricardo-cunha/streamfind/releases/tag/v0.4.0).
+1. Download and extract `streamfind-core-cpp-0.5.0-Linux-x86_64.tgz` from the
+   release assets.
 2. Open a terminal in the extracted package directory.
 3. Run:
 

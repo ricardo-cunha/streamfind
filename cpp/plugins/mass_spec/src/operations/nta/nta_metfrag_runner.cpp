@@ -5,6 +5,7 @@
 // verbatim; only the plumbing (model structs, tool resolution, persistence) is adapted.
 
 #include "operations/nta/nta_metfrag_runner.hpp"
+#include "operations/nta/nta_suspect_screening.hpp"
 #include "utils/nta.hpp"
 #include "utils/tools_resolver.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
@@ -455,7 +456,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     std::string SMILES;
     std::string InChI;
     std::string InChIKey;
-    std::string database_id;
+    std::string identifier;
     double      score       = 0.0;
     double      xLogP       = std::numeric_limits<double>::quiet_NaN();
     double      neutral_mass= std::numeric_limits<double>::quiet_NaN();
@@ -464,6 +465,62 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     std::string expl_smiles;
     std::string expl_aromatic_smiles;
   };
+
+  const SuspectQuery *find_target_metadata(
+      const MetFragRow &row,
+      const std::vector<SuspectQuery> &targets)
+  {
+    for (const auto &target : targets)
+    {
+      if (!row.InChIKey.empty() && !target.InChIKey.empty() &&
+          row.InChIKey == target.InChIKey)
+        return &target;
+      if (!row.formula.empty() && row.formula == target.formula &&
+          std::isfinite(row.neutral_mass) && target.has_mass &&
+          std::abs(row.neutral_mass - target.mass) <= 1e-6)
+        return &target;
+      if (!row.name.empty() && row.name == target.name)
+        return &target;
+    }
+    return nullptr;
+  }
+
+  MetFragRow mass_only_row(const SuspectQuery &target)
+  {
+    MetFragRow row;
+    row.name = target.name;
+    row.formula = target.formula;
+    row.SMILES = target.SMILES;
+    row.InChI = target.InChI;
+    row.InChIKey = target.InChIKey;
+
+    row.xLogP = target.has_xLogP ? target.xLogP : std::numeric_limits<double>::quiet_NaN();
+    row.neutral_mass = target.has_mass ? target.mass : std::numeric_limits<double>::quiet_NaN();
+    return row;
+  }
+
+  std::vector<MetFragRow> mass_candidates(
+      const std::vector<SuspectQuery> &targets,
+      double precursor_mass,
+      double ppm,
+      int top_n)
+  {
+    std::vector<MetFragRow> rows;
+    for (const auto &target : targets)
+    {
+      if (!target.has_mass || !std::isfinite(target.mass))
+        continue;
+      const double tolerance = target.mass * ppm / 1e6;
+      if (std::abs(precursor_mass - target.mass) <= tolerance)
+        rows.push_back(mass_only_row(target));
+    }
+    std::sort(rows.begin(), rows.end(), [&](const MetFragRow &lhs, const MetFragRow &rhs) {
+      return std::abs(lhs.neutral_mass - precursor_mass) < std::abs(rhs.neutral_mass - precursor_mass);
+    });
+    if (rows.size() > static_cast<std::size_t>(top_n))
+      rows.resize(static_cast<std::size_t>(top_n));
+    return rows;
+  }
 
   bool normalize_structure_fields(
       std::string &smiles,
@@ -541,7 +598,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     int ci_smi   = find_col(headers, {"SMILES", "smiles", "CanonicalSMILES"});
     int ci_inchi = find_col(headers, {"InChI", "inchi1", "StandardInChI"});
     int ci_ikey  = find_col(headers, {"InChIKey", "inchi_key"});
-    int ci_id    = find_col(headers, {"Identifier", "PubChemCID", "database_id", "InChIKey"});
+    int ci_id    = find_col(headers, {"Identifier", "PubChemCID", "identifier", "InChIKey"});
     int ci_score = find_col(headers, {"Score", "MetFragScore", "TotalScore", "FinalScore"});
     int ci_xlogp = find_col(headers, {"XLogP", "XLogP3", "LogP", "XLogP-3"});
     int ci_mass  = find_col(headers, {"NeutralMass", "MonoisotopicMass", "ExactMass"});
@@ -568,7 +625,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         r.SMILES      = gf(row, ci_smi);
         r.InChI       = gf(row, ci_inchi);
         r.InChIKey    = gf(row, ci_ikey);
-        r.database_id = gf(row, ci_id);
+        r.identifier = gf(row, ci_id);
         std::string ss = gf(row, ci_score);
         if (!ss.empty()) r.score = std::atof(ss.c_str());
         std::string xs = gf(row, ci_xlogp);
@@ -584,8 +641,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
             r.formula,
             r.neutral_mass,
             r.xLogP);
-        r.database_id = resolve_structure_identifier(
-            r.database_id,
+        r.identifier = resolve_structure_identifier(
+            r.identifier,
             r.InChIKey,
             r.InChI,
             r.SMILES,
@@ -796,7 +853,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     // Rename map: MetFrag target → accepted user column names (first match wins).
     struct RenameRule { std::string target; std::vector<std::string> aliases; };
     const std::vector<RenameRule> rules = {
-      { "Identifier",       { "Identifier", "identifier", "id", "database_id", "databaseid" } },
+      { "Identifier",       { "Identifier", "identifier", "id" } },
       { "MonoisotopicMass", { "MonoisotopicMass", "mass" } },
       { "MolecularFormula", { "MolecularFormula", "formula" } },
       { "SMILES",           { "SMILES", "smiles", "Smiles" } },
@@ -818,7 +875,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       output_columns.push_back({rule.target, idx});
     }
 
-    int id_idx   = find_col({ "Identifier", "identifier", "id", "database_id", "databaseid" });
+    int id_idx   = find_col({ "Identifier", "identifier", "id" });
     int name_idx = find_col({ "Name", "name" });
     int ikey_idx = find_col({ "InChIKey", "inchikey", "Inchikey" });
     int inchi_idx = find_col({ "InChI", "inchi", "Inchi" });
@@ -1136,19 +1193,28 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         std::string log_path    = run_dir + "/metfrag_" + sid + ".log";
         std::string sample_name = "metfrag_" + sid;
 
+        int status = 0;
+        std::vector<MetFragRow> rows;
+        std::vector<std::string> csv_paths = collect_metfrag_result_files(run_dir, sample_name);
+
         if (has_ms2)
+        {
           write_peak_list(ms2_path, ms2_mz, ms2_int);
 
-        // Write parameter file.
-        write_params_file(params_path, common_params_template, precursor_mass,
-                          feats.polarity[fi], ms2_path, sample_name);
+          // Write parameter file and use MetFrag's fragmentation results for
+          // MS2-supported candidates.
+          write_params_file(params_path, common_params_template, precursor_mass,
+                            feats.polarity[fi], ms2_path, sample_name);
+          status = run_metfrag(params.metfrag_path, params.java_path, params_path, log_path);
+          rows = parse_metfrag_output(run_dir, sample_name);
+          csv_paths = collect_metfrag_result_files(run_dir, sample_name);
+        }
 
-        // -- Invoke MetFragCL --------------------------------------------------
-        int status = run_metfrag(params.metfrag_path, params.java_path, params_path, log_path);
-
-        // -- Parse output file (PSV from FragmentSmilesPSV, or CSV fallback) ---
-        std::vector<MetFragRow> rows = parse_metfrag_output(run_dir, sample_name);
-        std::vector<std::string> csv_paths = collect_metfrag_result_files(run_dir, sample_name);
+        // A feature without MS2 still receives mass-based suspect hits. This
+        // is deliberately independent of MetFrag output: MetFrag cannot add
+        // fragmentation evidence when no experimental spectrum exists.
+        if (rows.empty())
+          rows = mass_candidates(params.suspect_targets, precursor_mass, params.ppm, params.top_n);
 
         if (rows.empty())
         {
@@ -1183,6 +1249,11 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           std::string db_ms2_mz_enc  = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_mzf);
           std::string db_ms2_int_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_intf);
 
+          const SuspectQuery *target = find_target_metadata(row, params.suspect_targets);
+          const auto isotope = target
+              ? ::streamfind::mass_spec::nta::suspect_screening::matches_isotope_pattern(
+                    *target, feats, static_cast<size_t>(fi), params.isotopePpm)
+              : ::streamfind::mass_spec::nta::suspect_screening::IsotopeMatch{};
           // Cosine similarity between explained peaks and experimental MS2.
           int shared = 0;
           double cosine = 0.0;
@@ -1191,40 +1262,44 @@ namespace streamfind::mass_spec::nta::metfrag_runner
                                        params.ppmMS2, params.mzrMS2, shared);
 
           // Mass error (ppm).
+          const double database_mass = std::isfinite(row.neutral_mass)
+              ? row.neutral_mass
+              : (target && target->has_mass ? target->mass : std::numeric_limits<double>::quiet_NaN());
           double error_mass = std::numeric_limits<double>::quiet_NaN();
-          if (!std::isnan(row.neutral_mass) && precursor_mass > 0.0)
+          if (std::isfinite(database_mass) && precursor_mass > 0.0)
             error_mass = std::round(
-                ((precursor_mass - row.neutral_mass) / precursor_mass) * 1e6 * 10.0) / 10.0;
+                ((precursor_mass - database_mass) / precursor_mass) * 1e6 * 10.0) / 10.0;
 
-          // RT post-filter: skip candidate if database RT is known and out of tolerance.
-          double db_rt_val  = std::numeric_limits<double>::quiet_NaN();
+          // RT is supporting evidence, not a candidate exclusion criterion.
+          // Candidates remain reportable when their observed RT differs from
+          // the suspect metadata; the deviation is retained in error_rt.
+          double db_rt_val  = target && target->has_rt
+              ? target->rt : std::numeric_limits<double>::quiet_NaN();
           double error_rt   = std::numeric_limits<double>::quiet_NaN();
-          if (!std::isnan(db_rt_val) &&
-              std::abs(static_cast<double>(feats.rt[fi]) - db_rt_val) > params.sec)
-          {
-            ++rank;
-            continue;
-          }
           if (!std::isnan(db_rt_val))
             error_rt = static_cast<double>(feats.rt[fi]) - db_rt_val;
 
-          // Assign identification level.
+          // Assign the MetFrag identification level from the in-silico
+          // MetFrag spectrum and supporting RT evidence. The supplied target
+          // fragment columns are intentionally not used by this operation.
           bool rt_match  = (!std::isnan(db_rt_val) &&
                            std::abs(static_cast<double>(feats.rt[fi]) - db_rt_val) <= params.sec);
           bool ms2_match = (shared > 0);
           int  id_level  = 4;
+          const bool has_structure = target &&
+              (!target->SMILES.empty() || !target->InChI.empty() || !target->InChIKey.empty());
           if      (rt_match && ms2_match) id_level = 1;
           else if (ms2_match)             id_level = 2;
-          else if (rt_match)              id_level = 3;
+          else if (has_structure || rt_match) id_level = 3;
 
           // Populate SUSPECT.
           ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW s;
           s.analysis           = ana;
           s.feature            = feats.feature[fi];
           s.candidate_rank     = rank;
-          s.name               = row.name.empty() ? row.database_id : row.name;
+          s.name               = row.name.empty() ? row.identifier : row.name;
           s.polarity           = feats.polarity[fi];
-          s.db_mass            = row.neutral_mass;
+          s.db_mass            = database_mass;
           s.exp_mass           = precursor_mass;
           s.error_mass         = error_mass;
           s.db_rt              = db_rt_val;
@@ -1241,7 +1316,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           s.InChI              = row.InChI;
           s.InChIKey           = row.InChIKey;
           s.xLogP              = row.xLogP;
-          s.database_id        = row.database_id;
+
           s.db_ms2_size        = static_cast<int>(db_mz.size());
           s.db_ms2_mz          = db_ms2_mz_enc;
           s.db_ms2_intensity   = db_ms2_int_enc;
@@ -1250,6 +1325,10 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           s.exp_ms2_size       = feats.ms2_size[fi];
           s.exp_ms2_mz         = feats.ms2_mz[fi];
           s.exp_ms2_intensity  = feats.ms2_intensity[fi];
+          s.isotope_theoretical_peaks = isotope.theoretical_peaks;
+          s.isotope_matched_peaks = isotope.matched_peaks;
+          s.isotope_similarity = isotope.similarity;
+          s.isotope_match = isotope.evaluated && isotope.matched_peaks > 0;
 
           suspect_buffers[ai].append(s);
           ++rank;
@@ -1295,8 +1374,9 @@ using Json = nlohmann::json;
                         "MetFragCommandLine-2.6.11.jar");
 
         // R method defaults.
-        const double ppm = parameters.value("ppm", 5.0);
-        const double sec = parameters.value("sec", 10.0);
+        const double ppm = parameters.value("ppm", 10.0);
+        const double isotope_ppm = parameters.value("isotope_ppm", 5.0);
+        const double sec = parameters.value("sec", 15.0);
         const double ppm_ms2 = parameters.value("ppm_ms2", 10.0);
         const double mzr_ms2 = parameters.value("mzr_ms2", 0.008);
         const int top_n = parameters.value("top_n", 5);
@@ -1308,19 +1388,19 @@ using Json = nlohmann::json;
             score_weights.push_back(v.get<double>());
         std::vector<std::string> pre_processing_candidate_filter;
         for (const auto &v : parameters.value("pre_processing_candidate_filter",
-                                              Json::array({Json("UnconnectedCompoundFilter"), Json("IsotopeFilter")})))
+                                              Json::array({Json("UnconnectedCompoundFilter")})))
             pre_processing_candidate_filter.push_back(v.get<std::string>());
         std::vector<std::string> post_processing_candidate_filter;
         for (const auto &v : parameters.value("post_processing_candidate_filter", Json::array({Json("InChIKeyFilter")})))
             post_processing_candidate_filter.push_back(v.get<std::string>());
-        const int maximum_tree_depth = parameters.value("maximum_tree_depth", 3);
+        const int maximum_tree_depth = parameters.value("maximum_tree_depth", 2);
         const int number_threads = parameters.value("number_threads", 1);
         const bool use_smiles = parameters.value("use_smiles", true);
         const bool filtered = parameters.value("filtered", false);
         // `debug` is accepted for schema parity; the runner keeps the inspectable
         // PSV output for features with candidates regardless (R never forwards it).
 
-        if (ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0)
+        if (ppm < 0 || isotope_ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: ppm, sec, ppm_ms2, and mzr_ms2 must be >= 0");
         if (top_n < 1)
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: top_n must be >= 1");
@@ -1331,14 +1411,17 @@ using Json = nlohmann::json;
         if (score_types.size() != score_weights.size())
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
 
-        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, true);
+        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, false);
         if (suspect_targets.empty())
             throw Error(ErrorCode::InvalidArgument,
                         "metfrag_screening requires at least one suspect_targets row with chemical identity.");
 
         Json local_database = Json::array();
+        std::vector<SuspectQuery> normalized_targets;
+        normalized_targets.reserve(suspect_targets.size());
         for (const auto &target : suspect_targets)
         {
+            SuspectQuery normalized_target = target;
             std::string smiles = target.SMILES;
             std::string inchi = target.InChI;
             std::string inchikey = target.InChIKey;
@@ -1350,8 +1433,19 @@ using Json = nlohmann::json;
                 throw Error(ErrorCode::InvalidArgument,
                             "metfrag_screening suspect_targets rows must provide mass or a valid SMILES/InChI.");
 
+            normalized_target.SMILES = smiles;
+            normalized_target.InChI = inchi;
+            normalized_target.InChIKey = inchikey;
+            normalized_target.formula = formula;
+            normalized_target.mass = mass;
+            normalized_target.has_mass = std::isfinite(mass);
+            normalized_target.xLogP = xlogp;
+            normalized_target.has_xLogP = std::isfinite(xlogp);
+            normalized_targets.push_back(normalized_target);
+
             Json row = Json::object();
             row["name"] = target.name;
+
             row["formula"] = formula;
             row["mass"] = mass;
             row["SMILES"] = smiles;
@@ -1367,6 +1461,7 @@ using Json = nlohmann::json;
         p.java_path = tool->first;     // java executable
         p.database_type = "LocalCSV";
         p.ppm = ppm;
+        p.isotopePpm = isotope_ppm;
         p.sec = sec;
         p.ppmMS2 = ppm_ms2;
         p.mzrMS2 = mzr_ms2;
@@ -1381,6 +1476,7 @@ using Json = nlohmann::json;
         p.use_smiles = use_smiles;
         p.filtered = filtered;
         p.run_dir = ::streamfind::mass_spec::nta::metfrag_runner::resolve_run_dir(p);
+        p.suspect_targets = std::move(normalized_targets);
         std::filesystem::create_directories(p.run_dir);
         p.database_path = utils::detail::write_local_metfrag_database(local_database, p.run_dir);
         ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(data, p);

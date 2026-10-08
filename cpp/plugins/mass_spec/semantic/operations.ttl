@@ -729,7 +729,7 @@ sfms:suspectScreening
     skos:prefLabel "Screen suspect features" ;
     skos:definition "Match detected features against suspect targets by structure-derived or supplied accurate mass, with optional retention-time, isotope, and MS2 evidence, and persist candidate assignments in a suspectsTable." ;
     sf:category "nta-identification" ;
-    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and MS2 reference peaks are optional. Structure-only matches receive the lowest identification category; add retention-time, isotope, or MS2 evidence for stronger assignments. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm, min_isotope_peaks, and min_isotope_similarity control MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
+    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and MS2 reference peaks are optional. Isotope matching is informational only and does not control candidate retention or identification level. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
@@ -740,8 +740,6 @@ sfms:suspectScreening
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
         sfms:isotopePpmParameter,
-        sfms:minIsotopePeaksParameter,
-        sfms:minIsotopeSimilarityParameter,
         sfms:filteredParameter ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
@@ -846,13 +844,14 @@ sfms:metfragScreening
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Screen features with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Optionally connect suspectTargetsTable, for example from mass_spec.fragmentation_to_suspect_targets; when connected, it supplies the candidate structures used for screening instead of the suspect_targets parameter." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Provide candidate structures through the suspect_targets parameter; retention time and MS2 reference peaks are optional." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
         sfms:mzrMs2Parameter,
+        sfms:isotopePpmParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -864,7 +863,6 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:optionalInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 sfms:fragmentSuspectTargets
@@ -888,6 +886,7 @@ sfms:fragmentationToSuspectTargets
     skos:prefLabel "Convert fragments to suspect targets" ;
     skos:definition "Convert each generated fragmentationTreeTable row into a chemical candidate row in suspectTargetsTable for downstream suspect screening, normalizing SMILES-derived descriptors with Open Babel when available." ;
     sf:category "structure-conversion" ;
-    sf:guidance "Connect a MetFrag fragmentationTreeTable. Each fragment with a non-empty SMILES becomes one suspect target, with its fragment identifier appended to the source name. Open Babel canonicalizes the SMILES and derives formula, exact mass, InChI, InChIKey, and xLogP when available. Fragment parent/provenance fields remain in the source fragmentation artifact." ;
+    sf:guidance "Connect a MetFrag fragmentationTreeTable. Each fragment with a non-empty SMILES becomes one suspect target, with its fragment identifier appended to the source name. Open Babel canonicalizes the SMILES and derives formula, exact mass, InChI, InChIKey, and xLogP when available. Fragment parent/provenance fields remain in the source fragmentation artifact. Set number_duplicate_formulas to a positive integer to retain only the first that many SMILES in input order for each formula; zero keeps all rows." ;
+    sf:hasParameter sfms:numberDuplicateFormulasParameter ;
     sf:hasInputPort sfms:fragmentationTreeTable ;
     sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .

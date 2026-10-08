@@ -6,17 +6,8 @@ import { fileURLToPath, URL } from 'node:url';
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const worktreeRoot = resolve(frontendRoot, '..');
-const configuredBuildRoot = process.env.STREAMFIND_NATIVE_BUILD_DIR
-  ? resolve(worktreeRoot, process.env.STREAMFIND_NATIVE_BUILD_DIR)
-  : undefined;
-const buildRoots = [
-  configuredBuildRoot,
-  resolve(worktreeRoot, 'tmp', 'build', 'mingw-ucrt64'),
-  resolve(worktreeRoot, 'tmp', 'build', 'mingw-release-cpp'),
-].filter((root, index, roots) => root && roots.indexOf(root) === index);
-const serviceLocation = buildRoots
-  .map((root) => ({ root, executable: resolve(root, 'streamfind_service.exe') }))
-  .find(({ executable }) => existsSync(executable));
+const buildRoot = resolve(worktreeRoot, 'tmp', 'build', 'mingw-ucrt64');
+const serviceExecutable = resolve(buildRoot, 'streamfind_service.exe');
 const serviceUrl = process.env.STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790';
 const servicePort = new URL(serviceUrl).port || '8790';
 const children = [];
@@ -38,11 +29,22 @@ async function serviceReady() {
 }
 
 function startService() {
-  if (!serviceLocation) {
-    throw new Error(`Native service was not found. Build streamfind_service in one of: ${buildRoots.join(', ')}`);
+  if (!existsSync(serviceExecutable)) {
+    throw new Error(`Native service was not found. Build streamfind_service in: ${buildRoot}`);
   }
-  const { root: buildRoot, executable: serviceExecutable } = serviceLocation;
-  const pathEntries = [buildRoot, 'C:/msys64/ucrt64/bin', 'C:/msys64/usr/bin', process.env.PATH || ''];
+  log(`Using native service binary: ${serviceExecutable}`);
+  const pathEntries = [
+    buildRoot,
+    resolve(buildRoot, 'sdk'),
+    resolve(buildRoot, 'core', 'vendors', 'duckdb'),
+    resolve(buildRoot, 'core', 'vendors', 'mingw'),
+    resolve(buildRoot, 'plugins', 'mass_spec'),
+    resolve(buildRoot, 'plugins', 'raman'),
+    resolve(buildRoot, 'plugins', 'sensors'),
+    'C:/msys64/ucrt64/bin',
+    'C:/msys64/usr/bin',
+    process.env.PATH || '',
+  ];
   const child = spawn(serviceExecutable, [servicePort], {
     cwd: buildRoot,
     env: { ...process.env, PATH: pathEntries.join(';') },

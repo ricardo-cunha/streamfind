@@ -85,14 +85,16 @@ endif()
 
 install(TARGETS streamfind_mass_spec_plugin
     RUNTIME DESTINATION plugins/mass_spec
-    LIBRARY DESTINATION plugins/mass_spec
-    ARCHIVE DESTINATION sdk/lib)
-
-install(TARGETS libzstd_static
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION sdk/lib
-    LIBRARY DESTINATION sdk/lib
-    RUNTIME DESTINATION bin)
+    LIBRARY DESTINATION plugins/mass_spec)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_mass_spec_plugin
+        ARCHIVE DESTINATION sdk/lib)
+    install(TARGETS libzstd_static
+        EXPORT streamfind-cpp-targets
+        ARCHIVE DESTINATION sdk/lib
+        LIBRARY DESTINATION sdk/lib
+        RUNTIME DESTINATION sdk/bin)
+endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/LICENSE"
     DESTINATION licenses RENAME zstd-LICENSE.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/COPYING"

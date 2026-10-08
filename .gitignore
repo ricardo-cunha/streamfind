@@ -23,9 +23,11 @@ _skbuild/
 **/*.egg-info/
 /cpp/vendor/openbabel/build/
 
-# Rust tooling ----------------------------------------------------------------
-# Machine-local Cargo config (e.g. a per-user linker path); never commit.
-rust/.cargo/
+# Local-only Rust development ---------------------------------------------------
+# Rust source and helper scripts are intentionally not part of the tracked C++
+# release project. Keep them available locally without including them in commits.
+/rust/
+/rust_scripts/
 
 # Linked git worktrees ---------------------------------------------------------
 # Nested git repositories (have their own .git file); local developer state.

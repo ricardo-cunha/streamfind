@@ -65,6 +65,7 @@ void ServicePluginRuntime::load(const std::filesystem::path &configuration_path,
         host.has_table = &sdk::plugin_has_table;
         host.clear_table = &sdk::plugin_clear_table;
         host.read_batch = &sdk::plugin_read_batch;
+        host.count_rows = &sdk::plugin_count_rows;
         host.append_batch = &sdk::plugin_append_batch;
         host.emit_table_batch = &sdk::plugin_emit_table_batch;
         host.emit_result = &sdk::plugin_emit_result;

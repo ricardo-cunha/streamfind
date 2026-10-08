@@ -34,7 +34,7 @@ export type ProjectInitialization = {
 };
 
 export type WorkflowState =
-  'idle' | 'validated' | 'queued' | 'running' | 'paused' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
+  'idle' | 'validated' | 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
 
 export type WorkflowProgress = {
   completed: number;
@@ -73,7 +73,7 @@ export type WorkflowDefinition = {
   workflow_id?: string;
   name?: string;
   version: number;
-  metadata?: WorkflowMetadata;
+  metadata: WorkflowMetadata;
   operations: WorkflowOperationDefinition[];
   connections: WorkflowConnectionDefinition[];
 };

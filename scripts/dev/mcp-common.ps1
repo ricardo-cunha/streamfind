@@ -157,23 +157,11 @@ function Get-StreamfindVendorRoot {
     return $root
 }
 
-function Invoke-StreamfindRustBuild {
-    param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
-    $buildScript = Join-Path $RepositoryRoot 'scripts\build\rust\build-rust.ps1'
-    $commandLine = 'set tmp=&&set temp=&&set TMP=C:\Windows\Temp&&set TEMP=C:\Windows\Temp&&set TMPDIR=C:\Windows\Temp&&powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $buildScript + '" -Clean -Release'
-    & $env:ComSpec /d /c $commandLine | Out-Host
-    return [int]$LASTEXITCODE
-}
-
 function Get-BackendMcpExecutable {
     param(
-        [Parameter(Mandatory = $true)][string]$RepositoryRoot,
-        [Parameter(Mandatory = $true)][ValidateSet('Cpp', 'Rust')][string]$Backend
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot
     )
-    if ($Backend -eq 'Cpp') {
-        $name = if ($isWindowsPlatform) { 'streamfind_mcp.exe' } else { 'streamfind_mcp' }
-        $buildDir = if ($isWindowsPlatform) { 'tmp/build/core-default' } else { 'tmp/build/linux-cpp' }
-        return (Join-Path (Join-Path $RepositoryRoot $buildDir) $name)
-    }
-    return (Join-Path $RepositoryRoot 'tmp\build\rust-target\release\streamfind-rust-mcp.exe')
+    $name = if ($isWindowsPlatform) { 'streamfind_mcp.exe' } else { 'streamfind_mcp' }
+    $buildDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64' } else { 'tmp/build/linux-cpp' }
+    return (Join-Path (Join-Path $RepositoryRoot $buildDir) $name)
 }

@@ -370,12 +370,12 @@ namespace streamfind::mass_spec::nta::utils
 
     const std::vector<std::string> &suspects_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
         return columns;
     }
     const std::vector<std::string> &internal_standards_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
         return columns;
     }
     const std::vector<std::string> &transformation_products_columns()
@@ -751,7 +751,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             {
                 const auto table = input_it->at("physical_table").get<std::string>();
                 targets = Json::array();
-                const std::vector<std::string> columns = {"name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "database_id", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+                const std::vector<std::string> columns = {"name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
                 for (auto row : access.read(table, columns, "name"))
                 {
                     for (const auto &key : {"fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"})
@@ -793,7 +793,11 @@ namespace streamfind::mass_spec::nta::utils::detail
                     q.has_mass = true;
                     q.mass = *mz;
                 }
-                q.rt = number_value(t, "rt").value_or(0.0);
+                if (const auto rt = number_value(t, "rt"))
+                {
+                    q.has_rt = true;
+                    q.rt = *rt;
+                }
                 q.formula = string_value(t, "formula");
                 q.SMILES = string_value(t, "SMILES");
                 if (q.SMILES.empty()) q.SMILES = string_value(t, "smiles");
@@ -801,7 +805,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 if (q.InChI.empty()) q.InChI = string_value(t, "inchi");
                 q.InChIKey = string_value(t, "InChIKey");
                 if (q.InChIKey.empty()) q.InChIKey = string_value(t, "inchikey");
-                q.database_id = string_value(t, "database_id");
+
                 q.score = number_value(t, "score").value_or(0.0);
                 if (const auto xlogp = number_value(t, "xLogP"))
                 {
@@ -910,7 +914,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 "analysis", "replicate", "feature", "feature_group", "candidate_rank", "name", "polarity",
                 "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area",
                 "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "SMILES", "InChI", "InChIKey",
-                "xLogP", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
+                "xLogP", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
                 "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed",
                 "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
                 "isotope_theoretical_peaks", "isotope_matched_peaks", "isotope_similarity", "isotope_match"};
@@ -925,8 +929,12 @@ namespace streamfind::mass_spec::nta::utils::detail
                 dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
                 dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
                 str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey),
-                dnum_cell(r.xLogP), str_cell(r.database_id), inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity),
-                str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles), inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity)};
+                dnum_cell(r.xLogP), inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity),
+                str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
+                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                std::nullopt, std::nullopt, std::nullopt,
+                inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
+                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match)};
         }
 
         const std::vector<std::string> &internal_standards_columns()
@@ -935,7 +943,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 "analysis", "feature", "feature_group", "feature_component", "adduct",
                 "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt",
                 "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity",
-                "formula", "SMILES", "InChI", "InChIKey", "xLogP", "database_id",
+                "formula", "SMILES", "InChI", "InChIKey", "xLogP",
                 "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
                 "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
             return cols;
@@ -948,7 +956,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
                 dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
                 dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
-                str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP), str_cell(r.database_id),
+                str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP),
                 inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity), str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
                 inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity)};
         }
@@ -965,7 +973,7 @@ namespace streamfind::mass_spec::nta::utils::detail
 
         Json suspect_json(const ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW &r)
         {
-            return Json{{"analysis",r.analysis},{"replicate", ""},{"feature",r.feature},{"feature_group",r.feature_group},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"database_id",r.database_id},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"eic_size",0},{"eic_rt", ""},{"eic_mz", ""},{"eic_intensity", ""},{"eic_baseline", ""},{"eic_smoothed", ""},{"ms1_size",0},{"ms1_mz", ""},{"ms1_intensity", ""},{"ms2_size",0},{"ms2_mz", ""},{"ms2_intensity", ""},{"isotope_theoretical_peaks",r.isotope_theoretical_peaks},{"isotope_matched_peaks",r.isotope_matched_peaks},{"isotope_similarity",r.isotope_similarity},{"isotope_match",r.isotope_match}};
+            return Json{{"analysis",r.analysis},{"replicate", ""},{"feature",r.feature},{"feature_group",r.feature_group},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"eic_size",0},{"eic_rt", ""},{"eic_mz", ""},{"eic_intensity", ""},{"eic_baseline", ""},{"eic_smoothed", ""},{"ms1_size",0},{"ms1_mz", ""},{"ms1_intensity", ""},{"ms2_size",0},{"ms2_mz", ""},{"ms2_intensity", ""},{"isotope_theoretical_peaks",r.isotope_theoretical_peaks},{"isotope_matched_peaks",r.isotope_matched_peaks},{"isotope_similarity",r.isotope_similarity},{"isotope_match",r.isotope_match}};
         }
 
         void enrich_suspect_with_feature(Json &suspect, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
@@ -994,7 +1002,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     rows.push_back(std::move(row));
                 }
             }
-            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","string","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
+            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
         }
 
         Json internal_standard_json(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
@@ -1003,7 +1011,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             s.analysis=r.analysis; s.feature=r.feature; s.feature_group=r.feature_group; s.candidate_rank=r.candidate_rank; s.name=r.name; s.polarity=r.polarity;
             s.db_mass=r.db_mass; s.exp_mass=r.exp_mass; s.error_mass=r.error_mass; s.db_rt=r.db_rt; s.exp_rt=r.exp_rt; s.error_rt=r.error_rt;
             s.intensity=r.intensity; s.area=r.area; s.id_level=r.id_level; s.score=r.score; s.shared_fragments=r.shared_fragments; s.cosine_similarity=r.cosine_similarity;
-            s.formula=r.formula; s.SMILES=r.SMILES; s.InChI=r.InChI; s.InChIKey=r.InChIKey; s.xLogP=r.xLogP; s.database_id=r.database_id;
+            s.formula=r.formula; s.SMILES=r.SMILES; s.InChI=r.InChI; s.InChIKey=r.InChIKey; s.xLogP=r.xLogP;
             s.db_ms2_size=r.db_ms2_size; s.db_ms2_mz=r.db_ms2_mz; s.db_ms2_intensity=r.db_ms2_intensity; s.db_ms2_formula=r.db_ms2_formula; s.db_ms2_smiles=r.db_ms2_smiles;
             s.exp_ms2_size=r.exp_ms2_size; s.exp_ms2_mz=r.exp_ms2_mz; s.exp_ms2_intensity=r.exp_ms2_intensity;
             auto out = suspect_json(s); out["feature_component"] = r.feature_component; out["adduct"] = r.adduct; return out;
@@ -1038,7 +1046,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             auto &buffers = data.suspect_buffers();
             for (auto &b : buffers)
                 b = ::streamfind::mass_spec::nta::api::NTA_SUSPECTS();
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity FROM " + input_table(parameters, "suspectsTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity FROM " + input_table(parameters, "suspectsTable") + " ORDER BY analysis"))
             {
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
@@ -1068,7 +1076,6 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.InChI = col_s(row, "InChI");
                 r.InChIKey = col_s(row, "InChIKey");
                 r.xLogP = col_d(row, "xLogP");
-                r.database_id = col_s(row, "database_id");
                 r.db_ms2_size = col_i(row, "db_ms2_size");
                 r.db_ms2_mz = col_s(row, "db_ms2_mz");
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
@@ -1086,7 +1093,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             auto &buffers = data.internal_standard_buffers();
             for (auto &b : buffers)
                 b = ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS();
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
             {
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
@@ -1118,7 +1125,6 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.InChI = col_s(row, "InChI");
                 r.InChIKey = col_s(row, "InChIKey");
                 r.xLogP = col_d(row, "xLogP");
-                r.database_id = col_s(row, "database_id");
                 r.db_ms2_size = col_i(row, "db_ms2_size");
                 r.db_ms2_mz = col_s(row, "db_ms2_mz");
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
@@ -1306,7 +1312,6 @@ namespace streamfind::mass_spec::nta::utils::detail
                 s.InChI = row.InChI;
                 s.InChIKey = row.InChIKey;
                 s.xLogP = row.xLogP;
-                s.database_id = "";
                 s.db_ms2_size = 0;
                 s.db_ms2_mz = "";
                 s.db_ms2_intensity = "";

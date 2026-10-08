@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
 
 namespace streamfind::mass_spec::nta
@@ -76,15 +77,6 @@ namespace streamfind::mass_spec::nta
       return normalized;
     }
 
-    struct IsotopeMatch
-    {
-      int theoretical_peaks = 0;
-      int matched_peaks = 0;
-      double similarity = 0.0;
-      bool evaluated = false;
-      bool matched = true;
-    };
-
     IsotopeMatch matches_isotope_pattern(const SuspectQuery &suspect,
                                  const ::streamfind::mass_spec::nta::api::NTA_FEATURES &features,
                                  size_t feature_index,
@@ -104,7 +96,7 @@ namespace streamfind::mass_spec::nta
         if (formula.empty())
           return {};
         IsoSpec::Iso isotope_model(formula);
-        auto envelope = IsoSpec::FixedEnvelope::FromTotalProb(isotope_model, 0.999, true, false);
+        auto envelope = IsoSpec::FixedEnvelope::FromTotalProb(isotope_model, 0.999, true, true);
         envelope.sort_by_mass();
 
         constexpr std::size_t max_isotope_peaks = 12;
@@ -243,7 +235,7 @@ namespace streamfind::mass_spec::nta
       row.InChI = suspect.InChI;
       row.InChIKey = suspect.InChIKey;
       row.xLogP = suspect.xLogP;
-      row.database_id = suspect.database_id;
+
       row.db_ms2_size = suspect.db_ms2_size;
       row.db_ms2_mz = suspect.db_ms2_mz;
       row.db_ms2_intensity = suspect.db_ms2_intensity;
@@ -266,8 +258,6 @@ namespace streamfind::mass_spec::nta
         double minCosineSimilarity,
         int minSharedFragments,
         double isotopePpm,
-        int minIsotopePeaks,
-        double minIsotopeSimilarity,
         bool filtered,
         bool write_internal_standards)
     {
@@ -324,8 +314,6 @@ namespace streamfind::mass_spec::nta
               continue;
 
             const IsotopeMatch isotope = matches_isotope_pattern(sus, fts, static_cast<size_t>(i), isotopePpm);
-            if (isotope.evaluated && (isotope.matched_peaks < minIsotopePeaks || isotope.similarity < minIsotopeSimilarity))
-              continue;
 
             assigned = sus.name;
           }
@@ -379,7 +367,7 @@ namespace streamfind::mass_spec::nta
         row.InChI = sus->InChI;
         row.InChIKey = sus->InChIKey;
         row.xLogP = sus->has_xLogP ? sus->xLogP : std::numeric_limits<double>::quiet_NaN();
-        row.database_id = sus->database_id;
+
 
         row.db_mass = std::numeric_limits<double>::quiet_NaN();
         if (sus->has_mass)
@@ -397,7 +385,7 @@ namespace streamfind::mass_spec::nta
         row.db_rt = sus->rt;
         row.error_rt = std::numeric_limits<double>::quiet_NaN();
         bool rt_matched = false;
-        if (row.db_rt > 0.0 && std::isfinite(row.exp_rt))
+        if (sus->has_rt && std::isfinite(row.exp_rt))
         {
           double err_rt = row.exp_rt - row.db_rt;
           row.error_rt = std::round(err_rt * 10.0) / 10.0;
@@ -416,8 +404,7 @@ namespace streamfind::mass_spec::nta
         row.isotope_theoretical_peaks = isotope.theoretical_peaks;
         row.isotope_matched_peaks = isotope.matched_peaks;
         row.isotope_similarity = isotope.similarity;
-        row.isotope_match = !isotope.evaluated ||
-                            (isotope.matched_peaks >= minIsotopePeaks && isotope.similarity >= minIsotopeSimilarity);
+        row.isotope_match = isotope.evaluated && isotope.matched_peaks > 0;
 
         const std::vector<double> *sus_mz = nullptr;
         const std::vector<double> *sus_int = nullptr;
@@ -566,11 +553,9 @@ namespace streamfind::mass_spec::nta
         double minCosineSimilarity,
         int minSharedFragments,
         double isotopePpm,
-        int minIsotopePeaks,
-        double minIsotopeSimilarity,
         bool filtered)
     {
-      screening_impl(nta_data, analyses, suspects, ppm, sec, ppmMS2, mzrMS2, minCosineSimilarity, minSharedFragments, isotopePpm, minIsotopePeaks, minIsotopeSimilarity, filtered, false);
+      screening_impl(nta_data, analyses, suspects, ppm, sec, ppmMS2, mzrMS2, minCosineSimilarity, minSharedFragments, isotopePpm, filtered, false);
     }
 
     void find_internal_standards_impl(
@@ -585,7 +570,7 @@ namespace streamfind::mass_spec::nta
         int minSharedFragments,
         bool filtered)
     {
-      screening_impl(nta_data, analyses, suspects, ppm, sec, ppmMS2, mzrMS2, minCosineSimilarity, minSharedFragments, 5.0, 2, 0.5, filtered, true);
+      screening_impl(nta_data, analyses, suspects, ppm, sec, ppmMS2, mzrMS2, minCosineSimilarity, minSharedFragments, 5.0, filtered, true);
     }
   } // namespace suspect_screening
 } // namespace nta
@@ -603,18 +588,15 @@ using Json = nlohmann::json;
         const double min_cosine_similarity = parameters.value("min_cosine_similarity", 0.7);
         const int min_shared_fragments = parameters.value("min_shared_fragments", 3);
         const double isotope_ppm = parameters.value("isotope_ppm", ppm);
-        const int min_isotope_peaks = parameters.value("min_isotope_peaks", 2);
-        const double min_isotope_similarity = parameters.value("min_isotope_similarity", 0.5);
         const bool filtered = parameters.value("filtered", true);
         if (ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0 || min_cosine_similarity < 0 ||
-            min_cosine_similarity > 1 || min_shared_fragments < 0 || isotope_ppm < 0 || min_isotope_peaks < 0 ||
-            min_isotope_similarity < 0 || min_isotope_similarity > 1)
+            min_cosine_similarity > 1 || min_shared_fragments < 0 || isotope_ppm < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid suspect screening parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
         const auto suspects = utils::detail::parse_suspect_targets(access, parameters, false);
         ::streamfind::mass_spec::nta::suspect_screening::suspect_screening_impl(data, data.analysis_names(), suspects,
                                                        ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments,
-                                                       isotope_ppm, min_isotope_peaks, min_isotope_similarity, filtered);
+                                                       isotope_ppm, filtered);
         utils::detail::emit_suspects(access, data);
         return Json{{"status", "finished"}, {"info", "Suspect screening completed."}};
     }
@@ -637,7 +619,7 @@ using Json = nlohmann::json;
             min_cosine_similarity > 1 || min_shared_fragments < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid internal standard parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
-        const auto suspects = utils::detail::parse_suspect_targets(access, parameters);
+        const auto suspects = utils::detail::parse_suspect_targets(access, parameters, false);
         ::streamfind::mass_spec::nta::suspect_screening::find_internal_standards_impl(data, data.analysis_names(), suspects,
                                                              ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, filtered);
         utils::detail::emit_features(access, data);

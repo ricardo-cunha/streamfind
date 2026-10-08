@@ -1,6 +1,6 @@
 <#
     build-common.ps1 — shared toolchain detection + logging for the streamfind
-    build/test scripts under build/cpp/ and build/rust/.
+    build/test scripts under build/cpp/.
 
     Design goals:
       - Machine independent: no hardcoded user or machine paths. Tools are
@@ -9,7 +9,7 @@
                                query tool), with $env:VSINSTALLDIR override.
           * cmake / ninja   -> $env:CMAKE / $env:NINJA override, else PATH via
                                Get-Command, else known VS-bundled locations.
-          * cargo / rustc   -> $env:CARGO override, else PATH via Get-Command.
+
       - All transient outputs go under the repository-local tmp/ folder
         (AGENTS.md "Repository Scratch, Build, and Log Locations"): builds in
         tmp/build/, logs in tmp/logs/.
@@ -36,12 +36,12 @@ function New-TmpDirs {
 }
 
 function Set-RepositoryTemp {
-    # MSVC and Cargo require valid Windows paths. Some agent shells export
+    # Native Windows tools require valid Windows paths. Some agent shells export
     # colliding TMP/tmp or TEMP/temp values (often /tmp); use the managed
     # repository scratch directory for child tool processes instead.
     New-TmpDirs
     # Git Bash can export a second, lower-case `tmp` variable. Windows treats
-    # environment names case-insensitively in most APIs, but cmd/rustc can
+    # environment names case-insensitively in most APIs, but child tools can
     # still receive both entries and interpret the MSYS value as C:\c\....
     [Environment]::SetEnvironmentVariable('tmp', $null, 'Process')
     [Environment]::SetEnvironmentVariable('temp', $null, 'Process')
@@ -114,15 +114,6 @@ function Get-CPack {
     return $path
 }
 
-function Get-Cargo {
-    if ($env:CARGO) {
-        if (Test-Path $env:CARGO) { return $env:CARGO }
-        throw "CARGO override set but not found: $env:CARGO"
-    }
-    $path = Resolve-Command 'cargo'
-    if (-not $path) { throw 'cargo not found on PATH; set $env:CARGO or install the Rust toolchain (https://rustup.rs)' }
-    return $path
-}
 
 function Get-VisualStudioPath {
     if ($env:VSINSTALLDIR) {
@@ -166,26 +157,62 @@ function Get-Ninja {
 }
 
 function Initialize-MinGWUcrt64 {
-    $msysRoot = if ($env:STREAMFIND_MINGW_ROOT) {
+    $msysRoot = if ($env:STREAMFIND_MSYS2_ROOT) {
+        $env:STREAMFIND_MSYS2_ROOT
+    } elseif ($env:STREAMFIND_MINGW_ROOT) {
         $env:STREAMFIND_MINGW_ROOT
     } else {
         'C:\msys64'
     }
     $mingwBin = Join-Path $msysRoot 'ucrt64\bin'
     $msysBin = Join-Path $msysRoot 'usr\bin'
-    foreach ($required in @('gcc.exe', 'g++.exe', 'ninja.exe')) {
-        if (-not (Test-Path (Join-Path $mingwBin $required))) {
-            throw "MinGW UCRT64 tool is missing: $(Join-Path $mingwBin $required)"
+
+    if (-not (Test-Path (Join-Path $msysRoot 'usr\bin\bash.exe'))) {
+        throw "MSYS2 installation was not found at $msysRoot. Install MSYS2 or set STREAMFIND_MSYS2_ROOT."
+    }
+
+    $cmakeCandidates = @(
+        (Join-Path $mingwBin 'cmake.exe'),
+        (Join-Path $msysBin 'cmake.exe'))
+    $cmakePath = $cmakeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $ninjaPath = Join-Path $mingwBin 'ninja.exe'
+    $missingPackages = @()
+    if (-not (Test-Path (Join-Path $mingwBin 'gcc.exe'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-gcc' }
+    if (-not (Test-Path (Join-Path $mingwBin 'g++.exe'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-gcc' }
+    if (-not $cmakePath) { $missingPackages += 'mingw-w64-ucrt-x86_64-cmake' }
+    if (-not (Test-Path $ninjaPath)) { $missingPackages += 'mingw-w64-ucrt-x86_64-ninja' }
+    $missingPackages = @($missingPackages | Select-Object -Unique)
+    if ($missingPackages.Count -gt 0) {
+        $pacman = Join-Path $msysBin 'pacman.exe'
+        if (-not (Test-Path $pacman)) {
+            throw "MSYS2 tools are missing ($($missingPackages -join ', ')) and pacman was not found at $pacman"
+        }
+        Write-Log "Installing missing MSYS2 UCRT64 packages: $($missingPackages -join ', ')"
+        & $pacman -S --needed --noconfirm @missingPackages
+        if ($LASTEXITCODE -ne 0) {
+            throw "MSYS2 package installation failed ($LASTEXITCODE)"
+        }
+        $cmakePath = $cmakeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    foreach ($requiredPath in @(
+        (Join-Path $mingwBin 'gcc.exe'),
+        (Join-Path $mingwBin 'g++.exe'),
+        $cmakePath,
+        $ninjaPath)) {
+        if (-not $requiredPath -or -not (Test-Path $requiredPath)) {
+            throw "Required MSYS2 UCRT64 build tool is missing after installation: $requiredPath"
         }
     }
     $env:MSYSTEM = 'UCRT64'
     $env:PATH = "$mingwBin;$msysBin;$env:PATH"
+    $env:CMAKE = $cmakePath
+    $env:NINJA = $ninjaPath
     Set-RepositoryTemp
     return [pscustomobject]@{
         Root = $msysRoot
         Bin = $mingwBin
-        CMake = (Get-CMake)
-        Ninja = (Join-Path $mingwBin 'ninja.exe')
+        CMake = $cmakePath
+        Ninja = $ninjaPath
         CCompiler = (Join-Path $mingwBin 'gcc.exe')
         CxxCompiler = (Join-Path $mingwBin 'g++.exe')
     }

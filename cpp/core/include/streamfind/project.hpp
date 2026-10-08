@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <atomic>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -324,7 +325,8 @@ public:
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
     /// Ontology-backed workflow description; additional JSON keys are preserved.
-    Json metadata = Json::object();
+    Json metadata = {{"name", "Untitled workflow"},
+                     {"description", "Describe the purpose of this workflow."}};
     /// Operation instances forming the backend execution graph.
     std::vector<WorkflowOperation> operations;
     /// Explicit typed-port dataflow connections.
@@ -510,6 +512,10 @@ public:
                        const std::string &operation_instance = {},
                        const Json &provided_inputs = Json(nullptr));
     void set_operation_log_callback(OperationLogCallback callback);
+    /** @brief Bind the live cancellation flag for the current workflow run. */
+    void set_cancellation_flag(std::atomic_bool *flag) noexcept;
+    /** @brief Return whether the current workflow run has been cancelled. */
+    bool cancellation_requested() const noexcept;
     void log_operation(std::string_view message) const;
     /** @brief Mark the Project closed; subsequent operations fail. */
     void close() noexcept;

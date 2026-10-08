@@ -1,9 +1,9 @@
 {
   "plugin_id": "raman",
   "name": "StreamFind Raman plugin",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "abi_version": { "major": 1, "minor": 1 },
-  "sdk_compatibility": { "minimum": "0.4.0", "maximum": "0.4.x" },
+  "sdk_compatibility": { "minimum": "0.5.0", "maximum": "0.5.x" },
   "library": {
     "windows-x86_64": "streamfind_raman.dll",
     "linux-x86_64": "libstreamfind_raman.so"

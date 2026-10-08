@@ -1,6 +1,6 @@
 <#
     test-cpp.ps1 — run the C++ backend CTest suite against the build tree in
-    tmp/build/core-default. Build first with build-cpp.ps1 (or with -Tests).
+    tmp/build/mingw-ucrt64. Build first with build-cpp.ps1 (or with -Tests).
 
     Usage:
       powershell -ExecutionPolicy Bypass -File scripts\build\cpp\test-cpp.ps1
@@ -14,7 +14,7 @@ param(
 Start-ScriptLog 'test-cpp'
 
 $ctest    = Get-CTest
-$buildDir = Join-Path $Script:TMP_BUILD 'core-default'
+$buildDir = Join-Path $Script:TMP_BUILD 'mingw-ucrt64'
 if (-not (Test-Path (Join-Path $buildDir 'build.ninja'))) {
     throw "No CMake build tree at $buildDir - run scripts\build\cpp\build-cpp.ps1 first."
 }

@@ -27,7 +27,11 @@
       "type": "object",
       "additionalProperties": true,
       "description": "User-defined workflow metadata. The workflow revision is stored in the top-level version field and is not duplicated here.",
-      "properties": {}
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 }
+      }
     },
     "operation": {
       "type": "object",

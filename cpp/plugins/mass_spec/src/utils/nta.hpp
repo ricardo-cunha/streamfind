@@ -674,7 +674,7 @@ namespace streamfind::mass_spec::nta::api
         std::string InChI;
         std::string InChIKey;
         double xLogP = 0.0;
-        std::string database_id;
+
         int db_ms2_size = 0;
         std::string db_ms2_mz;
         std::string db_ms2_intensity;
@@ -714,7 +714,7 @@ namespace streamfind::mass_spec::nta::api
         std::vector<std::string> InChI;
         std::vector<std::string> InChIKey;
         std::vector<double> xLogP;
-        std::vector<std::string> database_id;
+
         std::vector<int> db_ms2_size;
         std::vector<std::string> db_ms2_mz;
         std::vector<std::string> db_ms2_intensity;
@@ -723,6 +723,10 @@ namespace streamfind::mass_spec::nta::api
         std::vector<int> exp_ms2_size;
         std::vector<std::string> exp_ms2_mz;
         std::vector<std::string> exp_ms2_intensity;
+        std::vector<int> isotope_theoretical_peaks;
+        std::vector<int> isotope_matched_peaks;
+        std::vector<double> isotope_similarity;
+        std::vector<bool> isotope_match;
 
         int size() const { return static_cast<int>(analysis.size()); }
 
@@ -751,7 +755,6 @@ namespace streamfind::mass_spec::nta::api
             suspect_i.InChI = InChI[i];
             suspect_i.InChIKey = InChIKey[i];
             suspect_i.xLogP = xLogP[i];
-            suspect_i.database_id = database_id[i];
             suspect_i.db_ms2_size = db_ms2_size[i];
             suspect_i.db_ms2_mz = db_ms2_mz[i];
             suspect_i.db_ms2_intensity = db_ms2_intensity[i];
@@ -760,6 +763,10 @@ namespace streamfind::mass_spec::nta::api
             suspect_i.exp_ms2_size = exp_ms2_size[i];
             suspect_i.exp_ms2_mz = exp_ms2_mz[i];
             suspect_i.exp_ms2_intensity = exp_ms2_intensity[i];
+            suspect_i.isotope_theoretical_peaks = isotope_theoretical_peaks[i];
+            suspect_i.isotope_matched_peaks = isotope_matched_peaks[i];
+            suspect_i.isotope_similarity = isotope_similarity[i];
+            suspect_i.isotope_match = isotope_match[i];
             return suspect_i;
         }
 
@@ -787,7 +794,6 @@ namespace streamfind::mass_spec::nta::api
             InChI.push_back(s.InChI);
             InChIKey.push_back(s.InChIKey);
             xLogP.push_back(s.xLogP);
-            database_id.push_back(s.database_id);
             db_ms2_size.push_back(s.db_ms2_size);
             db_ms2_mz.push_back(s.db_ms2_mz);
             db_ms2_intensity.push_back(s.db_ms2_intensity);
@@ -796,6 +802,10 @@ namespace streamfind::mass_spec::nta::api
             exp_ms2_size.push_back(s.exp_ms2_size);
             exp_ms2_mz.push_back(s.exp_ms2_mz);
             exp_ms2_intensity.push_back(s.exp_ms2_intensity);
+            isotope_theoretical_peaks.push_back(s.isotope_theoretical_peaks);
+            isotope_matched_peaks.push_back(s.isotope_matched_peaks);
+            isotope_similarity.push_back(s.isotope_similarity);
+            isotope_match.push_back(s.isotope_match);
         }
     };
 
@@ -1027,7 +1037,7 @@ namespace streamfind::mass_spec::nta::api
         std::string InChI;
         std::string InChIKey;
         double xLogP = 0.0;
-        std::string database_id;
+
         int db_ms2_size = 0;
         std::string db_ms2_mz;
         std::string db_ms2_intensity;
@@ -1063,7 +1073,7 @@ namespace streamfind::mass_spec::nta::api
         std::vector<std::string> InChI;
         std::vector<std::string> InChIKey;
         std::vector<double> xLogP;
-        std::vector<std::string> database_id;
+
         std::vector<int> db_ms2_size;
         std::vector<std::string> db_ms2_mz;
         std::vector<std::string> db_ms2_intensity;
@@ -1100,7 +1110,6 @@ namespace streamfind::mass_spec::nta::api
             standard_i.InChI = InChI[i];
             standard_i.InChIKey = InChIKey[i];
             standard_i.xLogP = xLogP[i];
-            standard_i.database_id = database_id[i];
             standard_i.db_ms2_size = db_ms2_size[i];
             standard_i.db_ms2_mz = db_ms2_mz[i];
             standard_i.db_ms2_intensity = db_ms2_intensity[i];
@@ -1136,7 +1145,6 @@ namespace streamfind::mass_spec::nta::api
             InChI.push_back(is.InChI);
             InChIKey.push_back(is.InChIKey);
             xLogP.push_back(is.xLogP);
-            database_id.push_back(is.database_id);
             db_ms2_size.push_back(is.db_ms2_size);
             db_ms2_mz.push_back(is.db_ms2_mz);
             db_ms2_intensity.push_back(is.db_ms2_intensity);
@@ -1229,6 +1237,7 @@ struct SuspectQuery
     std::string name;
     bool has_mass = false;
     double mass = 0.0;
+    bool has_rt = false;
     double rt = 0.0;
     std::string formula;
     std::string SMILES;
@@ -1237,7 +1246,6 @@ struct SuspectQuery
     double score = 0.0;
     bool has_xLogP = false;
     double xLogP = 0.0;
-    std::string database_id;
     std::vector<double> fragments_mz_pos;
     std::vector<double> fragments_intensity_pos;
     std::vector<double> fragments_mz_neg;

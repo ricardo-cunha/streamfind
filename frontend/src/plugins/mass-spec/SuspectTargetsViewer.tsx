@@ -54,7 +54,7 @@ function structureCacheKey(row: SuspectRow): string {
   return `${value(row, ['SMILES', 'smiles']) ?? ''}\\u0000${value(row, ['InChI', 'inchi']) ?? ''}`;
 }
 
-function StructureImage({
+export function StructureImage({
   row,
   large,
   client,
@@ -128,9 +128,14 @@ function ms2Spec(
   const intensity = parseNumbers(value(row, [`fragments_intensity_${polarity}`]));
   const count = Math.min(mz.length, intensity.length);
   if (!count) return null;
-  const plotTheme = darkMode
-    ? { background: '#111', grid: '#39414d', text: '#f3f4f6' }
-    : { background: '#fff', grid: '#d7dce2', text: '#1f2937' };
+  void darkMode;
+  const readThemeColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const plotTheme = {
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    text: readThemeColor('--sf-text', 'currentColor'),
+  };
   const x = mz.slice(0, count);
   const y = intensity.slice(0, count);
   return {
@@ -201,9 +206,14 @@ function isotopeSpec(
 ): VisualizationSpec | null {
   const count = Math.min(mz.length, probability.length);
   if (!count) return null;
-  const plotTheme = darkMode
-    ? { background: '#111', grid: '#39414d', text: '#f3f4f6' }
-    : { background: '#fff', grid: '#d7dce2', text: '#1f2937' };
+  void darkMode;
+  const readThemeColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const plotTheme = {
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    text: readThemeColor('--sf-text', 'currentColor'),
+  };
   const x = mz.slice(0, count);
   const y = probability.slice(0, count);
   const maxProbability = Math.max(...y, 0);

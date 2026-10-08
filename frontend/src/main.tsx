@@ -19,6 +19,7 @@ async function bootstrap(): Promise<void> {
   const { default: Plotly } = await import('plotly.js-dist-min');
   registerCoreVisualizationRenderers({
     newPlot: Plotly.newPlot,
+    react: (Plotly as unknown as { react: typeof Plotly.newPlot }).react,
     purge: Plotly.purge,
     resize: Plotly.Plots.resize,
   });

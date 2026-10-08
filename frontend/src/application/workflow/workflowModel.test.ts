@@ -25,6 +25,7 @@ describe('workflow model', () => {
   it('fingerprints equivalent workflows independently of object key order', () => {
     const first: WorkflowDefinition = {
       schema_version: 1,
+      metadata: { name: 'Workflow', description: 'Workflow definition.' },
       operations: [],
       connections: [],
       workflow_id: 'workflow',
@@ -32,6 +33,7 @@ describe('workflow model', () => {
     };
     const second: WorkflowDefinition = {
       connections: [],
+      metadata: { name: 'Workflow', description: 'Workflow definition.' },
       workflow_id: 'workflow',
       operations: [],
       schema_version: 1,
@@ -60,7 +62,12 @@ describe('workflow model', () => {
       owner: 'web-app',
       purpose: 'metadata update test',
     });
-    expect(workflow.metadata).toEqual({ owner: 'web-app', purpose: 'metadata update test' });
+    expect(workflow.metadata).toEqual({
+      name: 'Untitled workflow',
+      description: 'Describe the purpose of this workflow.',
+      owner: 'web-app',
+      purpose: 'metadata update test',
+    });
     expect(workflow.version).toBe(15);
     expect(workflow.metadata).not.toHaveProperty('version');
   });
@@ -69,6 +76,7 @@ describe('workflow model', () => {
     const result = workflowToCanvas(
       {
         schema_version: 1,
+        metadata: { name: 'Workflow', description: 'Workflow definition.' },
         workflow_id: 'workflow',
         version: 1,
         operations: [{ id: 'operation-1', operation: 'sf:run', parameters: { known: 'value' } }],

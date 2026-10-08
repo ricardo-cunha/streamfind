@@ -310,7 +310,7 @@ Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const J
 std::string ProjectRuntimeManager::set_workflow_state(const std::string &session_id, const std::string &state) {
     std::lock_guard lock(mutex_);
     if (projects_.find(session_id) == projects_.end()) throw std::invalid_argument("project session not found");
-    static const std::set<std::string> valid_states{"idle", "validated", "queued", "running", "paused", "cancelling", "completed", "failed", "cancelled"};
+    static const std::set<std::string> valid_states{"idle", "validated", "queued", "running", "cancelling", "completed", "failed", "cancelled"};
     if (!valid_states.contains(state)) throw std::invalid_argument("invalid workflow state");
     workflow_states_[session_id] = state;
     return state;
@@ -338,8 +338,10 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
         project = iterator->second.get();
         workflow_workers_[session_id] = std::thread([this, session_id, project, cancellation] {
             try {
+                project->set_cancellation_flag(cancellation.get());
                 if (cancellation->load()) {
                     set_workflow_state(session_id, "cancelled");
+                    project->set_cancellation_flag(nullptr);
                     std::lock_guard lock(mutex_);
                     workflow_cancellations_.erase(session_id);
                     return;
@@ -347,16 +349,27 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
                 set_workflow_state(session_id, "running");
                 const auto result = project->run_operation_graph(*operations_);
                 const auto status = result.is_object() ? result.value("status", std::string{"failed"}) : std::string{"completed"};
+                project->set_cancellation_flag(nullptr);
                 set_workflow_state(session_id, status == "completed" ? "completed" : "failed");
                 std::lock_guard lock(mutex_);
                 workflow_cancellations_.erase(session_id);
-            } catch (const std::exception &error) {
-                try { set_workflow_state(session_id, "failed"); } catch (...) {}
+            } catch (const Error &error) {
+                project->set_cancellation_flag(nullptr);
+                try { set_workflow_state(session_id, (error.code() == ErrorCode::Cancelled || cancellation->load()) ? "cancelled" : "failed"); } catch (...) {}
                 std::lock_guard lock(mutex_);
+                workflow_cancellations_.erase(session_id);
+                workflow_progress_[session_id] = Json{{"completed", 0}, {"total", 0}, {"current_step", 0}, {"error", error.what()}};
+            } catch (const std::exception &error) {
+                project->set_cancellation_flag(nullptr);
+                try { set_workflow_state(session_id, cancellation->load() ? "cancelled" : "failed"); } catch (...) {}
+                std::lock_guard lock(mutex_);
+                workflow_cancellations_.erase(session_id);
                 workflow_progress_[session_id] = Json{{"completed", 0}, {"total", 0}, {"current_step", 0}, {"error", error.what()}};
             } catch (...) {
+                project->set_cancellation_flag(nullptr);
                 try { set_workflow_state(session_id, "failed"); } catch (...) {}
                 std::lock_guard lock(mutex_);
+                workflow_cancellations_.erase(session_id);
                 workflow_progress_[session_id] = Json{{"completed", 0}, {"total", 0}, {"current_step", 0}, {"error", "unknown workflow execution failure"}};
             }
         });

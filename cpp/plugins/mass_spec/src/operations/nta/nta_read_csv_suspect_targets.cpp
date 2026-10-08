@@ -15,16 +15,16 @@ namespace streamfind::mass_spec::nta::read_csv_suspect_targets
         const auto parsed = target_csv::read_targets_csv(path, true);
         const std::vector<std::string> columns = {
             "name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-            "database_id", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+            "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
         const std::vector<std::string> types = {
             "string", "real", "integer", "real", "real", "string", "string", "string", "string", "real",
-            "string", "array", "array", "array", "array"};
+            "array", "array", "array", "array"};
         Json rows = Json::array();
         for (const auto &source : parsed)
         {
             Json row = Json::object();
             for (const auto &column : columns) row[column] = nullptr;
-            for (const auto &key : {"name", "formula", "SMILES", "InChI", "InChIKey", "database_id"})
+            for (const auto &key : {"name", "formula", "SMILES", "InChI", "InChIKey"})
                 if (source.contains(key)) row[key] = source.at(key);
             for (const auto &key : {"mass", "polarity", "mz", "rt", "xLogP"})
                 if (source.contains(key)) row[key] = source.at(key);

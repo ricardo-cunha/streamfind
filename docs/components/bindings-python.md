@@ -1,11 +1,10 @@
 # Python package
 
-A public Python package is not currently released by streamfind.
+A public Python package is not part of the current streamfind distribution.
 
-!!! warning "Not currently available"
-    The C++ and Rust native packages do not provide a public Python import
-    package. Use their CLI or MCP interfaces instead.
+!!! note "Current interface"
+    Python applications use the native C++ CLI or MCP interface. The current
+    distribution does not provide a Python import package.
 
-This page is retained so that future Python assets have a clear place in the
-No Python API, installation command, service endpoint, or compatibility promise is
-available at this time.
+There is no Python API, Python installation command, or Python-specific service
+endpoint in the current distribution.

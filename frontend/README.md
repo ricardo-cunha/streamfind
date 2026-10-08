@@ -24,6 +24,16 @@ Build it from the worktree root when needed:
 cmake --build tmp/build/mingw-ucrt64 --target streamfind_service -j2
 ```
 
+The launcher always uses the canonical development build tree:
+
+```text
+../tmp/build/mingw-ucrt64/streamfind_service.exe
+```
+
+If a service is already healthy at `STREAMFIND_SERVICE_URL` (default `http://127.0.0.1:8790`), `npm start` reuses it and does not start another executable. It does not rebuild the C++ service automatically. After backend changes, stop the current launcher, rebuild `streamfind_service`, and run `npm start` again. There is no fallback to an older release build tree.
+
+The launcher starts `streamfind_service.exe` for the backend and starts Vite through the active Node.js executable (`node_modules/vite/bin/vite.js`) for the UI. It does not start `streamfind_mcp.exe`, `streamfind_cli.exe`, or the packaged root `streamfind.exe`. The backend process receives MSYS2 runtime paths through `PATH` so it can load the build-tree native dependencies.
+
 The development launcher waits for `/session` readiness before starting Vite and stops the service when the launcher exits. Press Ctrl+C in the launcher terminal to stop both processes.
 
 ## Start only the backend

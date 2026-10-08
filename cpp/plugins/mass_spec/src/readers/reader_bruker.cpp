@@ -302,8 +302,8 @@ std::vector<TsfFrame> read_tsf_frames(const std::string &path)
   {
     TsfFrame frame;
     frame.id = duckdb_value_int64(&result, 0, row);
-    // TSF Frames.Time is stored in minutes; the public reader contract is seconds.
-    frame.retention_time = duckdb_value_double(&result, 1, row) * 60.0;
+    // TSF Frames.Time is already stored in seconds; the public reader contract is seconds.
+    frame.retention_time = duckdb_value_double(&result, 1, row);
     frame.polarity = detail::value_string(result, 2, row);
     frame.scan_mode = static_cast<std::int32_t>(duckdb_value_int64(&result, 3, row));
     frame.msms_type = static_cast<std::int32_t>(duckdb_value_int64(&result, 4, row));

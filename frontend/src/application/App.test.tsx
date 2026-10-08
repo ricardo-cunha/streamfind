@@ -34,6 +34,11 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
             workflow_id: 'demo',
             name: 'Demo workflow',
             version: 1,
+            metadata: {
+              name: 'Demo workflow',
+              description: 'A demo workflow.',
+              use_case: 'Show the workflow demo picker.',
+            },
             operations: [],
             connections: [],
           },
@@ -67,10 +72,6 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
 
     async runWorkflow() {
       return { session_id: project.session_id, state: 'queued' as const };
-    }
-
-    async pauseWorkflow() {
-      return { session_id: project.session_id, state: 'paused' as const };
     }
 
     async cancelWorkflow() {
@@ -142,19 +143,42 @@ describe('application shell', () => {
       await Promise.resolve();
     });
     expect(screen.getByText('Demo workflow')).toBeInTheDocument();
-    expect(screen.getByText('Show the workflow demo picker.')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Show the workflow demo picker.', { selector: '.sf-demo-list-item small' }),
+    ).not.toBeInTheDocument();
     await act(async () => {
       screen.getByRole('button', { name: /Demo workflow/ }).click();
     });
-    expect((screen.getByLabelText('Workflow metadata JSON') as HTMLTextAreaElement).value).toBe('{}');
+    expect(screen.getByRole('heading', { name: 'Demo workflow' })).toBeInTheDocument();
+    expect(screen.getByText('A demo workflow.')).toBeInTheDocument();
+    expect(screen.getByText('0 operations')).toBeInTheDocument();
+    expect(screen.queryByText(/Revision/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/workflow demo/, { selector: '.sf-workflow-summary' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Show the workflow demo picker.', { selector: '.sf-project-preview-domain' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/"use_case": "Show the workflow demo picker\."/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Workflow' })).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create Workflow' }).click();
+    });
+    expect((screen.getByLabelText('Workflow metadata JSON') as HTMLTextAreaElement).value).toContain(
+      '"name": "Demo workflow"',
+    );
     await act(async () => {
       screen.getByRole('button', { name: 'Cancel' }).click();
       await Promise.resolve();
     });
+    expect(screen.getByRole('heading', { name: 'Demo workflow' })).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Close workflow demo preview' }).click();
+    });
     await act(async () => {
       screen.getByRole('button', { name: 'Create workflow' }).click();
     });
-    expect((screen.getByLabelText('Workflow metadata JSON') as HTMLTextAreaElement).value).toBe('{}');
+    expect((screen.getByLabelText('Workflow metadata JSON') as HTMLTextAreaElement).value).toContain(
+      '"name": "Untitled workflow"',
+    );
   });
 
   it('renders fixed project actions and discovered project cards', async () => {
@@ -163,6 +187,15 @@ describe('application shell', () => {
     expect(screen.getByText('Open workflow')).toBeInTheDocument();
     expect(screen.getByText('path-test')).toBeInTheDocument();
     expect(screen.getByText('tmp/projects/path-test.duckdb')).toBeInTheDocument();
+  });
+
+  it('shows the workflow state when the definition request is temporarily blocked', async () => {
+    await showWorkspace();
+
+    expect(screen.getByText('path-test')).toBeInTheDocument();
+    expect(screen.getByText('size: 0.00 Mb')).toBeInTheDocument();
+    expect(screen.queryByText(/Workflow (queued|running|failed)/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading workflow summary…')).not.toBeInTheDocument();
   });
 
   it('keeps the Project Hub visible when no project session is active', async () => {

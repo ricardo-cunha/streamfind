@@ -25,6 +25,7 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     std::filesystem::path database_path;
     std::string operation_instance;
     std::atomic_bool *cancelled{nullptr};
+    std::function<bool()> cancellation_requested;
     std::function<void(double, std::string_view)> progress;
     std::function<void(std::string_view)> report_error;
     std::vector<std::string> allowed_tables;
@@ -39,6 +40,7 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
 STREAMFIND_SDK_API streamfind_plugin_status plugin_has_table(void *, const char *, uint32_t, uint8_t *, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_clear_table(void *, const char *, uint32_t, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_read_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, uint64_t, streamfind_plugin_consume_batch_fn, void *, void *);
+STREAMFIND_SDK_API streamfind_plugin_status plugin_count_rows(void *, const char *, uint32_t, uint64_t *, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_append_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_emit_table_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_emit_result(void *, const char *, uint32_t, const char *, uint64_t, void *);

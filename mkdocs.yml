@@ -2,8 +2,7 @@ site_name: streamfind
 site_description: >-
   streamfind is a DuckDB-backed workflow framework for analytical data
   processing, centered on the active C++ plugin framework and semantic
-  catalogue, with a preserved Rust backend, native MCP servers, and language
-  bindings.
+  catalogue, native MCP servers, and language bindings.
 site_url: https://streamfind.odea-project.org/
 repo_url: https://github.com/ricardo-cunha/streamfind
 edit_uri: edit/master/docs/
@@ -59,11 +58,9 @@ nav:
   - Components:
       - Semantic catalogue: components/semantic.md
       - C++ core: components/core-cpp.md
-      - Rust backend: components/rust.md
       - R package: components/bindings-r.md
-      - Python package (not released): components/bindings-python.md
-      - Cogniflow integration (separate path): components/cf-streamfind.md
+      - Python interface: components/bindings-python.md
+      - Cogniflow integration: components/cf-streamfind.md
   - Quickstart:
       - C++ MCP server: quickstart/cpp-mcp.md
-      - Rust MCP server: quickstart/rust-mcp.md
   - Compatibility and support: testing.md

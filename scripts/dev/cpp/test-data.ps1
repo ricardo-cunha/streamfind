@@ -1,7 +1,5 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Cpp')]
-    [string]$Backend = 'Cpp',
     [string]$RelativePath = 'mass_spec\basic_tof\00_tof_s_is_pos_cent-r001.mzML',
     [switch]$SkipBuild
 )
@@ -15,26 +13,19 @@ if (-not (Test-Path $dataFile -PathType Leaf)) {
 }
 
 if (-not $SkipBuild) {
-    if ($Backend -eq 'Cpp') {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\build\cpp\build-cpp.ps1') -Clean -Config Release
-        if ($LASTEXITCODE -ne 0) { throw "C++ build failed ($LASTEXITCODE)" }
-    } else {
-        $buildExitCode = Invoke-StreamfindRustBuild $repoRoot
-        if ($buildExitCode -ne 0) { throw "Rust build failed ($buildExitCode)" }
-    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\build\cpp\build-cpp.ps1') -Clean -Config Release
+    if ($LASTEXITCODE -ne 0) { throw "C++ build failed ($LASTEXITCODE)" }
 }
 
-$executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot -Backend $Backend
-$catalogue = Join-Path $repoRoot 'tmp\build\core-default\semantic_catalogue\catalogue.duckdb'
-$database = Join-Path $repoRoot "tmp\projects\streamfind-$($Backend.ToLowerInvariant())-data-script.duckdb"
-$projectId = "data-$($Backend.ToLowerInvariant())"
+$executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
+$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$database = Join-Path $repoRoot 'tmp\projects\streamfind-cpp-data-script.duckdb'
+$projectId = 'data-cpp'
 $analysisName = [System.IO.Path]::GetFileNameWithoutExtension($dataFile)
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-if ($Backend -eq 'Cpp') {
-    $env:PATH = (Join-Path $repoRoot 'tmp\build\core-default\tests') + ';' + $env:PATH
-}
+$env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 try {
@@ -80,7 +71,7 @@ try {
         $firstHeader[$column.Name] = if ($values.Count -gt 0) { $values[0] } else { $null }
     }
     Write-Host ("First spectra header row: " + ($firstHeader | ConvertTo-Json -Compress -Depth 20))
-    Write-Host "$Backend data test passed: $RelativePath ($($headers.row_count) spectrum headers)."
+    Write-Host "C++ data test passed: $RelativePath ($($headers.row_count) spectrum headers)."
 } finally {
     Stop-StreamfindMcp $process
     Remove-Item -Force -ErrorAction SilentlyContinue $database

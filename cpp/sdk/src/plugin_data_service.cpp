@@ -269,6 +269,30 @@ streamfind_plugin_status plugin_read_batch(
         }
 }
 
+streamfind_plugin_status plugin_count_rows(
+    void *execution_context,
+    const char *table_name,
+    uint32_t table_name_size,
+    uint64_t *row_count,
+    void *) {
+    if (execution_context == nullptr || table_name == nullptr || table_name_size == 0 || row_count == nullptr)
+        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    auto *context = detail::context_from(execution_context);
+    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    try {
+        const std::string table(table_name, table_name_size);
+        if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
+        const auto value = context->tables->scalar(
+            "SELECT COUNT(*) FROM " + detail::quoted_identifier(table_name, table_name_size));
+        if (!value) return STREAMFIND_PLUGIN_ERROR;
+        *row_count = std::stoull(*value);
+        return STREAMFIND_PLUGIN_OK;
+    } catch (...) {
+        detail::report_data_service_error(*context, "unknown plugin row-count failure");
+        return STREAMFIND_PLUGIN_ERROR;
+    }
+}
+
 streamfind_plugin_status plugin_append_batch(
     void *execution_context,
     const char *table_name,
@@ -570,6 +594,7 @@ uint8_t plugin_is_cancelled(void *execution_context, void *) {
         return 1;
     }
     const auto *context = detail::context_from(execution_context);
+    if (context->cancellation_requested && context->cancellation_requested()) return 1;
     return context->cancelled != nullptr && context->cancelled->load() ? 1 : 0;
 }
 

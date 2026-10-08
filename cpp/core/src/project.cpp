@@ -1274,6 +1274,14 @@ namespace streamfind
                         "Unsupported workflow schema version: " + std::to_string(schema_version));
         if (!metadata.is_object())
             throw Error(ErrorCode::WorkflowValidation, "Workflow metadata must be an object");
+        const auto require_metadata_text = [&](const char *key) {
+            const auto value = metadata.find(key);
+            if (value == metadata.end() || !value->is_string() || value->get<std::string>().empty())
+                throw Error(ErrorCode::WorkflowValidation,
+                            std::string("Workflow metadata requires a non-empty ") + key);
+        };
+        require_metadata_text("name");
+        require_metadata_text("description");
 
         if (operations.empty() && connections.empty()) return;
 
@@ -1394,6 +1402,10 @@ namespace streamfind
             } catch (const std::exception &) {
             }
         }
+        if (!workflow.metadata.is_object()) workflow.metadata = Json::object();
+        if (!workflow.metadata.contains("name")) workflow.metadata["name"] = "Untitled workflow";
+        if (!workflow.metadata.contains("description"))
+            workflow.metadata["description"] = "Describe the purpose of this workflow.";
 
         for (const auto &item : value.value("operations", Json::array()))
             workflow.operations.push_back(WorkflowOperation::from_json(item));
@@ -1410,6 +1422,7 @@ namespace streamfind
         mutable std::mutex workflow_execution_mutex;
         bool closed{false};
         Project::OperationLogCallback operation_log_callback;
+        std::atomic_bool *cancellation_flag{nullptr};
     };
 
     class Connection
@@ -1526,6 +1539,7 @@ namespace streamfind
                                      {"version", 1},
                                      {"metadata", options.workflow_metadata},
                                      {"operations", Json::array()}, {"connections", Json::array()}};
+            initial_workflow = Workflow::from_json(initial_workflow).to_json();
             prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, ?)", "create PROJECT row", [&](Statement statement)
                      { bind_text(statement, 1, json_text(options.metadata)); bind_text(statement, 2, json_text(initial_workflow)); }, [](duckdb_result &) {});
         }
@@ -2139,9 +2153,14 @@ namespace streamfind
                 if (artifact.value("producer_instance", "") == connection.source_operation &&
                     port_matches &&
                     artifact.value("status", "") == "published") {
-                    const auto revision_text = artifact.value("workflow_revision", "");
                     int revision = -1;
-                    try { revision = std::stoi(revision_text); } catch (...) { continue; }
+                    try {
+                        const auto revision_value = artifact.find("workflow_revision");
+                        if (revision_value == artifact.end() || revision_value->is_null()) continue;
+                        if (revision_value->is_number_integer()) revision = revision_value->get<int>();
+                        else if (revision_value->is_string()) revision = std::stoi(revision_value->get<std::string>());
+                        else continue;
+                    } catch (...) { continue; }
                     if (revision > workflow.version)
                         continue;
                     const auto created_at = artifact.value("created_at", "");
@@ -2280,7 +2299,9 @@ namespace streamfind
                 Json cached_result = {{"emitted_results", Json::object()}};
                 for (const auto &artifact : cached_artifacts) {
                     Json reference = {{"artifact_id", artifact.value("artifact_id", "")}};
-                    const auto payload = artifact.value("payload", "");
+                    const auto payload_value = artifact.find("payload");
+                    const auto payload = payload_value != artifact.end() && payload_value->is_string()
+                        ? payload_value->get<std::string>() : std::string{};
                     if (!payload.empty() && payload != "null")
                         reference["payload"] = parse_json(payload, "cached artifact payload");
                     cached_result["emitted_results"][artifact.value("output_port_id", "")] = std::move(reference);
@@ -2561,6 +2582,17 @@ namespace streamfind
     {
         std::lock_guard lock(impl_->mutex);
         impl_->operation_log_callback = std::move(callback);
+    }
+
+    void Project::set_cancellation_flag(std::atomic_bool *flag) noexcept
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->cancellation_flag = flag;
+    }
+
+    bool Project::cancellation_requested() const noexcept
+    {
+        return impl_->cancellation_flag != nullptr && impl_->cancellation_flag->load();
     }
 
     void Project::log_operation(std::string_view message) const

@@ -6,5 +6,5 @@
   "activation": "optional",
   "source": "src/plugins/mass-spec/index.ts",
   "domains": ["mass_spec"],
-  "artifactContracts": ["featuresTable", "suspectTargetsTable"]
+  "artifactContracts": ["featuresTable", "suspectTargetsTable", "suspectsTable"]
 }

@@ -14,28 +14,13 @@
 - Use an explicit named internal namespace such as `streamfind::detail` for non-public helpers, or use a file-local `static` function where appropriate.
 - This rule applies to `cpp/` and project-owned C++ code. Do not rewrite third-party or vendored source under `cpp/vendor/`.
 
-## Rust Project Rules
+## Local-only Rust development
 
-- Put Rust tests in the owning crate's `tests/` directory. Do not add inline `#[cfg(test)] mod tests` modules to implementation files.
-- Keep integration tests under the relevant crate, such as `rust/crates/core/tests/` or `rust/crates/cli/tests/`.
-
-## C++/Rust Test Parity
-
-- The official C++ and Rust suites must cover the same controlled test matrix:
-  project lifecycle, shared conformance, MCP behavior, dependency smoke,
-  mass-spec interface, and NTA interface.
-- Each corresponding C++/Rust test must exercise the same behavior and use the
-  same filename stem, with only the language extension differing. For example:
-  `project_smoke.cpp` / `project_smoke.rs`, `mcp_smoke.cpp` /
-  `mcp_smoke.rs`, and `mass_spec_interface_smoke.cpp` /
-  `mass_spec_interface_smoke.rs`.
-- When adding, removing, or materially changing an official test, apply the
-  same change to its counterpart backend or document the deliberate exception
-  in the test plan before proceeding.
-- Before finalizing test changes, verify redundancy, necessity, and coverage
-  across both backends; do not add a backend-specific duplicate merely to
-  increase test counts.
-
+The `rust/` source tree and `rust_scripts/` helper tree are intentionally
+ignored and are not part of the tracked C++ project or any release artifact.
+They may be used locally for experiments, but do not add Rust source, tests,
+Cargo metadata, or Rust scripts to commits. The tracked build, test, release,
+and documentation workflows are C++-only.
 ## Legacy-Free Development
 
 During the active streamfind refactor, the codebase must move toward the target architecture without accumulating legacy scaffolding.
@@ -50,8 +35,8 @@ During the active streamfind refactor, the codebase must move toward the target 
 
 ### Deferred Boundaries
 
-- Treat `bindings/r` as a preserved, functional package during the current C++/Python and Rust implementation work. Do not refactor it, redirect it, or add R migration helpers until those implementations are complete.
-- Treat `integrations/cf-streamfind` the same way: defer public-Python integration work until the end-state C++/Python and Rust domain implementations are complete.
+- Treat `bindings/r` as a preserved, functional package during the current C++/Python implementation work. Do not refactor it, redirect it, or add R migration helpers until those implementations are complete.
+- Treat `integrations/cf-streamfind` the same way: defer public-Python integration work until the end-state C++/Python domain implementations are complete.
 
 ### When Compatibility Is Truly Required
 
@@ -122,8 +107,8 @@ anything that must be committed.
   `tmp/build/`.
 - Housekeeping before committing on `dev_refactoring`:
   `scripts\build\clean-build-temp.cmd` removes build/test artifacts and disposable
-  scratch (`tmp/build/`, `tmp/projects/`, `tmp/scratch/`, plus the legacy
-  `cpp/build/`, `rust/target/`, `log/`, `cache/` dirs). It **preserves**
+  `tmp/projects/`, `tmp/scratch/`, plus the legacy
+  `cpp/build/`, `log/`, `cache/` dirs). It **preserves**
   `tmp/logs/` by default so diagnostics survive a routine clean. Run
   `scripts\build\clean-build-temp.cmd --all` only to wipe legacy temporary
   scripts/logs; tracked scripts under `scripts/` are never removed.
@@ -137,10 +122,10 @@ location.
 
 When a version is ready:
 
-1. Update and commit the C++/Rust version metadata and any release notes.
-2. Run `scripts/release/release.ps1 -Version <version>` (add `-Linux` when Linux
+1. Update the C++ `VERSION` file and any release notes.
+2. Run `scripts/release/cpp/release-cpp.ps1 -Version <version>` (add `-Linux` when Linux
    packages are required). This builds, tests, packages, and hashes the
-   archives under `tmp/release-output/`.
+   archives under `tmp/release-output`.
 3. Create and push the annotated tag to the official repository:
 
    ```powershell
@@ -226,7 +211,7 @@ unrelated formatting-only rewrite would obscure the intended change.
 After ontology edits, run from the repository root:
 
 ```powershell
-cmake --build tmp\build\core-default --target streamfind_aggregate_catalogue
+cmake --build tmp\build\mingw-ucrt64 --target streamfind_aggregate_catalogue
 ```
 
 The native SDK catalogue generator is the authoritative projection path. Python/Jena

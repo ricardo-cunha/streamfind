@@ -162,6 +162,7 @@ Json invoke_dynamic(
         context.database_path = project.get_database_path();
         context.operation_instance = workflow_instance;
         context.cancelled = &cancelled;
+        context.cancellation_requested = [&project] { return project.cancellation_requested(); };
         context.progress = [&project](double fraction, std::string_view message) {
             if (message.empty()) return;
             const auto percent = static_cast<int>(std::round(std::clamp(fraction, 0.0, 1.0) * 100.0));
@@ -288,9 +289,9 @@ Json invoke_dynamic(
         const auto status = plugin.plugin.invoke(
             &context, text.data(), static_cast<uint32_t>(text.size()), &buffer, plugin.plugin.user_data);
         if (status != STREAMFIND_PLUGIN_OK) {
-            throw Error(ErrorCode::MethodExecution,
-                            "dynamic plugin invocation failed with status " + std::to_string(status) +
-                            (plugin.runtime_diagnostics.empty() ? std::string{} : ": " + plugin.runtime_diagnostics));
+            throw Error(status == STREAMFIND_PLUGIN_CANCELLED ? ErrorCode::Cancelled : ErrorCode::MethodExecution,
+                        "dynamic plugin invocation failed with status " + std::to_string(status) +
+                        (plugin.runtime_diagnostics.empty() ? std::string{} : ": " + plugin.runtime_diagnostics));
         }
         if ((buffer.data == nullptr) != (buffer.size == 0)) {
             plugin.plugin.release_buffer(&buffer, plugin.plugin.user_data);

@@ -1,7 +1,5 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Cpp')]
-    [string]$Backend = 'Cpp',
     [switch]$RunPipeline,
     [switch]$SkipBuild,
     [ValidateRange(0, 1000)]
@@ -106,36 +104,29 @@ $blankNames = @($analysisNames | ForEach-Object {
 })
 
 if (-not $SkipBuild) {
-    if ($Backend -eq 'Cpp') {
-        if ($isWindowsPlatform) {
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\build\cpp\build-cpp.ps1') -Clean -Config Release
-        } else {
-            & bash (Join-Path $repoRoot 'scripts/build/cpp/build-cpp-linux.sh')
-        }
-        if ($LASTEXITCODE -ne 0) { throw "C++ build failed ($LASTEXITCODE)" }
+    if ($isWindowsPlatform) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\build\cpp\build-cpp.ps1') -Clean -Config Release
     } else {
-        $buildExitCode = Invoke-StreamfindRustBuild $repoRoot
-        if ($buildExitCode -ne 0) { throw "Rust build failed ($buildExitCode)" }
+        & bash (Join-Path $repoRoot 'scripts/build/cpp/build-cpp-linux.sh')
     }
+    if ($LASTEXITCODE -ne 0) { throw "C++ build failed ($LASTEXITCODE)" }
 }
 
 $executable = if ($Executable) { (Resolve-Path $Executable).Path } else {
-    Get-BackendMcpExecutable -RepositoryRoot $repoRoot -Backend $Backend
+    Get-BackendMcpExecutable -RepositoryRoot $repoRoot
 }
 $dynamicRuntime = Test-Path (Join-Path (Split-Path $executable) 'streamfind.json')
 $catalogue = if ($Catalogue) { (Resolve-Path $Catalogue).Path } else {
-    $buildDir = if ($isWindowsPlatform) { 'tmp\build\core-default' } else { 'tmp/build/linux-cpp' }
+    $buildDir = if ($isWindowsPlatform) { 'tmp\build\mingw-ucrt64' } else { 'tmp/build/linux-cpp' }
     Join-Path $repoRoot (Join-Path $buildDir 'semantic_catalogue/catalogue.duckdb')
 }
-$database = Join-Path $repoRoot (Join-Path (Join-Path 'tmp' 'projects') "streamfind-$($Backend.ToLowerInvariant())-nta-script.duckdb")
-$projectId = "nta-$($Backend.ToLowerInvariant())"
+$database = Join-Path $repoRoot (Join-Path (Join-Path 'tmp' 'projects') 'streamfind-cpp-nta-script.duckdb')
+$projectId = 'nta-cpp'
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-if ($Backend -eq 'Cpp') {
-    $testDir = if ($isWindowsPlatform) { 'tmp/build/core-default/tests' } else { 'tmp/build/linux-cpp/tests' }
-    $env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
-}
+$testDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64/tests' } else { 'tmp/build/linux-cpp/tests' }
+$env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 $baseArguments = @{
@@ -239,7 +230,7 @@ function Assert-NtaWorkflowResults {
 
 try {
     Initialize-Mcp $process | Out-Null
-    Write-Host ("NTA workflow backend={0}; analyses={1}; internal_standards={2}; suspects={3}" -f $Backend, $analysisNames.Count, $internalTargets.Count, $suspectTargets.Count)
+    Write-Host ("NTA workflow backend=C++ analyses={0}; internal_standards={1}; suspects={2}" -f $analysisNames.Count, $internalTargets.Count, $suspectTargets.Count)
 
     Invoke-McpTool $process 2 'create' @{
         database_path = $database
@@ -357,9 +348,9 @@ try {
             $id++
         }
         if ($StopAfter) { Write-Host "Stopped after $StopAfter." }
-        else { Write-Host "$Backend full NTA workflow completed." }
+        else { Write-Host 'C++ full NTA workflow completed.' }
     } else {
-        Write-Host "$Backend NTA setup passed; use -RunPipeline to execute all 12 methods."
+        Write-Host 'C++ NTA setup passed; use -RunPipeline to execute all 12 methods.'
     }
 } finally {
     Stop-StreamfindMcp $process

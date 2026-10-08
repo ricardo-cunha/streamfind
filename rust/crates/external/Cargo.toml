@@ -1,7 +1,0 @@
-[package]
-name = "streamfind-rust-external"
-version.workspace = true
-edition = "2021"
-
-[lib]
-name = "streamfind_external"

@@ -103,6 +103,13 @@ typedef streamfind_plugin_status (*streamfind_plugin_read_batch_fn)(
     void *consumer_context,
     void *user_data);
 
+typedef streamfind_plugin_status (*streamfind_plugin_count_rows_fn)(
+    void *execution_context,
+    const char *table_name,
+    uint32_t table_name_size,
+    uint64_t *row_count,
+    void *user_data);
+
 typedef streamfind_plugin_status (*streamfind_plugin_append_batch_fn)(
     void *execution_context,
     const char *table_name,
@@ -224,6 +231,7 @@ struct streamfind_plugin_host_api {
     void *user_data;
     streamfind_plugin_emit_table_batch_fn emit_table_batch;
     streamfind_plugin_emit_result_fn emit_result;
+    streamfind_plugin_count_rows_fn count_rows;
 };
 
 struct streamfind_plugin_api {

@@ -1,9 +1,0 @@
-[package]
-name = "streamfind-rust-cli"
-version.workspace = true
-edition = "2021"
-
-[dependencies]
-streamfind-rust-core = { path = "../core" }
-streamfind-rust-external = { path = "../external" }
-serde_json = "1"

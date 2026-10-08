@@ -5,6 +5,16 @@ function(streamfind_add_openbabel vendor_root)
     set(_ob_root "${_root}/openbabel-3-2-0")
     set(_inchi_root "${_root}/inchi-iupac-1.07.5")
     set(_inchi_base "${_root}/INCHI_BASE")
+    foreach(_required_dir IN ITEMS
+        "${_ob_root}/include"
+        "${_ob_root}/src"
+        "${_ob_root}/data"
+        "${_inchi_root}/src"
+        "${_inchi_base}/src")
+        if(NOT IS_DIRECTORY "${_required_dir}")
+            message(FATAL_ERROR "Required Open Babel dependency directory is missing: ${_required_dir}")
+        endif()
+    endforeach()
     set(STREAMFIND_OPENBABEL_DATA_DIR "${_ob_root}/data")
     file(GLOB _ob_sources CONFIGURE_DEPENDS
         "${_ob_root}/src/*.cpp"
@@ -24,8 +34,11 @@ function(streamfind_add_openbabel vendor_root)
         "${_ob_root}/src/formats/inchiformat.cpp"
     )
     list(FILTER _ob_sources EXCLUDE REGEX
-        "/(RDKitConv|conformersearch|confsearch|distgeom|dlhandler_unix|doxygen_pages)\\.cpp$"
-    )
+        "/(RDKitConv|conformersearch|confsearch|distgeom|dlhandler_unix|doxygen_pages)\\.cpp$")
+    list(LENGTH _ob_sources _ob_source_count)
+    if(_ob_source_count LESS 10)
+        message(FATAL_ERROR "Open Babel source set is incomplete under ${_ob_root}/src")
+    endif()
     if(WIN32)
         set(STREAMFIND_OB_HAVE_CONIO_H 1)
         set(STREAMFIND_OB_MODULE_EXTENSION ".obf")
@@ -48,6 +61,10 @@ function(streamfind_add_openbabel vendor_root)
         "${_inchi_root}/src/inchi_dll_b.c"
         "${_inchi_root}/src/inchi_dll_main.c"
     )
+    list(LENGTH _inchi_sources _inchi_source_count)
+    if(_inchi_source_count LESS 4)
+        message(FATAL_ERROR "InChI source set is incomplete under ${_inchi_root}")
+    endif()
 
     set(_includes
         "${STREAMFIND_OPENBABEL_CONFIG_DIR}"

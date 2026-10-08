@@ -1,10 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../rust/Cargo.toml" STREAMFIND_CARGO_VERSION_LINE
-    REGEX "^version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"$" LIMIT_COUNT 1)
-string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" STREAMFIND_PROJECT_VERSION
-    "${STREAMFIND_CARGO_VERSION_LINE}")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" STREAMFIND_PROJECT_VERSION)
+string(STRIP "${STREAMFIND_PROJECT_VERSION}" STREAMFIND_PROJECT_VERSION)
 if(NOT STREAMFIND_PROJECT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
-    message(FATAL_ERROR "rust/Cargo.toml workspace package version is missing or invalid")
+    message(FATAL_ERROR "../VERSION is missing or invalid")
 endif()
 project(streamfind_cpp VERSION ${STREAMFIND_PROJECT_VERSION} LANGUAGES C CXX)
 if(WIN32)
@@ -15,6 +13,8 @@ include(CMakePackageConfigHelpers)
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
 option(STREAMFIND_BUILD_SHARED "Build shared native libraries" OFF)
 option(STREAMFIND_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
+option(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT
+    "Install SDK headers, libraries, tools, and CMake package files" OFF)
 set(STREAMFIND_APP_DIR "" CACHE PATH "Built frontend directory to package")
 set(STREAMFIND_MINGW_RUNTIME_DIR "" CACHE PATH
     "MinGW runtime directory to package for Windows releases")
@@ -78,6 +78,28 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${STREAMFIND_OPENBABEL_DATA_DIR}"
             "${_streamfind_openbabel_dev_dir}/data")
+    if(MINGW)
+        if(NOT STREAMFIND_MINGW_RUNTIME_DIR)
+            get_filename_component(STREAMFIND_MINGW_RUNTIME_DIR
+                "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        endif()
+        set(_streamfind_mingw_dev_dir "${CMAKE_BINARY_DIR}/core/vendors/mingw")
+        foreach(_mingw_runtime IN ITEMS
+            libgcc_s_seh-1.dll
+            libstdc++-6.dll
+            libwinpthread-1.dll)
+            if(NOT EXISTS "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}")
+                message(FATAL_ERROR
+                    "Required MinGW runtime is missing: ${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}")
+            endif()
+            add_custom_command(TARGET streamfind_openbabel_runtime POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_streamfind_mingw_dev_dir}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "${_streamfind_mingw_dev_dir}")
+        endforeach()
+    endif()
 endif()
 if(MSVC)
     target_link_options(streamfind_openbabel_runtime PRIVATE
@@ -94,11 +116,16 @@ endif()
 # import library instead of the build-time target name.
 add_library(streamfind_duckdb_runtime INTERFACE)
 if(STREAMFIND_DUCKDB_STATIC_LIBRARIES)
+    if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+        set(STREAMFIND_DUCKDB_INSTALL_ROOT "$<INSTALL_PREFIX>/sdk/lib")
+    else()
+        set(STREAMFIND_DUCKDB_INSTALL_ROOT "$<INSTALL_PREFIX>/core/vendors/duckdb")
+    endif()
     set(STREAMFIND_DUCKDB_INSTALL_LINKS
-        "$<INSTALL_PREFIX>/sdk/lib/${CMAKE_STATIC_LIBRARY_PREFIX}duckdb_static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        "${STREAMFIND_DUCKDB_INSTALL_ROOT}/${CMAKE_STATIC_LIBRARY_PREFIX}duckdb_static${CMAKE_STATIC_LIBRARY_SUFFIX}")
     foreach(_duckdb_archive IN LISTS STREAMFIND_DUCKDB_STATIC_LIBRARIES)
         get_filename_component(_duckdb_archive_name "${_duckdb_archive}" NAME)
-        list(APPEND STREAMFIND_DUCKDB_INSTALL_LINKS "$<INSTALL_PREFIX>/sdk/lib/${_duckdb_archive_name}")
+        list(APPEND STREAMFIND_DUCKDB_INSTALL_LINKS "${STREAMFIND_DUCKDB_INSTALL_ROOT}/${_duckdb_archive_name}")
     endforeach()
     target_link_libraries(streamfind_duckdb_runtime INTERFACE
         $<BUILD_INTERFACE:streamfind::duckdb>
@@ -109,13 +136,18 @@ if(STREAMFIND_DUCKDB_STATIC_LIBRARIES)
         $<INSTALL_INTERFACE:${CMAKE_DL_LIBS}>
     )
 else()
+    if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+        set(STREAMFIND_DUCKDB_INSTALL_LINK "$<INSTALL_PREFIX>/sdk/lib/duckdb.lib")
+    else()
+        set(STREAMFIND_DUCKDB_INSTALL_LINK "$<INSTALL_PREFIX>/core/vendors/duckdb/duckdb.lib")
+    endif()
     target_link_libraries(streamfind_duckdb_runtime INTERFACE
         $<BUILD_INTERFACE:streamfind::duckdb>
         $<INSTALL_INTERFACE:$<IF:$<PLATFORM_ID:Windows>,
-            $<INSTALL_PREFIX>/lib/duckdb.lib,
+            ${STREAMFIND_DUCKDB_INSTALL_LINK},
             $<IF:$<PLATFORM_ID:Darwin>,
-                $<INSTALL_PREFIX>/lib/libduckdb.dylib,
-                $<INSTALL_PREFIX>/lib/libduckdb.so
+                $<INSTALL_PREFIX>/core/vendors/duckdb/libduckdb.dylib,
+                $<INSTALL_PREFIX>/core/vendors/duckdb/libduckdb.so
             >
         >>
     )
@@ -203,51 +235,50 @@ if(STREAMFIND_BUILD_SHARED)
     target_compile_definitions(streamfind_cpp_core INTERFACE STREAMFIND_CORE_USING_SHARED)
 endif()
 
-install(
-    TARGETS streamfind_cpp_core
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION sdk/lib
-    LIBRARY DESTINATION sdk/lib
-    RUNTIME DESTINATION bin
-)
-
-install(
-    TARGETS streamfind_zlib
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION sdk/lib
-    LIBRARY DESTINATION sdk/lib
-    RUNTIME DESTINATION bin
-)
-
-install(
-    TARGETS streamfind_inchi streamfind_openbabel
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION sdk/lib
-    LIBRARY DESTINATION sdk/lib
-    RUNTIME DESTINATION bin
-)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(
+        TARGETS streamfind_cpp_core
+        EXPORT streamfind-cpp-targets
+        ARCHIVE DESTINATION sdk/lib
+        LIBRARY DESTINATION sdk/lib
+        RUNTIME DESTINATION sdk/bin
+    )
+    install(
+        TARGETS streamfind_zlib
+        EXPORT streamfind-cpp-targets
+        ARCHIVE DESTINATION sdk/lib
+        LIBRARY DESTINATION sdk/lib
+        RUNTIME DESTINATION sdk/bin
+    )
+    install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/zlib/zlib-develop/zlib.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/zlib/zlib-develop/zconf.h"
+        DESTINATION sdk/include)
+    install(
+        TARGETS streamfind_inchi streamfind_openbabel
+        EXPORT streamfind-cpp-targets
+        ARCHIVE DESTINATION sdk/lib
+        LIBRARY DESTINATION sdk/lib
+        RUNTIME DESTINATION sdk/bin
+    )
+endif()
 install(TARGETS streamfind_openbabel_runtime
     EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION core/vendors/openbabel
-    LIBRARY DESTINATION core/vendors/openbabel
-    ARCHIVE DESTINATION sdk/lib)
+    LIBRARY DESTINATION core/vendors/openbabel)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_openbabel_runtime ARCHIVE DESTINATION sdk/lib)
+endif()
 install(DIRECTORY "${STREAMFIND_OPENBABEL_DATA_DIR}/"
     DESTINATION core/vendors/openbabel/data)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/openbabel/openbabel-3-2-0/COPYING"
     DESTINATION licenses RENAME openbabel-COPYING.txt)
 
-install(
-    DIRECTORY core/include/
-    DESTINATION sdk/include
-)
-install(
-    DIRECTORY sdk/include/
-    DESTINATION sdk/include
-)
-install(
-    FILES vendor/nlohmann/json.hpp
-    DESTINATION sdk/include/nlohmann
-)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(DIRECTORY core/include/ DESTINATION sdk/include)
+    install(DIRECTORY sdk/include/ DESTINATION sdk/include)
+    install(FILES vendor/nlohmann/json.hpp DESTINATION sdk/include/nlohmann)
+endif()
 
 install(
     FILES
@@ -258,8 +289,9 @@ install(
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/duckdb/LICENSE"
     DESTINATION licenses RENAME duckdb-LICENSE.txt)
 
-install(TARGETS streamfind_duckdb_runtime
-    EXPORT streamfind-cpp-targets)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_duckdb_runtime EXPORT streamfind-cpp-targets)
+endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/zlib/zlib-develop/LICENSE"
     DESTINATION licenses RENAME zlib-LICENSE.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/pugixml-1.14/LICENSE"
@@ -271,39 +303,36 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/nlohmann/LICENSE"
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/json-schema-validator/LICENSE"
     DESTINATION licenses RENAME json-schema-validator-LICENSE.txt)
 
-install(
-    EXPORT streamfind-cpp-targets
-    FILE streamfind-cpp-targets.cmake
-    NAMESPACE streamfind::
-    DESTINATION sdk/cmake/streamfind
-)
-
-configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfindConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfig.cmake"
-    INSTALL_DESTINATION sdk/cmake/streamfind
-)
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfigVersion.cmake"
-    VERSION "${PROJECT_VERSION}"
-    COMPATIBILITY SameMajorVersion
-)
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfigVersion.cmake"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sdk/cmake/streamfindAddPlugin.cmake"
-    DESTINATION sdk/cmake/streamfind
-)
-
-if(STREAMFIND_DUCKDB_RUNTIME AND EXISTS "${STREAMFIND_DUCKDB_RUNTIME}")
-    if(WIN32)
-        install(FILES "${STREAMFIND_DUCKDB_RUNTIME}" DESTINATION core/vendors/duckdb)
-    else()
-        install(FILES "${STREAMFIND_DUCKDB_RUNTIME}" DESTINATION sdk/lib)
-    endif()
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(
+        EXPORT streamfind-cpp-targets
+        FILE streamfind-cpp-targets.cmake
+        NAMESPACE streamfind::
+        DESTINATION sdk/cmake/streamfind
+    )
+    configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfindConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfig.cmake"
+        INSTALL_DESTINATION sdk/cmake/streamfind
+    )
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfigVersion.cmake"
+        VERSION "${PROJECT_VERSION}"
+        COMPATIBILITY SameMajorVersion
+    )
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfigVersion.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/sdk/cmake/streamfindAddPlugin.cmake"
+        DESTINATION sdk/cmake/streamfind
+    )
 endif()
 
-if(STREAMFIND_DUCKDB_STATIC_LIBRARIES)
+if(STREAMFIND_DUCKDB_RUNTIME AND EXISTS "${STREAMFIND_DUCKDB_RUNTIME}")
+    install(FILES "${STREAMFIND_DUCKDB_RUNTIME}" DESTINATION core/vendors/duckdb)
+endif()
+
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT AND STREAMFIND_DUCKDB_STATIC_LIBRARIES)
     install(FILES ${STREAMFIND_DUCKDB_STATIC_LIBRARIES} DESTINATION sdk/lib)
     install(DIRECTORY "${STREAMFIND_DUCKDB_INCLUDE_DIR}/" DESTINATION sdk/include)
 endif()
@@ -327,7 +356,7 @@ if(MINGW AND WIN32)
     endforeach()
 endif()
 
-if(STREAMFIND_DUCKDB_IMPORT_LIBRARY AND EXISTS "${STREAMFIND_DUCKDB_IMPORT_LIBRARY}")
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT AND STREAMFIND_DUCKDB_IMPORT_LIBRARY AND EXISTS "${STREAMFIND_DUCKDB_IMPORT_LIBRARY}")
     install(FILES "${STREAMFIND_DUCKDB_IMPORT_LIBRARY}" DESTINATION sdk/lib)
 endif()
 
@@ -358,15 +387,6 @@ if(STREAMFIND_BUILD_TESTS)
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
     add_dependencies(streamfind_project_isolation_contract streamfind_core_catalogue)
 endif()
-
-function(streamfind_static_mingw_executable target)
-    if(MINGW)
-        target_link_options(${target} PRIVATE
-            -static-libgcc
-            -static-libstdc++
-            -static)
-    endif()
-endfunction()
 
 add_executable(streamfind_mcp core/src/streamfind-mcp.cpp)
 add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sdk
@@ -437,6 +457,60 @@ streamfind_static_mingw_executable(streamfind_mcp)
 streamfind_static_mingw_executable(streamfind_cli)
 streamfind_static_mingw_executable(streamfind_service)
 
+if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
+    set(_streamfind_duckdb_build_dir "${CMAKE_BINARY_DIR}/core/vendors/duckdb")
+    file(MAKE_DIRECTORY "${_streamfind_duckdb_build_dir}")
+    foreach(_streamfind_host_target IN ITEMS
+        streamfind_mcp
+        streamfind_cli
+        streamfind_service)
+        add_custom_command(TARGET ${_streamfind_host_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${_streamfind_duckdb_build_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${STREAMFIND_DUCKDB_RUNTIME}"
+                "${_streamfind_duckdb_build_dir}"
+            # Keep the development executable directly runnable as well as
+            # launcher-runnable. Windows resolves process-image imports before
+            # application code can add the centralized vendor directory.
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${STREAMFIND_DUCKDB_RUNTIME}"
+                "$<TARGET_FILE_DIR:${_streamfind_host_target}>")
+    endforeach()
+    if(MINGW)
+        if(NOT STREAMFIND_MINGW_RUNTIME_DIR)
+            get_filename_component(STREAMFIND_MINGW_RUNTIME_DIR
+                "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        endif()
+        foreach(_mingw_runtime IN ITEMS
+            libgcc_s_seh-1.dll
+            libstdc++-6.dll
+            libwinpthread-1.dll)
+            if(NOT EXISTS "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}")
+                message(FATAL_ERROR
+                    "Required MinGW runtime is missing: ${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}")
+            endif()
+            add_custom_command(TARGET streamfind_mcp POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${CMAKE_BINARY_DIR}/core/vendors/mingw"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "${CMAKE_BINARY_DIR}/core/vendors/mingw"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "$<TARGET_FILE_DIR:streamfind_mcp>")
+            add_custom_command(TARGET streamfind_cli POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "$<TARGET_FILE_DIR:streamfind_cli>")
+            add_custom_command(TARGET streamfind_service POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "$<TARGET_FILE_DIR:streamfind_service>")
+        endforeach()
+    endif()
+endif()
+
 if(MSVC)
     foreach(_target IN ITEMS
         streamfind_mcp
@@ -456,17 +530,14 @@ endif()
 # through the core runtime path setup before delayed imports or plugins load.
 install(
     TARGETS streamfind_mcp streamfind_cli streamfind_service
-    EXPORT streamfind-cpp-targets
     RUNTIME DESTINATION bin
 )
 if(WIN32)
     install(TARGETS streamfind_service_host
-        EXPORT streamfind-cpp-targets
         RUNTIME DESTINATION .)
     install(TARGETS streamfind_mcp_launcher RUNTIME DESTINATION bin)
 else()
     install(TARGETS streamfind_service_host
-        EXPORT streamfind-cpp-targets
         RUNTIME DESTINATION .)
 endif()
 if(STREAMFIND_APP_DIR AND EXISTS "${STREAMFIND_APP_DIR}")
@@ -476,12 +547,15 @@ endif()
 # cached defaults CPack::Configure writes into CPackConfig.cmake.
 set(CPACK_PACKAGE_NAME "streamfind-core-cpp")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    set(CPACK_PACKAGE_NAME "streamfind-plugin-dev")
+endif()
 if(WIN32)
     set(CPACK_GENERATOR "ZIP")
-    set(CPACK_PACKAGE_FILE_NAME "streamfind-core-cpp-${PROJECT_VERSION}-Windows-x86_64")
+    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-Windows-x86_64")
 else()
     set(CPACK_GENERATOR "TGZ")
-    set(CPACK_PACKAGE_FILE_NAME "streamfind-core-cpp-${PROJECT_VERSION}-Linux-${CMAKE_SYSTEM_PROCESSOR}")
+    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-Linux-${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 include(CPack)
 # Dev-tree catalogue: keep catalogue.duckdb next to the built MCP server so the
@@ -495,9 +569,6 @@ if(STREAMFIND_DUCKDB_RUNTIME)
     add_custom_command(TARGET streamfind_service POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
-            "$<TARGET_FILE_DIR:streamfind_service>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${STREAMFIND_DUCKDB_RUNTIME}"
             "$<TARGET_FILE_DIR:streamfind_service>"
         COMMENT "Staging streamfind_service runtime dependencies"
     )

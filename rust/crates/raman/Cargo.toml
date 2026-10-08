@@ -1,7 +1,0 @@
-[package]
-name = "streamfind-rust-raman"
-version.workspace = true
-edition = "2021"
-
-[dependencies]
-streamfind-rust-core = { path = "../core" }

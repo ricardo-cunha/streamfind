@@ -61,8 +61,6 @@ Domains are assigned when a project is created and are immutable afterward.
 ## MCP
 
 The [C++ MCP quickstart](../quickstart/cpp-mcp.md) documents the stdio server
-and the persisted operation-graph workflow.
-
-The Rust MCP server is a stale development backend and is not the current
-runtime contract. The current React development/preview frontend consumes this
-C++ public boundary and does not access DuckDB or plugin internals directly.
+and the persisted operation-graph workflow. The current React development/
+preview frontend consumes this C++ public boundary and does not access DuckDB or
+plugin internals directly.

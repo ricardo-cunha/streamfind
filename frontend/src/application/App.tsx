@@ -35,13 +35,27 @@ import {
 
 type ThemeMode = 'light' | 'dark';
 type WorkflowSummary = {
-  operationCount: number;
-  revision: number;
+  operationCount?: number;
+  revision?: number;
   state: WorkflowState;
   artifactCount?: number;
 };
-const defaultWorkflowMetadata: Record<string, never> = {};
+const defaultWorkflowMetadata = {
+  name: 'Untitled workflow',
+  description: 'Describe the purpose of this workflow.',
+} satisfies Record<string, string>;
 const defaultWorkflowMetadataText = JSON.stringify(defaultWorkflowMetadata, null, 2);
+
+function requireWorkflowMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Workflow metadata must be a JSON object.');
+  const metadata = value as Record<string, unknown>;
+  if (typeof metadata.name !== 'string' || !metadata.name.trim())
+    throw new Error('Workflow metadata requires a non-empty name.');
+  if (typeof metadata.description !== 'string' || !metadata.description.trim())
+    throw new Error('Workflow metadata requires a non-empty description.');
+  return metadata;
+}
 type OntologyEntry = {
   id: string;
   label: string;
@@ -685,10 +699,23 @@ function ProjectCard({
         <div className="sf-workflow-summary">
           {summary ? (
             <>
-              <span>
-                {summary.operationCount} operations · Revision {summary.revision}
-              </span>
-              <span>Run: {summary.state}</span>
+              {summary.operationCount !== undefined && summary.revision !== undefined ? (
+                <span>
+                  {summary.operationCount} operations · Revision {summary.revision}
+                </span>
+              ) : null}
+              {summary.state === 'running' || summary.state === 'queued' || summary.state === 'cancelling' ? (
+                <span className={`sf-workflow-status sf-workflow-status--${summary.state}`}>
+                  <i aria-hidden="true" />
+                  Workflow {summary.state}
+                </span>
+              ) : null}
+              {summary.state === 'failed' ? (
+                <span className="sf-workflow-status sf-workflow-status--failed">
+                  <i aria-hidden="true" />
+                  Workflow failed
+                </span>
+              ) : null}
               {summary.artifactCount !== undefined ? <span>Artifacts: {summary.artifactCount} published</span> : null}
             </>
           ) : (
@@ -908,6 +935,59 @@ function ProjectPreview({
     </div>
   );
 }
+
+function WorkflowDemoPreview({
+  demo,
+  onCreate,
+  onClose,
+}: {
+  demo: WorkflowDemoMetadata;
+  onCreate: () => void;
+  onClose: () => void;
+}) {
+  const metadata = demo.workflow.metadata || {};
+  const description = demo.description || String(metadata.description || 'Workflow demonstration');
+  return (
+    <div
+      className="sf-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <aside className="sf-dialog sf-project-preview sf-workflow-demo-preview">
+        <div className="sf-dialog-heading">
+          <div>
+            <h2>{demo.name}</h2>
+            <p>{description}</p>
+          </div>
+          <button type="button" className="sf-icon-button" onClick={onClose} aria-label="Close workflow demo preview">
+            <i className="fa-solid fa-xmark" />
+          </button>
+        </div>
+        <div className="sf-project-overview-grid">
+          <section className="sf-project-overview-details">
+            <div className="sf-workflow-summary">
+              <span>{demo.workflow.operations.length} operations</span>
+            </div>
+            <h3>Workflow metadata</h3>
+            <pre className="sf-workflow-metadata-json">{JSON.stringify(metadata, null, 2)}</pre>
+          </section>
+          <section className="sf-project-overview-graph">
+            <WorkflowOverviewGraph workflow={demo.workflow} />
+          </section>
+        </div>
+        <div className="sf-dialog-actions">
+          <button type="button" className="sf-button secondary" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className="sf-button" onClick={onCreate}>
+            Create Workflow
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
 function ProjectWorkspace({
   project,
   capabilities,
@@ -967,11 +1047,13 @@ function ProjectHub({
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (demosOpen) setDemosOpen(false);
+      else if (mode) setMode(null);
+      else if (selectedDemo) setSelectedDemo(null);
       else setMode(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [demosOpen]);
+  }, [demosOpen, mode, selectedDemo]);
 
   useEffect(() => {
     let active = true;
@@ -992,33 +1074,77 @@ function ProjectHub({
   useEffect(() => {
     let active = true;
     if (!client) return undefined;
-    const loadSummaries = Promise.all(
-      projects.map(async (project) => {
-        try {
-          const [workflow, state] = await Promise.all([
-            client.workflowDefinition(project.session_id),
+
+    const loadSummaries = async () => {
+      const entries = await Promise.all(
+        projects.map(async (project) => {
+          const [workflowResult, stateResult] = await Promise.allSettled([
+            typeof client.workflowDefinition === 'function'
+              ? client.workflowDefinition(project.session_id)
+              : Promise.reject(new Error('workflow definition unavailable')),
             client.workflowState(project.session_id),
           ]);
+          if (stateResult.status !== 'fulfilled') return null;
+          const workflow = workflowResult.status === 'fulfilled' ? workflowResult.value.workflow : undefined;
           return [
             project.session_id,
             {
-              operationCount: workflow.workflow.operations.length,
-              revision: workflow.workflow.version,
-              state: state.state,
+              ...(workflow
+                ? {
+                    operationCount: workflow.operations.length,
+                    revision: workflow.version,
+                  }
+                : {}),
+              state: stateResult.value.state,
             },
           ] as const;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    loadSummaries.then((entries) => {
-      if (active) {
+        }),
+      );
+      if (active)
         setSummaries(
           Object.fromEntries(entries.filter((entry): entry is readonly [string, WorkflowSummary] => entry !== null)),
         );
-      }
-    });
+    };
+    void loadSummaries();
+
+    const stateTimer = window.setInterval(() => {
+      void Promise.all(
+        projects.map(async (project) => {
+          try {
+            const state = await client.workflowState(project.session_id);
+            let workflow: Awaited<ReturnType<NonNullable<typeof client.workflowDefinition>>>['workflow'] | undefined;
+            if (
+              ['completed', 'failed', 'cancelled'].includes(state.state) &&
+              typeof client.workflowDefinition === 'function'
+            ) {
+              try {
+                workflow = (await client.workflowDefinition(project.session_id)).workflow;
+              } catch {
+                workflow = undefined;
+              }
+            }
+            return [project.session_id, state.state, workflow] as const;
+          } catch {
+            return null;
+          }
+        }),
+      ).then((entries) => {
+        if (!active) return;
+        setSummaries((current) => {
+          const next = { ...current };
+          for (const entry of entries) {
+            if (!entry || !next[entry[0]]) continue;
+            next[entry[0]] = {
+              ...next[entry[0]],
+              ...(entry[2] ? { operationCount: entry[2].operations.length, revision: entry[2].version } : {}),
+              state: entry[1],
+            };
+          }
+          return next;
+        });
+      });
+    }, 1000);
+
     const artifactTimer = window.setTimeout(() => {
       void Promise.all(
         projects.map(async (project) => {
@@ -1043,6 +1169,7 @@ function ProjectHub({
     }, 1500);
     return () => {
       active = false;
+      window.clearInterval(stateTimer);
       window.clearTimeout(artifactTimer);
     };
   }, [client, projects]);
@@ -1055,12 +1182,7 @@ function ProjectHub({
       const projectName = projectNameFromPath(selectedPath);
       const sessionId = mode === 'create' ? uniqueSessionId(projectName, projects) : projectName;
       const workflowMetadata =
-        mode === 'create' ? (JSON.parse(workflowMetadataText) as Record<string, unknown>) : undefined;
-      if (
-        mode === 'create' &&
-        (!workflowMetadata || typeof workflowMetadata !== 'object' || Array.isArray(workflowMetadata))
-      )
-        throw new Error('Workflow metadata must be a JSON object.');
+        mode === 'create' ? requireWorkflowMetadata(JSON.parse(workflowMetadataText)) : undefined;
       const project = await client.createProject({
         session_id: sessionId,
         database_path: selectedPath,
@@ -1068,10 +1190,14 @@ function ProjectHub({
         workflow_metadata: workflowMetadata,
       });
       if (selectedDemo && mode === 'create') {
-        const validation = await client.validateWorkflow(project.session_id, selectedDemo.workflow);
+        const workflow = {
+          ...selectedDemo.workflow,
+          metadata: workflowMetadata as WorkflowDefinition['metadata'],
+        };
+        const validation = await client.validateWorkflow(project.session_id, workflow);
         if (!validation.valid)
           throw new Error(validation.diagnostics.map((item) => item.message).join('; ') || 'Workflow demo is invalid.');
-        await client.saveWorkflow(project.session_id, selectedDemo.workflow);
+        await client.saveWorkflow(project.session_id, workflow);
       }
       (mode === 'open' ? onAdded : onOpened)(project);
       notifyApp({
@@ -1187,16 +1313,16 @@ function ProjectHub({
                       setWorkflowMetadataText(JSON.stringify(metadata, null, 2));
                       setDatabasePath('');
                       setDemosOpen(false);
-                      setMode('create');
                     }}
                   >
                     <span className="sf-card-icon">
                       <i className="fa-solid fa-diagram-project" />
                     </span>
                     <span>
-                      <strong>{demo.name}</strong>
-                      <small>{demo.description}</small>
-                      {demo.use_case ? <small>{demo.use_case}</small> : null}
+                      <strong>{demo.name || String(demo.workflow.metadata?.name || demo.id)}</strong>
+                      <small>
+                        {demo.description || String(demo.workflow.metadata?.description || 'Workflow demonstration')}
+                      </small>
                     </span>
                   </button>
                 ))
@@ -1204,6 +1330,13 @@ function ProjectHub({
             </div>
           </div>
         </div>
+      ) : null}
+      {selectedDemo && !mode ? (
+        <WorkflowDemoPreview
+          demo={selectedDemo}
+          onClose={() => setSelectedDemo(null)}
+          onCreate={() => setMode('create')}
+        />
       ) : null}
       {mode ? (
         <div
@@ -1215,7 +1348,9 @@ function ProjectHub({
           <form className={`sf-dialog ${mode === 'create' ? 'sf-create-workflow-dialog' : ''}`} onSubmit={submit}>
             <div className="sf-dialog-heading">
               <div>
-                <h2>{mode === 'create' ? 'Create project' : 'Open project'}</h2>
+                <h2>
+                  {mode === 'create' ? (selectedDemo ? 'Create workflow from demo' : 'Create project') : 'Open project'}
+                </h2>
               </div>
               <button
                 type="button"
@@ -1286,7 +1421,13 @@ function ProjectHub({
                 Cancel
               </button>
               <button type="submit" className="sf-button" disabled={submitting || (mode === 'create' && !databasePath)}>
-                {submitting ? 'Working…' : mode === 'create' ? 'Create project' : 'Open project'}
+                {submitting
+                  ? 'Working…'
+                  : mode === 'create'
+                    ? selectedDemo
+                      ? 'Create Workflow'
+                      : 'Create project'
+                    : 'Open project'}
               </button>
             </div>
           </form>

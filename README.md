@@ -7,49 +7,47 @@
 streamfind is a DuckDB-backed framework for analytical data processing. Its
 active native backend is C++, with mass-spectrometry data access, a shared
 semantic catalogue, a dynamic plugin framework, a browser-facing development
-application, and MCP servers for applications and AI agents. A Rust backend is
-preserved from an earlier development phase and is not released in 0.4.0.
+application, and MCP servers for applications and AI agents.
 
 ## Start here
 
 - [Read the user documentation](https://streamfind.odea-project.org/).
 - [Download the native packages](docs/releases.md).
 - [Use the C++ MCP server](docs/quickstart/cpp-mcp.md).
+- [Build and develop the C++ backend](cpp/README.md).
 - [Run the development frontend](frontend/README.md).
-- [See the preserved Rust backend](docs/components/rust.md).
-- [See the legacy R package](docs/components/bindings-r.md).
-- [Check availability and compatibility](docs/status.md).
+- [Use the R interface](docs/components/bindings-r.md).
+- [Check the supported platform and interfaces](docs/status.md).
 
 ## Current availability
 
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | 0.4.0 preview packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
-| Rust backend | Stale development backend; not released in 0.4.0 | Existing Rust experiments only |
+| C++ backend | 0.5.0 test packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
 | React web app | Windows and Linux archives include built assets and a browser launcher | Local browser UI over the C++ service |
-| R package | Legacy interface | Existing R and Shiny workflows |
-| Python package | Not released | No public installation path yet |
-| Cogniflow integration | Separate future path | Not included in native packages |
+| R package | Separate R interface | Existing R and Shiny workflows |
+| Python package | No public package | Use the C++ CLI or MCP interface |
+| Cogniflow integration | Not included in the native distribution | Use the native C++ package or MCP interface |
 
-The native C++ project version is maintained in the Rust workspace manifest so
-CMake and the release tooling share one version source. Rust remains in the
-workspace for preservation and development compatibility, but is not part of
-the 0.4.0 release. See [Releases](docs/releases.md) for downloadable assets.
+The native C++ project version is currently `0.5.0` and is maintained in the
+repository `VERSION` file so CMake, documentation, and release tooling share one
+version source. See [Releases](docs/releases.md) for downloadable assets.
 
 ## Native implementation
 
 The C++ implementation is the native implementation. Its core owns project
-files, DuckDB transactions, operation-graph execution, schema lifecycle, and
-the generic host ABI. Domain plugins own their semantic catalogues, native
-readers, processing algorithms, and operations. Plugins access project data
-through the generic SDK host boundary.
+files, DuckDB transactions, operation-graph execution, schema lifecycle, and the
+generic host ABI. Domain plugins own their semantic catalogues, native readers,
+processing algorithms, and operations. Plugins access project data through the
+generic SDK host boundary.
 
-The Rust backend is a stale, preserved development backend. It is not the
-recommended runtime or extension point. The R package is a separate legacy
-interface and is not the native C++ API.
+The C++ development guide documents the current MSYS2 UCRT64/GCC and Linux GCC
+toolchains, build and test commands, runtime package layout, plugin generator,
+optional developer kit, out-of-tree consumer check, and extracted-package release
+validation routines: [`cpp/README.md`](cpp/README.md).
 
-The React web app is a development and preview application. The native 0.4.0
+The React web app is a development and preview application. The native 0.5.0
 archives include its built static assets and a root-level `streamfind` launcher;
 running that launcher starts the local C++ service and opens the app in the
 default browser. The frontend consumes the typed service boundary and does not
@@ -98,7 +96,7 @@ See the C++ MCP quickstart for request examples.
 
 The semantic catalogue defines operation names, operation parameters,
 nested input schemas, results, units, constraints, and agent-facing guidance.
-The C++ and Rust backends implement that public contract independently.
+The C++ backend implements that public contract.
 
 ## R package
 
