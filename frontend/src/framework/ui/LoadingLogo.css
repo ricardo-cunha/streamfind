@@ -1,0 +1,31 @@
+.sf-loading-logo {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  min-height: 120px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.sf-loading-logo img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  animation: sf-rotate 3s ease-in-out infinite;
+  filter: drop-shadow(0 14px 25px rgba(0, 0, 0, 0.16));
+}
+
+.sf-loading-logo-compact {
+  min-height: 72px;
+}
+
+.sf-loading-logo-compact img {
+  width: 30px;
+  height: 30px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-loading-logo img {
+    animation: none;
+  }
+}

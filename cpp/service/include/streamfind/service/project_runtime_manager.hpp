@@ -35,6 +35,7 @@ public:
     Json workflow_snapshot(const std::string &session_id) const;
     Json artifact_inventory(const std::string &session_id) const;
     Json current_artifact_inventory(const std::string &session_id) const;
+    Json artifact_query(const std::string &session_id, const Json &request) const;
     Json artifact_data(const std::string &session_id, const Json &request) const;
     std::string set_workflow_state(const std::string &session_id, const std::string &state);
     std::string start_workflow(const std::string &session_id);

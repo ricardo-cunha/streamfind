@@ -8,7 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 import * as d3 from 'd3';
-import logo from '../../assets/streamfind.png';
+import type { ArtifactQueryFilter } from '../../framework/backend/StreamFindApiClient';
+import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -20,10 +21,43 @@ type DetailTab = 'details' | QueryKind | 'network';
 export type SelectionMode = 'feature' | 'feature_group' | 'feature_component' | 'feature_group_component';
 type FeatureColumn = { name: string; type: string };
 type NumericFilter = { min: string; max: string };
+type TextFilter = string;
 export type FeaturePlotPoint = { row: FeatureRow; index: number; color: string; intensity: number };
+type PlotViewport = { xMin: number; xMax: number; yMin: number; yMax: number };
+
+const featureOverviewColumns = [
+  'feature',
+  'feature_id',
+  'analysis',
+  'replicate',
+  'feature_component',
+  'feature_group',
+  'mz',
+  'rt',
+  'intensity',
+  'max_intensity',
+  'area',
+  'polarity',
+  'adduct',
+  'annotation_type',
+  'annotation_category',
+  'annotation_element',
+  'annotation_parent_feature',
+  'component_best_partner',
+  'component_max_correlation',
+  'component_mean_correlation',
+  'formula',
+  'filtered',
+  'blank',
+] as const;
 
 export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [rows, setRows] = useState<FeatureRow[]>([]);
+  const rowsRef = useRef<FeatureRow[]>([]);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [columns, setColumns] = useState<FeatureColumn[]>([]);
@@ -31,13 +65,26 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [groupBy, setGroupBy] = useState('replicate');
   const [selectBy, setSelectBy] = useState<SelectionMode>('feature');
   const [numericFilters, setNumericFilters] = useState<Record<string, NumericFilter>>({});
+  const initialNumericFilters = useRef<Record<string, NumericFilter>>({});
   const [booleanFilters, setBooleanFilters] = useState<Record<string, boolean>>({});
+  const [textFilters, setTextFilters] = useState<Record<string, TextFilter>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [detailRows, setDetailRows] = useState<FeatureRow[]>([]);
+  const [detailSelectionKey, setDetailSelectionKey] = useState<string | null>(null);
+  const [networkRows, setNetworkRows] = useState<FeatureRow[]>([]);
+  const [networkSelectionKey, setNetworkSelectionKey] = useState<string | null>(null);
+  const [detailErrorKey, setDetailErrorKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>('eic');
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const inspectorRef = useRef<HTMLDivElement>(null);
+  const initialLoadComplete = useRef(false);
   const [filtersWidth, setFiltersWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
+  const [viewport, setViewport] = useState<PlotViewport | null>(null);
+  const overviewColumns = useMemo(
+    () => selectFeatureOverviewColumns(context.artifact?.columns),
+    [context.artifact?.columns],
+  );
 
   const resizeFilters = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -94,35 +141,37 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     }
     const artifactId = context.artifact.artifact_id;
     const loadRows = async () => {
-      const pageSize = 1000;
-      const firstPage = await api.artifactData(context.sessionId, {
+      const firstPage = await api.artifactQuery(context.sessionId, {
         artifact_id: artifactId,
-        offset: 0,
-        limit: pageSize,
+        mode: 'sample',
+        columns: overviewColumns,
+        filters: overviewColumns?.includes('filtered')
+          ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
+          : undefined,
+        sampling_strategy: 'grid',
+        x_bins: 512,
+        y_bins: 512,
+        x_column: 'mz',
+        y_column: 'rt',
+        limit: 50000,
       });
       const loadedRows = [...firstPage.rows];
-      let offset = firstPage.rows.length;
-      while (offset < firstPage.total_rows) {
-        const page = await api.artifactData(context.sessionId, {
-          artifact_id: artifactId,
-          offset,
-          limit: pageSize,
-        });
-        loadedRows.push(...page.rows);
-        if (!page.rows.length) break;
-        offset += page.rows.length;
-      }
       setColumns(firstPage.columns);
       const loadedFilterColumns = getFilterColumns(firstPage.columns, loadedRows);
-      setNumericFilters(createInitialNumericFilters(loadedFilterColumns.numeric, loadedRows));
+      const nextNumericFilters = createInitialNumericFilters(loadedFilterColumns.numeric, loadedRows);
+      initialNumericFilters.current = nextNumericFilters;
+      setNumericFilters(nextNumericFilters);
       setBooleanFilters(Object.fromEntries(loadedFilterColumns.boolean.map((column) => [column.name, false])));
-      return loadedRows;
+      setTextFilters(Object.fromEntries(loadedFilterColumns.text.map((column) => [column.name, ''])));
+      return { rows: loadedRows, totalRows: firstPage.total_rows };
     };
     void loadRows()
-      .then((loadedRows) => {
+      .then(({ rows: loadedRows, totalRows: loadedTotalRows }) => {
         if (!active) return;
         setRows(loadedRows);
+        setTotalRows(loadedTotalRows);
         setSelectedKey(null);
+        initialLoadComplete.current = true;
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -134,7 +183,65 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     return () => {
       active = false;
     };
-  }, [context.artifact, context.pluginApi, context.sessionId]);
+  }, [context.artifact, context.pluginApi, context.sessionId, overviewColumns]);
+
+  useEffect(() => {
+    if (!initialLoadComplete.current || !context.artifact || !context.pluginApi?.client) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void context
+        .pluginApi!.client.artifactQuery(context.sessionId, {
+          artifact_id: context.artifact!.artifact_id,
+          mode: 'sample',
+          columns: overviewColumns,
+          sampling_strategy: 'grid',
+          x_bins: 512,
+          y_bins: 512,
+          x_column: 'mz',
+          y_column: 'rt',
+          limit: 50000,
+          search: search || undefined,
+          filters: buildFeatureQueryFilters(
+            getFilterColumns(columns, rowsRef.current),
+            numericFilters,
+            booleanFilters,
+            textFilters,
+            initialNumericFilters.current,
+          ).concat(
+            viewport
+              ? [
+                  { column: 'rt', operator: 'between', min: viewport.xMin, max: viewport.xMax },
+                  { column: 'mz', operator: 'between', min: viewport.yMin, max: viewport.yMax },
+                ]
+              : [],
+          ),
+        })
+        .then((response) => {
+          if (!active) return;
+          setRows(response.rows);
+          setTotalRows(response.total_rows);
+          setSelectedKey(null);
+        })
+        .catch(() => {
+          // Keep the last successful overview visible while a transient query fails.
+        });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    booleanFilters,
+    columns,
+    context.artifact,
+    context.pluginApi,
+    context.sessionId,
+    numericFilters,
+    overviewColumns,
+    search,
+    textFilters,
+    viewport,
+  ]);
 
   const filteredRows = useMemo(() => {
     let searchPattern: RegExp | null = null;
@@ -164,14 +271,90 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             numericFilters[column.name]?.max ?? '',
           ),
         ) &&
-        filterColumns.boolean.every((column) => booleanFilters[column.name] || booleanValue(row[column.name]) !== true)
+        filterColumns.boolean.every((column) => {
+          const value = booleanValue(row[column.name]);
+          return column.name === 'filtered'
+            ? booleanFilters[column.name] || value !== true
+            : !booleanFilters[column.name] || value === true;
+        }) &&
+        filterColumns.text.every((column) => {
+          const filter = (textFilters[column.name] ?? '').trim().toLowerCase();
+          return !filter || String(row[column.name] ?? '').toLowerCase() === filter;
+        })
       );
     });
-  }, [booleanFilters, filterColumns, numericFilters, rows, search, selectBy]);
+  }, [booleanFilters, filterColumns, numericFilters, rows, search, selectBy, textFilters]);
   const points = useMemo(() => makePoints(filteredRows, groupBy), [filteredRows, groupBy]);
-  const selectedRows = useMemo(
+  const sampledSelectedRows = useMemo(
     () => filteredRows.filter((row) => selectionKey(row, selectBy) === selectedKey),
     [filteredRows, selectBy, selectedKey],
+  );
+
+  useEffect(() => {
+    let active = true;
+    const api = context.pluginApi?.client;
+    const artifact = context.artifact;
+    const representative = sampledSelectedRows[0];
+    if (!api || !artifact || !selectedKey || !representative) {
+      return () => {
+        active = false;
+      };
+    }
+    const querySelection = async () => {
+      const loadSelection = async (selectionFilters: ArtifactQueryFilter[]) => {
+        const overview = await api.artifactQuery(context.sessionId, {
+          artifact_id: artifact.artifact_id,
+          mode: 'page',
+          columns: overviewColumns,
+          filters: selectionFilters,
+          limit: 50000,
+        });
+        const rowKeys = overview.rows.map((row) => row.row_key).filter((key): key is string => Boolean(key));
+        if (!rowKeys.length) return [];
+        const detail = await api.artifactQuery(context.sessionId, {
+          artifact_id: artifact.artifact_id,
+          mode: 'detail',
+          row_keys: rowKeys,
+          limit: 50000,
+        });
+        return detail.rows;
+      };
+      const [evidenceRows, expandedNetworkRows] = await Promise.all([
+        loadSelection(buildSelectionQueryFilters(selectBy, representative)),
+        loadSelection(buildNetworkSelectionQueryFilters(selectBy, representative)),
+      ]);
+      return { evidenceRows, expandedNetworkRows };
+    };
+    void querySelection()
+      .then(({ evidenceRows, expandedNetworkRows }) => {
+        if (active) {
+          setDetailRows(evidenceRows);
+          setDetailSelectionKey(selectedKey);
+          setNetworkRows(expandedNetworkRows);
+          setNetworkSelectionKey(selectedKey);
+          setDetailErrorKey(null);
+        }
+      })
+      .catch(() => {
+        if (active) setDetailErrorKey(selectedKey);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    context.artifact,
+    context.pluginApi,
+    context.sessionId,
+    overviewColumns,
+    sampledSelectedRows,
+    selectBy,
+    selectedKey,
+  ]);
+
+  const selectedRows = detailSelectionKey === selectedKey && detailRows.length ? detailRows : sampledSelectedRows;
+  const selectedNetworkRows = networkSelectionKey === selectedKey && networkRows.length ? networkRows : selectedRows;
+  const detailPending = Boolean(
+    selectedKey && sampledSelectedRows.length && detailSelectionKey !== selectedKey && detailErrorKey !== selectedKey,
   );
 
   const selectPoint = (key: string) => {
@@ -181,8 +364,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   if (loading)
     return (
       <div className="sf-feature-loading" role="status" aria-live="polite">
-        <img src={logo} alt="streamfind" />
-        <span>Loading feature data…</span>
+        <LoadingLogo label="Loading feature data…" />
       </div>
     );
   if (loadError) return <div role="alert">{loadError}</div>;
@@ -202,7 +384,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       <aside className="sf-feature-inspector-filters" aria-label="Feature filters">
         <header>
           <strong>
-            Features {filteredRows.length} / {rows.length}
+            Features {filteredRows.length} / {totalRows}
           </strong>
         </header>
         <label>
@@ -281,6 +463,23 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
               />
             </label>
           ))}
+          {filterColumns.text.map((column) => (
+            <label key={column.name}>
+              {column.name}
+              <select
+                aria-label={`${column.name} value`}
+                value={textFilters[column.name] ?? ''}
+                onChange={(event) => setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))}
+              >
+                <option value="">Any</option>
+                {getDistinctColumnValues(rows, column.name).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
         </div>
       </aside>
       <div
@@ -303,6 +502,23 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           darkMode={darkMode}
           onSelect={selectPoint}
           onClearSelection={() => setSelectedKey(null)}
+          onRelayout={(event) => {
+            if (event['xaxis.autorange'] || event['yaxis.autorange']) {
+              setViewport(null);
+              return;
+            }
+            const x0 = Number(event['xaxis.range[0]']);
+            const x1 = Number(event['xaxis.range[1]']);
+            const y0 = Number(event['yaxis.range[0]']);
+            const y1 = Number(event['yaxis.range[1]']);
+            if ([x0, x1, y0, y1].every(Number.isFinite))
+              setViewport({
+                xMin: Math.min(x0, x1),
+                xMax: Math.max(x0, x1),
+                yMin: Math.min(y0, y1),
+                yMax: Math.max(y0, y1),
+              });
+          }}
         />
       </main>
       <div
@@ -331,7 +547,12 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           <div className="sf-feature-inspector-empty">Select a point in the scatter plot.</div>
         ) : null}
         {selectedRows.length && activeTab === 'details' ? <FeatureDetails rows={selectedRows} /> : null}
-        {selectedRows.length && (activeTab === 'eic' || activeTab === 'ms1' || activeTab === 'ms2') ? (
+        {detailPending && (activeTab === 'eic' || activeTab === 'ms1' || activeTab === 'ms2') ? (
+          <LoadingLogo label={`Loading ${activeTab.toUpperCase()}…`} />
+        ) : null}
+        {selectedRows.length &&
+        !detailPending &&
+        (activeTab === 'eic' || activeTab === 'ms1' || activeTab === 'ms2') ? (
           <FeatureSignalPlot
             kind={activeTab}
             rows={selectedRows}
@@ -340,7 +561,12 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           />
         ) : null}
         {selectedRows.length && activeTab === 'network' ? (
-          <FeatureNetwork rows={rows} selectedKey={selectedKey} selectBy={selectBy} darkMode={darkMode} />
+          <FeatureNetwork
+            rows={selectedNetworkRows}
+            selectedKey={selectedKey}
+            selectBy={selectBy}
+            darkMode={darkMode}
+          />
         ) : null}
       </section>
     </div>
@@ -355,6 +581,7 @@ export function FeaturePlot({
   darkMode,
   onSelect,
   onClearSelection,
+  onRelayout,
 }: {
   artifactId: string;
   points: FeaturePlotPoint[];
@@ -363,6 +590,7 @@ export function FeaturePlot({
   darkMode: boolean;
   onSelect: (key: string) => void;
   onClearSelection: () => void;
+  onRelayout: (event: Record<string, unknown>) => void;
 }) {
   return (
     <VisualizationRenderer
@@ -386,6 +614,7 @@ export function FeaturePlot({
       }}
       onPlotClick={onClearSelection}
       onDoubleClick={onClearSelection}
+      onRelayout={onRelayout}
     />
   );
 }
@@ -1068,15 +1297,18 @@ function withAlpha(hex: string, alpha: number): string {
 function getFilterColumns(
   columns: FeatureColumn[],
   rows: FeatureRow[],
-): { numeric: FeatureColumn[]; boolean: FeatureColumn[] } {
+): { numeric: FeatureColumn[]; boolean: FeatureColumn[]; text: FeatureColumn[] } {
   const knownColumns = columns.length
     ? columns
     : Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).map((name) => ({ name, type: '' }));
   const numeric: FeatureColumn[] = [];
   const boolean: FeatureColumn[] = [];
+  const text: FeatureColumn[] = [];
   knownColumns.forEach((column) => {
-    const type = column.type.toLowerCase();
-    const values = rows.map((row) => row[column.name]).filter((value): value is string => value !== null);
+    const type = (column.type ?? '').toLowerCase();
+    const values = rows
+      .map((row) => row[column.name])
+      .filter((value): value is string => value !== null && value !== undefined);
     const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
     const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
     if (isNumericType(type) || (!type && inferredNumeric)) numeric.push(column);
@@ -1085,9 +1317,12 @@ function getFilterColumns(
       !['component_is_core', 'component_bridge_flag'].includes(column.name)
     ) {
       boolean.push(column);
+    } else if (isTextType(type) || (!type && values.length > 0)) {
+      const distinctValues = new Set(values.map((value) => value.trim()).filter(Boolean));
+      if (distinctValues.size > 0 && distinctValues.size <= 64) text.push(column);
     }
   });
-  return { numeric, boolean };
+  return { numeric, boolean, text };
 }
 
 function isNumericType(type: string): boolean {
@@ -1096,6 +1331,16 @@ function isNumericType(type: string): boolean {
 
 function isBooleanType(type: string): boolean {
   return type === 'boolean' || type === 'bool' || type === 'logical';
+}
+
+function isTextType(type: string): boolean {
+  return /char|string|text|varchar|uuid/.test(type);
+}
+
+function getDistinctColumnValues(rows: FeatureRow[], column: string): string[] {
+  return Array.from(new Set(rows.map((row) => row[column]).filter((value): value is string => Boolean(value))))
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 64);
 }
 
 function createInitialNumericFilters(columns: FeatureColumn[], rows: FeatureRow[]): Record<string, NumericFilter> {
@@ -1113,6 +1358,99 @@ function createInitialNumericFilters(columns: FeatureColumn[], rows: FeatureRow[
       ];
     }),
   );
+}
+
+function buildFeatureQueryFilters(
+  columns: { numeric: FeatureColumn[]; boolean: FeatureColumn[] },
+  numericFilters: Record<string, NumericFilter>,
+  booleanFilters: Record<string, boolean>,
+  textFilters: Record<string, TextFilter>,
+  defaults: Record<string, NumericFilter>,
+): ArtifactQueryFilter[] {
+  const filters: ArtifactQueryFilter[] = [];
+  columns.numeric.forEach((column) => {
+    const value = numericFilters[column.name];
+    const initial = defaults[column.name];
+    if (!value || !initial || (value.min === initial.min && value.max === initial.max)) return;
+    if (value.min !== '' && value.max !== '')
+      filters.push({ column: column.name, operator: 'between', min: Number(value.min), max: Number(value.max) });
+    else if (value.min !== '') filters.push({ column: column.name, operator: 'gte', value: Number(value.min) });
+    else if (value.max !== '') filters.push({ column: column.name, operator: 'lte', value: Number(value.max) });
+  });
+  columns.boolean.forEach((column) => {
+    if (column.name === 'filtered') {
+      if (!booleanFilters[column.name]) filters.push({ column: column.name, operator: 'neq', value: 'true' });
+    } else if (booleanFilters[column.name]) {
+      filters.push({ column: column.name, operator: 'eq', value: 'true' });
+    }
+  });
+  Object.entries(textFilters).forEach(([column, value]) => {
+    if (value.trim()) filters.push({ column, operator: 'eq', value: value.trim() });
+  });
+  return filters;
+}
+
+function buildSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ArtifactQueryFilter[] {
+  const filters: ArtifactQueryFilter[] = [];
+  const add = (column: string, value: unknown) => {
+    if (value !== undefined && value !== null && String(value) !== '')
+      filters.push({ column, operator: 'eq', value: String(value) });
+  };
+  if (selectBy === 'feature_group' || selectBy === 'feature_group_component') add('feature_group', row.feature_group);
+  if (selectBy === 'feature_component' || selectBy === 'feature_group_component')
+    add('feature_component', row.feature_component);
+  if (selectBy === 'feature' || selectBy === 'feature_component') add('analysis', row.analysis);
+  if (selectBy === 'feature') {
+    if (row.feature !== undefined && row.feature !== null && String(row.feature) !== '') add('feature', row.feature);
+    else if (row.feature_id !== undefined && row.feature_id !== null && String(row.feature_id) !== '')
+      add('feature_id', row.feature_id);
+    else add('id', row.id);
+  }
+  return filters;
+}
+
+function buildNetworkSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ArtifactQueryFilter[] {
+  if (selectBy !== 'feature') return buildSelectionQueryFilters(selectBy, row);
+  const component = String(row.feature_component ?? '').trim();
+  const group = String(row.feature_group ?? '').trim();
+  const analysis = String(row.analysis ?? '').trim();
+  if (component) {
+    const filters: ArtifactQueryFilter[] = [{ column: 'feature_component', operator: 'eq', value: component }];
+    if (analysis) filters.unshift({ column: 'analysis', operator: 'eq', value: analysis });
+    return filters;
+  }
+  if (group) {
+    const filters: ArtifactQueryFilter[] = [{ column: 'feature_group', operator: 'eq', value: group }];
+    if (analysis) filters.unshift({ column: 'analysis', operator: 'eq', value: analysis });
+    return filters;
+  }
+  return buildSelectionQueryFilters(selectBy, row);
+}
+
+function selectOverviewColumns<T extends string>(
+  available: string[] | undefined,
+  requested: readonly T[],
+): string[] | undefined {
+  if (!available?.length) return undefined;
+  const availableColumns = new Set(available);
+  const selected = requested.filter((column) => availableColumns.has(column));
+  return selected.length ? selected : undefined;
+}
+
+function selectFeatureOverviewColumns(available: FeatureColumn[] | undefined): string[] | undefined {
+  if (!available?.length) return undefined;
+  const scalarColumns = available
+    .filter(
+      (column) =>
+        !/array|list|map|struct|blob|binary|json/i.test(column.type ?? '') && !isFeatureDetailColumn(column.name),
+    )
+    .map((column) => column.name);
+  const preferred = selectOverviewColumns(scalarColumns, featureOverviewColumns) ?? [];
+  return Array.from(new Set([...preferred, ...scalarColumns]));
+}
+
+function isFeatureDetailColumn(name: string): boolean {
+  return /^(eic_(rt|intensity)|ms1_(mz|intensity)|ms2_(mz|intensity)|db_ms2_(mz|intensity))$/i.test(name);
 }
 
 function booleanValue(value: string | null | undefined): boolean | undefined {

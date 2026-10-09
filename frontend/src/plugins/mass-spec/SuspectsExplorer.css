@@ -95,7 +95,10 @@
 .sf-suspects-explorer-filter-list {
   display: grid;
   gap: 10px;
-  margin-top: 14px;
+  min-height: 0;
+  overflow: auto;
+  margin-top: 0;
+  padding-right: 3px;
 }
 
 .sf-suspects-explorer-filter-list fieldset {
@@ -359,6 +362,7 @@
   gap: 14px;
   height: 100%;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -379,6 +383,8 @@
   flex-direction: column;
   gap: 10px;
   padding: 10px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .sf-suspects-explorer-scatter-panel {
@@ -396,10 +402,46 @@
   padding: 10px;
 }
 
-.sf-suspects-explorer-filter-panel input {
+.sf-suspects-explorer-filter-panel label,
+.sf-suspects-explorer-filter-panel fieldset {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  color: var(--sf-text-secondary);
+  font-size: 0.76rem;
+}
+
+.sf-suspects-explorer-filter-panel fieldset {
+  grid-template-columns: 1fr 1fr;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sf-suspects-explorer-filter-panel legend {
+  grid-column: 1 / -1;
+  padding: 0;
+}
+
+.sf-suspects-explorer-filter-panel input,
+.sf-suspects-explorer-filter-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   border-color: var(--sf-border);
   background: var(--sf-surface-raised);
   color: var(--sf-text);
+}
+
+.sf-suspects-explorer-filter-panel input[type='checkbox'] {
+  width: auto;
+}
+
+.sf-suspects-explorer-filter-panel .sf-suspects-explorer-filter-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
 
 .sf-suspects-explorer-panel-heading {

@@ -60,6 +60,36 @@ export type ArtifactDataResponse = {
   limit: number;
   total_rows: number;
 };
+export type ArtifactQueryFilter = {
+  column: string;
+  operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in' | 'is_null' | 'is_not_null';
+  value?: JsonValue;
+  values?: JsonValue[];
+  min?: JsonValue;
+  max?: JsonValue;
+};
+export type ArtifactQueryRequest = {
+  artifact_id: string;
+  mode?: 'page' | 'sample' | 'detail';
+  columns?: string[];
+  filters?: ArtifactQueryFilter[];
+  offset?: number;
+  limit?: number;
+  search?: string;
+  sort_column?: string;
+  descending?: boolean;
+  x_column?: string;
+  y_column?: string;
+  row_keys?: string[];
+  sampling_strategy?: 'ordered' | 'grid';
+  x_bins?: number;
+  y_bins?: number;
+};
+export type ArtifactQueryResponse = ArtifactDataResponse & {
+  returned_rows: number;
+  mode: 'page' | 'sample' | 'detail';
+  has_more: boolean;
+};
 export type StructureSvgRequest = {
   smiles?: string | null;
   inchi?: string | null;
@@ -286,6 +316,16 @@ export class StreamFindApiClient {
     });
     if (!response.ok) throw new Error(`Artifact data request failed (${response.status})`);
     return (await response.json()) as ArtifactDataResponse;
+  }
+
+  async artifactQuery(sessionId: string, request: ArtifactQueryRequest): Promise<ArtifactQueryResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) throw new Error(`Artifact query request failed (${response.status})`);
+    return (await response.json()) as ArtifactQueryResponse;
   }
 
   async structureSvg(request: StructureSvgRequest): Promise<string> {

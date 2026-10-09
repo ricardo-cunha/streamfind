@@ -91,4 +91,44 @@ describe('StreamFindApiClient capability discovery', () => {
       new StreamFindApiClient('http://service').runOperation('session', 'mass_spec.read_mass_spec_files', {}),
     ).rejects.toThrow('Operation request failed (400): Workflow execution lock was lost');
   });
+
+  it('queries bounded artifact data through the generic query endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response({
+        artifact_id: 'features-1',
+        columns: [{ name: 'rt', type: 'DOUBLE' }],
+        rows: [{ rt: '12.5' }],
+        offset: 0,
+        limit: 50000,
+        total_rows: 1000000,
+        returned_rows: 1,
+        mode: 'sample',
+        has_more: true,
+      }),
+    );
+
+    const result = await new StreamFindApiClient('http://service').artifactQuery('session/1', {
+      artifact_id: 'features-1',
+      mode: 'sample',
+      columns: ['rt', 'mz'],
+      x_column: 'rt',
+      y_column: 'mz',
+      limit: 50000,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith('http://service/projects/session%2F1/artifacts/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artifact_id: 'features-1',
+        mode: 'sample',
+        columns: ['rt', 'mz'],
+        x_column: 'rt',
+        y_column: 'mz',
+        limit: 50000,
+      }),
+    });
+    expect(result.mode).toBe('sample');
+    expect(result.total_rows).toBe(1000000);
+  });
 });

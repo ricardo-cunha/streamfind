@@ -615,12 +615,17 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
             else if (method == "POST" && path == "/chemistry/structure-svg") {
                 const auto input = Json::parse(body);
+                const auto optional_string = [&input](const char *key) {
+                    const auto it = input.find(key);
+                    if (it == input.end() || it->is_null()) return std::string{};
+                    return it->get<std::string>();
+                };
                 const auto result = ::streamfind::core::vendors::openbabel::render_structure_svg(
-                    input.value("smiles", std::string{}),
-                    input.value("inchi", std::string{}),
+                    optional_string("smiles"),
+                    optional_string("inchi"),
                     std::clamp(input.value("width", 320), 80, 1600),
                     std::clamp(input.value("height", 240), 80, 1200),
-                    input.value("bond_color", std::string{}));
+                    optional_string("bond_color"));
                 if (!result.ok) detail::send_http(socket, 422, Json{{"error", result.error}});
                 else detail::send_http(socket, 200, Json{{"svg", result.svg}});
             }
@@ -816,6 +821,11 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 try { if (!query_value("after").empty()) after = std::stoull(query_value("after")); } catch (...) { throw std::invalid_argument("invalid event history cursor"); }
                 try { if (!query_value("limit").empty()) limit = std::stoull(query_value("limit")); } catch (...) { throw std::invalid_argument("invalid event history limit"); }
                 detail::send_http(socket, 200, events_.history(session_id, after, limit));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/query")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/query");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.artifact_query(session_id, Json::parse(body)));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/data")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/artifacts/data");

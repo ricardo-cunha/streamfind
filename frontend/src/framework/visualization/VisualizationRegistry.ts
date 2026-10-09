@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { VisualizationSpec } from './visualizationTypes';
 
 export type VisualizationPointClick = { customdata?: unknown; pointIndex?: number; pointNumber?: number };
+export type VisualizationRelayout = Record<string, unknown>;
 
 export type VisualizationRendererProps = {
   spec: VisualizationSpec;
@@ -9,6 +10,7 @@ export type VisualizationRendererProps = {
   onPointClick?: (point: VisualizationPointClick) => void;
   onPlotClick?: () => void;
   onDoubleClick?: () => void;
+  onRelayout?: (event: VisualizationRelayout) => void;
 };
 
 export type VisualizationRenderer = (props: VisualizationRendererProps) => ReactNode;

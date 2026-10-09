@@ -78,6 +78,11 @@
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  padding: 6px 7px;
+  border: 1px solid var(--sf-border);
+  border-radius: 5px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
 }
 .sf-feature-inspector-hint,
 .sf-feature-inspector-empty {

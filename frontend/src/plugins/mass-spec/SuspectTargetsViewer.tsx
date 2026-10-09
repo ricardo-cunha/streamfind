@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
 import type { StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
@@ -67,14 +68,35 @@ export function StructureImage({
   cache: StructureCache;
   onRendered: (key: string, structure: RenderedStructure) => void;
 }) {
-  const cacheKey = structureCacheKey(row);
+  const darkMode = document.documentElement.dataset.theme === 'dark';
+  const cacheKey = `${structureCacheKey(row)}\\u0000${darkMode ? 'dark' : 'light'}`;
   const [structure, setStructure] = useState<RenderedStructure | null>(() => cache[cacheKey] ?? null);
   const [error, setError] = useState(false);
+  const [visible, setVisible] = useState(large);
+  const elementRef = useRef<HTMLElement | null>(null);
   const smiles = value(row, ['SMILES', 'smiles']);
   const inchi = value(row, ['InChI', 'inchi']);
   useEffect(() => {
+    if (large || visible) return undefined;
+    if (!elementRef.current || typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '240px' },
+    );
+    observer.observe(elementRef.current);
+    return () => observer.disconnect();
+  }, [large, visible]);
+  useEffect(() => {
     let active = true;
-    if (!smiles && !inchi) {
+    if (!visible || (!smiles && !inchi)) {
       return () => {
         active = false;
       };
@@ -87,7 +109,13 @@ export function StructureImage({
     void client
       // Use one Open Babel render size for cards and details. The detail view
       // scales this SVG with CSS instead of requesting a second oversized render.
-      .structureSvg({ smiles, inchi, width: 300, height: 240 })
+      .structureSvg({
+        ...(smiles ? { smiles } : {}),
+        ...(inchi ? { inchi } : {}),
+        width: 300,
+        height: 240,
+        bond_color: darkMode ? '#ffffff' : undefined,
+      })
       .then((svg) => {
         if (active) {
           const rendered = { svg, dataUri: svgDataUri(svg) };
@@ -101,19 +129,31 @@ export function StructureImage({
     return () => {
       active = false;
     };
-  }, [cache, cacheKey, client, inchi, large, onRendered, smiles]);
+  }, [cache, cacheKey, client, darkMode, inchi, large, onRendered, smiles, visible]);
   const displayedStructure = structure ?? cache[cacheKey] ?? null;
   if (displayedStructure)
     return (
       <img
+        ref={(element) => {
+          elementRef.current = element;
+        }}
         className={large ? 'sf-suspect-structure-large' : 'sf-suspect-structure'}
         src={displayedStructure.dataUri}
         alt={`Chemical structure for ${value(row, ['name']) ?? 'compound'}`}
       />
     );
   return (
-    <div className="sf-suspect-structure-placeholder">
-      {(!smiles && !inchi) || error ? 'Structure unavailable' : 'Rendering structure…'}
+    <div
+      ref={(element) => {
+        elementRef.current = element;
+      }}
+      className={
+        large
+          ? 'sf-suspect-structure-placeholder sf-suspect-structure-placeholder-large'
+          : 'sf-suspect-structure-placeholder'
+      }
+    >
+      {(!smiles && !inchi) || error ? 'Structure unavailable' : visible ? 'Rendering structure…' : 'Scroll to render…'}
     </div>
   );
 }
@@ -436,7 +476,7 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
       active = false;
     };
   }, [client, context.artifact, context.sessionId]);
-  if (loading) return <div className="sf-suspect-viewer-state">Loading suspect targets…</div>;
+  if (loading) return <LoadingLogo label="Loading suspect targets…" />;
   if (error)
     return (
       <div className="sf-suspect-viewer-state" role="alert">
@@ -478,8 +518,14 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
               <div className="sf-suspect-modal">
                 <header className="sf-suspect-modal-header">
                   <strong>{value(selected, ['name']) ?? 'Compound'}</strong>
-                  <button type="button" className="sf-suspect-modal-close" onClick={() => setSelected(null)}>
-                    Close
+                  <button
+                    type="button"
+                    className="sf-icon-button sf-suspect-modal-close"
+                    aria-label="Close suspect details"
+                    title="Close"
+                    onClick={() => setSelected(null)}
+                  >
+                    <i className="fa-solid fa-xmark" aria-hidden="true" />
                   </button>
                 </header>
                 <div className="sf-suspect-modal-body">

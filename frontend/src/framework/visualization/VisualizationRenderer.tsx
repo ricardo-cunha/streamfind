@@ -9,6 +9,7 @@ export type VisualizationRendererViewProps = {
   onPointClick?: VisualizationRendererProps['onPointClick'];
   onPlotClick?: VisualizationRendererProps['onPlotClick'];
   onDoubleClick?: VisualizationRendererProps['onDoubleClick'];
+  onRelayout?: VisualizationRendererProps['onRelayout'];
 };
 
 export function VisualizationRenderer({
@@ -18,6 +19,7 @@ export function VisualizationRenderer({
   onPointClick,
   onPlotClick,
   onDoubleClick,
+  onRelayout,
 }: VisualizationRendererViewProps): ReactNode {
   if (!isVisualizationSpec(spec)) {
     return <div role="alert">Invalid visualization specification.</div>;
@@ -32,6 +34,6 @@ export function VisualizationRenderer({
       )
     );
   }
-  const props: VisualizationRendererProps = { spec, className, onPointClick, onPlotClick, onDoubleClick };
+  const props: VisualizationRendererProps = { spec, className, onPointClick, onPlotClick, onDoubleClick, onRelayout };
   return renderer(props);
 }

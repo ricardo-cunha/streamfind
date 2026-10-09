@@ -857,6 +857,7 @@ function ProjectPreview({
 }) {
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
   const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null);
+  const [workflowFailure, setWorkflowFailure] = useState<string | null>(null);
   const [artifactCount, setArtifactCount] = useState(0);
   const metadata = workflow?.metadata || {};
   useEffect(() => {
@@ -875,6 +876,21 @@ function ProjectPreview({
         if (active) setWorkflowState(state.state);
       })
       .catch(() => undefined);
+    client
+      .workflowEvents(project.session_id)
+      .then((history) => {
+        if (!active) return;
+        const failedEvent = [...history.events]
+          .reverse()
+          .find((event) => event.type === 'operation.failed' || event.type === 'workflow.failed');
+        const payload = failedEvent?.payload;
+        const message =
+          payload && typeof payload === 'object' && !Array.isArray(payload) && typeof payload.message === 'string'
+            ? payload.message
+            : null;
+        setWorkflowFailure(message);
+      })
+      .catch(() => undefined);
     const artifactTimer = window.setTimeout(() => {
       void client
         .artifacts(project.session_id)
@@ -888,6 +904,14 @@ function ProjectPreview({
       window.clearTimeout(artifactTimer);
     };
   }, [client, project.session_id]);
+  const displayState =
+    workflowState === 'running' || workflowState === 'queued'
+      ? 'running'
+      : workflowState === 'cancelling'
+        ? 'cancelling'
+        : workflowState === 'failed'
+          ? 'failed'
+          : 'idle';
   return (
     <div
       className="sf-dialog-backdrop"
@@ -912,9 +936,17 @@ function ProjectPreview({
               <span>
                 {workflow?.operations.length ?? 0} operations · Revision {workflow?.version ?? 0}
               </span>
-              <span>Run: {workflowState || 'loading'}</span>
+              <span>State: {displayState}</span>
               <span>Artifacts: {artifactCount} published</span>
               <span>{formatDatabaseSize(project.database_size_bytes)}</span>
+              {displayState === 'failed' ? (
+                <span
+                  className="sf-workflow-failure"
+                  title={workflowFailure || 'Open the workflow canvas to inspect the terminal history.'}
+                >
+                  Failure: {workflowFailure || 'Open the workflow canvas to inspect the terminal history.'}
+                </span>
+              ) : null}
             </div>
             <h3>Workflow metadata</h3>
             <pre className="sf-workflow-metadata-json">{JSON.stringify(metadata, null, 2)}</pre>

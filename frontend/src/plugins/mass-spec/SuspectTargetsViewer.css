@@ -104,6 +104,11 @@
   font-size: 12px;
 }
 
+.sf-suspect-structure-placeholder-large {
+  width: min(100%, 560px);
+  height: 360px;
+}
+
 .sf-suspect-detail {
   box-sizing: border-box;
   flex: 1 1 auto;
@@ -255,6 +260,24 @@
 .sf-suspect-modal-close {
   flex: 0 0 auto;
   margin: 0;
+}
+
+/* Keep suspect details consistent with the borderless explorer modal. */
+.sf-suspect-modal,
+.sf-suspect-modal * {
+  border: 0 !important;
+}
+
+.sf-suspect-modal-close {
+  padding: 6px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sf-text);
+}
+
+.sf-suspect-modal-close:hover,
+.sf-suspect-modal-close:focus-visible {
+  background: color-mix(in srgb, var(--sf-accent) 10%, transparent);
 }
 
 .sf-suspect-viewer-state {

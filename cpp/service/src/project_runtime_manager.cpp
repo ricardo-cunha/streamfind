@@ -301,7 +301,7 @@ Json ProjectRuntimeManager::current_artifact_inventory(const std::string &sessio
     return result;
 }
 
-Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const Json &request) const {
+Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const Json &request) const {
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
@@ -331,6 +331,30 @@ Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const J
         for (const char character : value) output += character == '"' ? "\"\"" : std::string(1, character);
         return output + "\"";
     };
+    const auto mode = request.value("mode", std::string{"page"});
+    if (mode != "page" && mode != "sample" && mode != "detail")
+        throw std::invalid_argument("artifact query mode must be page, sample, or detail");
+    std::vector<std::string> selected_columns;
+    if (request.contains("columns")) {
+        if (!request.at("columns").is_array()) throw std::invalid_argument("artifact query columns must be an array");
+        for (const auto &column : request.at("columns")) {
+            if (!column.is_string()) throw std::invalid_argument("artifact query column names must be strings");
+            const auto name = column.get<std::string>();
+            if (std::find(columns.begin(), columns.end(), name) == columns.end())
+                throw std::invalid_argument("artifact query column not found: " + name);
+            selected_columns.push_back(name);
+        }
+    }
+    if (selected_columns.empty()) selected_columns = columns;
+    if (selected_columns.size() > 128) throw std::invalid_argument("artifact query selects too many columns");
+    std::string projection;
+    for (const auto &column : selected_columns) {
+        if (!projection.empty()) projection += ", ";
+        projection += quote_identifier(column);
+    }
+    if (std::find(columns.begin(), columns.end(), "row_key") != columns.end())
+        throw std::invalid_argument("artifact query cannot expose a source column named row_key");
+    const auto projection_with_key = projection + ", CAST(rowid AS VARCHAR) AS \"row_key\"";
     const auto escape = [](const std::string &value) {
         std::string output;
         for (const char character : value) output += character == '\'' ? "''" : std::string(1, character);
@@ -343,23 +367,132 @@ Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const J
     const auto search = request.value("search", std::string{});
     if (!search.empty()) {
         std::string search_condition;
-        for (const auto &column : columns) {
+        for (const auto &column : selected_columns) {
             if (!search_condition.empty()) search_condition += " OR ";
             search_condition += "CAST(" + quote_identifier(column) + " AS VARCHAR) ILIKE '%" + escape(search) + "%'";
         }
         append_condition("(" + search_condition + ")");
     }
+    const auto filters = request.value("filters", Json::array());
+    if (!filters.is_array()) throw std::invalid_argument("artifact query filters must be an array");
+    const auto scalar_sql = [](const Json &value) {
+        if (value.is_null()) return std::string("NULL");
+        if (value.is_boolean()) return value.get<bool>() ? std::string("TRUE") : std::string("FALSE");
+        if (value.is_number()) return value.dump();
+        if (value.is_string()) {
+            std::string escaped = "'";
+            for (const char character : value.get<std::string>()) escaped += character == '\'' ? "''" : std::string(1, character);
+            return escaped + "'";
+        }
+        throw std::invalid_argument("artifact query filter value must be scalar");
+    };
+    for (const auto &filter : filters) {
+        if (!filter.is_object() || !filter.contains("column") || !filter.at("column").is_string())
+            throw std::invalid_argument("artifact query filter requires a column");
+        const auto column = filter.at("column").get<std::string>();
+        if (std::find(columns.begin(), columns.end(), column) == columns.end())
+            throw std::invalid_argument("artifact query filter column not found: " + column);
+        const auto operation = filter.value("operator", std::string{});
+        const auto identifier = quote_identifier(column);
+        if (operation == "is_null" || operation == "is_not_null") {
+            append_condition(identifier + (operation == "is_null" ? " IS NULL" : " IS NOT NULL"));
+        } else if (operation == "between") {
+            if (!filter.contains("min") || !filter.contains("max")) throw std::invalid_argument("between filter requires min and max");
+            append_condition(identifier + " BETWEEN " + scalar_sql(filter.at("min")) + " AND " + scalar_sql(filter.at("max")));
+        } else if (operation == "in") {
+            if (!filter.contains("values") || !filter.at("values").is_array() || filter.at("values").empty())
+                throw std::invalid_argument("in filter requires a non-empty values array");
+            std::string values;
+            for (const auto &value : filter.at("values")) {
+                if (!values.empty()) values += ", ";
+                values += scalar_sql(value);
+            }
+            append_condition(identifier + " IN (" + values + ")");
+        } else {
+            static const std::set<std::string> operators{"eq", "neq", "gt", "gte", "lt", "lte"};
+            if (!operators.contains(operation) || !filter.contains("value"))
+                throw std::invalid_argument("unsupported artifact query filter");
+            const auto sql_operator = operation == "eq" ? "=" : operation == "neq" ? "<>" : operation == "gt" ? ">" :
+                                      operation == "gte" ? ">=" : operation == "lt" ? "<" : "<=";
+            append_condition(identifier + " " + sql_operator + " " + scalar_sql(filter.at("value")));
+        }
+    }
+    if (request.contains("row_keys")) {
+        if (!request.at("row_keys").is_array() || request.at("row_keys").empty())
+            throw std::invalid_argument("row_keys must be a non-empty array");
+        std::string keys;
+        for (const auto &key : request.at("row_keys")) {
+            if (!key.is_string()) throw std::invalid_argument("row_keys must contain strings");
+            if (!keys.empty()) keys += ", ";
+            keys += scalar_sql(key);
+        }
+        append_condition("CAST(rowid AS VARCHAR) IN (" + keys + ")");
+    }
     const auto sort = request.value("sort_column", std::string{});
     const bool valid_sort = std::find(columns.begin(), columns.end(), sort) != columns.end();
-    const auto order = valid_sort ? (" ORDER BY " + quote_identifier(sort) + " " + (request.value("descending", false) ? "DESC" : "ASC")) : std::string{};
-    const auto limit = std::clamp(request.value("limit", 100), 1, 1000);
+    std::string order = valid_sort ? (" ORDER BY " + quote_identifier(sort) + " " + (request.value("descending", false) ? "DESC" : "ASC")) : std::string{};
+    std::string x_column;
+    std::string y_column;
+    bool requested_grid_sampling = false;
+    bool grid_sampling = false;
+    std::string sample_where = where;
+    if (mode == "sample") {
+        x_column = request.value("x_column", std::string{});
+        y_column = request.value("y_column", std::string{});
+        if (std::find(columns.begin(), columns.end(), x_column) == columns.end() ||
+            std::find(columns.begin(), columns.end(), y_column) == columns.end())
+            throw std::invalid_argument("sample mode requires valid x_column and y_column");
+        order = " ORDER BY " + quote_identifier(x_column) + ", " + quote_identifier(y_column);
+        requested_grid_sampling = request.value("sampling_strategy", std::string{"ordered"}) == "grid";
+    }
+    const auto limit = std::clamp(request.value("limit", mode == "sample" ? 50000 : 100), 1, mode == "sample" ? 50000 : 1000);
     const auto offset = std::max(0, request.value("offset", 0));
-    auto rows = iterator->second->query_json(
-        "SELECT *, COUNT(*) OVER() AS \"__streamfind_total_rows\" FROM " + quoted_table + where + order +
-        " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset));
     std::size_t total_rows = 0;
+    if (mode == "sample") {
+        const auto count = iterator->second->query_json("SELECT COUNT(*) AS \"__streamfind_total_rows\" FROM " + quoted_table + where);
+        if (!count.empty()) total_rows = std::stoull(count.front().value("__streamfind_total_rows", std::string{"0"}));
+        grid_sampling = requested_grid_sampling && total_rows > static_cast<std::size_t>(limit);
+        if (grid_sampling) {
+            sample_where += sample_where.empty() ? " WHERE " : " AND ";
+            sample_where += quote_identifier(x_column) + " IS NOT NULL AND " + quote_identifier(y_column) + " IS NOT NULL";
+            const auto coordinate_count = iterator->second->query_json("SELECT COUNT(*) AS \"__streamfind_total_rows\" FROM " + quoted_table + sample_where);
+            if (!coordinate_count.empty()) total_rows = std::stoull(coordinate_count.front().value("__streamfind_total_rows", std::string{"0"}));
+        }
+    }
+    const auto x_bins = std::clamp(request.value("x_bins", 256), 1, 1024);
+    const auto y_bins = std::clamp(request.value("y_bins", 256), 1, 1024);
+    const auto bounds = grid_sampling
+        ? iterator->second->query_json("SELECT MIN(" + quote_identifier(x_column) + ") AS \"min_x\", MAX(" + quote_identifier(x_column) +
+          ") AS \"max_x\", MIN(" + quote_identifier(y_column) + ") AS \"min_y\", MAX(" + quote_identifier(y_column) +
+          ") AS \"max_y\" FROM " + quoted_table + sample_where)
+        : Json::array();
+    const auto min_x = !bounds.empty() ? std::stod(bounds.front().value("min_x", std::string{"0"})) : 0.0;
+    const auto max_x = !bounds.empty() ? std::stod(bounds.front().value("max_x", std::string{"0"})) : 0.0;
+    const auto min_y = !bounds.empty() ? std::stod(bounds.front().value("min_y", std::string{"0"})) : 0.0;
+    const auto max_y = !bounds.empty() ? std::stod(bounds.front().value("max_y", std::string{"0"})) : 0.0;
+    const auto x_range = max_x - min_x;
+    const auto y_range = max_y - min_y;
+    const auto x_bin = "CASE WHEN " + std::to_string(x_range) + " = 0 THEN 0 ELSE LEAST(" + std::to_string(x_bins - 1) +
+        ", GREATEST(0, CAST(FLOOR((" + quote_identifier(x_column) + " - " + std::to_string(min_x) + ") / " + std::to_string(x_range) +
+        " * " + std::to_string(x_bins) + ") AS INTEGER))) END";
+    const auto y_bin = "CASE WHEN " + std::to_string(y_range) + " = 0 THEN 0 ELSE LEAST(" + std::to_string(y_bins - 1) +
+        ", GREATEST(0, CAST(FLOOR((" + quote_identifier(y_column) + " - " + std::to_string(min_y) + ") / " + std::to_string(y_range) +
+        " * " + std::to_string(y_bins) + ") AS INTEGER))) END";
+    const auto query = grid_sampling
+        ? "SELECT " + projection + ", \"row_key\", \"bin_count\" FROM (SELECT " + projection_with_key + ", " + x_bin +
+          " AS \"x_bin\", " + y_bin + " AS \"y_bin\", COUNT(*) OVER (PARTITION BY " + x_bin + ", " + y_bin +
+          ") AS \"bin_count\", ROW_NUMBER() OVER (PARTITION BY " + x_bin + ", " + y_bin + " ORDER BY rowid) AS \"bin_row\" FROM " +
+          quoted_table + sample_where + ") sampled WHERE \"bin_row\" = 1 ORDER BY \"x_bin\", \"y_bin\" LIMIT " + std::to_string(limit)
+        : mode == "sample"
+        ? "SELECT " + projection + ", \"row_key\" FROM (SELECT " + projection_with_key + ", ROW_NUMBER() OVER (" + order.substr(1) +
+          ") AS \"__streamfind_row_number\" FROM " + quoted_table + sample_where + ") sampled WHERE ((\"__streamfind_row_number\" - 1) % " +
+          std::to_string(std::max<std::size_t>(1, (total_rows + limit - 1) / limit)) + ") = 0 ORDER BY \"__streamfind_row_number\" LIMIT " +
+          std::to_string(limit) + " OFFSET " + std::to_string(offset)
+        : "SELECT " + projection_with_key + ", COUNT(*) OVER() AS \"__streamfind_total_rows\" FROM " + quoted_table + where + order +
+          " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
+    auto rows = iterator->second->query_json(query);
     if (!rows.empty()) {
-        total_rows = std::stoull(rows.front().value("__streamfind_total_rows", std::string{"0"}));
+        if (mode != "sample") total_rows = std::stoull(rows.front().value("__streamfind_total_rows", std::string{"0"}));
         for (auto &row : rows) row.erase("__streamfind_total_rows");
     } else {
         const auto count = iterator->second->query_json("SELECT COUNT(*) AS \"__streamfind_total_rows\" FROM " + quoted_table + where);
@@ -367,9 +500,15 @@ Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const J
     }
     Json column_json = Json::array();
     for (const auto &column : description)
-        column_json.push_back({{"name", column.value("column_name", std::string{})}, {"type", column.value("column_type", std::string{})}});
+        if (std::find(selected_columns.begin(), selected_columns.end(), column.value("column_name", std::string{})) != selected_columns.end())
+            column_json.push_back({{"name", column.value("column_name", std::string{})}, {"type", column.value("column_type", std::string{})}});
     return {{"artifact_id", artifact_id}, {"columns", column_json}, {"rows", rows},
-            {"offset", offset}, {"limit", limit}, {"total_rows", total_rows}};
+            {"offset", offset}, {"limit", limit}, {"total_rows", total_rows},
+            {"returned_rows", rows.size()}, {"mode", mode}, {"has_more", offset + rows.size() < total_rows}};
+}
+
+Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const Json &request) const {
+    return artifact_query(session_id, request);
 }
 
 std::string ProjectRuntimeManager::set_workflow_state(const std::string &session_id, const std::string &state) {

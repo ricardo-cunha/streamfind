@@ -829,6 +829,12 @@ h2 {
   background: var(--sf-error);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-error) 18%, transparent);
 }
+.sf-workflow-failure {
+  overflow: hidden;
+  color: var(--sf-error) !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sf-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -1801,6 +1807,7 @@ h2 {
   max-height: none;
   box-sizing: border-box;
   border: 0;
+  background: var(--sf-surface-raised);
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
@@ -1841,7 +1848,7 @@ h2 {
   align-content: start;
   gap: 10px;
   padding: 16px;
-  background: var(--sf-surface);
+  background: var(--sf-surface-raised);
 }
 .sf-project-overview-details h3 {
   margin: 8px 0 0;
@@ -1855,7 +1862,7 @@ h2 {
   padding: 12px;
   overflow: auto;
   color: var(--sf-text);
-  background: var(--sf-surface-raised);
+  background: color-mix(in srgb, var(--sf-surface-raised) 92%, var(--sf-accent) 8%);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.78rem;
   line-height: 1.45;
@@ -1869,7 +1876,7 @@ h2 {
   justify-content: stretch;
   height: 100%;
   padding: 8px;
-  background: var(--sf-surface);
+  background: var(--sf-surface-raised);
 }
 .sf-workflow-overview-graph {
   width: 100%;
@@ -1877,6 +1884,7 @@ h2 {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  background: var(--sf-surface-raised);
 }
 .sf-workflow-overview-graph svg {
   display: block;

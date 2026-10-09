@@ -8,7 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import type { StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import type { ArtifactQueryFilter, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -17,8 +18,10 @@ import { StructureImage } from './SuspectTargetsViewer';
 
 type Row = Record<string, string | null>;
 type ScatterPoint = { row: Row; index: number; color: string; intensity: number };
+type PlotViewport = { xMin: number; xMax: number; yMin: number; yMax: number };
 type StructureCache = Record<string, { svg: string; dataUri: string }>;
 type NumericFilter = { min: string; max: string };
+type Column = { name: string; type?: string };
 
 const filterDefinitions = [
   ['exp_mass', 'Experimental mass'],
@@ -29,6 +32,30 @@ const filterDefinitions = [
   ['cosine_similarity', 'Cosine similarity'],
   ['isotope_similarity', 'Isotope similarity'],
   ['shared_fragments', 'Shared fragments'],
+] as const;
+
+const suspectOverviewColumns = [
+  'feature',
+  'analysis',
+  'replicate',
+  'feature_group',
+  'exp_mass',
+  'exp_rt',
+  'intensity',
+  'name',
+  'formula',
+  'mass',
+  'SMILES',
+  'InChI',
+  'InChIKey',
+  'id_level',
+  'error_mass',
+  'error_rt',
+  'cosine_similarity',
+  'isotope_similarity',
+  'shared_fragments',
+  'isotope_match',
+  'filtered',
 ] as const;
 
 function text(row: Row, key: string): string {
@@ -205,12 +232,14 @@ function SuspectScatter({
   selectedKey,
   onSelect,
   onClearSelection,
+  onRelayout,
   artifactId,
 }: {
   points: ScatterPoint[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
   onClearSelection: () => void;
+  onRelayout: (event: Record<string, unknown>) => void;
   artifactId: string;
 }): ReactNode {
   const theme = {
@@ -311,6 +340,7 @@ function SuspectScatter({
       }}
       onPlotClick={onClearSelection}
       onDoubleClick={onClearSelection}
+      onRelayout={onRelayout}
     />
   );
 }
@@ -384,13 +414,17 @@ function evidenceSpec(
     const experimentalCount = Math.min(experimentalMz.length, experimentalIntensity.length);
     const databaseCount = Math.min(databaseMz.length, databaseIntensity.length);
     if (!experimentalCount && !databaseCount) return null;
+    const experimentalMax = Math.max(...experimentalIntensity.slice(0, experimentalCount), 0);
+    const databaseMax = Math.max(...databaseIntensity.slice(0, databaseCount), 0);
     if (experimentalCount > 0)
       data.push({
         type: 'scatter',
         mode: 'lines',
         name: 'Experimental MS2',
         x: experimentalMz.slice(0, experimentalCount).flatMap((value) => [value, value, null]),
-        y: experimentalIntensity.slice(0, experimentalCount).flatMap((value) => [0, value, null]),
+        y: experimentalIntensity
+          .slice(0, experimentalCount)
+          .flatMap((value) => [0, experimentalMax > 0 ? value / experimentalMax : 0, null]),
         line: { color: experimentalColor, width: 1 },
       });
     if (databaseCount > 0)
@@ -399,10 +433,12 @@ function evidenceSpec(
         mode: 'lines',
         name: 'Database MS2',
         x: databaseMz.slice(0, databaseCount).flatMap((value) => [value, value, null]),
-        y: databaseIntensity.slice(0, databaseCount).flatMap((value) => [0, -value, null]),
+        y: databaseIntensity
+          .slice(0, databaseCount)
+          .flatMap((value) => [0, databaseMax > 0 ? -value / databaseMax : 0, null]),
         line: { color: theme.reference, width: 1 },
       });
-    yTitle = 'Intensity (experimental + / database −)';
+    yTitle = 'Relative intensity (experimental + / database −)';
   }
   return {
     schema: 'streamfind.visualization/v1',
@@ -451,13 +487,22 @@ function evidenceSpec(
 export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const client = context.pluginApi?.client;
   const [suspects, setSuspects] = useState<Row[]>([]);
+  const [totalSuspects, setTotalSuspects] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedFeatureDetail, setSelectedFeatureDetail] = useState<Row | null>(null);
   const [selectedSuspect, setSelectedSuspect] = useState<Row | null>(null);
+  const [selectedSuspectLoading, setSelectedSuspectLoading] = useState(false);
   const [rightTab, setRightTab] = useState<'eic' | 'suspects'>('eic');
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState<'analysis' | 'replicate'>('replicate');
   const [numericFilters, setNumericFilters] = useState<Record<string, NumericFilter>>({});
+  const initialNumericFilters = useRef<Record<string, NumericFilter>>({});
+  const [columns, setColumns] = useState<Column[]>([]);
+  const [booleanFilters, setBooleanFilters] = useState<Record<string, boolean>>({});
+  const [textFilters, setTextFilters] = useState<Record<string, string>>({});
+  const initialLoadComplete = useRef(false);
   const [isotopeOnly, setIsotopeOnly] = useState(false);
+  const [showFiltered, setShowFiltered] = useState(false);
   const [, refreshTheme] = useState(0);
   const [filtersWidth, setFiltersWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
@@ -465,6 +510,12 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [structureCache, setStructureCache] = useState<StructureCache>({});
+  const [viewport, setViewport] = useState<PlotViewport | null>(null);
+  const overviewColumns = useMemo(
+    () => selectSuspectOverviewColumns(context.artifact?.columns),
+    [context.artifact?.columns],
+  );
+  const filterColumns = useMemo(() => getSuspectFilterColumns(columns, suspects), [columns, suspects]);
 
   const resizeFilters = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -518,14 +569,34 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     }
     const suspectsArtifactId = context.artifact.artifact_id;
     const load = async () => {
-      const suspectData = await client.artifactData(context.sessionId, {
+      const suspectData = await client.artifactQuery(context.sessionId, {
         artifact_id: suspectsArtifactId,
-        offset: 0,
-        limit: 10000,
+        mode: 'sample',
+        columns: overviewColumns,
+        filters: overviewColumns?.includes('filtered')
+          ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
+          : undefined,
+        sampling_strategy: 'grid',
+        x_bins: 512,
+        y_bins: 512,
+        x_column: 'exp_mass',
+        y_column: 'exp_rt',
+        limit: 50000,
       });
       if (!active) return;
       setSuspects(suspectData.rows.filter((row) => row && typeof row === 'object'));
+      setTotalSuspects(suspectData.total_rows);
+      setColumns(suspectData.columns);
+      const loadedFilterColumns = getSuspectFilterColumns(suspectData.columns, suspectData.rows);
+      const defaults = Object.fromEntries(
+        loadedFilterColumns.numeric.map((column) => [column.name, { min: '', max: '' }]),
+      );
+      initialNumericFilters.current = defaults;
+      setNumericFilters(defaults);
+      setBooleanFilters(Object.fromEntries(loadedFilterColumns.boolean.map((column) => [column.name, false])));
+      setTextFilters(Object.fromEntries(loadedFilterColumns.text.map((column) => [column.name, ''])));
       setSelectedKey(null);
+      initialLoadComplete.current = true;
     };
     void load()
       .catch((reason: unknown) => {
@@ -537,7 +608,64 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     return () => {
       active = false;
     };
-  }, [client, context.artifact, context.sessionId]);
+  }, [client, context.artifact, context.sessionId, overviewColumns]);
+
+  useEffect(() => {
+    if (!initialLoadComplete.current || !client || !context.artifact) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void client
+        .artifactQuery(context.sessionId, {
+          artifact_id: context.artifact!.artifact_id,
+          mode: 'sample',
+          columns: overviewColumns,
+          sampling_strategy: 'grid',
+          x_bins: 512,
+          y_bins: 512,
+          x_column: 'exp_mass',
+          y_column: 'exp_rt',
+          limit: 50000,
+          search: search || undefined,
+          filters: [
+            ...buildSuspectQueryFilters(numericFilters, booleanFilters, textFilters, isotopeOnly),
+            ...(!showFiltered && overviewColumns?.includes('filtered')
+              ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
+              : []),
+            ...(viewport
+              ? [
+                  { column: 'exp_rt', operator: 'between' as const, min: viewport.xMin, max: viewport.xMax },
+                  { column: 'exp_mass', operator: 'between' as const, min: viewport.yMin, max: viewport.yMax },
+                ]
+              : []),
+          ],
+        })
+        .then((response) => {
+          if (!active) return;
+          setSuspects(response.rows.filter((row) => row && typeof row === 'object'));
+          setTotalSuspects(response.total_rows);
+          setSelectedKey(null);
+        })
+        .catch(() => {
+          // Keep the last successful overview visible while a transient query fails.
+        });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    client,
+    context.artifact,
+    context.sessionId,
+    booleanFilters,
+    isotopeOnly,
+    numericFilters,
+    overviewColumns,
+    search,
+    showFiltered,
+    textFilters,
+    viewport,
+  ]);
 
   const filteredSuspects = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -552,17 +680,29 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
       )
         return false;
       if (isotopeOnly && text(row, 'isotope_match').toLowerCase() !== 'true') return false;
-      return filterDefinitions.every(([key]) => {
-        const filter = numericFilters[key];
-        const value = number(row, key);
-        if (!filter || (filter.min === '' && filter.max === '')) return true;
-        if (value === null) return false;
-        const min = filter.min === '' ? -Infinity : Number(filter.min);
-        const max = filter.max === '' ? Infinity : Number(filter.max);
-        return Number.isFinite(min) && Number.isFinite(max) && value >= min && value <= max;
-      });
+      if (!showFiltered && text(row, 'filtered').toLowerCase() === 'true') return false;
+      return (
+        filterColumns.numeric.every((column) => {
+          const key = column.name;
+          const filter = numericFilters[key];
+          const value = number(row, key);
+          if (!filter || (filter.min === '' && filter.max === '')) return true;
+          if (value === null) return false;
+          const min = filter.min === '' ? -Infinity : Number(filter.min);
+          const max = filter.max === '' ? Infinity : Number(filter.max);
+          return Number.isFinite(min) && Number.isFinite(max) && value >= min && value <= max;
+        }) &&
+        filterColumns.boolean.every((column) => {
+          const value = text(row, column.name).toLowerCase() === 'true';
+          return booleanFilters[column.name] ? value : true;
+        }) &&
+        filterColumns.text.every((column) => {
+          const filter = (textFilters[column.name] ?? '').trim().toLowerCase();
+          return !filter || text(row, column.name).toLowerCase() === filter;
+        })
+      );
     });
-  }, [isotopeOnly, numericFilters, search, suspects]);
+  }, [booleanFilters, filterColumns, isotopeOnly, numericFilters, search, showFiltered, suspects, textFilters]);
 
   const featureRows = useMemo(() => {
     const unique = new Map<string, Row>();
@@ -597,6 +737,53 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   }, [categories, featureRows, groupBy]);
 
   const selectedFeature = plotPoints.find((point) => featureKey(point.row) === selectedKey)?.row ?? null;
+
+  useEffect(() => {
+    let active = true;
+    const rowKey = selectedFeature?.row_key;
+    if (!selectedFeature || !rowKey || !client || !context.artifact) {
+      return () => {
+        active = false;
+      };
+    }
+    void client
+      .artifactQuery(context.sessionId, {
+        artifact_id: context.artifact.artifact_id,
+        mode: 'detail',
+        row_keys: [rowKey],
+        limit: 1,
+      })
+      .then((response) => {
+        if (active) setSelectedFeatureDetail(response.rows[0] ?? null);
+      })
+      .catch(() => {
+        if (active) setSelectedFeatureDetail(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, context.artifact, context.sessionId, selectedFeature]);
+
+  const openSuspectDetail = async (row: Row) => {
+    setSelectedSuspect(row);
+    const rowKey = row.row_key;
+    const canLoadDetail = Boolean(rowKey && client && context.artifact);
+    setSelectedSuspectLoading(canLoadDetail);
+    if (!canLoadDetail || !client || !context.artifact || !rowKey) return;
+    try {
+      const detail = await client.artifactQuery(context.sessionId, {
+        artifact_id: context.artifact.artifact_id,
+        mode: 'detail',
+        row_keys: [rowKey],
+        limit: 1,
+      });
+      if (detail.rows[0]) setSelectedSuspect(detail.rows[0]);
+    } catch {
+      // Keep the projected suspect row visible when detail retrieval fails.
+    } finally {
+      setSelectedSuspectLoading(false);
+    }
+  };
   const selectedSuspects = useMemo(() => {
     if (!selectedFeature) return [];
     return filteredSuspects.filter((row) => featureKey(row) === selectedKey);
@@ -614,7 +801,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     return () => document.removeEventListener('keydown', close, true);
   }, [selectedSuspect]);
 
-  if (loading) return <div className="sf-suspects-explorer-state">Loading suspects explorer…</div>;
+  if (loading) return <LoadingLogo label="Loading suspects explorer…" />;
   if (error)
     return (
       <div className="sf-suspects-explorer-state" role="alert">
@@ -639,7 +826,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
           <div className="sf-suspects-explorer-panel-heading">
             <strong>Filters</strong>
             <span>
-              {filteredSuspects.length} / {suspects.length}
+              {filteredSuspects.length} / {totalSuspects}
             </span>
           </div>
           <label className="sf-suspects-explorer-filter-label">
@@ -661,8 +848,14 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
             Isotope match only
             <input type="checkbox" checked={isotopeOnly} onChange={(event) => setIsotopeOnly(event.target.checked)} />
           </label>
+          <label className="sf-suspects-explorer-filter-checkbox">
+            Show filtered features
+            <input type="checkbox" checked={showFiltered} onChange={(event) => setShowFiltered(event.target.checked)} />
+          </label>
           <div className="sf-suspects-explorer-filter-list">
-            {filterDefinitions.map(([key, label]) => {
+            {filterColumns.numeric.map((column) => {
+              const key = column.name;
+              const label = filterLabel(key);
               const filter = numericFilters[key] ?? { min: '', max: '' };
               return (
                 <fieldset key={key}>
@@ -688,6 +881,37 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                 </fieldset>
               );
             })}
+            {filterColumns.boolean
+              .filter((column) => column.name !== 'filtered' && column.name !== 'isotope_match')
+              .map((column) => (
+                <label className="sf-suspects-explorer-filter-checkbox" key={column.name}>
+                  {filterLabel(column.name)}
+                  <input
+                    type="checkbox"
+                    checked={Boolean(booleanFilters[column.name])}
+                    onChange={(event) =>
+                      setBooleanFilters((current) => ({ ...current, [column.name]: event.target.checked }))
+                    }
+                  />
+                </label>
+              ))}
+            {filterColumns.text.map((column) => (
+              <label key={column.name}>
+                {filterLabel(column.name)}
+                <select
+                  aria-label={`${filterLabel(column.name)} value`}
+                  value={textFilters[column.name] ?? ''}
+                  onChange={(event) => setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))}
+                >
+                  <option value="">Any</option>
+                  {getDistinctValues(suspects, column.name).map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
           </div>
         </aside>
         <div
@@ -704,6 +928,23 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
             selectedKey={selectedKey}
             onSelect={setSelectedKey}
             onClearSelection={() => setSelectedKey(null)}
+            onRelayout={(event) => {
+              if (event['xaxis.autorange'] || event['yaxis.autorange']) {
+                setViewport(null);
+                return;
+              }
+              const x0 = Number(event['xaxis.range[0]']);
+              const x1 = Number(event['xaxis.range[1]']);
+              const y0 = Number(event['yaxis.range[0]']);
+              const y1 = Number(event['yaxis.range[1]']);
+              if ([x0, x1, y0, y1].every(Number.isFinite))
+                setViewport({
+                  xMin: Math.min(x0, x1),
+                  xMax: Math.max(x0, x1),
+                  yMin: Math.min(y0, y1),
+                  yMax: Math.max(y0, y1),
+                });
+            }}
           />
         </main>
         <div
@@ -730,19 +971,25 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
           </div>
           {selectedFeature && rightTab === 'eic' ? (
             <div className="sf-suspects-explorer-right-plot">
-              {(() => {
-                const spec = evidenceSpec(
-                  selectedFeature,
-                  'eic',
-                  null,
-                  context.artifact?.artifact_id ?? context.artifactId,
-                );
-                return spec ? (
-                  <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
-                ) : (
-                  <p className="sf-suspects-explorer-empty">No EIC data is available for this feature.</p>
-                );
-              })()}
+              {selectedFeatureDetail?.row_key !== selectedFeature.row_key ? (
+                <LoadingLogo label="Loading EIC…" />
+              ) : selectedFeatureDetail ? (
+                (() => {
+                  const spec = evidenceSpec(
+                    selectedFeatureDetail,
+                    'eic',
+                    null,
+                    context.artifact?.artifact_id ?? context.artifactId,
+                  );
+                  return spec ? (
+                    <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
+                  ) : (
+                    <p className="sf-suspects-explorer-empty">No EIC data is available for this feature.</p>
+                  );
+                })()
+              ) : (
+                <LoadingLogo label="Loading EIC…" />
+              )}
             </div>
           ) : selectedFeature ? (
             <>
@@ -761,7 +1008,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                       type="button"
                       className="sf-suspects-explorer-row"
                       key={`${text(row, 'name')}-${index}`}
-                      onClick={() => setSelectedSuspect(row)}
+                      onClick={() => void openSuspectDetail(row)}
                     >
                       <span>
                         <strong>{text(row, 'name') || 'Unnamed suspect'}</strong>
@@ -807,19 +1054,25 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                   </button>
                 </header>
                 <div className="sf-suspects-explorer-modal-body">
-                  <IdentificationOverview
-                    row={selectedSuspect}
-                    client={client}
-                    cache={structureCache}
-                    onRendered={(key, structure) =>
-                      setStructureCache((current) => (current[key] ? current : { ...current, [key]: structure }))
-                    }
-                  />
-                  <EvidencePlots
-                    row={selectedSuspect}
-                    client={client}
-                    artifactId={context.artifact?.artifact_id ?? context.artifactId}
-                  />
+                  {selectedSuspectLoading ? (
+                    <LoadingLogo label="Loading suspect evidence…" />
+                  ) : (
+                    <>
+                      <IdentificationOverview
+                        row={selectedSuspect}
+                        client={client}
+                        cache={structureCache}
+                        onRendered={(key, structure) =>
+                          setStructureCache((current) => (current[key] ? current : { ...current, [key]: structure }))
+                        }
+                      />
+                      <EvidencePlots
+                        row={selectedSuspect}
+                        client={client}
+                        artifactId={context.artifact?.artifact_id ?? context.artifactId}
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             </div>,
@@ -828,4 +1081,92 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         : null}
     </div>
   );
+}
+
+function buildSuspectQueryFilters(
+  numericFilters: Record<string, NumericFilter>,
+  booleanFilters: Record<string, boolean>,
+  textFilters: Record<string, string>,
+  isotopeOnly: boolean,
+): ArtifactQueryFilter[] {
+  const filters: ArtifactQueryFilter[] = [];
+  Object.entries(numericFilters).forEach(([key, value]) => {
+    if (!value || (value.min === '' && value.max === '')) return;
+    if (value.min !== '' && value.max !== '')
+      filters.push({ column: key, operator: 'between', min: Number(value.min), max: Number(value.max) });
+    else if (value.min !== '') filters.push({ column: key, operator: 'gte', value: Number(value.min) });
+    else filters.push({ column: key, operator: 'lte', value: Number(value.max) });
+  });
+  Object.entries(booleanFilters).forEach(([key, enabled]) => {
+    if (enabled) filters.push({ column: key, operator: 'eq', value: true });
+  });
+  Object.entries(textFilters).forEach(([key, value]) => {
+    if (value.trim()) filters.push({ column: key, operator: 'eq', value: value.trim() });
+  });
+  if (isotopeOnly) filters.push({ column: 'isotope_match', operator: 'eq', value: true });
+  return filters;
+}
+
+function getSuspectFilterColumns(
+  columns: Column[],
+  rows: Row[],
+): {
+  numeric: Column[];
+  boolean: Column[];
+  text: Column[];
+} {
+  const knownColumns = columns.length
+    ? columns
+    : Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).map((name): Column => ({ name }));
+  const numeric: Column[] = [];
+  const boolean: Column[] = [];
+  const textColumns: Column[] = [];
+  for (const column of knownColumns) {
+    const type = (column.type ?? '').toLowerCase();
+    const values = rows
+      .map((row) => row[column.name])
+      .filter((value): value is string => value !== null && value !== undefined);
+    const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
+    const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
+    if (/int|decimal|numeric|real|double|float|hugeint/.test(type) || (!type && inferredNumeric)) {
+      numeric.push(column);
+    } else if (type === 'boolean' || type === 'bool' || type === 'logical' || (!type && inferredBoolean)) {
+      boolean.push(column);
+    } else if (/char|string|text|varchar|uuid/.test(type) || (!type && values.length > 0)) {
+      const distinct = new Set(values.map((value) => value.trim()).filter(Boolean));
+      if (distinct.size > 0 && distinct.size <= 64 && isSuspectCategoricalFilterColumn(column.name)) {
+        textColumns.push(column);
+      }
+    }
+  }
+  return { numeric, boolean, text: textColumns };
+}
+
+function isSuspectCategoricalFilterColumn(name: string): boolean {
+  return !/^(formula|smiles|inchi|inchikey|name|feature|db_ms2_|eic_|ms1_|ms2_|fragments?_|raw_)/i.test(name);
+}
+
+function getDistinctValues(rows: Row[], column: string): string[] {
+  return Array.from(new Set(rows.map((row) => text(row, column)).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 64);
+}
+
+function filterLabel(key: string): string {
+  const known = filterDefinitions.find(([name]) => name === key)?.[1];
+  if (known) return known;
+  return key.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function selectSuspectOverviewColumns(available: Column[] | undefined): string[] | undefined {
+  if (!available?.length) return undefined;
+  const scalarColumns = available
+    .filter(
+      (column) =>
+        !/array|list|map|struct|blob|binary|json/i.test(column.type ?? '') &&
+        !/^(eic_(rt|intensity)|ms1_(mz|intensity)|ms2_(mz|intensity)|db_ms2_(mz|intensity))$/i.test(column.name),
+    )
+    .map((column) => column.name);
+  const preferred = suspectOverviewColumns.filter((column) => scalarColumns.includes(column));
+  return Array.from(new Set([...preferred, ...scalarColumns]));
 }
