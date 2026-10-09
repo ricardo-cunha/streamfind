@@ -297,6 +297,15 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 #endif
   }
 
+  void forward_metfrag_log(::streamfind::sdk::PluginProjectAccess &access,
+                           const std::string &log_path)
+  {
+    std::ifstream input(log_path);
+    std::string line;
+    while (std::getline(input, line))
+      if (!line.empty()) access.report_progress(0.0, line);
+  }
+
   // ── CSV parsing ───────────────────────────────────────────────────────────
 
   std::string build_common_params_template(
@@ -1118,6 +1127,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
   }
 
   void metfrag_screening_impl(
+    ::streamfind::sdk::PluginProjectAccess &access,
     NtaProjectData &nta_data,
     const MetFragParams &p)
   {
@@ -1129,6 +1139,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
     // Ensure run directory exists.
     std::string run_dir = resolve_run_dir(params);
+    access.report_progress(0.0, "MetFrag screening started.");
     try { fs::create_directories(run_dir); }
     catch (const std::exception &e)
     {
@@ -1163,6 +1174,10 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       std::cerr << ai + 1 << "/" << n_ana
                 << " MetFrag screening: " << ana
                 << " (" << n_feat << " features)" << std::endl;
+      access.report_progress(
+        n_ana == 0 ? 0.0 : static_cast<double>(ai) / static_cast<double>(n_ana),
+        std::to_string(ai + 1) + "/" + std::to_string(n_ana) +
+          " MetFrag screening: " + ana + " (" + std::to_string(n_feat) + " features)");
       int n_suspects_found = 0;
 
       for (int fi = 0; fi < n_feat; ++fi)
@@ -1206,6 +1221,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           write_params_file(params_path, common_params_template, precursor_mass,
                             feats.polarity[fi], ms2_path, sample_name);
           status = run_metfrag(params.metfrag_path, params.java_path, params_path, log_path);
+          forward_metfrag_log(access, log_path);
           rows = parse_metfrag_output(run_dir, sample_name);
           csv_paths = collect_metfrag_result_files(run_dir, sample_name);
         }
@@ -1215,6 +1231,12 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         // fragmentation evidence when no experimental spectrum exists.
         if (rows.empty())
           rows = mass_candidates(params.suspect_targets, precursor_mass, params.ppm, params.top_n);
+
+        access.report_progress(
+          n_ana == 0 ? 1.0 : static_cast<double>(ai + 1) / static_cast<double>(n_ana),
+          "MetFrag completed feature " + std::to_string(fi + 1) + "/" + std::to_string(n_feat) +
+            "; candidates: " + std::to_string(rows.size()) +
+            "; exit status: " + std::to_string(status));
 
         if (rows.empty())
         {
@@ -1479,7 +1501,7 @@ using Json = nlohmann::json;
         p.suspect_targets = std::move(normalized_targets);
         std::filesystem::create_directories(p.run_dir);
         p.database_path = utils::detail::write_local_metfrag_database(local_database, p.run_dir);
-        ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(data, p);
+        ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(access, data, p);
         utils::detail::emit_suspects(access, data);
         return Json{{"status", "finished"}, {"info", "MetFrag screening completed."}};
     }

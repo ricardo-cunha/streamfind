@@ -6,7 +6,18 @@ export type StreamFindEvent = {
   operation_id?: string;
   execution_id?: string;
   timestamp?: string;
+  event_id?: number;
+  timestamp_ms?: number;
   payload?: JsonValue;
+};
+
+export type WorkflowEventHistoryResponse = {
+  project: string;
+  events: StreamFindEvent[];
+  has_more: boolean;
+  gap?: boolean;
+  oldest_event_id?: number | null;
+  latest_event_id?: number | null;
 };
 
 export type ServiceSession = {

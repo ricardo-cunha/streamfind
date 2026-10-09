@@ -31,11 +31,18 @@ endfunction()
 
 # Keep MinGW's compiler runtimes self-contained without forcing every imported
 # dependency to have a static archive. DuckDB and other shared dependencies are
-# staged by their owning target/package rules below.
+# staged by their owning target/package rules below. libwinpthread is selected
+# explicitly because -static-libgcc and -static-libstdc++ do not include it.
 function(streamfind_static_mingw_executable target)
     if(MINGW)
         target_link_options(${target} PRIVATE
             -static-libgcc
             -static-libstdc++)
+        target_link_libraries(${target} PRIVATE
+            "-Wl,-Bstatic"
+            "-Wl,--whole-archive"
+            winpthread
+            "-Wl,--no-whole-archive"
+            "-Wl,-Bdynamic")
     endif()
 endfunction()

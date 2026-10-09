@@ -299,8 +299,17 @@ ProjectTableStore::ProjectTableStore(Project &project) noexcept : project_(&proj
 ProjectTableStore::ProjectTableStore(Project &project, std::vector<std::string> owned_tables)
     : project_(&project), impl_(std::make_unique<Impl>()) {
     impl_->owned_tables = std::move(owned_tables);
-    if (duckdb_open(project.get_database_path().string().c_str(), &impl_->database) == DuckDBError)
-        throw Error(ErrorCode::DatabaseError, "open transaction project database failed");
+    duckdb_config config = nullptr;
+    if (duckdb_create_config(&config) == DuckDBError)
+        throw Error(ErrorCode::DatabaseError, "create transaction database config failed");
+    char *error = nullptr;
+    const auto state = duckdb_open_ext(project.get_database_path().string().c_str(), &impl_->database, config, &error);
+    duckdb_destroy_config(&config);
+    if (state == DuckDBError) {
+        const std::string message = error ? error : "open transaction project database failed";
+        if (error) duckdb_free(error);
+        throw Error(ErrorCode::DatabaseError, message);
+    }
     if (duckdb_connect(impl_->database, &impl_->connection) == DuckDBError) {
         duckdb_close(&impl_->database);
         throw Error(ErrorCode::DatabaseError, "connect transaction project database failed");

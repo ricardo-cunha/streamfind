@@ -43,7 +43,8 @@ public:
                        const Json &parameters, const std::string &operation_instance = {});
     std::vector<ProjectSessionDto> list() const;
     bool contains(const std::string &session_id) const;
-    void set_operation_log_callback(std::function<void(const std::string &, std::string_view)> callback);
+    void set_operation_log_callback(std::function<void(const std::string &, std::string_view, std::string_view)> callback);
+    void set_operation_event_callback(std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> callback);
 
 private:
     ProjectSessionDto describe(const std::string &session_id, const Project &project) const;
@@ -55,8 +56,10 @@ private:
     std::unordered_map<std::string, std::thread> workflow_workers_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;
     std::unordered_map<std::string, Json> workflow_progress_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>> workflow_operation_steps_;
     OperationRegistry *operations_;
-    std::function<void(const std::string &, std::string_view)> operation_log_callback_;
+    std::function<void(const std::string &, std::string_view, std::string_view)> operation_log_callback_;
+    std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> operation_event_callback_;
 };
 
 }  // namespace streamfind::service

@@ -418,7 +418,8 @@ struct STREAMFIND_CORE_API AuditEntry {
 /** @brief RAII handle for a DuckDB-backed streamfind Project. */
 class STREAMFIND_CORE_API Project {
 public:
-    using OperationLogCallback = std::function<void(std::string_view)>;
+    using OperationLogCallback = std::function<void(std::string_view, std::string_view)>;
+    using OperationEventCallback = std::function<void(std::string_view, std::string_view, const Json &)>;
     /** @internal Implementation state shared by the Project handle. */
     struct Impl;
     /** @internal Construct from initialized implementation state. */
@@ -512,6 +513,7 @@ public:
                        const std::string &operation_instance = {},
                        const Json &provided_inputs = Json(nullptr));
     void set_operation_log_callback(OperationLogCallback callback);
+    void set_operation_event_callback(OperationEventCallback callback);
     /** @brief Bind the live cancellation flag for the current workflow run. */
     void set_cancellation_flag(std::atomic_bool *flag) noexcept;
     /** @brief Return whether the current workflow run has been cancelled. */

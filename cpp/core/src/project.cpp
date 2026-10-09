@@ -1418,10 +1418,13 @@ namespace streamfind
     {
         ProjectOptions options;
         ProjectInfo info;
+        Workflow workflow;
         mutable std::mutex mutex;
         mutable std::mutex workflow_execution_mutex;
         bool closed{false};
         Project::OperationLogCallback operation_log_callback;
+        Project::OperationEventCallback operation_event_callback;
+        std::string active_operation_id;
         std::atomic_bool *cancellation_flag{nullptr};
     };
 
@@ -1544,6 +1547,10 @@ namespace streamfind
                      { bind_text(statement, 1, json_text(options.metadata)); bind_text(statement, 2, json_text(initial_workflow)); }, [](duckdb_result &) {});
         }
         impl->info = read_info(connection.get());
+        prepared(connection.get(), "SELECT workflow FROM PROJECT LIMIT 1", "read workflow", [&](Statement) {}, [&](duckdb_result &result)
+                 {
+                 if (duckdb_row_count(&result))
+                     impl->workflow = Workflow::from_json(parse_json(value_string(result, 0, 0), "workflow")); });
         audit(connection.get(), creating ? "create" : "open", "project", Json::object());
         if (!creating)
             query(connection.get(), "UPDATE WORKFLOW_EXECUTION SET status = 'interrupted', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'", "recover workflow executions");
@@ -1625,11 +1632,7 @@ namespace streamfind
     {
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
-        Connection connection(*impl_);
-        Json value;
-        prepared(connection.get(), "SELECT workflow FROM PROJECT", "read workflow", [&](Statement statement) {}, [&](duckdb_result &result)
-                 { if (duckdb_row_count(&result)) value = parse_json(value_string(result, 0, 0), "workflow"); });
-        return Workflow::from_json(value);
+        return impl_->workflow;
     }
 
     void Project::set_workflow(Workflow workflow_value)
@@ -1649,6 +1652,7 @@ namespace streamfind
         prepared(connection.get(), "UPDATE PROJECT SET workflow = ?, updated_at = CURRENT_TIMESTAMP", "update workflow", [&](Statement statement)
                  { bind_text(statement, 1, json_text(workflow_value.to_json())); }, [](duckdb_result &) {});
         audit(connection.get(), "update", "workflow", workflow_value.to_json());
+        impl_->workflow = workflow_value;
     }
 
     void Project::set_workflow(Workflow workflow_value, const OperationRegistry &registry)
@@ -1692,6 +1696,7 @@ namespace streamfind
             query(connection.get(), "UPDATE ARTIFACT_INVENTORY SET status = 'stale' WHERE producer_instance = " + detail::sql_quote(operation_id),
                   "invalidate changed operation artifacts");
         audit(connection.get(), "update", "workflow", workflow_value.to_json());
+        impl_->workflow = workflow_value;
     }
 
     void Project::clear_workflow_history()
@@ -2239,10 +2244,20 @@ namespace streamfind
         Json executions = Json::array();
         Json current_artifacts = Json::object();
         for (std::size_t index = 0; index < ready.size(); ++index) {
+            if (cancellation_requested())
+                throw Error(ErrorCode::Cancelled, "Workflow cancellation requested");
             if (!process_lock.healthy())
                 throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
             const auto &operation_id = ready[index];
             const auto &operation = *by_id.at(operation_id);
+            OperationEventCallback event_callback;
+            {
+                std::lock_guard lock(impl_->mutex);
+                ensure_active(*impl_);
+                impl_->active_operation_id = operation.id;
+                event_callback = impl_->operation_event_callback;
+            }
+            if (event_callback) event_callback(operation.id, "operation.started", Json::object());
             const auto *executor = registry.find(operation.operation);
             if (!executor)
                 throw Error(ErrorCode::WorkflowValidation,
@@ -2319,6 +2334,11 @@ namespace streamfind
                             detail::sql_quote(cached_result.at("emitted_results").dump()) +
                             " WHERE step_index = " + std::to_string(index));
                 log_operation("operation.cache_reused (" + operation.operation + "): Reused cached artifacts; operation execution skipped.");
+                if (event_callback) event_callback(operation.id, "operation.completed", Json{{"cache_hit", true}});
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    impl_->active_operation_id.clear();
+                }
                 executions.push_back({{"operation_id", operation.id},
                                       {"operation", operation.operation},
                                       {"inputs", inputs}, {"result", cached_result}, {"cache_hit", true}});
@@ -2378,17 +2398,32 @@ namespace streamfind
             executions.push_back({{"operation_id", operation.id},
                                   {"operation", operation.operation},
                                   {"inputs", inputs}, {"result", result}});
+            if (event_callback) event_callback(operation.id, "operation.completed", Json{{"cache_hit", false}});
+            {
+                std::lock_guard lock(impl_->mutex);
+                impl_->active_operation_id.clear();
+            }
             if (result.contains("emitted_results") && result.at("emitted_results").is_object())
                 for (const auto &[output_port, artifact] : result.at("emitted_results").items())
                     current_artifacts[operation.id][output_port] = artifact.value("artifact_id", "");
             for (const auto &target : outgoing[operation_id])
                 if (--indegree[target] == 0) ready.push_back(target);
             } catch (const std::exception &error) {
+                if (event_callback) event_callback(operation.id, "operation.failed", Json{{"message", error.what()}});
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    impl_->active_operation_id.clear();
+                }
                 execute_sql("UPDATE WORKFLOW_EXECUTION_STEP SET status = 'failed', error_message = " +
                             detail::sql_quote(error.what()) + ", updated_at = CURRENT_TIMESTAMP WHERE step_index = " +
                             std::to_string(index));
                 throw;
             } catch (...) {
+                if (event_callback) event_callback(operation.id, "operation.failed", Json{{"message", "unknown workflow step failure"}});
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    impl_->active_operation_id.clear();
+                }
                 execute_sql("UPDATE WORKFLOW_EXECUTION_STEP SET status = 'failed', error_message = 'unknown workflow step failure', updated_at = CURRENT_TIMESTAMP WHERE step_index = " +
                             std::to_string(index));
                 throw;
@@ -2414,7 +2449,7 @@ namespace streamfind
             try
             {
                 execute_sql("UPDATE WORKFLOW_EXECUTION SET error = " + detail::sql_quote(error.what()) + ", updated_at = CURRENT_TIMESTAMP");
-                manager.release_worker(worker_id, ExecutionState::failed);
+                manager.release_worker(worker_id, cancellation_requested() ? ExecutionState::cancelled : ExecutionState::failed);
             }
             catch (...)
             {
@@ -2584,6 +2619,12 @@ namespace streamfind
         impl_->operation_log_callback = std::move(callback);
     }
 
+    void Project::set_operation_event_callback(OperationEventCallback callback)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->operation_event_callback = std::move(callback);
+    }
+
     void Project::set_cancellation_flag(std::atomic_bool *flag) noexcept
     {
         std::lock_guard lock(impl_->mutex);
@@ -2598,11 +2639,13 @@ namespace streamfind
     void Project::log_operation(std::string_view message) const
     {
         OperationLogCallback callback;
+        std::string operation_id;
         {
             std::lock_guard lock(impl_->mutex);
             callback = impl_->operation_log_callback;
+            operation_id = impl_->active_operation_id;
         }
-        if (callback) callback(message);
+        if (callback) callback(operation_id, message);
     }
 
     void Project::close() noexcept

@@ -6,6 +6,7 @@ import type {
   WorkflowStateResponse,
   WorkflowDefinition,
   WorkflowDefinitionResponse,
+  WorkflowEventHistoryResponse,
   JsonValue,
   CapabilityIndexResponse,
   CapabilityModulesResponse,
@@ -253,6 +254,14 @@ export class StreamFindApiClient {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/state`);
     if (!response.ok) throw new Error(`Workflow state request failed (${response.status})`);
     return response.json() as Promise<WorkflowStateResponse>;
+  }
+
+  async workflowEvents(sessionId: string, after = 0, limit = 20000): Promise<WorkflowEventHistoryResponse> {
+    const response = await fetch(
+      `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/events?after=${after}&limit=${limit}`,
+    );
+    if (!response.ok) throw new Error(`Workflow event history request failed (${response.status})`);
+    return response.json() as Promise<WorkflowEventHistoryResponse>;
   }
 
   async artifacts(sessionId: string): Promise<ArtifactRecord[]> {

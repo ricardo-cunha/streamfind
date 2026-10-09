@@ -347,21 +347,122 @@ std::vector<std::filesystem::path> workflow_demo_files(const std::filesystem::pa
 
 }  // namespace detail
 
-void EventBroker::add(std::intptr_t socket) { std::lock_guard lock(mutex_); clients_.push_back(socket); }
-void EventBroker::remove(std::intptr_t socket) { std::lock_guard lock(mutex_); clients_.erase(std::remove(clients_.begin(), clients_.end(), socket), clients_.end()); }
-void EventBroker::publish(const Json &event) {
+EventBroker::EventBroker() : worker_([this] { run(); }) {}
+
+EventBroker::~EventBroker() {
+    {
+        std::lock_guard lock(mutex_);
+        stopping_ = true;
+    }
+    condition_.notify_one();
+    if (worker_.joinable()) worker_.join();
+}
+
+void EventBroker::add(std::intptr_t socket) {
     std::lock_guard lock(mutex_);
-    for (const auto socket : clients_) {
-        try { detail::send_all(socket, detail::websocket_frame(event.dump())); } catch (...) {}
+    if (std::find(clients_.begin(), clients_.end(), socket) == clients_.end())
+        clients_.push_back(socket);
+}
+
+void EventBroker::remove(std::intptr_t socket) {
+    std::lock_guard lock(mutex_);
+    clients_.erase(std::remove(clients_.begin(), clients_.end(), socket), clients_.end());
+}
+
+std::string event_project_id(const Json &event) {
+    const auto project = event.find("project");
+    if (project == event.end() || project->is_null()) return {};
+    if (project->is_string()) return project->get<std::string>();
+    if (project->is_object()) {
+        const auto session_id = project->find("session_id");
+        if (session_id != project->end() && session_id->is_string()) return session_id->get<std::string>();
+    }
+    return {};
+}
+
+void EventBroker::publish(const Json &event) {
+    Json queued = event;
+    {
+        std::lock_guard lock(mutex_);
+        queued["event_id"] = next_event_id_++;
+        queued["timestamp_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        const auto project = event_project_id(queued);
+        if (!project.empty()) {
+            static constexpr std::size_t max_history_events = 32768;
+            auto &project_history = history_[project];
+            if (project_history.size() >= max_history_events) project_history.pop_front();
+            project_history.push_back(queued);
+        }
+        static constexpr std::size_t max_pending_events = 8192;
+        if (pending_.size() >= max_pending_events) pending_.pop_front();
+        pending_.push_back(std::move(queued));
+    }
+    condition_.notify_one();
+}
+
+Json EventBroker::history(const std::string &project_id, std::uint64_t after_event_id,
+                          std::size_t limit) const {
+    std::lock_guard lock(mutex_);
+    const auto found = history_.find(project_id);
+    Json events = Json::array();
+    if (found == history_.end())
+        return Json{{"project", project_id}, {"events", events}, {"has_more", false},
+                    {"oldest_event_id", nullptr}, {"latest_event_id", nullptr}, {"gap", false}};
+    limit = std::clamp<std::size_t>(limit, 1, 20000);
+    for (const auto &event : found->second) {
+        if (event.value("event_id", std::uint64_t{0}) <= after_event_id) continue;
+        if (events.size() >= limit) break;
+        events.push_back(event);
+    }
+    const auto &project_history = found->second;
+    const auto oldest = project_history.front().value("event_id", std::uint64_t{0});
+    const auto latest = project_history.back().value("event_id", std::uint64_t{0});
+    const bool gap = after_event_id != 0 && after_event_id + 1 < oldest;
+    const bool has_more = !events.empty() && events.back().value("event_id", std::uint64_t{0}) < latest;
+    return Json{{"project", project_id}, {"events", events}, {"has_more", has_more},
+                {"oldest_event_id", oldest}, {"latest_event_id", latest}, {"gap", gap}};
+}
+
+void EventBroker::run() {
+    while (true) {
+        Json event;
+        std::vector<std::intptr_t> clients;
+        {
+            std::unique_lock lock(mutex_);
+            condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+            if (stopping_ && pending_.empty()) return;
+            event = std::move(pending_.front());
+            pending_.pop_front();
+            clients = clients_;
+        }
+        const auto frame = detail::websocket_frame(event.dump());
+        std::vector<int> failed;
+        for (const auto socket : clients) {
+            try { detail::send_all(socket, frame); }
+            catch (...) { failed.push_back(socket); }
+        }
+        if (!failed.empty()) {
+            std::lock_guard lock(mutex_);
+            for (const auto socket : failed)
+                clients_.erase(std::remove(clients_.begin(), clients_.end(), socket), clients_.end());
+        }
     }
 }
 
 ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
     const std::filesystem::path &application_root)
     : port_(port), application_root_(application_root), runtime_root_(configuration_path.parent_path()), projects_(operations_) {
-    projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view message) {
-        events_.publish(Json{{"type", "operation.log"}, {"project", session_id},
-                             {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}});
+    projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view operation_id, std::string_view message) {
+        Json event{{"type", "operation.log"}, {"project", session_id},
+                   {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}};
+        if (!operation_id.empty()) event["operation_id"] = std::string(operation_id);
+        events_.publish(event);
+    });
+    projects_.set_operation_event_callback([this](const std::string &session_id, std::string_view operation_id, std::string_view type, const Json &payload) {
+        Json event{{"type", std::string(type)}, {"project", session_id}, {"payload", payload}};
+        if (!operation_id.empty()) event["operation_id"] = std::string(operation_id);
+        events_.publish(event);
     });
 #ifdef _WIN32
     WSADATA data{};
@@ -706,6 +807,15 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow/state");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.workflow_snapshot(session_id));
+            } else if (method == "GET" && route.rfind("/projects/", 0) == 0 && route.ends_with("/workflow/events")) {
+                            const auto prefix = std::string("/projects/");
+                            const auto suffix = std::string("/workflow/events");
+                            const auto session_id = detail::percent_decode(route.substr(prefix.size(), route.size() - prefix.size() - suffix.size()));
+                std::uint64_t after = 0;
+                std::size_t limit = 20000;
+                try { if (!query_value("after").empty()) after = std::stoull(query_value("after")); } catch (...) { throw std::invalid_argument("invalid event history cursor"); }
+                try { if (!query_value("limit").empty()) limit = std::stoull(query_value("limit")); } catch (...) { throw std::invalid_argument("invalid event history limit"); }
+                detail::send_http(socket, 200, events_.history(session_id, after, limit));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/data")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/artifacts/data");
@@ -742,8 +852,8 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow/cancel");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto state = projects_.cancel_workflow(session_id);
-                events_.publish(Json{{"type", "workflow.cancelled"}, {"project", session_id},
-                                     {"payload", Json{{"message", "Workflow cancellation requested."}}}});
+                events_.publish(Json{{"type", "workflow.cancellation_requested"}, {"project", session_id},
+                                                     {"payload", Json{{"message", "Workflow cancellation requested."}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.find("/operations/") != std::string::npos) {
                 const auto prefix = std::string("/projects/");

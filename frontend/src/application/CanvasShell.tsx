@@ -14,7 +14,7 @@ import {
   type ArtifactRecord,
   type ProjectSession,
 } from '../framework/backend/StreamFindApiClient';
-import type { WorkflowMetadata } from '../framework/backend/protocol';
+import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
 import logo from '../assets/streamfind.png';
 
 import { PathFileManager } from './PathFileManager';
@@ -183,6 +183,7 @@ export default function CanvasShell({
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const lastStatusRef = useRef<{ message: string; timestamp: number } | null>(null);
   const recentEventRef = useRef<Map<string, number>>(new Map());
+  const seenEventIdsRef = useRef<Set<number>>(new Set());
   const [paletteSearch, setPaletteSearch] = useState('');
   const [paletteModule, setPaletteModule] = useState('');
   const [anchorCenters, setAnchorCenters] = useState<Record<string, Point>>({});
@@ -191,6 +192,7 @@ export default function CanvasShell({
     surface === 'workflow' ? 'Drag an output connector to a compatible input connector.' : 'Workflow canvas',
   );
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
+  const logSequenceRef = useRef(0);
   const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactViewer, setArtifactViewer] = useState<ArtifactRecord | null>(null);
   const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'default'>('default');
@@ -217,10 +219,16 @@ export default function CanvasShell({
     current: '',
   });
   const historyApplyingRef = useRef(false);
-  const appendLog = useCallback((message: string, level: CanvasLogLine['level'] = 'info') => {
+  const appendLog = useCallback((message: string, level: CanvasLogLine['level'] = 'info', timestampMs?: number) => {
+    const timestamp = timestampMs ?? Date.now();
     setActivityLog((current) => [
-      { id: Date.now() + current.length, timestamp: new Date().toLocaleTimeString(), message, level },
-      ...current.slice(0, 99),
+      {
+        id: ++logSequenceRef.current,
+        timestamp: new Date(timestamp).toLocaleTimeString(),
+        message,
+        level,
+      },
+      ...current.slice(0, 4999),
     ]);
   }, []);
   useEffect(() => {
@@ -334,16 +342,8 @@ export default function CanvasShell({
   const workflowDirty =
     workflowLoaded && savedWorkflowFingerprint !== null && currentWorkflowFingerprint !== savedWorkflowFingerprint;
 
-  useEffect(() => {
-    if (!client) return undefined;
-    return client.subscribe((event) => {
-      const eventKey = JSON.stringify(event);
-      const now = Date.now();
-      const previousEvent = recentEventRef.current.get(eventKey);
-      if (previousEvent && now - previousEvent < 1000) return;
-      recentEventRef.current.set(eventKey, now);
-      for (const [key, timestamp] of recentEventRef.current)
-        if (now - timestamp >= 1000) recentEventRef.current.delete(key);
+  const applyWorkflowEvent = useCallback(
+    (event: StreamFindEvent) => {
       const projectId =
         typeof event.project === 'string'
           ? event.project
@@ -354,17 +354,32 @@ export default function CanvasShell({
             ? String(event.project.session_id)
             : undefined;
       if (projectId && projectId !== project.session_id) return;
+      if (event.event_id !== undefined) {
+        if (seenEventIdsRef.current.has(event.event_id)) return;
+        seenEventIdsRef.current.add(event.event_id);
+        if (seenEventIdsRef.current.size > 50000) {
+          const first = seenEventIdsRef.current.values().next().value;
+          if (first !== undefined) seenEventIdsRef.current.delete(first);
+        }
+      }
       const payload = event.payload;
       const detail =
         payload && typeof payload === 'object' && !Array.isArray(payload) && 'message' in payload
           ? String(payload.message)
           : undefined;
       const operation = event.operation_id ? ` (${event.operation_id})` : '';
-      const level: CanvasLogLine['level'] = event.type.endsWith('.failed')
-        ? 'error'
-        : event.type.endsWith('.completed')
-          ? 'success'
-          : 'info';
+      const payloadLevel =
+        payload && typeof payload === 'object' && !Array.isArray(payload) && 'level' in payload
+          ? String(payload.level)
+          : undefined;
+      const level: CanvasLogLine['level'] =
+        payloadLevel === 'error' || event.type.endsWith('.failed')
+          ? 'error'
+          : payloadLevel === 'warning'
+            ? 'info'
+            : event.type.endsWith('.completed')
+              ? 'success'
+              : 'info';
       if (event.operation_id) {
         const executionState =
           event.type === 'operation.started'
@@ -381,16 +396,35 @@ export default function CanvasShell({
         }
       }
       if (event.type !== 'workflow.completed') {
-        appendLog(detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`, level);
+        appendLog(
+          detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`,
+          level,
+          event.timestamp_ms,
+        );
       }
       if (
-        event.type === 'operation.completed' ||
         event.type === 'workflow.completed' ||
-        event.type === 'workflow.failed'
+        event.type === 'workflow.failed' ||
+        event.type === 'workflow.cancelled'
       )
         void refreshArtifacts();
+    },
+    [appendLog, project.session_id, refreshArtifacts],
+  );
+
+  useEffect(() => {
+    if (!client) return undefined;
+    return client.subscribe((event) => {
+      const eventKey = JSON.stringify(event);
+      const now = Date.now();
+      const previousEvent = recentEventRef.current.get(eventKey);
+      if (previousEvent && now - previousEvent < 1000) return;
+      recentEventRef.current.set(eventKey, now);
+      for (const [key, timestamp] of recentEventRef.current)
+        if (now - timestamp >= 1000) recentEventRef.current.delete(key);
+      applyWorkflowEvent(event);
     });
-  }, [appendLog, client, project.session_id, refreshArtifacts]);
+  }, [applyWorkflowEvent, client]);
 
   useEffect(() => {
     if (!client || surface === 'workflow') return undefined;
@@ -421,6 +455,22 @@ export default function CanvasShell({
       window.clearInterval(timer);
     };
   }, [appendLog, client, project.session_id, refreshArtifacts, surface]);
+
+  useEffect(() => {
+    if (surface !== 'workflow' || !client || !workflowLoaded || typeof client.workflowEvents !== 'function')
+      return undefined;
+    let active = true;
+    client
+      .workflowEvents(project.session_id)
+      .then((result) => {
+        if (!active) return;
+        for (const event of result.events) applyWorkflowEvent(event);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [applyWorkflowEvent, client, project.session_id, surface, workflowLoaded]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
@@ -713,17 +763,11 @@ export default function CanvasShell({
         .then((result) => {
           setWorkflowState(result.state);
           if (result.progress) setWorkflowProgress(result.progress);
-          if (result.state !== 'idle') {
-            appendLog(
-              `workflow ${result.state}: ${result.progress?.completed ?? 0}/${result.progress?.total ?? 0}`,
-              result.state === 'failed' ? 'error' : result.state === 'completed' ? 'success' : 'info',
-            );
-          }
         })
         .catch(() => undefined);
     }, 500);
     return () => window.clearInterval(timer);
-  }, [appendLog, client, project.session_id, surface, workflowState]);
+  }, [client, project.session_id, surface, workflowState]);
 
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const toWorld = (event: ReactMouseEvent): Point => {
@@ -1373,7 +1417,7 @@ export default function CanvasShell({
     setCsvPreview({ rows: parsed.rows, error: validation || undefined });
   };
   const runEntryOperation = async (node: CanvasNode, capability: BackendCapability) => {
-    if (!client || !node.capabilityId) return;
+    if (!client || !node.capabilityId || nodeControlsLocked) return;
     if (workflowDirty) {
       const saved = await saveCurrentWorkflow();
       if (!saved) return;
@@ -1555,7 +1599,13 @@ export default function CanvasShell({
         <button type="button" className="sf-canvas-control" onClick={() => zoom(-0.1)} title="Zoom out">
           <i className="fa-solid fa-minus" />
         </button>
-        <button type="button" className="sf-canvas-control" onClick={arrangeNodes} title="Reset view and arrange nodes">
+        <button
+          type="button"
+          className="sf-canvas-control"
+          onClick={arrangeNodes}
+          disabled={nodeControlsLocked}
+          title="Reset view and arrange nodes"
+        >
           <i className="fa-solid fa-crosshairs" />
         </button>
         <button
@@ -1570,6 +1620,7 @@ export default function CanvasShell({
           type="button"
           className="sf-canvas-control"
           onClick={openStandalonePicker}
+          disabled={nodeControlsLocked}
           title="Add Operation"
           aria-label="Add Operation"
         >
@@ -1588,7 +1639,7 @@ export default function CanvasShell({
               type="button"
               className={`sf-canvas-control ${workflowDirty ? 'unsaved' : ''}`}
               onClick={() => void saveCurrentWorkflow()}
-              disabled={workflowBusy || !workflowLoaded || !workflowDirty}
+              disabled={nodeControlsLocked || !workflowLoaded || !workflowDirty}
               title={workflowDirty ? 'Save workflow changes' : 'Workflow is saved'}
               aria-label="Save workflow"
             >
@@ -1598,7 +1649,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={openWorkflowMetadataEditor}
-              disabled={workflowBusy || !workflowLoaded}
+              disabled={nodeControlsLocked || !workflowLoaded}
               title="Edit workflow metadata JSON"
               aria-label="Edit workflow metadata"
             >
@@ -1608,7 +1659,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={discardWorkflowChanges}
-              disabled={workflowBusy || !workflowLoaded || !workflowDirty}
+              disabled={nodeControlsLocked || !workflowLoaded || !workflowDirty}
               title="Discard changes and reload saved workflow"
               aria-label="Discard workflow changes"
             >
@@ -1618,7 +1669,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={resetWorkflow}
-              disabled={workflowBusy}
+              disabled={nodeControlsLocked}
               title="Reset workflow to empty"
               aria-label="Reset workflow to empty"
             >
@@ -1628,6 +1679,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={undoWorkflowEdit}
+              disabled={nodeControlsLocked}
               title="Undo workflow edit"
               aria-label="Undo workflow edit"
             >
@@ -1637,6 +1689,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={redoWorkflowEdit}
+              disabled={nodeControlsLocked}
               title="Redo workflow edit"
               aria-label="Redo workflow edit"
             >
@@ -1646,6 +1699,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={() => void clearArtifactCache()}
+              disabled={nodeControlsLocked}
               title="Clear cached data and cache history"
               aria-label="Clear cached data and cache history"
             >
@@ -1655,7 +1709,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={() => void clearAllArtifacts()}
-              disabled={workflowBusy}
+              disabled={nodeControlsLocked}
               title="Clear all artifacts"
               aria-label="Clear all artifacts"
             >
@@ -1665,7 +1719,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={exportWorkflow}
-              disabled={workflowBusy}
+              disabled={nodeControlsLocked}
               title="Export workflow JSON"
               aria-label="Export workflow JSON"
             >
@@ -1675,7 +1729,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={() => workflowFileInputRef.current?.click()}
-              disabled={workflowBusy}
+              disabled={nodeControlsLocked}
               title="Load workflow JSON"
               aria-label="Load workflow JSON"
             >
@@ -1685,7 +1739,7 @@ export default function CanvasShell({
               type="button"
               className="sf-canvas-control"
               onClick={() => void validateCurrentWorkflow()}
-              disabled={workflowBusy}
+              disabled={nodeControlsLocked}
               title="Validate workflow"
             >
               <i className="fa-solid fa-check" />

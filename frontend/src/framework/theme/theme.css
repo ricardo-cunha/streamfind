@@ -2312,6 +2312,13 @@ h2 {
 .sf-canvas-control:hover {
   cursor: pointer;
 }
+.sf-canvas-control:disabled,
+.sf-canvas-control:disabled:hover {
+  background: transparent;
+  color: var(--sf-text-muted);
+  cursor: default;
+  opacity: 0.35;
+}
 .sf-canvas-control.unsaved,
 .sf-canvas-control.unsaved:hover {
   background: var(--sf-error);

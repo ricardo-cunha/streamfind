@@ -415,8 +415,37 @@ Json Session::handle(const Json &request) {
             ProjectOptions options;
             options.database_path = arguments.at("database_path").get<std::string>();
             auto project = Project::open(options);
-            const Json result = project.run_operation_graph(operations_);
-            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::workflow_result(result)}};
+            Json logs = Json::array();
+            Json events = Json::array();
+            project.set_operation_log_callback([&logs](std::string_view operation_id, std::string_view message) {
+                logs.push_back(Json{{"operation_id", std::string(operation_id)}, {"message", std::string(message)}});
+            });
+            project.set_operation_event_callback([&events](std::string_view operation_id, std::string_view type, const Json &payload) {
+                events.push_back(Json{{"type", std::string(type)},
+                                      {"operation_id", std::string(operation_id)},
+                                      {"payload", payload}});
+            });
+            const auto workflow = project.get_workflow();
+            WorkflowExecutionManager execution_manager(project);
+            const auto worker_id = "mcp-" + id.dump();
+            execution_manager.create(Json{{"workflow_revision", workflow.version},
+                                          {"progress", Json{{"completed", 0},
+                                                              {"total", workflow.operations.size()},
+                                                              {"current_step", 0}}}});
+            const Json result = project.run_worker(worker_id, operations_);
+            const auto execution = project.get_workflow_execution();
+            constexpr std::size_t max_log_entries = 200;
+            const auto first_log = logs.size() > max_log_entries ? logs.size() - max_log_entries : 0;
+            Json bounded_logs = Json::array();
+            for (std::size_t index = first_log; index < logs.size(); ++index)
+                bounded_logs.push_back(logs[index]);
+            Json response = result;
+            response["execution"] = execution;
+            response["events"] = events;
+            response["logs"] = std::move(bounded_logs);
+            response["log_count"] = logs.size();
+            response["logs_truncated"] = first_log != 0;
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::workflow_result(response)}};
         } catch (const Error &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }

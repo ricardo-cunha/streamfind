@@ -4,24 +4,40 @@
 #include "streamfind/service/service_plugin_runtime.hpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace streamfind::service {
 
 class EventBroker {
 public:
+    EventBroker();
+    ~EventBroker();
+    EventBroker(const EventBroker &) = delete;
+    EventBroker &operator=(const EventBroker &) = delete;
     void add(std::intptr_t socket);
     void remove(std::intptr_t socket);
     void publish(const Json &event);
+    Json history(const std::string &project_id, std::uint64_t after_event_id = 0,
+                 std::size_t limit = 20000) const;
 
 private:
-    std::mutex mutex_;
-    std::vector<int> clients_;
+    void run();
+    mutable std::mutex mutex_;
+    std::condition_variable condition_;
+    std::vector<std::intptr_t> clients_;
+    std::deque<Json> pending_;
+    std::unordered_map<std::string, std::deque<Json>> history_;
+    std::thread worker_;
+    bool stopping_{false};
+    std::uint64_t next_event_id_{1};
 };
 
 class ServiceServer {
