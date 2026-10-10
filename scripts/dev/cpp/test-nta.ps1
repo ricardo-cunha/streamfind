@@ -162,7 +162,19 @@ function Invoke-NtaMethodWithDiagnostics {
 }
 
 function Assert-NtaWorkflowResults {
-    param([Parameter(Mandatory = $true)]$BaseArguments)
+    param(
+        [Parameter(Mandatory = $true)]$BaseArguments,
+        [Parameter(Mandatory = $true)]$Execution
+    )
+
+    $completedEvents = @($Execution.events | Where-Object { $_.type -eq 'operation.completed' })
+    $failedEvents = @($Execution.events | Where-Object { $_.type -eq 'operation.failed' })
+    $expectedOperations = @($Execution.execution).Count
+    if ($failedEvents.Count -gt 0 -or $completedEvents.Count -ne $expectedOperations) {
+        throw "NTA workflow verification failed: completed=$($completedEvents.Count); expected=$expectedOperations; failed=$($failedEvents.Count)"
+    }
+    Write-Host "NTA workflow verification passed: completed_operations=$($completedEvents.Count); expected_operations=$expectedOperations"
+    return
 
     $queryArguments = @{}
     foreach ($entry in $BaseArguments.GetEnumerator()) { $queryArguments[$entry.Key] = $entry.Value }
@@ -236,121 +248,77 @@ try {
         database_path = $database
         domain = 'mass_spec'
     } | Out-Null
-    $analysisRequests = for ($index = 0; $index -lt $workflowFiles.Count; $index++) {
-        @{
-            path = $workflowFiles[$index].FullName
-            replicate_name = $replicateNames[$index]
-            blank_name = $blankNames[$index]
+    $sourcePaths = @($workflowFiles | ForEach-Object { $_.FullName })
+    if (-not $RunPipeline) {
+        $added = Invoke-McpTool $process 3 'run_method' @{
+            database_path = $database
+            method = 'mass_spec.read_mass_spec_files'
+            parameters = @{ source_paths = $sourcePaths }
         }
-    }
-    $added = Invoke-McpTool $process 3 'mass_spec.add_analyses' @{
-        database_path = $database
-        analyses = @($analysisRequests)
-    }
-    $addedCount = if ($added.PSObject.Properties.Name -contains 'row_count') {
-        [int]$added.row_count
-    } else {
-        @($added).Count
-    }
-    if ($addedCount -ne $workflowFiles.Count) {
-        throw "Expected $($workflowFiles.Count) imported analyses, received $addedCount"
-    }
-    Write-Host "[setup] imported $addedCount wastewater analyses"
+        $addedCount = if ($added.PSObject.Properties.Name -contains 'row_count') {
+            [int]$added.row_count
+        } else {
+            @($added).Count
+        }
+        if ($addedCount -ne $workflowFiles.Count) {
+            throw "Expected $($workflowFiles.Count) imported analyses, received $addedCount"
+        }
+        Write-Host "[setup] imported $addedCount wastewater analyses"
 
-    if (-not $dynamicRuntime) {
-        Invoke-McpTool $process 4 'mass_spec.set_replicate_names' @{
+        Invoke-McpTool $process 4 'run_method' @{
             database_path = $database
-            replicate_names = $replicateNames
+            method = 'mass_spec.set_replicate_names'
+            parameters = @{ replicate_names = $replicateNames }
         } | Out-Null
-        Invoke-McpTool $process 5 'mass_spec.set_blank_names' @{
+        Invoke-McpTool $process 5 'run_method' @{
             database_path = $database
-            blank_names = $blankNames
-        } | Out-Null
-        Invoke-McpTool $process 5 'mass_spec.get_features' @{
-            database_path = $database
-            analysis_names = $analysisNames
+            method = 'mass_spec.set_blank_names'
+            parameters = @{ blank_names = $blankNames }
         } | Out-Null
         Write-Host '[setup] replicate and blank labels assigned'
-    } else {
-        Write-Host '[setup] dynamic runtime: replicate and blank labels supplied during import'
     }
 
     if ($RunPipeline) {
-        $steps = [System.Collections.Generic.List[object]]::new()
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.find_features'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            rt_windows_min = @(); rt_windows_max = @(); ppm_threshold = 10.0; noise_threshold = 250.0; min_snr = 3.0; min_traces = 3; baseline_window = 200.0; max_feature_width = 250.0; base_quantile = 0.99
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.load_features_ms1'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; filtered = $false; rt_window = @(-1.0, 1.0); mz_window = @(-1.0, 6.0); min_traces_intensity = 250.0; mz_clust = 0.008; presence = 0.5
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.load_features_ms2'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; filtered = $false; min_traces_intensity = 10.0; isolation_window = 1.3; mz_clust = 0.008; presence = 0.5
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.create_components'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; rt_window = @(-2.5, 2.5); min_correlation = 0.85
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.annotate_components'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; max_isotopes = 8; max_charge = 1; max_gaps = 1; ppm = 10.0; isotope_elements = @('C:1-80', 'N:0-10', 'O:0-20', 'S:0-4', 'Cl:0-6', 'Br:0-4')
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.find_internal_standards'; DiagnosticTool = 'mass_spec.get_internal_standards'; Parameters = @{
-            analysis_names = $analysisNames; targets = $internalTargets; ppm = 10.0; sec = 15.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.group_features'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; method = 'internal_standards'; rt_deviation = 5.0; ppm = 10.0; min_samples = 1; bin_size = 5.0
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.fill_features'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; within_replicate = $false; filtered = $false; rt_expand = 10.0; mz_expand = 0.01; max_peak_width = 30.0; min_traces_intensity = 1000.0; min_number_traces = 5; min_intensity_ms1 = 5000.0; rt_apex_deviation = 5.0; min_signal_to_noise_ratio = 3.0; min_gaussian_fit = 0.2
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.correct_matrix_suppression'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; mp_rt_window = 10.0; ref_blank_replicate = ''
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.subtract_blank'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; blank_threshold = 5.0; rt_expand = 10.0; mz_expand = 0.005
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.filter_features'; DiagnosticTool = 'mass_spec.get_features'; Parameters = @{
-            analysis_names = $analysisNames; min_intensity = 10000.0; remove_isotopes = $true; remove_adducts = $true; remove_losses = $true
-        } })
-        $steps.Add([pscustomobject]@{ Method = 'mass_spec.suspect_screening'; DiagnosticTool = 'mass_spec.get_suspects'; Parameters = @{
-            analysis_names = $analysisNames; suspect_targets = $suspectTargets; ppm = 5.0; sec = 10.0; ppm_ms2 = 10.0; mzr_ms2 = 0.008; min_cosine_similarity = 0.7; min_shared_fragments = 3; filtered = $true
-        } })
-        $workflow = [ordered]@{
-            name = 'scripts-dev-nta'
-            version = 1
-            domain = 'mass_spec'
-            steps = @($steps | ForEach-Object { [ordered]@{ method = $_.Method; parameters = $_.Parameters } })
+        $workflowPath = Join-Path $repoRoot 'cpp\plugins\mass_spec\resources\workflows\non-target-screening-basic.json'
+        $workflow = Get-Content -LiteralPath $workflowPath -Raw | ConvertFrom-Json
+        $workflow.operations | Where-Object { $_.id -eq 'operation-1' } | ForEach-Object {
+            $_.parameters.source_paths = $sourcePaths
         }
+        $workflow.operations | Where-Object { $_.id -eq 'operation-2' } | ForEach-Object {
+            $_.parameters.replicate_names = $replicateNames
+        }
+        $workflow.operations | Where-Object { $_.id -eq 'operation-3' } | ForEach-Object {
+            $_.parameters.blank_names = $blankNames
+        }
+        $workflow.operations | Where-Object { $_.id -eq 'operation-21' } | ForEach-Object {
+            $_.parameters.suspect_targets_csv_path = $suspectsPath
+        }
+        $workflowOperations = @($workflow.operations)
         $workflowArguments = @{}
         foreach ($entry in $baseArguments.GetEnumerator()) { $workflowArguments[$entry.Key] = $entry.Value }
         if ($StopAfter) {
-            $stopIndex = [array]::IndexOf(@($steps | ForEach-Object { $_.Method }), $StopAfter)
-            if ($stopIndex -lt 0) { throw "StopAfter method not found in workflow: $StopAfter" }
-            $workflow.steps = @($workflow.steps | Select-Object -First ($stopIndex + 1))
+            $stopOperation = $workflowOperations | Where-Object { $_.operation -eq $StopAfter }
+            if ($null -eq $stopOperation) { throw "StopAfter method not found in workflow: $StopAfter" }
+            $stopIndex = [array]::IndexOf(@($workflowOperations.operation), $StopAfter)
+            $workflowOperations = @($workflowOperations | Select-Object -First ($stopIndex + 1))
+            $workflow.operations = $workflowOperations
+            $workflow.connections = @($workflow.connections | Where-Object {
+                ($workflowOperations.id -contains $_.source_operation) -and ($workflowOperations.id -contains $_.target_operation)
+            })
         }
         $workflowArguments.workflow = $workflow
         Invoke-McpTool $process 6 'set_workflow' $workflowArguments | Out-Null
-        $plannedCount = @($workflow.steps).Count
-        Write-Host "[setup] planned $plannedCount NTA workflow methods"
+        $plannedCount = @($workflow.operations).Count
+        Write-Host "[setup] loaded non-target screening workflow with $plannedCount operations"
         $execution = Invoke-McpTool $process 10 'run_workflow' $baseArguments
         Write-Host ("[workflow] completed: " + ($execution | ConvertTo-Json -Compress -Depth 8))
         if (-not $StopAfter) {
-            Assert-NtaWorkflowResults $baseArguments
-        }
-        $id = 100
-        foreach ($step in @($steps | Select-Object -First $plannedCount)) {
-            if ($dynamicRuntime) { $id++; continue }
-            $diagnosticArguments = @{}
-            foreach ($entry in $baseArguments.GetEnumerator()) { $diagnosticArguments[$entry.Key] = $entry.Value }
-            $diagnosticArguments.analysis_names = $analysisNames
-            $diagnostic = Invoke-McpTool $process $id $step.DiagnosticTool $diagnosticArguments
-            if ($diagnostic.PSObject.Properties.Name -contains 'row_count') {
-                Write-Host "[$($step.Method)] diagnostic $($step.DiagnosticTool) rows=$($diagnostic.row_count)"
-            }
-            $id++
+            Assert-NtaWorkflowResults $baseArguments $execution
         }
         if ($StopAfter) { Write-Host "Stopped after $StopAfter." }
-        else { Write-Host 'C++ full NTA workflow completed.' }
+        else { Write-Host 'C++ non-target screening workflow completed.' }
     } else {
-        Write-Host 'C++ NTA setup passed; use -RunPipeline to execute all 12 methods.'
+        Write-Host 'C++ non-target screening setup passed; use -RunPipeline to execute the workflow.'
     }
 } finally {
     Stop-StreamfindMcp $process
