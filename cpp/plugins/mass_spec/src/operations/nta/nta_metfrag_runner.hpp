@@ -71,3 +71,4 @@ namespace streamfind::mass_spec::nta
 
 #endif // STREAMFIND_NTA_METFRAG_RUNNER_HPP
 namespace streamfind::mass_spec::nta::metfrag_screening { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+namespace streamfind::mass_spec::nta::find_internal_standards_metfrag { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

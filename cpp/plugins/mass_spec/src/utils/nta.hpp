@@ -1046,6 +1046,10 @@ namespace streamfind::mass_spec::nta::api
         int exp_ms2_size = 0;
         std::string exp_ms2_mz;
         std::string exp_ms2_intensity;
+        int isotope_theoretical_peaks = 0;
+        int isotope_matched_peaks = 0;
+        double isotope_similarity = 0.0;
+        bool isotope_match = false;
     };
 
     // MARK: NTA_INTERNAL_STANDARDS (columnar)
@@ -1053,6 +1057,9 @@ namespace streamfind::mass_spec::nta::api
     {
         std::vector<std::string> analysis;
         std::vector<std::string> feature;
+        std::vector<std::string> feature_group;
+        std::vector<std::string> feature_component;
+        std::vector<std::string> adduct;
         std::vector<int> candidate_rank;
         std::vector<std::string> name;
         std::vector<int> polarity;
@@ -1082,6 +1089,10 @@ namespace streamfind::mass_spec::nta::api
         std::vector<int> exp_ms2_size;
         std::vector<std::string> exp_ms2_mz;
         std::vector<std::string> exp_ms2_intensity;
+        std::vector<int> isotope_theoretical_peaks;
+        std::vector<int> isotope_matched_peaks;
+        std::vector<double> isotope_similarity;
+        std::vector<bool> isotope_match;
 
         int size() const { return static_cast<int>(analysis.size()); }
 
@@ -1090,6 +1101,9 @@ namespace streamfind::mass_spec::nta::api
             NTA_INTERNAL_STANDARD_ROW standard_i;
             standard_i.analysis = analysis[i];
             standard_i.feature = feature[i];
+            standard_i.feature_group = feature_group[i];
+            standard_i.feature_component = feature_component[i];
+            standard_i.adduct = adduct[i];
             standard_i.candidate_rank = candidate_rank[i];
             standard_i.name = name[i];
             standard_i.polarity = polarity[i];
@@ -1118,6 +1132,10 @@ namespace streamfind::mass_spec::nta::api
             standard_i.exp_ms2_size = exp_ms2_size[i];
             standard_i.exp_ms2_mz = exp_ms2_mz[i];
             standard_i.exp_ms2_intensity = exp_ms2_intensity[i];
+            standard_i.isotope_theoretical_peaks = isotope_theoretical_peaks[i];
+            standard_i.isotope_matched_peaks = isotope_matched_peaks[i];
+            standard_i.isotope_similarity = isotope_similarity[i];
+            standard_i.isotope_match = isotope_match[i];
             return standard_i;
         }
 
@@ -1125,6 +1143,9 @@ namespace streamfind::mass_spec::nta::api
         {
             analysis.push_back(is.analysis);
             feature.push_back(is.feature);
+            feature_group.push_back(is.feature_group);
+            feature_component.push_back(is.feature_component);
+            adduct.push_back(is.adduct);
             candidate_rank.push_back(is.candidate_rank);
             name.push_back(is.name);
             polarity.push_back(is.polarity);
@@ -1153,6 +1174,10 @@ namespace streamfind::mass_spec::nta::api
             exp_ms2_size.push_back(is.exp_ms2_size);
             exp_ms2_mz.push_back(is.exp_ms2_mz);
             exp_ms2_intensity.push_back(is.exp_ms2_intensity);
+            isotope_theoretical_peaks.push_back(is.isotope_theoretical_peaks);
+            isotope_matched_peaks.push_back(is.isotope_matched_peaks);
+            isotope_similarity.push_back(is.isotope_similarity);
+            isotope_match.push_back(is.isotope_match);
         }
     };
 

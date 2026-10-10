@@ -1382,7 +1382,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 namespace streamfind::mass_spec::nta::metfrag_screening
 {
 using Json = nlohmann::json;
-    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    Json run_impl(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters, bool output_internal_standards)
     {
         // Tool resolution is discovery-only. Installation must be an explicit user action.
         const auto tool = ::streamfind::mass_spec::tools::resolve_metfrag();
@@ -1433,7 +1433,10 @@ using Json = nlohmann::json;
         if (score_types.size() != score_weights.size())
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
 
-        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, false);
+        // Internal-standard MetFrag screening follows the same target source
+        // contract as the normal operation: targets are supplied through the
+        // Mass spectrometry suspect targets parameter, not a table connection.
+        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, !output_internal_standards);
         if (suspect_targets.empty())
             throw Error(ErrorCode::InvalidArgument,
                         "metfrag_screening requires at least one suspect_targets row with chemical identity.");
@@ -1502,7 +1505,28 @@ using Json = nlohmann::json;
         std::filesystem::create_directories(p.run_dir);
         p.database_path = utils::detail::write_local_metfrag_database(local_database, p.run_dir);
         ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(access, data, p);
+        if (output_internal_standards)
+        {
+            ::streamfind::mass_spec::nta::suspect_screening::convert_suspects_to_internal_standards(data);
+            utils::detail::emit_internal_standards(access, data);
+            return Json{{"status", "finished"}, {"info", "Internal standards found with MetFrag."}};
+        }
         utils::detail::emit_suspects(access, data);
         return Json{{"status", "finished"}, {"info", "MetFrag screening completed."}};
+    }
+
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        return run_impl(access, parameters, false);
+    }
+}
+
+namespace streamfind::mass_spec::nta::find_internal_standards_metfrag
+{
+using Json = nlohmann::json;
+
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        return ::streamfind::mass_spec::nta::metfrag_screening::run_impl(access, parameters, true);
     }
 }

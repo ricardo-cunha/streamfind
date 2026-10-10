@@ -1,16 +1,51 @@
 #include "operations/nta/nta_annotation.hpp"
 #include "utils/nta.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
+#include "element_tables.h"
 #include "utils/nta.hpp"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <limits>
 #include <cctype>
+#include <stdexcept>
 
 namespace streamfind::mass_spec::nta
 {
   namespace annotation
   {
+    double isotope_combination_chemical_preference(const std::vector<std::string> &combination)
+    {
+      int carbon_isotopes = 0;
+      int halogen_isotopes = 0;
+      for (const auto &isotope : combination)
+      {
+        if (isotope == "13C")
+          ++carbon_isotopes;
+        else if (isotope == "37Cl" || isotope == "81Br")
+          ++halogen_isotopes;
+      }
+
+      // Organic compounds are the default domain. Prefer a carbon-supported
+      // explanation when the isotope-mass match is effectively tied, while
+      // retaining halogen candidates for the complete-envelope comparison.
+      return (0.04 * static_cast<double>(carbon_isotopes)) -
+             (0.10 * static_cast<double>(halogen_isotopes));
+    }
+
+    bool isotope_combination_is_carbon_only(const std::vector<std::string> &combination)
+    {
+      bool has_carbon = false;
+      for (const auto &isotope : combination)
+      {
+        if (isotope == "13C")
+          has_carbon = true;
+        if (isotope == "37Cl" || isotope == "81Br")
+          return false;
+      }
+      return has_carbon;
+    }
+
     namespace streamfind::nta_annotation_detail
     {
       std::string fmt_num(double value, int precision)
@@ -287,6 +322,29 @@ namespace streamfind::mass_spec::nta
         return false;
       }
 
+      bool relation_candidate_is_valid_for_root(
+          const ANNOTATION_CANDIDATE &candidate,
+          const std::unordered_map<int, ANNOTATION_CANDIDATE> &state,
+          int root_index)
+      {
+        if (!relation_candidate_is_valid(candidate, state))
+          return false;
+
+        if (candidate.parent_index == root_index)
+          return true;
+
+        const auto parent_it = state.find(candidate.parent_index);
+        if (parent_it == state.end() || parent_it->second.is_default)
+          return false;
+
+        // Only an already-selected loss chain may continue below the chosen
+        // molecular root. Adducts and dimers must attach directly to that
+        // root; otherwise an unselected default feature can become an
+        // accidental parent merely because it happens to precede the target
+        // in the local update order.
+        return candidate.cat == "loss" && parent_it->second.cat == "loss";
+      }
+
       double neutral_mass_from_base_ion(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft)
       {
         constexpr double proton = 1.007276;
@@ -331,6 +389,33 @@ namespace streamfind::mass_spec::nta
           --end;
 
         return value.substr(start, end - start);
+      }
+
+      std::string lowercase_copy(const std::string &value)
+      {
+        std::string out = value;
+        std::transform(out.begin(), out.end(), out.begin(), [](unsigned char character) {
+          return static_cast<char>(std::tolower(character));
+        });
+        return out;
+      }
+
+      std::string adduct_modification_token(const ADDUCT &adduct)
+      {
+        const auto open = adduct.type.find('[');
+        const auto close = adduct.type.find(']');
+        if (open == std::string::npos || close == std::string::npos || close <= open + 1)
+          return adduct.type;
+
+        std::string expression = adduct.type.substr(open + 1, close - open - 1);
+        if (starts_with(expression, "M"))
+          expression.erase(0, 1);
+        return expression;
+      }
+
+      std::string loss_modification_token(const FRAGMENT_LOSS &loss)
+      {
+        return loss.expression.empty() ? "-" + loss.formula : loss.expression;
       }
 
       struct ISOTOPE_ELEMENT_SPEC
@@ -382,33 +467,7 @@ namespace streamfind::mass_spec::nta
 
       double isotope_priority_score(const std::string &element_label)
       {
-        static const std::unordered_map<std::string, double> priorities{
-            {"13C", 1.00},
-            {"37Cl", 0.98},
-            {"81Br", 0.98},
-            {"34S", 0.92},
-            {"33S", 0.82},
-            {"15N", 0.78},
-            {"18O", 0.62},
-            {"17O", 0.40},
-            {"2H", 0.35},
-            {"29Si", 0.70},
-            {"30Si", 0.62},
-            {"25Mg", 0.45},
-            {"26Mg", 0.48},
-            {"41K", 0.40},
-            {"44Ca", 0.32},
-            {"54Fe", 0.30},
-            {"57Fe", 0.34},
-            {"65Cu", 0.28},
-            {"66Zn", 0.30},
-            {"68Zn", 0.26},
-            {"77Se", 0.36},
-            {"78Se", 0.42},
-            {"80Se", 0.44},
-            {"10B", 0.24},
-            {"36S", 0.18}};
-
+        static const ISOTOPE_SET isotopes;
         const std::vector<std::string> tokens = split_string(element_label, '/');
         if (tokens.empty())
           return 0.0;
@@ -416,46 +475,36 @@ namespace streamfind::mass_spec::nta
         double score = 0.0;
         for (const auto &token : tokens)
         {
-          const auto it = priorities.find(token);
-          score += (it != priorities.end()) ? it->second : 0.2;
+          const auto it = std::find_if(isotopes.data.begin(), isotopes.data.end(), [&](const ISOTOPE &isotope) {
+            return isotope.isotope == token;
+          });
+          if (it == isotopes.data.end())
+          {
+            score += 0.0;
+            continue;
+          }
+
+          // Derive the priority from the current IsoSpec abundance rather
+          // than a second handwritten isotope-property table. The chemical
+          // carbon/halogen preference is applied separately by the envelope
+          // scorer.
+          const double relative_abundance = std::max(0.0, static_cast<double>(it->abundance));
+          score += std::min(1.0, std::sqrt(relative_abundance));
         }
         return score / static_cast<double>(tokens.size());
       }
 
       double isotope_mass_delta(const std::string &element_label)
       {
-        static const std::unordered_map<std::string, double> deltas{
-            {"13C", 1.0033548378},
-            {"2H", 1.0062767},
-            {"10B", 0.996809},
-            {"15N", 0.9970349},
-            {"17O", 1.004217},
-            {"18O", 2.004246},
-            {"25Mg", 0.999711},
-            {"26Mg", 1.995796},
-            {"29Si", 0.999568},
-            {"30Si", 1.996844},
-            {"33S", 0.999388},
-            {"34S", 1.995796},
-            {"36S", 3.995010},
-            {"37Cl", 1.997050},
-            {"81Br", 1.997953},
-            {"41K", 1.998119},
-            {"44Ca", 3.998159},
-            {"54Fe", -1.004391},
-            {"57Fe", 2.995294},
-            {"65Cu", 1.998204},
-            {"66Zn", 1.999059},
-            {"68Zn", 3.995796},
-            {"77Se", 0.997953},
-            {"78Se", 1.996004},
-            {"80Se", 3.995010}};
         double total = 0.0;
+        static const ISOTOPE_SET isotopes;
         for (const auto &token : split_string(element_label, '/'))
         {
-          const auto it = deltas.find(token);
-          if (it != deltas.end())
-            total += it->second;
+          const auto it = std::find_if(isotopes.data.begin(), isotopes.data.end(), [&](const ISOTOPE &isotope) {
+            return isotope.isotope == token;
+          });
+          if (it != isotopes.data.end())
+            total += it->mass_distance;
         }
         return total;
       }
@@ -478,6 +527,59 @@ namespace streamfind::mass_spec::nta
     }
 
     // MARK: ISOTOPE_COMBINATIONS Implementation
+    ISOTOPE_SET::ISOTOPE_SET()
+    {
+      struct ElementBase
+      {
+        std::string symbol;
+        double mass = 0.0;
+        double probability = 0.0;
+      };
+
+      std::vector<ElementBase> bases;
+      for (size_t i = 0; i < IsoSpec::isospec_number_of_isotopic_entries; ++i)
+      {
+        const std::string symbol = IsoSpec::elem_table_symbol[i];
+        if (symbol.empty() || IsoSpec::elem_table_Radioactive[i] || IsoSpec::elem_table_probability[i] <= 0.0)
+          continue;
+        auto base = std::find_if(bases.begin(), bases.end(), [&](const ElementBase &candidate) {
+          return candidate.symbol == symbol;
+        });
+        if (base == bases.end())
+        {
+          bases.push_back({symbol, IsoSpec::elem_table_mass[i], IsoSpec::elem_table_probability[i]});
+        }
+        else if (IsoSpec::elem_table_probability[i] > base->probability)
+        {
+          base->mass = IsoSpec::elem_table_mass[i];
+          base->probability = IsoSpec::elem_table_probability[i];
+        }
+      }
+
+      for (size_t i = 0; i < IsoSpec::isospec_number_of_isotopic_entries; ++i)
+      {
+        const std::string symbol = IsoSpec::elem_table_symbol[i];
+        if (symbol.empty() || IsoSpec::elem_table_Radioactive[i] || IsoSpec::elem_table_probability[i] <= 0.0)
+          continue;
+        const auto base = std::find_if(bases.begin(), bases.end(), [&](const ElementBase &candidate) {
+          return candidate.symbol == symbol;
+        });
+        if (base == bases.end() || std::abs(IsoSpec::elem_table_mass[i] - base->mass) < 1e-9)
+          continue;
+
+        const int mass_number = static_cast<int>(std::llround(IsoSpec::elem_table_massNo[i]));
+        const std::string isotope = std::to_string(mass_number) + symbol;
+        data.emplace_back(
+            symbol,
+            isotope,
+            static_cast<float>(IsoSpec::elem_table_mass[i] - base->mass),
+            static_cast<float>(IsoSpec::elem_table_probability[i] / base->probability),
+            static_cast<float>(base->probability),
+            0,
+            100);
+      }
+    }
+
     ISOTOPE_COMBINATIONS::ISOTOPE_COMBINATIONS(ISOTOPE_SET &isotopes, const int &max_number_elements)
     {
       std::set<std::vector<std::string>> combinations_set;
@@ -571,6 +673,7 @@ namespace streamfind::mass_spec::nta
       tensor_abundances.resize(length);
       mass_distances.resize(length);
       step.resize(length);
+      combinations_by_step.resize(max_number_elements + 1);
 
       for (int i = 0; i < length; i++)
       {
@@ -579,6 +682,8 @@ namespace streamfind::mass_spec::nta
         tensor_abundances[i] = tensor_abundances_unordered[order_idx[i]];
         mass_distances[i] = mass_distances_unordered[order_idx[i]];
         step[i] = std::round(mass_distances[i]);
+        if (step[i] >= 0 && step[i] < static_cast<int>(combinations_by_step.size()))
+          combinations_by_step[step[i]].push_back(i);
       }
     }
 
@@ -621,6 +726,161 @@ namespace streamfind::mass_spec::nta
     }
 
     // MARK: ADDUCT_SET Implementation
+    namespace modification_mass_detail
+    {
+      constexpr double electron_mass_da = 0.000548579909065;
+
+      std::string expand_formula_coefficient(const std::string &formula)
+      {
+        if (formula.empty() || !std::isdigit(static_cast<unsigned char>(formula.front())))
+          return formula;
+
+        std::size_t separator = 0;
+        while (separator < formula.size() && std::isdigit(static_cast<unsigned char>(formula[separator])))
+          ++separator;
+        const int coefficient = std::stoi(formula.substr(0, separator));
+        if (coefficient <= 0 || separator == formula.size())
+          throw std::invalid_argument("invalid modification formula: " + formula);
+
+        std::string expanded;
+        std::size_t cursor = separator;
+        while (cursor < formula.size())
+        {
+          if (!std::isupper(static_cast<unsigned char>(formula[cursor])))
+            throw std::invalid_argument("invalid modification formula: " + formula);
+          const std::size_t element_start = cursor++;
+          if (cursor < formula.size() && std::islower(static_cast<unsigned char>(formula[cursor])))
+            ++cursor;
+          const std::string element = formula.substr(element_start, cursor - element_start);
+          const std::size_t count_start = cursor;
+          while (cursor < formula.size() && std::isdigit(static_cast<unsigned char>(formula[cursor])))
+            ++cursor;
+          const int count = count_start == cursor ? 1 : std::stoi(formula.substr(count_start, cursor - count_start));
+          if (count <= 0)
+            throw std::invalid_argument("invalid modification formula: " + formula);
+          expanded += element;
+          const int expanded_count = coefficient * count;
+          if (expanded_count != 1)
+            expanded += std::to_string(expanded_count);
+        }
+        return expanded;
+      }
+
+      std::string adduct_formula(const std::string &element)
+      {
+        if (element == "ACN+H")
+          return "C2H4N";
+        if (element == "CH3OH+H")
+          return "CH5O";
+        if (element == "CH3COO")
+          return "C2H3O2";
+        if (element == "FA-H")
+          return "CHO2";
+        if (element == "2FA-H")
+          return "CHO2";
+        if (element == "2-H")
+          return "H";
+        if (element == "2H")
+          return "H";
+        if (element == "2Na")
+          return "Na";
+        if (element == "2K")
+          return "K";
+        if (element == "2NH4")
+          return "NH4";
+        if (element == "2Cl")
+          return "Cl";
+        if (!element.empty() && element.front() == '-')
+          return expand_formula_coefficient(element.substr(1));
+        return expand_formula_coefficient(element);
+      }
+
+      double formula_mass(const std::string &formula)
+      {
+        const auto result = ::streamfind::core::vendors::openbabel::mass_from_formula(formula);
+        if (!result.ok)
+          throw std::runtime_error("Open Babel could not calculate mass for formula " + formula + ": " + result.error);
+        return result.exact_mass;
+      }
+
+      double adduct_mass(const ADDUCT &adduct)
+      {
+        const std::string formula = adduct_formula(adduct.element);
+        const double neutral_mass = formula_mass(formula);
+        const bool subtract = (!adduct.element.empty() && adduct.element.front() == '-') || adduct.element == "2-H";
+        if (subtract)
+          return -(neutral_mass - electron_mass_da);
+        return neutral_mass + (adduct.polarity < 0 ? electron_mass_da : -electron_mass_da);
+      }
+    }
+
+    const std::vector<std::string> &default_adduct_expressions()
+    {
+      static const std::vector<std::string> expressions{
+          "+H", "+Na", "+K", "+NH4", "+ACN+H", "+CH3OH+H",
+          "2M+H", "2M+Na", "2M+K", "2M+NH4",
+          "-H", "+Cl", "+Br", "+CHO2", "+CH3COO", "+FA-H",
+          "2M-H", "2M+Cl", "2M+FA-H"};
+      return expressions;
+    }
+
+    const std::vector<std::string> &default_loss_expressions()
+    {
+      static const std::vector<std::string> expressions{
+          "-H2O", "-CO2", "-NH3", "-CO", "-CH3", "-CH2O2",
+          "-HCl", "-HF", "-SO2", "-SO3", "-H2SO4", "-CH3OH",
+          "-C2H4", "-C2H2", "-NO", "-NO2", "-HNO2", "-HNO3",
+          "-CH2", "-C2H6O", "-HPO3", "-H3PO4"};
+      return expressions;
+    }
+
+    ADDUCT make_default_adduct(const std::string &expression)
+    {
+      const bool dimer = expression.rfind("2M", 0) == 0;
+      const std::string suffix = dimer ? expression.substr(2) : expression;
+      if (suffix.empty())
+        throw std::invalid_argument("invalid adduct expression: " + expression);
+
+      const bool negative = expression == "-H" || expression == "+Cl" ||
+          expression == "+Br" || expression == "+CHO2" || expression == "+CH3COO" ||
+          expression == "+FA-H" || expression == "2M-H" || expression == "2M+Cl" ||
+          expression == "2M+FA-H";
+      const int polarity = negative ? -1 : 1;
+      const int multiplicity = dimer ? 2 : 1;
+      const std::string adduct_component = suffix.front() == '+' ? suffix.substr(1) : suffix;
+      const std::string element = dimer ? "2" + adduct_component : adduct_component;
+
+      const std::string ion_sign = polarity > 0 ? "+" : "-";
+      const std::string type = "[" + (dimer ? expression : "M" + expression) + "]" + ion_sign;
+      return ADDUCT(element, polarity, "adduct", type, 0.0f, 1, multiplicity);
+    }
+
+    FRAGMENT_LOSS make_default_loss(const std::string &expression)
+    {
+      if (expression.size() < 2 || expression.front() != '-')
+        throw std::invalid_argument("invalid loss expression: " + expression);
+      const std::string formula = modification_mass_detail::expand_formula_coefficient(expression.substr(1));
+      const int polarity = expression == "-NH3" ? 1 : (expression == "-CH2O2" ? -1 : 0);
+      return FRAGMENT_LOSS(expression.substr(1), formula, 0.0f, polarity, expression);
+    }
+
+    ADDUCT_SET::ADDUCT_SET()
+    {
+      for (const auto &expression : default_adduct_expressions())
+        all_adducts.push_back(make_default_adduct(expression));
+      for (ADDUCT &adduct : neutralizers)
+      {
+        adduct.formula = "H";
+        const double proton_mass = modification_mass_detail::formula_mass(adduct.formula) - modification_mass_detail::electron_mass_da;
+        adduct.mass_distance = static_cast<float>(-adduct.polarity * proton_mass);
+      }
+      for (ADDUCT &adduct : all_adducts)
+      {
+        adduct.formula = modification_mass_detail::adduct_formula(adduct.element);
+        adduct.mass_distance = static_cast<float>(modification_mass_detail::adduct_mass(adduct));
+      }
+    }
+
     float ADDUCT_SET::neutralizer(const int &pol)
     {
       if (pol == 1)
@@ -634,25 +894,11 @@ namespace streamfind::mass_spec::nta
     {
       std::vector<ADDUCT> out;
 
-      if (pol == 1)
+      for (const ADDUCT &a : all_adducts)
       {
-        for (const ADDUCT &a : all_adducts)
+        if (a.polarity == pol)
         {
-          if (a.polarity == 1)
-          {
-            out.push_back(a);
-          }
-        }
-      }
-
-      if (pol == -1)
-      {
-        for (const ADDUCT &a : all_adducts)
-        {
-          if (a.polarity == -1)
-          {
-            out.push_back(a);
-          }
+          out.push_back(a);
         }
       }
 
@@ -660,6 +906,14 @@ namespace streamfind::mass_spec::nta
     }
 
     // MARK: FRAGMENT_LOSS_SET Implementation
+    FRAGMENT_LOSS_SET::FRAGMENT_LOSS_SET()
+    {
+      for (const auto &expression : default_loss_expressions())
+        all_losses.push_back(make_default_loss(expression));
+      for (FRAGMENT_LOSS &loss : all_losses)
+        loss.mass_loss = static_cast<float>(modification_mass_detail::formula_mass(loss.formula));
+    }
+
     std::vector<FRAGMENT_LOSS> FRAGMENT_LOSS_SET::losses(const int &pol)
     {
       std::vector<FRAGMENT_LOSS> out;
@@ -869,13 +1123,17 @@ namespace streamfind::mass_spec::nta
 
           std::vector<int> which_combinations;
 
-          for (int c = 0; c < combinations.length; ++c)
-          {
-            if (combinations.step[c] == s)
-              which_combinations.push_back(c);
-          }
+          if (s < static_cast<int>(combinations.combinations_by_step.size()))
+            which_combinations = combinations.combinations_by_step[s];
 
           const int number_combinations = which_combinations.size();
+
+          // The bounded combination table currently covers isotope steps up
+          // to max_number_elements. A larger max_isotopes value is valid and
+          // simply has no generated combinations for later steps; do not call
+          // min/max_element on an empty step bucket.
+          if (number_combinations == 0)
+            continue;
 
           if (debug)
           {
@@ -930,7 +1188,8 @@ namespace streamfind::mass_spec::nta
               }
             }
 
-            double combination_mass_error = 10;
+                double combination_mass_error = 10;
+                double combination_preference = -std::numeric_limits<double>::infinity();
 
             if (mass_distance_min - mzr < candidate_mass_distance && mass_distance_max + mzr > candidate_mass_distance)
             {
@@ -1032,10 +1291,31 @@ namespace streamfind::mass_spec::nta
 
                 const float rel_int = intensity / mono_ion.intensity;
 
-                if (candidate_mass_distance_error < combination_mass_error &&
+                // In a carbon-rich organic envelope, M+2 and later peaks can
+                // receive meaningful contributions from multiple light
+                // isotopes. Keep a carbon-only explanation eligible when the
+                // M+1-derived carbon estimate supports it, rather than letting
+                // a single high M+2 peak force a halogen label. The complete
+                // envelope score remains responsible for the final confidence.
+                const bool carbon_rich = iso_chain.number_carbons >= 40.0;
+                const bool carbon_only = isotope_combination_is_carbon_only(combination);
+                const double intensity_upper_bound =
+                    (carbon_rich && carbon_only && s >= 2)
+                        ? std::max(static_cast<double>(max_rel_int * 1.3),
+                                   std::min(2.0, static_cast<double>(max_rel_int * 2.0)))
+                        : static_cast<double>(max_rel_int * 1.3);
+
+                const double mass_tie_tolerance = std::max(0.0005, mzr * 1.0e-6);
+                const double chemical_preference = isotope_combination_chemical_preference(combination);
+                const bool mass_is_better = candidate_mass_distance_error < (combination_mass_error - mass_tie_tolerance);
+                const bool chemically_preferred_tie =
+                    std::abs(candidate_mass_distance_error - combination_mass_error) <= mass_tie_tolerance &&
+                    chemical_preference > combination_preference;
+
+                if ((mass_is_better || chemically_preferred_tie) &&
                     candidate_mass_distance_error <= mzr * 1.3 &&
                     rel_int >= min_rel_int * 0.7 &&
-                    rel_int <= max_rel_int * 1.3)
+                    rel_int <= intensity_upper_bound)
                 {
                   if (debug)
                   {
@@ -1044,6 +1324,7 @@ namespace streamfind::mass_spec::nta
                     DEBUG_LOG("         Rel intensity: " << rel_int << " (range: " << (min_rel_int * 0.7) << " - " << (max_rel_int * 1.3) << ")" << std::endl);
                   }
                   combination_mass_error = candidate_mass_distance_error;
+                  combination_preference = chemical_preference;
 
                   bool is_in_chain = false;
                   size_t is_in_chain_idx = 0;
@@ -1360,6 +1641,163 @@ namespace streamfind::mass_spec::nta
 
     using namespace streamfind::nta_annotation_detail;
 
+    struct ROOTED_RELATION_SOLUTION
+    {
+      std::unordered_map<int, ANNOTATION_CANDIDATE> state;
+      double score = -std::numeric_limits<double>::infinity();
+      std::size_t selected_edges = 0;
+      int root_index = -1;
+    };
+
+    struct ROOTED_RELATION_ASSIGNMENT
+    {
+      ROOTED_RELATION_SOLUTION selected;
+      ROOTED_RELATION_SOLUTION alternative;
+      std::size_t candidate_edge_count = 0;
+      std::size_t ambiguous_edge_count = 0;
+    };
+
+    double rooted_relation_edge_score(const ANNOTATION_CANDIDATE &candidate,
+                                      int root_index)
+    {
+      double score = candidate.score;
+      if (candidate.cat == "adduct")
+      {
+        // A positive modification attached directly to the molecular root is
+        // the preferred orientation when it competes with a reverse loss.
+        score += candidate.parent_index == root_index ? 0.08 : -0.10;
+        if (candidate.is_dimer)
+          score -= 0.06;
+      }
+      else if (candidate.cat == "loss")
+      {
+        // Losses remain valid, but require stronger evidence than a direct
+        // positive modification and become progressively less preferable in
+        // a chain. This is a soft orientation prior, not a hard exclusion.
+        score -= candidate.parent_index == root_index ? 0.04 : 0.08;
+      }
+      return score;
+    }
+
+    ROOTED_RELATION_ASSIGNMENT solve_rooted_relation_graph(
+        const std::vector<int> &relation_order,
+        const std::unordered_map<int, std::vector<ANNOTATION_CANDIDATE>> &candidate_edges,
+        const std::unordered_map<int, ANNOTATION_CANDIDATE> &default_state,
+        const std::unordered_map<int, double> &root_priors,
+        const std::vector<float> &feature_mz)
+    {
+      ROOTED_RELATION_ASSIGNMENT result;
+      for (const auto &[feature_index, candidates] : candidate_edges)
+        result.candidate_edge_count += candidates.size();
+
+      const auto better_solution = [&feature_mz](const ROOTED_RELATION_SOLUTION &lhs,
+                                                  const ROOTED_RELATION_SOLUTION &rhs) {
+        constexpr double epsilon = 1e-12;
+        if (lhs.score > rhs.score + epsilon)
+          return true;
+        if (rhs.score > lhs.score + epsilon)
+          return false;
+        if (lhs.selected_edges != rhs.selected_edges)
+          return lhs.selected_edges > rhs.selected_edges;
+        if (lhs.root_index < 0)
+          return false;
+        if (rhs.root_index < 0)
+          return true;
+        if (feature_mz[lhs.root_index] != feature_mz[rhs.root_index])
+          return feature_mz[lhs.root_index] < feature_mz[rhs.root_index];
+        return lhs.root_index < rhs.root_index;
+      };
+
+      constexpr std::size_t relation_beam_width = 24;
+      for (const int root_index : relation_order)
+      {
+        std::vector<ROOTED_RELATION_SOLUTION> beam(1);
+        beam.front().root_index = root_index;
+        const auto root_prior_it = root_priors.find(root_index);
+        beam.front().score = root_prior_it == root_priors.end() ? 0.0 : root_prior_it->second;
+        beam.front().state = default_state;
+
+        for (const int feature_index : relation_order)
+        {
+          if (feature_index == root_index)
+            continue;
+
+          const auto edge_it = candidate_edges.find(feature_index);
+          std::vector<ROOTED_RELATION_SOLUTION> next_beam;
+          const std::size_t branch_count = edge_it == candidate_edges.end() ? 1 : edge_it->second.size() + 1;
+          next_beam.reserve(beam.size() * branch_count);
+
+          for (const auto &solution : beam)
+          {
+            // Keep the unmodified explanation. A mass-compatible relation is
+            // not authoritative unless it wins in the component objective.
+            next_beam.push_back(solution);
+            if (edge_it == candidate_edges.end())
+              continue;
+
+            for (const auto &candidate : edge_it->second)
+            {
+              if (!relation_candidate_is_valid_for_root(candidate, solution.state, root_index))
+                continue;
+
+              ROOTED_RELATION_SOLUTION branched = solution;
+              branched.state[feature_index] = candidate;
+              branched.score += rooted_relation_edge_score(candidate, root_index);
+              ++branched.selected_edges;
+              next_beam.push_back(std::move(branched));
+            }
+          }
+
+          std::sort(next_beam.begin(), next_beam.end(), better_solution);
+          if (next_beam.size() > relation_beam_width)
+            next_beam.resize(relation_beam_width);
+          beam = std::move(next_beam);
+        }
+
+        if (beam.empty())
+          continue;
+        const ROOTED_RELATION_SOLUTION solution = beam.front();
+        if (result.selected.root_index < 0 || better_solution(solution, result.selected))
+        {
+          if (result.selected.root_index >= 0 &&
+              (result.alternative.root_index < 0 || better_solution(result.selected, result.alternative)))
+            result.alternative = result.selected;
+          result.selected = solution;
+        }
+        else if (result.alternative.root_index < 0 || better_solution(solution, result.alternative))
+        {
+          result.alternative = solution;
+        }
+      }
+
+      if (result.selected.root_index >= 0)
+      {
+        for (const int feature_index : relation_order)
+        {
+          const auto edge_it = candidate_edges.find(feature_index);
+          if (edge_it == candidate_edges.end())
+            continue;
+
+          const auto selected_it = result.selected.state.find(feature_index);
+          const bool selected_edge = selected_it != result.selected.state.end() && !selected_it->second.is_default;
+          double selected_score = selected_edge ? rooted_relation_edge_score(selected_it->second, result.selected.root_index) : 0.0;
+          for (const auto &candidate : edge_it->second)
+          {
+            if (!relation_candidate_is_valid_for_root(candidate, result.selected.state, result.selected.root_index))
+              continue;
+            const double score = rooted_relation_edge_score(candidate, result.selected.root_index);
+            if ((!selected_edge && score > 0.0) ||
+                (selected_edge && !candidate_equals(candidate, selected_it->second) && std::abs(score - selected_score) < 0.05))
+            {
+              ++result.ambiguous_edge_count;
+              break;
+            }
+          }
+        }
+      }
+      return result;
+    }
+
     // MARK: annotate_components_impl
     void annotate_components_impl(
       ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
@@ -1368,12 +1806,14 @@ namespace streamfind::mass_spec::nta
         int maxGaps,
         float ppm,
         const std::vector<std::string> &isotopeElements,
+        const std::vector<std::string> &modifications,
+        bool useDefaultModifications,
         const std::string &debugComponent,
         const std::string &debugAnalysis,
         sdk::DebugSession *debug)
     {
       ISOTOPE_SET isotopes;
-      const std::vector<std::string> default_elements = {"C:1-60", "N:0-10", "O:0-20", "S:0-4", "Cl:0-6", "Br:0-4"};
+      const std::vector<std::string> default_elements = {"C:1-80", "N:0-10", "O:0-20", "S:0-4", "Cl:0-6", "Br:0-4"};
       const ISOTOPE_ELEMENT_SPEC parsed_specs = parse_isotope_element_specs(isotopeElements.empty() ? default_elements : isotopeElements);
       isotopes.filter(parsed_specs.elements);
       isotopes.set_ranges(parsed_specs.ranges);
@@ -1395,6 +1835,70 @@ namespace streamfind::mass_spec::nta
 
       ADDUCT_SET all_adducts;
       FRAGMENT_LOSS_SET all_losses;
+      std::unordered_set<std::string> selected_modifications;
+      std::unordered_map<std::string, std::string> modification_labels;
+      for (const auto &raw_modification : modifications)
+      {
+        const auto modification = lowercase_copy(trim_copy(raw_modification));
+        if (modification.empty())
+          throw std::invalid_argument("modifications cannot contain empty entries");
+        if (!selected_modifications.insert(modification).second)
+          throw std::invalid_argument("duplicate annotation modification: " + raw_modification);
+        modification_labels.emplace(modification, trim_copy(raw_modification));
+      }
+
+      if (!useDefaultModifications)
+      {
+        std::unordered_set<std::string> built_in_modifications;
+        for (const auto &adduct : all_adducts.all_adducts)
+          built_in_modifications.insert(lowercase_copy(adduct_modification_token(adduct)));
+        for (const auto &loss : all_losses.all_losses)
+          built_in_modifications.insert(lowercase_copy(loss_modification_token(loss)));
+
+        for (const auto &modification : selected_modifications)
+        {
+          if (built_in_modifications.count(modification) > 0)
+            continue;
+          if (modification.size() < 2 || (modification.front() != '+' && modification.front() != '-') || modification.find('m') != std::string::npos)
+            continue;
+
+          const std::string expression = modification_labels.at(modification);
+          const std::string formula_expression = expression.substr(1);
+          const std::string formula = modification_mass_detail::expand_formula_coefficient(formula_expression);
+          if (formula.empty())
+            throw std::invalid_argument("annotation modification requires a formula: " + expression);
+          modification_mass_detail::formula_mass(formula);
+
+          if (expression.front() == '+')
+          {
+            ADDUCT custom(formula_expression, 1, "adduct", "[M" + expression + "]+", 0.0f, 1, 1);
+            custom.formula = formula;
+            custom.mass_distance = static_cast<float>(modification_mass_detail::adduct_mass(custom));
+            all_adducts.all_adducts.push_back(std::move(custom));
+          }
+          else
+          {
+            FRAGMENT_LOSS custom("custom", formula, 0.0f, 0, expression);
+            custom.mass_loss = static_cast<float>(modification_mass_detail::formula_mass(formula));
+            all_losses.all_losses.push_back(std::move(custom));
+          }
+        }
+      }
+
+      if (!useDefaultModifications)
+      {
+        std::unordered_set<std::string> supported_modifications;
+        for (const auto &adduct : all_adducts.all_adducts)
+          supported_modifications.insert(lowercase_copy(adduct_modification_token(adduct)));
+        for (const auto &loss : all_losses.all_losses)
+          supported_modifications.insert(lowercase_copy(loss_modification_token(loss)));
+
+        for (const auto &modification : selected_modifications)
+        {
+          if (supported_modifications.count(modification) == 0)
+            throw std::invalid_argument("unknown annotation modification: " + modification);
+        }
+      }
 
       for (int a = 0; a < number_analyses; a++)
       {
@@ -1422,10 +1926,15 @@ namespace streamfind::mass_spec::nta
         int total_fragments_found = 0;
         int default_adducts_assigned = 0;
 
+        std::vector<std::string> component_ids;
+        component_ids.reserve(component_groups.size());
         for (const auto &comp_pair : component_groups)
+          component_ids.push_back(comp_pair.first);
+        std::sort(component_ids.begin(), component_ids.end());
+
+        for (const auto &component_id : component_ids)
         {
-          const std::string &component_id = comp_pair.first;
-          const std::vector<int> &component_indices = comp_pair.second;
+          const std::vector<int> &component_indices = component_groups.at(component_id);
           if (component_indices.empty())
             continue;
 
@@ -1460,6 +1969,8 @@ namespace streamfind::mass_spec::nta
             std::vector<ANNOTATION_CANDIDATE> children;
             double total_ppm = 0.0;
             double total_rt = 0.0;
+            double total_score = 0.0;
+            double envelope_score = 0.0;
           };
 
           std::unordered_map<int, ANNOTATION_CANDIDATE> final_candidate;
@@ -1528,23 +2039,40 @@ namespace streamfind::mass_spec::nta
                 candidate.label = make_annotation_label(candidate);
                 assignment.total_ppm += candidate.mass_error_ppm;
                 assignment.total_rt += candidate.rt_error;
+                assignment.total_score += candidate.score;
                 assignment.children.push_back(candidate);
               }
 
               if (!assignment.children.empty())
+              {
+                const double child_count = static_cast<double>(assignment.children.size());
+                const double mean_score = assignment.total_score / child_count;
+                // Reward complete, coherent envelopes while keeping the score
+                // bounded as components grow. The child-count term prevents a
+                // single high-scoring isotope from outranking a well-supported
+                // multi-isotope chain.
+                assignment.envelope_score = assignment.total_score +
+                  (0.15 * std::log1p(child_count)) + (0.10 * mean_score);
                 isotope_assignments.push_back(std::move(assignment));
+              }
             }
           }
 
           std::sort(isotope_assignments.begin(), isotope_assignments.end(), [&fts](const ISOTOPE_CHAIN_ASSIGNMENT &lhs, const ISOTOPE_CHAIN_ASSIGNMENT &rhs) {
             if (lhs.children.size() != rhs.children.size())
               return lhs.children.size() > rhs.children.size();
+            if (lhs.envelope_score != rhs.envelope_score)
+              return lhs.envelope_score > rhs.envelope_score;
             if (lhs.total_ppm != rhs.total_ppm)
               return lhs.total_ppm < rhs.total_ppm;
             if (lhs.total_rt != rhs.total_rt)
               return lhs.total_rt < rhs.total_rt;
             return fts.mz[lhs.anchor_idx] < fts.mz[rhs.anchor_idx];
           });
+
+          constexpr std::size_t max_isotope_anchor_hypotheses = 64;
+          if (isotope_assignments.size() > max_isotope_anchor_hypotheses)
+            isotope_assignments.resize(max_isotope_anchor_hypotheses);
 
           std::unordered_set<int> isotope_anchor_children;
           for (const auto &assignment : isotope_assignments)
@@ -1595,8 +2123,17 @@ namespace streamfind::mass_spec::nta
           for (int anchor_idx : non_isotope_indices)
           {
             const auto anchor = fts.get_feature(anchor_idx);
-            const auto adducts = all_adducts.adducts(anchor.polarity);
-            const auto losses = all_losses.losses(anchor.polarity);
+            auto adducts = all_adducts.adducts(anchor.polarity);
+            auto losses = all_losses.losses(anchor.polarity);
+            if (!useDefaultModifications)
+            {
+              adducts.erase(std::remove_if(adducts.begin(), adducts.end(), [&](const ADDUCT &adduct) {
+                return selected_modifications.count(lowercase_copy(adduct_modification_token(adduct))) == 0;
+              }), adducts.end());
+              losses.erase(std::remove_if(losses.begin(), losses.end(), [&](const FRAGMENT_LOSS &loss) {
+                return selected_modifications.count(lowercase_copy(loss_modification_token(loss))) == 0;
+              }), losses.end());
+            }
             const double neutral_mass = neutral_mass_from_base_ion(anchor);
 
             for (int idx : non_isotope_indices)
@@ -1624,6 +2161,8 @@ namespace streamfind::mass_spec::nta
                 candidate.element_or_delta = adduct.element;
                 candidate.feature_index = idx;
                 candidate.parent_index = anchor_idx;
+                candidate.is_dimer = adduct.multiplicity > 1;
+                candidate.relation_id = adduct_modification_token(adduct);
                 candidate.mass_error_da = std::abs(child.mz - theoretical_mz);
                 candidate.mass_error_ppm = mass_error_ppm_value;
                 candidate.rt_error = rt_error;
@@ -1647,11 +2186,12 @@ namespace streamfind::mass_spec::nta
 
                 ANNOTATION_CANDIDATE candidate;
                 candidate.cat = "loss";
-                candidate.type = "M-" + loss.formula;
+                candidate.type = "M" + loss_modification_token(loss);
                 candidate.parent_feature = anchor.feature;
-                candidate.element_or_delta = "-" + loss.formula;
+                candidate.element_or_delta = loss_modification_token(loss);
                 candidate.feature_index = idx;
                 candidate.parent_index = anchor_idx;
+                candidate.relation_id = loss_modification_token(loss);
                 candidate.mass_error_da = std::abs(child.mz - theoretical_mz);
                 candidate.mass_error_ppm = mass_error_ppm_value;
                 candidate.rt_error = rt_error;
@@ -1666,10 +2206,6 @@ namespace streamfind::mass_spec::nta
             }
           }
 
-          std::unordered_map<int, ANNOTATION_CANDIDATE> relation_state;
-          for (int idx : non_isotope_indices)
-            relation_state[idx] = final_candidate[idx];
-
           std::vector<int> relation_update_order = non_isotope_indices;
           std::sort(relation_update_order.begin(), relation_update_order.end(), [&fts](int lhs, int rhs) {
             if (fts.mz[lhs] != fts.mz[rhs])
@@ -1677,43 +2213,114 @@ namespace streamfind::mass_spec::nta
             return lhs < rhs;
           });
 
-          bool relation_changed = true;
-          const int max_relation_iterations = std::max(1, static_cast<int>(non_isotope_indices.size()));
-          for (int iter = 0; iter < max_relation_iterations && relation_changed; ++iter)
+          for (auto &[feature_idx, candidates] : relation_candidates)
           {
-            relation_changed = false;
-            std::unordered_map<int, ANNOTATION_CANDIDATE> next_state = relation_state;
-
-            for (int feature_idx : relation_update_order)
-            {
-              auto cand_it = relation_candidates.find(feature_idx);
-              if (cand_it == relation_candidates.end())
-                continue;
-              auto &feature_candidates = cand_it->second;
-
-              auto current_it = relation_state.find(feature_idx);
-              ANNOTATION_CANDIDATE best = final_candidate[feature_idx];
-              if (current_it != relation_state.end() && relation_candidate_is_valid(current_it->second, next_state))
-                best = current_it->second;
-
-              for (const auto &candidate : feature_candidates)
-              {
-                if (!relation_candidate_is_valid(candidate, next_state))
-                  continue;
-                if (best.is_default || candidate_better(candidate, best))
-                  best = candidate;
-              }
-
-              next_state[feature_idx] = best;
-              if (!candidate_equals(best, relation_state[feature_idx]))
-                relation_changed = true;
-            }
-
-            relation_state.swap(next_state);
+            std::sort(candidates.begin(), candidates.end(), [](const ANNOTATION_CANDIDATE &lhs, const ANNOTATION_CANDIDATE &rhs) {
+              if (candidate_better(lhs, rhs))
+                return true;
+              if (candidate_better(rhs, lhs))
+                return false;
+              if (lhs.cat != rhs.cat)
+                return lhs.cat < rhs.cat;
+          if (lhs.relation_id != rhs.relation_id)
+            return lhs.relation_id < rhs.relation_id;
+              if (lhs.type != rhs.type)
+                return lhs.type < rhs.type;
+              if (lhs.element_or_delta != rhs.element_or_delta)
+                return lhs.element_or_delta < rhs.element_or_delta;
+              return lhs.parent_index < rhs.parent_index;
+            });
           }
 
-          for (const auto &[feature_idx, candidate] : relation_state)
+          if (debug_this_component)
+          {
+            std::size_t candidate_edge_count = 0;
+            for (const auto &[feature_idx, candidates] : relation_candidates)
+              candidate_edge_count += candidates.size();
+
+            DEBUG_LOG("\n=== Candidate molecular edges for Component " << component_id
+                      << " (" << candidate_edge_count << ") ===" << std::endl);
+            for (const int feature_idx : non_isotope_indices)
+            {
+              const auto candidates_it = relation_candidates.find(feature_idx);
+              if (candidates_it == relation_candidates.end())
+                continue;
+
+              const auto child = fts.get_feature(feature_idx);
+              for (const auto &candidate : candidates_it->second)
+              {
+                const auto parent = fts.get_feature(candidate.parent_index);
+                DEBUG_LOG("  parent=" << parent.feature
+                          << " child=" << child.feature
+                          << " category=" << candidate.cat
+                          << " direction=parent_to_child"
+                          << " relation_id=" << candidate.relation_id
+                          << " rule=" << candidate.element_or_delta
+                          << " type=" << candidate.type
+                          << " mass_error_ppm=" << candidate.mass_error_ppm
+                          << " rt_error=" << candidate.rt_error
+                          << " intensity_ratio=" << candidate.rel_intensity
+                          << " score=" << candidate.score << std::endl);
+              }
+            }
+          }
+
+          std::unordered_map<int, double> root_priors;
+          const auto root_prior = [&fts, &non_isotope_indices](int root_index) {
+            double min_mz = std::numeric_limits<double>::infinity();
+            double max_mz = -std::numeric_limits<double>::infinity();
+            double max_log_intensity = 0.0;
+            for (const int idx : non_isotope_indices)
+            {
+              min_mz = std::min(min_mz, static_cast<double>(fts.mz[idx]));
+              max_mz = std::max(max_mz, static_cast<double>(fts.mz[idx]));
+              max_log_intensity = std::max(max_log_intensity, std::log1p(std::max(0.0, static_cast<double>(fts.intensity[idx]))));
+            }
+
+            const double mz_span = std::max(1e-9, max_mz - min_mz);
+            const double low_mz_support = 1.0 - (static_cast<double>(fts.mz[root_index]) - min_mz) / mz_span;
+            const double log_intensity = std::log1p(std::max(0.0, static_cast<double>(fts.intensity[root_index])));
+            const double intensity_support = max_log_intensity > 0.0 ? log_intensity / max_log_intensity : 0.0;
+
+            // A root prior is deliberately weak. It breaks otherwise equal
+            // interpretations in favor of a lower-m/z, well-supported base
+            // feature, but a coherent modification/loss explanation still
+            // dominates when its candidate score is materially better.
+            return 0.04 * low_mz_support + 0.04 * intensity_support;
+          };
+
+          for (const int root_index : relation_update_order)
+            root_priors[root_index] = root_prior(root_index);
+
+          const ROOTED_RELATION_ASSIGNMENT relation_assignment = solve_rooted_relation_graph(
+              relation_update_order, relation_candidates, final_candidate, root_priors, fts.mz);
+          const auto &selected_solution = relation_assignment.selected;
+          const auto &alternative_solution = relation_assignment.alternative;
+
+          for (const auto &[feature_idx, candidate] : selected_solution.state)
             final_candidate[feature_idx] = candidate;
+
+          if (debug_this_component && selected_solution.root_index >= 0)
+          {
+            const auto root = fts.get_feature(selected_solution.root_index);
+            DEBUG_LOG("\n=== Selected molecular root: " << root.feature
+                      << " mz=" << root.mz
+                      << " score=" << selected_solution.score
+                      << " edges=" << selected_solution.selected_edges
+                      << " candidate_edges=" << relation_assignment.candidate_edge_count
+                      << " ambiguous_edges=" << relation_assignment.ambiguous_edge_count
+                      << " ===" << std::endl);
+            if (alternative_solution.root_index >= 0)
+            {
+              const auto alternative_root = fts.get_feature(alternative_solution.root_index);
+              const double score_gap = selected_solution.score - alternative_solution.score;
+              DEBUG_LOG("  Alternative root: " << alternative_root.feature
+                        << " mz=" << alternative_root.mz
+                        << " score=" << alternative_solution.score
+                        << " score_gap=" << score_gap
+                        << (score_gap < 0.05 ? " [AMBIGUOUS]" : "") << std::endl);
+            }
+          }
 
           std::unordered_set<int> reserved_targets;
           for (const auto &entry : final_candidate)
@@ -1865,7 +2472,25 @@ using Json = nlohmann::json;
         std::vector<std::string> isotope_elements;
         const auto isotope_elements_param = parameters.value("isotope_elements", Json::array({Json("C:1-80"), Json("N:0-10"), Json("O:0-20"), Json("S:0-4"), Json("Cl:0-6"), Json("Br:0-4")}));
         for (const auto &v : isotope_elements_param)
+        {
+            if (!v.is_string())
+                throw Error(ErrorCode::InvalidArgument, "isotope_elements entries must be strings");
             isotope_elements.push_back(v.get<std::string>());
+        }
+        std::vector<std::string> modifications;
+        const bool use_default_modifications = !parameters.contains("annotation_modifications");
+        if (!use_default_modifications)
+        {
+            const auto &modifications_param = parameters.at("annotation_modifications");
+            if (!modifications_param.is_array())
+                throw Error(ErrorCode::InvalidArgument, "annotation_modifications must be an array");
+            for (const auto &v : modifications_param)
+            {
+                if (!v.is_string())
+                    throw Error(ErrorCode::InvalidArgument, "annotation_modifications entries must be strings");
+                modifications.push_back(v.get<std::string>());
+            }
+        }
         if (max_isotopes < 1 || max_charge < 1 || max_gaps < 0 || ppm < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid annotation parameters");
         // Annotation is intentionally all-analysis, like find_features.
@@ -1882,6 +2507,7 @@ using Json = nlohmann::json;
             sdk::DebugOptions{debug_analysis, 0.0, -1, !debug_component.empty() && !debug_analysis.empty(), false});
         ::streamfind::mass_spec::nta::annotation::annotate_components_impl(
             data, max_isotopes, max_charge, max_gaps, ppm, isotope_elements,
+            modifications, use_default_modifications,
             debug_component, debug_analysis, &debug);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Components annotated."}};

@@ -55,7 +55,10 @@ namespace streamfind::mass_spec::nta
         double mzrMS2,
         double minCosineSimilarity,
         int minSharedFragments,
+        double isotopePpm,
         bool filtered);
+
+    void convert_suspects_to_internal_standards(NtaProjectData &nta_data);
   } // namespace suspect_screening
 } // namespace streamfind::mass_spec::nta
 
@@ -64,3 +67,4 @@ namespace streamfind::mass_spec::nta
 namespace streamfind::mass_spec::nta::suspect_screening { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
 
 namespace streamfind::mass_spec::nta::find_internal_standards { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+namespace streamfind::mass_spec::nta::enrich_internal_standards { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

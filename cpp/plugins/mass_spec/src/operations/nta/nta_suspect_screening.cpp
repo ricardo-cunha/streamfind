@@ -3,14 +3,14 @@
 // Suspect screening implementations for NTA_DATA
 
 #include "utils/nta.hpp"
-#include "utils/nta.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
 #include "operations/base.hpp"
 #include "fixedEnvelopes.h"
-#include "utils/nta.hpp"
+#include "element_tables.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -58,11 +58,107 @@ namespace streamfind::mass_spec::nta
     template <typename T>
     T get_or_default(const std::vector<T> &vec, size_t idx, const T &def);
 
-    std::string isospec_formula(const std::string &formula)
+    struct IsotopeAwareFormula
     {
+      std::string natural_formula;
+      double fixed_mass_delta = 0.0;
+      bool has_fixed_isotopes = false;
+    };
+
+    int isotope_table_index(const std::string &symbol, int mass_number)
+    {
+      for (size_t i = 0; i < IsoSpec::isospec_number_of_isotopic_entries; ++i)
+      {
+        if (symbol == IsoSpec::elem_table_symbol[i] &&
+            static_cast<int>(std::llround(IsoSpec::elem_table_massNo[i])) == mass_number)
+          return static_cast<int>(i);
+      }
+      return -1;
+    }
+
+    int most_abundant_isotope_table_index(const std::string &symbol)
+    {
+      int best = -1;
+      for (size_t i = 0; i < IsoSpec::isospec_number_of_isotopic_entries; ++i)
+      {
+        if (symbol != IsoSpec::elem_table_symbol[i] || IsoSpec::elem_table_Radioactive[i] ||
+            IsoSpec::elem_table_probability[i] <= 0.0)
+          continue;
+        if (best < 0 || IsoSpec::elem_table_probability[i] > IsoSpec::elem_table_probability[best])
+          best = static_cast<int>(i);
+      }
+      return best;
+    }
+
+    IsotopeAwareFormula parse_isotope_formula(const std::string &formula)
+    {
+      IsotopeAwareFormula result;
       std::string normalized;
       for (size_t i = 0; i < formula.size();)
       {
+        if (formula[i] == '[')
+        {
+          const size_t close = formula.find(']', i + 1);
+          if (close == std::string::npos)
+            return {};
+          const std::string isotope_token = formula.substr(i + 1, close - i - 1);
+          size_t symbol_start = 0;
+          while (symbol_start < isotope_token.size() &&
+                 std::isdigit(static_cast<unsigned char>(isotope_token[symbol_start])))
+            ++symbol_start;
+          if (symbol_start == 0 || symbol_start == isotope_token.size())
+            return {};
+          const int mass_number = std::stoi(isotope_token.substr(0, symbol_start));
+          const std::string symbol = isotope_token.substr(symbol_start);
+          const int isotope_index = isotope_table_index(symbol, mass_number);
+          const int base_index = most_abundant_isotope_table_index(symbol);
+          if (isotope_index < 0 || base_index < 0)
+            return {};
+
+          size_t cursor = close + 1;
+          const size_t count_start = cursor;
+          while (cursor < formula.size() && std::isdigit(static_cast<unsigned char>(formula[cursor])))
+            ++cursor;
+          const int count = count_start == cursor ? 1 : std::stoi(formula.substr(count_start, cursor - count_start));
+          if (count <= 0)
+            return {};
+
+          normalized += symbol;
+          if (count > 1)
+            normalized += std::to_string(count);
+
+          result.fixed_mass_delta += static_cast<double>(count) *
+              (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+          result.has_fixed_isotopes = true;
+          i = cursor;
+          continue;
+        }
+
+        // Accept the conventional shorthand D/T as labelled hydrogen while
+        // retaining the explicit isotope information internally.
+        if (formula[i] == 'D' || formula[i] == 'T')
+        {
+          const int mass_number = formula[i] == 'D' ? 2 : 3;
+          const int isotope_index = isotope_table_index("H", mass_number);
+          const int base_index = most_abundant_isotope_table_index("H");
+          if (isotope_index < 0 || base_index < 0)
+            return {};
+          ++i;
+          const size_t count_start = i;
+          while (i < formula.size() && std::isdigit(static_cast<unsigned char>(formula[i])))
+            ++i;
+          const int count = count_start == i ? 1 : std::stoi(formula.substr(count_start, i - count_start));
+          if (count <= 0)
+            return {};
+          normalized += "H";
+          if (count > 1)
+            normalized += std::to_string(count);
+          result.fixed_mass_delta += static_cast<double>(count) *
+              (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+          result.has_fixed_isotopes = true;
+          continue;
+        }
+
         if (formula[i] < 'A' || formula[i] > 'Z')
           return {};
         normalized.push_back(formula[i++]);
@@ -74,7 +170,8 @@ namespace streamfind::mass_spec::nta
         if (i == count_start)
           normalized.push_back('1');
       }
-      return normalized;
+      result.natural_formula = normalized;
+      return result;
     }
 
     IsotopeMatch matches_isotope_pattern(const SuspectQuery &suspect,
@@ -92,10 +189,10 @@ namespace streamfind::mass_spec::nta
 
       try
       {
-        const std::string formula = isospec_formula(suspect.formula);
-        if (formula.empty())
+        const IsotopeAwareFormula parsed_formula = parse_isotope_formula(suspect.formula);
+        if (parsed_formula.natural_formula.empty())
           return {};
-        IsoSpec::Iso isotope_model(formula);
+        IsoSpec::Iso isotope_model(parsed_formula.natural_formula);
         auto envelope = IsoSpec::FixedEnvelope::FromTotalProb(isotope_model, 0.999, true, true);
         envelope.sort_by_mass();
 
@@ -108,7 +205,7 @@ namespace streamfind::mass_spec::nta
         {
           if (envelope.prob(i) < minimum_probability)
             continue;
-          theoretical_mz.push_back(envelope.mass(i) + ion_offset);
+          theoretical_mz.push_back(envelope.mass(i) + parsed_formula.fixed_mass_delta + ion_offset);
           theoretical_probability.push_back(envelope.prob(i));
         }
         IsotopeMatch result;
@@ -176,14 +273,73 @@ namespace streamfind::mass_spec::nta
       if (!streamfind::core::vendors::openbabel::openbabel_available())
         return suspects;
 
+      const auto contains_isotope_label = [](const SuspectQuery &suspect)
+      {
+        // Open Babel normalizes ordinary structures well, but isotope-labelled
+        // standards must retain the mass/formula supplied by the target file.
+        // In particular, deuterated CSV targets use [2H] in SMILES/formulas and
+        // /i...D... in InChI; normalizing those can discard the label or produce
+        // a non-finite derived mass.
+        const auto has_bracket_isotope = [](const std::string &value)
+        {
+          for (size_t i = 0; i + 2 < value.size(); ++i)
+          {
+            if (value[i] == '[' && std::isdigit(static_cast<unsigned char>(value[i + 1])))
+              return true;
+          }
+          return false;
+        };
+        return has_bracket_isotope(suspect.formula) ||
+               has_bracket_isotope(suspect.SMILES) ||
+               suspect.formula.find('D') != std::string::npos ||
+               suspect.formula.find('T') != std::string::npos ||
+               suspect.InChI.find("/i") != std::string::npos;
+      };
+
       std::vector<SuspectQuery> normalized = suspects;
       for (auto &sus : normalized)
       {
-        if (sus.SMILES.empty() && sus.InChI.empty())
+        if ((sus.SMILES.empty() && sus.InChI.empty()) || contains_isotope_label(sus))
+        {
+          // Keep labelled descriptors authoritative. If the target did not
+          // provide a mass, derive it from the natural formula plus the fixed
+          // isotope mass deltas instead of asking Open Babel to parse a
+          // bracket-isotope formula through its ordinary formula boundary.
+          if (!sus.has_mass && !sus.formula.empty())
+          {
+            const IsotopeAwareFormula parsed_formula = parse_isotope_formula(sus.formula);
+            if (!parsed_formula.natural_formula.empty())
+            {
+              try
+              {
+                const auto natural_mass = streamfind::core::vendors::openbabel::mass_from_formula(parsed_formula.natural_formula);
+                if (natural_mass.ok && std::isfinite(natural_mass.exact_mass))
+                {
+                  sus.mass = natural_mass.exact_mass + parsed_formula.fixed_mass_delta;
+                  sus.has_mass = true;
+                }
+              }
+              catch (const std::exception &)
+              {
+                // Leave the target mass unset when the natural formula is
+                // incomplete; screening can still use the supplied structure.
+              }
+            }
+          }
           continue;
+        }
 
-        const streamfind::core::vendors::openbabel::NormalizedStructure structure =
-          streamfind::core::vendors::openbabel::normalize_structure(sus.SMILES, sus.InChI);
+        streamfind::core::vendors::openbabel::NormalizedStructure structure;
+        try
+        {
+          structure = streamfind::core::vendors::openbabel::normalize_structure(sus.SMILES, sus.InChI);
+        }
+        catch (const std::exception &)
+        {
+          // A single isotope-labelled target must not abort screening for the
+          // remaining targets. Keep its supplied mass/formula/identifiers.
+          continue;
+        }
         if (!structure.ok)
           continue;
 
@@ -215,6 +371,7 @@ namespace streamfind::mass_spec::nta
       row.created_at = suspect.created_at;
       row.analysis = suspect.analysis;
       row.feature = suspect.feature;
+      row.feature_group = suspect.feature_group;
       row.candidate_rank = suspect.candidate_rank;
       row.name = suspect.name;
       row.polarity = suspect.polarity;
@@ -244,6 +401,10 @@ namespace streamfind::mass_spec::nta
       row.exp_ms2_size = suspect.exp_ms2_size;
       row.exp_ms2_mz = suspect.exp_ms2_mz;
       row.exp_ms2_intensity = suspect.exp_ms2_intensity;
+      row.isotope_theoretical_peaks = suspect.isotope_theoretical_peaks;
+      row.isotope_matched_peaks = suspect.isotope_matched_peaks;
+      row.isotope_similarity = suspect.isotope_similarity;
+      row.isotope_match = suspect.isotope_match;
       return row;
     }
 
@@ -287,7 +448,7 @@ namespace streamfind::mass_spec::nta
       {
         size_t analysis_idx;
         int feature_idx;
-        std::string assigned_name;
+        size_t suspect_idx;
       };
 
       std::vector<FeatureRef> matched;
@@ -304,9 +465,15 @@ namespace streamfind::mass_spec::nta
           if (!filtered && fts.filtered[i])
             continue;
 
-          std::string assigned;
-          for (const auto &sus : normalized_suspects)
+          size_t best_suspect = normalized_suspects.size();
+          double best_mass_error = std::numeric_limits<double>::infinity();
+          int best_isotope_matches = -1;
+          double best_isotope_similarity = -1.0;
+          double best_score = -std::numeric_limits<double>::infinity();
+          bool best_rt_match = false;
+          for (size_t suspect_idx = 0; suspect_idx < normalized_suspects.size(); ++suspect_idx)
           {
+            const auto &sus = normalized_suspects[suspect_idx];
             if (!sus.has_mass)
               continue;
             double expected_mz = sus.mass + (static_cast<double>(fts.polarity[i]) * 1.007276);
@@ -314,35 +481,37 @@ namespace streamfind::mass_spec::nta
               continue;
 
             const IsotopeMatch isotope = matches_isotope_pattern(sus, fts, static_cast<size_t>(i), isotopePpm);
-
-            assigned = sus.name;
+            const double mass_error = std::abs(fts.mz[i] - expected_mz) / std::max(std::abs(expected_mz), 1e-12) * 1e6;
+            const bool rt_match = sus.has_rt && within_sec(fts.rt[i], sus.rt, sec);
+            const bool better = best_suspect == normalized_suspects.size() ||
+                                mass_error < best_mass_error ||
+                                (mass_error == best_mass_error && rt_match && !best_rt_match) ||
+                                (mass_error == best_mass_error && rt_match == best_rt_match && isotope.matched_peaks > best_isotope_matches) ||
+                                (mass_error == best_mass_error && rt_match == best_rt_match && isotope.matched_peaks == best_isotope_matches && isotope.similarity > best_isotope_similarity) ||
+                                (mass_error == best_mass_error && rt_match == best_rt_match && isotope.matched_peaks == best_isotope_matches && isotope.similarity == best_isotope_similarity && sus.score > best_score) ||
+                                (mass_error == best_mass_error && rt_match == best_rt_match && isotope.matched_peaks == best_isotope_matches && isotope.similarity == best_isotope_similarity && sus.score == best_score && sus.name < normalized_suspects[best_suspect].name);
+            if (better)
+            {
+              best_suspect = suspect_idx;
+              best_mass_error = mass_error;
+              best_rt_match = rt_match;
+              best_isotope_matches = isotope.matched_peaks;
+              best_isotope_similarity = isotope.similarity;
+              best_score = sus.score;
+            }
           }
 
-          if (!assigned.empty())
-          {
-            matched.push_back({a, i, assigned});
-          }
+          if (best_suspect != normalized_suspects.size())
+            matched.push_back({a, i, best_suspect});
         }
       }
 
       if (matched.empty())
         return;
 
-      auto find_suspect = [&](const std::string &feature_name) -> const SuspectQuery *
-      {
-        for (const auto &sus : normalized_suspects)
-        {
-          if (feature_name.find(sus.name) != std::string::npos)
-            return &sus;
-        }
-        return nullptr;
-      };
-
       for (const auto &ref : matched)
       {
-        const SuspectQuery *sus = find_suspect(ref.assigned_name);
-        if (!sus)
-          continue;
+        const SuspectQuery *sus = &normalized_suspects[ref.suspect_idx];
 
         const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts = feature_buffers[ref.analysis_idx];
         const int i = ref.feature_idx;
@@ -351,8 +520,9 @@ namespace streamfind::mass_spec::nta
         api::NTA_SUSPECT_ROW row;
         row.analysis = analysis_names[ref.analysis_idx];
         row.feature = get_or_default(fts.feature, idx, std::string());
+        row.feature_group = get_or_default(fts.feature_group, idx, std::string());
         row.candidate_rank = 1;
-        row.name = ref.assigned_name;
+        row.name = sus->name;
         row.polarity = get_or_default(fts.polarity, idx, 0);
         row.exp_mass = static_cast<double>(get_or_default(fts.mass, idx, 0.0f));
         row.exp_rt = static_cast<double>(get_or_default(fts.rt, idx, 0.0f));
@@ -531,13 +701,16 @@ namespace streamfind::mass_spec::nta
           row.id_level = 4;
         }
 
-        if (write_internal_standards)
-        {
-          internal_standard_buffers[ref.analysis_idx].append(suspect_to_internal_standard(row));
-        }
+        // Internal-standard matches use the standard suspect result contract
+        // while retaining the dedicated table needed by correction methods.
+        if (!write_internal_standards)
+          suspect_buffers[ref.analysis_idx].append(row);
         else
         {
-          suspect_buffers[ref.analysis_idx].append(row);
+          auto internal_standard = suspect_to_internal_standard(row);
+          internal_standard.feature_component = get_or_default(fts.feature_component, idx, std::string());
+          internal_standard.adduct = get_or_default(fts.adduct, idx, std::string());
+          internal_standard_buffers[ref.analysis_idx].append(internal_standard);
         }
       }
     }
@@ -568,9 +741,46 @@ namespace streamfind::mass_spec::nta
         double mzrMS2,
         double minCosineSimilarity,
         int minSharedFragments,
+        double isotopePpm,
         bool filtered)
     {
-      screening_impl(nta_data, analyses, suspects, ppm, sec, ppmMS2, mzrMS2, minCosineSimilarity, minSharedFragments, 5.0, filtered, true);
+      screening_impl(nta_data, analyses, suspects, ppm, sec, ppmMS2, mzrMS2, minCosineSimilarity, minSharedFragments, isotopePpm, filtered, true);
+    }
+
+    void convert_suspects_to_internal_standards(NtaProjectData &nta_data)
+    {
+      auto &internal_buffers = nta_data.internal_standard_buffers();
+      const auto &feature_buffers = nta_data.feature_buffers();
+      const auto &analysis_names = nta_data.analysis_names();
+      for (std::size_t analysis_index = 0; analysis_index < internal_buffers.size(); ++analysis_index)
+      {
+        internal_buffers[analysis_index] = api::NTA_INTERNAL_STANDARDS();
+        if (analysis_index >= nta_data.suspect_buffers().size())
+          continue;
+        const auto &suspects = nta_data.suspect_buffers()[analysis_index];
+        for (int suspect_index = 0; suspect_index < suspects.size(); ++suspect_index)
+        {
+          const auto suspect = suspects.get_suspect(suspect_index);
+          auto internal_standard = suspect_to_internal_standard(suspect);
+          internal_standard.analysis = analysis_index < analysis_names.size()
+              ? analysis_names[analysis_index] : suspect.analysis;
+          if (analysis_index < feature_buffers.size())
+          {
+            const auto &features = feature_buffers[analysis_index];
+            for (int feature_index = 0; feature_index < features.size(); ++feature_index)
+            {
+              const auto feature = features.get_feature(feature_index);
+              if (feature.feature != suspect.feature)
+                continue;
+              internal_standard.feature_group = feature.feature_group;
+              internal_standard.feature_component = feature.feature_component;
+              internal_standard.adduct = feature.adduct;
+              break;
+            }
+          }
+          internal_buffers[analysis_index].append(internal_standard);
+        }
+      }
     }
   } // namespace suspect_screening
 } // namespace nta
@@ -614,16 +824,54 @@ using Json = nlohmann::json;
         const double mzr_ms2 = parameters.value("mzr_ms2", 0.008);
         const double min_cosine_similarity = parameters.value("min_cosine_similarity", 0.7);
         const int min_shared_fragments = parameters.value("min_shared_fragments", 3);
+        const double isotope_ppm = parameters.value("isotope_ppm", ppm);
         const bool filtered = parameters.value("filtered", true);
         if (ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0 || min_cosine_similarity < 0 ||
-            min_cosine_similarity > 1 || min_shared_fragments < 0)
+            min_cosine_similarity > 1 || min_shared_fragments < 0 || isotope_ppm < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid internal standard parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
         const auto suspects = utils::detail::parse_suspect_targets(access, parameters, false);
         ::streamfind::mass_spec::nta::suspect_screening::find_internal_standards_impl(data, data.analysis_names(), suspects,
-                                                             ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, filtered);
-        utils::detail::emit_features(access, data);
+                                                             ppm, sec, ppm_ms2, mzr_ms2, min_cosine_similarity, min_shared_fragments, isotope_ppm, filtered);
         utils::detail::emit_internal_standards(access, data);
         return Json{{"status", "finished"}, {"info", "Internal standards found."}};
+    }
+}
+
+#include "utils/nta.hpp"
+namespace streamfind::mass_spec::nta::enrich_internal_standards
+{
+using Json = nlohmann::json;
+
+    Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        auto data = utils::detail::load_analysis_features(access, parameters);
+        utils::detail::load_internal_standards(access, data, parameters);
+
+        auto &standards = data.internal_standard_buffers();
+        const auto &features = data.feature_buffers();
+        for (std::size_t analysis_index = 0; analysis_index < standards.size(); ++analysis_index)
+        {
+            auto &standard_buffer = standards[analysis_index];
+            const auto &feature_buffer = features[analysis_index];
+            for (int standard_index = 0; standard_index < standard_buffer.size(); ++standard_index)
+            {
+                const std::string &feature_name = standard_buffer.feature[static_cast<std::size_t>(standard_index)];
+                for (int feature_index = 0; feature_index < feature_buffer.size(); ++feature_index)
+                {
+                    if (feature_buffer.feature[static_cast<std::size_t>(feature_index)] != feature_name)
+                        continue;
+                    const auto index = static_cast<std::size_t>(standard_index);
+                    const auto feature = static_cast<std::size_t>(feature_index);
+                    standard_buffer.feature_group[index] = feature < feature_buffer.feature_group.size() ? feature_buffer.feature_group[feature] : std::string();
+                    standard_buffer.feature_component[index] = feature < feature_buffer.feature_component.size() ? feature_buffer.feature_component[feature] : std::string();
+                    standard_buffer.adduct[index] = feature < feature_buffer.adduct.size() ? feature_buffer.adduct[feature] : std::string();
+                    break;
+                }
+            }
+        }
+
+        utils::detail::emit_internal_standards(access, data);
+        return Json{{"status", "finished"}, {"info", "Internal-standard feature context enriched."}};
     }
 }

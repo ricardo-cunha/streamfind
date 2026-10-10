@@ -75,11 +75,13 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.suspect_screening", sdk::CapabilityKind::Operation, &nta::suspect_screening::run},
         {"mass_spec.read_csv_suspect_targets", sdk::CapabilityKind::Operation, &nta::read_csv_suspect_targets::run},
         {"mass_spec.find_internal_standards", sdk::CapabilityKind::Operation, &nta::find_internal_standards::run},
+        {"mass_spec.enrich_internal_standards", sdk::CapabilityKind::Operation, &nta::enrich_internal_standards::run},
         {"mass_spec.filter_suspects", sdk::CapabilityKind::Operation, &nta::filter_suspects::run},
         {"mass_spec.filter_internal_standards", sdk::CapabilityKind::Operation, &nta::filter_internal_standards::run},
         {"mass_spec.correct_matrix_suppression", sdk::CapabilityKind::Operation, &nta::correct_matrix_suppression::run},
         {"mass_spec.assign_transformation_products", sdk::CapabilityKind::Operation, &nta::assign_transformation_products::run},
         {"mass_spec.metfrag_screening", sdk::CapabilityKind::Operation, &nta::metfrag_screening::run},
+        {"mass_spec.find_internal_standards_metfrag", sdk::CapabilityKind::Operation, &nta::find_internal_standards_metfrag::run},
         {"mass_spec.get_features", sdk::CapabilityKind::Operation, &nta::get_features},
         {"mass_spec.get_suspects", sdk::CapabilityKind::Operation, &nta::get_suspects},
         {"mass_spec.get_internal_standards", sdk::CapabilityKind::Operation, &nta::get_internal_standards},
@@ -149,7 +151,7 @@ streamfind_plugin_status describe_dependencies(streamfind_plugin_buffer *result_
     const auto *host = static_cast<const streamfind_plugin_host_api *>(user_data);
     return write_dependency_result(Json::array({
         {{"id", "runtime.java"}, {"label", "Java Runtime"}, {"version", "21"}, {"kind", "runtime"},
-         {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/java"},
+         {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.find_internal_standards_metfrag", "mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/java"},
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_java().has_value()}},
         {{"id", "mass_spec.metfrag_fragmenter"}, {"label", "MetFrag Fragmenter"}, {"version", "0.1.0"}, {"kind", "jar"},
@@ -157,7 +159,7 @@ streamfind_plugin_status describe_dependencies(streamfind_plugin_buffer *result_
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_metfrag_fragmenter_jar().has_value()}},
         {{"id", "mass_spec.metfrag"}, {"label", "MetFragCL"}, {"version", "2.6.11"}, {"kind", "jar"},
-         {"required_by", Json::array({"mass_spec.metfrag_screening"})}, {"managed_path", ".streamfind/tools/metfrag/MetFragCL.jar"},
+         {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.find_internal_standards_metfrag"})}, {"managed_path", ".streamfind/tools/metfrag/MetFragCL.jar"},
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_metfrag_jar().has_value()}}}), result_json, host);
 }

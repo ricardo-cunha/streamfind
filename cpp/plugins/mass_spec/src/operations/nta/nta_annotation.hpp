@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <stdexcept>
 
 #include <string>
 
@@ -43,36 +44,21 @@ namespace streamfind::mass_spec::nta
     // MARK: ISOTOPE_SET
     struct ISOTOPE_SET
     {
-      std::vector<ISOTOPE> data = {
-          ISOTOPE("C", "13C", 1.0033548378, 0.01078, 0.988922, 1, 60),
-          ISOTOPE("H", "2H", 1.0062767, 0.00015574, 0.99984426, 0, 120),
-          ISOTOPE("B", "10B", 0.996809, 0.199, 0.801, 0, 2),
-          ISOTOPE("N", "15N", 0.9970349, 0.003663, 0.996337, 0, 10),
-          ISOTOPE("O", "17O", 1.004217, 0.00037, 0.99763, 0, 20),
-          ISOTOPE("O", "18O", 2.004246, 0.00200, 0.99763, 0, 20),
-          ISOTOPE("Mg", "25Mg", 0.999711, 0.10, 0.7899, 0, 2),
-          ISOTOPE("Mg", "26Mg", 1.995796, 0.1101, 0.7899, 0, 2),
-          ISOTOPE("Si", "29Si", 0.999568, 0.04683, 0.92230, 0, 6),
-          ISOTOPE("Si", "30Si", 1.996844, 0.03087, 0.92230, 0, 6),
-          ISOTOPE("S", "33S", 0.999388, 0.00750, 0.95018, 0, 4),
-          ISOTOPE("S", "34S", 1.995796, 0.04215, 0.95018, 0, 4),
-          ISOTOPE("S", "36S", 3.995010, 0.00017, 0.95018, 0, 4),
-          ISOTOPE("Cl", "37Cl", 1.997050, 0.24229, 0.75771, 0, 6),
-          ISOTOPE("Br", "81Br", 1.997953, 0.49314, 0.50686, 0, 4),
-          ISOTOPE("K", "41K", 1.998119, 0.0673, 0.9327, 0, 2),
-          ISOTOPE("Ca", "44Ca", 3.998159, 0.02086, 0.96941, 0, 2),
-          ISOTOPE("Fe", "54Fe", -1.004391, 0.05845, 0.91754, 0, 2),
-          ISOTOPE("Fe", "57Fe", 2.995294, 0.02119, 0.91754, 0, 2),
-          ISOTOPE("Cu", "65Cu", 1.998204, 0.3085, 0.6915, 0, 2),
-          ISOTOPE("Zn", "66Zn", 1.999059, 0.2773, 0.4917, 0, 2),
-          ISOTOPE("Zn", "68Zn", 3.995796, 0.1845, 0.4917, 0, 2),
-          ISOTOPE("Se", "77Se", 0.997953, 0.0763, 0.4961, 0, 2),
-          ISOTOPE("Se", "78Se", 1.996004, 0.2377, 0.4961, 0, 2),
-          ISOTOPE("Se", "80Se", 3.995010, 0.4961, 0.4961, 0, 2)};
+      std::vector<ISOTOPE> data;
+
+      ISOTOPE_SET();
 
       void filter(const std::vector<std::string> &el)
       {
         std::unordered_set<std::string> el_set(el.begin(), el.end());
+        for (const std::string &requested : el_set)
+        {
+          const auto known = std::find_if(data.begin(), data.end(), [&](const ISOTOPE &iso) {
+            return iso.element == requested;
+          });
+          if (known == data.end())
+            throw std::invalid_argument("unknown isotope element: " + requested);
+        }
         std::vector<ISOTOPE> data_filtered;
         for (const ISOTOPE &iso : data)
         {
@@ -111,6 +97,7 @@ namespace streamfind::mass_spec::nta
       std::vector<std::vector<float>> tensor_mass_distances;
       std::vector<std::vector<float>> tensor_abundances;
       std::vector<float> mass_distances;
+      std::vector<std::vector<int>> combinations_by_step;
       int length;
 
       ISOTOPE_COMBINATIONS(ISOTOPE_SET &isotopes, const int &max_number_elements);
@@ -144,6 +131,7 @@ namespace streamfind::mass_spec::nta
     struct ADDUCT
     {
       std::string element;
+      std::string formula;
       int polarity;
       std::string cat;
       std::string type;
@@ -152,36 +140,17 @@ namespace streamfind::mass_spec::nta
       float mass_distance;
 
       ADDUCT(const std::string &e, const int &p, const std::string &c, const std::string &t, const float &md, const int &z, const int &m = 1)
-          : element(e), polarity(p), cat(c), type(t), charge(z), multiplicity(m), mass_distance(md) {}
+          : element(e), formula(), polarity(p), cat(c), type(t), charge(z), multiplicity(m), mass_distance(md) {}
     };
 
     // MARK: ADDUCT_SET
     struct ADDUCT_SET
     {
+      ADDUCT_SET();
       std::vector<ADDUCT> neutralizers{
-          ADDUCT("H", 1, "[M+H]+", "[M+H]+", -1.007276, 1),
-          ADDUCT("H", -1, "[M-H]-", "[M-H]-", 1.007276, 1)};
-
-      std::vector<ADDUCT> all_adducts{
-          ADDUCT("H", 1, "adduct", "[M+H]+", 1.007276f, 1, 1),
-          ADDUCT("Na", 1, "adduct", "[M+Na]+", 22.989218f, 1, 1),
-          ADDUCT("K", 1, "adduct", "[M+K]+", 38.963158f, 1, 1),
-          ADDUCT("NH4", 1, "adduct", "[M+NH4]+", 18.033823f, 1, 1),
-          ADDUCT("ACN+H", 1, "adduct", "[M+ACN+H]+", 42.033823f, 1, 1),
-          ADDUCT("CH3OH+H", 1, "adduct", "[M+CH3OH+H]+", 33.033489f, 1, 1),
-          ADDUCT("2H", 1, "adduct", "[2M+H]+", 1.007276f, 1, 2),
-          ADDUCT("2Na", 1, "adduct", "[2M+Na]+", 22.989218f, 1, 2),
-          ADDUCT("2K", 1, "adduct", "[2M+K]+", 38.963158f, 1, 2),
-          ADDUCT("2NH4", 1, "adduct", "[2M+NH4]+", 18.033823f, 1, 2),
-          ADDUCT("-H", -1, "adduct", "[M-H]-", -1.007276f, 1, 1),
-          ADDUCT("Cl", -1, "adduct", "[M+Cl]-", 34.969402f, 1, 1),
-          ADDUCT("Br", -1, "adduct", "[M+Br]-", 78.918885f, 1, 1),
-          ADDUCT("CHO2", -1, "adduct", "[M+CHO2]-", 44.998201f, 1, 1),
-          ADDUCT("CH3COO", -1, "adduct", "[M+CH3COO]-", 59.013851f, 1, 1),
-          ADDUCT("FA-H", -1, "adduct", "[M+FA-H]-", 44.998201f, 1, 1),
-          ADDUCT("2-H", -1, "adduct", "[2M-H]-", -1.007276f, 1, 2),
-          ADDUCT("2Cl", -1, "adduct", "[2M+Cl]-", 34.969402f, 1, 2),
-          ADDUCT("2FA-H", -1, "adduct", "[2M+FA-H]-", 44.998201f, 1, 2)};
+          ADDUCT("H", 1, "[M+H]+", "[M+H]+", 0.0f, 1),
+          ADDUCT("H", -1, "[M-H]-", "[M-H]-", 0.0f, 1)};
+      std::vector<ADDUCT> all_adducts;
 
       float neutralizer(const int &pol);
       std::vector<ADDUCT> adducts(const int &pol);
@@ -192,40 +161,19 @@ namespace streamfind::mass_spec::nta
     {
       std::string name;
       std::string formula;
+      std::string expression;
       float mass_loss;
       int polarity;
 
-      FRAGMENT_LOSS(const std::string &n, const std::string &f, float ml, int p)
-          : name(n), formula(f), mass_loss(ml), polarity(p) {}
+      FRAGMENT_LOSS(const std::string &n, const std::string &f, float ml, int p, const std::string &e = {})
+          : name(n), formula(f), expression(e), mass_loss(ml), polarity(p) {}
     };
 
     // MARK: FRAGMENT_LOSS_SET
     struct FRAGMENT_LOSS_SET
     {
-      std::vector<FRAGMENT_LOSS> all_losses{
-          FRAGMENT_LOSS("water", "H2O", 18.010565, 0),        // neutral, both polarities
-          FRAGMENT_LOSS("carbon dioxide", "CO2", 43.989829, 0), // neutral, both polarities
-          FRAGMENT_LOSS("ammonia", "NH3", 17.026549, 1),      // positive mode
-          FRAGMENT_LOSS("carbon monoxide", "CO", 27.994915, 0), // neutral, both polarities
-          FRAGMENT_LOSS("methyl", "CH3", 15.023475, 0),       // neutral, both polarities
-          FRAGMENT_LOSS("formic acid", "CH2O2", 46.005479, -1), // negative mode
-          FRAGMENT_LOSS("hydrogen chloride", "HCl", 35.976678, 0),
-          FRAGMENT_LOSS("hydrogen fluoride", "HF", 20.006229, 0),
-          FRAGMENT_LOSS("sulfur dioxide", "SO2", 63.961901, 0),
-          FRAGMENT_LOSS("sulfur trioxide", "SO3", 79.956815, 0),
-          FRAGMENT_LOSS("sulfuric acid", "H2SO4", 97.967379, 0),
-          FRAGMENT_LOSS("methanol", "CH3OH", 32.026215, 0),
-          FRAGMENT_LOSS("ethylene", "C2H4", 28.031300, 0),
-          FRAGMENT_LOSS("acetylene", "C2H2", 26.015650, 0),
-          FRAGMENT_LOSS("nitric oxide", "NO", 29.997989, 0),
-          FRAGMENT_LOSS("nitrogen dioxide", "NO2", 45.992904, 0),
-          FRAGMENT_LOSS("nitrous acid", "HNO2", 46.005479, 0),
-          FRAGMENT_LOSS("nitric acid", "HNO3", 62.000394, 0),
-          FRAGMENT_LOSS("methylene", "CH2", 14.015650, 0),
-          FRAGMENT_LOSS("ethanol", "C2H6O", 46.041865, 0),
-          FRAGMENT_LOSS("phosphorous acid", "HPO3", 79.966331, 0),
-          FRAGMENT_LOSS("phosphoric acid", "H3PO4", 97.976896, 0)
-      };
+      FRAGMENT_LOSS_SET();
+      std::vector<FRAGMENT_LOSS> all_losses;
 
       std::vector<FRAGMENT_LOSS> losses(const int &pol);
     };
@@ -289,6 +237,8 @@ namespace streamfind::mass_spec::nta
       int feature_index = -1;
       int priority = 0;
       bool is_default = false;
+      bool is_dimer = false;
+      std::string relation_id;
       std::string label;
     };
 
@@ -302,6 +252,8 @@ namespace streamfind::mass_spec::nta
         int maxGaps,
         float ppm,
         const std::vector<std::string> &isotopeElements,
+        const std::vector<std::string> &modifications,
+        bool useDefaultModifications,
         const std::string &debugComponent = "",
         const std::string &debugAnalysis = "",
         sdk::DebugSession *debug = nullptr);
