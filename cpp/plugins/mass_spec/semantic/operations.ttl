@@ -21,7 +21,7 @@ sfms:readCsvTargets
     sf:operationId "mass_spec.read_csv_targets" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
-    skos:prefLabel "Read CSV targets" ;
+    skos:prefLabel "Read CSV with targets" ;
     skos:definition "Read a target CSV, validate numeric matching fields, normalize optional chemical structures with Open Babel, and publish a reusable targetsTable artifact." ;
     sf:category "mass-spec-ingestion" ;
     sf:hasParameter sfms:targetsCsvPathParameter ;
@@ -32,7 +32,7 @@ sfms:readCsvSuspectTargets
     sf:operationId "mass_spec.read_csv_suspect_targets" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Read CSV suspect targets" ;
+    skos:prefLabel "Read CSV with suspect targets" ;
     skos:definition "Read a suspect-target CSV, require chemical identity fields, normalize them with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
     sf:category "nta-identification" ;
     sf:hasParameter sfms:suspectTargetsCsvPathParameter ;
@@ -353,7 +353,7 @@ sfms:getFeatures
     sf:operationId "mass_spec.get_features" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Get NTA features" ;
+    skos:prefLabel "Get features" ;
     skos:definition "Return a reduced, persisted featuresTable artifact containing features that match optional target rows. Omit analysis_names to search every analysis. Each target may provide mass, mz, rt, explicit bounds, analysis, and optional polarity; omitted polarity never filters. A mass or mz target is expanded by ppm, and an exact rt target is expanded by rt_tolerance seconds. The result includes the matched target name when supplied and is available for artifact inspection and downstream connections." ;
     sf:hasParameter
         sfms:analysisNamesParameter,
@@ -385,7 +385,7 @@ sfms:getInternalStandards
     sf:operationId "mass_spec.get_internal_standards" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Get NTA internal standards" ;
+    skos:prefLabel "Get internal standards" ;
     skos:definition "Read persisted non-target-analysis internal-standard assignments matching analysis, mass or m/z, retention time, and polarity targets." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
@@ -401,7 +401,7 @@ sfms:getTransformationProducts
     sf:operationId "mass_spec.get_transformation_products" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Get NTA transformation products" ;
+    skos:prefLabel "Get transformation products" ;
     skos:definition "Read persisted non-target-analysis transformation-product assignments matching analysis and mass targets. Transformation-product artifacts do not contain independent m/z or retention-time columns." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
@@ -501,7 +501,7 @@ sfms:findFeatures
     sf:operationId "mass_spec.find_features" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Find mass spectrometry features" ;
+    skos:prefLabel "Find features" ;
     skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
     sf:category "nta-feature-detection" ;
     sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range." ;
@@ -527,7 +527,7 @@ sfms:loadFeaturesMs1
     sf:operationId "mass_spec.load_features_ms1" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Load MS1 spectra for features" ;
+    skos:prefLabel "Load features MS1 spectra" ;
     skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
     sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
@@ -548,7 +548,7 @@ sfms:loadFeaturesMs2
     sf:operationId "mass_spec.load_features_ms2" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Load MS2 spectra for features" ;
+    skos:prefLabel "Load features MS2 spectra" ;
     skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
     sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. It updates ms2_size, ms2_mz, and ms2_intensity." ;
@@ -568,7 +568,7 @@ sfms:subtractBlank
     sf:operationId "mass_spec.subtract_blank" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Subtract blank features" ;
+    skos:prefLabel "Subtract blank background" ;
     skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows. The operation processes every analysis and resolves its associated blank replicate from analysesTable." ;
     sf:guidance "Connect analysesTable and featuresTable. The replicate and blank columns in featuresTable describe feature rows but do not replace analysesTable: analysesTable remains required because it supplies authoritative native source paths and analysis indices needed to load each associated blank spectrum. Every analysis is processed using its blank assignment. Optionally connect spectraHeadersTable to reuse persisted spectra headers for RT/m/z targeting. Matching persisted headers avoid reparsing source headers; missing or stale rows fall back to native header loading." ;
     sf:hasParameter
@@ -648,15 +648,17 @@ sfms:groupFeatures
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Group features" ;
-    skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and an alignment method." ;
+    skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and the selected alignment method. The internal_standards method consumes the optional internalStandardsTable through the internal_standards table parameter; obi_warp does not require that table." ;
+    sf:guidance "Connect featuresTable. Select grouping_method from the constrained internal_standards or obi_warp options. When grouping_method is internal_standards, connect an internalStandardsTable result to the internal_standards table parameter; the operation rejects an empty or missing table in that mode." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
-        sfms:methodParameter,
+        sfms:groupingMethodParameter,
+        sfms:internalStandardsParameter,
         sfms:rtDeviationParameter,
         sfms:ppmParameter,
         sfms:minSamplesParameter,
         sfms:binSizeParameter ;
-    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -681,6 +683,7 @@ sfms:fillFeatures
         sfms:minSignalToNoiseRatioParameter,
         sfms:minGaussianFitParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -727,7 +730,7 @@ sfms:suspectScreening
     sf:operationId "mass_spec.suspect_screening" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Screen suspect features" ;
+    skos:prefLabel "Suspect screening" ;
     skos:definition "Match detected features against suspect targets by structure-derived or supplied accurate mass, with optional retention-time, isotope, and MS2 evidence, and persist candidate assignments in a suspectsTable." ;
     sf:category "nta-identification" ;
     sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and MS2 reference peaks are optional. Isotope matching is informational only and does not control candidate retention or identification level. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
@@ -841,14 +844,14 @@ sfms:assignTransformationProducts
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Assign transformation products" ;
-    skos:definition "Assign plausible biotransformation products to suspected features using transformation-product candidates, scoring combinations by mass/MS2 cosine similarity and logP-based retention-time plausibility, and append the assignments to the suspect results." ;
+    skos:definition "Assign plausible biotransformation products to suspected features using transformation-product candidates, scoring combinations by mass/MS2 cosine similarity and logP-based retention-time plausibility, and emit the scored assignments as an independent transformationProductsTable." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:transformationProductsParameter,
         sfms:chromatographicPhaseParameter,
         sfms:mzrMs2Parameter ;
     sf:hasInputPort sfms:featuresTable, sfms:suspectsTable ;
-    sf:hasOutputPort sfms:suspectsTable, sfms:transformationProductsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:transformationProductsTable, sfcore:operationSuccessSignal .
 
 
 sfms:metfragScreening
@@ -856,7 +859,7 @@ sfms:metfragScreening
     sf:operationId "mass_spec.metfrag_screening" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Screen features with MetFrag" ;
+    skos:prefLabel "Suspect screening with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
     sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Provide candidate structures through the suspect_targets parameter; retention time and MS2 reference peaks are optional." ;
     sf:hasParameter

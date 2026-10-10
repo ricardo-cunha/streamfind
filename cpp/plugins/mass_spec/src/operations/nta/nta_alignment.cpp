@@ -824,7 +824,7 @@ namespace streamfind::mass_spec::nta::group_features
 using Json = nlohmann::json;
     Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto method = parameters.value("method", std::string("internal_standards"));
+        const auto method = parameters.value("grouping_method", std::string("obi_warp"));
         const float rt_deviation = parameters.value("rt_deviation", 5.0);
         const float ppm = parameters.value("ppm", 10.0);
         const int min_samples = parameters.value("min_samples", 1);
@@ -833,7 +833,14 @@ using Json = nlohmann::json;
             throw Error(ErrorCode::InvalidArgument, "invalid feature grouping parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
         if (method == "internal_standards")
+        {
+            if (!parameters.contains("internal_standards") ||
+                !parameters.at("internal_standards").is_array() ||
+                parameters.at("internal_standards").empty())
+                throw Error(ErrorCode::WorkflowValidation,
+                            "grouping_method=internal_standards requires a populated internal_standards table parameter");
             utils::detail::load_internal_standards(access, data, parameters);
+        }
         ::streamfind::mass_spec::nta::alignment::group_features_impl(data, method, rt_deviation, ppm, min_samples, bin_size);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Features grouped."}};

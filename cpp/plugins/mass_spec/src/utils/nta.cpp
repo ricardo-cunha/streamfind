@@ -1151,12 +1151,14 @@ namespace streamfind::mass_spec::nta::utils::detail
             auto &buffers = data.internal_standard_buffers();
             for (auto &b : buffers)
                 b = ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS();
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            auto append_row = [&](const Json &row)
             {
+                if (!row.is_object())
+                    throw Error(ErrorCode::WorkflowValidation, "Internal standards rows must be objects");
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
                 if (it == data.analysis_names().end())
-                    continue;
+                    return;
                 ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW r;
                 r.analysis = an;
                 r.feature = col_s(row, "feature");
@@ -1196,7 +1198,18 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.isotope_similarity = col_d(row, "isotope_similarity");
                 r.isotope_match = col_s(row, "isotope_match") == "true";
                 buffers[static_cast<size_t>(it - data.analysis_names().begin())].append(r);
+            };
+            if (parameters.contains("internal_standards"))
+            {
+                const auto &rows = parameters.at("internal_standards");
+                if (!rows.is_array())
+                    throw Error(ErrorCode::WorkflowValidation, "internal_standards must be an array of table rows");
+                for (const auto &row : rows)
+                    append_row(row);
+                return;
             }
+            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+                append_row(row);
         }
 
         // Map the JSON `transformation_products` parameter (R data.frame columns:

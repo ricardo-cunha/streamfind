@@ -170,7 +170,7 @@ sfms:rtWindowsParameter
     sf:example "[{\"rtmin\":0,\"rtmax\":1800}]" .
 
 
-sfms:methodParameter
+sfms:groupingMethodParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
@@ -181,6 +181,20 @@ sfms:methodParameter
     sf:default "obi_warp" ;
     sf:constraints "internal_standards|obi_warp" ;
     sf:example "internal_standards" .
+
+
+sfms:internalStandardsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal standards for feature grouping" ;
+    skos:definition "Internal-standard assignments used to align features when groupingMethodParameter is internal_standards. The table is optional for other alignment methods and is supplied through a table connection." ;
+    sf:type "table" ;
+    sf:tableContract sfms:internalStandardsTable ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default "[]" ;
+    sf:example "[]" .
 
 
 sfms:ppmThresholdParameter

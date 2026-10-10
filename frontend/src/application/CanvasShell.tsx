@@ -1139,7 +1139,7 @@ export default function CanvasShell({
           (template.kind === 'operation' || template.kind === 'extract' || template.kind === 'plot') &&
           Boolean(
             sourcePort &&
-              (nodePorts(targetCapability).inputs.some((port) => portMatchesPort(sourcePort, port)) ||
+            (nodePorts(targetCapability).inputs.some((port) => portMatchesPort(sourcePort, port)) ||
               targetCapability?.parameters.some(
                 (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
               )),
@@ -2279,6 +2279,12 @@ export default function CanvasShell({
                               </div>
                             );
                           }
+                          const constrainedValues = Array.isArray(parameter.schema.enum)
+                            ? parameter.schema.enum.filter(
+                                (candidate) =>
+                                  candidate === null || ['string', 'number', 'boolean'].includes(typeof candidate),
+                              )
+                            : [];
                           return (
                             <div className="sf-canvas-parameter" key={parameter.name}>
                               <button
@@ -2318,46 +2324,72 @@ export default function CanvasShell({
                                 <div
                                   className={isSimplePathParameter(parameter) ? 'sf-canvas-scalar-path-row' : undefined}
                                 >
-                                  <input
-                                    type={
-                                      String(
+                                  {constrainedValues.length > 0 ? (
+                                    <select
+                                      value={
+                                        constrainedValues.some(
+                                          (candidate) => String(candidate) === parameterInputValue(parameter, value),
+                                        )
+                                          ? parameterInputValue(parameter, value)
+                                          : ''
+                                      }
+                                      onChange={(event) =>
+                                        updateNodeParameter(
+                                          node.id,
+                                          parameter.name,
+                                          scalarInputValue(parameter, event.target.value),
+                                        )
+                                      }
+                                    >
+                                      {!parameter.required ? <option value="">Select an option</option> : null}
+                                      {constrainedValues.map((candidate) => (
+                                        <option key={String(candidate)} value={String(candidate)}>
+                                          {String(candidate)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type={
+                                        String(
+                                          Array.isArray(parameter.schema.type)
+                                            ? parameter.schema.type[0]
+                                            : parameter.schema.type,
+                                        ) === 'boolean'
+                                          ? 'checkbox'
+                                          : ['integer', 'number', 'real', 'float', 'double'].includes(
+                                                String(
+                                                  Array.isArray(parameter.schema.type)
+                                                    ? parameter.schema.type[0]
+                                                    : parameter.schema.type,
+                                                ),
+                                              )
+                                            ? 'number'
+                                            : 'text'
+                                      }
+                                      {...(String(
                                         Array.isArray(parameter.schema.type)
                                           ? parameter.schema.type[0]
                                           : parameter.schema.type,
                                       ) === 'boolean'
-                                        ? 'checkbox'
-                                        : ['integer', 'number', 'real', 'float', 'double'].includes(
-                                              String(
-                                                Array.isArray(parameter.schema.type)
-                                                  ? parameter.schema.type[0]
-                                                  : parameter.schema.type,
-                                              ),
-                                            )
-                                          ? 'number'
-                                          : 'text'
-                                    }
-                                    {...(String(
-                                      Array.isArray(parameter.schema.type)
-                                        ? parameter.schema.type[0]
-                                        : parameter.schema.type,
-                                    ) === 'boolean'
-                                      ? {
-                                          checked: Boolean(
-                                            value ?? parameter.default ?? parameter.schema.default ?? false,
-                                          ),
-                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
-                                            updateNodeParameter(node.id, parameter.name, event.target.checked),
-                                        }
-                                      : {
-                                          value: parameterInputValue(parameter, value),
-                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
-                                            updateNodeParameter(
-                                              node.id,
-                                              parameter.name,
-                                              scalarInputValue(parameter, event.target.value),
+                                        ? {
+                                            checked: Boolean(
+                                              value ?? parameter.default ?? parameter.schema.default ?? false,
                                             ),
-                                        })}
-                                  />
+                                            onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                              updateNodeParameter(node.id, parameter.name, event.target.checked),
+                                          }
+                                        : {
+                                            value: parameterInputValue(parameter, value),
+                                            onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                              updateNodeParameter(
+                                                node.id,
+                                                parameter.name,
+                                                scalarInputValue(parameter, event.target.value),
+                                              ),
+                                          })}
+                                    />
+                                  )}
                                   {isSimplePathParameter(parameter) ? (
                                     <button
                                       type="button"

@@ -891,6 +891,32 @@ namespace streamfind
         {
             if (!resolved.contains(definition.name))
                 continue;
+            if (definition.constraints.is_string())
+            {
+                const auto allowed = definition.constraints.get<std::string>();
+                const auto first = allowed.find_first_not_of(" \t\r\n");
+                const bool is_enum_constraint = first != std::string::npos && allowed[first] != '{';
+                if (is_enum_constraint)
+                {
+                    if (!resolved.at(definition.name).is_string())
+                        throw Error(ErrorCode::WorkflowValidation,
+                                    "Invalid value for parameter '" + definition.name + "'; expected one of: " + allowed);
+                    std::stringstream choices(allowed);
+                    std::string choice;
+                    bool matched = false;
+                    while (std::getline(choices, choice, '|'))
+                    {
+                        if (choice == resolved.at(definition.name).get<std::string>())
+                        {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if (!matched)
+                        throw Error(ErrorCode::WorkflowValidation,
+                                    "Invalid value for parameter '" + definition.name + "'; expected one of: " + allowed);
+                }
+            }
             try
             {
                 definition.type.validate(resolved.at(definition.name));

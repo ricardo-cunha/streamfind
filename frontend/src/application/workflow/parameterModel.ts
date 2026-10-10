@@ -237,6 +237,11 @@ export function parseCsvRows(text: string, columns: string[]): { rows?: Record<s
 }
 
 export function validateJsonValue(value: unknown, schema: JsonSchema, path = 'value'): string | null {
+  if (
+    Array.isArray(schema.enum) &&
+    !schema.enum.some((candidate) => JSON.stringify(candidate) === JSON.stringify(value))
+  )
+    return `${path} must be one of the declared options.`;
   const declared = Array.isArray(schema.type) ? schema.type : [schema.type];
   if (!declared.length || declared.includes(undefined)) return null;
   const matches = (type: string): string | null => {

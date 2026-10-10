@@ -11,6 +11,7 @@ import {
   schemaTypeLabel,
   schemaPropertyOrder,
   uiParameters,
+  validateJsonValue,
   wireTableToRows,
   wireParameters,
 } from './parameterModel';
@@ -68,5 +69,11 @@ describe('workflow parameter model', () => {
       'a',
       'b',
     ]);
+  });
+
+  it('validates constrained values against the declared options', () => {
+    const schema = { type: 'string', enum: ['internal_standards', 'obi_warp'] };
+    expect(validateJsonValue('internal_standards', schema)).toBeNull();
+    expect(validateJsonValue('other', schema)).toContain('declared options');
   });
 });

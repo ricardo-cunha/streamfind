@@ -103,7 +103,7 @@ sfms:chromatogramsTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Mass spectrometry chromatogram points table" ;
+    skos:prefLabel "Mass spectrometry chromatograms table" ;
     skos:definition "Persisted chromatogram point records for mass spectrometry analyses. Channel metadata lives in MASS_SPEC_CHROMATOGRAMS_HEADERS; join through analysis and index." ;
     sf:tableContractName "MASS_SPEC_CHROMATOGRAMS" ;
     sf:dataKind "duckdb_table" ;
@@ -154,8 +154,8 @@ sfms:featuresTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "NTA features table" ;
-    skos:definition "Persisted MS1 features detected for non-target analysis." ;
+    skos:prefLabel "Mass spectrometry features table" ;
+    skos:definition "Persisted features (i.e., chromatographic mass spectrometry peaks) detected for non-target analysis." ;
     sf:tableContractName "MASS_SPEC_NTA_FEATURES" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -238,7 +238,7 @@ sfms:suspectsTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "NTA suspects table" ;
+    skos:prefLabel "Mass spectrometry suspects table" ;
     skos:definition "Persisted suspect-screening assignment rows." ;
     sf:tableContractName "MASS_SPEC_NTA_SUSPECTS" ;
     sf:dataKind "duckdb_table" ;
@@ -296,7 +296,7 @@ sfms:internalStandardsTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "NTA internal standards table" ;
+    skos:prefLabel "Mass spectrometry internal standards table" ;
     skos:definition "Persisted internal-standard assignment rows with a shared suspect-identification vocabulary and an independent contract for alignment, correction, and QC." ;
     skos:broader sfms:suspectsTable ;
     sf:tableContractName "MASS_SPEC_NTA_INTERNAL_STANDARDS" ;
@@ -358,7 +358,7 @@ sfms:transformationProductsTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "NTA transformation products table" ;
+    skos:prefLabel "Mass spectrometry transformation products table" ;
     skos:definition "Persisted transformation-product assignment rows." ;
     sf:tableContractName "MASS_SPEC_NTA_TRANSFORMATION_PRODUCTS" ;
     sf:dataKind "duckdb_table" ;
@@ -404,7 +404,7 @@ sfms:ticTable
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry total ion current" ;
-    skos:definition "Table of filtered total ion current records." ;
+    skos:definition "Table of total ion current records." ;
     sf:tableContractName "MASS_SPEC_TIC" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -422,8 +422,8 @@ sfms:spectraTable
     a sf:Table ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Mass spectrometry raw spectra" ;
-    skos:definition "Table of independently targeted raw spectrum points." ;
+    skos:prefLabel "Mass spectrometry spectra" ;
+    skos:definition "Table of raw spectra." ;
     sf:tableContractName "MASS_SPEC_SPECTRA" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -446,7 +446,7 @@ sfms:eicTable
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry extracted ion chromatograms" ;
-    skos:definition "Table of extracted ion chromatogram spectrum points." ;
+    skos:definition "Table of extracted ion chromatogram spectra." ;
     sf:tableContractName "MASS_SPEC_EIC" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -621,7 +621,7 @@ sfms:transformationProductCandidatesTable
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Transformation-product candidate table" ;
+    skos:prefLabel "Mass spectrometry transformation-product candidate table" ;
     skos:definition "Schema for candidate transformation-product rows supplied to transformation-product assignment." ;
     sf:tableContractName "MASS_SPEC_TRANSFORMATION_PRODUCT_CANDIDATES" ;
     sf:dataKind "duckdb_table" ;

@@ -48,6 +48,15 @@ struct IsotopePatternFormula {
     std::vector<std::string> fixed_labels;
 };
 
+std::string isotope_formula_without_charge(const std::string &formula) {
+    auto normalized = formula;
+    while (!normalized.empty() && std::isspace(static_cast<unsigned char>(normalized.back())))
+        normalized.pop_back();
+    if (!normalized.empty() && (normalized.back() == '+' || normalized.back() == '-'))
+        normalized.pop_back();
+    return normalized;
+}
+
 int isotope_table_index(const std::string &symbol, int mass_number) {
     for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
         if (symbol == IsoSpec::elem_table_symbol[index] &&
@@ -69,17 +78,32 @@ int most_abundant_isotope_table_index(const std::string &symbol) {
     return best;
 }
 
+int nearest_isotope_table_index(double mass) {
+    int best = -1;
+    double best_distance = std::numeric_limits<double>::max();
+    for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
+        const double distance = std::abs(IsoSpec::elem_table_mass[index] - mass);
+        if (distance < best_distance) {
+            best = static_cast<int>(index);
+            best_distance = distance;
+        }
+    }
+    return best_distance <= 1e-3 ? best : -1;
+}
+
 IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) {
     IsotopePatternFormula result;
     std::map<std::string, int> natural_elements;
+    const auto formula_body = isotope_formula_without_charge(formula);
+    if (formula_body.empty()) return {};
     const auto add_natural_element = [&natural_elements](const std::string &symbol, int count) {
         natural_elements[symbol] += count;
     };
-    for (std::size_t index = 0; index < formula.size();) {
-        if (formula[index] == '[') {
-            const auto close = formula.find(']', index + 1);
+    for (std::size_t index = 0; index < formula_body.size();) {
+        if (formula_body[index] == '[') {
+            const auto close = formula_body.find(']', index + 1);
             if (close == std::string::npos) return {};
-            const auto token = formula.substr(index + 1, close - index - 1);
+            const auto token = formula_body.substr(index + 1, close - index - 1);
             std::size_t symbol_start = 0;
             while (symbol_start < token.size() && std::isdigit(static_cast<unsigned char>(token[symbol_start])))
                 ++symbol_start;
@@ -92,8 +116,8 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
 
             std::size_t cursor = close + 1;
             const auto count_start = cursor;
-            while (cursor < formula.size() && std::isdigit(static_cast<unsigned char>(formula[cursor]))) ++cursor;
-            const auto count = count_start == cursor ? 1 : std::stoi(formula.substr(count_start, cursor - count_start));
+            while (cursor < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[cursor]))) ++cursor;
+            const auto count = count_start == cursor ? 1 : std::stoi(formula_body.substr(count_start, cursor - count_start));
             if (count <= 0) return {};
             add_natural_element(symbol, count);
             result.fixed_mass_delta += static_cast<double>(count) *
@@ -104,15 +128,15 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
             continue;
         }
 
-        if (formula[index] == 'D' || formula[index] == 'T') {
-            const int mass_number = formula[index] == 'D' ? 2 : 3;
+        if (formula_body[index] == 'D' || formula_body[index] == 'T') {
+            const int mass_number = formula_body[index] == 'D' ? 2 : 3;
             const auto isotope_index = isotope_table_index("H", mass_number);
             const auto base_index = most_abundant_isotope_table_index("H");
             if (isotope_index < 0 || base_index < 0) return {};
             ++index;
             const auto count_start = index;
-            while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
-            const auto count = count_start == index ? 1 : std::stoi(formula.substr(count_start, index - count_start));
+            while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
+            const auto count = count_start == index ? 1 : std::stoi(formula_body.substr(count_start, index - count_start));
             if (count <= 0) return {};
             add_natural_element("H", count);
             result.fixed_mass_delta += static_cast<double>(count) *
@@ -122,13 +146,13 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
             continue;
         }
 
-        if (formula[index] < 'A' || formula[index] > 'Z') return {};
-        std::string symbol(1, formula[index++]);
-        if (index < formula.size() && formula[index] >= 'a' && formula[index] <= 'z')
-            symbol.push_back(formula[index++]);
+        if (formula_body[index] < 'A' || formula_body[index] > 'Z') return {};
+        std::string symbol(1, formula_body[index++]);
+        if (index < formula_body.size() && formula_body[index] >= 'a' && formula_body[index] <= 'z')
+            symbol.push_back(formula_body[index++]);
         const auto count_start = index;
-        while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
-        const auto count = count_start == index ? 1 : std::stoi(formula.substr(count_start, index - count_start));
+        while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
+        const auto count = count_start == index ? 1 : std::stoi(formula_body.substr(count_start, index - count_start));
         if (count <= 0) return {};
         add_natural_element(symbol, count);
     }
@@ -736,26 +760,27 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 if (parsed_formula.natural_formula.empty())
                     throw std::invalid_argument("invalid formula or isotope label");
                 const auto &normalized_formula = parsed_formula.natural_formula;
+                const auto formula_body = detail::isotope_formula_without_charge(formula);
                 std::vector<std::string> element_symbols;
-                for (std::size_t index = 0; index < formula.size();) {
-                    if (formula[index] == '[') {
-                        const auto close = formula.find(']', index + 1);
+                for (std::size_t index = 0; index < formula_body.size();) {
+                    if (formula_body[index] == '[') {
+                        const auto close = formula_body.find(']', index + 1);
                         if (close == std::string::npos) throw std::invalid_argument("invalid formula");
                         index = close + 1;
-                        while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
+                        while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
                         continue;
                     }
-                    if (formula[index] == 'D' || formula[index] == 'T') {
+                    if (formula_body[index] == 'D' || formula_body[index] == 'T') {
                         ++index;
-                        while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
+                        while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
                         continue;
                     }
-                    if (formula[index] < 'A' || formula[index] > 'Z') throw std::invalid_argument("invalid formula");
+                    if (formula_body[index] < 'A' || formula_body[index] > 'Z') throw std::invalid_argument("invalid formula");
                     const auto symbol_start = index;
                     index++;
-                    if (index < formula.size() && formula[index] >= 'a' && formula[index] <= 'z') index++;
-                    element_symbols.push_back(formula.substr(symbol_start, index - symbol_start));
-                    while (index < formula.size() && formula[index] >= '0' && formula[index] <= '9')
+                    if (index < formula_body.size() && formula_body[index] >= 'a' && formula_body[index] <= 'z') index++;
+                    element_symbols.push_back(formula_body.substr(symbol_start, index - symbol_start));
+                    while (index < formula_body.size() && formula_body[index] >= '0' && formula_body[index] <= '9')
                         index++;
                 }
                 IsoSpec::Iso isotope_model(normalized_formula);
@@ -790,16 +815,10 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                             const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
                             if (isotope == 0 || count <= 0) continue;
                             const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
-                            int table_index = -1;
-                            for (int candidate = 0; candidate < ISOSPEC_NUMBER_OF_ISOTOPIC_ENTRIES; ++candidate) {
-                                if (std::string(IsoSpec::elem_table_symbol[candidate]) == element_symbols[dimension] &&
-                                    std::abs(IsoSpec::elem_table_mass[candidate] - mass) < 1e-8) {
-                                    table_index = candidate;
-                                    break;
-                                }
-                            }
+                            const int table_index = detail::nearest_isotope_table_index(mass);
                             const auto label = table_index >= 0
-                                ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) + element_symbols[dimension]
+                                ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) +
+                                      IsoSpec::elem_table_symbol[table_index]
                                 : element_symbols[dimension];
                             for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
                         }
