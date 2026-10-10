@@ -234,6 +234,7 @@ Json parameter_schema(const Graph &graph, const std::string &resource) {
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = parameter_schema(graph, item);
     const auto table_contract = value(graph, resource, std::string(sf) + "tableContract");
     if (!table_contract.empty()) {
+        result["x-streamfind-semantic-contract"] = local(table_contract);
         const auto contract_schema = result_schema(graph, table_contract);
         if (contract_schema.contains("properties")) result["properties"] = contract_schema["properties"];
         if (contract_schema.contains("x-streamfind-property-order"))

@@ -169,5 +169,21 @@ export function portMatchesParameter(sourcePort: NodePort, parameter: Capability
         ? 'structured_value'
         : parameter.schema.type;
   const sourceKind = sourcePort.dataKind === 'duckdb_table' ? 'table' : sourcePort.dataKind;
-  return schemaShape(sourcePort.schema) === schemaShape(parameter.schema) && sourceKind === parameterKind;
+  const parameterContract =
+    parameter.semantic_contract ||
+    (typeof parameter.schema['x-streamfind-semantic-contract'] === 'string'
+      ? parameter.schema['x-streamfind-semantic-contract']
+      : undefined);
+  const contractsMatch = !parameterContract || sourcePort.semanticContract === parameterContract;
+  return contractsMatch && schemaShape(sourcePort.schema) === schemaShape(parameter.schema) && sourceKind === parameterKind;
+}
+
+export function portMatchesPort(sourcePort: NodePort, targetPort: NodePort): boolean {
+  return (
+    Boolean(sourcePort.semanticContract) &&
+    sourcePort.semanticContract === targetPort.semanticContract &&
+    sourcePort.typeKey !== 'unknown' &&
+    targetPort.typeKey !== 'unknown' &&
+    sourcePort.typeKey === targetPort.typeKey
+  );
 }

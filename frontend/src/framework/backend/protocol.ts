@@ -185,6 +185,7 @@ export type CapabilityParameter = {
   schema: JsonSchema;
   default?: JsonValue;
   semantic_type?: string;
+  semantic_contract?: string;
 };
 
 export type CapabilityInterface = {

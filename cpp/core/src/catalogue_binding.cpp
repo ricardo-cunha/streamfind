@@ -12,6 +12,7 @@ ParameterDefinition parameter_definition(const Json &item) {
     parameter.name = item.at("name").get<std::string>();
     parameter.description = item.value("description", item.value("definition", ""));
     auto schema = item.at("schema");
+    const auto semantic_contract = schema.value("x-streamfind-semantic-contract", "");
     if (schema.value("type", "") == "table" && schema.value("properties", Json::object()).is_object())
     {
         Json columns = Json::array();
@@ -28,6 +29,7 @@ ParameterDefinition parameter_definition(const Json &item) {
     parameter.default_value = item.value("default", Json(nullptr));
     parameter.example = item.value("example", Json(nullptr));
     parameter.constraints = item.value("constraints", Json::object());
+    parameter.semantic_contract = item.value("semantic_contract", semantic_contract);
     return parameter;
 }
 

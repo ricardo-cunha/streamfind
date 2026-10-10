@@ -65,6 +65,7 @@ import {
   nodePorts,
   parameterTypeKey,
   portMatchesParameter,
+  portMatchesPort,
   typeClass,
   typeIcon,
   visualPortTypeKey,
@@ -972,12 +973,7 @@ export default function CanvasShell({
     const sourcePort = sourcePorts.find((port) => port.id === connection?.sourcePort);
     const targetInput = targetPorts.find((port) => port.id === targetPort);
     const targetParameter = targetCapability?.parameters.find((parameter) => parameter.name === parameterName);
-    const compatibleTypes =
-      sourcePort && targetInput
-        ? sourcePort.typeKey !== 'unknown' &&
-          targetInput.typeKey !== 'unknown' &&
-          sourcePort.typeKey === targetInput.typeKey
-        : false;
+    const compatibleTypes = sourcePort && targetInput ? portMatchesPort(sourcePort, targetInput) : false;
     const parameterCompatible =
       sourcePort && targetParameter ? portMatchesParameter(sourcePort, targetParameter) : false;
     return sourcePort !== undefined && (compatibleTypes || parameterCompatible);
@@ -1034,6 +1030,17 @@ export default function CanvasShell({
     setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
     setSelectedNodeId(null);
     setStatus('Deleted node and its connected connectors.');
+  };
+  const clearNodeArtifacts = async (node: CanvasNode) => {
+    if (!client || workflowExecutionActive) return;
+    if (!window.confirm(`Delete all published output data for “${node.title}”?`)) return;
+    try {
+      await client.clearNodeArtifacts(project.session_id, node.id);
+      await refreshArtifacts();
+      setStatus(`Deleted published output data for ${node.title}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Node artifact cleanup failed.');
+    }
   };
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1098,7 +1105,7 @@ export default function CanvasShell({
       const sourcePort =
         sourceNode && nodePorts(nodeCapability(sourceNode)).outputs.find((port) => port.id === picker.sourcePort);
       const targetPort =
-        nodePorts(targetCapability).inputs.find((port) => sourcePort && port.typeKey === sourcePort.typeKey)?.id ||
+        nodePorts(targetCapability).inputs.find((port) => sourcePort && portMatchesPort(sourcePort, port))?.id ||
         (sourcePort
           ? targetCapability?.parameters.find(
               (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
@@ -1132,7 +1139,7 @@ export default function CanvasShell({
           (template.kind === 'operation' || template.kind === 'extract' || template.kind === 'plot') &&
           Boolean(
             sourcePort &&
-            (nodePorts(targetCapability).inputs.some((port) => port.typeKey === sourcePort.typeKey) ||
+              (nodePorts(targetCapability).inputs.some((port) => portMatchesPort(sourcePort, port)) ||
               targetCapability?.parameters.some(
                 (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
               )),
@@ -1930,6 +1937,20 @@ export default function CanvasShell({
                     }}
                   >
                     <i className="fa-solid fa-trash" />
+                  </button>
+                  <button
+                    type="button"
+                    className="sf-node-info sf-node-clear-artifacts"
+                    aria-label={`Delete output data for ${node.title}`}
+                    title="Delete published output data"
+                    disabled={workflowExecutionActive || !client}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void clearNodeArtifacts(node);
+                    }}
+                  >
+                    <i className="fa-solid fa-eraser" />
                   </button>
                 </div>
                 <strong className="sf-node-title">{node.title}</strong>

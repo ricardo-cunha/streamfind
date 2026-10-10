@@ -812,7 +812,9 @@ namespace streamfind
 
     Json ParameterDefinition::to_json() const
     {
-        return {{"name", name}, {"description", description}, {"type", type.to_json()}, {"default", default_value}, {"required", required}, {"example", example}, {"constraints", constraints}, {"ui", ui}};
+        auto output = Json{{"name", name}, {"description", description}, {"type", type.to_json()}, {"default", default_value}, {"required", required}, {"example", example}, {"constraints", constraints}, {"ui", ui}};
+        if (!semantic_contract.empty()) output["semantic_contract"] = semantic_contract;
+        return output;
     }
 
     ParameterDefinition ParameterDefinition::from_json(const Json &value)
@@ -824,12 +826,14 @@ namespace streamfind
         ParameterDefinition definition;
         definition.name = value.at("name").get<std::string>();
         definition.description = value.value("description", "");
-        definition.type = TypeDescriptor::from_json(value.at("type"));
+        const auto type_value = value.at("type");
+        definition.type = TypeDescriptor::from_json(type_value);
         definition.default_value = value.value("default", Json(nullptr));
         definition.required = value.value("required", false);
         definition.example = value.value("example", Json(nullptr));
         definition.constraints = value.value("constraints", Json::object());
         definition.ui = value.value("ui", Json::object());
+        definition.semantic_contract = value.value("semantic_contract", type_value.value("x-streamfind-semantic-contract", ""));
         return definition;
     }
 
@@ -1324,11 +1328,13 @@ namespace streamfind
             const auto input_port = std::find_if(
                 target->second->input_ports.begin(), target->second->input_ports.end(),
                 [&](const auto &port) { return port.id == connection.target_port; });
+            const auto target_parameter = std::find_if(
+                target->second->parameters.definitions.begin(),
+                target->second->parameters.definitions.end(), [&](const auto &parameter) {
+                    return "parameter:" + parameter.name == connection.target_port;
+                });
             const bool parameter_binding = connection.target_port.rfind("parameter:", 0) == 0 &&
-                std::find_if(target->second->parameters.definitions.begin(),
-                             target->second->parameters.definitions.end(), [&](const auto &parameter) {
-                                 return "parameter:" + parameter.name == connection.target_port;
-                             }) != target->second->parameters.definitions.end();
+                target_parameter != target->second->parameters.definitions.end();
             if (input_port == target->second->input_ports.end() && !parameter_binding)
                 throw Error(ErrorCode::WorkflowValidation,
                             "Workflow connection references unknown input port " + connection.target_port +
@@ -1339,6 +1345,11 @@ namespace streamfind
                             "." + connection.target_port);
             if (input_port != target->second->input_ports.end() &&
                 source_port->semantic_contract != input_port->semantic_contract)
+                throw Error(ErrorCode::WorkflowValidation,
+                            "Workflow connection has incompatible contracts: " + connection.source_port +
+                            " -> " + connection.target_port);
+            if (parameter_binding && !target_parameter->semantic_contract.empty() &&
+                source_port->semantic_contract != target_parameter->semantic_contract)
                 throw Error(ErrorCode::WorkflowValidation,
                             "Workflow connection has incompatible contracts: " + connection.source_port +
                             " -> " + connection.target_port);
@@ -1874,6 +1885,43 @@ namespace streamfind
         query(connection.get(), "DELETE FROM ARTIFACT_INVENTORY", "clear artifact inventory");
         query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT", "clear artifact cache outputs");
         query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
+    }
+
+    void Project::clear_artifacts_for_producer_instance(const std::string &producer_instance)
+    {
+        if (producer_instance.empty()) throw std::invalid_argument("producer instance is required");
+        const auto inventory = get_artifact_inventory();
+        std::vector<std::string> artifact_ids;
+        std::vector<std::string> physical_tables;
+        for (const auto &artifact : inventory) {
+            if (artifact.value("producer_instance", std::string{}) != producer_instance) continue;
+            const auto artifact_id = artifact.value("artifact_id", std::string{});
+            if (!artifact_id.empty()) artifact_ids.push_back(artifact_id);
+            const auto table = artifact.value("physical_table", std::string{});
+            if (!table.empty() && detail::is_generated_artifact_table(table)) physical_tables.push_back(table);
+        }
+        if (artifact_ids.empty()) return;
+
+        std::lock_guard lock(impl_->mutex);
+        ensure_active(*impl_);
+        Connection connection(*impl_);
+        const auto drop_table = [&](const std::string &table) {
+            std::string quoted = "\"";
+            for (const char character : table) quoted += character == '\"' ? "\"\"" : std::string(1, character);
+            quoted += "\"";
+            query(connection.get(), "DROP TABLE IF EXISTS " + quoted, "clear operation artifact table");
+        };
+        for (const auto &table : physical_tables) drop_table(table);
+
+        std::string ids;
+        for (const auto &artifact_id : artifact_ids) {
+            if (!ids.empty()) ids += ",";
+            ids += detail::sql_quote(artifact_id);
+        }
+        query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE WHERE artifact_id IN (" + ids + ") OR source_artifact_id IN (" + ids + ")", "clear operation artifact lineage");
+        query(connection.get(), "DELETE FROM ARTIFACT_INVENTORY WHERE artifact_id IN (" + ids + ")", "clear operation artifacts");
+        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT WHERE artifact_id IN (" + ids + ")", "clear operation artifact cache outputs");
+        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "invalidate artifact cache entries");
     }
 
     std::vector<std::string> Project::list_tables() const
