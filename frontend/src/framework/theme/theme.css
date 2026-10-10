@@ -1293,6 +1293,22 @@ h2 {
   align-items: center;
   gap: 8px;
 }
+.sf-context-copy {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sf-text-secondary);
+  cursor: pointer;
+}
+.sf-context-copy:hover {
+  color: var(--sf-accent);
+  background: color-mix(in srgb, var(--sf-accent) 12%, transparent);
+}
 .sf-topbar-logo {
   width: 34px;
   height: 26px;
@@ -1302,6 +1318,11 @@ h2 {
   display: grid;
   gap: 2px;
   line-height: 1;
+}
+.sf-topbar-brand.is-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .sf-topbar-brand strong {
   max-width: min(60vw, 760px);
@@ -1715,12 +1736,17 @@ h2 {
   gap: 10px;
   padding: 43px 25px 30px;
   color: var(--sf-text);
+  container-type: inline-size;
 }
 .sf-project-hub .sf-project-row > div:first-child {
   display: grid;
   gap: 8px;
   min-width: 0;
   width: 100%;
+  max-height: none;
+  padding-bottom: 42px;
+  box-sizing: border-box;
+  overflow: visible;
   text-align: center;
 }
 .sf-project-hub .sf-project-row strong {
@@ -1729,9 +1755,10 @@ h2 {
   white-space: normal;
   overflow-wrap: anywhere;
   font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
-  font-size: 1.15rem;
+  font-size: clamp(0.78rem, 5cqw, 1.15rem);
   font-weight: 700;
   letter-spacing: -0.025em;
+  line-height: 1.12;
 }
 .sf-project-hub .sf-project-row span {
   color: var(--sf-text-muted);
@@ -1743,15 +1770,52 @@ h2 {
 .sf-project-hub .sf-project-row code {
   display: block;
   min-width: 0;
+  max-width: 100%;
   overflow: visible;
   text-overflow: clip;
   overflow-wrap: anywhere;
   color: var(--sf-text-secondary);
-  font-size: 0.76rem;
+  font-size: clamp(0.48rem, 2.8cqw, 0.7rem);
   text-align: center;
   line-height: 1.35;
   word-break: break-word;
   white-space: normal;
+}
+.sf-project-hub .sf-project-row .sf-project-path {
+  display: block;
+  width: 100%;
+  color: var(--sf-text-secondary);
+  font-size: clamp(0.48rem, 2.8cqw, 0.7rem);
+  font-weight: inherit;
+  letter-spacing: normal;
+  line-height: 1.35;
+  text-transform: none;
+}
+.sf-project-hub .sf-project-row .sf-project-path code {
+  display: inline;
+  width: auto;
+  font-size: inherit;
+  line-height: inherit;
+}
+.sf-project-path-copy {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15em;
+  height: 1.15em;
+  margin-left: 0.2em;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sf-accent);
+  cursor: pointer;
+  font-size: clamp(0.48rem, 2.8cqw, 0.7rem);
+  line-height: 1;
+  vertical-align: -0.12em;
+}
+.sf-project-path-copy:hover {
+  background: color-mix(in srgb, var(--sf-accent) 12%, transparent);
+  color: var(--sf-accent-hover);
 }
 .sf-project-hub .sf-project-row code {
   align-self: auto;
@@ -1767,6 +1831,8 @@ h2 {
   color: var(--sf-text-secondary);
   font-size: 0.7rem;
   line-height: 1.35;
+  justify-items: center;
+  text-align: center;
 }
 .sf-project-hub .sf-project-row .sf-workflow-summary span {
   color: var(--sf-text-secondary);

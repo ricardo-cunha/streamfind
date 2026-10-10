@@ -691,6 +691,15 @@ function ProjectCard({
   onOpenWorkflow: (project: ProjectSession) => void;
   onClose: (project: ProjectSession) => void;
 }) {
+  const copyDatabasePath = async () => {
+    try {
+      await navigator.clipboard.writeText(project.database_path);
+      notifyApp({ kind: 'success', message: 'Project database path copied.' });
+    } catch {
+      notifyApp({ kind: 'error', message: 'Project path could not be copied to the clipboard.' });
+    }
+  };
+
   return (
     <article className="sf-project-row">
       <div>
@@ -723,7 +732,18 @@ function ProjectCard({
           )}
         </div>
         <span className="sf-workflow-size">{formatDatabaseSize(project.database_size_bytes)}</span>
-        <code>{project.database_path}</code>
+        <span className="sf-project-path">
+          <code>{project.database_path}</code>{' '}
+          <button
+            type="button"
+            className="sf-project-path-copy"
+            onClick={() => void copyDatabasePath()}
+            aria-label={`Copy database path for ${projectFileName(project)}`}
+            title="Copy database path"
+          >
+            <i className="fa-solid fa-copy" aria-hidden="true" />
+          </button>
+        </span>
       </div>
       <div className="sf-project-actions">
         <button
@@ -1658,6 +1678,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [backendOpen, setBackendOpen] = useState(false);
   const [ontologyWikiTerm, setOntologyWikiTerm] = useState<string | null>(null);
+  const [projectPathCopied, setProjectPathCopied] = useState(false);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1768,6 +1789,16 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
     setRouteState({ route: 'projects' });
     navigateHash('projects');
   };
+  const copyProjectPath = async () => {
+    if (!activeProject?.database_path) return;
+    try {
+      await navigator.clipboard.writeText(activeProject.database_path);
+      setProjectPathCopied(true);
+      window.setTimeout(() => setProjectPathCopied(false), 1600);
+    } catch {
+      notifyApp({ kind: 'error', message: 'Project path could not be copied to the clipboard.' });
+    }
+  };
   const disconnectProject = async (project: ProjectSession) => {
     try {
       await client.closeProject(project.session_id);
@@ -1816,10 +1847,19 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
         <header className="sf-topbar">
           <div className="sf-context">
             <img className="sf-topbar-logo" src={logo} alt="" />
-            <div className="sf-topbar-brand">
+            <div className={`sf-topbar-brand ${activeProject ? 'is-project' : ''}`}>
               {activeProject ? (
                 <>
                   <strong>{projectFileName(activeProject)}</strong>
+                  <button
+                    type="button"
+                    className="sf-context-copy"
+                    onClick={() => void copyProjectPath()}
+                    aria-label="Copy project database path"
+                    title={projectPathCopied ? 'Project database path copied' : 'Copy project database path'}
+                  >
+                    <i className={`fa-solid ${projectPathCopied ? 'fa-check' : 'fa-copy'}`} />
+                  </button>
                 </>
               ) : (
                 <>

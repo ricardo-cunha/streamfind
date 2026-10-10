@@ -308,6 +308,15 @@ export class StreamFindApiClient {
     return result.artifacts || [];
   }
 
+  async clearNodeArtifacts(sessionId: string, producerInstance: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/node/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ producer_instance: producerInstance }),
+    });
+    if (!response.ok) throw new Error(`Node artifact cleanup failed (${response.status})`);
+  }
+
   async artifactData(sessionId: string, request: ArtifactDataRequest): Promise<ArtifactDataResponse> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/data`, {
       method: 'POST',

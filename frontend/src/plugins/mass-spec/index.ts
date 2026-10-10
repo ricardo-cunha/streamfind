@@ -13,7 +13,7 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
     domains: ['mass_spec'],
-    artifactContracts: ['featuresTable', 'suspectTargetsTable', 'suspectsTable'],
+    artifactContracts: ['featuresTable', 'suspectTargetsTable', 'suspectsTable', 'internalStandardsTable'],
     capabilities: ['feature-inspector', 'suspect-targets-viewer', 'suspects-explorer'],
   },
   setup(api) {
@@ -32,7 +32,7 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     api.registerViewer({
       id: 'mass-spec.suspects-explorer',
       label: 'Suspects explorer',
-      accepts: ['suspectsTable'],
+      accepts: ['suspectsTable', 'internalStandardsTable'],
       component: SuspectsExplorer,
     });
   },
