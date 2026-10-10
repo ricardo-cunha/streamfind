@@ -2066,6 +2066,13 @@ h2 {
   height: 4000px;
   transform-origin: 0 0;
 }
+.sf-canvas-selection-box {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid color-mix(in srgb, #3b82f6 82%, var(--sf-border));
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  pointer-events: none;
+}
 .sf-canvas-edges {
   position: absolute;
   inset: 0;
@@ -2131,6 +2138,10 @@ h2 {
   background: color-mix(in srgb, var(--sf-domain-base) 14%, var(--sf-surface-raised));
   color: var(--sf-text);
   cursor: move;
+}
+.sf-canvas-node.selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #3b82f6 38%, transparent);
 }
 :root[data-theme='dark'] .sf-canvas-node {
   background: color-mix(in srgb, var(--sf-domain-base) 22%, var(--sf-surface-raised));

@@ -31,12 +31,16 @@ export type CanvasEdge = {
 };
 export type Point = { x: number; y: number };
 export type Interaction = {
-  type: 'node' | 'pan';
+  type: 'node' | 'pan' | 'marquee';
   id?: string;
+  selectedIds?: string[];
+  origins?: Record<string, Point>;
   offsetX?: number;
   offsetY?: number;
   originX?: number;
   originY?: number;
+  startX?: number;
+  startY?: number;
 };
 export type ConnectionDraft = { source: string; sourcePort: string; point: Point };
 export type CanvasLogLine = { id: number; timestamp: string; message: string; level: 'info' | 'success' | 'error' };

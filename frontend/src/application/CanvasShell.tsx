@@ -122,6 +122,7 @@ export default function CanvasShell({
   const workflowFileInputRef = useRef<HTMLInputElement | null>(null);
   const nextId = useRef(1);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
+  const nodesRef = useRef<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
@@ -132,14 +133,27 @@ export default function CanvasShell({
     viewportRef.current = { offset, scale };
   }, [offset, scale]);
   const canvasWorldSize = useMemo(() => {
-    const requiredWidth = Math.max(CANVAS_WORLD_WIDTH, ...nodes.map((node) => node.x + NODE_WIDTH + 800));
-    const requiredHeight = Math.max(CANVAS_WORLD_HEIGHT, ...nodes.map((node) => node.y + NODE_HEIGHT + 600));
+    const minimumX = Math.min(0, ...nodes.map((node) => node.x));
+    const maximumX = Math.max(NODE_WIDTH, ...nodes.map((node) => node.x + NODE_WIDTH));
+    const minimumY = Math.min(0, ...nodes.map((node) => node.y));
+    const maximumY = Math.max(NODE_HEIGHT, ...nodes.map((node) => node.y + NODE_HEIGHT));
+    const requiredWidth = Math.max(CANVAS_WORLD_WIDTH, maximumX - minimumX + 800);
+    const requiredHeight = Math.max(CANVAS_WORLD_HEIGHT, maximumY - minimumY + 600);
+    const aspectRatio = CANVAS_WORLD_WIDTH / CANVAS_WORLD_HEIGHT;
+    const width = Math.max(requiredWidth, worldSize.width, requiredHeight * aspectRatio, worldSize.height * aspectRatio);
+    const height = width / aspectRatio;
     return {
-      width: Math.max(worldSize.width, requiredWidth),
-      height: Math.max(worldSize.height, requiredHeight),
+      width,
+      height,
     };
   }, [nodes, worldSize]);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const rightDragRef = useRef<{ start: Point; moved: boolean } | null>(null);
+  const suppressContextMenuRef = useRef(false);
+  const dragPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const dragFrameRef = useRef<number | null>(null);
   const [connection, setConnection] = useState<ConnectionDraft | null>(null);
   const pendingConnectionRef = useRef<{
     source: string;
@@ -188,6 +202,7 @@ export default function CanvasShell({
   const [paletteSearch, setPaletteSearch] = useState('');
   const [paletteModule, setPaletteModule] = useState('');
   const [anchorCenters, setAnchorCenters] = useState<Record<string, Point>>({});
+  const anchorCentersRef = useRef<Record<string, Point>>({});
   const [expandedParameters, setExpandedParameters] = useState<Record<string, boolean>>({});
   const [status, setStatusState] = useState(
     surface === 'workflow' ? 'Drag an output connector to a compatible input connector.' : 'Workflow canvas',
@@ -200,6 +215,10 @@ export default function CanvasShell({
   const [artifactViewerId, setArtifactViewerId] = useState<string | null>(null);
   const [hoveredOutputAnchor, setHoveredOutputAnchor] = useState<string | null>(null);
   const outputHoverTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   const openArtifactViewer = (artifact: ArtifactRecord, mode: 'table' | 'default', viewerId: string | null = null) => {
     setArtifactViewer(artifact);
@@ -301,6 +320,7 @@ export default function CanvasShell({
 
   useEffect(() => {
     if (!workflowLoaded) return;
+    if (interaction?.type === 'node' || interaction?.type === 'marquee') return;
     const snapshot = { nodes, edges };
     const fingerprint = canvasSnapshotFingerprint(snapshot);
     if (historyApplyingRef.current) {
@@ -314,7 +334,7 @@ export default function CanvasShell({
     }
     if (historyRef.current.current === fingerprint) return;
     historyRef.current = recordCanvasHistory(historyRef.current, snapshot);
-  }, [edges, nodes, workflowLoaded]);
+  }, [edges, interaction, nodes, workflowLoaded]);
 
   const restoreHistorySnapshot = (snapshot: CanvasHistorySnapshot) => {
     historyApplyingRef.current = true;
@@ -519,9 +539,13 @@ export default function CanvasShell({
         nextId.current = nextCanvasNodeNumber(loadedNodes);
         setNodes(loadedNodes);
         setEdges(loadedEdges);
+        const minimumX = Math.min(0, ...loadedNodes.map((node) => node.x));
+        const maximumX = Math.max(NODE_WIDTH, ...loadedNodes.map((node) => node.x + NODE_WIDTH));
+        const minimumY = Math.min(0, ...loadedNodes.map((node) => node.y));
+        const maximumY = Math.max(NODE_HEIGHT, ...loadedNodes.map((node) => node.y + NODE_HEIGHT));
         setWorldSize((current) => ({
-          width: Math.max(current.width, ...loadedNodes.map((node) => node.x + NODE_WIDTH + 800)),
-          height: Math.max(current.height, ...loadedNodes.map((node) => node.y + NODE_HEIGHT + 600)),
+          width: Math.max(current.width, maximumX - minimumX + 800),
+          height: Math.max(current.height, maximumY - minimumY + 600),
         }));
         setWorkflowLoaded(true);
         setStatus('Workflow loaded from the project.');
@@ -745,6 +769,14 @@ export default function CanvasShell({
       nextId.current = nextCanvasNodeNumber(loadedNodes);
       setNodes(loadedNodes);
       setEdges(loadedEdges);
+      const minimumX = Math.min(0, ...loadedNodes.map((node) => node.x));
+      const maximumX = Math.max(NODE_WIDTH, ...loadedNodes.map((node) => node.x + NODE_WIDTH));
+      const minimumY = Math.min(0, ...loadedNodes.map((node) => node.y));
+      const maximumY = Math.max(NODE_HEIGHT, ...loadedNodes.map((node) => node.y + NODE_HEIGHT));
+      setWorldSize((current) => ({
+        width: Math.max(current.width, maximumX - minimumX + 800),
+        height: Math.max(current.height, maximumY - minimumY + 600),
+      }));
       setExpandedParameters({});
       setWorkflowState('validated');
       setStatus('Workflow imported. Save it to persist it in the project.');
@@ -825,7 +857,15 @@ export default function CanvasShell({
             next[`${node.id}|input|parameter:${parameter.name}`] = point;
           });
       });
-      setAnchorCenters(next);
+      const previous = anchorCentersRef.current;
+      const keys = Object.keys(next);
+      const unchanged =
+        keys.length === Object.keys(previous).length &&
+        keys.every((key) => previous[key]?.x === next[key].x && previous[key]?.y === next[key].y);
+      if (!unchanged) {
+        anchorCentersRef.current = next;
+        setAnchorCenters(next);
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [capabilities.operations, expandedParameters, nodeMap, nodes, offset, scale]);
@@ -836,20 +876,95 @@ export default function CanvasShell({
         setOffset({ x: event.clientX - (interaction.originX || 0), y: event.clientY - (interaction.originY || 0) });
         return;
       }
-      if (interaction?.type === 'node' && interaction.id) {
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        let x = (event.clientX - rect.left - offset.x) / scale - (interaction.offsetX || 0);
-        let y = (event.clientY - rect.top - offset.y) / scale - (interaction.offsetY || 0);
-        if (gridVisible) {
-          x = Math.round(x / GRID_SIZE) * GRID_SIZE;
-          y = Math.round(y / GRID_SIZE) * GRID_SIZE;
+      const rightDrag = rightDragRef.current;
+      if (rightDrag && !rightDrag.moved) {
+        const movedX = event.clientX - rightDrag.start.x;
+        const movedY = event.clientY - rightDrag.start.y;
+        if (Math.hypot(movedX, movedY) >= 4) {
+          rightDrag.moved = true;
+          suppressContextMenuRef.current = true;
+          const start = rightDrag.start;
+          setInteraction({ type: 'marquee', startX: start.x, startY: start.y });
         }
-        setNodes((current) =>
-          current.map((node) =>
-            node.id === interaction.id ? { ...node, x: Math.max(12, x), y: Math.max(12, y) } : node,
-          ),
-        );
+      }
+      if (rightDragRef.current?.moved) {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const start = rightDragRef.current.start;
+          const current = {
+            x: (event.clientX - rect.left - offset.x) / scale,
+            y: (event.clientY - rect.top - offset.y) / scale,
+          };
+          const x = Math.min(start.x, current.x);
+          const y = Math.min(start.y, current.y);
+          const width = Math.abs(current.x - start.x);
+          const height = Math.abs(current.y - start.y);
+          setSelectionBox({ x, y, width, height });
+          setSelectedNodeIds(
+            nodesRef.current
+              .filter(
+                (node) =>
+                  node.x < x + width &&
+                  node.x + NODE_WIDTH > x &&
+                  node.y < y + height &&
+                  node.y + NODE_HEIGHT > y,
+              )
+              .map((node) => node.id),
+          );
+        }
+      }
+      if (interaction?.type === 'node' && interaction.id) {
+        const draggedNodeId = interaction.id;
+        dragPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+        if (dragFrameRef.current === null) {
+          dragFrameRef.current = window.requestAnimationFrame(() => {
+            dragFrameRef.current = null;
+            const pointer = dragPointerRef.current;
+            if (!pointer) return;
+            const rect = canvasRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            let x = (pointer.clientX - rect.left - offset.x) / scale - (interaction.offsetX || 0);
+            let y = (pointer.clientY - rect.top - offset.y) / scale - (interaction.offsetY || 0);
+            if (gridVisible) {
+              x = Math.round(x / GRID_SIZE) * GRID_SIZE;
+              y = Math.round(y / GRID_SIZE) * GRID_SIZE;
+            }
+            const draggedOrigin = interaction.origins?.[draggedNodeId] ?? { x, y };
+            const deltaX = x - draggedOrigin.x;
+            const deltaY = y - draggedOrigin.y;
+            const selectedOrigins = Object.values(interaction.origins || {});
+            const minimumX = selectedOrigins.length
+              ? Math.min(...selectedOrigins.map((origin) => origin.x + deltaX))
+              : x;
+            const minimumY = selectedOrigins.length
+              ? Math.min(...selectedOrigins.map((origin) => origin.y + deltaY))
+              : y;
+            const shiftX = Math.max(0, 12 - minimumX);
+            const shiftY = Math.max(0, 12 - minimumY);
+            if (shiftX || shiftY) {
+              setOffset((current) => ({
+                x: current.x - shiftX * scale,
+                y: current.y - shiftY * scale,
+              }));
+            }
+            const adjustedDeltaX = deltaX + shiftX;
+            const adjustedDeltaY = deltaY + shiftY;
+            setNodes((current) =>
+              current.map((node) => {
+                const origin = interaction.origins?.[node.id];
+                if (!origin)
+                  return node.id === draggedNodeId
+                    ? { ...node, x: Math.max(12, x + shiftX), y: Math.max(12, y + shiftY) }
+                    : node;
+                return {
+                  ...node,
+                  x: Math.max(12, origin.x + adjustedDeltaX),
+                  y: Math.max(12, origin.y + adjustedDeltaY),
+                };
+              }),
+            );
+          });
+        }
       }
       const pendingConnection = pendingConnectionRef.current;
       if (!connection && pendingConnection) {
@@ -881,10 +996,16 @@ export default function CanvasShell({
       }
     };
     const up = () => {
+      if (rightDragRef.current?.moved) setSelectionBox(null);
       pendingConnectionRef.current = null;
       setInteraction(null);
+      rightDragRef.current = null;
     };
     const blur = () => {
+      if (dragFrameRef.current !== null) window.cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = null;
+      rightDragRef.current = null;
+      setSelectionBox(null);
       setInteraction(null);
       setConnection(null);
     };
@@ -945,19 +1066,48 @@ export default function CanvasShell({
 
   const beginPan = (event: ReactMouseEvent) => {
     const target = event.target as HTMLElement;
-    if (
-      (event.button !== 0 && event.button !== 1) ||
-      target.closest('.sf-canvas-node, .sf-canvas-toolbar, .sf-canvas-picker')
-    )
+    if (target.closest('.sf-canvas-node, .sf-canvas-toolbar, .sf-canvas-picker'))
       return;
+    if (event.button === 2) {
+      rightDragRef.current = { start: toWorld(event), moved: false };
+      setSelectionBox(null);
+      return;
+    }
+    if (event.button !== 0 && event.button !== 1) return;
+    setSelectedNodeIds([]);
+    setSelectedEdgeId(null);
+    setSelectedNodeId(null);
+    setDocumentationFocus(null);
     setPicker(null);
     setInteraction({ type: 'pan', originX: event.clientX - offset.x, originY: event.clientY - offset.y });
   };
+  const beginRightSelection = (event: ReactMouseEvent) => {
+    event.stopPropagation();
+    if (event.button !== 2) return;
+    rightDragRef.current = { start: toWorld(event), moved: false };
+    setSelectionBox(null);
+  };
   const beginNodeDrag = (event: ReactMouseEvent, node: CanvasNode) => {
     event.stopPropagation();
+    if (event.button === 2) {
+      beginRightSelection(event);
+      return;
+    }
     const point = toWorld(event);
     setPicker(null);
-    setInteraction({ type: 'node', id: node.id, offsetX: point.x - node.x, offsetY: point.y - node.y });
+    const selectedIds = selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
+    const origins = Object.fromEntries(
+      nodes.filter((candidate) => selectedIds.includes(candidate.id)).map((candidate) => [candidate.id, { x: candidate.x, y: candidate.y }]),
+    );
+    setSelectedNodeIds(selectedIds);
+    setInteraction({
+      type: 'node',
+      id: node.id,
+      selectedIds,
+      origins,
+      offsetX: point.x - node.x,
+      offsetY: point.y - node.y,
+    });
   };
   const beginConnection = (event: ReactMouseEvent, node: CanvasNode, sourcePort: string) => {
     event.stopPropagation();
@@ -1052,19 +1202,21 @@ export default function CanvasShell({
         setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
         setSelectedEdgeId(null);
         setStatus('Deleted connector.');
-      } else if (selectedNodeId) {
+      } else if (selectedNodeIds.length || selectedNodeId) {
         event.preventDefault();
-        setNodes((current) => current.filter((node) => node.id !== selectedNodeId));
+        const ids = new Set(selectedNodeIds.length ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : []);
+        setNodes((current) => current.filter((node) => !ids.has(node.id)));
         setEdges((current) =>
-          current.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId),
+          current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
         );
+        setSelectedNodeIds([]);
         setSelectedNodeId(null);
         setStatus('Deleted node and its connected connectors.');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedEdgeId, selectedNodeId, setStatus]);
+  }, [selectedEdgeId, selectedNodeId, selectedNodeIds, setStatus]);
   useEffect(() => {
     if (!selectedNodeId && !pickerCapabilityId) return undefined;
     const handleDocumentationKeyDown = (event: KeyboardEvent) => {
@@ -1180,9 +1332,11 @@ export default function CanvasShell({
     if (!nodes.length) return;
     const indegree = new Map(nodes.map((node) => [node.id, 0]));
     const outgoing = new Map<string, string[]>();
+    const incoming = new Map<string, string[]>();
     edges.forEach((edge) => {
       indegree.set(edge.target, (indegree.get(edge.target) || 0) + 1);
       outgoing.set(edge.source, [...(outgoing.get(edge.source) || []), edge.target]);
+      incoming.set(edge.target, [...(incoming.get(edge.target) || []), edge.source]);
     });
     const queue = nodes.filter((node) => (indegree.get(node.id) || 0) === 0).map((node) => node.id);
     const depth = new Map(queue.map((id) => [id, 0]));
@@ -1207,18 +1361,32 @@ export default function CanvasShell({
     const stages = Array.from(groups.keys()).sort((a, b) => a - b);
     const maxStage = stages[stages.length - 1] || 0;
     const largestColumn = Math.max(...stages.map((stage) => groups.get(stage)?.length || 0), 1);
-    const layoutWidth = Math.max(CANVAS_WORLD_WIDTH, (maxStage + 1) * 360 + NODE_WIDTH + 800);
-    const layoutHeight = Math.max(CANVAS_WORLD_HEIGHT, largestColumn * 190 + 600);
+    const stageStep = NODE_WIDTH + 236;
+    const rowStep = NODE_HEIGHT + 140;
+    const layoutWidth = Math.max(CANVAS_WORLD_WIDTH, (maxStage + 1) * stageStep + NODE_WIDTH + 900);
+    const layoutHeight = Math.max(CANVAS_WORLD_HEIGHT, largestColumn * rowStep + 1000);
     const centerX = layoutWidth / 2;
     const centerY = layoutHeight / 2;
     stages.forEach((stage) => {
       const column = groups.get(stage) || [];
-      column.sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+      const parentCenter = (node: CanvasNode) => {
+        const parents = (incoming.get(node.id) || [])
+          .map((parentId) => byId.get(parentId))
+          .filter((parent): parent is CanvasNode => Boolean(parent));
+        if (!parents.length) return Number.POSITIVE_INFINITY;
+        return parents.reduce((sum, parent) => sum + parent.y + NODE_HEIGHT / 2, 0) / parents.length;
+      };
+      column.sort(
+        (a, b) =>
+          parentCenter(a) - parentCenter(b) ||
+          a.y - b.y ||
+          a.id.localeCompare(b.id),
+      );
       column.forEach((node, row) => {
         const target = byId.get(node.id);
         if (!target) return;
-        target.x = centerX + (stage - maxStage / 2) * 360 - NODE_WIDTH / 2;
-        target.y = centerY + (row - (column.length - 1) / 2) * 190 - NODE_HEIGHT / 2;
+        target.x = centerX + (stage - maxStage / 2) * stageStep - NODE_WIDTH / 2;
+        target.y = centerY + (row - (column.length - 1) / 2) * rowStep - NODE_HEIGHT / 2;
       });
     });
     setWorldSize((current) => ({
@@ -1234,7 +1402,7 @@ export default function CanvasShell({
     const canvas = canvasRef.current;
     if (canvas)
       setOffset({ x: canvas.clientWidth / 2 - (minX + maxX) / 2, y: canvas.clientHeight / 2 - (minY + maxY) / 2 });
-    setStatus('Arranged nodes by dependency stage from left to right.');
+    setStatus('Arranged nodes by dependency stage with spaced dependency branches.');
   };
   const zoom = (amount: number) =>
     setScale((current) => Math.min(2.8, Math.max(0.35, Number((current + amount).toFixed(2)))));
@@ -1586,6 +1754,11 @@ export default function CanvasShell({
       data-canvas-surface={surface}
       onMouseDown={beginPan}
       onMouseUp={finishOnCanvas}
+      onContextMenu={(event) => {
+        if (!suppressContextMenuRef.current) return;
+        event.preventDefault();
+        suppressContextMenuRef.current = false;
+      }}
     >
       <div className="sf-canvas-toolbar" onMouseDown={(event) => event.stopPropagation()}>
         {onProjectHub ? (
@@ -1815,6 +1988,18 @@ export default function CanvasShell({
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
         }}
       >
+        {selectionBox ? (
+          <div
+            className="sf-canvas-selection-box"
+            style={{
+              left: selectionBox.x,
+              top: selectionBox.y,
+              width: selectionBox.width,
+              height: selectionBox.height,
+            }}
+            aria-hidden="true"
+          />
+        ) : null}
         <svg
           className="sf-canvas-edges"
           width={canvasWorldSize.width}
@@ -1874,7 +2059,7 @@ export default function CanvasShell({
           return (
             <div
               key={node.id}
-              className={`sf-canvas-node ${node.kind} sf-domain-${domainClass} ${node.executionState === 'running' ? 'running' : ''}`}
+              className={`sf-canvas-node ${node.kind} sf-domain-${domainClass} ${node.executionState === 'running' ? 'running' : ''}${selectedNodeIds.includes(node.id) ? ' selected' : ''}`}
               style={{ left: node.x, top: node.y }}
               onMouseDown={(event) => beginNodeDrag(event, node)}
               onMouseUp={() => {
