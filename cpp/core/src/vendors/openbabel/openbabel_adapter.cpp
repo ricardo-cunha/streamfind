@@ -57,6 +57,7 @@ namespace streamfind::core::vendors::openbabel
   using normalize_structure_fn = int (*)(const char *, const char *, streamfind_ob_normalized_result *);
   using normalize_structure_from_mol_file_fn = int (*)(const char *, streamfind_ob_normalized_result *);
   using formula_from_mass_fn = int (*)(double, double, const char *, streamfind_ob_formula_result *);
+  using mass_from_formula_fn = int (*)(const char *, streamfind_ob_mass_result *);
   using render_structure_svg_fn = int (*)(const char *, const char *, int, int, const char *, streamfind_ob_svg_result *);
   using debug_runtime_fn = int (*)(char *, size_t);
 
@@ -67,6 +68,7 @@ namespace streamfind::core::vendors::openbabel
     normalize_structure_fn normalize = nullptr;
     normalize_structure_from_mol_file_fn normalize_from_mol = nullptr;
     formula_from_mass_fn formula_from_mass = nullptr;
+    mass_from_formula_fn mass_from_formula = nullptr;
     render_structure_svg_fn render_svg = nullptr;
     debug_runtime_fn debug_runtime = nullptr;
     std::string error;
@@ -215,6 +217,8 @@ namespace streamfind::core::vendors::openbabel
         GetProcAddress(api.module, "sf_ob_normalize_structure_from_mol_file"));
     api.formula_from_mass = reinterpret_cast<formula_from_mass_fn>(
         GetProcAddress(api.module, "sf_ob_formula_from_mass"));
+    api.mass_from_formula = reinterpret_cast<mass_from_formula_fn>(
+        GetProcAddress(api.module, "sf_ob_mass_from_formula"));
     api.render_svg = reinterpret_cast<render_structure_svg_fn>(
         GetProcAddress(api.module, "sf_ob_render_structure_svg"));
     api.debug_runtime = reinterpret_cast<debug_runtime_fn>(
@@ -343,6 +347,29 @@ namespace streamfind::core::vendors::openbabel
       }
     }
 #endif
+    return out;
+  }
+
+  FormulaMass mass_from_formula(const std::string &formula)
+  {
+    FormulaMass out;
+#ifdef _WIN32
+    const OpenBabelApi api = load_openbabel_api();
+    if (api.mass_from_formula == nullptr)
+    {
+      out.error = api.error.empty() ? "Open Babel runtime unavailable." : api.error;
+      return out;
+    }
+    streamfind_ob_mass_result result{};
+    api.mass_from_formula(formula.empty() ? nullptr : formula.c_str(), &result);
+#else
+    streamfind_ob_mass_result result{};
+    sf_ob_mass_from_formula(formula.empty() ? nullptr : formula.c_str(), &result);
+#endif
+    out.ok = result.ok != 0;
+    out.formula = result.formula;
+    out.exact_mass = result.exact_mass;
+    out.error = result.error;
     return out;
   }
 

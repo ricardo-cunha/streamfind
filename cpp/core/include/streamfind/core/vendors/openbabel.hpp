@@ -49,6 +49,16 @@ namespace streamfind::core::vendors::openbabel
       double tolerance_ppm = 5.0,
       const std::string &elements = "");
 
+  struct FormulaMass
+  {
+    bool ok = false;
+    std::string formula;
+    double exact_mass = 0.0;
+    std::string error;
+  };
+
+  FormulaMass mass_from_formula(const std::string &formula);
+
   StructureSvg render_structure_svg(
       const std::string &smiles,
       const std::string &inchi,

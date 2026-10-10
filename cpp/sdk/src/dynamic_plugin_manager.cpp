@@ -258,12 +258,18 @@ Json invoke_dynamic(
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             const std::string contract_id(contract, contract_size);
             const auto output = context.output_tables.find(contract_id);
-            if (output == context.output_tables.end() || output->second.empty())
+            if (output == context.output_tables.end() || output->second.empty()) {
+                if (context.report_error)
+                    context.report_error("workflow output contract is not allocated: " + contract_id);
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
-            return plugin_append_batch(
+            }
+            const auto status = plugin_append_batch(
                 execution_context, output->second.data(),
                 static_cast<uint32_t>(output->second.size()), columns, column_count,
                 row_count, user_data);
+            if (status != STREAMFIND_PLUGIN_OK && context.report_error)
+                context.report_error("workflow output batch emission failed with status " + std::to_string(status));
+            return status;
         };
         context.emit_result = [&emitted_results, &tables, &capability_id, &producer_instance, &lineage_inputs, workflow_revision](
             void *, const char *contract, uint32_t contract_size,

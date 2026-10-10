@@ -56,6 +56,14 @@ typedef struct streamfind_ob_formula_result
   char error[streamfind_OB_ERROR_CAPACITY];
 } streamfind_ob_formula_result;
 
+typedef struct streamfind_ob_mass_result
+{
+  int ok;
+  double exact_mass;
+  char formula[streamfind_OB_FORMULA_CAPACITY];
+  char error[streamfind_OB_ERROR_CAPACITY];
+} streamfind_ob_mass_result;
+
 streamfind_OPENBABEL_API int sf_ob_openbabel_available(void);
 
 streamfind_OPENBABEL_API int sf_ob_normalize_structure(
@@ -80,6 +88,10 @@ streamfind_OPENBABEL_API int sf_ob_formula_from_mass(
   double tolerance_ppm,
   const char *elements,
   streamfind_ob_formula_result *out);
+
+streamfind_OPENBABEL_API int sf_ob_mass_from_formula(
+  const char *formula,
+  streamfind_ob_mass_result *out);
 
 streamfind_OPENBABEL_API int sf_ob_debug_runtime(
   char *out,

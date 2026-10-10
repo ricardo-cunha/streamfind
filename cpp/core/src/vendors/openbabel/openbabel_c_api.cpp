@@ -17,6 +17,7 @@
 #endif
 
 #include <openbabel/descriptor.h>
+#include <openbabel/atom.h>
 #include <openbabel/elements.h>
 #include <openbabel/groupcontrib.h>
 #include <openbabel/mol.h>
@@ -298,6 +299,12 @@ namespace streamfind::obabel_detail
   }
 
   void zero_svg_result(streamfind_ob_svg_result *out)
+  {
+    if (out != nullptr)
+      std::memset(out, 0, sizeof(*out));
+  }
+
+  void zero_mass_result(streamfind_ob_mass_result *out)
   {
     if (out != nullptr)
       std::memset(out, 0, sizeof(*out));
@@ -842,6 +849,80 @@ extern "C"
     sort_formula_results(out);
 
     return out->count > 0 ? 1 : 0;
+  }
+
+  int sf_ob_mass_from_formula(
+    const char *formula,
+    streamfind_ob_mass_result *out)
+  {
+    zero_mass_result(out);
+    if (out == nullptr || formula == nullptr || *formula == '\0')
+      return 0;
+
+#ifdef _WIN32
+    ensure_openbabel_data_dir();
+#endif
+    const std::string normalized = normalize_formula(formula);
+    OpenBabel::OBMol mol;
+    for (size_t pos = 0; pos < normalized.size();)
+    {
+      if (normalized[pos] == '[')
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Isotopic bracket formulas are not supported by the formula mass boundary");
+        return 0;
+      }
+      if (!std::isupper(static_cast<unsigned char>(normalized[pos])))
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Open Babel could not parse formula");
+        return 0;
+      }
+      std::string symbol(1, normalized[pos++]);
+      if (pos < normalized.size() && std::islower(static_cast<unsigned char>(normalized[pos])))
+        symbol.push_back(normalized[pos++]);
+      const unsigned int atomic_number = OpenBabel::OBElements::GetAtomicNum(symbol.c_str());
+      if (atomic_number == 0)
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Open Babel could not resolve element in formula");
+        return 0;
+      }
+      size_t count_end = pos;
+      while (count_end < normalized.size() && std::isdigit(static_cast<unsigned char>(normalized[count_end])))
+        ++count_end;
+      const int count = count_end == pos ? 1 : std::stoi(normalized.substr(pos, count_end - pos));
+      if (count <= 0)
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Open Babel could not parse formula multiplicity");
+        return 0;
+      }
+      for (int index = 0; index < count; ++index)
+      {
+        OpenBabel::OBAtom *atom = mol.NewAtom();
+        atom->SetAtomicNum(atomic_number);
+      }
+      pos = count_end;
+    }
+
+    if (mol.NumAtoms() == 0)
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                "Open Babel could not parse formula");
+      return 0;
+    }
+
+    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, mol.GetFormula());
+    out->exact_mass = mol.GetExactMass();
+    if (!finite_value(out->exact_mass) || out->exact_mass <= 0.0)
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                "Open Babel produced an invalid formula mass");
+      return 0;
+    }
+    out->ok = 1;
+    return 1;
   }
 
   int sf_ob_render_structure_svg(

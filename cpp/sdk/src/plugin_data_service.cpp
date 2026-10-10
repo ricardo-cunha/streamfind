@@ -53,7 +53,13 @@ std::optional<std::string> column_value(const streamfind_plugin_batch_column &co
         if (column.element_size != sizeof(double)) {
             throw std::invalid_argument("FLOAT64 column has invalid element size");
         }
-        return std::to_string(static_cast<const double *>(column.data)[row]);
+        const double value = static_cast<const double *>(column.data)[row];
+        // DuckDB accepts SQL NULL for unavailable numeric values, but not the
+        // textual C++ spellings "nan"/"inf" produced by std::to_string.
+        // Plugin table emitters use non-finite doubles for missing measurements.
+        if (!std::isfinite(value))
+            return std::nullopt;
+        return std::to_string(value);
     }
     case STREAMFIND_PLUGIN_COLUMN_BOOL: {
         if (column.element_size != sizeof(uint8_t)) {
@@ -126,10 +132,14 @@ streamfind_plugin_status plugin_has_table(
         if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
         *exists = context->tables->has_table(table) ? 1 : 0;
         return STREAMFIND_PLUGIN_OK;
+    } catch (const std::exception &error) {
+        detail::report_data_service_error(*context,
+            std::string("plugin data-service failure: ") + error.what());
+        return STREAMFIND_PLUGIN_ERROR;
     } catch (...) {
-            detail::report_data_service_error(*context, "unknown plugin data-service failure");
-            return STREAMFIND_PLUGIN_ERROR;
-        }
+        detail::report_data_service_error(*context, "unknown plugin data-service failure");
+        return STREAMFIND_PLUGIN_ERROR;
+    }
 }
 
 streamfind_plugin_status plugin_clear_table(
@@ -320,8 +330,12 @@ streamfind_plugin_status plugin_append_batch(
                 return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
             }
             if (!detail::allowed_column(*context, table,
-                                        std::string(column.name, column.name_size), true))
+                                        std::string(column.name, column.name_size), true)) {
+                detail::report_data_service_error(*context,
+                    "plugin output column is not allowed: " +
+                    std::string(table) + "." + std::string(column.name, column.name_size));
                 return STREAMFIND_PLUGIN_NOT_ALLOWED;
+            }
             names.emplace_back(column.name, column.name_size);
         }
         std::vector<std::vector<std::optional<std::string>>> rows(
@@ -336,10 +350,14 @@ streamfind_plugin_status plugin_append_batch(
         context->tables->append(
             std::string(table_name, table_name_size), names, rows);
         return STREAMFIND_PLUGIN_OK;
+    } catch (const std::exception &error) {
+        detail::report_data_service_error(*context,
+            std::string("plugin data-service failure: ") + error.what());
+        return STREAMFIND_PLUGIN_ERROR;
     } catch (...) {
-            detail::report_data_service_error(*context, "unknown plugin data-service failure");
-            return STREAMFIND_PLUGIN_ERROR;
-        }
+        detail::report_data_service_error(*context, "unknown plugin data-service failure");
+        return STREAMFIND_PLUGIN_ERROR;
+    }
 }
 
 streamfind_plugin_status plugin_emit_table_batch(
