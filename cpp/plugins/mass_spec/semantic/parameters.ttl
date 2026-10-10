@@ -605,6 +605,18 @@ sfms:isotopeElementsParameter
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" .
 
+sfms:annotationModificationsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Annotation modifications" ;
+    skos:definition "Optional allow-list of built-in or validated signed molecular-formula modification expressions used by annotate_components. Entries use expressions such as +H, +Na, +NH4, 2M+H, -H2O, -CO2, or +2NOH. A leading plus selects an adduct-like modification and a leading minus selects a neutral loss; formulas and leading coefficients are validated and their masses are derived at runtime. When omitted, all 41 built-in rules are used; an explicit empty array disables adduct and loss matching." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[\"+H\",\"+Na\",\"+K\",\"+NH4\",\"+ACN+H\",\"+CH3OH+H\",\"2M+H\",\"2M+Na\",\"2M+K\",\"2M+NH4\",\"-H\",\"+Cl\",\"+Br\",\"+CHO2\",\"+CH3COO\",\"+FA-H\",\"2M-H\",\"2M+Cl\",\"2M+FA-H\",\"-H2O\",\"-CO2\",\"-NH3\",\"-CO\",\"-CH3\",\"-CH2O2\",\"-HCl\",\"-HF\",\"-SO2\",\"-SO3\",\"-H2SO4\",\"-CH3OH\",\"-C2H4\",\"-C2H2\",\"-NO\",\"-NO2\",\"-HNO2\",\"-HNO3\",\"-CH2\",\"-C2H6O\",\"-HPO3\",\"-H3PO4\"]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"+H\",\"+2NOH\",\"-H2O\"]" .
+
 sfms:minSamplesParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

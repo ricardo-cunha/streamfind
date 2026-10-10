@@ -708,13 +708,14 @@ sfms:annotateComponents
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Annotate components" ;
     skos:definition "Annotate feature components from every analysis with isotopic, adduct, and fragment relationships." ;
-    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80, and selected elements are resolved through IsoSpec++. annotation_modifications is an optional allow-list of the 41 built-in signed adduct/loss expressions; omitted uses all defaults, an explicit empty list disables modification matching, and additional signed formulas such as +2NOH or -2NOH are validated and resolved through Open Babel." ;
     sf:hasParameter
         sfms:maxIsotopesParameter,
         sfms:maxChargeParameter,
         sfms:maxGapsParameter,
         sfms:ppmParameter,
         sfms:isotopeElementsParameter,
+        sfms:annotationModificationsParameter,
         sfms:debugComponentParameter,
         sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
@@ -751,9 +752,9 @@ sfms:findInternalStandards
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards" ;
-    skos:definition "Match detected features against internal-standard targets by mass, RT, and MS2 similarity." ;
+    skos:definition "Match detected features against internal-standard targets by mass, RT, isotope, and MS2 evidence, and publish the matches in the independent internalStandardsTable contract used by alignment, correction, and QC operations." ;
+    sf:guidance "Provide internal-standard targets through suspect_targets. The operation processes every analysis in the connected featuresTable; analysis_names is not required. It emits only internalStandardsTable and an operation-success signal. Feature groups and components may be empty when the operation runs directly after feature detection; use enrichInternalStandards after grouping or component creation to update that context." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
@@ -761,9 +762,22 @@ sfms:findInternalStandards
         sfms:mzrMs2Parameter,
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
+        sfms:isotopePpmParameter,
         sfms:filteredParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfms:internalStandardsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
+
+
+sfms:enrichInternalStandards
+    a sf:Operation ;
+    sf:operationId "mass_spec.enrich_internal_standards" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Enrich internal standards" ;
+    skos:definition "Update internal-standard rows with feature group, component, and adduct context from the current featuresTable." ;
+    sf:guidance "Use after groupFeatures, createComponents, or annotateComponents when internal standards were created earlier. Rows are matched within each analysis by feature identity; unmatched rows remain unchanged. The operation mutates only the internalStandardsTable projection and does not require suspect targets." ;
+    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 
 sfms:correctMatrixSuppression
@@ -864,6 +878,34 @@ sfms:metfragScreening
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
+
+sfms:findInternalStandardsMetfrag
+    a sf:Operation ;
+    sf:operationId "mass_spec.find_internal_standards_metfrag" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Find internal standards with MetFrag" ;
+    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
+    skos:guidance "Use after loadFeaturesMs2 when experimental MS2 is available; features without experimental MS2 can still receive precursor-mass candidate assignments. Provide targets through the Mass spectrometry suspect targets parameter, using the same target configuration as Find internal standards. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    sf:hasParameter
+        sfms:suspectTargetsParameter,
+        sfms:ppmParameter,
+        sfms:secParameter,
+        sfms:ppmMs2Parameter,
+        sfms:mzrMs2Parameter,
+        sfms:isotopePpmParameter,
+        sfms:topNParameter,
+        sfms:scoreTypesParameter,
+        sfms:scoreWeightsParameter,
+        sfms:preProcessingCandidateFilterParameter,
+        sfms:postProcessingCandidateFilterParameter,
+        sfms:maximumTreeDepthParameter,
+        sfms:numberThreadsParameter,
+        sfms:useSmilesParameter,
+        sfms:filteredParameter,
+        sfms:debugParameter ;
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 sfms:fragmentSuspectTargets
     a sf:Operation ;

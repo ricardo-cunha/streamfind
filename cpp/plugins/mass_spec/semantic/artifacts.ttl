@@ -247,6 +247,8 @@ sfms:suspectsTable
         sfms:replicateNameColumn,
         sfms:featureColumn,
         sfms:featureGroupColumn,
+        sfms:featureComponentColumn,
+        sfms:adductColumn,
         sfms:candidateRankColumn,
         sfms:nameColumn,
         sfms:polarityColumn,
@@ -295,11 +297,13 @@ sfms:internalStandardsTable
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "NTA internal standards table" ;
-    skos:definition "Persisted internal-standard assignment rows." ;
+    skos:definition "Persisted internal-standard assignment rows with a shared suspect-identification vocabulary and an independent contract for alignment, correction, and QC." ;
+    skos:broader sfms:suspectsTable ;
     sf:tableContractName "MASS_SPEC_NTA_INTERNAL_STANDARDS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfms:analysisNameColumn,
+        sfms:replicateNameColumn,
         sfms:featureColumn,
         sfms:featureGroupColumn,
         sfms:featureComponentColumn,
@@ -331,7 +335,23 @@ sfms:internalStandardsTable
         sfms:dbMs2SmilesColumn,
         sfms:expMs2SizeColumn,
         sfms:expMs2MzColumn,
-        sfms:expMs2IntensityColumn .
+        sfms:expMs2IntensityColumn,
+        sfms:isotopeTheoreticalPeaksColumn,
+        sfms:isotopeMatchedPeaksColumn,
+        sfms:isotopeSimilarityColumn,
+        sfms:isotopeMatchColumn,
+        sfms:eicSizeColumn,
+        sfms:eicRtColumn,
+        sfms:eicMzColumn,
+        sfms:eicIntensityColumn,
+        sfms:eicBaselineColumn,
+        sfms:eicSmoothedColumn,
+        sfms:ms1SizeColumn,
+        sfms:ms1MzColumn,
+        sfms:ms1IntensityColumn,
+        sfms:ms2SizeColumn,
+        sfms:ms2MzColumn,
+        sfms:ms2IntensityColumn .
 
 sfms:transformationProductsTable
     a sf:Table ;
