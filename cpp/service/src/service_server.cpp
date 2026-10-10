@@ -9,12 +9,14 @@
 #include <bit>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <cwchar>
 #include <filesystem>
 #include <functional>
 #include <fstream>
 #include <memory>
+#include <map>
 #include <random>
 #include <set>
 #include <sstream>
@@ -39,6 +41,103 @@ using streamfind_socket_t = int;
 
 namespace streamfind::service {
 namespace detail {
+
+struct IsotopePatternFormula {
+    std::string natural_formula;
+    double fixed_mass_delta = 0.0;
+    std::vector<std::string> fixed_labels;
+};
+
+int isotope_table_index(const std::string &symbol, int mass_number) {
+    for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
+        if (symbol == IsoSpec::elem_table_symbol[index] &&
+            static_cast<int>(std::llround(IsoSpec::elem_table_massNo[index])) == mass_number)
+            return static_cast<int>(index);
+    }
+    return -1;
+}
+
+int most_abundant_isotope_table_index(const std::string &symbol) {
+    int best = -1;
+    for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
+        if (symbol != IsoSpec::elem_table_symbol[index] || IsoSpec::elem_table_Radioactive[index] ||
+            IsoSpec::elem_table_probability[index] <= 0.0)
+            continue;
+        if (best < 0 || IsoSpec::elem_table_probability[index] > IsoSpec::elem_table_probability[best])
+            best = static_cast<int>(index);
+    }
+    return best;
+}
+
+IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) {
+    IsotopePatternFormula result;
+    std::map<std::string, int> natural_elements;
+    const auto add_natural_element = [&natural_elements](const std::string &symbol, int count) {
+        natural_elements[symbol] += count;
+    };
+    for (std::size_t index = 0; index < formula.size();) {
+        if (formula[index] == '[') {
+            const auto close = formula.find(']', index + 1);
+            if (close == std::string::npos) return {};
+            const auto token = formula.substr(index + 1, close - index - 1);
+            std::size_t symbol_start = 0;
+            while (symbol_start < token.size() && std::isdigit(static_cast<unsigned char>(token[symbol_start])))
+                ++symbol_start;
+            if (symbol_start == 0 || symbol_start == token.size()) return {};
+            const auto mass_number = std::stoi(token.substr(0, symbol_start));
+            const auto symbol = token.substr(symbol_start);
+            const auto isotope_index = isotope_table_index(symbol, mass_number);
+            const auto base_index = most_abundant_isotope_table_index(symbol);
+            if (isotope_index < 0 || base_index < 0) return {};
+
+            std::size_t cursor = close + 1;
+            const auto count_start = cursor;
+            while (cursor < formula.size() && std::isdigit(static_cast<unsigned char>(formula[cursor]))) ++cursor;
+            const auto count = count_start == cursor ? 1 : std::stoi(formula.substr(count_start, cursor - count_start));
+            if (count <= 0) return {};
+            add_natural_element(symbol, count);
+            result.fixed_mass_delta += static_cast<double>(count) *
+                (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+            for (int repeat = 0; repeat < count; ++repeat)
+                result.fixed_labels.push_back(std::to_string(mass_number) + symbol);
+            index = cursor;
+            continue;
+        }
+
+        if (formula[index] == 'D' || formula[index] == 'T') {
+            const int mass_number = formula[index] == 'D' ? 2 : 3;
+            const auto isotope_index = isotope_table_index("H", mass_number);
+            const auto base_index = most_abundant_isotope_table_index("H");
+            if (isotope_index < 0 || base_index < 0) return {};
+            ++index;
+            const auto count_start = index;
+            while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
+            const auto count = count_start == index ? 1 : std::stoi(formula.substr(count_start, index - count_start));
+            if (count <= 0) return {};
+            add_natural_element("H", count);
+            result.fixed_mass_delta += static_cast<double>(count) *
+                (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+            for (int repeat = 0; repeat < count; ++repeat)
+                result.fixed_labels.push_back(std::to_string(mass_number) + "H");
+            continue;
+        }
+
+        if (formula[index] < 'A' || formula[index] > 'Z') return {};
+        std::string symbol(1, formula[index++]);
+        if (index < formula.size() && formula[index] >= 'a' && formula[index] <= 'z')
+            symbol.push_back(formula[index++]);
+        const auto count_start = index;
+        while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
+        const auto count = count_start == index ? 1 : std::stoi(formula.substr(count_start, index - count_start));
+        if (count <= 0) return {};
+        add_natural_element(symbol, count);
+    }
+    for (const auto &[symbol, count] : natural_elements) {
+        result.natural_formula += symbol;
+        result.natural_formula += std::to_string(count);
+    }
+    return result;
+}
 
 #ifdef _WIN32
 std::string pick_database_file(bool create) {
@@ -633,20 +732,31 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto input = Json::parse(body);
                 const auto formula = input.value("formula", std::string{});
                 if (formula.empty()) throw std::invalid_argument("formula is required");
-                std::string normalized_formula;
+                const auto parsed_formula = detail::parse_isotope_pattern_formula(formula);
+                if (parsed_formula.natural_formula.empty())
+                    throw std::invalid_argument("invalid formula or isotope label");
+                const auto &normalized_formula = parsed_formula.natural_formula;
                 std::vector<std::string> element_symbols;
                 for (std::size_t index = 0; index < formula.size();) {
-                    if (formula[index] < 'A' || formula[index] > 'Z')
-                        throw std::invalid_argument("invalid formula");
+                    if (formula[index] == '[') {
+                        const auto close = formula.find(']', index + 1);
+                        if (close == std::string::npos) throw std::invalid_argument("invalid formula");
+                        index = close + 1;
+                        while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
+                        continue;
+                    }
+                    if (formula[index] == 'D' || formula[index] == 'T') {
+                        ++index;
+                        while (index < formula.size() && std::isdigit(static_cast<unsigned char>(formula[index]))) ++index;
+                        continue;
+                    }
+                    if (formula[index] < 'A' || formula[index] > 'Z') throw std::invalid_argument("invalid formula");
                     const auto symbol_start = index;
-                    normalized_formula.push_back(formula[index++]);
-                    if (index < formula.size() && formula[index] >= 'a' && formula[index] <= 'z')
-                        normalized_formula.push_back(formula[index++]);
+                    index++;
+                    if (index < formula.size() && formula[index] >= 'a' && formula[index] <= 'z') index++;
                     element_symbols.push_back(formula.substr(symbol_start, index - symbol_start));
-                    const auto count_start = index;
                     while (index < formula.size() && formula[index] >= '0' && formula[index] <= '9')
-                        normalized_formula.push_back(formula[index++]);
-                    if (index == count_start) normalized_formula.push_back('1');
+                        index++;
                 }
                 IsoSpec::Iso isotope_model(normalized_formula);
                 auto envelope = IsoSpec::FixedEnvelope::FromTotalProb(
@@ -670,9 +780,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 std::unique_ptr<int[]> atom_counts_owner(atom_counts);
                 for (std::size_t index = 0; index < envelope.confs_no() && masses.size() < max_peaks; ++index) {
                     if (envelope.prob(index) < 1e-5) continue;
-                    masses.push_back(envelope.mass(index) + ion_offset);
+                    masses.push_back(envelope.mass(index) + parsed_formula.fixed_mass_delta + ion_offset);
                     probabilities.push_back(envelope.prob(index));
-                    std::vector<std::string> heavy_isotopes;
+                    std::vector<std::string> heavy_isotopes = parsed_formula.fixed_labels;
                     const auto *configuration = envelope.conf(index);
                     std::size_t isotope_offset = 0;
                     for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
@@ -802,6 +912,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/artifacts/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.clear_all_artifacts(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/node/clear")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/node/clear");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                const auto request = Json::parse(body);
+                detail::send_http(socket, 200, projects_.clear_node_artifacts(session_id, request.value("producer_instance", std::string{})));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");

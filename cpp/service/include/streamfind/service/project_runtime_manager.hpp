@@ -32,6 +32,7 @@ public:
     Json clear_workflow_history(const std::string &session_id);
     Json clear_artifact_cache(const std::string &session_id);
     Json clear_all_artifacts(const std::string &session_id);
+    Json clear_node_artifacts(const std::string &session_id, const std::string &producer_instance);
     Json workflow_snapshot(const std::string &session_id) const;
     Json artifact_inventory(const std::string &session_id) const;
     Json current_artifact_inventory(const std::string &session_id) const;

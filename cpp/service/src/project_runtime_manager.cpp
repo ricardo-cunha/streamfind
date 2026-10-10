@@ -205,6 +205,14 @@ Json ProjectRuntimeManager::clear_all_artifacts(const std::string &session_id) {
     return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
 }
 
+Json ProjectRuntimeManager::clear_node_artifacts(const std::string &session_id, const std::string &producer_instance) {
+    std::lock_guard lock(mutex_);
+    const auto iterator = projects_.find(session_id);
+    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    iterator->second->clear_artifacts_for_producer_instance(producer_instance);
+    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}, {"producer_instance", producer_instance}};
+}
+
 Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) const {
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
