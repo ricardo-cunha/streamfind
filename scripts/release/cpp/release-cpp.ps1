@@ -11,8 +11,13 @@ param(
 . "$PSScriptRoot\..\release-common.ps1"
 
 $root = $Script:REPO_ROOT
+$versionFile = Join-Path $root 'VERSION'
+$canonicalVersion = (Get-Content -Raw $versionFile).Trim()
+if ($canonicalVersion -ne $Version) {
+    throw "Release version $Version does not match canonical version $canonicalVersion in $versionFile"
+}
 $env:STREAMFIND_PACKAGE_VERSION = $Version
-$buildDir = Join-Path $root 'tmp\build\mingw-release-cpp'
+$buildDir = Join-Path $root 'tmp\build\mingw-ucrt64'
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'
 $toolchain = Initialize-MinGWUcrt64
@@ -35,6 +40,7 @@ Write-ReleaseLog "Building C++ backend ($Config)..."
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)" `
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
     -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF `
+    -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
@@ -58,25 +64,16 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $verifyDir
 Expand-Archive -Path $built.FullName -DestinationPath $verifyDir
 $packageRoot = Get-ChildItem -Path $verifyDir -Directory | Select-Object -First 1
 if (-not $packageRoot) { throw 'C++ archive has no top-level package directory' }
-Assert-CppDistributionPayload $packageRoot.FullName -RequireSdk
+Assert-CppDistributionPayload $packageRoot.FullName
+$python = if ($env:STREAMFIND_PYTHON) { $env:STREAMFIND_PYTHON } else { Join-Path $root '.venv\Scripts\python.exe' }
+if (-not (Test-Path $python)) { throw "Repository Python environment is missing: $python" }
+& $python (Join-Path $root 'scripts\dev\validate_native_dependencies.py') $packageRoot.FullName '--platform' 'windows'
+if ($LASTEXITCODE -ne 0) { throw "Windows native dependency closure validation failed ($LASTEXITCODE)" }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/release/cpp/test-packaged-mcp.ps1') `
     -PackageRoot $packageRoot.FullName
 if ($LASTEXITCODE -ne 0) { throw "Packaged C++ MCP smoke test failed ($LASTEXITCODE)" }
-
-$sdkArchive = Join-Path $Script:RELEASE_OUTPUT "streamfind-sdk-cpp-$Version-Windows-x86_64.zip"
-Move-Item $built.FullName $sdkArchive -Force
-$runtimeVerifyDir = Join-Path $root 'tmp\build\package-verify\cpp-runtime'
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $runtimeVerifyDir
-New-Item -ItemType Directory -Force -Path $runtimeVerifyDir | Out-Null
-$runtimeRoot = Join-Path $runtimeVerifyDir $packageRoot.Name
-Copy-Item -Recurse $packageRoot.FullName $runtimeRoot
-Remove-Item -Recurse -Force (Join-Path $runtimeRoot 'sdk')
-Assert-CppDistributionPayload $runtimeRoot
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/release/cpp/test-packaged-mcp.ps1') `
-    -PackageRoot $runtimeRoot
-if ($LASTEXITCODE -ne 0) { throw "Packaged runtime MCP smoke test failed ($LASTEXITCODE)" }
 $runtimeArchive = Join-Path $Script:RELEASE_OUTPUT "streamfind-core-cpp-$Version-Windows-x86_64.zip"
-Compress-Archive -Path $runtimeRoot -DestinationPath $runtimeArchive -Force
+Move-Item $built.FullName $runtimeArchive -Force
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $cpackDir
 Write-ReleaseChecksums
-Write-ReleaseLog "C++ runtime and SDK archives written to $Script:RELEASE_OUTPUT"
+Write-ReleaseLog "C++ runtime archive written to $Script:RELEASE_OUTPUT"

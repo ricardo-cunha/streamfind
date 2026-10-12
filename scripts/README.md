@@ -1,10 +1,9 @@
 # streamfind build & test scripts
 
-Machine-independent helpers for building and testing the primary C++ backend
-(`cpp/`) and the alternative Rust backend (`rust/`). All transient artifacts land under
-the repository-local `tmp/` folder (see AGENTS.md "Repository Scratch, Build,
-and Log Locations"): build trees in `tmp/build/`, release packages in
-`tmp/release-output/`, and logs in `tmp/logs/`.
+Machine-independent helpers for building and testing the C++ backend
+(`cpp/`). All transient artifacts land under the repository-local `tmp/` folder
+(see AGENTS.md "Repository Scratch, Build, and Log Locations"): build trees in
+`tmp/build/`, release packages in `tmp/release-output/`, and logs in `tmp/logs/`.
 
 ## Quick start
 
@@ -13,18 +12,13 @@ and Log Locations"): build trees in `tmp/build/`, release packages in
 | Build the C++ backend | `powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1` |
 | C++ backend + run CTest | `powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1 -Tests` |
 | Run C++ CTest only | `scripts\build\cpp\test-cpp.cmd` |
-| Build the alternative Rust backend | `scripts/build/rust/build-rust.cmd` |
-| Build Rust and run its tests | `scripts/build/rust/build-rust.cmd -Tests` |
-| Run Rust tests only | `scripts/build/rust/test-rust.cmd` |
 | Run C++ built-MCP data test | `scripts\dev\cpp\test-data.ps1` |
 | Run C++ built-MCP NTA test | `scripts\dev\cpp\test-nta.ps1` |
 | Run C++ vendor reader parser test | `scripts\dev\cpp\test-vendor-readers.ps1 -Vendor Shimadzu` |
 | Run data-backed NTA pipeline | Add `-RunPipeline` to `scripts\dev\cpp\test-nta.ps1` |
-| Run explicit cross-backend conformance | `scripts/dev/conformance/run-conformance.ps1 -CppExecutable <path> -RustExecutable <path> -Thermo` |
 | Build C++ release archive | `scripts/release/cpp/release-cpp.cmd -Version <version>` |
 | Run extracted packaged MCP smoke | `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <extracted-package>` |
-| Build Rust release archive | `scripts/release/rust/release-rust.cmd -Version <version> -CppCatalogue <path>` |
-| Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version> -Backend Cpp|Rust|All` |
+| Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version>` |
 | Clean build/test artifacts | `scripts\build\clean-build-temp.cmd` |
 
 Every `.cmd` is a thin wrapper over its `.ps1`; use either form.
@@ -80,9 +74,8 @@ directory-based, but every enabled plugin must define
 `streamfind_<domain>_plugin`; its manifest, semantic catalogue, ABI validation,
 and runtime dependencies are staged by that plugin's CMake target.
 
-Never share `tmp/build/core-default`, `tmp/build/mingw-ucrt64`, or a release
-build directory between MSVC, MinGW, GCC, or Clang configurations. Delete the
-tree or use a new named preset when changing the compiler.
+Never share `tmp/build/mingw-ucrt64` with another compiler configuration or a release
+build directory. Delete the tree or use a new named preset when changing the compiler.
 
 ### Semantic catalogue Java
 
@@ -99,13 +92,10 @@ test environments. The normal packaged runtime does not need Java; this
 provisioning applies only to development and release-time catalogue generation.
 
 The official C++ suite is the authoritative framework, plugin, mass-spectrometry
-interface, and lightweight NTA coverage registered by CMake. Rust is an
-alternative backend: its wrapper requires the C++ build/release catalogue through
-`STREAMFIND_CATALOGUE` and does not define the C++ acceptance gate. Raw reader,
-parity, and data-backed NTA tests are development-stage checks under
-`scripts/dev/cpp/`; they launch the C++ built MCP executable and are not C++ test
-source targets. Cross-backend comparisons are isolated under `scripts/dev/conformance/`
-and require both executable paths explicitly. They are not part of the C++ gate.
+interface, and lightweight NTA coverage registered by CMake. Raw reader, parity,
+and data-backed NTA checks are development-stage checks under `scripts/dev/cpp/`;
+they launch the C++ built MCP executable and are not C++ test source targets.
+They are not part of the C++ gate.
 
 ## External example data
 
@@ -153,7 +143,6 @@ paths, using the standard mechanisms:
   installation), else `PATH`.
 - **ninja** — `$env:NINJA` override, else `PATH`, else Visual Studio's bundled
   Ninja (`Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe`).
-- **cargo** — `$env:CARGO` override, else `PATH`.
 
 Failures are explicit with a helpful message pointing at the missing tool or
 install method.
@@ -161,29 +150,19 @@ install method.
 ## What each script does
 
 - `scripts/build/cpp/build-cpp.ps1` — required Windows C++ entry point; initializes
-  the MinGW-w64 UCRT64 environment, configures with Ninja into `tmp/build/core-default`
+  the MinGW-w64 UCRT64 environment, configures with Ninja into `tmp/build/mingw-ucrt64`
   (`STREAMFIND_BUILD_TESTS=ON`, `STREAMFIND_BUILD_SHARED=OFF`), builds, and
   optionally runs CTest. Flags: `-Clean`, `-Tests`, `-Target <name>`,
   `-Config <Debug|Release>`.
-- `scripts/build/cpp/test-cpp.ps1` — runs `ctest --test-dir tmp/build/core-default
+- `scripts/build/cpp/test-cpp.ps1` — runs `ctest --test-dir tmp/build/mingw-ucrt64
   --output-on-failure` for the official framework, mass-spec interface, and
   lightweight NTA interface suite. Data-backed parsing and NTA checks use the
   dedicated scripts in `scripts/dev/`.
-- `scripts/build/rust/build-rust.ps1` — sets `CARGO_TARGET_DIR=tmp/build/rust-target`, requires the C++ catalogue, and builds
-  the workspace (or one `-Package`). Flags: `-Clean`, `-Tests`,
-  `-Package <name>`, `-Release`.
-- `scripts/build/rust/test-rust.ps1` — `build-rust.ps1 -Tests` shorthand against the C++ catalogue.
-- `scripts/build/cpp/build-cpp-linux.sh` — configures and builds the authoritative C++ backend with Ninja on Linux; set `STREAMFIND_RUN_TESTS=1` to run CTest.
-- `scripts/build/rust/build-rust-linux.sh` — builds the alternative Rust workspace on Linux using `STREAMFIND_CATALOGUE` from the C++ backend; set `STREAMFIND_RUN_TESTS=1` to run Rust tests.
+- `scripts/build/cpp/build-cpp-linux.sh` — configures and builds the C++ backend with Ninja on Linux; set `STREAMFIND_RUN_TESTS=1` to run CTest.
 - `scripts/release/cpp/release-cpp.ps1` — builds, tests, packages, and hashes the
-  authoritative C++ backend archive. It does not run development-stage data or
-  NTA scripts.
-- `scripts/release/rust/release-rust.ps1` — builds and optionally tests the
-  alternative Rust backend against an explicitly supplied C++ catalogue, then
-  packages and hashes only the Rust archive. It does not define the C++ release
-  gate.
+  C++ backend archive. It does not run development-stage data or NTA scripts.
 - `scripts/release/cpp/release-cpp-linux.sh <version>` — builds, tests, and
-  packages only the authoritative C++ Linux backend.
+  packages the C++ Linux backend.
 - The Windows C++ archive is self-contained at launch: run `streamfind.exe`
   from the package root. It starts `bin\\streamfind_service.exe` with the same
   package-relative runtime paths. Advanced MCP clients can use
@@ -193,9 +172,6 @@ install method.
   processes.
 - Validate an extracted Windows archive with
   `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <package-root>`.
-- `scripts/release/rust/release-rust-linux.sh <version> <cpp-catalogue>` —
-  builds, tests, and packages only the Rust Linux backend against the supplied
-  C++ catalogue.
 - `scripts/release/publish-release.ps1` — validates the versioned archives and checksums in
   `tmp/release-output/`, then creates a GitHub Release. Pass `-Replace` only
   when intentionally replacing assets in an existing release.
@@ -203,7 +179,7 @@ install method.
 ## Notes
 
 - On a plain terminal, the scripts set repository-local Windows `TMP`/`TEMP`
-  paths before invoking MinGW, CMake, Ninja, or cargo (the scripts assume a normal user
+  paths before invoking MinGW, CMake, or Ninja (the scripts assume a normal user
   environment).
 - Build artifacts are gitignored; `scripts/build/clean-build-temp.cmd` removes
   them while preserving tracked scripts and `tmp/logs/`.

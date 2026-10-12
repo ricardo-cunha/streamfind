@@ -28,6 +28,7 @@ target_include_directories(streamfind_cpp_sdk
 add_executable(streamfind_sdk_catalogue tools/streamfind-sdk-catalogue.cpp)
 target_link_libraries(streamfind_sdk_catalogue PRIVATE streamfind::cpp_sdk)
 target_compile_features(streamfind_sdk_catalogue PRIVATE cxx_std_20)
+streamfind_static_mingw_executable(streamfind_sdk_catalogue)
 if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
     add_custom_command(TARGET streamfind_sdk_catalogue POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -39,16 +40,50 @@ add_executable(streamfind_sdk_plugin_validator
     tools/streamfind-sdk-plugin-validator.cpp)
 target_link_libraries(streamfind_sdk_plugin_validator PRIVATE streamfind::cpp_sdk)
 target_compile_features(streamfind_sdk_plugin_validator PRIVATE cxx_std_20)
+streamfind_static_mingw_executable(streamfind_sdk_plugin_validator)
+if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
+    add_custom_command(TARGET streamfind_sdk_plugin_validator POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${STREAMFIND_DUCKDB_RUNTIME}"
+            "$<TARGET_FILE_DIR:streamfind_sdk_plugin_validator>")
+endif()
+if(WIN32 AND MINGW)
+    if(NOT STREAMFIND_MINGW_RUNTIME_DIR)
+        get_filename_component(STREAMFIND_MINGW_RUNTIME_DIR
+            "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    endif()
+    foreach(_mingw_runtime IN ITEMS
+        libgcc_s_seh-1.dll
+        libstdc++-6.dll
+        libwinpthread-1.dll)
+        if(NOT EXISTS "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}")
+            message(FATAL_ERROR
+                "Required MinGW runtime is missing: ${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}")
+        endif()
+        foreach(_streamfind_sdk_target IN ITEMS
+            streamfind_sdk_catalogue
+            streamfind_sdk_plugin_validator)
+            add_custom_command(TARGET ${_streamfind_sdk_target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "$<TARGET_FILE_DIR:${_streamfind_sdk_target}>")
+        endforeach()
+        if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+            install(FILES "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}" DESTINATION sdk/bin)
+        endif()
+    endforeach()
+endif()
 
-install(TARGETS streamfind_sdk_catalogue streamfind_sdk_plugin_validator
-    RUNTIME DESTINATION sdk/bin)
-
-install(
-    TARGETS streamfind_cpp_sdk
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION sdk/lib
-    LIBRARY DESTINATION sdk/lib
-    RUNTIME DESTINATION sdk/bin
-)
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/apache-jena/"
-    DESTINATION sdk/tools/jena)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_sdk_catalogue streamfind_sdk_plugin_validator
+        RUNTIME DESTINATION sdk/bin)
+    install(
+        TARGETS streamfind_cpp_sdk
+        EXPORT streamfind-cpp-targets
+        ARCHIVE DESTINATION sdk/lib
+        LIBRARY DESTINATION sdk/lib
+        RUNTIME DESTINATION sdk/bin
+    )
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/apache-jena/"
+        DESTINATION sdk/tools/jena)
+endif()

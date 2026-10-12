@@ -105,7 +105,7 @@ inline Json capabilities_json() {
                 output_results.push_back(Json{{"canonical_id", result_id},
                                               {"label", result_id},
                                               {"definition", result.value("schema", Json::object()).value("description", "")},
-                                              {"table", Json{{"table_name", result_id},
+                                              {"table", Json{{"table_contract_name", result_id},
                                                                {"domain", entry.value("domain", "")},
                                                                {"module_id", entry.value("module_id", "")},
                                                                {"columns", Json::array()}}},
@@ -121,7 +121,7 @@ inline Json capabilities_json() {
                 {"operations", projected_entries},
                 {"methods", methods},
                 {"domains", std::vector<std::string>(domains.begin(), domains.end())},
-                {"endpoints", Json::array({ "/session", "/capabilities", "/capabilities/index", "/capabilities/domains/<domain>/modules", "/capabilities/operations?domain=...&module=...", "/capabilities/operations/<canonical_id>", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/pause", "/projects/<session_id>/workflow/cancel", "/events" })}};
+                {"endpoints", Json::array({ "/session", "/capabilities", "/capabilities/index", "/capabilities/domains/<domain>/modules", "/capabilities/operations?domain=...&module=...", "/capabilities/operations/<canonical_id>", "/workflow-demos", "/chemistry/structure-svg", "/chemistry/isotope-pattern", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/cancel", "/events" })}};
 }
 
 inline Json project_initialization_json(const std::vector<std::string> &domains) {

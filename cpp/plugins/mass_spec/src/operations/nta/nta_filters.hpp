@@ -40,8 +40,6 @@ namespace streamfind::mass_spec::nta
         int maxModality,
         bool hasMaxModality,
         double minPlates,
-        bool hasOnlyFilled,
-        bool onlyFilledValue,
         bool removeFilled,
         int minSizeEIC,
         bool hasMinSizeEIC,

@@ -1,8 +1,6 @@
 [CmdletBinding()]
 param(
     [switch]$Child,
-    [ValidateSet('Cpp')]
-    [string]$Backend = 'Cpp',
     [int]$WorkerIndex = 0,
     [ValidateSet('Completed', 'Cancelled', 'Failed')]
     [string]$Scenario = 'Completed',
@@ -32,29 +30,24 @@ foreach ($fixture in $fixtures) {
     if (-not (Test-Path $fixture -PathType Leaf)) { throw "Missing mzML fixture: $fixture" }
 }
 
-$catalogue = Join-Path $repoRoot 'tmp\build\core-default\semantic_catalogue\catalogue.duckdb'
-$executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot -Backend $Backend
-if ($Backend -eq 'Rust' -and -not (Test-Path $executable -PathType Leaf)) {
-    $executable = Join-Path $repoRoot 'tmp\build\rust-target\debug\streamfind-rust-mcp.exe'
-}
+$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
 if (-not (Test-Path $executable -PathType Leaf)) { throw "MCP executable not found: $executable" }
 $env:STREAMFIND_CATALOGUE = $catalogue
-if ($Backend -eq 'Cpp') {
-    $env:PATH = (Join-Path $repoRoot 'tmp\build\core-default\tests') + ';' + $env:PATH
-}
+$env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
 $projectsRoot = Join-Path $repoRoot 'tmp\projects'
 $logsRoot = Join-Path $repoRoot 'tmp\logs\concurrent-find-features'
 New-Item -ItemType Directory -Force -Path $projectsRoot, $logsRoot | Out-Null
 
 function Invoke-Child {
     param([Parameter(Mandatory = $true)][int]$Index)
-    $database = Join-Path $projectsRoot "concurrent-find-features-$($Backend.ToLowerInvariant())-$Index.duckdb"
+    $database = Join-Path $projectsRoot "concurrent-find-features-cpp-$Index.duckdb"
     $log = Join-Path $logsRoot "worker-$Index.log"
     Remove-Item -Force -ErrorAction SilentlyContinue $database, $log
     $script = $scriptPath
     $arguments = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script,
-        '-Child', '-Backend', $Backend,
+        '-Child',
         '-Scenario', $Scenario,
         '-WorkerIndex', $Index,
         '-DatabasePath', $database,
@@ -100,7 +93,7 @@ if (-not $Child) {
 if ($WorkerIndex -lt 1 -or [string]::IsNullOrWhiteSpace($DatabasePath) -or [string]::IsNullOrWhiteSpace($FixturePath)) {
     throw 'Child mode requires worker index, database path, and fixture path'
 }
-$projectId = "concurrent-$($Backend.ToLowerInvariant())-$WorkerIndex"
+$projectId = "concurrent-cpp-$WorkerIndex"
 $process = $null
 try {
     $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue

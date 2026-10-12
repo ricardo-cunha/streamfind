@@ -10,14 +10,13 @@ applications and AI agents.
                  Shared semantic catalogue
        operations • parameters • typed ports • results
                          │
-          ┌──────────────┴──────────────┐
-          ▼                             ▼
-   C++ core + plugins       Rust backend (stale development)
-          ▼
-     C++ public API / MCP
-          │
-          ▼
-   React web app
+          ┌────────────────────────────┐
+          ▼                            ▼
+   C++ core + plugins             C++ public API / MCP
+          │                            │
+          └──────────────┬─────────────┘
+                         ▼
+                    React web app
 ```
 
 ## Operations and operation graphs
@@ -48,8 +47,7 @@ A typical application or agent follows this sequence:
 5. validate the operation graph;
 6. run the graph and inspect its artifacts and results.
 
-The C++ MCP server is the application boundary. The Rust MCP server is a stale
-development backend and is not the current runtime contract.
+The C++ MCP server is the application boundary and current runtime contract.
 
 The React web app uses the C++ public API and service boundary. It does not
 access DuckDB files or plugin internals directly. Both native archives contain
@@ -77,8 +75,8 @@ domain capabilities to be deployed selectively.
 ## Data and runtime assets
 
 Native packages include the runtime data needed by the MCP servers, especially
-the semantic catalogue under `share/streamfind/`. Keep the catalogue with the
-server executable. Optional scientific tools remain separate user-installed
+the semantic catalogue under `core/`. Keep the catalogue with the package.
+Optional scientific tools remain separate user-installed
 components.
 
 See [Releases](releases.md) for package layouts and

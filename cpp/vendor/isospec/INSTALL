@@ -1,0 +1,67 @@
+-------------------------------------------
+Building and installing the C/C++ library
+
+Requirements:
+   A C++20 compiler
+   Make (GNU make is OK)
+
+
+Next, execute the following commands:
+
+cd src/IsoSpec++
+make
+
+You may copy the resulting .so file to a convenient location.
+If you wish to develop software using this library, you will also
+have to place the header files (*.hpp/*.h) somewhere your C/C++
+compiler can find them.
+
+------------------------------------------
+Building and installing the Python package
+
+IMPORTANT: please note that the Python package is standalone, in the
+sense that it does not need the C/C++ library to be installed separately.
+
+IsoSpecPy is compatible with both CPython and PyPy, running on Unix,
+Cygwin or in MinGW environment.
+
+The preferred method of installation is by using the pip package manager.
+In order to do that, simply issue the following command, replacing
+"<python>" with your Python executable (python/python3/pypy/...)
+
+<python> -m pip install IsoSpecPy
+
+If, instead, you wish to install the package manually, follow these
+instructions:
+
+Requirements:
+    Python >= 3.9
+    C++20 compiler
+
+Execute the following commands:
+pip install .
+
+------------------------------------------
+Building and installing the R package
+
+The preferred installation method is to use the CRAN package installer.
+To do that, simply issue the command:
+
+install.packages('IsoSpecR')
+
+in your R session. However it is possible to install the package manually,
+from source, by following these instructions:
+
+Requirements:
+	R (>= 4.0.0)
+	Rcpp package from CRAN
+	C++11 compiler, clang++ (v3.3 or later) or g++ (v4.7 or later)
+
+Move to the folder containing the IsoSpecR folder. Then run in terminal:
+
+   cd src
+	R CMD build IsoSpecR
+	R CMD INSTALL IsoSpecR_*.tar.gz
+
+All necessary packages should download automatically.
+

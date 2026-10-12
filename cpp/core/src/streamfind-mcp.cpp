@@ -112,6 +112,7 @@ public:
             loaded->host.has_table = &sdk::plugin_has_table;
             loaded->host.clear_table = &sdk::plugin_clear_table;
             loaded->host.read_batch = &sdk::plugin_read_batch;
+            loaded->host.count_rows = &sdk::plugin_count_rows;
             loaded->host.append_batch = &sdk::plugin_append_batch;
             loaded->host.emit_table_batch = &sdk::plugin_emit_table_batch;
             loaded->host.emit_result = &sdk::plugin_emit_result;
@@ -160,6 +161,38 @@ public:
         }
     }
 
+    Json dependencies() const {
+        Json result = Json::array();
+        for (const auto &loaded : plugins_) {
+            if (loaded->plugin.plugin.describe_dependencies == nullptr) continue;
+            streamfind_plugin_buffer buffer{};
+            if (loaded->plugin.plugin.describe_dependencies(&buffer, loaded->plugin.plugin.user_data) != STREAMFIND_PLUGIN_OK)
+                throw std::runtime_error("plugin dependency discovery failed");
+            const auto values = Json::parse(std::string(buffer.data, buffer.size));
+            loaded->plugin.plugin.release_buffer(&buffer, loaded->plugin.plugin.user_data);
+            if (values.is_array()) for (const auto &value : values) result.push_back(value);
+        }
+        return result;
+    }
+
+    Json install_dependencies(const Json &request) const {
+        Json result = Json::array();
+        const auto text = request.dump();
+        for (const auto &loaded : plugins_) {
+            if (loaded->plugin.plugin.install_dependencies == nullptr) continue;
+            streamfind_plugin_buffer buffer{};
+            const auto status = loaded->plugin.plugin.install_dependencies(
+                text.data(), static_cast<uint32_t>(text.size()), &buffer, loaded->plugin.plugin.user_data);
+            if (status == STREAMFIND_PLUGIN_INVALID_ARGUMENT) continue;
+            if (status != STREAMFIND_PLUGIN_OK) throw std::runtime_error("plugin dependency installation failed");
+            const auto values = Json::parse(std::string(buffer.data, buffer.size));
+            loaded->plugin.plugin.release_buffer(&buffer, loaded->plugin.plugin.user_data);
+            if (values.contains("results") && values.at("results").is_array())
+                for (const auto &value : values.at("results")) result.push_back(value);
+        }
+        return Json{{"results", result}};
+    }
+
 private:
     struct LoadedPlugin {
         std::filesystem::path package_root;
@@ -190,9 +223,17 @@ int main(int argc, char **argv) {
         std::cerr << "streamfind-mcp: registration failed: " << error.what() << '\n';
         return 3;
     }
-    streamfind::mcp::Session session(operations);
+    streamfind::mcp::Session session(
+        operations,
+        [&dynamic_plugins] { return dynamic_plugins->dependencies(); },
+        [&dynamic_plugins](const streamfind::Json &request) { return dynamic_plugins->install_dependencies(request); });
     while (std::getline(std::cin, line)) {
-            try { std::cout << session.handle(streamfind::Json::parse(line)).dump() << '\n' << std::flush; }
+            try {
+                const auto request = streamfind::Json::parse(line);
+                const auto response = session.handle(request);
+                if (!response.is_null() && request.contains("id"))
+                    std::cout << response.dump() << '\n' << std::flush;
+            }
             catch (const std::exception &error) { std::cout << streamfind::Json{{"jsonrpc", "2.0"}, {"error", {{"code", -32700}, {"message", error.what()}}}}.dump() << '\n' << std::flush; }
         }
 }

@@ -9,7 +9,7 @@ sfcore:projectTable
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project table" ;
     skos:definition "Generic project identity, metadata, workflow, and framework state." ;
-    sf:tableName "PROJECT" ;
+    sf:tableContractName "PROJECT" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfcore:projectMetadataColumn,
@@ -25,7 +25,7 @@ sfcore:auditTrailTable
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Audit trail table" ;
     skos:definition "Persisted project and workflow operation audit events." ;
-    sf:tableName "AUDIT_TRAIL" ;
+    sf:tableContractName "AUDIT_TRAIL" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfcore:operationTypeColumn,
@@ -39,7 +39,7 @@ sfcore:workflowExecutionTable
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution table" ;
     skos:definition "Singleton persisted lifecycle state for the current workflow execution." ;
-    sf:tableName "WORKFLOW_EXECUTION" ;
+    sf:tableContractName "WORKFLOW_EXECUTION" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfcore:workflowRevisionColumn,
@@ -61,7 +61,7 @@ sfcore:workflowExecutionStepTable
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution step table" ;
     skos:definition "Durable child records for the latest workflow execution, including method state, cache identity, progress, and lifecycle timestamps." ;
-    sf:tableName "WORKFLOW_EXECUTION_STEP" ;
+    sf:tableContractName "WORKFLOW_EXECUTION_STEP" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfcore:workflowRevisionColumn,

@@ -10,22 +10,29 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
+#include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
-#include <vector>
 #endif
 
 #include <openbabel/descriptor.h>
+#include <openbabel/atom.h>
 #include <openbabel/elements.h>
 #include <openbabel/groupcontrib.h>
 #include <openbabel/mol.h>
+#include <openbabel/obiter.h>
 #include <openbabel/obconversion.h>
 #include <openbabel/oberror.h>
 #include <openbabel/tokenst.h>
 
 namespace streamfind::obabel_detail
 {
+  // Open Babel's conversion registry and error logger are process-global and
+  // are not safe to use concurrently from service request threads.
+  std::mutex structure_render_mutex;
+
 #ifdef _WIN32
   std::wstring widen_path(const std::string &path)
   {
@@ -294,6 +301,12 @@ namespace streamfind::obabel_detail
   }
 
   void zero_svg_result(streamfind_ob_svg_result *out)
+  {
+    if (out != nullptr)
+      std::memset(out, 0, sizeof(*out));
+  }
+
+  void zero_mass_result(streamfind_ob_mass_result *out)
   {
     if (out != nullptr)
       std::memset(out, 0, sizeof(*out));
@@ -840,6 +853,405 @@ extern "C"
     return out->count > 0 ? 1 : 0;
   }
 
+  int sf_ob_mass_from_formula(
+    const char *formula,
+    streamfind_ob_mass_result *out)
+  {
+    zero_mass_result(out);
+    if (out == nullptr || formula == nullptr || *formula == '\0')
+      return 0;
+
+#ifdef _WIN32
+    ensure_openbabel_data_dir();
+#endif
+    const std::string normalized = normalize_formula(formula);
+    OpenBabel::OBMol mol;
+    for (size_t pos = 0; pos < normalized.size();)
+    {
+      if (normalized[pos] == '[')
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Isotopic bracket formulas are not supported by the formula mass boundary");
+        return 0;
+      }
+      if (!std::isupper(static_cast<unsigned char>(normalized[pos])))
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Open Babel could not parse formula");
+        return 0;
+      }
+      std::string symbol(1, normalized[pos++]);
+      if (pos < normalized.size() && std::islower(static_cast<unsigned char>(normalized[pos])))
+        symbol.push_back(normalized[pos++]);
+      const unsigned int atomic_number = OpenBabel::OBElements::GetAtomicNum(symbol.c_str());
+      if (atomic_number == 0)
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Open Babel could not resolve element in formula");
+        return 0;
+      }
+      size_t count_end = pos;
+      while (count_end < normalized.size() && std::isdigit(static_cast<unsigned char>(normalized[count_end])))
+        ++count_end;
+      const int count = count_end == pos ? 1 : std::stoi(normalized.substr(pos, count_end - pos));
+      if (count <= 0)
+      {
+        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                  "Open Babel could not parse formula multiplicity");
+        return 0;
+      }
+      for (int index = 0; index < count; ++index)
+      {
+        OpenBabel::OBAtom *atom = mol.NewAtom();
+        atom->SetAtomicNum(atomic_number);
+      }
+      pos = count_end;
+    }
+
+    if (mol.NumAtoms() == 0)
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                "Open Babel could not parse formula");
+      return 0;
+    }
+
+    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, mol.GetFormula());
+    out->exact_mass = mol.GetExactMass();
+    if (!finite_value(out->exact_mass) || out->exact_mass <= 0.0)
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                "Open Babel produced an invalid formula mass");
+      return 0;
+    }
+    out->ok = 1;
+    return 1;
+  }
+
+  int sf_ob_generate_bond_order_variants(
+    const char *smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out)
+  {
+    if (out == nullptr)
+      return 0;
+    std::memset(out, 0, sizeof(*out));
+    if (smiles == nullptr || *smiles == '\0' || max_results <= 0)
+      return 0;
+#ifdef _WIN32
+    ensure_openbabel_data_dir();
+#endif
+    OpenBabel::OBMol mol;
+    std::string parse_error;
+    if (!read_molecule(mol, smiles, "smi", parse_error))
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY, parse_error);
+      return 0;
+    }
+
+    const int result_limit = std::min(max_results, static_cast<int>(streamfind_OB_GRAPH_EDIT_MAX_RESULTS));
+    for (OpenBabel::OBMolBondIter iterator(mol); iterator && out->count < result_limit; ++iterator)
+    {
+      const auto &bond = *iterator;
+      if (bond.IsAromatic())
+        continue;
+      const int order = static_cast<int>(bond.GetBondOrder());
+      for (const int direction : {-1, 1})
+      {
+        const int new_order = order + direction;
+        if (new_order < 1 || new_order > 3 || out->count >= result_limit)
+          continue;
+        OpenBabel::OBMol edited = mol;
+        auto *edited_bond = edited.GetBond(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx());
+        if (edited_bond == nullptr)
+          continue;
+        edited.BeginModify();
+        edited_bond->SetBondOrder(new_order);
+        edited.EndModify();
+        std::string write_error;
+        const auto edited_smiles = write_molecule(edited, "can", write_error);
+        if (edited_smiles.empty())
+          continue;
+        streamfind_ob_normalized_result normalized{};
+        if (!sf_ob_normalize_structure(edited_smiles.c_str(), nullptr, &normalized) || !normalized.ok)
+          continue;
+        bool duplicate = false;
+        for (int index = 0; index < out->count; ++index)
+          if (std::string(out->smiles[index]) == normalized.canonical_smiles)
+          {
+            duplicate = true;
+            break;
+          }
+        if (duplicate)
+          continue;
+        copy_text(out->smiles[out->count], streamfind_OB_SMILES_CAPACITY, normalized.canonical_smiles);
+        copy_text(out->formulas[out->count], streamfind_OB_FORMULA_CAPACITY, normalized.formula);
+        copy_text(out->labels[out->count], 64,
+                  std::string(direction < 0 ? "hydrogenation_bond_" : "dehydrogenation_bond_") +
+                  std::to_string(bond.GetIdx()));
+        out->masses[out->count] = normalized.exact_mass;
+        ++out->count;
+      }
+    }
+    return out->count;
+  }
+
+  int sf_ob_generate_fragment_attachment_variants(
+    const char *root_smiles,
+    const char *fragment_smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out)
+  {
+    if (out == nullptr)
+      return 0;
+    std::memset(out, 0, sizeof(*out));
+    if (root_smiles == nullptr || *root_smiles == '\0' ||
+        fragment_smiles == nullptr || *fragment_smiles == '\0' || max_results <= 0)
+      return 0;
+#ifdef _WIN32
+    ensure_openbabel_data_dir();
+#endif
+    OpenBabel::OBMol root;
+    OpenBabel::OBMol fragment;
+    std::string parse_error;
+    if (!read_molecule(root, root_smiles, "smi", parse_error) ||
+        !read_molecule(fragment, fragment_smiles, "smi", parse_error))
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY, parse_error);
+      return 0;
+    }
+
+    const int result_limit = std::min(max_results, static_cast<int>(streamfind_OB_GRAPH_EDIT_MAX_RESULTS));
+    const int root_atom_count = root.NumAtoms();
+    const int fragment_atom_count = fragment.NumAtoms();
+    for (int root_index = 1; root_index <= root_atom_count && out->count < result_limit; ++root_index)
+    {
+      for (int fragment_index = 1; fragment_index <= fragment_atom_count && out->count < result_limit; ++fragment_index)
+      {
+        OpenBabel::OBMol combined = root;
+        combined.BeginModify();
+        combined += fragment;
+        auto *root_atom = combined.GetAtom(root_index);
+        auto *fragment_atom = combined.GetAtom(root_atom_count + fragment_index);
+        if (root_atom == nullptr || fragment_atom == nullptr ||
+            root_atom->GetImplicitHCount() == 0 || fragment_atom->GetImplicitHCount() == 0)
+        {
+          combined.EndModify();
+          continue;
+        }
+        root_atom->SetImplicitHCount(root_atom->GetImplicitHCount() - 1);
+        fragment_atom->SetImplicitHCount(fragment_atom->GetImplicitHCount() - 1);
+        if (!combined.AddBond(root_index, root_atom_count + fragment_index, 1))
+        {
+          combined.EndModify();
+          continue;
+        }
+        combined.EndModify();
+        combined.DeleteHydrogens();
+        combined.AddHydrogens();
+
+        std::string write_error;
+        const auto candidate_smiles = write_molecule(combined, "can", write_error);
+        if (candidate_smiles.empty())
+          continue;
+        streamfind_ob_normalized_result normalized{};
+        if (!sf_ob_normalize_structure(candidate_smiles.c_str(), nullptr, &normalized) || !normalized.ok)
+          continue;
+        bool duplicate = false;
+        for (int index = 0; index < out->count; ++index)
+          if (std::string(out->smiles[index]) == normalized.canonical_smiles)
+          {
+            duplicate = true;
+            break;
+          }
+        if (duplicate)
+          continue;
+        copy_text(out->smiles[out->count], streamfind_OB_SMILES_CAPACITY, normalized.canonical_smiles);
+        copy_text(out->formulas[out->count], streamfind_OB_FORMULA_CAPACITY, normalized.formula);
+        copy_text(out->labels[out->count], 64,
+                  std::string("fragment_attachment_") + std::to_string(root_index) + "_" +
+                  std::to_string(fragment_index));
+        out->masses[out->count] = normalized.exact_mass;
+        ++out->count;
+      }
+    }
+    return out->count;
+  }
+
+  int sf_ob_generate_local_transformation_variants(
+    const char *smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out)
+  {
+    if (out == nullptr)
+      return 0;
+    std::memset(out, 0, sizeof(*out));
+    if (smiles == nullptr || *smiles == '\0' || max_results <= 0)
+      return 0;
+#ifdef _WIN32
+    ensure_openbabel_data_dir();
+#endif
+    OpenBabel::OBMol mol;
+    std::string parse_error;
+    if (!read_molecule(mol, smiles, "smi", parse_error))
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY, parse_error);
+      return 0;
+    }
+
+    const int result_limit = std::min(max_results, static_cast<int>(streamfind_OB_GRAPH_EDIT_MAX_RESULTS));
+    auto append_normalized = [&](OpenBabel::OBMol &edited, const std::string &label) {
+      if (out->count >= result_limit)
+        return;
+      std::string write_error;
+      const auto edited_smiles = write_molecule(edited, "can", write_error);
+      if (edited_smiles.empty())
+        return;
+      streamfind_ob_normalized_result normalized{};
+      if (!sf_ob_normalize_structure(edited_smiles.c_str(), nullptr, &normalized) || !normalized.ok)
+        return;
+      for (int index = 0; index < out->count; ++index)
+        if (std::string(out->smiles[index]) == normalized.canonical_smiles)
+          return;
+      copy_text(out->smiles[out->count], streamfind_OB_SMILES_CAPACITY, normalized.canonical_smiles);
+      copy_text(out->formulas[out->count], streamfind_OB_FORMULA_CAPACITY, normalized.formula);
+      copy_text(out->labels[out->count], 64, label);
+      out->masses[out->count] = normalized.exact_mass;
+      ++out->count;
+    };
+
+    // Generate positional H/D exchange hypotheses from explicit hydrogens. This
+    // preserves the location of the exchange in the generated SMILES.
+    OpenBabel::OBMol isotope_mol = mol;
+    isotope_mol.AddHydrogens();
+    int hydrogen_index = 0;
+    for (OpenBabel::OBMolAtomIter iterator(isotope_mol); iterator && out->count < result_limit; ++iterator)
+    {
+      auto *atom = &*iterator;
+      if (atom->GetAtomicNum() != 1 || atom->GetIsotope() != 0)
+        continue;
+      OpenBabel::OBMol edited = isotope_mol;
+      auto *edited_atom = edited.GetAtom(atom->GetIdx());
+      if (edited_atom == nullptr)
+        continue;
+      edited_atom->SetIsotope(2);
+      append_normalized(edited, "deuterium_exchange_" + std::to_string(hydrogen_index));
+      ++hydrogen_index;
+    }
+
+    // Add chemically simple substituents only at atoms with replaceable
+    // implicit hydrogen. Open Babel validates valence and canonicalizes each
+    // resulting structure, so these are hypotheses rather than string edits.
+    for (int atom_index = 1; atom_index <= mol.NumAtoms() && out->count < result_limit; ++atom_index)
+    {
+      auto *source_atom = mol.GetAtom(atom_index);
+      if (source_atom == nullptr || source_atom->GetImplicitHCount() == 0)
+        continue;
+      for (const auto &[atomic_number, label] : std::vector<std::pair<int, std::string>>{
+               {8, "oxygenation"}, {9, "fluorination"}, {17, "chlorination"}, {35, "bromination"}})
+      {
+        if (out->count >= result_limit)
+          break;
+        OpenBabel::OBMol edited = mol;
+        edited.BeginModify();
+        auto *target_atom = edited.GetAtom(atom_index);
+        if (target_atom == nullptr || target_atom->GetImplicitHCount() == 0)
+        {
+          edited.EndModify();
+          continue;
+        }
+        target_atom->SetImplicitHCount(target_atom->GetImplicitHCount() - 1);
+        auto *substituent = edited.NewAtom();
+        substituent->SetAtomicNum(atomic_number);
+        if (atomic_number == 8)
+          substituent->SetImplicitHCount(1);
+        if (!edited.AddBond(atom_index, substituent->GetIdx(), 1))
+        {
+          edited.EndModify();
+          continue;
+        }
+        edited.EndModify();
+        edited.DeleteHydrogens();
+        edited.AddHydrogens();
+        append_normalized(edited, label + "_atom_" + std::to_string(atom_index));
+      }
+    }
+    return out->count;
+  }
+
+  int sf_ob_generate_dealkylation_variants(
+    const char *smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out)
+  {
+    if (out == nullptr)
+      return 0;
+    std::memset(out, 0, sizeof(*out));
+    if (smiles == nullptr || *smiles == '\0' || max_results <= 0)
+      return 0;
+#ifdef _WIN32
+    ensure_openbabel_data_dir();
+#endif
+    OpenBabel::OBMol mol;
+    std::string parse_error;
+    if (!read_molecule(mol, smiles, "smi", parse_error))
+    {
+      copy_text(out->error, streamfind_OB_ERROR_CAPACITY, parse_error);
+      return 0;
+    }
+    const int result_limit = std::min(max_results, static_cast<int>(streamfind_OB_GRAPH_EDIT_MAX_RESULTS));
+    const std::vector<std::string> allowed_losses = {"C3H6", "C4H8"};
+    for (OpenBabel::OBMolBondIter iterator(mol); iterator && out->count < result_limit; ++iterator)
+    {
+      const auto *bond = &*iterator;
+      if (bond == nullptr) continue;
+      OpenBabel::OBMol edited = mol;
+      auto *edited_bond = edited.GetBond(bond->GetBeginAtomIdx(), bond->GetEndAtomIdx());
+      if (edited_bond == nullptr) continue;
+      edited.DeleteBond(edited_bond);
+      edited.DeleteHydrogens();
+      edited.AddHydrogens();
+      const auto parts = edited.Separate();
+      if (parts.size() != 2) continue;
+      int loss_index = -1;
+      std::string loss_formula;
+      for (std::size_t part_index = 0; part_index < parts.size(); ++part_index)
+      {
+        std::string write_error;
+        auto part = parts[part_index];
+        const auto part_smiles = write_molecule(part, "can", write_error);
+        streamfind_ob_normalized_result normalized{};
+        if (part_smiles.empty() || !sf_ob_normalize_structure(part_smiles.c_str(), nullptr, &normalized) || !normalized.ok)
+          continue;
+        const std::string formula = normalized.formula;
+        if (std::find(allowed_losses.begin(), allowed_losses.end(), formula) != allowed_losses.end())
+        {
+          loss_index = static_cast<int>(part_index);
+          loss_formula = formula;
+          break;
+        }
+      }
+      if (loss_index < 0) continue;
+      const auto candidate_index = loss_index == 0 ? 1 : 0;
+      std::string write_error;
+      auto candidate_part = parts[static_cast<std::size_t>(candidate_index)];
+      const auto candidate_smiles = write_molecule(candidate_part, "can", write_error);
+      streamfind_ob_normalized_result normalized{};
+      if (candidate_smiles.empty() || !sf_ob_normalize_structure(candidate_smiles.c_str(), nullptr, &normalized) || !normalized.ok)
+        continue;
+      bool duplicate = false;
+      for (int index = 0; index < out->count; ++index)
+        if (std::string(out->smiles[index]) == normalized.canonical_smiles) { duplicate = true; break; }
+      if (duplicate) continue;
+      copy_text(out->smiles[out->count], streamfind_OB_SMILES_CAPACITY, normalized.canonical_smiles);
+      copy_text(out->formulas[out->count], streamfind_OB_FORMULA_CAPACITY, normalized.formula);
+      copy_text(out->labels[out->count], 64,
+                std::string("dealkylation_loss_") + loss_formula + "_bond_" + std::to_string(bond->GetIdx()));
+      out->masses[out->count] = normalized.exact_mass;
+      ++out->count;
+    }
+    return out->count;
+  }
+
   int sf_ob_render_structure_svg(
     const char *smiles,
     const char *inchi,
@@ -848,6 +1260,7 @@ extern "C"
     const char *bond_color,
     streamfind_ob_svg_result *out)
   {
+    const std::lock_guard<std::mutex> render_lock(streamfind::obabel_detail::structure_render_mutex);
     zero_svg_result(out);
     if (out == nullptr)
       return 0;

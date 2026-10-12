@@ -16,6 +16,42 @@ sfms:readMassSpecFiles
     sf:hasParameter sfms:sourcePathsParameter ;
     sf:hasOutputPort sfms:analysesTable, sfms:spectraHeadersTable, sfms:chromatogramsHeadersTable, sfcore:operationSuccessSignal .
 
+sfms:readCsvTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.read_csv_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Read CSV with targets" ;
+    skos:definition "Read a target CSV, validate numeric matching fields, normalize optional chemical structures with Open Babel, and publish a reusable targetsTable artifact." ;
+    sf:category "mass-spec-ingestion" ;
+    sf:hasParameter sfms:targetsCsvPathParameter ;
+    sf:hasOutputPort sfms:targetsTable, sfcore:operationSuccessSignal .
+
+sfms:readCsvSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.read_csv_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Read CSV with suspect targets" ;
+    skos:definition "Read a suspect-target CSV, require chemical identity fields, normalize them with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
+    sf:category "nta-identification" ;
+    sf:hasParameter sfms:suspectTargetsCsvPathParameter ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
+sfms:readMolSuspectTarget
+    a sf:Operation ;
+    sf:operationId "mass_spec.read_mol_suspect_target" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Read MOL suspect target" ;
+    skos:definition "Read one MDL MOL file, normalize its chemical structure with Open Babel, and publish all derived chemical descriptors as a reusable suspectTargetsTable artifact." ;
+    sf:category "mass-spec-ingestion" ;
+    sf:guidance "The optional compound_name overrides the MOL title; when omitted or empty, the MOL title is used and then Compound is used as a fallback. The operation does not invent MS2 reference peaks, retention time, polarity, or database identifiers." ;
+    sf:hasParameter
+        sfms:molFilePathParameter,
+        sfms:compoundNameParameter ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
 sfms:removeAnalyses
     a sf:Operation ;
     sf:operationId "mass_spec.remove_analyses" ;
@@ -317,7 +353,7 @@ sfms:getFeatures
     sf:operationId "mass_spec.get_features" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Get NTA features" ;
+    skos:prefLabel "Get features" ;
     skos:definition "Return a reduced, persisted featuresTable artifact containing features that match optional target rows. Omit analysis_names to search every analysis. Each target may provide mass, mz, rt, explicit bounds, analysis, and optional polarity; omitted polarity never filters. A mass or mz target is expanded by ppm, and an exact rt target is expanded by rt_tolerance seconds. The result includes the matched target name when supplied and is available for artifact inspection and downstream connections." ;
     sf:hasParameter
         sfms:analysisNamesParameter,
@@ -349,7 +385,7 @@ sfms:getInternalStandards
     sf:operationId "mass_spec.get_internal_standards" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Get NTA internal standards" ;
+    skos:prefLabel "Get internal standards" ;
     skos:definition "Read persisted non-target-analysis internal-standard assignments matching analysis, mass or m/z, retention time, and polarity targets." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
@@ -365,7 +401,7 @@ sfms:getTransformationProducts
     sf:operationId "mass_spec.get_transformation_products" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Get NTA transformation products" ;
+    skos:prefLabel "Get transformation products" ;
     skos:definition "Read persisted non-target-analysis transformation-product assignments matching analysis and mass targets. Transformation-product artifacts do not contain independent m/z or retention-time columns." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
@@ -465,13 +501,12 @@ sfms:findFeatures
     sf:operationId "mass_spec.find_features" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Find mass spectrometry features" ;
+    skos:prefLabel "Find features" ;
     skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
     sf:category "nta-feature-detection" ;
-    sf:guidance "Connect analysesTable. Connect spectraHeadersTable only when persisted headers are available; otherwise headers are read directly from the source files. The operation processes every analysis in analysesTable. rt_windows_min and rt_windows_max must be arrays of equal length." ;
+    sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range." ;
     sf:hasParameter
-        sfms:rtWindowsMinParameter,
-        sfms:rtWindowsMaxParameter,
+        sfms:rtWindowsParameter,
         sfms:ppmThresholdParameter,
         sfms:noiseThresholdParameter,
         sfms:minSnrParameter,
@@ -492,10 +527,10 @@ sfms:loadFeaturesMs1
     sf:operationId "mass_spec.load_features_ms1" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Load MS1 spectra for features" ;
+    skos:prefLabel "Load features MS1 spectra" ;
     skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
-    sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
+    sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
     sf:hasParameter
         sfms:filteredParameter,
         sfms:rtWindowParameter,
@@ -504,6 +539,7 @@ sfms:loadFeaturesMs1
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -512,10 +548,10 @@ sfms:loadFeaturesMs2
     sf:operationId "mass_spec.load_features_ms2" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Load MS2 spectra for features" ;
+    skos:prefLabel "Load features MS2 spectra" ;
     skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
     sf:category "nta-spectrum-loading" ;
-    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table; it updates ms2_size, ms2_mz, and ms2_intensity without requiring a separate spectraHeadersTable input." ;
+    sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. It updates ms2_size, ms2_mz, and ms2_intensity." ;
     sf:hasParameter
         sfms:filteredParameter,
         sfms:minTracesIntensityParameter,
@@ -523,6 +559,7 @@ sfms:loadFeaturesMs2
         sfms:mzClustParameter,
         sfms:presenceParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -531,14 +568,15 @@ sfms:subtractBlank
     sf:operationId "mass_spec.subtract_blank" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Subtract blank features" ;
-    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows." ;
+    skos:prefLabel "Subtract blank background" ;
+    skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows. The operation processes every analysis and resolves its associated blank replicate from analysesTable." ;
+    sf:guidance "Connect analysesTable and featuresTable. The replicate and blank columns in featuresTable describe feature rows but do not replace analysesTable: analysesTable remains required because it supplies authoritative native source paths and analysis indices needed to load each associated blank spectrum. Every analysis is processed using its blank assignment. Optionally connect spectraHeadersTable to reuse persisted spectra headers for RT/m/z targeting. Matching persisted headers avoid reparsing source headers; missing or stale rows fall back to native header loading." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:blankThresholdParameter,
         sfms:rtExpandParameter,
         sfms:mzExpandParameter ;
-    sf:hasInputPort sfms:featuresTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -550,7 +588,6 @@ sfms:filterFeatures
     skos:prefLabel "Filter features" ;
     skos:definition "Remove or flag features failing signal, shape, and quality criteria." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:minSnParameter,
         sfms:minIntensityParameter,
         sfms:minAreaParameter,
@@ -573,7 +610,6 @@ sfms:filterFeatures
         sfms:maxAsymmetryParameter,
         sfms:maxModalityParameter,
         sfms:minPlatesParameter,
-        sfms:onlyFilledParameter,
         sfms:removeFilledParameter,
         sfms:minSizeEicParameter,
         sfms:minSizeMs1Parameter,
@@ -612,15 +648,17 @@ sfms:groupFeatures
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Group features" ;
-    skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and an alignment method." ;
+    skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and the selected alignment method. The internal_standards method consumes the optional internalStandardsTable through the internal_standards table parameter; obi_warp does not require that table." ;
+    sf:guidance "Connect featuresTable. Select grouping_method from the constrained internal_standards or obi_warp options. When grouping_method is internal_standards, connect an internalStandardsTable result to the internal_standards table parameter; the operation rejects an empty or missing table in that mode." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
-        sfms:methodParameter,
+        sfms:groupingMethodParameter,
+        sfms:internalStandardsParameter,
         sfms:rtDeviationParameter,
         sfms:ppmParameter,
         sfms:minSamplesParameter,
         sfms:binSizeParameter ;
-    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -631,8 +669,8 @@ sfms:fillFeatures
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Fill feature gaps" ;
     skos:definition "Fill missing feature values across analyses by extracting and integrating EIC peaks in the expected windows." ;
+    sf:guidance "Connect featuresTable and use min_traces_intensity as the single MS1 intensity threshold. It is applied when extracting trace points and again when accepting the resulting filled feature; an analysis selector is not required and all analyses in the featuresTable are processed." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:withinReplicateParameter,
         sfms:filteredParameter,
         sfms:rtExpandParameter,
@@ -640,11 +678,11 @@ sfms:fillFeatures
         sfms:maxPeakWidthParameter,
         sfms:minTracesIntensityParameter,
         sfms:minNumberTracesParameter,
-        sfms:minIntensityMs1Parameter,
         sfms:rtApexDeviationParameter,
         sfms:minSignalToNoiseRatioParameter,
         sfms:minGaussianFitParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
+    sf:optionalInputPort sfms:spectraHeadersTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
 
@@ -672,13 +710,14 @@ sfms:annotateComponents
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Annotate components" ;
     skos:definition "Annotate feature components from every analysis with isotopic, adduct, and fragment relationships." ;
-    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80, and selected elements are resolved through IsoSpec++. Each feature receives an implicit polarity-specific base ion ([M+H]+ or [M-H]-). annotation_modifications is an optional allow-list of additional signed adduct/loss expressions; omitted uses the common small-molecule NTS defaults (+Na, +NH4, +K, +Cl, +FA-H, +CH3COO, -H2O, -CO2, -NH3, and -CO), an explicit empty list disables modification matching, and additional built-in or signed formulas such as 2M+Na, +2NOH, or -2NOH are validated and resolved through Open Babel. Adducts attach directly to a base ion; losses may form sequential chains but must ultimately resolve to that base ion." ;
     sf:hasParameter
         sfms:maxIsotopesParameter,
         sfms:maxChargeParameter,
         sfms:maxGapsParameter,
         sfms:ppmParameter,
         sfms:isotopeElementsParameter,
+        sfms:annotationModificationsParameter,
         sfms:debugComponentParameter,
         sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
@@ -690,10 +729,10 @@ sfms:suspectScreening
     sf:operationId "mass_spec.suspect_screening" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Screen suspect features" ;
-    skos:definition "Match detected features against suspect targets by accurate mass, retention time, and optional MS2 similarity, persist candidate assignments, and attach the best assignments to the feature records." ;
+    skos:prefLabel "Suspect screening" ;
+    skos:definition "Match detected features against suspect targets by structure-derived or supplied accurate mass, with optional retention-time, isotope, and MS2 evidence, and persist candidate assignments in a suspectsTable." ;
     sf:category "nta-identification" ;
-    sf:guidance "Run after load_features_ms2 when MS2 assignment is required. Each target should provide a name, mass or formula, optional retention time, and optional MS2 reference peaks. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; an empty analysis_names array processes every analysis." ;
+    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and MS2 reference peaks are optional. Isotope matching is informational only and does not control candidate retention or identification level. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
@@ -703,9 +742,10 @@ sfms:suspectScreening
         sfms:mzrMs2Parameter,
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
+        sfms:isotopePpmParameter,
         sfms:filteredParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 
 sfms:findInternalStandards
@@ -714,9 +754,9 @@ sfms:findInternalStandards
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards" ;
-    skos:definition "Match detected features against internal-standard targets by mass, RT, and MS2 similarity." ;
+    skos:definition "Match detected features against internal-standard targets by mass, RT, isotope, and MS2 evidence, and publish the matches in the independent internalStandardsTable contract used by alignment, correction, and QC operations." ;
+    sf:guidance "Provide internal-standard targets through suspect_targets. The operation processes every analysis in the connected featuresTable; analysis_names is not required. It emits only internalStandardsTable and an operation-success signal. Feature groups and components may be empty when the operation runs directly after feature detection; use enrichInternalStandards after grouping or component creation to update that context." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
@@ -724,9 +764,22 @@ sfms:findInternalStandards
         sfms:mzrMs2Parameter,
         sfms:minCosineSimilarityParameter,
         sfms:minSharedFragmentsParameter,
+        sfms:isotopePpmParameter,
         sfms:filteredParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfms:internalStandardsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
+
+
+sfms:enrichInternalStandards
+    a sf:Operation ;
+    sf:operationId "mass_spec.enrich_internal_standards" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Enrich internal standards" ;
+    skos:definition "Update internal-standard rows with feature group, component, and adduct context from the current featuresTable." ;
+    sf:guidance "Use after groupFeatures, createComponents, or annotateComponents when internal standards were created earlier. Rows are matched within each analysis by feature identity; unmatched rows remain unchanged. The operation mutates only the internalStandardsTable projection and does not require suspect targets." ;
+    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 
 sfms:correctMatrixSuppression
@@ -735,9 +788,9 @@ sfms:correctMatrixSuppression
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Correct matrix suppression" ;
-    skos:definition "Apply matrix/suppression correction factors derived from analysis intensity profiles." ;
+    skos:definition "Apply matrix/suppression correction factors derived from all analysis intensity profiles." ;
+    sf:guidance "Connect featuresTable and, when available, internalStandardsTable. The operation processes every analysis represented by the connected featuresTable; no analysis selector is required. The reference blank replicate may be left empty to use the available blank metadata." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:mpRtWindowParameter,
         sfms:refBlankReplicateParameter ;
     sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
@@ -770,9 +823,9 @@ sfms:filterInternalStandards
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Filter internal standards" ;
-    skos:definition "Refine internal-standard matches by applying name, score, RT/mass error, identification-level, fragment, and cosine-similarity thresholds." ;
+    skos:definition "Refine internal-standard matches using only the rows and evidence stored in internalStandardsTable." ;
+    sf:guidance "Connect internalStandardsTable. The operation does not require featuresTable or an analysis selector; all filters are applied to every persisted internal-standard row and the result is emitted as a new internalStandardsTable." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:namesParameter,
         sfms:minScoreParameter,
         sfms:maxErrorRtParameter,
@@ -780,7 +833,7 @@ sfms:filterInternalStandards
         sfms:idLevelsParameter,
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
-    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 
@@ -790,14 +843,14 @@ sfms:assignTransformationProducts
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Assign transformation products" ;
-    skos:definition "Assign plausible biotransformation products to suspected features using transformation-product candidates, scoring combinations by mass/MS2 cosine similarity and logP-based retention-time plausibility, and append the assignments to the suspect results." ;
+    skos:definition "Assign plausible biotransformation products to suspected features using transformation-product candidates, scoring combinations by mass/MS2 cosine similarity and logP-based retention-time plausibility, and emit the scored assignments as an independent transformationProductsTable." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:transformationProductsParameter,
         sfms:chromatographicPhaseParameter,
         sfms:mzrMs2Parameter ;
     sf:hasInputPort sfms:featuresTable, sfms:suspectsTable ;
-    sf:hasOutputPort sfms:suspectsTable, sfms:transformationProductsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:transformationProductsTable, sfcore:operationSuccessSignal .
 
 
 sfms:metfragScreening
@@ -805,17 +858,16 @@ sfms:metfragScreening
     sf:operationId "mass_spec.metfrag_screening" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
-    skos:prefLabel "Screen features with MetFrag" ;
-    skos:definition "Run in-silico MetFrag fragmenter screening for detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit and never automatic: run 'streamfind-cli tools install java' and 'streamfind-cli tools install metfrag', then retry this method." ;
+    skos:prefLabel "Suspect screening with MetFrag" ;
+    skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Provide candidate structures through the suspect_targets parameter; retention time and MS2 reference peaks are optional." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
-        sfms:databaseTypeParameter,
-        sfms:databaseParameter,
+        sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
         sfms:mzrMs2Parameter,
+        sfms:isotopePpmParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -827,4 +879,84 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfms:suspectsTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
+
+sfms:findInternalStandardsMetfrag
+    a sf:Operation ;
+    sf:operationId "mass_spec.find_internal_standards_metfrag" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Find internal standards with MetFrag" ;
+    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
+    skos:guidance "Use after loadFeaturesMs2 when experimental MS2 is available; features without experimental MS2 can still receive precursor-mass candidate assignments. Provide targets through the Mass spectrometry suspect targets parameter, using the same target configuration as Find internal standards. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    sf:hasParameter
+        sfms:suspectTargetsParameter,
+        sfms:ppmParameter,
+        sfms:secParameter,
+        sfms:ppmMs2Parameter,
+        sfms:mzrMs2Parameter,
+        sfms:isotopePpmParameter,
+        sfms:topNParameter,
+        sfms:scoreTypesParameter,
+        sfms:scoreWeightsParameter,
+        sfms:preProcessingCandidateFilterParameter,
+        sfms:postProcessingCandidateFilterParameter,
+        sfms:maximumTreeDepthParameter,
+        sfms:numberThreadsParameter,
+        sfms:useSmilesParameter,
+        sfms:filteredParameter,
+        sfms:debugParameter ;
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
+
+sfms:fragmentSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.fragment_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Generate suspect fragmentation trees" ;
+    skos:definition "Generate a structural top-down fragmentation tree for every SMILES in the connected suspectTargetsTable using the standalone MetFrag Fragmenter CLI, preserving MetFrag-generated parent links and exposed structure metadata." ;
+    sf:category "structure-fragmentation" ;
+    sf:guidance "Connect suspectTargetsTable. Rows without SMILES are skipped. Requires Java 21 and the streamfind MetFrag Fragmenter JAR. Install dependency mass_spec.metfrag_fragmenter to download the pinned public v0.1.0 release into <streamfind-home>/tools/metfrag/streamfind-metfrag-fragmenter.jar, or set STREAMFIND_METFRAG_FRAGMENTER_JAR to a local JAR path. Parent links describe the generator's top-down traversal, not experimentally observed MS/MS transitions. Neutral-loss structures are limited to matches exposed by MetFrag." ;
+    sf:hasParameter sfms:fragmentationDepthParameter ;
+    sf:hasInputPort sfms:suspectTargetsTable ;
+    sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .
+
+sfms:fragmentationToSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.fragmentation_to_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Convert fragments to suspect targets" ;
+    skos:definition "Convert each generated fragmentationTreeTable row into a chemical candidate row in suspectTargetsTable for downstream suspect screening, normalizing SMILES-derived descriptors with Open Babel when available." ;
+    sf:category "structure-conversion" ;
+    sf:guidance "Connect a MetFrag fragmentationTreeTable. Each fragment with a non-empty SMILES becomes one suspect target, with its fragment identifier appended to the source name. Open Babel canonicalizes the SMILES and derives formula, exact mass, InChI, InChIKey, and xLogP when available. Fragment parent/provenance fields remain in the source fragmentation artifact. The default retains at most two representative SMILES per formula to keep screening practical; set number_duplicate_formulas to another positive value for a controlled isomer set, or explicitly use zero to keep all rows." ;
+    sf:hasParameter sfms:numberDuplicateFormulasParameter ;
+    sf:hasInputPort sfms:fragmentationTreeTable ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
+sfms:expandFragmentationTree
+    a sf:Operation ;
+    sf:operationId "mass_spec.expand_fragmentation_tree" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Expand fragmentation tree inversely" ;
+    skos:definition "Extend a one-compound fragmentationTreeTable with bounded, structure-bearing inverse-fragmentation candidates and return the same table contract. The MOL-derived row without parent_id is the main compound at depth 0; every generated graph-edit candidate is assigned depth -1." ;
+    sf:category "structure-fragmentation" ;
+    sf:guidance "Connect one fragmentationTreeTable generated from one MOL-derived suspect. The operation requires exactly one row without parent_id and rejects multi-root input to prevent mixing compounds. It preserves all original rows and appends depth -1 candidates. Unique observed fragment SMILES are attached at a bounded number of valid root/fragment positions; a second observed fragment may then be attached to model multi-unit impurities. A separate local-edit layer adds positional H/D exchange and simple oxygenation, fluorination, chlorination, and bromination hypotheses. Remaining capacity is filled with validated non-aromatic bond-order isomers. Open Babel canonicalizes every candidate and derives its formula and exact mass; provenance records the source fragment(s) and transformation. max_inverse_candidates caps the complete result, while the other parameters bound attachment positions, multi-unit expansion, and local edits. Formula-only composition hypotheses are intentionally handled by a separate formula-processing operation." ;
+    sf:hasParameter sfms:maxInverseCandidatesParameter, sfms:maxAttachmentVariantsPerFragmentParameter, sfms:maxFragmentUnitsPerCandidateParameter, sfms:maxLocalEditCandidatesParameter ;
+    sf:hasInputPort sfms:fragmentationTreeTable ;
+    sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .
+
+sfms:filterFragmentationTree
+    a sf:Operation ;
+    sf:operationId "mass_spec.filter_fragmentation_tree" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Filter fragmentation tree" ;
+    skos:definition "Filter fragmentationTreeTable rows by inclusive exact-mass bounds and limit repeated structures sharing the same formula while preserving the fragmentation-tree schema." ;
+    sf:category "structure-fragmentation" ;
+    sf:guidance "Connect one fragmentationTreeTable. Minimum and maximum fragment mass are inclusive and nullable. number_duplicate_formulas limits the number of rows retained per non-empty formula; zero keeps all rows. Filtering is applied in depth order and does not invent candidates or change parent links." ;
+    sf:hasParameter sfms:fragmentationTreeMinimumMassParameter, sfms:fragmentationTreeMaximumMassParameter, sfms:numberDuplicateFormulasParameter ;
+    sf:hasInputPort sfms:fragmentationTreeTable ;
+    sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .

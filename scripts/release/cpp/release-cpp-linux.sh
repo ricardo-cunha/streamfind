@@ -14,20 +14,34 @@ if [[ "${STREAMFIND_SKIP_FRONTEND_BUILD:-0}" == 0 ]]; then
     (cd "$FRONTEND" && npm ci && npm run build)
 fi
 test -f "$FRONTEND_DIST/index.html"
-cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
+cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
 cmake --build "$BUILD" --parallel "${STREAMFIND_JOBS:-$(nproc)}"
 [[ "${STREAMFIND_RUN_TESTS:-1}" == 0 ]] || (cd "$BUILD" && ctest --output-on-failure)
 (cd "$BUILD" && cpack -G TGZ -C Release -B "$OUT")
 ARCH="$(uname -m)"; source_archive="$OUT/streamfind-core-cpp-$VERSION-Linux-$ARCH.tar.gz"; archive="$OUT/streamfind-core-cpp-$VERSION-Linux-$ARCH.tgz"
 if [[ -f "$source_archive" ]]; then mv -f "$source_archive" "$archive"; fi
 test -f "$archive"; assert_archive "$archive" licenses
+runtime_root="$REPO_ROOT/tmp/scratch/linux-release-runtime"
+rm -rf "$runtime_root"
+mkdir -p "$runtime_root"
+tar -xzf "$archive" -C "$runtime_root"
+package_root="$(find "$runtime_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+test -n "$package_root"
+PYTHON="${STREAMFIND_PYTHON:-$REPO_ROOT/.venv/bin/python}"
+test -x "$PYTHON"
+"$PYTHON" "$REPO_ROOT/scripts/dev/validate_native_dependencies.py" "$package_root" --platform linux
+"$PYTHON" "$REPO_ROOT/scripts/release/cpp/test-packaged-mcp-linux.py" "$package_root"
 listing="${archive}.list"
 tar -tzf "$archive" > "$listing"
 grep -Eq '(^|/)app/index\.html$' "$listing"
 grep -Eq '(^|/)streamfind$' "$listing"
 plugin_manifests=$(grep -E '(^|/)plugins/[^/]+/plugin\.json$' "$listing")
 test -n "$plugin_manifests"
-grep -Eq '(^|/)lib/libduckdb_static\.a$' "$listing"
+if grep -Eq '(^|/)sdk/' "$listing"; then
+    echo "runtime archive must not contain an sdk directory" >&2
+    exit 1
+fi
+grep -Eq '(^|/)core/catalogue\.duckdb$' "$listing"
 while IFS= read -r manifest_path; do
     domain="$(dirname "$manifest_path" | xargs basename)"
     manifest_file="${archive}.${domain}.manifest"
@@ -44,5 +58,6 @@ while IFS= read -r manifest_path; do
     rm -f "$manifest_file"
 done <<< "$plugin_manifests"
 rm -f "$listing"
+rm -rf "$runtime_root"
 (cd "$OUT" && find . -maxdepth 1 -type f \( -name 'streamfind-*.tgz' -o -name 'streamfind-*.tar.gz' \) -printf '%f\n' | sort | xargs -r sha256sum > sha256sums.txt)
 echo "C++ Linux release: $archive"

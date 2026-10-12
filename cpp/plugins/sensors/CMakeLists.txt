@@ -34,5 +34,7 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/sensors)
 install(TARGETS streamfind_sensors_plugin
     RUNTIME DESTINATION plugins/sensors
-    LIBRARY DESTINATION plugins/sensors
-    ARCHIVE DESTINATION sdk/lib)
+    LIBRARY DESTINATION plugins/sensors)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_sensors_plugin ARCHIVE DESTINATION sdk/lib)
+endif()

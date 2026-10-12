@@ -107,6 +107,12 @@ function(streamfind_configure_dependencies vendor_root)
             "${CMAKE_BINARY_DIR}/streamfind-vendored-zlib"
             EXCLUDE_FROM_ALL
         )
+        # The developer kit installs vendored headers below sdk/include.
+        set_property(TARGET streamfind_zlib PROPERTY
+            INTERFACE_INCLUDE_DIRECTORIES
+            "$<BUILD_INTERFACE:${_vendor_root}/zlib/zlib-develop>"
+            "$<INSTALL_INTERFACE:sdk/include>"
+        )
     endif()
 
     set(STREAMFIND_VENDOR_DIR "${_vendor_root}" PARENT_SCOPE)

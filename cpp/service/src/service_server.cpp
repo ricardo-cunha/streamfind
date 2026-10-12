@@ -1,16 +1,22 @@
 #include "streamfind/service/service_server.hpp"
 #include "streamfind/service/service_protocol.hpp"
+#include "streamfind/core/vendors/openbabel.hpp"
+#include "fixedEnvelopes.h"
+#include "element_tables.h"
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <cwchar>
 #include <filesystem>
 #include <functional>
 #include <fstream>
+#include <memory>
+#include <map>
 #include <random>
 #include <set>
 #include <sstream>
@@ -35,6 +41,127 @@ using streamfind_socket_t = int;
 
 namespace streamfind::service {
 namespace detail {
+
+struct IsotopePatternFormula {
+    std::string natural_formula;
+    double fixed_mass_delta = 0.0;
+    std::vector<std::string> fixed_labels;
+};
+
+std::string isotope_formula_without_charge(const std::string &formula) {
+    auto normalized = formula;
+    while (!normalized.empty() && std::isspace(static_cast<unsigned char>(normalized.back())))
+        normalized.pop_back();
+    if (!normalized.empty() && (normalized.back() == '+' || normalized.back() == '-'))
+        normalized.pop_back();
+    return normalized;
+}
+
+int isotope_table_index(const std::string &symbol, int mass_number) {
+    for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
+        if (symbol == IsoSpec::elem_table_symbol[index] &&
+            static_cast<int>(std::llround(IsoSpec::elem_table_massNo[index])) == mass_number)
+            return static_cast<int>(index);
+    }
+    return -1;
+}
+
+int most_abundant_isotope_table_index(const std::string &symbol) {
+    int best = -1;
+    for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
+        if (symbol != IsoSpec::elem_table_symbol[index] || IsoSpec::elem_table_Radioactive[index] ||
+            IsoSpec::elem_table_probability[index] <= 0.0)
+            continue;
+        if (best < 0 || IsoSpec::elem_table_probability[index] > IsoSpec::elem_table_probability[best])
+            best = static_cast<int>(index);
+    }
+    return best;
+}
+
+int nearest_isotope_table_index(double mass) {
+    int best = -1;
+    double best_distance = std::numeric_limits<double>::max();
+    for (std::size_t index = 0; index < IsoSpec::isospec_number_of_isotopic_entries; ++index) {
+        const double distance = std::abs(IsoSpec::elem_table_mass[index] - mass);
+        if (distance < best_distance) {
+            best = static_cast<int>(index);
+            best_distance = distance;
+        }
+    }
+    return best_distance <= 1e-3 ? best : -1;
+}
+
+IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) {
+    IsotopePatternFormula result;
+    std::map<std::string, int> natural_elements;
+    const auto formula_body = isotope_formula_without_charge(formula);
+    if (formula_body.empty()) return {};
+    const auto add_natural_element = [&natural_elements](const std::string &symbol, int count) {
+        natural_elements[symbol] += count;
+    };
+    for (std::size_t index = 0; index < formula_body.size();) {
+        if (formula_body[index] == '[') {
+            const auto close = formula_body.find(']', index + 1);
+            if (close == std::string::npos) return {};
+            const auto token = formula_body.substr(index + 1, close - index - 1);
+            std::size_t symbol_start = 0;
+            while (symbol_start < token.size() && std::isdigit(static_cast<unsigned char>(token[symbol_start])))
+                ++symbol_start;
+            if (symbol_start == 0 || symbol_start == token.size()) return {};
+            const auto mass_number = std::stoi(token.substr(0, symbol_start));
+            const auto symbol = token.substr(symbol_start);
+            const auto isotope_index = isotope_table_index(symbol, mass_number);
+            const auto base_index = most_abundant_isotope_table_index(symbol);
+            if (isotope_index < 0 || base_index < 0) return {};
+
+            std::size_t cursor = close + 1;
+            const auto count_start = cursor;
+            while (cursor < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[cursor]))) ++cursor;
+            const auto count = count_start == cursor ? 1 : std::stoi(formula_body.substr(count_start, cursor - count_start));
+            if (count <= 0) return {};
+            add_natural_element(symbol, count);
+            result.fixed_mass_delta += static_cast<double>(count) *
+                (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+            for (int repeat = 0; repeat < count; ++repeat)
+                result.fixed_labels.push_back(std::to_string(mass_number) + symbol);
+            index = cursor;
+            continue;
+        }
+
+        if (formula_body[index] == 'D' || formula_body[index] == 'T') {
+            const int mass_number = formula_body[index] == 'D' ? 2 : 3;
+            const auto isotope_index = isotope_table_index("H", mass_number);
+            const auto base_index = most_abundant_isotope_table_index("H");
+            if (isotope_index < 0 || base_index < 0) return {};
+            ++index;
+            const auto count_start = index;
+            while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
+            const auto count = count_start == index ? 1 : std::stoi(formula_body.substr(count_start, index - count_start));
+            if (count <= 0) return {};
+            add_natural_element("H", count);
+            result.fixed_mass_delta += static_cast<double>(count) *
+                (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+            for (int repeat = 0; repeat < count; ++repeat)
+                result.fixed_labels.push_back(std::to_string(mass_number) + "H");
+            continue;
+        }
+
+        if (formula_body[index] < 'A' || formula_body[index] > 'Z') return {};
+        std::string symbol(1, formula_body[index++]);
+        if (index < formula_body.size() && formula_body[index] >= 'a' && formula_body[index] <= 'z')
+            symbol.push_back(formula_body[index++]);
+        const auto count_start = index;
+        while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
+        const auto count = count_start == index ? 1 : std::stoi(formula_body.substr(count_start, index - count_start));
+        if (count <= 0) return {};
+        add_natural_element(symbol, count);
+    }
+    for (const auto &[symbol, count] : natural_elements) {
+        result.natural_formula += symbol;
+        result.natural_formula += std::to_string(count);
+    }
+    return result;
+}
 
 #ifdef _WIN32
 std::string pick_database_file(bool create) {
@@ -294,7 +421,7 @@ void send_file(std::intptr_t socket, const std::filesystem::path &root, const st
     std::ifstream input(file, std::ios::binary);
     const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     const auto extension = file.extension().string();
-    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : extension == ".js" ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
+    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : extension == ".js" ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".json" ? "application/json; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
     send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: " + std::string(content_type) + "\r\nContent-Length: " + std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
 }
 
@@ -320,23 +447,145 @@ bool receive_exact(std::intptr_t socket, unsigned char *buffer, std::size_t size
     return true;
 }
 
+std::string read_text_file(const std::filesystem::path &path) {
+    std::ifstream input(path);
+    if (!input) throw std::runtime_error("unable to read workflow demo: " + path.string());
+    return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+}
+
+std::vector<std::filesystem::path> workflow_demo_files(const std::filesystem::path &package_root) {
+    std::vector<std::filesystem::path> files;
+    const auto plugins = package_root / "plugins";
+    if (!std::filesystem::exists(plugins)) return files;
+    for (const auto &plugin : std::filesystem::directory_iterator(plugins)) {
+        if (!plugin.is_directory()) continue;
+        const auto workflows = plugin.path() / "resources" / "workflows";
+        if (!std::filesystem::exists(workflows)) continue;
+        for (const auto &entry : std::filesystem::directory_iterator(workflows))
+            if (entry.is_regular_file() && entry.path().extension() == ".json") files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
 }  // namespace detail
 
-void EventBroker::add(std::intptr_t socket) { std::lock_guard lock(mutex_); clients_.push_back(socket); }
-void EventBroker::remove(std::intptr_t socket) { std::lock_guard lock(mutex_); clients_.erase(std::remove(clients_.begin(), clients_.end(), socket), clients_.end()); }
-void EventBroker::publish(const Json &event) {
+EventBroker::EventBroker() : worker_([this] { run(); }) {}
+
+EventBroker::~EventBroker() {
+    {
+        std::lock_guard lock(mutex_);
+        stopping_ = true;
+    }
+    condition_.notify_one();
+    if (worker_.joinable()) worker_.join();
+}
+
+void EventBroker::add(std::intptr_t socket) {
     std::lock_guard lock(mutex_);
-    for (const auto socket : clients_) {
-        try { detail::send_all(socket, detail::websocket_frame(event.dump())); } catch (...) {}
+    if (std::find(clients_.begin(), clients_.end(), socket) == clients_.end())
+        clients_.push_back(socket);
+}
+
+void EventBroker::remove(std::intptr_t socket) {
+    std::lock_guard lock(mutex_);
+    clients_.erase(std::remove(clients_.begin(), clients_.end(), socket), clients_.end());
+}
+
+std::string event_project_id(const Json &event) {
+    const auto project = event.find("project");
+    if (project == event.end() || project->is_null()) return {};
+    if (project->is_string()) return project->get<std::string>();
+    if (project->is_object()) {
+        const auto session_id = project->find("session_id");
+        if (session_id != project->end() && session_id->is_string()) return session_id->get<std::string>();
+    }
+    return {};
+}
+
+void EventBroker::publish(const Json &event) {
+    Json queued = event;
+    {
+        std::lock_guard lock(mutex_);
+        queued["event_id"] = next_event_id_++;
+        queued["timestamp_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        const auto project = event_project_id(queued);
+        if (!project.empty()) {
+            static constexpr std::size_t max_history_events = 32768;
+            auto &project_history = history_[project];
+            if (project_history.size() >= max_history_events) project_history.pop_front();
+            project_history.push_back(queued);
+        }
+        static constexpr std::size_t max_pending_events = 8192;
+        if (pending_.size() >= max_pending_events) pending_.pop_front();
+        pending_.push_back(std::move(queued));
+    }
+    condition_.notify_one();
+}
+
+Json EventBroker::history(const std::string &project_id, std::uint64_t after_event_id,
+                          std::size_t limit) const {
+    std::lock_guard lock(mutex_);
+    const auto found = history_.find(project_id);
+    Json events = Json::array();
+    if (found == history_.end())
+        return Json{{"project", project_id}, {"events", events}, {"has_more", false},
+                    {"oldest_event_id", nullptr}, {"latest_event_id", nullptr}, {"gap", false}};
+    limit = std::clamp<std::size_t>(limit, 1, 20000);
+    for (const auto &event : found->second) {
+        if (event.value("event_id", std::uint64_t{0}) <= after_event_id) continue;
+        if (events.size() >= limit) break;
+        events.push_back(event);
+    }
+    const auto &project_history = found->second;
+    const auto oldest = project_history.front().value("event_id", std::uint64_t{0});
+    const auto latest = project_history.back().value("event_id", std::uint64_t{0});
+    const bool gap = after_event_id != 0 && after_event_id + 1 < oldest;
+    const bool has_more = !events.empty() && events.back().value("event_id", std::uint64_t{0}) < latest;
+    return Json{{"project", project_id}, {"events", events}, {"has_more", has_more},
+                {"oldest_event_id", oldest}, {"latest_event_id", latest}, {"gap", gap}};
+}
+
+void EventBroker::run() {
+    while (true) {
+        Json event;
+        std::vector<std::intptr_t> clients;
+        {
+            std::unique_lock lock(mutex_);
+            condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+            if (stopping_ && pending_.empty()) return;
+            event = std::move(pending_.front());
+            pending_.pop_front();
+            clients = clients_;
+        }
+        const auto frame = detail::websocket_frame(event.dump());
+        std::vector<int> failed;
+        for (const auto socket : clients) {
+            try { detail::send_all(socket, frame); }
+            catch (...) { failed.push_back(socket); }
+        }
+        if (!failed.empty()) {
+            std::lock_guard lock(mutex_);
+            for (const auto socket : failed)
+                clients_.erase(std::remove(clients_.begin(), clients_.end(), socket), clients_.end());
+        }
     }
 }
 
 ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
     const std::filesystem::path &application_root)
-    : port_(port), application_root_(application_root), projects_(operations_) {
-    projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view message) {
-        events_.publish(Json{{"type", "operation.log"}, {"project", session_id},
-                             {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}});
+    : port_(port), application_root_(application_root), runtime_root_(configuration_path.parent_path()), projects_(operations_) {
+    projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view operation_id, std::string_view message) {
+        Json event{{"type", "operation.log"}, {"project", session_id},
+                   {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}};
+        if (!operation_id.empty()) event["operation_id"] = std::string(operation_id);
+        events_.publish(event);
+    });
+    projects_.set_operation_event_callback([this](const std::string &session_id, std::string_view operation_id, std::string_view type, const Json &payload) {
+        Json event{{"type", std::string(type)}, {"project", session_id}, {"payload", payload}};
+        if (!operation_id.empty()) event["operation_id"] = std::string(operation_id);
+        events_.publish(event);
     });
 #ifdef _WIN32
     WSADATA data{};
@@ -348,6 +597,35 @@ ServiceServer::~ServiceServer() { stop();
 #ifdef _WIN32
     WSACleanup();
 #endif
+}
+
+Json ServiceServer::workflow_demos() const {
+    Json workflows = Json::array();
+    auto files = detail::workflow_demo_files(application_root_.parent_path());
+    if (files.empty() && runtime_root_ != application_root_.parent_path())
+        files = detail::workflow_demo_files(runtime_root_);
+    for (const auto &file : files) {
+        try {
+            const auto document = Json::parse(detail::read_text_file(file));
+            const auto workflow = document.contains("workflow") ? document.at("workflow") : document;
+            auto parsed = Workflow::from_json(workflow);
+            parsed.validate(operations_);
+            Json metadata = document.value("metadata", Json::object());
+            const auto id = metadata.value("id", file.stem().string());
+            workflows.push_back({
+                {"id", id},
+                {"name", metadata.value("name", parsed.name.empty() ? id : parsed.name)},
+                {"description", metadata.value("description", "Workflow demonstration")},
+                {"use_case", metadata.value("use_case", "")},
+                {"domain", metadata.value("domain", "")},
+                {"metadata", metadata},
+                {"workflow", parsed.to_json()}
+            });
+        } catch (const std::exception &) {
+            // Invalid demos are not exposed; release validation should catch them.
+        }
+    }
+    return workflows;
 }
 
 void ServiceServer::stop() { stopping_ = true; if (listener_ != -1) detail::close_socket(listener_); }
@@ -454,8 +732,117 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             const auto body_start = separator + 4;
             const auto body = body_start < request.size() ? request.substr(body_start) : std::string{};
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
-            else if (method == "GET" && std::filesystem::exists(application_root_) && (path == "/" || path.rfind("/assets/", 0) == 0)) detail::send_file(socket, application_root_, path);
+            else if (method == "GET" && std::filesystem::exists(application_root_) &&
+                     (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
+                detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
+            else if (method == "POST" && path == "/chemistry/structure-svg") {
+                const auto input = Json::parse(body);
+                const auto optional_string = [&input](const char *key) {
+                    const auto it = input.find(key);
+                    if (it == input.end() || it->is_null()) return std::string{};
+                    return it->get<std::string>();
+                };
+                const auto result = ::streamfind::core::vendors::openbabel::render_structure_svg(
+                    optional_string("smiles"),
+                    optional_string("inchi"),
+                    std::clamp(input.value("width", 320), 80, 1600),
+                    std::clamp(input.value("height", 240), 80, 1200),
+                    optional_string("bond_color"));
+                if (!result.ok) detail::send_http(socket, 422, Json{{"error", result.error}});
+                else detail::send_http(socket, 200, Json{{"svg", result.svg}});
+            }
+            else if (method == "POST" && path == "/chemistry/isotope-pattern") {
+                const auto input = Json::parse(body);
+                const auto formula = input.value("formula", std::string{});
+                if (formula.empty()) throw std::invalid_argument("formula is required");
+                const auto parsed_formula = detail::parse_isotope_pattern_formula(formula);
+                if (parsed_formula.natural_formula.empty())
+                    throw std::invalid_argument("invalid formula or isotope label");
+                const auto &normalized_formula = parsed_formula.natural_formula;
+                const auto formula_body = detail::isotope_formula_without_charge(formula);
+                std::vector<std::string> element_symbols;
+                for (std::size_t index = 0; index < formula_body.size();) {
+                    if (formula_body[index] == '[') {
+                        const auto close = formula_body.find(']', index + 1);
+                        if (close == std::string::npos) throw std::invalid_argument("invalid formula");
+                        index = close + 1;
+                        while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
+                        continue;
+                    }
+                    if (formula_body[index] == 'D' || formula_body[index] == 'T') {
+                        ++index;
+                        while (index < formula_body.size() && std::isdigit(static_cast<unsigned char>(formula_body[index]))) ++index;
+                        continue;
+                    }
+                    if (formula_body[index] < 'A' || formula_body[index] > 'Z') throw std::invalid_argument("invalid formula");
+                    const auto symbol_start = index;
+                    index++;
+                    if (index < formula_body.size() && formula_body[index] >= 'a' && formula_body[index] <= 'z') index++;
+                    element_symbols.push_back(formula_body.substr(symbol_start, index - symbol_start));
+                    while (index < formula_body.size() && formula_body[index] >= '0' && formula_body[index] <= '9')
+                        index++;
+                }
+                IsoSpec::Iso isotope_model(normalized_formula);
+                auto envelope = IsoSpec::FixedEnvelope::FromTotalProb(
+                    isotope_model, input.value("probability", 0.999), true, true);
+                envelope.sort_by_mass();
+                const auto max_peaks = static_cast<std::size_t>(std::clamp(input.value("max_peaks", 12), 2, 64));
+                const auto charge = input.value("charge", 0);
+                const double ion_offset = static_cast<double>(charge) * 1.007276466621;
+                Json masses = Json::array();
+                Json probabilities = Json::array();
+                Json labels = Json::array();
+                std::vector<double> isotope_masses;
+                std::vector<double> isotope_probabilities;
+                int *isotope_numbers = nullptr;
+                int *atom_counts = nullptr;
+                unsigned int conf_size = 0;
+                const auto dimensions = IsoSpec::parse_formula(
+                    normalized_formula.c_str(), isotope_masses, isotope_probabilities,
+                    &isotope_numbers, &atom_counts, &conf_size, false);
+                std::unique_ptr<int[]> isotope_numbers_owner(isotope_numbers);
+                std::unique_ptr<int[]> atom_counts_owner(atom_counts);
+                for (std::size_t index = 0; index < envelope.confs_no() && masses.size() < max_peaks; ++index) {
+                    if (envelope.prob(index) < 1e-5) continue;
+                    masses.push_back(envelope.mass(index) + parsed_formula.fixed_mass_delta + ion_offset);
+                    probabilities.push_back(envelope.prob(index));
+                    std::vector<std::string> heavy_isotopes = parsed_formula.fixed_labels;
+                    const auto *configuration = envelope.conf(index);
+                    std::size_t isotope_offset = 0;
+                    for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
+                        for (int isotope = 0; isotope < isotope_numbers[dimension]; ++isotope) {
+                            const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
+                            if (isotope == 0 || count <= 0) continue;
+                            const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
+                            const int table_index = detail::nearest_isotope_table_index(mass);
+                            const auto label = table_index >= 0
+                                ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) +
+                                      IsoSpec::elem_table_symbol[table_index]
+                                : element_symbols[dimension];
+                            for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
+                        }
+                        isotope_offset += static_cast<std::size_t>(isotope_numbers[dimension]);
+                    }
+                    labels.push_back(heavy_isotopes.empty() ? "M" : [&heavy_isotopes]() {
+                        std::string combined;
+                        for (const auto &label : heavy_isotopes) {
+                            if (!combined.empty()) combined += "-";
+                            combined += label;
+                        }
+                        return combined;
+                    }());
+                }
+                detail::send_http(socket, 200, Json{{"formula", formula}, {"mz", masses}, {"probability", probabilities}, {"labels", labels}});
+            }
+            else if (method == "GET" && path == "/dependencies")
+                detail::send_http(socket, 200, Json{{"dependencies", plugin_runtime_.dependencies()}});
+            else if (method == "POST" && path == "/dependencies/install") {
+                const auto request = Json::parse(body);
+                if (!request.value("allow_network", false))
+                    throw std::invalid_argument("dependency installation requires allow_network=true");
+                detail::send_http(socket, 200, plugin_runtime_.install_dependencies(request));
+            }
             else if (method == "GET" && route == "/capabilities/index") detail::send_http(socket, 200, capability_index_json());
             else if (method == "GET" && route.rfind("/capabilities/domains/", 0) == 0 && route.ends_with("/modules")) {
                 const auto domain = detail::percent_decode(route.substr(std::string("/capabilities/domains/").size(), route.size() - std::string("/capabilities/domains/").size() - std::string("/modules").size()));
@@ -485,6 +872,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     }
                 if (!found) detail::send_http(socket, 404, Json{{"error", "operation not found"}, {"operation", operation_id}});
             }
+            else if (method == "GET" && path == "/workflow-demos") detail::send_http(socket, 200, Json{{"workflows", workflow_demos()}});
             else if (method == "GET" && path == "/capabilities") detail::send_http(socket, 200, capabilities_json());
             else if (method == "GET" && path == "/projects") {
                 Json result = Json::array(); for (const auto &project : projects_.list()) result.push_back(project); detail::send_http(socket, 200, Json{{"projects", result}});
@@ -543,6 +931,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/artifacts/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.clear_all_artifacts(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/node/clear")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/node/clear");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                const auto request = Json::parse(body);
+                detail::send_http(socket, 200, projects_.clear_node_artifacts(session_id, request.value("producer_instance", std::string{})));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
@@ -553,6 +947,20 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow/state");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.workflow_snapshot(session_id));
+            } else if (method == "GET" && route.rfind("/projects/", 0) == 0 && route.ends_with("/workflow/events")) {
+                            const auto prefix = std::string("/projects/");
+                            const auto suffix = std::string("/workflow/events");
+                            const auto session_id = detail::percent_decode(route.substr(prefix.size(), route.size() - prefix.size() - suffix.size()));
+                std::uint64_t after = 0;
+                std::size_t limit = 2000;
+                try { if (!query_value("after").empty()) after = std::stoull(query_value("after")); } catch (...) { throw std::invalid_argument("invalid event history cursor"); }
+                try { if (!query_value("limit").empty()) limit = std::stoull(query_value("limit")); } catch (...) { throw std::invalid_argument("invalid event history limit"); }
+                detail::send_http(socket, 200, events_.history(session_id, after, limit));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/query")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/artifacts/query");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.artifact_query(session_id, Json::parse(body)));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/data")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/artifacts/data");
@@ -572,7 +980,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/validate");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                const auto validation = projects_.validate_workflow(session_id, Json::parse(body));
+                const auto request = Json::parse(body);
+                const auto validation = projects_.validate_workflow(
+                    session_id, request.contains("workflow") ? request.at("workflow") : Json(nullptr));
                 detail::send_http(socket, 200, validation);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/run")) {
                 const auto prefix = std::string("/projects/");
@@ -587,11 +997,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow/cancel");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto state = projects_.cancel_workflow(session_id);
-                events_.publish(Json{{"type", "workflow.cancelled"}, {"project", session_id},
-                                     {"payload", Json{{"message", "Workflow cancellation requested."}}}});
+                events_.publish(Json{{"type", "workflow.cancellation_requested"}, {"project", session_id},
+                                                     {"payload", Json{{"message", "Workflow cancellation requested."}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}});
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/pause")) {
-                detail::send_http(socket, 501, Json{{"error", "workflow pause is not supported by the current execution engine"}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.find("/operations/") != std::string::npos) {
                 const auto prefix = std::string("/projects/");
                 const auto marker = std::string("/operations/");
@@ -633,7 +1041,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 detail::send_http(socket, 200, project);
             } else if (method == "POST" && path == "/projects") {
                 const auto input = Json::parse(body);
-                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object())};
+                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object()), input.value("workflow_metadata", ProjectOptions{}.workflow_metadata)};
                 const auto session_id = input.at("session_id").get<std::string>();
                 const auto project = input.value("mode", "create") == "open"
                                          ? projects_.open(session_id, options)

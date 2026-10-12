@@ -38,5 +38,7 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/raman)
 install(TARGETS streamfind_raman_plugin
     RUNTIME DESTINATION plugins/raman
-    LIBRARY DESTINATION plugins/raman
-    ARCHIVE DESTINATION sdk/lib)
+    LIBRARY DESTINATION plugins/raman)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_raman_plugin ARCHIVE DESTINATION sdk/lib)
+endif()

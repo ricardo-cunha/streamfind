@@ -292,6 +292,38 @@ namespace streamfind::mass_spec::nta::utils
         return value.empty() ? 0.0 : std::stod(value);
     }
 
+    std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_spectra_headers(
+        const std::vector<nlohmann::json> &rows)
+    {
+        std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
+        for (const auto &row : rows)
+        {
+            auto &header = headers[text(row, "analysis")];
+            header.index.push_back(integer(row, "index"));
+            header.scan.push_back(integer(row, "scan"));
+            header.array_length.push_back(integer(row, "array_length"));
+            header.level.push_back(integer(row, "level"));
+            header.mode.push_back(integer(row, "mode"));
+            header.polarity.push_back(integer(row, "polarity"));
+            header.configuration.push_back(integer(row, "configuration"));
+            header.lowmz.push_back(static_cast<float>(real(row, "lowmz")));
+            header.highmz.push_back(static_cast<float>(real(row, "highmz")));
+            header.bpmz.push_back(static_cast<float>(real(row, "bpmz")));
+            header.bpint.push_back(static_cast<float>(real(row, "bpint")));
+            header.tic.push_back(static_cast<float>(real(row, "tic")));
+            header.rt.push_back(static_cast<float>(real(row, "rt")));
+            header.mobility.push_back(static_cast<float>(real(row, "mobility")));
+            header.window_mz.push_back(static_cast<float>(real(row, "window_mz")));
+            header.window_mzlow.push_back(static_cast<float>(real(row, "window_mzlow")));
+            header.window_mzhigh.push_back(static_cast<float>(real(row, "window_mzhigh")));
+            header.precursor_mz.push_back(static_cast<float>(real(row, "precursor_mz")));
+            header.precursor_intensity.push_back(static_cast<float>(real(row, "precursor_intensity")));
+            header.precursor_charge.push_back(integer(row, "precursor_charge"));
+            header.activation_ce.push_back(static_cast<float>(real(row, "activation_ce")));
+        }
+        return headers;
+    }
+
     const std::vector<std::string> &feature_columns()
     {
         static const std::vector<std::string> columns = {
@@ -338,12 +370,12 @@ namespace streamfind::mass_spec::nta::utils
 
     const std::vector<std::string> &suspects_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
         return columns;
     }
     const std::vector<std::string> &internal_standards_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
         return columns;
     }
     const std::vector<std::string> &transformation_products_columns()
@@ -519,7 +551,16 @@ namespace streamfind::mass_spec::nta::utils::detail
             std::vector<std::string> names, paths, blanks, replicates;
             std::vector<int> indices;
             std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers;
+            std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_headers;
             const auto wanted = parameters.value("analysis_names", Json::array());
+            const auto inputs = parameters.value("_inputs", Json::object());
+            const auto spectra_input = inputs.find("spectraHeadersTable");
+            if (spectra_input != inputs.end() && spectra_input->is_object())
+            {
+                persisted_headers = persisted_spectra_headers(access.query(
+                    "SELECT analysis,index,scan,array_length,level,mode,polarity,configuration,lowmz,highmz,bpmz,bpint,tic,rt,mobility,window_mz,window_mzlow,window_mzhigh,precursor_mz,precursor_intensity,precursor_charge,activation_ce FROM "
+                    + spectra_input->at("physical_table").get<std::string>() + " ORDER BY analysis,index"));
+            }
             // query_json stringifies every column; parse the analysis index tolerantly.
             auto analysis_index_of = [&](const Json &row)
             {
@@ -576,6 +617,12 @@ namespace streamfind::mass_spec::nta::utils::detail
                     replicates.emplace_back();
                 }
                 headers.resize(names.size());
+            }
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                const auto persisted = persisted_headers.find(names[i]);
+                if (persisted != persisted_headers.end() && !persisted->second.index.empty())
+                    headers[i] = persisted->second;
             }
             ::streamfind::mass_spec::nta::NtaProjectData data(std::move(names), std::move(paths), std::move(headers));
             data.set_analysis_indices(std::move(indices));
@@ -694,55 +741,125 @@ namespace streamfind::mass_spec::nta::utils::detail
             return data;
         }
 
-        // Map the JSON `suspect_targets` array into SuspectQuery objects.
-        std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(const Json &parameters)
+        ::streamfind::mass_spec::nta::NtaProjectData load_internal_standards_only(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
         {
+            std::vector<std::string> names;
+            std::string previous_name;
+            for (const auto &row : access.query(
+                "SELECT analysis FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            {
+                const auto name = row.at("analysis").get<std::string>();
+                if (name == previous_name)
+                    continue;
+                previous_name = name;
+                names.push_back(name);
+            }
+            std::vector<std::string> paths(names.size());
+            std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers(names.size());
+            return ::streamfind::mass_spec::nta::NtaProjectData(std::move(names), std::move(paths), std::move(headers));
+        }
+
+        // Map the JSON `suspect_targets` array into SuspectQuery objects.
+        std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters, bool allow_table_input)
+        {
+            const auto json_array_value = [](const Json &value) {
+                if (!value.is_string())
+                    return value;
+                const std::string encoded = value.get<std::string>();
+                if (encoded.empty())
+                    return Json::array();
+                try
+                {
+                    const Json decoded = Json::parse(encoded);
+                    return decoded.is_array() ? decoded : Json::array();
+                }
+                catch (...)
+                {
+                    return Json::array();
+                }
+            };
+            Json targets = parameters.value("suspect_targets", Json::array());
+            const auto inputs = parameters.value("_inputs", Json::object());
+            const auto input_it = allow_table_input ? inputs.find("suspectTargetsTable") : inputs.end();
+            if (input_it != inputs.end())
+            {
+                const auto table = input_it->at("physical_table").get<std::string>();
+                targets = Json::array();
+                const std::vector<std::string> columns = {"name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+                for (auto row : access.read(table, columns, "name"))
+                {
+                    for (const auto &key : {"fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"})
+                        if (row.contains(key) && row[key].is_string() && !row[key].get<std::string>().empty())
+                            row[key] = Json::parse(row[key].get<std::string>());
+                    targets.push_back(std::move(row));
+                }
+            }
             std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> out;
-            const auto targets = parameters.value("suspect_targets", Json::array());
             for (const auto &t : targets)
             {
                 ::streamfind::mass_spec::nta::suspect_screening::SuspectQuery q;
-                q.name = t.value("name", "");
-                if (t.contains("mass"))
+                const auto string_value = [](const Json &row, const char *key) {
+                    const auto value = row.find(key);
+                    return value != row.end() && value->is_string()
+                        ? value->get<std::string>() : std::string{};
+                };
+                const auto number_value = [](const Json &row, const char *key) -> std::optional<double> {
+                    const auto value = row.find(key);
+                    if (value == row.end() || value->is_null()) return std::nullopt;
+                    if (value->is_number()) return value->get<double>();
+                    if (value->is_string()) {
+                        try {
+                            std::size_t consumed = 0;
+                            const auto number = std::stod(value->get<std::string>(), &consumed);
+                            if (consumed == value->get<std::string>().size()) return number;
+                        } catch (...) {}
+                    }
+                    return std::nullopt;
+                };
+                q.name = string_value(t, "name");
+                if (const auto mass = number_value(t, "mass"))
                 {
                     q.has_mass = true;
-                    q.mass = t.at("mass").get<double>();
+                    q.mass = *mass;
                 }
-                else if (t.contains("mz"))
+                else if (const auto mz = number_value(t, "mz"))
                 {
                     q.has_mass = true;
-                    q.mass = t.at("mz").get<double>();
+                    q.mass = *mz;
                 }
-                q.rt = t.value("rt", 0.0);
-                q.formula = t.value("formula", "");
-                q.SMILES = t.value("SMILES", t.value("smiles", ""));
-                q.InChI = t.value("InChI", t.value("inchi", ""));
-                q.InChIKey = t.value("InChIKey", t.value("inchikey", ""));
-                q.database_id = t.value("database_id", "");
-                q.score = t.value("score", 0.0);
-                if (t.contains("xLogP"))
+                if (const auto rt = number_value(t, "rt"))
+                {
+                    q.has_rt = true;
+                    q.rt = *rt;
+                }
+                q.formula = string_value(t, "formula");
+                q.SMILES = string_value(t, "SMILES");
+                if (q.SMILES.empty()) q.SMILES = string_value(t, "smiles");
+                q.InChI = string_value(t, "InChI");
+                if (q.InChI.empty()) q.InChI = string_value(t, "inchi");
+                q.InChIKey = string_value(t, "InChIKey");
+                if (q.InChIKey.empty()) q.InChIKey = string_value(t, "inchikey");
+
+                q.score = number_value(t, "score").value_or(0.0);
+                if (const auto xlogp = number_value(t, "xLogP"))
                 {
                     q.has_xLogP = true;
-                    q.xLogP = t.at("xLogP").get<double>();
+                    q.xLogP = *xlogp;
                 }
                 // Preserve both modes from the CSV adapter; older callers may provide
                 // the compact `fragments_mz`/`fragments_intensity` positive aliases.
-                const auto positive_mz = t.value("fragments_mz_positive",
-                                                 t.value("fragments_mz_pos", t.value("fragments_mz", Json::array())));
-                const auto positive_int = t.value("fragments_intensity_positive",
-                                                  t.value("fragments_intensity_pos", t.value("fragments_intensity", Json::array())));
-                const auto negative_mz = t.value("fragments_mz_negative",
-                                                 t.value("fragments_mz_neg", Json::array()));
-                const auto negative_int = t.value("fragments_intensity_negative",
-                                                  t.value("fragments_intensity_neg", Json::array()));
-                for (const auto &v : positive_mz)
-                    q.fragments_mz_pos.push_back(v.get<double>());
-                for (const auto &v : positive_int)
-                    q.fragments_intensity_pos.push_back(v.get<double>());
-                for (const auto &v : negative_mz)
-                    q.fragments_mz_neg.push_back(v.get<double>());
-                for (const auto &v : negative_int)
-                    q.fragments_intensity_neg.push_back(v.get<double>());
+                const auto positive_mz = json_array_value(t.value("fragments_mz_positive",
+                                                 t.value("fragments_mz_pos", t.value("fragments_mz", Json::array()))));
+                const auto positive_int = json_array_value(t.value("fragments_intensity_positive",
+                                                  t.value("fragments_intensity_pos", t.value("fragments_intensity", Json::array()))));
+                const auto negative_mz = json_array_value(t.value("fragments_mz_negative",
+                                                 t.value("fragments_mz_neg", Json::array())));
+                const auto negative_int = json_array_value(t.value("fragments_intensity_negative",
+                                                  t.value("fragments_intensity_neg", Json::array())));
+                for (const auto &v : positive_mz) if (v.is_number()) q.fragments_mz_pos.push_back(v.get<double>());
+                for (const auto &v : positive_int) if (v.is_number()) q.fragments_intensity_pos.push_back(v.get<double>());
+                for (const auto &v : negative_mz) if (v.is_number()) q.fragments_mz_neg.push_back(v.get<double>());
+                for (const auto &v : negative_int) if (v.is_number()) q.fragments_intensity_neg.push_back(v.get<double>());
                 out.push_back(std::move(q));
             }
             return out;
@@ -828,48 +945,60 @@ namespace streamfind::mass_spec::nta::utils::detail
         const std::vector<std::string> &suspects_columns()
         {
             static const std::vector<std::string> cols = {
-                "analysis", "feature", "feature_group", "candidate_rank", "name", "polarity",
+                "analysis", "replicate", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity",
                 "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area",
                 "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "SMILES", "InChI", "InChIKey",
-                "xLogP", "database_id", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
-                "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+                "xLogP", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
+                "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed",
+                "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
+                "isotope_theoretical_peaks", "isotope_matched_peaks", "isotope_similarity", "isotope_match"};
             return cols;
         }
 
         std::vector<std::optional<std::string>> suspect_cells(const ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW &r)
         {
             return {
-                str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_group),
+                str_cell(r.analysis), std::nullopt, str_cell(r.feature), str_cell(r.feature_group), std::nullopt, std::nullopt,
                 inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
                 dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
                 dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
                 str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey),
-                dnum_cell(r.xLogP), str_cell(r.database_id), inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity),
-                str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles), inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity)};
+                dnum_cell(r.xLogP), inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity),
+                str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
+                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                std::nullopt, std::nullopt, std::nullopt,
+                inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
+                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match)};
         }
 
         const std::vector<std::string> &internal_standards_columns()
         {
             static const std::vector<std::string> cols = {
-                "analysis", "feature", "feature_group", "feature_component", "adduct",
+                "analysis", "replicate", "feature", "feature_group", "feature_component", "adduct",
                 "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt",
                 "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity",
-                "formula", "SMILES", "InChI", "InChIKey", "xLogP", "database_id",
+                "formula", "SMILES", "InChI", "InChIKey", "xLogP",
                 "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
-                "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+                "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity",
+                "isotope_theoretical_peaks", "isotope_matched_peaks", "isotope_similarity", "isotope_match",
+                "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed",
+                "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity"};
             return cols;
         }
 
         std::vector<std::optional<std::string>> internal_standard_cells(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
         {
             return {
-                str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
+                str_cell(r.analysis), std::nullopt, str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
                 inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
                 dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
                 dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
-                str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP), str_cell(r.database_id),
+                str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP),
                 inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity), str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
-                inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity)};
+                inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
+                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match),
+                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt};
         }
 
         void emit_features(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
@@ -884,14 +1013,52 @@ namespace streamfind::mass_spec::nta::utils::detail
 
         Json suspect_json(const ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW &r)
         {
-            return Json{{"analysis",r.analysis},{"feature",r.feature},{"feature_group",r.feature_group},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"database_id",r.database_id},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"exp_ms2_size",r.exp_ms2_size},{"exp_ms2_mz",r.exp_ms2_mz},{"exp_ms2_intensity",r.exp_ms2_intensity}};
+            return Json{{"analysis",r.analysis},{"replicate", ""},{"feature",r.feature},{"feature_group",r.feature_group},{"feature_component", ""},{"adduct", ""},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"eic_size",0},{"eic_rt", ""},{"eic_mz", ""},{"eic_intensity", ""},{"eic_baseline", ""},{"eic_smoothed", ""},{"ms1_size",0},{"ms1_mz", ""},{"ms1_intensity", ""},{"ms2_size",r.exp_ms2_size},{"ms2_mz",r.exp_ms2_mz},{"ms2_intensity",r.exp_ms2_intensity},{"isotope_theoretical_peaks",r.isotope_theoretical_peaks},{"isotope_matched_peaks",r.isotope_matched_peaks},{"isotope_similarity",r.isotope_similarity},{"isotope_match",r.isotope_match}};
+        }
+
+        void enrich_suspect_with_feature(Json &suspect, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
+        {
+            const auto feature_payload = ::streamfind::mass_spec::nta::utils::feature_row(feature);
+            for (const auto *column : {"replicate", "feature_component", "adduct", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline",
+                                       "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity"})
+                suspect[column] = feature_payload.at(column);
+        }
+
+        void normalize_emitted_row(Json &row, const std::vector<std::string> &columns)
+        {
+            for (const auto &column : columns)
+            {
+                if (!row.contains(column))
+                {
+                    row[column] = nullptr;
+                    continue;
+                }
+                auto &value = row[column];
+                if (value.is_number_float() && !std::isfinite(value.get<double>()))
+                    value = nullptr;
+            }
         }
 
         void emit_suspects(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
         {
             Json rows = Json::array();
-            for (const auto &buffer : data.suspect_buffers()) for (int i=0; i<buffer.size(); ++i) rows.push_back(suspect_json(buffer.get_suspect(i)));
-            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","string","integer","string","string","string","string","integer","string","string"}, rows);
+            for (std::size_t analysis_index = 0; analysis_index < data.suspect_buffers().size(); ++analysis_index) {
+                const auto &buffer = data.suspect_buffers()[analysis_index];
+                const auto &features = data.feature_buffers()[analysis_index];
+                for (int i = 0; i < buffer.size(); ++i) {
+                    const auto suspect = buffer.get_suspect(i);
+                    auto row = suspect_json(suspect);
+                    for (int feature_index = 0; feature_index < features.size(); ++feature_index) {
+                        const auto feature = features.get_feature(feature_index);
+                        if (feature.feature != suspect.feature) continue;
+                        enrich_suspect_with_feature(row, feature);
+                        break;
+                    }
+                    normalize_emitted_row(row, suspects_columns());
+                    rows.push_back(std::move(row));
+                }
+            }
+            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
         }
 
         Json internal_standard_json(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
@@ -900,17 +1067,33 @@ namespace streamfind::mass_spec::nta::utils::detail
             s.analysis=r.analysis; s.feature=r.feature; s.feature_group=r.feature_group; s.candidate_rank=r.candidate_rank; s.name=r.name; s.polarity=r.polarity;
             s.db_mass=r.db_mass; s.exp_mass=r.exp_mass; s.error_mass=r.error_mass; s.db_rt=r.db_rt; s.exp_rt=r.exp_rt; s.error_rt=r.error_rt;
             s.intensity=r.intensity; s.area=r.area; s.id_level=r.id_level; s.score=r.score; s.shared_fragments=r.shared_fragments; s.cosine_similarity=r.cosine_similarity;
-            s.formula=r.formula; s.SMILES=r.SMILES; s.InChI=r.InChI; s.InChIKey=r.InChIKey; s.xLogP=r.xLogP; s.database_id=r.database_id;
+            s.formula=r.formula; s.SMILES=r.SMILES; s.InChI=r.InChI; s.InChIKey=r.InChIKey; s.xLogP=r.xLogP;
             s.db_ms2_size=r.db_ms2_size; s.db_ms2_mz=r.db_ms2_mz; s.db_ms2_intensity=r.db_ms2_intensity; s.db_ms2_formula=r.db_ms2_formula; s.db_ms2_smiles=r.db_ms2_smiles;
             s.exp_ms2_size=r.exp_ms2_size; s.exp_ms2_mz=r.exp_ms2_mz; s.exp_ms2_intensity=r.exp_ms2_intensity;
+            s.isotope_theoretical_peaks=r.isotope_theoretical_peaks; s.isotope_matched_peaks=r.isotope_matched_peaks; s.isotope_similarity=r.isotope_similarity; s.isotope_match=r.isotope_match;
             auto out = suspect_json(s); out["feature_component"] = r.feature_component; out["adduct"] = r.adduct; return out;
         }
 
         void emit_internal_standards(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
         {
             Json rows = Json::array();
-            for (const auto &buffer : data.internal_standard_buffers()) for (int i=0; i<buffer.size(); ++i) rows.push_back(internal_standard_json(buffer.get_internal_standard(i)));
-            access.emit_table_rows("internalStandardsTable", internal_standards_columns(), {"string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","string","integer","string","string","string","string","integer","string","string"}, rows);
+            for (std::size_t analysis_index = 0; analysis_index < data.internal_standard_buffers().size(); ++analysis_index) {
+                const auto &buffer = data.internal_standard_buffers()[analysis_index];
+                const auto &features = data.feature_buffers()[analysis_index];
+                for (int i = 0; i < buffer.size(); ++i) {
+                    const auto standard = buffer.get_internal_standard(i);
+                    auto row = internal_standard_json(standard);
+                    for (int feature_index = 0; feature_index < features.size(); ++feature_index) {
+                        const auto feature = features.get_feature(feature_index);
+                        if (feature.feature != standard.feature) continue;
+                        enrich_suspect_with_feature(row, feature);
+                        break;
+                    }
+                    normalize_emitted_row(row, internal_standards_columns());
+                    rows.push_back(std::move(row));
+                }
+            }
+            access.emit_table_rows("internalStandardsTable", internal_standards_columns(), {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","integer","integer","real","boolean","integer","string","string","string","string","string","integer","string","string","integer","string","string"}, rows);
         }
 
         // NULL-tolerant accessors (query_json stringifies all column values).
@@ -935,7 +1118,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             auto &buffers = data.suspect_buffers();
             for (auto &b : buffers)
                 b = ::streamfind::mass_spec::nta::api::NTA_SUSPECTS();
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity FROM " + input_table(parameters, "suspectsTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "suspectsTable") + " ORDER BY analysis"))
             {
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
@@ -965,7 +1148,6 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.InChI = col_s(row, "InChI");
                 r.InChIKey = col_s(row, "InChIKey");
                 r.xLogP = col_d(row, "xLogP");
-                r.database_id = col_s(row, "database_id");
                 r.db_ms2_size = col_i(row, "db_ms2_size");
                 r.db_ms2_mz = col_s(row, "db_ms2_mz");
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
@@ -974,6 +1156,10 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.exp_ms2_size = col_i(row, "exp_ms2_size");
                 r.exp_ms2_mz = col_s(row, "exp_ms2_mz");
                 r.exp_ms2_intensity = col_s(row, "exp_ms2_intensity");
+                r.isotope_theoretical_peaks = col_i(row, "isotope_theoretical_peaks");
+                r.isotope_matched_peaks = col_i(row, "isotope_matched_peaks");
+                r.isotope_similarity = col_d(row, "isotope_similarity");
+                r.isotope_match = col_s(row, "isotope_match") == "true";
                 buffers[static_cast<size_t>(it - data.analysis_names().begin())].append(r);
             }
         }
@@ -983,12 +1169,14 @@ namespace streamfind::mass_spec::nta::utils::detail
             auto &buffers = data.internal_standard_buffers();
             for (auto &b : buffers)
                 b = ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS();
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,database_id,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            auto append_row = [&](const Json &row)
             {
+                if (!row.is_object())
+                    throw Error(ErrorCode::WorkflowValidation, "Internal standards rows must be objects");
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
                 if (it == data.analysis_names().end())
-                    continue;
+                    return;
                 ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW r;
                 r.analysis = an;
                 r.feature = col_s(row, "feature");
@@ -1015,7 +1203,6 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.InChI = col_s(row, "InChI");
                 r.InChIKey = col_s(row, "InChIKey");
                 r.xLogP = col_d(row, "xLogP");
-                r.database_id = col_s(row, "database_id");
                 r.db_ms2_size = col_i(row, "db_ms2_size");
                 r.db_ms2_mz = col_s(row, "db_ms2_mz");
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
@@ -1024,8 +1211,23 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.exp_ms2_size = col_i(row, "exp_ms2_size");
                 r.exp_ms2_mz = col_s(row, "exp_ms2_mz");
                 r.exp_ms2_intensity = col_s(row, "exp_ms2_intensity");
+                r.isotope_theoretical_peaks = col_i(row, "isotope_theoretical_peaks");
+                r.isotope_matched_peaks = col_i(row, "isotope_matched_peaks");
+                r.isotope_similarity = col_d(row, "isotope_similarity");
+                r.isotope_match = col_s(row, "isotope_match") == "true";
                 buffers[static_cast<size_t>(it - data.analysis_names().begin())].append(r);
+            };
+            if (parameters.contains("internal_standards"))
+            {
+                const auto &rows = parameters.at("internal_standards");
+                if (!rows.is_array())
+                    throw Error(ErrorCode::WorkflowValidation, "internal_standards must be an array of table rows");
+                for (const auto &row : rows)
+                    append_row(row);
+                return;
             }
+            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+                append_row(row);
         }
 
         // Map the JSON `transformation_products` parameter (R data.frame columns:
@@ -1203,7 +1405,6 @@ namespace streamfind::mass_spec::nta::utils::detail
                 s.InChI = row.InChI;
                 s.InChIKey = row.InChIKey;
                 s.xLogP = row.xLogP;
-                s.database_id = "";
                 s.db_ms2_size = 0;
                 s.db_ms2_mz = "";
                 s.db_ms2_intensity = "";

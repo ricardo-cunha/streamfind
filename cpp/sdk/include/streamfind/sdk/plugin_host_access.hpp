@@ -12,11 +12,17 @@ public:
 
     const std::filesystem::path &database_path() const noexcept override;
     std::string_view operation_instance() const noexcept override;
+    bool is_cancelled() const noexcept override;
 
     Json query(const std::string &sql) override;
     Json read(const std::string &table_name,
               const std::vector<std::string> &column_names,
               const std::string &order_by) override;
+    void read_batches(const std::string &table_name,
+                      const std::vector<std::string> &column_names,
+                      const std::string &order_by,
+                      const JsonBatchCallback &callback) override;
+    std::uint64_t count_rows(const std::string &table_name) override;
     void clear_table(const std::string &table_name) override;
     void append(const std::string &table_name,
                 const std::vector<std::string> &column_names,

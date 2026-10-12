@@ -1,0 +1,12 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/lib/@CMAKE_LIBRARY_ARCHITECTURE@
+includedir=${prefix}/include
+
+Name: libIsoSpec++
+Description: IsoSpec++ library for calculating isotopic clusters
+Version: @VERSION@
+Libs: -lIsoSpec++
+Cflags: -I${includedir}/IsoSpec++ -I${includedir}
+Requires: 
+

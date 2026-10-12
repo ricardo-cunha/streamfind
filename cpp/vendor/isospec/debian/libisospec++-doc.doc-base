@@ -1,0 +1,10 @@
+Document: libisospec++
+Title: libIsoSpec++ isotopic fine structure calculator documentation
+Author: Michal Startek and Mateusz Lacki
+Abstract: This documentation describes the uses and features
+ of the libIsoSpec++ library (source package isospec)
+Section: Science/Chemistry
+
+Format: HTML
+Index: /usr/share/doc/isospec/html/index.html
+Files: /usr/share/doc/isospec/html/*.html

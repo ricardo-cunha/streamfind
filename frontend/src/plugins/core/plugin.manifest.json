@@ -1,0 +1,11 @@
+{
+  "id": "streamfind.core",
+  "name": "streamfind core viewers",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "bootstrap",
+  "source": "src/plugins/core/index.ts",
+  "artifactContracts": ["table", "visualizationSpecResult"],
+  "artifactRepresentations": ["table"],
+  "visualizationTypes": ["*"]
+}

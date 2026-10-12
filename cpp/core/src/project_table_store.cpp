@@ -299,8 +299,17 @@ ProjectTableStore::ProjectTableStore(Project &project) noexcept : project_(&proj
 ProjectTableStore::ProjectTableStore(Project &project, std::vector<std::string> owned_tables)
     : project_(&project), impl_(std::make_unique<Impl>()) {
     impl_->owned_tables = std::move(owned_tables);
-    if (duckdb_open(project.get_database_path().string().c_str(), &impl_->database) == DuckDBError)
-        throw Error(ErrorCode::DatabaseError, "open transaction project database failed");
+    duckdb_config config = nullptr;
+    if (duckdb_create_config(&config) == DuckDBError)
+        throw Error(ErrorCode::DatabaseError, "create transaction database config failed");
+    char *error = nullptr;
+    const auto state = duckdb_open_ext(project.get_database_path().string().c_str(), &impl_->database, config, &error);
+    duckdb_destroy_config(&config);
+    if (state == DuckDBError) {
+        const std::string message = error ? error : "open transaction project database failed";
+        if (error) duckdb_free(error);
+        throw Error(ErrorCode::DatabaseError, message);
+    }
     if (duckdb_connect(impl_->database, &impl_->connection) == DuckDBError) {
         duckdb_close(&impl_->database);
         throw Error(ErrorCode::DatabaseError, "connect transaction project database failed");
@@ -335,7 +344,7 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     std::set<std::string> modules;
     for (const auto &table : *manifest)
     {
-        owned_tables.push_back(detail::manifest_identifier(table.at("table_name").get<std::string>()));
+        owned_tables.push_back(detail::manifest_identifier(table.at("table_contract_name").get<std::string>()));
         modules.insert(table.value("module_id", std::string{}));
     }
     ProjectTableStore::transaction(project, owned_tables, [&](ProjectTableStore &tables) {
@@ -344,7 +353,7 @@ void ProjectTableStore::install_manifest_schema(Project &project,
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "PRIMARY KEY (domain_id, module_id))");
         for (const auto &table : *manifest) {
-            const auto table_name = detail::manifest_identifier(table.at("table_name").get<std::string>());
+            const auto table_name = detail::manifest_identifier(table.at("table_contract_name").get<std::string>());
             std::vector<std::string> definitions;
             for (const auto &column : table.value("columns", Json::array())) {
                 const auto name = detail::manifest_identifier(column.at("name").get<std::string>());
@@ -426,7 +435,7 @@ void ProjectTableStore::require_manifest(const std::string &domain, const std::s
     std::vector<TableRequirement> requirements;
     for (const auto &table : *manifest) {
         TableRequirement requirement;
-        requirement.name = table.value("table_name", "");
+        requirement.name = table.value("table_contract_name", "");
         for (const auto &column : table.value("columns", Json::array()))
             requirement.required_column_types.emplace_back(column.value("name", ""), column.value("type", ""));
         requirements.push_back(std::move(requirement));

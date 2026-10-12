@@ -3,7 +3,104 @@
 **Target baseline:** `dev_refactoring`\
 **Primary proof-of-concept:** Mass-spec / NTA feature-table viewer and
 curation UI\
-**Status:** Proposed implementation plan
+**Status:** Static viewers, GUI regression coverage, the MCP/web-app
+visualization boundary, the versioned frontend plugin API, the controlled
+loader boundary, packaged-manifest discovery, and the first bundled optional
+mass-spec plugin are implemented; backend-mediated curation remains
+
+The next consolidation phase is now active: `visualizationSpecResult` and
+domain table artifacts are being brought under one plugin-owned artifact-viewer
+architecture. Core and domain plugins must register viewers through the same
+public API; `CanvasShell` may enumerate compatible registrations but must not
+name domain contracts or viewer labels. Visualization-spec parsing and inner
+renderer selection remain separate concerns, but both are plugin dependencies
+with standardized registry and test boundaries.
+
+First consolidation slice completed: canonical artifact-contract normalization
+now lives in `frontend/src/artifacts/artifactContracts.ts`; the core
+`visualizationSpecResult` viewer registers through `api.registerViewer()` like
+domain plugins; plugin APIs expose the visualization registry and transactional
+`registerVisualizationRenderer()` support; and renderer registration rollback
+is covered by the plugin registry tests. The remaining structural work is to
+relocate core artifact/visualization assets under `plugins/core/`, then remove
+the transitional `viewers/` and `visualization/` ownership split.
+
+The first relocation is complete: the visualization-spec artifact viewer and
+the visualization envelope, resolver, registry, Plotly renderer, and related
+tests now live under `frontend/src/plugins/core/`. `src/viewers/` retains only
+the generic shell/resolver/registry boundary, while the mass-spec plugin
+imports the shared visualization runtime from the core plugin.
+
+The core artifact-viewer relocation has started as well: the virtualized generic
+table implementation now lives at
+`frontend/src/plugins/core/artifact-viewers/VirtualArtifactTable.tsx` instead
+of inside `CanvasShell`. The remaining table viewer extraction must move its
+artifact paging state and toolbar into the core plugin before the hardcoded
+table action is replaced with a core viewer registration.
+
+The generic table viewer extraction is now complete. `GenericTableViewer` owns
+server-side paging, searching, sorting, page-size selection, and the virtualized
+table presentation. It is registered as `core.table` by `streamfind.core`, and
+`CanvasShell` resolves that viewer instead of rendering the table controls
+directly. The transitional `registerCoreViewers` module and test were removed;
+core viewer registration now has one plugin-owned path.
+
+Core bootstrap ownership is now explicit in
+`frontend/src/plugins/core/index.ts`. It owns the core plugin manifest and
+registration of both `core.table` and `core.visualization`; `main.tsx` imports
+that entry point directly. The former top-level core registration module was
+removed so the core implementation and bootstrap boundary share one folder.
+
+Added a core bootstrap contract test at
+`frontend/src/plugins/core/index.test.ts`; it verifies that the core plugin
+registers both generic artifact viewers and resolves the canonical table and
+visualization contracts through the public registry.
+
+Added `GenericTableViewer.test.tsx` to cover the typed artifact-data boundary:
+the viewer requests the initial page and requests the next server-side page
+when the user activates pagination. `VirtualArtifactTable` now tolerates test
+and non-browser environments without a native `scrollTo` implementation.
+
+Packaged validation served the production `dist/` payload and confirmed that
+`/plugins.json` points to the emitted same-origin mass-spec chunk. The browser
+successfully dynamically imported that hashed entry and found the default
+`streamfind.mass-spec` plugin export. Full application activation reached the
+backend initialization gate but could not proceed because no backend service
+was running; the packaged viewer import was validated independently and no
+frontend page error was observed before the expected backend failure state.
+
+The plugin manifest now declares ownership metadata for domains and artifact
+contracts. `streamfind.mass-spec` declares `mass_spec` and `featuresTable`,
+while `streamfind.core` declares `visualizationSpecResult`. The runtime exposes
+`providersForArtifact()` so future artifact routing can distinguish activated
+core and domain providers without hardcoded domain checks.
+
+Viewer compatibility is now split between semantic contracts and generic
+representations. Domain plugins register semantic viewers such as
+`featuresTable`; core registers the generic table viewer for the `table`
+representation. `ViewerResolver` and the artifact menu query both values, so
+`CanvasShell` no longer names `core.table` directly. Artifact contract helpers
+only normalize and compare backend-provided identifiers; they no longer contain
+a frontend-owned list of domain contracts.
+
+The frontend directory boundary has now been separated into application,
+framework, plugin, deployment, and tooling areas. Application screens live
+under `src/application/`; transport, artifact matching, plugin lifecycle,
+viewer hosting, visualization envelopes, and theme infrastructure live under
+`src/framework/`; plugin implementations remain under `src/plugins/`;
+deployment-time plugin metadata is sourced from `deployment/`; and build,
+development, and browser tooling live under `tools/`. `public/plugins.json` is
+now a generated development/runtime copy of the deployment manifest rather
+rather than the source of plugin ownership metadata.
+
+Each plugin now owns `plugin.manifest.json` beside its entry point. The build
+and development manifest tools discover `src/plugins/*/plugin.manifest.json`,
+filter registrations by activation mode, and resolve each declared source
+entry through the Vite manifest. They no longer name `streamfind.mass-spec`,
+`featuresTable`, or any other plugin/domain in build code. The bundled-entry
+graph uses a Vite glob with the core bootstrap excluded, so adding a plugin
+requires adding its folder and registration file rather than editing a central
+manifest generator.
 
 ## 1. Objective
 
@@ -68,9 +165,12 @@ registry/semantic-contract approach**, not replace it.
 
 ## Current implementation state and gaps
 
-The current checkout already provides a usable backend/artifact foundation,
-but it does not yet provide the viewer/plugin architecture described below.
-Treat these as facts when implementing the plan:
+The current checkout has moved beyond the original proposal. It now provides a
+working static viewer boundary and a first-party mass-spec Feature Inspector,
+including the GUI refinements captured from manual review. The remaining work
+is to harden that boundary, close the read-only viewer contract, and only then
+extract the stable plugin API and runtime loader. Treat the following as the
+current source of truth when implementing the plan:
 
 ### C++ / MCP already implemented
 
@@ -84,11 +184,12 @@ Treat these as facts when implementing the plan:
     table pagination/filtering controls and metadata-only inventory queries.
 -   `visualizationSpecResult` is a validated JSON artifact contract in the
     C++ project table store.
--   The current MCP implementation still advertises `resources/list`,
-    `resources/read`, `structuredContent`, and `ui://streamfind/visualization`
-    HTML resources, and the C++ distribution currently requires
-    `app/index.html`. These are transitional MCP-owned rendering paths that
-    Phase 0b must remove.
+-   The MCP implementation no longer advertises resource capabilities, accepts
+    `resources/list`/`resources/read`, emits `structuredContent`, or exposes a
+    `ui://streamfind/visualization` HTML resource. Visualization results remain
+    persisted artifacts with a bounded text/metadata fallback. The packaged
+    `app/index.html` used by the native browser application is independent of
+    MCP and remains required.
 
 ### Frontend already implemented
 
@@ -98,23 +199,108 @@ Treat these as facts when implementing the plan:
 -   `VisualizationDataResolver.ts` resolves a published
     `visualizationSpecResult` artifact, and `VisualizationRenderer.tsx`
     validates the spec and selects a registered renderer with a fallback.
--   `McpVisualizationApp.tsx` and `mcpVisualization.tsx` currently implement
-    the MCP HTML entry point. They are not the target architecture and should
-    be removed or repurposed only after the web-app artifact viewer path is
-    available.
--   `CanvasShell.tsx` currently owns the generic artifact viewer and bounded
-    table paging. A dedicated `ViewerShell`/`ViewerResolver` and domain viewer
-    registry are still planned work.
--   There is no `frontend/src/viewers/` or `frontend/src/plugins/` runtime
-    registry/loader yet, and no first-party mass-spec Feature Inspector yet.
+-   No frontend MCP HTML visualization entry point is part of the current
+    source path. Rich visualization is owned by the packaged web app and
+    persisted artifact viewer.
+-   `frontend/src/viewers/ViewerShell.tsx`, `ViewerResolver.tsx`, and
+    `viewerTypes.ts` (which owns `ViewerRegistry`) provide the static viewer
+    boundary, resolution, fallback, and shell lifecycle.
+-   `registerCoreViewers.ts` registers the generic visualization artifact
+    viewer and the mass-spec Feature Inspector. This is a static first-party
+    registration, not runtime JavaScript plugin loading.
+-   `frontend/src/plugins/mass-spec/FeatureInspector.tsx` is a read-only
+    mass-spec/NTA viewer. It loads all
+    bounded artifact pages, renders the Feature Explorer with Plotly WebGL,
+    supports analysis-scoped feature/component selection and cross-analysis
+    feature-group selection, and coordinates details, EIC, MS1, MS2, and
+    persisted relationship-network views.
+-   The manual GUI improvements are implemented and must remain regression
+    requirements: 320px filter sidebar; responsive/resizable detail panel;
+    full-width detail plots; in-plot EIC legend; rich EIC hover metadata;
+    deterministic trace/legend/fill colors; boolean filter label-before-
+    checkbox layout; selection-mode filtering of null/empty group/component
+    rows; persisted relationship-based network rendering; and centered
+    loading/error/empty states.
+-   `featureSelection.ts` centralizes selection identity and availability
+    rules. Changing selection mode clears stale selection, and unavailable
+    dimensions are expressed by filtering rows rather than notification-only
+    messages.
+-   Generic artifact tables remain domain-agnostic and retain server-side
+    search, sorting, filtering, pagination, and virtualization. The Feature
+    Inspector's complete-row load is intentional for its cross-row WebGL
+    explorer and does not replace the generic table contract.
+-   `frontend/src/plugins/` now contains the versioned public API contract,
+    registry validation, and static core-plugin registration. It does not yet
+    contain a runtime loader. Do not introduce dynamic loading until the
+    remaining static viewer contract is complete.
 
 ### Consequence for sequencing
 
-Do not start by implementing dynamic JavaScript loading. First move the
-existing visualization renderer and generic artifact viewer into an explicit
-web-app viewer boundary, remove the MCP HTML dependency, and prove that the
-same persisted artifact can be inspected from the workflow UI. Only then
-introduce a versioned frontend plugin API and runtime loader.
+Do not start by implementing dynamic JavaScript loading or curation writes.
+First consolidate the implemented viewer boundary, verify the manual GUI
+contract in the browser, and close the read-only artifact-binding and MCP/web-
+app boundary tests. Only then introduce a versioned frontend plugin API and
+runtime loader.
+
+------------------------------------------------------------------------
+
+## 3a. Implemented GUI contract to preserve
+
+The following behavior came from manual viewer review and is part of the
+acceptance contract, not optional polish:
+
+### Feature Explorer
+
+- Load the complete feature artifact through bounded pages and render the
+  overview with Plotly `scattergl`; do not silently fall back to SVG for the
+  large feature plot.
+- Keep `featuresTable` and `spectraHeadersTable` on the same generic,
+  domain-agnostic virtualized table path. Feature-specific controls belong in
+  the Feature Inspector, not in the generic renderer.
+- Keep server-side search, sorting, filtering, and pagination for generic
+  tables. Do not move those responsibilities into a frontend-only copy of
+  the data.
+- Treat feature and component identities as analysis-scoped. Treat feature
+  group identity as cross-analysis. Use persisted relationship columns for
+  network edges; never infer edges from m/z or retention-time proximity.
+- When selection mode is Feature group, Feature component, or Group +
+  component, filter out rows whose required value is null, empty, or only
+  whitespace. Show the resulting count directly in the table/plot state and
+  clear the previous selection when the mode changes.
+
+### Coordinated detail views
+
+- Selecting a point or table row updates feature details and the dependent
+  EIC/MS1/MS2/network tabs without creating a workflow node.
+- EIC/MS1/MS2 plots fill the available right-side panel width. The EIC legend
+  is inside the plot at the top-right. Trace colors, marker colors, fills, and
+  legend swatches come from one deterministic label/category mapping in both
+  light and dark themes.
+- EIC hover text includes feature, analysis, replicate, component/group,
+  m/z, retention time, intensity/area, polarity/adduct, annotation/formula,
+  and the hovered point values when present.
+- Network rendering consumes persisted partner/correlation/loss-chain
+  relationships and preserves explicit loss chains; it must not invent
+  relationships from visual proximity.
+
+### Layout and interaction
+
+- Keep the 320px filter sidebar and constrain filter controls so the viewer
+  does not acquire avoidable horizontal scrolling.
+- Keep the details splitter bounded by usable minimum widths and ensure plots
+  resize with the panel.
+- Keep centered loading, error, and empty states; do not show misleading
+  selection-availability notifications when filtering can make the absence
+  visible directly.
+- File/folder selection controls must preserve existing JSON-array values,
+  append newly selected paths without duplicates, keep the explorer visible,
+  and support click, Shift-click range, Ctrl/Cmd-click toggle, and right-click
+  selection. Do not render a large selected-path list below the explorer.
+- JSON editor modals remain horizontally and vertically resizable, with the
+  editor fitting the modal.
+
+These rules apply to future refactors of the viewer even if the component is
+later moved into a first-party frontend plugin package.
 
 ------------------------------------------------------------------------
 
@@ -805,157 +991,175 @@ plugin SDK, but the rendering location remains the web app.
 
 ------------------------------------------------------------------------
 
-## 19. Proposed implementation phases
+## 19. Revised implementation phases
 
-### Phase 0 --- Contract inventory
+The first three phases below are the immediate development sequence. They
+describe work still required; the old proposal's boundary-extraction and
+first-party-viewer phases are recorded as implemented rather than repeated as
+future work.
 
-Before coding:
+### Phase 0 --- Baseline and contract audit (implemented, maintain)
 
--   document current artifact types;
--   identify the current mass-spec feature table contract/table;
--   identify operations required to retrieve feature EIC/MS1/MS2;
--   map relevant legacy R/Shiny behavior to current C++ capabilities;
--   identify missing backend operations;
--   inventory the release/MCP HTML entry points and `app/` assets that
-    currently attempt to render visualization inside an MCP harness;
--   define the MCP result envelope for artifact ID, semantic contract,
-    producer node/port, workflow revision, bounded summary, and web-app
-    guidance;
--   identify the exact MCP tool descriptions and release packaging rules that
-    must be changed so visualization is described as web-app rendered.
+Keep a short inventory synchronized with the code:
 
-**Deliverable:** explicit feature-viewer data contract and backend
-capability matrix, plus an MCP/web-app visualization boundary specification.
+-   artifact semantic types and table schemas used by the viewer;
+-   stable feature identity, analysis/replicate identity, group/component
+    identity, and persisted relationship columns;
+-   backend operations required for feature detail, EIC, MS1, MS2, and network
+    data;
+-   the `ViewerShell`/`ViewerResolver`/registry contract and generic fallback;
+-   MCP artifact identity and web-app guidance;
+-   the manual GUI contract in section 3a.
 
-### Phase 0b --- Remove MCP-owned visualization assets
+Do not broaden this inventory into a new domain-specific backend API when the
+generic artifact and operation APIs already provide the required data.
 
-Implement the boundary before building specialized viewers:
+### Phase 1 --- Read-only viewer hardening (next implementation slice)
 
--   remove MCP-only HTML entry points and visualization `app/` assets from
-    the release/package manifests;
--   retain the semantic visualization artifact and bounded artifact retrieval
-    through MCP;
--   update MCP operation/tool descriptions and result summaries to identify
-    the artifact and direct users to the streamfind web app;
--   keep non-rendering harnesses useful through text and metadata fallback;
--   add an MCP contract test proving that visualization support does not
-    depend on an HTML resource while the artifact reference remains present.
+Finish and verify the implemented static path before plugin loading:
 
-Likely files to inspect or modify:
+1. Audit `ViewerShell`, `ViewerResolver`, and `registerCoreViewers` for
+   artifact/port binding, close/reopen behavior, missing-viewer fallback, and
+   session-aware API usage.
+2. Ensure the Feature Inspector does not depend on MCP window messages,
+   `structuredContent`, or a hard-coded workflow node ID.
+3. Extract small pure helpers from `FeatureInspector.tsx` where they improve
+   testability, but keep domain-specific logic out of `CanvasShell` and keep
+   the generic table domain-agnostic.
+4. Add regression tests for every section 3a rule that can be tested without a
+   browser, especially selection identity, null/empty filtering, trace-color
+   parity, relationship-network construction, and paged artifact loading.
+5. Run a fresh browser inspection of the real workflow with light and dark
+   themes, resizing the detail splitter and checking the EIC/MS1/MS2 tabs.
 
--   `cpp/core/src/mcp.cpp`;
--   `cpp/service/src/service_server.cpp`;
--   `cpp/sdk/src/catalogue_builder.cpp`;
--   `cpp/tests/unit/mcp_discovery_contract.cpp`;
--   `scripts/release/cpp/release-cpp.ps1` and related package manifests;
--   `frontend/src/visualization/VisualizationDataResolver.ts`;
--   `frontend/src/visualization/VisualizationRenderer.tsx`.
+**Acceptance:** a persisted feature artifact opens in the web app with no
+workflow mutation; selecting a point or row updates all available dependent
+views; the generic artifact fallback remains usable; and the manual GUI
+contract passes automated tests plus browser inspection.
 
-**Acceptance:** a fresh packaged MCP server exposes artifact-based
-visualization guidance without shipping or requiring MCP HTML entry points,
-and the web app remains the only rich interactive rendering authority.
+### Phase 2 --- MCP/web-app boundary completion (implementation complete;
+package smoke remains)
 
-### Phase 1 --- Extract the web-app viewer boundary
+The MCP boundary implementation is complete:
 
-Implement the first target boundary around existing code rather than creating
-parallel rendering paths:
+-   MCP no longer advertises resource capabilities or accepts
+    `resources/list`/`resources/read`;
+-   visualization results no longer use MCP `structuredContent` or an HTML
+    entry point;
+-   persisted visualization artifacts and bounded text responses remain
+    available;
+-   initialize guidance directs rich inspection to the streamfind web app;
+-   the MCP discovery contract covers the removed resource surface and the
+    web-app artifact guidance;
+-   the packaged archive retains `app/index.html`, the native launcher, and
+    the service independently of MCP.
 
--   introduce `frontend/src/viewers/ViewerShell.tsx` and
-    `viewerTypes.ts`;
--   introduce `ViewerResolver` and adapt the existing static
-    `VisualizationRegistry`/`VisualizationRenderer` to it;
--   move generic artifact-viewer lifecycle out of `CanvasShell.tsx` while
-    preserving the current session-aware `StreamFindApiClient` boundary;
--   resolve visualization specs from persisted artifacts, not MCP
-    `structuredContent` or window message state;
--   keep a generic table/JSON fallback for artifacts without a specialized
-    viewer;
--   remove the web app's dependency on `McpVisualizationApp` for normal
-    workflow inspection.
+Remaining closure check: retain the packaged MCP smoke and let the user
+continue manual Feature Inspector browser validation against their populated
+project fixture during subsequent viewer changes.
 
-Do not add runtime JavaScript loading yet.
+**Acceptance:** MCP is useful for execution and artifact discovery, while the
+streamfind web app is the only rich interactive visualization authority. The
+packaged web app still launches normally on Windows and Linux.
 
-**Acceptance:** a statically registered test viewer opens from a compatible
-workflow output/artifact in the web app, and the same behavior works when MCP
-returns only the artifact reference and summary.
+### Phase 3 --- Versioned frontend plugin API
 
-### Phase 2 --- First-party mass-spec feature viewer
+The first static API slice is implemented in `frontend/src/plugins/`. It
+extracts only the interfaces needed to establish the extension boundary:
 
-Implement the mass-spec Feature Inspector as a frontend extension using
-the registry.
+-   `FrontendPluginApi` with registration, artifact access, operation request,
+    theme/layout tokens, and notification/error boundaries;
+-   plugin ID, API version, semantic-contract compatibility, viewer mode, and
+    capability declarations;
+-   duplicate registration and incompatible-version rejection;
+-   core viewers registered through `streamfind.core` without changing their
+    current rendering behavior.
+-   plugin setup is transactional for viewers registered through the public
+    API; failed setup removes partial viewer registrations and the plugin
+    remains inactive.
 
-Start statically packaged while keeping its API identical to the future
-runtime plugin API.
+The registry exposes a typed `StreamFindApiClient`, bounded theme tokens,
+notifications, artifact summaries, and the existing `ViewerRegistry` through
+`FrontendPluginApi`. The Feature Inspector continues to receive its existing
+typed viewer context, now with a plugin API carrying the active typed client;
+its artifact paging reads use that public API. Its domain CSS is loaded by the
+core plugin from `frontend/src/plugins/mass-spec/FeatureInspector.css` rather
+than the global theme stylesheet.
 
-**Acceptance:** feature selection drives coordinated feature
-metadata/EIC/MS1/MS2 views.
-
-### Phase 3 --- Frontend plugin API
-
-Extract the APIs used by the feature viewer into a stable
-`FrontendPluginApi`.
-
-Add:
-
--   plugin registration lifecycle;
--   version declaration;
--   capability declaration;
--   compatibility validation.
-
-**Acceptance:** the mass-spec viewer does not import private core
-frontend modules.
+**Current acceptance:** the application starts with the core plugin, viewers
+still resolve by semantic contract, and the registry rejects duplicate,
+unsupported-version, and incompatible-contract registrations. Failed plugin
+setup rolls back partial public-API viewer registrations. Runtime loader
+failure isolation remains a Phase 4 concern.
 
 ### Phase 4 --- Runtime plugin loader
 
-Implement:
+The controlled loader boundary is implemented in
+`frontend/src/plugins/FrontendPluginLoader.ts`. It currently provides:
 
--   manifest discovery;
--   manifest validation;
--   dynamic ESM loading;
--   plugin activation;
--   error isolation;
--   compatibility checks;
--   controlled asset/CSS loading.
+-   strict manifest and API-version validation;
+-   same-origin entry enforcement by default;
+-   controlled dynamic ESM import through an injectable importer;
+-   activation through the transactional plugin registry;
+-   failure containment with warning notifications;
+-   duplicate-load suppression.
 
-Convert the mass-spec feature viewer from static registration to runtime
-registration.
+The packaged web app owns one optional same-origin manifest at
+`/plugins.json`, sourced from `frontend/public/plugins.json` and copied into
+the production `dist/`/native `app/` payload. Bootstrap discovers and
+activates its manifests after the core plugin is registered. A missing or
+invalid optional manifest does not block core startup. The mass-spec viewer
+source lives under `frontend/src/plugins/mass-spec/` and
+is emitted as a Vite dynamic ESM chunk. Development uses the source entry;
+production rewrites `dist/plugins.json` to the hashed chunk path.
 
-**Acceptance:** the application can start without the feature UI plugin,
-then expose it when the compatible plugin is installed/discovered.
+**Current acceptance:** valid same-origin manifests can be loaded through the
+controlled boundary, while invalid, cross-origin, malformed, or setup-failing
+plugins cannot break generic/core viewers. Optional activation is packaged
+manifest-driven; no remote manifest discovery or arbitrary cross-origin
+loading is enabled.
+
+Packaged validation is complete: the production preview served
+`/plugins.json`, the manifest resolved the emitted mass-spec chunk, and the
+browser imported `streamfind.mass-spec` with API version `1.0` without page
+errors. The preview process was stopped after validation.
+
+The first live dynamic-plugin reproduction also exposed and fixed the module
+export boundary: the loader accepts `default`/`plugin` exports, so the bundled
+mass-spec entry now provides a default plugin export. Without it, the hardcoded
+artifact renderer menu still displayed `Features Explorer`, but registry
+resolution returned no viewer and the modal fell back to a `null` payload.
+
+Artifact renderer menus now enumerate compatible registrations from the shared
+viewer registry. The canvas retains only the generic table action for table
+representations; plugin-provided viewer labels and IDs are discovered from the
+artifact semantic contract and selected by viewer ID, so unavailable optional
+plugins no longer leave dead domain-specific buttons.
 
 ### Phase 5 --- Curation operations
 
-Add backend curation contracts and frontend editor actions.
+After the read-only viewer is stable, add backend-mediated curation. Begin
+with one narrow operation such as `unreviewed -> accepted/rejected`.
 
-Implement at least one end-to-end curation operation, for example:
-
-``` text
-feature status: unreviewed -> accepted/rejected
-```
-
-**Acceptance:** user-confirmed curation is persisted through the backend
-with provenance and is restored after project reload.
+**Acceptance:** explicit user confirmation invokes a validated backend
+operation, records provenance/audit data, and restores the curated state after
+project reload. The viewer never writes DuckDB directly.
 
 ### Phase 6 --- Generalize extension points
 
-Once the viewer/editor model is proven, add optional registries for:
-
--   parameter editors;
--   node contextual actions;
--   domain panels;
--   specialized visualization renderers.
-
-Avoid designing all extension points before the Feature Inspector proves
-the common plugin lifecycle.
+Only after the Feature Inspector proves the lifecycle, consider registries for
+parameter editors, node actions, domain panels, and specialized renderers.
+Each extension must preserve the generic artifact fallback and section 3a GUI
+contract.
 
 ------------------------------------------------------------------------
 
 ## 20. Suggested frontend organization
 
-The current implementation remains under `frontend/src/visualization/` and
-`frontend/src/app/`, including the transitional `McpVisualizationApp.tsx`.
-The following is the target organization after Phase 1, not a claim about the
-current checkout:
+The current implementation remains under `frontend/src/visualization/`,
+`frontend/src/viewers/`, and `frontend/src/app/`. The following organization
+is the current static shape plus the target plugin boundary; runtime plugin
+files are future work:
 
 ``` text
 frontend/src/
@@ -969,16 +1173,22 @@ frontend/src/
 
     viewers/
         ViewerShell.tsx
-        ViewerRegistry.ts
-        ViewerResolver.ts
-        GenericTableViewer.tsx
-        viewerTypes.ts
+        ViewerResolver.tsx
+        viewerTypes.ts              # ViewerRegistry and shared types
+        registerCoreViewers.ts
+        VisualizationArtifactViewer.tsx
 
     plugins/
-        FrontendPluginApi.ts
+        pluginTypes.ts
         FrontendPluginRegistry.ts
+        registerCoreFrontendPlugin.ts
         FrontendPluginLoader.ts
-        frontendPluginTypes.ts
+        mass-spec/
+            FeatureInspector.tsx
+            FeatureInspector.test.tsx
+            FeatureInspector.css
+            index.ts
+            register.ts
 
     core-ui/
         ...
@@ -1055,13 +1265,38 @@ Planned additions:
 ### Feature viewer tests
 
 -   table loading;
+-   complete multi-page artifact loading and short/empty page termination;
 -   selection;
+-   analysis-scoped feature/component identity;
+-   cross-analysis feature-group identity;
+-   null/empty/whitespace selection-mode filtering;
 -   EIC update;
 -   MS1 update;
 -   MS2 update;
+-   deterministic trace, marker, fill, and legend color parity;
+-   persisted partner/correlation/loss-chain network construction;
 -   missing optional data;
 -   large-table pagination/filtering;
 -   viewer close/reopen state behavior.
+
+### Manual GUI regression checks
+
+Run these against a fresh browser session after viewer-layout changes:
+
+-   inspect the Feature Inspector in light and dark themes;
+-   resize the details splitter and verify EIC/MS1/MS2 plots use the available
+    panel width;
+-   verify the EIC legend remains inside the plot at top-right and its swatches
+    match the traces;
+-   select by feature, group, component, and group+component, including an
+    artifact where the selected dimension is entirely empty;
+-   confirm the feature count, plot, table/details, and dependent views all
+    reflect the filtered rows;
+-   click a point and a table row, then switch tabs without creating a canvas
+    node;
+-   exercise file/folder click, Shift-click, Ctrl/Cmd-click, right-click, and
+    JSON-array append behavior;
+-   resize JSON editor modals horizontally and vertically.
 
 ### MCP/web-app boundary tests
 
@@ -1116,27 +1351,25 @@ Planned additions:
 
 ## 24. Recommended first implementation slice
 
-The smallest slice that meaningfully validates the architecture is:
+The next smallest slice that meaningfully advances the current architecture is:
 
-1. inventory the current `visualizationSpecResult` artifact and MCP resource
-   behavior;
-2. remove the release/package dependency on MCP HTML assets;
-3. add a web-app `ViewerShell` around the existing static renderer registry;
-4. resolve compatible viewers from a workflow output/artifact, not from an MCP
-   resource or a hard-coded node ID;
-5. implement a statically registered generic artifact viewer;
-6. implement the first mass-spec `FeatureTableViewer` against bounded artifact
-   retrieval;
-7. select one feature and request one dependent view, preferably EIC;
-8. ensure no new workflow node is created by opening the viewer;
-9. preserve the existing Plotly renderer behavior in the web app;
-10. only after this works, define the versioned frontend plugin API and runtime
-    loader.
+1. audit the implemented `ViewerShell`, `ViewerResolver`, core registrations,
+   and generic fallback against persisted artifact identity;
+2. add missing unit tests for the section 3a selection, color, relationship,
+   and pagination contracts;
+3. run the fresh browser GUI regression matrix in the testing section;
+4. fix only concrete viewer-boundary or GUI-contract failures, without adding
+   a second rendering path or moving domain logic into `CanvasShell`;
+5. remove the remaining transitional raw viewer-client field after all static
+   viewers use the plugin API;
+6. design the manifest and controlled runtime loader around the now-tested
+   transactional registration boundary.
 
-This sequencing separates three risks:
+This sequencing separates four risks:
 
+-   read-only viewer binding and GUI regressions;
 -   MCP/web-app boundary and release packaging;
--   viewer architecture and artifact binding;
+-   public plugin API compatibility;
 -   runtime JavaScript plugin loading.
 
 ------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 
 #include <atomic>
+#include <algorithm>
+#include <cmath>
 
 #include <cstring>
 #include <optional>
@@ -160,8 +162,15 @@ Json invoke_dynamic(
         context.database_path = project.get_database_path();
         context.operation_instance = workflow_instance;
         context.cancelled = &cancelled;
-        context.progress = [&project](double, std::string_view message) {
-            if (!message.empty()) project.log_operation(message);
+        context.cancellation_requested = [&project] { return project.cancellation_requested(); };
+        context.progress = [&project](double fraction, std::string_view message) {
+            if (message.empty()) return;
+            const auto percent = static_cast<int>(std::round(std::clamp(fraction, 0.0, 1.0) * 100.0));
+            project.log_operation("[" + std::to_string(percent) + "%] " + std::string(message));
+        };
+        plugin.runtime_diagnostics.clear();
+        context.report_error = [&plugin](std::string_view message) {
+            plugin.runtime_diagnostics.assign(message.data(), message.size());
         };
         context.allowed_tables = transaction_tables;
         if (manifest) {
@@ -199,10 +208,13 @@ Json invoke_dynamic(
                         const auto name = column.value("name", std::string{});
                         if (name.empty()) continue;
                         context.readable_columns[physical_table].insert(name);
-                        context.column_types[physical_table][name] =
-                            column.value("type", std::string{}) == "integer"
-                                ? STREAMFIND_PLUGIN_COLUMN_INT64
-                                : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                        const auto semantic_type = column.value("type", std::string{});
+                        context.column_types[physical_table][name] = semantic_type == "integer"
+                            ? STREAMFIND_PLUGIN_COLUMN_INT64
+                            : semantic_type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
+                            : semantic_type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
+                            : semantic_type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
+                            : STREAMFIND_PLUGIN_COLUMN_UTF8;
                     }
                     break;
                 }
@@ -246,12 +258,18 @@ Json invoke_dynamic(
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             const std::string contract_id(contract, contract_size);
             const auto output = context.output_tables.find(contract_id);
-            if (output == context.output_tables.end() || output->second.empty())
+            if (output == context.output_tables.end() || output->second.empty()) {
+                if (context.report_error)
+                    context.report_error("workflow output contract is not allocated: " + contract_id);
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
-            return plugin_append_batch(
+            }
+            const auto status = plugin_append_batch(
                 execution_context, output->second.data(),
                 static_cast<uint32_t>(output->second.size()), columns, column_count,
                 row_count, user_data);
+            if (status != STREAMFIND_PLUGIN_OK && context.report_error)
+                context.report_error("workflow output batch emission failed with status " + std::to_string(status));
+            return status;
         };
         context.emit_result = [&emitted_results, &tables, &capability_id, &producer_instance, &lineage_inputs, workflow_revision](
             void *, const char *contract, uint32_t contract_size,
@@ -277,9 +295,9 @@ Json invoke_dynamic(
         const auto status = plugin.plugin.invoke(
             &context, text.data(), static_cast<uint32_t>(text.size()), &buffer, plugin.plugin.user_data);
         if (status != STREAMFIND_PLUGIN_OK) {
-            throw Error(ErrorCode::MethodExecution,
-                            "dynamic plugin invocation failed with status " + std::to_string(status) +
-                            (plugin.runtime_diagnostics.empty() ? std::string{} : ": " + plugin.runtime_diagnostics));
+            throw Error(status == STREAMFIND_PLUGIN_CANCELLED ? ErrorCode::Cancelled : ErrorCode::MethodExecution,
+                        "dynamic plugin invocation failed with status " + std::to_string(status) +
+                        (plugin.runtime_diagnostics.empty() ? std::string{} : ": " + plugin.runtime_diagnostics));
         }
         if ((buffer.data == nullptr) != (buffer.size == 0)) {
             plugin.plugin.release_buffer(&buffer, plugin.plugin.user_data);

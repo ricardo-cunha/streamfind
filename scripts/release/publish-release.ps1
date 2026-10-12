@@ -19,8 +19,6 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')]
     [string]$Version,
     [string]$Repository = 'ricardo-cunha/streamfind',
-    [ValidateSet('Cpp', 'Rust', 'All')]
-    [string]$Backend = 'Cpp',
     [switch]$Replace
 )
 
@@ -41,7 +39,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not (Test-Path $output)) {
-    throw "Release output directory not found: $output. Run scripts\release\cpp\release-cpp.ps1 or scripts\release\rust\release-rust.ps1 first."
+    throw "Release output directory not found: $output. Run scripts\release\cpp\release-cpp.ps1 first."
 }
 
 $escapedVersion = [regex]::Escape($Version)
@@ -55,18 +53,10 @@ $archives = @(
 if ($archives.Count -eq 0) {
     throw "No versioned release archives found for $Version in $output."
 }
-if (($Backend -in @('Cpp', 'All')) -and -not ($archives | Where-Object { $_.Name -like "streamfind-core-cpp-$Version-*" })) {
+if (-not ($archives | Where-Object { $_.Name -like "streamfind-core-cpp-$Version-*" })) {
     throw "The C++ archive for $Version is missing from $output."
 }
-if (($Backend -in @('Rust', 'All')) -and -not ($archives | Where-Object { $_.Name -like "streamfind-rust-$Version-*" })) {
-    throw "The Rust archive for $Version is missing from $output."
-}
-if ($Backend -eq 'Cpp' -and ($archives | Where-Object { $_.Name -like "streamfind-rust-$Version-*" })) {
-    throw "Rust archives for $Version are present in $output. Remove stale archives or explicitly publish with -Backend All."
-}
-$archives = @($archives | Where-Object {
-    $Backend -eq 'All' -or ($Backend -eq 'Cpp' -and $_.Name -like "streamfind-core-cpp-$Version-*") -or ($Backend -eq 'Rust' -and $_.Name -like "streamfind-rust-$Version-*")
-})
+$archives = @($archives | Where-Object { $_.Name -like "streamfind-core-cpp-$Version-*" })
 
 $checksum = Join-Path $output 'sha256sums.txt'
 if (-not (Test-Path $checksum)) {
@@ -98,13 +88,7 @@ if ($Replace) {
     if ($LASTEXITCODE -ne 0) { throw "GitHub Release asset upload failed ($LASTEXITCODE)." }
 } else {
     Write-Host "Creating GitHub Release $tag..."
-    $notes = if ($Backend -eq 'Cpp') {
-        "Development release of the native C++ backend for Windows and Linux. Rust is not included in this release. See the documentation for package contents and compatibility scope."
-    } elseif ($Backend -eq 'Rust') {
-        "Development release of the preserved Rust backend. See the documentation for package contents and compatibility scope."
-    } else {
-        "Development release of the native C++ and Rust backends. See the documentation for package contents and compatibility scope."
-    }
+    $notes = "Development release of the native C++ backend for Windows and Linux. See the documentation for package contents and compatibility scope."
     & $gh.Path release create $tag @assets --repo $Repository --title "streamfind $Version" --notes $notes --generate-notes
     if ($LASTEXITCODE -ne 0) { throw "GitHub Release creation failed ($LASTEXITCODE)." }
 }

@@ -51,12 +51,18 @@ std::filesystem::path streamfind_home() {
 }
 
 std::filesystem::path jena_home() {
+    const auto executable_directory = detail::executable_dir();
+    const auto installed_candidates = {
+        executable_directory / "tools" / "jena",
+        executable_directory.parent_path() / "tools" / "jena",
+        executable_directory.parent_path().parent_path() / "sdk" / "tools" / "jena"};
+    for (const auto &installed : installed_candidates) {
+        if (std::filesystem::exists(installed)) return installed;
+    }
 #ifdef STREAMFIND_JENA_VENDOR_DIR
     const std::filesystem::path vendored(STREAMFIND_JENA_VENDOR_DIR);
     if (std::filesystem::exists(vendored)) return vendored;
 #endif
-    const auto installed = detail::executable_dir().parent_path() / "share" / "streamfind" / "tools" / "jena";
-    if (std::filesystem::exists(installed)) return installed;
 #ifdef _WIN32
     if (const char *profile = std::getenv("USERPROFILE"); profile && *profile)
         return std::filesystem::path(profile) / ".streamfind" / "tools" / "jena";

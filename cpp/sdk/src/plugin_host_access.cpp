@@ -1,6 +1,7 @@
 #include "streamfind/sdk/plugin_host_access.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
 
+#include <exception>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -12,6 +13,13 @@ namespace detail {
 struct ReadRows {
     std::vector<std::string> names;
     Json rows = Json::array();
+};
+
+struct ReadBatch {
+    std::vector<std::string> names;
+    PluginProjectAccess::JsonBatchCallback callback;
+    std::exception_ptr exception;
+    std::uint64_t row_count = 0;
 };
 
 streamfind_plugin_status consume_rows(
@@ -60,6 +68,60 @@ streamfind_plugin_status consume_rows(
     return STREAMFIND_PLUGIN_OK;
 }
 
+streamfind_plugin_status consume_batch(
+    void *context, const streamfind_plugin_batch_column *columns,
+    uint32_t column_count, uint64_t row_count) {
+    auto &result = *static_cast<ReadBatch *>(context);
+    result.row_count = row_count;
+    Json rows = Json::array();
+    for (uint64_t row = 0; row < row_count; ++row) {
+        Json object = Json::object();
+        for (uint32_t column = 0; column < column_count; ++column) {
+            const auto &source = columns[column];
+            const bool valid = source.validity_bitmap == nullptr ||
+                (source.validity_bitmap[row / 8] & (1u << (row % 8))) != 0;
+            if (!valid) {
+                object[result.names[column]] = nullptr;
+                continue;
+            }
+            switch (source.type) {
+            case STREAMFIND_PLUGIN_COLUMN_UTF8:
+            case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
+            case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
+            case STREAMFIND_PLUGIN_COLUMN_BINARY: {
+                if (source.element_size != sizeof(streamfind_plugin_string_view))
+                    return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                const auto *values = static_cast<const streamfind_plugin_string_view *>(source.data);
+                object[result.names[column]] = std::string(values[row].data, values[row].size);
+                break;
+            }
+            case STREAMFIND_PLUGIN_COLUMN_INT64:
+                if (source.element_size != sizeof(int64_t)) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                object[result.names[column]] = static_cast<const int64_t *>(source.data)[row];
+                break;
+            case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+                if (source.element_size != sizeof(double)) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                object[result.names[column]] = static_cast<const double *>(source.data)[row];
+                break;
+            case STREAMFIND_PLUGIN_COLUMN_BOOL:
+                if (source.element_size != sizeof(uint8_t)) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                object[result.names[column]] = static_cast<const uint8_t *>(source.data)[row] != 0;
+                break;
+            default:
+                return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+            }
+        }
+        rows.push_back(std::move(object));
+    }
+    try {
+        result.callback(rows);
+    } catch (...) {
+        result.exception = std::current_exception();
+        return STREAMFIND_PLUGIN_ERROR;
+    }
+    return STREAMFIND_PLUGIN_OK;
+}
+
 
 }  // namespace detail
 
@@ -80,6 +142,11 @@ const std::filesystem::path &PluginHostAccess::database_path() const noexcept {
 
 std::string_view PluginHostAccess::operation_instance() const noexcept {
     return static_cast<const PluginDataServiceContext *>(execution_context_)->operation_instance;
+}
+
+bool PluginHostAccess::is_cancelled() const noexcept {
+    return host_.is_cancelled != nullptr &&
+           host_.is_cancelled(execution_context_, host_.user_data) != 0;
 }
 
 streamfind_plugin_column_type PluginHostAccess::column_type(
@@ -158,6 +225,53 @@ Json PluginHostAccess::read(const std::string &table_name,
         }
     }
     return result;
+}
+
+void PluginHostAccess::read_batches(const std::string &table_name,
+                                    const std::vector<std::string> &column_names,
+                                    const std::string &order_by,
+                                    const JsonBatchCallback &callback) {
+    (void)order_by;
+    if (table_name.empty() || column_names.empty() || order_by.empty() || !callback)
+        throw std::invalid_argument("invalid dynamic project batch read request");
+
+    std::vector<streamfind_plugin_batch_column> requested(column_names.size());
+    for (std::size_t i = 0; i < column_names.size(); ++i) {
+        if (column_names[i].empty()) throw std::invalid_argument("empty dynamic project read column");
+        const auto type = column_type(table_name, column_names[i]);
+        requested[i] = {column_names[i].data(), static_cast<uint32_t>(column_names[i].size()),
+                        type, 0, nullptr, 0, 0, nullptr};
+    }
+
+    constexpr std::uint64_t batch_size = 4096;
+    std::uint64_t offset = 0;
+    for (;;) {
+        if (is_cancelled()) return;
+        detail::ReadBatch batch;
+        batch.names = column_names;
+        batch.callback = callback;
+        const auto status = host_.read_batch(
+            execution_context_, table_name.data(), static_cast<uint32_t>(table_name.size()),
+            requested.data(), static_cast<uint32_t>(requested.size()), offset, batch_size,
+            &detail::consume_batch, &batch, host_.user_data);
+        if (batch.exception) std::rethrow_exception(batch.exception);
+        if (status != STREAMFIND_PLUGIN_OK)
+            throw std::runtime_error("plugin read_batch failed with status " + std::to_string(status));
+        if (batch.row_count == 0 || batch.row_count < batch_size) return;
+        offset += batch.row_count;
+    }
+}
+
+std::uint64_t PluginHostAccess::count_rows(const std::string &table_name) {
+    if (host_.count_rows == nullptr)
+        throw std::runtime_error("plugin host does not provide row counting");
+    std::uint64_t row_count = 0;
+    const auto status = host_.count_rows(
+        execution_context_, table_name.data(), static_cast<uint32_t>(table_name.size()),
+        &row_count, host_.user_data);
+    if (status != STREAMFIND_PLUGIN_OK)
+        throw std::runtime_error("plugin count_rows failed with status " + std::to_string(status));
+    return row_count;
 }
 
 void PluginHostAccess::clear_table(const std::string &table_name) {

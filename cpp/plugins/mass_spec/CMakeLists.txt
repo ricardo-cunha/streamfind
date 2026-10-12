@@ -11,6 +11,10 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/readers/reader_sciex.cpp
     src/readers/reader_thermo.cpp
     src/operations/base.cpp
+    src/operations/fragmentation/fragment_suspect_targets.cpp
+    src/operations/fragmentation/fragmentation_to_suspect_targets.cpp
+    src/operations/fragmentation/expand_fragmentation_tree.cpp
+    src/operations/fragmentation/filter_fragmentation_tree.cpp
     src/operations/chromatograms/operations.cpp
     src/operations/nta/operations.cpp
     src/operations/nta/nta_deconvolution.cpp
@@ -24,10 +28,12 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/nta/nta_gap_filling.cpp
     src/operations/nta/nta_metfrag_runner.cpp
     src/operations/nta/nta_suspect_screening.cpp
+    src/operations/nta/nta_read_csv_suspect_targets.cpp
     src/operations/nta/nta_load_features_ms1.cpp
     src/operations/nta/nta_load_features_ms2.cpp
 
     src/utils/base.cpp
+    src/utils/target_csv.cpp
     src/utils/chromatograms.cpp
     src/utils/nta.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"
@@ -42,8 +48,9 @@ target_include_directories(streamfind_mass_spec_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/pugixml-1.14/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/isospec/src/IsoSpec++"
 )
-target_link_libraries(streamfind_mass_spec_plugin PRIVATE streamfind::cpp_sdk streamfind::zstd)
+target_link_libraries(streamfind_mass_spec_plugin PRIVATE streamfind::cpp_sdk streamfind::zstd IsoSpec++-static)
 
 set_target_properties(streamfind_mass_spec_plugin PROPERTIES OUTPUT_NAME "streamfind_mass_spec")
 if(WIN32)
@@ -55,9 +62,14 @@ add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
         "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
-        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/catalogue.duckdb")
+        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/catalogue.duckdb"
+    )
 streamfind_validate_plugin_build(streamfind_mass_spec_plugin mass_spec)
 streamfind_stage_mingw_plugin_runtime(streamfind_mass_spec_plugin mass_spec)
+add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/resources")
 if(MSVC)
     target_compile_definitions(streamfind_mass_spec_plugin PRIVATE
         NOMINMAX
@@ -75,14 +87,16 @@ endif()
 
 install(TARGETS streamfind_mass_spec_plugin
     RUNTIME DESTINATION plugins/mass_spec
-    LIBRARY DESTINATION plugins/mass_spec
-    ARCHIVE DESTINATION sdk/lib)
-
-install(TARGETS libzstd_static
-    EXPORT streamfind-cpp-targets
-    ARCHIVE DESTINATION sdk/lib
-    LIBRARY DESTINATION sdk/lib
-    RUNTIME DESTINATION bin)
+    LIBRARY DESTINATION plugins/mass_spec)
+if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    install(TARGETS streamfind_mass_spec_plugin
+        ARCHIVE DESTINATION sdk/lib)
+    install(TARGETS libzstd_static
+        EXPORT streamfind-cpp-targets
+        ARCHIVE DESTINATION sdk/lib
+        LIBRARY DESTINATION sdk/lib
+        RUNTIME DESTINATION sdk/bin)
+endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/LICENSE"
     DESTINATION licenses RENAME zstd-LICENSE.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/COPYING"
@@ -91,3 +105,5 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/mass_spec/ontology)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/mass_spec)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
+    DESTINATION plugins/mass_spec/resources)

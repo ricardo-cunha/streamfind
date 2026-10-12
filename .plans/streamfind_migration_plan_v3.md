@@ -49,7 +49,7 @@ Core owns project lifecycle, workflow persistence, validation, execution, DuckDB
    - Add visualization operations that publish typed visualization-spec artifacts.
 
 7. **Deferred integrations**
-   - Reopen Rust, R, and other integrations only after the C++ contracts and release packages are stable.
+   - Reopen R and other integrations only after the C++ contracts and release packages are stable.
    - Any future backend must consume the same semantic operation, port, result, and artifact contracts independently.
 
 ## Acceptance gates

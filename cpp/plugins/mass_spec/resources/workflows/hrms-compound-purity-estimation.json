@@ -1,0 +1,528 @@
+{
+  "connections": [
+    {
+      "source_operation": "operation-1",
+      "source_port": "analysesTable",
+      "target_operation": "operation-2",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-2",
+      "source_port": "analysesTable",
+      "target_operation": "operation-3",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-4",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-4",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-4",
+      "source_port": "featuresTable",
+      "target_operation": "operation-6",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-6",
+      "source_port": "featuresTable",
+      "target_operation": "operation-7",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-7",
+      "source_port": "featuresTable",
+      "target_operation": "operation-8",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-8",
+      "source_port": "featuresTable",
+      "target_operation": "operation-9",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-9",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-9",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-9",
+      "source_port": "featuresTable",
+      "target_operation": "operation-10",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-10",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-10",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-10",
+      "source_port": "featuresTable",
+      "target_operation": "operation-11",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-11",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-11",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-4",
+      "source_port": "featuresTable",
+      "target_operation": "operation-13",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-12",
+      "source_port": "targetsTable",
+      "target_operation": "operation-13",
+      "target_port": "parameter:targets"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-14",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "analysesTable",
+      "target_operation": "operation-14",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-15",
+      "source_port": "suspectTargetsTable",
+      "target_operation": "operation-16",
+      "target_port": "suspectTargetsTable"
+    },
+    {
+      "source_operation": "operation-16",
+      "source_port": "fragmentationTreeTable",
+      "target_operation": "operation-21",
+      "target_port": "fragmentationTreeTable"
+    },
+    {
+      "source_operation": "operation-20",
+      "source_port": "fragmentationTreeTable",
+      "target_operation": "operation-18",
+      "target_port": "fragmentationTreeTable"
+    },
+    {
+      "source_operation": "operation-21",
+      "source_port": "fragmentationTreeTable",
+      "target_operation": "operation-20",
+      "target_port": "fragmentationTreeTable"
+    },
+    {
+      "source_operation": "operation-11",
+      "source_port": "featuresTable",
+      "target_operation": "operation-19",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-18",
+      "source_port": "suspectTargetsTable",
+      "target_operation": "operation-19",
+      "target_port": "parameter:suspect_targets"
+    }
+  ],
+  "metadata": {
+    "name": "HRMS Compound Purity Estimation",
+    "description": "Processes blank and sample HRMS files through feature detection, component annotation, filtering, blank subtraction, MS1/MS2 loading, target matching, suspect fragmentation, and MetFrag identification.",
+    "methods": [
+      "Blank and replicate naming",
+      "Feature detection and componentization",
+      "Isotope, adduct, and loss annotation",
+      "Feature filtering and blank subtraction",
+      "MS1 and MS2 feature spectrum loading",
+      "Target-matched feature retrieval",
+      "Suspect target preparation and fragmentation",
+      "MetFrag suspect screening and identification",
+      "Total ion chromatogram visualization"
+    ],
+    "owner": "StreamFind mass-spectrometry demos",
+    "purpose": "Prepare an HRMS workflow for compound purity estimation and suspect identification",
+    "sample_type": "HRMS sample",
+    "use_case": "Compound purity estimation with MetFrag identification"
+  },
+  "name": "Workflow",
+  "operations": [
+    {
+      "id": "operation-1",
+      "inputs": {},
+      "operation": "mass_spec.read_mass_spec_files",
+      "parameters": {
+        "source_paths": [
+          "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4_blank_P1-E-5_1_2022_11895.d",
+          "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4_P1-F-1_1_2022_11896.d"
+        ]
+      },
+      "position": {
+        "x": 43.570875934892115,
+        "y": 285.6651796634776
+      }
+    },
+    {
+      "id": "operation-2",
+      "inputs": {},
+      "operation": "mass_spec.set_replicate_names",
+      "parameters": {
+        "replicate_names": [
+          "blank",
+          "sample"
+        ]
+      },
+      "position": {
+        "x": 408.89840974880053,
+        "y": 114.45796960199216
+      }
+    },
+    {
+      "id": "operation-3",
+      "inputs": {},
+      "operation": "mass_spec.set_blank_names",
+      "parameters": {
+        "blank_names": [
+          "blank",
+          "blank"
+        ]
+      },
+      "position": {
+        "x": 690.4891346253619,
+        "y": 114.5215202095743
+      }
+    },
+    {
+      "id": "operation-4",
+      "inputs": {},
+      "operation": "mass_spec.find_features",
+      "parameters": {
+        "base_quantile": 0.2,
+        "baseline_window": 200,
+        "debug_analysis": "",
+        "debug_mz": 0,
+        "debug_spec_idx": -1,
+        "max_feature_width": 250,
+        "min_snr": 2,
+        "min_traces": 3,
+        "noise_threshold": 10,
+        "ppm_threshold": 20,
+        "rt_windows": [
+          {
+            "rtmax": 3400,
+            "rtmin": 300
+          }
+        ]
+      },
+      "position": {
+        "x": 985.3671363355693,
+        "y": 516.8458176013531
+      }
+    },
+    {
+      "id": "operation-6",
+      "inputs": {},
+      "operation": "mass_spec.create_components",
+      "parameters": {
+        "debug_analysis": "",
+        "debug_rt": 0,
+        "min_correlation": 0.9,
+        "rt_window": [
+          -10,
+          10
+        ]
+      },
+      "position": {
+        "x": 1331.3322360133325,
+        "y": 626.3958980730555
+      }
+    },
+    {
+      "id": "operation-7",
+      "inputs": {},
+      "operation": "mass_spec.annotate_components",
+      "parameters": {
+        "debug_analysis": "",
+        "debug_component": "",
+        "isotope_elements": [
+          "C:1-130",
+          "N:0-10",
+          "O:0-20",
+          "S:0-4",
+          "Cl:0-6",
+          "Br:0-4"
+        ],
+        "annotation_modifications": [
+          "+Na",
+          "+NH4",
+          "+K",
+          "+Cl",
+          "+FA-H",
+          "+CH3COO",
+          "-H2O",
+          "-CO2",
+          "-NH3",
+          "-CO"
+        ],
+        "max_charge": 1,
+        "max_gaps": 1,
+        "max_isotopes": 8,
+        "ppm": 10
+      },
+      "position": {
+        "x": 1611.374759298665,
+        "y": 625.7679459018269
+      }
+    },
+    {
+      "id": "operation-8",
+      "inputs": {},
+      "operation": "mass_spec.filter_features",
+      "parameters": {
+        "remove_adducts": true,
+        "remove_filled": false,
+        "remove_isotopes": true,
+        "remove_losses": true
+      },
+      "position": {
+        "x": 1886.9847966932475,
+        "y": 620.8614808143017
+      }
+    },
+    {
+      "id": "operation-9",
+      "inputs": {},
+      "operation": "mass_spec.subtract_blank",
+      "parameters": {
+        "blank_threshold": 5,
+        "mz_expand": 0.001,
+        "rt_expand": 5
+      },
+      "position": {
+        "x": 2394.198960957123,
+        "y": 413.9980771259158
+      }
+    },
+    {
+      "id": "operation-10",
+      "inputs": {},
+      "operation": "mass_spec.load_features_ms1",
+      "parameters": {
+        "filtered": false,
+        "min_traces_intensity": 100,
+        "mz_clust": 0.008,
+        "mz_window": [
+          -500,
+          500
+        ],
+        "presence": 0.2,
+        "rt_window": [
+          -2,
+          2
+        ]
+      },
+      "position": {
+        "x": 2676.521986691379,
+        "y": 412.5932357860737
+      }
+    },
+    {
+      "id": "operation-11",
+      "inputs": {},
+      "operation": "mass_spec.load_features_ms2",
+      "parameters": {
+        "filtered": false,
+        "isolation_window": 1.3,
+        "min_traces_intensity": 50,
+        "mz_clust": 0.008,
+        "presence": 0.5
+      },
+      "position": {
+        "x": 2957.4775235144043,
+        "y": 412.7292041140479
+      }
+    },
+    {
+      "id": "operation-12",
+      "inputs": {},
+      "operation": "mass_spec.read_csv_targets",
+      "parameters": {
+        "targets_csv_path": "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4_targets.csv"
+      },
+      "position": {
+        "x": 1137.8706145618257,
+        "y": 12
+      }
+    },
+    {
+      "id": "operation-13",
+      "inputs": {},
+      "operation": "mass_spec.get_features",
+      "parameters": {
+        "analysis_names": [],
+        "filtered": false,
+        "ppm": 20,
+        "rt_tolerance": 15,
+        "targets": []
+      },
+      "position": {
+        "x": 1474.6499083418048,
+        "y": 12
+      }
+    },
+    {
+      "id": "operation-14",
+      "inputs": {},
+      "operation": "mass_spec.plot_spectra_tic",
+      "parameters": {
+        "analysis_names": [],
+        "levels": [
+          1
+        ],
+        "plot_downsize": 0,
+        "plot_group_by": "analysis",
+        "plot_title": "Total Ion Chromatograms (TICs)",
+        "plot_x_label": "Retention time / seconds",
+        "plot_y_label": "Intensity / counts",
+        "rt_max": 0,
+        "rt_min": 0
+      },
+      "position": {
+        "x": 402.50294852951356,
+        "y": 497.1534303508787
+      }
+    },
+    {
+      "id": "operation-15",
+      "inputs": {},
+      "operation": "mass_spec.read_mol_suspect_target",
+      "parameters": {
+        "compound_name": "Compound",
+        "mol_file_path": "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4.mol"
+      },
+      "position": {
+        "x": 1645.9100594184895,
+        "y": 1036.3710958469824
+      }
+    },
+    {
+      "id": "operation-16",
+      "inputs": {},
+      "operation": "mass_spec.fragment_suspect_targets",
+      "parameters": {
+        "fragmentation_depth": 2
+      },
+      "position": {
+        "x": 1974.2977628197104,
+        "y": 986.2980191407955
+      }
+    },
+    {
+      "id": "operation-18",
+      "inputs": {},
+      "operation": "mass_spec.fragmentation_to_suspect_targets",
+      "parameters": {
+        "number_duplicate_formulas": 4
+      },
+      "position": {
+        "x": 2956.550875881522,
+        "y": 808.4387841429758
+      }
+    },
+    {
+      "id": "operation-19",
+      "inputs": {},
+      "operation": "mass_spec.metfrag_screening",
+      "parameters": {
+        "debug": false,
+        "filtered": false,
+        "isotope_ppm": 10,
+        "maximum_tree_depth": 1,
+        "mzr_ms2": 0.008,
+        "number_threads": 5,
+        "post_processing_candidate_filter": [],
+        "ppm": 10,
+        "ppm_ms2": 10,
+        "pre_processing_candidate_filter": [
+          "UnconnectedCompoundFilter"
+        ],
+        "score_types": [
+          "FragmenterScore"
+        ],
+        "score_weights": [
+          1
+        ],
+        "sec": 15,
+        "suspect_targets": [],
+        "top_n": 10,
+        "use_smiles": true
+      },
+      "position": {
+        "x": 3368.675819375473,
+        "y": 660.3922983104668
+      }
+    },
+    {
+      "id": "operation-20",
+      "inputs": {},
+      "operation": "mass_spec.expand_fragmentation_tree",
+      "parameters": {
+        "max_attachment_variants_per_fragment": 8,
+        "max_fragment_units_per_candidate": 2,
+        "max_inverse_candidates": 5000,
+        "max_local_edit_candidates": 256
+      },
+      "position": {
+        "x": 2631.683023346808,
+        "y": 868.7231687207155
+      }
+    },
+    {
+      "id": "operation-21",
+      "inputs": {},
+      "operation": "mass_spec.filter_fragmentation_tree",
+      "parameters": {
+        "number_duplicate_formulas": 4
+      },
+      "position": {
+        "x": 2299.3144613864188,
+        "y": 937.3323403094741
+      }
+    }
+  ],
+  "schema_version": 1,
+  "version": 33,
+  "workflow_id": "workflow",
+  "domain": "mass_spec"
+}

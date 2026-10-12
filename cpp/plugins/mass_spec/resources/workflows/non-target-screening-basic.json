@@ -1,0 +1,649 @@
+{
+  "connections": [
+    {
+      "source_operation": "operation-1",
+      "source_port": "analysesTable",
+      "target_operation": "operation-2",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-2",
+      "source_port": "analysesTable",
+      "target_operation": "operation-3",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-4",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-4",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-4",
+      "source_port": "featuresTable",
+      "target_operation": "operation-6",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-6",
+      "source_port": "featuresTable",
+      "target_operation": "operation-7",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-9",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-9",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-10",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-10",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-10",
+      "source_port": "featuresTable",
+      "target_operation": "operation-11",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-11",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-11",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-14",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "analysesTable",
+      "target_operation": "operation-14",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-17",
+      "source_port": "suspectTargetsTable",
+      "target_operation": "operation-16",
+      "target_port": "parameter:suspect_targets"
+    },
+    {
+      "source_operation": "operation-16",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-19",
+      "target_port": "parameter:internal_standards"
+    },
+    {
+      "source_operation": "operation-8",
+      "source_port": "featuresTable",
+      "target_operation": "operation-9",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-7",
+      "source_port": "featuresTable",
+      "target_operation": "operation-10",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-11",
+      "source_port": "featuresTable",
+      "target_operation": "operation-16",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-11",
+      "source_port": "featuresTable",
+      "target_operation": "operation-19",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-19",
+      "source_port": "featuresTable",
+      "target_operation": "operation-20",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-20",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-20",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-20",
+      "source_port": "featuresTable",
+      "target_operation": "operation-21",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-16",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-22",
+      "target_port": "internalStandardsTable"
+    },
+    {
+      "source_operation": "operation-22",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-18",
+      "target_port": "internalStandardsTable"
+    },
+    {
+      "source_operation": "operation-19",
+      "source_port": "featuresTable",
+      "target_operation": "operation-18",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-18",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-21",
+      "target_port": "internalStandardsTable"
+    },
+    {
+      "source_operation": "operation-21",
+      "source_port": "featuresTable",
+      "target_operation": "operation-8",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-9",
+      "source_port": "featuresTable",
+      "target_operation": "operation-23",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-24",
+      "source_port": "suspectTargetsTable",
+      "target_operation": "operation-23",
+      "target_port": "parameter:suspect_targets"
+    }
+  ],
+  "metadata": {
+    "name": "Non-target Screening basic demo",
+    "description": "Complete non-target screening workflow for high-resolution mass-spectrometry data, including feature processing, internal-standard handling, and suspect screening.",
+    "methods": [
+      "Blank and replicate naming",
+      "Feature detection and componentization",
+      "Isotope, adduct, and loss annotation",
+      "MS1 and MS2 feature spectrum loading",
+      "Internal-standard detection and enrichment",
+      "Feature grouping and gap filling",
+      "Matrix-suppression correction and internal-standard filtering",
+      "Blank subtraction and feature filtering",
+      "Suspect screening with MetFrag",
+      "Total ion chromatogram visualization"
+    ],
+    "owner": "StreamFind mass-spectrometry demos",
+    "purpose": "Demonstrate an end-to-end non-target screening workflow",
+    "sample_type": "High-resolution mass-spectrometry samples",
+    "use_case": "Non-target screening with internal-standard quality control and suspect identification"
+  },
+  "name": "Workflow",
+  "operations": [
+    {
+      "id": "operation-1",
+      "inputs": {},
+      "operation": "mass_spec.read_mass_spec_files",
+      "parameters": {
+        "source_paths": [
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r003.mzML"
+        ]
+      },
+      "position": {
+        "x": 43.570875934892115,
+        "y": 285.6651796634776
+      }
+    },
+    {
+      "id": "operation-2",
+      "inputs": {},
+      "operation": "mass_spec.set_replicate_names",
+      "parameters": {
+        "replicate_names": [
+          "neg_blank",
+          "neg_blank",
+          "neg_blank",
+          "pos_blank",
+          "pos_blank",
+          "pos_blank",
+          "neg_influent",
+          "neg_influent",
+          "neg_influent",
+          "pos_influent",
+          "pos_influent",
+          "pos_influent",
+          "neg_o3sw_effluent",
+          "neg_o3sw_effluent",
+          "neg_o3sw_effluent",
+          "pos_o3sw_effluent",
+          "pos_o3sw_effluent",
+          "pos_o3sw_effluent"
+        ]
+      },
+      "position": {
+        "x": 410.79599035714386,
+        "y": 12
+      }
+    },
+    {
+      "id": "operation-3",
+      "inputs": {},
+      "operation": "mass_spec.set_blank_names",
+      "parameters": {
+        "blank_names": [
+          "neg_blank",
+          "neg_blank",
+          "neg_blank",
+          "pos_blank",
+          "pos_blank",
+          "pos_blank",
+          "neg_blank",
+          "neg_blank",
+          "neg_blank",
+          "pos_blank",
+          "pos_blank",
+          "pos_blank",
+          "neg_blank",
+          "neg_blank",
+          "neg_blank",
+          "pos_blank",
+          "pos_blank",
+          "pos_blank"
+        ]
+      },
+      "position": {
+        "x": 712.9796466249653,
+        "y": 12
+      }
+    },
+    {
+      "id": "operation-4",
+      "inputs": {},
+      "operation": "mass_spec.find_features",
+      "parameters": {
+        "base_quantile": 0.99,
+        "baseline_window": 200,
+        "debug_analysis": "",
+        "debug_mz": 0,
+        "debug_spec_idx": -1,
+        "max_feature_width": 100,
+        "min_snr": 3,
+        "min_traces": 3,
+        "noise_threshold": 500,
+        "ppm_threshold": 10,
+        "rt_windows": [
+          {
+            "rtmax": 3400,
+            "rtmin": 300
+          }
+        ]
+      },
+      "position": {
+        "x": 988.6966074144448,
+        "y": 559.8740833349062
+      }
+    },
+    {
+      "id": "operation-6",
+      "inputs": {},
+      "operation": "mass_spec.create_components",
+      "parameters": {
+        "debug_analysis": "",
+        "debug_rt": 0,
+        "min_correlation": 0.8,
+        "rt_window": [
+          -2.5,
+          2.5
+        ]
+      },
+      "position": {
+        "x": 1289.0399308359445,
+        "y": 589.4996529071323
+      }
+    },
+    {
+      "id": "operation-7",
+      "inputs": {},
+      "operation": "mass_spec.annotate_components",
+      "parameters": {
+        "annotation_modifications": [
+          "+Na",
+          "+NH4",
+          "+K",
+          "+Cl",
+          "+FA-H",
+          "+CH3COO",
+          "-H2O",
+          "-CO2",
+          "-NH3",
+          "-CO"
+        ],
+        "debug_analysis": "",
+        "debug_component": "",
+        "isotope_elements": [
+          "C:1-80",
+          "N:0-10",
+          "O:0-20",
+          "S:0-4",
+          "Cl:0-6",
+          "Br:0-4"
+        ],
+        "max_charge": 1,
+        "max_gaps": 1,
+        "max_isotopes": 8,
+        "ppm": 10
+      },
+      "position": {
+        "x": 1585.644854994824,
+        "y": 592.4153140865811
+      }
+    },
+    {
+      "id": "operation-8",
+      "inputs": {},
+      "operation": "mass_spec.filter_features",
+      "parameters": {
+        "min_gaussian_r2": 0.1,
+        "remove_adducts": true,
+        "remove_filled": false,
+        "remove_isotopes": true,
+        "remove_losses": true
+      },
+      "position": {
+        "x": 3968.3521140513035,
+        "y": 509.5833875411721
+      }
+    },
+    {
+      "id": "operation-9",
+      "inputs": {},
+      "operation": "mass_spec.subtract_blank",
+      "parameters": {
+        "blank_threshold": 5,
+        "mz_expand": 0.001,
+        "rt_expand": 5
+      },
+      "position": {
+        "x": 4273.601958093979,
+        "y": 472.5567886198749
+      }
+    },
+    {
+      "id": "operation-10",
+      "inputs": {},
+      "operation": "mass_spec.load_features_ms1",
+      "parameters": {
+        "filtered": false,
+        "min_traces_intensity": 500,
+        "mz_clust": 0.008,
+        "mz_window": [
+          -10,
+          20
+        ],
+        "presence": 0.2,
+        "rt_window": [
+          -2.5,
+          2.5
+        ]
+      },
+      "position": {
+        "x": 1948.3143923409907,
+        "y": 532.3923227674709
+      }
+    },
+    {
+      "id": "operation-11",
+      "inputs": {},
+      "operation": "mass_spec.load_features_ms2",
+      "parameters": {
+        "filtered": false,
+        "isolation_window": 1.3,
+        "min_traces_intensity": 50,
+        "mz_clust": 0.008,
+        "presence": 0.5
+      },
+      "position": {
+        "x": 2239.5136842871925,
+        "y": 532.5282910954452
+      }
+    },
+    {
+      "id": "operation-14",
+      "inputs": {},
+      "operation": "mass_spec.plot_spectra_tic",
+      "parameters": {
+        "analysis_names": [],
+        "levels": [
+          1
+        ],
+        "plot_downsize": 0,
+        "plot_group_by": "analysis",
+        "plot_title": "Total Ion Chromatograms (TICs)",
+        "plot_x_label": "Retention time / seconds",
+        "plot_y_label": "Intensity / counts",
+        "rt_max": 0,
+        "rt_min": 0
+      },
+      "position": {
+        "x": 429.57729273143957,
+        "y": 661.5176303727796
+      }
+    },
+    {
+      "id": "operation-16",
+      "inputs": {},
+      "operation": "mass_spec.find_internal_standards_metfrag",
+      "parameters": {
+        "debug": false,
+        "filtered": false,
+        "isotope_ppm": 10,
+        "maximum_tree_depth": 2,
+        "mzr_ms2": 0.008,
+        "number_threads": 5,
+        "post_processing_candidate_filter": [
+          "InChIKeyFilter"
+        ],
+        "ppm": 10,
+        "ppm_ms2": 10,
+        "pre_processing_candidate_filter": [
+          "UnconnectedCompoundFilter"
+        ],
+        "score_types": [
+          "FragmenterScore"
+        ],
+        "score_weights": [
+          1
+        ],
+        "sec": 15,
+        "suspect_targets": [],
+        "top_n": 2,
+        "use_smiles": true
+      },
+      "position": {
+        "x": 2601.906332861184,
+        "y": 794.1155444724089
+      }
+    },
+    {
+      "id": "operation-17",
+      "inputs": {},
+      "operation": "mass_spec.read_csv_suspect_targets",
+      "parameters": {
+        "suspect_targets_csv_path": "C:\\example_data\\mass_spec\\wastewater\\internal_standards.csv"
+      },
+      "position": {
+        "x": 2242.9130239420024,
+        "y": 979.056521463041
+      }
+    },
+    {
+      "id": "operation-18",
+      "inputs": {},
+      "operation": "mass_spec.enrich_internal_standards",
+      "parameters": {},
+      "position": {
+        "x": 3281.7393735618934,
+        "y": 926.0304643387345
+      }
+    },
+    {
+      "id": "operation-19",
+      "inputs": {},
+      "operation": "mass_spec.group_features",
+      "parameters": {
+        "bin_size": 5,
+        "grouping_method": "obi_warp",
+        "internal_standards": [],
+        "min_samples": 1,
+        "ppm": 10,
+        "rt_deviation": 5
+      },
+      "position": {
+        "x": 2959.9540591288164,
+        "y": 554.211513091606
+      }
+    },
+    {
+      "id": "operation-20",
+      "inputs": {},
+      "operation": "mass_spec.fill_features",
+      "parameters": {
+        "filtered": false,
+        "max_peak_width": 30,
+        "min_gaussian_fit": 0.2,
+        "min_number_traces": 5,
+        "min_signal_to_noise_ratio": 3,
+        "min_traces_intensity": 0,
+        "mz_expand": 0.005,
+        "rt_apex_deviation": 1,
+        "rt_expand": 10,
+        "within_replicate": true
+      },
+      "position": {
+        "x": 3313.038382198185,
+        "y": 501.3310233214569
+      }
+    },
+    {
+      "id": "operation-21",
+      "inputs": {},
+      "operation": "mass_spec.correct_matrix_suppression",
+      "parameters": {
+        "mp_rt_window": 60
+      },
+      "position": {
+        "x": 3664.3305381426317,
+        "y": 504.95059078418035
+      }
+    },
+    {
+      "id": "operation-22",
+      "inputs": {},
+      "operation": "mass_spec.filter_internal_standards",
+      "parameters": {
+        "id_levels": [
+          1,
+          2,
+          3
+        ],
+        "min_cosine_similarity": 0,
+        "min_score": 0,
+        "min_shared_fragments": 0,
+        "names": []
+      },
+      "position": {
+        "x": 2957.1930648200228,
+        "y": 943.4853576373348
+      }
+    },
+    {
+      "id": "operation-23",
+      "inputs": {},
+      "operation": "mass_spec.suspect_screening",
+      "parameters": {
+        "analysis_names": [],
+        "filtered": false,
+        "isotope_ppm": 10,
+        "min_cosine_similarity": 0.7,
+        "min_shared_fragments": 3,
+        "mzr_ms2": 0.008,
+        "ppm": 10,
+        "ppm_ms2": 10,
+        "sec": 15,
+        "suspect_targets": []
+      },
+      "position": {
+        "x": 4805.1307428763575,
+        "y": 581.5229574557948
+      }
+    },
+    {
+      "id": "operation-24",
+      "inputs": {},
+      "operation": "mass_spec.read_csv_suspect_targets",
+      "parameters": {
+        "suspect_targets_csv_path": "C:\\example_data\\mass_spec\\wastewater\\suspects.csv"
+      },
+      "position": {
+        "x": 4475.393704994414,
+        "y": 852.268461758057
+      }
+    }
+  ],
+  "schema_version": 1,
+  "version": 1,
+  "workflow_id": "mass-spec-non-target-screening-basic",
+  "domain": "mass_spec"
+}

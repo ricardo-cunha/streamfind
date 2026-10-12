@@ -55,6 +55,19 @@ sf:Workflow
     skos:prefLabel "Workflow" ;
     skos:definition "A versioned project workflow of operations and typed port connections." .
 
+sf:WorkflowMetadata
+    a rdfs:Class ;
+    rdfs:subClassOf skos:Concept ;
+    skos:prefLabel "Workflow metadata" ;
+    skos:definition "User-defined JSON metadata stored with a workflow; the workflow revision is tracked separately by sf:version." .
+
+sf:workflowMetadata
+    a rdf:Property ;
+    rdfs:domain sf:Workflow ;
+    rdfs:range sf:WorkflowMetadata ;
+    skos:prefLabel "workflow metadata" ;
+    skos:definition "Arbitrary user-defined JSON metadata associated with a workflow." .
+
 sf:Parameter
     a rdfs:Class ;
     rdfs:subClassOf skos:Concept ;
@@ -392,12 +405,12 @@ sf:columnName
     skos:prefLabel "column name" ;
     skos:definition "DuckDB column name." .
 
-sf:tableName
+sf:tableContractName
     a rdf:Property ;
     rdfs:domain sf:Table ;
     rdfs:range rdfs:Literal ;
-    skos:prefLabel "table name" ;
-    skos:definition "DuckDB table name." .
+    skos:prefLabel "table contract name" ;
+    skos:definition "Stable logical name of a table contract. Runtime-produced table artifacts may use a generated physical DuckDB table name and must be resolved through their artifact identifier." .
 
 sf:dataKind
     a rdf:Property ;

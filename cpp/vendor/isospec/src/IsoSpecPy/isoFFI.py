@@ -1,0 +1,290 @@
+import cffi
+import platform
+from pathlib import Path
+
+
+class IsoFFI:
+    def __init__(self):
+        self.ffi = cffi.FFI()
+        self.ffi.cdef(
+            """
+        void * setupIso(int dimNumber,
+                const int* isotopeNumbers,
+                const int* atomCounts,
+                const double* isotopeMasses,
+                const double* isotopeProbabilities);
+
+        void * isoFromFasta(const char* fasta, bool use_nominal_masses, bool add_water);
+
+        double getLightestPeakMassIso(void* iso);
+        double getLightestPeakLProbIso(void* iso);
+        void getLightestPeakSignature(void* iso, int* space);
+        double getHeaviestPeakMassIso(void* iso);
+        double getHeaviestPeakLProbIso(void* iso);
+        void getHeaviestPeakSignature(void* iso, int* space);
+        double getMonoisotopicPeakMassIso(void* iso);
+        double getMonoisotopicPeakLProbIso(void* iso);
+        void getMonoisotopicPeakSignature(void* iso, int* space);
+        double getModeLProbIso(void* iso);
+        double getModeMassIso(void* iso);
+        double getTheoreticalAverageMassIso(void* iso);
+        double getIsoVariance(void* iso);
+        double getIsoStddev(void* iso);
+        double* getMarginalLogSizeEstimates(void* iso, double target_total_prob);
+
+        void deleteIso(void* iso);
+
+        void* setupIsoThresholdGenerator(void* iso,
+                                         double threshold,
+                                         bool _absolute,
+                                         int _tabSize,
+                                         int _hashSize,
+                                         bool reorder_marginals);
+        double massIsoThresholdGenerator(void* generator);
+        double lprobIsoThresholdGenerator(void* generator);
+        double probIsoThresholdGenerator(void* generator);
+        bool advanceToNextConfigurationIsoThresholdGenerator(void* generator);
+        void deleteIsoThresholdGenerator(void* generator);
+        void get_conf_signatureIsoThresholdGenerator(void* generator, int* space);
+
+
+
+        void* setupIsoLayeredGenerator(void* iso,
+                                       int _tabSize,
+                                       int _hashSize,
+                                       bool reorder_marginals,
+                                       double t_prob_hint);
+        double massIsoLayeredGenerator(void* generator);
+        double lprobIsoLayeredGenerator(void* generator);
+        double probIsoLayeredGenerator(void* generator);
+        bool advanceToNextConfigurationIsoLayeredGenerator(void* generator);
+        void deleteIsoLayeredGenerator(void* generator);
+        void get_conf_signatureIsoLayeredGenerator(void* generator, int* space);
+
+
+        void* setupIsoOrderedGenerator(void* iso,
+                                       int _tabSize,
+                                       int _hashSize);
+        double massIsoOrderedGenerator(void* generator);
+        double lprobIsoOrderedGenerator(void* generator);
+        double probIsoOrderedGenerator(void* generator);
+        bool advanceToNextConfigurationIsoOrderedGenerator(void* generator);
+        void deleteIsoOrderedGenerator(void* generator);
+        void get_conf_signatureIsoOrderedGenerator(void* generator, int* space);
+
+        void* setupIsoStochasticGenerator(void* iso,
+                                   size_t no_molecules,
+                                   double precision,
+                                   double beta_bias);
+        double massIsoStochasticGenerator(void* generator);
+        double lprobIsoStochasticGenerator(void* generator);
+        double probIsoStochasticGenerator(void* generator);
+        bool advanceToNextConfigurationIsoStochasticGenerator(void* generator);
+        void deleteIsoStochasticGenerator(void* generator);
+        void get_conf_signatureIsoStochasticGenerator(void* generator, int* space);
+
+        void* setupThresholdFixedEnvelope(void* iso,
+                                    double threshold,
+                                    bool absolute,
+                                    bool get_confs);
+
+        void* setupTotalProbFixedEnvelope(void* iso,
+                                      double taget_coverage,
+                                      bool optimize,
+                                      bool get_confs);
+
+        void* setupStochasticFixedEnvelope(void* iso,
+                                     size_t no_molecules,
+                                     double precision,
+                                     double beta_bias,
+                                     bool get_confs);
+
+        void* setupBinnedFixedEnvelope(void* iso,
+                            double target_total_prob,
+                            double bin_width,
+                            double bin_middle);
+
+        void* setupFixedEnvelope(double* masses, double* probs, size_t size, bool mass_sorted, bool prob_sorted, double total_prob);
+        void* setupFixedEnvelopeWithConfs(double* masses, double* probs, int* confs, size_t size, int allDim, bool mass_sorted, bool prob_sorted, double total_prob);
+        void* copyFixedEnvelope(void* other);
+        void deleteFixedEnvelope(void* tabulator, bool releaseEverything);
+
+        const double* massesFixedEnvelope(void* tabulator);
+        const double* probsFixedEnvelope(void* tabulator);
+        const int*    confsFixedEnvelope(void* tabulator);
+        size_t confs_noFixedEnvelope(void* tabulator);
+
+        typedef void (*IsoSpecArrayDeleter)(void* array, size_t size);
+
+        double* massesFixedEnvelopeWithDeleter(void* tabulator, size_t* size_out, IsoSpecArrayDeleter* deleter_out);
+        double* probsFixedEnvelopeWithDeleter(void* tabulator, size_t* size_out, IsoSpecArrayDeleter* deleter_out);
+        int*    confsFixedEnvelopeWithDeleter(void* tabulator, size_t* size_out, IsoSpecArrayDeleter* deleter_out);
+        void freeReleasedArrayWithDeleter(void* array, size_t size, IsoSpecArrayDeleter deleter);
+
+        double empiricAverageMass(void* tabulator);
+        double empiricVariance(void* tabulator);
+        double empiricStddev(void* tabulator);
+
+        double wassersteinDistance(void* tabulator1, void* tabulator2);
+        double orientedWassersteinDistance(void* tabulator1, void* tabulator2);
+        double abyssalWassersteinDistance(void* tabulator1, void* tabulator2, double abyss_depth, double other_scale);
+//        double abyssalWassersteinDistanceGrad(void* const* envelopes, const double* scales, double* ret_gradient, size_t N, double abyss_depth_exp, double abyss_depth_the);
+
+        struct ws_match_res{
+        double res1;
+        double res2;
+        double flow;
+        };
+
+        struct ws_match_res wassersteinMatch(void* tabulator1, void* tabulator2, double flow_dist, double other_scale);
+
+        void* addEnvelopes(void* tabulator1, void* tabulator2);
+        void* convolveEnvelopes(void* tabulator1, void* tabulator2);
+
+        double getTotalProbOfEnvelope(void* envelope);
+        void scaleEnvelope(void* envelope, double factor);
+        void normalizeEnvelope(void* envelope);
+        void shiftMassEnvelope(void* envelope, double d_mass);
+        void resampleEnvelope(void* envelope, size_t ionic_current, double beta_bias);
+        void* binnedEnvelope(void* envelope, double width, double middle);
+        void* linearCombination(void* const * const envelopes, const double* intensities, size_t count);
+
+        void sortEnvelopeByMass(void* envelope);
+        void sortEnvelopeByProb(void* envelope);
+
+        void freeReleasedArray(void* array);
+        void array_add(double* array, size_t N, double what);
+        void array_mul(double* array, size_t N, double what);
+        void array_fma(double* array, size_t N, double mul, double add);
+
+        void parse_fasta_c(const char* fasta, int atomCounts[6]);
+
+        void* isoFromFastaWithMods(const char* sequence, bool use_nominal_masses, bool add_water, const char* unimod_db_path);
+        void* parseFastaWithModsC(const char* sequence, const char* unimod_db_path);
+        size_t compositionSizeC(void* composition);
+        const char* const* compositionSymbolsC(void* composition);
+        const int* compositionCountsC(void* composition);
+        void deleteCompositionC(void* composition);
+
+        void* expandCompositionC(const char* const* symbols, const int* counts, size_t size, bool use_nominal_masses);
+        const int* expandedIsotopeNumbersC(void* expanded);
+        const int* expandedAtomCountsC(void* expanded);
+        const double* expandedIsotopeMassesC(void* expanded);
+        const double* expandedIsotopeProbabilitiesC(void* expanded);
+        void deleteExpandedCompositionC(void* expanded);
+
+        const char* activeSimdLevel(void);
+
+        // Must be kept in sync by hand with ISOSPEC_NUMBER_OF_ISOTOPIC_ENTRIES
+        // in element_tables.h -- see PeriodicTbl.py's comment on why this
+        // can't be read from isospec_number_of_isotopic_entries (the real
+        // compiled variable, right below) instead: cffi's dlopen ABI mode
+        // can't access plain extern const globals, only #define constants
+        // like this one. A stale value here silently drops table entries in
+        // Python without erroring (already happened once, #51/deuterium).
+        #define NUMBER_OF_ISOTOPIC_ENTRIES 293
+        extern const size_t isospec_number_of_isotopic_entries;
+        extern const int elem_table_atomicNo[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const double elem_table_probability[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const double elem_table_mass[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const double elem_table_massNo[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const int elem_table_extraNeutrons[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const char* elem_table_element[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const char* elem_table_symbol[NUMBER_OF_ISOTOPIC_ENTRIES];
+        extern const bool elem_table_Radioactive[NUMBER_OF_ISOTOPIC_ENTRIES];
+                        """
+        )
+
+        mod_dir = Path(__file__).resolve().parent
+
+        libnames = ["IsoSpecCppPy*", "IsoSpec++*"]
+        libprefix = ["", "lib", "Lib"]
+        extension = [".so", ".dylib", ".dll"]
+        try:
+            if platform.system() == "Linux":
+                extension = [".so", ".pyd"]
+            elif platform.system() == "Windows":
+                extension = [".dll", ".pyd"]
+        except:
+            pass
+
+        prebuilt = ["", "prebuilt-"]
+
+        def cprod(ll1, ll2):
+            res = []
+            for l1 in ll1:
+                for l2 in ll2:
+                    res.append(l1 + l2)
+            return res
+
+        paths_to_check = cprod(prebuilt, cprod(libprefix, cprod(libnames, extension)))
+        dpc = []
+
+        search_dirs = [
+            mod_dir,
+            mod_dir.parent,
+            mod_dir.parent / "bin",
+            mod_dir.parent / "lib",
+        ]
+
+        # Editable installs (scikit-build-core) redirect this module's
+        # __file__ to the source tree, but build the compiled extension
+        # straight into the installed package's own site-packages
+        # directory instead -- mod_dir above never sees it. Search that
+        # directory too, when it isn't already mod_dir.
+        try:
+            import importlib.util
+
+            installed_pkg = importlib.util.find_spec("IsoSpecPy")
+            for loc in installed_pkg.submodule_search_locations or []:
+                loc = Path(loc)
+                if loc not in search_dirs:
+                    search_dirs.append(loc)
+        except (ImportError, AttributeError, ValueError):
+            pass
+
+        for dirpath in search_dirs:
+            dpc.extend([dirpath / p for p in paths_to_check])
+
+        paths_to_check = dpc
+        # expand glob patterns using pathlib (keep only actual matches, like glob.glob did)
+        expanded = []
+        for p in paths_to_check:
+            expanded.extend(p.parent.glob(p.name))
+        paths_to_check = expanded
+        try:
+            import importlib
+
+            paths_to_check.insert(
+                0, Path(importlib.util.find_spec("IsoSpecCppPy").origin)
+            )
+        except (ImportError, AttributeError):
+            pass
+
+        errors = []
+
+        self.clib = None
+        for libpath in set(paths_to_check):
+            try:
+                self.clib = self.ffi.dlopen(str(libpath))
+                self.libpath = libpath
+                break
+            except (IndexError, OSError) as e:
+                errmsg = (
+                    "Load libIsoSpec++.so, tried: "
+                    + str(libpath)
+                    + "\n"
+                    + "Got error: "
+                    + str(type(e))
+                    + ": "
+                    + str(e)
+                )
+                errors.append(errmsg)
+
+        if self.clib == None:
+            raise ImportError(
+                "Cannot find or load the C++ part of the library\n" + "\n".join(errors)
+            )
+
+
+isoFFI = IsoFFI()  # This is done while including the module

@@ -1,0 +1,798 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { LoadingLogo } from '../../framework/ui/LoadingLogo';
+import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
+import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
+import type { StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
+
+type SuspectRow = Record<string, string | null>;
+type RenderedStructure = { svg: string; dataUri: string };
+type StructureCache = Record<string, RenderedStructure>;
+
+type StructureRenderTask = {
+  run: () => void;
+  cancelled: boolean;
+  cancel: () => void;
+};
+
+const structureRenderQueue: StructureRenderTask[] = [];
+const structureRenderPromises = new Map<string, Promise<string>>();
+let activeStructureRenders = 0;
+const maxConcurrentStructureRenders = 4;
+
+function drainStructureRenderQueue() {
+  while (activeStructureRenders < maxConcurrentStructureRenders && structureRenderQueue.length) {
+    const task = structureRenderQueue.shift();
+    if (!task) return;
+    if (task.cancelled) continue;
+    activeStructureRenders += 1;
+    task.run();
+  }
+}
+
+function queuedStructureSvg(
+  key: string,
+  client: StreamFindApiClient,
+  request: { smiles?: string; inchi?: string; width: number; height: number; bond_color?: string },
+): { promise: Promise<string>; cancel: () => void } {
+  const existing = structureRenderPromises.get(key);
+  if (existing) return { promise: existing, cancel: () => undefined };
+  let task: StructureRenderTask;
+  let rejectPromise: ((reason?: unknown) => void) | undefined;
+  const promise = new Promise<string>((resolve, reject) => {
+    rejectPromise = reject;
+    task = {
+      cancelled: false,
+      cancel: () => {
+        if (task.cancelled) return;
+        task.cancelled = true;
+        rejectPromise?.(new Error('Structure render cancelled'));
+        if (structureRenderPromises.get(key) === promise) structureRenderPromises.delete(key);
+      },
+      run: () => {
+        if (task.cancelled) return;
+        void client
+          .structureSvg(request)
+          .then(resolve, reject)
+          .finally(() => {
+            activeStructureRenders -= 1;
+            drainStructureRenderQueue();
+          });
+      },
+    };
+    structureRenderQueue.push(task);
+    drainStructureRenderQueue();
+  });
+  structureRenderPromises.set(key, promise);
+  return { promise, cancel: () => task.cancel() };
+}
+
+function value(row: SuspectRow, names: string[]): string | null {
+  for (const name of names) {
+    const candidate = row[name];
+    if (candidate !== null && candidate !== undefined && candidate !== '') return candidate;
+  }
+  return null;
+}
+
+function parseNumbers(raw: string | null): number[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+  } catch {
+    // Some table transports expose arrays as a JSON string nested in a string.
+    try {
+      const parsed: unknown = JSON.parse(JSON.parse(raw) as string);
+      if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function svgDataUri(svg: string): string {
+  const normalized = svg.replace(/^\s*<\?xml[^>]*>\s*/i, '').replace(/^\s*<!DOCTYPE[^>]*>\s*/i, '');
+  const bytes = new TextEncoder().encode(normalized);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return `data:image/svg+xml;base64,${btoa(binary)}`;
+}
+
+function displayMass(row: SuspectRow): string {
+  const mass = value(row, ['mass', 'exact_mass']);
+  if (!mass || !Number.isFinite(Number(mass))) return 'Mass unavailable';
+  return `${Number(mass).toFixed(5)} Da`;
+}
+
+function structureCacheKey(row: SuspectRow): string {
+  // SMILES is the stable structure identity for rows produced by the
+  // fragmentation-to-suspect conversion. Do not miss cache hits merely
+  // because equivalent rows carry different InChI serializations.
+  return value(row, ['SMILES', 'smiles']) ?? value(row, ['InChI', 'inchi']) ?? '';
+}
+
+export function StructureImage({
+  row,
+  large,
+  client,
+  cache,
+  onRendered,
+}: {
+  row: SuspectRow;
+  large: boolean;
+  client: StreamFindApiClient;
+  cache: StructureCache;
+  onRendered: (key: string, structure: RenderedStructure) => void;
+}) {
+  const darkMode = document.documentElement.dataset.theme === 'dark';
+  const cacheKey = `${structureCacheKey(row)}\\u0000${darkMode ? 'dark' : 'light'}`;
+  const [structure, setStructure] = useState<RenderedStructure | null>(() => cache[cacheKey] ?? null);
+  const [error, setError] = useState(false);
+  const [visible, setVisible] = useState(large);
+  const elementRef = useRef<HTMLElement | null>(null);
+  const smiles = value(row, ['SMILES', 'smiles']);
+  const inchi = value(row, ['InChI', 'inchi']);
+  useEffect(() => {
+    if (large || visible) return undefined;
+    if (!elementRef.current || typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '40px' },
+    );
+    observer.observe(elementRef.current);
+    return () => observer.disconnect();
+  }, [large, visible]);
+  useEffect(() => {
+    let active = true;
+    if (!visible || (!smiles && !inchi)) {
+      return () => {
+        active = false;
+      };
+    }
+    if (cache[cacheKey]) {
+      return () => {
+        active = false;
+      };
+    }
+    const renderTask = queuedStructureSvg(cacheKey, client, {
+      // Use one Open Babel render size for cards and details. The detail view
+      // scales this SVG with CSS instead of requesting a second oversized render.
+      ...(smiles ? { smiles } : {}),
+      ...(inchi ? { inchi } : {}),
+      width: 300,
+      height: 240,
+      bond_color: darkMode ? '#ffffff' : undefined,
+    });
+    void renderTask.promise
+      .then((svg) => {
+        if (active) {
+          const rendered = { svg, dataUri: svgDataUri(svg) };
+          setStructure(rendered);
+          onRendered(cacheKey, rendered);
+        }
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => {
+      active = false;
+      renderTask.cancel();
+    };
+  }, [cache, cacheKey, client, darkMode, inchi, large, onRendered, smiles, visible]);
+  const displayedStructure = structure ?? cache[cacheKey] ?? null;
+  if (displayedStructure)
+    return (
+      <img
+        ref={(element) => {
+          elementRef.current = element;
+        }}
+        className={large ? 'sf-suspect-structure-large' : 'sf-suspect-structure'}
+        src={displayedStructure.dataUri}
+        alt={`Chemical structure for ${value(row, ['name']) ?? 'compound'}`}
+      />
+    );
+  return (
+    <div
+      ref={(element) => {
+        elementRef.current = element;
+      }}
+      className={
+        large
+          ? 'sf-suspect-structure-placeholder sf-suspect-structure-placeholder-large'
+          : 'sf-suspect-structure-placeholder'
+      }
+    >
+      {(!smiles && !inchi) || error ? 'Structure unavailable' : visible ? 'Rendering structure…' : 'Scroll to render…'}
+    </div>
+  );
+}
+
+function ms2Spec(
+  row: SuspectRow,
+  polarity: 'pos' | 'neg',
+  darkMode: boolean,
+  sourceArtifactId: string,
+): VisualizationSpec | null {
+  const mz = parseNumbers(value(row, [`fragments_mz_${polarity}`]));
+  const intensity = parseNumbers(value(row, [`fragments_intensity_${polarity}`]));
+  const count = Math.min(mz.length, intensity.length);
+  if (!count) return null;
+  void darkMode;
+  const readThemeColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const plotTheme = {
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    text: readThemeColor('--sf-text', 'currentColor'),
+  };
+  const x = mz.slice(0, count);
+  const y = intensity.slice(0, count);
+  return {
+    schema: 'streamfind.visualization/v1',
+    visualization_id: `suspect-ms2-${polarity}`,
+    semantic_type: 'sfms:ms2',
+    title: `MS2 (${polarity === 'pos' ? 'positive' : 'negative'})`,
+    data_mode: 'inline',
+    renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
+    payload: {
+      data: [
+        {
+          type: 'scatter',
+          mode: 'lines',
+          x: x.flatMap((item) => [item, item, null]),
+          y: y.flatMap((item) => [0, item, null]),
+          line: { color: '#1f77b4', width: 2 },
+          hovertemplate: 'm/z %{x:.4f}<br>intensity %{y:.4f}<extra></extra>',
+        },
+      ],
+      layout: {
+        autosize: true,
+        showlegend: false,
+        margin: { l: 55, r: 20, t: 35, b: 50 },
+        annotations: x.map((item, index) => ({
+          x: item,
+          y: y[index],
+          text: item.toFixed(4),
+          showarrow: false,
+          yshift: 8,
+          font: { color: plotTheme.text, size: 10 },
+        })),
+        xaxis: {
+          title: { text: 'm/z' },
+          gridcolor: plotTheme.grid,
+          linecolor: plotTheme.text,
+          titlefont: { color: plotTheme.text },
+          tickfont: { color: plotTheme.text },
+        },
+        yaxis: {
+          title: { text: 'Intensity' },
+          gridcolor: plotTheme.grid,
+          linecolor: plotTheme.text,
+          titlefont: { color: plotTheme.text },
+          tickfont: { color: plotTheme.text },
+        },
+        paper_bgcolor: plotTheme.background,
+        plot_bgcolor: plotTheme.background,
+        font: { color: plotTheme.text },
+      },
+      config: { displaylogo: false, responsive: true, displayModeBar: true },
+    },
+    provenance: {
+      source_artifact_ids: [sourceArtifactId],
+      producer_operation_id: 'frontend.suspect-targets-viewer',
+      producer_node_id: 'suspect-targets-viewer',
+    },
+    fallback: { description: 'The MS2 renderer is unavailable.' },
+  };
+}
+
+function isotopeSpec(
+  mz: number[],
+  probability: number[],
+  darkMode: boolean,
+  sourceArtifactId: string,
+  labels: string[],
+): VisualizationSpec | null {
+  const count = Math.min(mz.length, probability.length);
+  if (!count) return null;
+  void darkMode;
+  const readThemeColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const plotTheme = {
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    text: readThemeColor('--sf-text', 'currentColor'),
+  };
+  const x = mz.slice(0, count);
+  const y = probability.slice(0, count);
+  const maxProbability = Math.max(...y, 0);
+  const normalized = maxProbability > 0 ? y.map((item) => item / maxProbability) : y;
+  return {
+    schema: 'streamfind.visualization/v1',
+    visualization_id: 'suspect-isotope-pattern',
+    semantic_type: 'sfms:isotope-pattern',
+    title: 'Expected isotope pattern',
+    data_mode: 'inline',
+    renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
+    payload: {
+      data: [
+        {
+          type: 'scatter',
+          mode: 'lines',
+          x: x.flatMap((item) => [item, item, null]),
+          y: normalized.flatMap((item) => [0, item, null]),
+          line: { color: '#b45309', width: 2 },
+          hovertemplate: 'm/z %{x:.5f}<br>relative abundance %{y:.4f}<extra></extra>',
+        },
+      ],
+      layout: {
+        autosize: true,
+        showlegend: false,
+        margin: { l: 55, r: 20, t: 35, b: 50 },
+        annotations: x.map((item, index) => ({
+          x: item,
+          y: normalized[index],
+          text: `${labels[index] ?? 'M'}<br>${item.toFixed(5)}`,
+          showarrow: false,
+          yshift: 8,
+          font: { color: plotTheme.text, size: 10 },
+        })),
+        xaxis: { title: { text: 'm/z' }, gridcolor: plotTheme.grid, tickfont: { color: plotTheme.text } },
+        yaxis: {
+          title: { text: 'Relative abundance' },
+          range: [0, 1.12],
+          gridcolor: plotTheme.grid,
+          tickfont: { color: plotTheme.text },
+        },
+        paper_bgcolor: plotTheme.background,
+        plot_bgcolor: plotTheme.background,
+        font: { color: plotTheme.text },
+      },
+      config: { displaylogo: false, responsive: true, displayModeBar: true },
+    },
+    provenance: {
+      source_artifact_ids: [sourceArtifactId],
+      producer_operation_id: 'frontend.suspect-targets-viewer',
+      producer_node_id: 'suspect-targets-viewer',
+    },
+    fallback: { description: 'The isotope-pattern renderer is unavailable.' },
+  };
+}
+
+function IsotopePattern({
+  row,
+  client,
+  darkMode,
+  sourceArtifactId,
+}: {
+  row: SuspectRow;
+  client: StreamFindApiClient;
+  darkMode: boolean;
+  sourceArtifactId: string;
+}) {
+  const formula = value(row, ['formula', 'Formula']);
+  const [pattern, setPattern] = useState<{ mz: number[]; probability: number[]; labels: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (!formula)
+      return () => {
+        active = false;
+      };
+    void client
+      .isotopePattern({ formula, max_peaks: 16 })
+      .then((result) => {
+        if (active) setPattern(result);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Could not calculate isotope pattern.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, formula]);
+  if (!formula) return null;
+  const spec = pattern
+    ? isotopeSpec(pattern.mz, pattern.probability, darkMode, sourceArtifactId, pattern.labels)
+    : null;
+  return (
+    <section className="sf-suspect-isotope">
+      <h3>Expected isotope pattern</h3>
+      {error ? (
+        <p role="alert">{error}</p>
+      ) : spec ? (
+        <VisualizationRenderer spec={spec} className="sf-suspect-isotope-plot" />
+      ) : (
+        <p>Calculating isotope pattern…</p>
+      )}
+    </section>
+  );
+}
+
+function Details({
+  row,
+  client,
+  darkMode,
+  sourceArtifactId,
+  cache,
+  onRendered,
+}: {
+  row: SuspectRow;
+  client: StreamFindApiClient;
+  darkMode: boolean;
+  sourceArtifactId: string;
+  cache: StructureCache;
+  onRendered: (key: string, structure: RenderedStructure) => void;
+}) {
+  const fields = useMemo(() => Object.entries(row).filter(([, item]) => item !== null && item !== ''), [row]);
+  const positiveSpec = ms2Spec(row, 'pos', darkMode, sourceArtifactId);
+  const negativeSpec = ms2Spec(row, 'neg', darkMode, sourceArtifactId);
+  return (
+    <div className="sf-suspect-detail" role="dialog" aria-label={`${value(row, ['name']) ?? 'Compound'} details`}>
+      <div className="sf-suspect-detail-grid">
+        <div className="sf-suspect-detail-structure">
+          <StructureImage row={row} large client={client} cache={cache} onRendered={onRendered} />
+        </div>
+        <div className="sf-suspect-properties">
+          {fields.map(([key, item]) => (
+            <div className="sf-suspect-property" key={key}>
+              <span>{key}</span>
+              <code>{item}</code>
+            </div>
+          ))}
+        </div>
+      </div>
+      <IsotopePattern row={row} client={client} darkMode={darkMode} sourceArtifactId={sourceArtifactId} />
+      {positiveSpec || negativeSpec ? (
+        <section className="sf-suspect-ms2">
+          <div className="sf-suspect-ms2-grid">
+            {positiveSpec ? (
+              <div className="sf-suspect-ms2-panel">
+                <h4>MS2 positive spectrum</h4>
+                <VisualizationRenderer spec={positiveSpec} className="sf-suspect-ms2-plot" />
+              </div>
+            ) : null}
+            {negativeSpec ? (
+              <div className="sf-suspect-ms2-panel">
+                <h4>MS2 negative spectrum</h4>
+                <VisualizationRenderer spec={negativeSpec} className="sf-suspect-ms2-plot" />
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNode {
+  const [rows, setRows] = useState<SuspectRow[]>([]);
+  const [selected, setSelected] = useState<SuspectRow | null>(null);
+  const [selectedLoading, setSelectedLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [totalRows, setTotalRows] = useState(0);
+  const [massMin, setMassMin] = useState('');
+  const [massMax, setMassMax] = useState('');
+  const [massMinInput, setMassMinInput] = useState('');
+  const [massMaxInput, setMassMaxInput] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
+  const [structureCache, setStructureCache] = useState<StructureCache>({});
+  const client = context.pluginApi?.client;
+  // Keep the DOM and Open Babel queue bounded. Large inverse-expansion tables
+  // can contain thousands of distinct, complex structures.
+  const pageSize = 24;
+  const overviewColumns = useMemo(() => {
+    const available = new Set((context.artifact?.columns ?? []).map((column) => column.name));
+    return ['name', 'mass', 'formula', 'SMILES', 'InChIKey'].filter((column) => available.has(column));
+  }, [context.artifact]);
+  const massColumn = useMemo(() => {
+    const available = new Set((context.artifact?.columns ?? []).map((column) => column.name));
+    return available.has('mass') ? 'mass' : available.has('exact_mass') ? 'exact_mass' : null;
+  }, [context.artifact]);
+  const massFilters = useMemo(() => {
+    if (!massColumn) return undefined;
+    if (massMin !== '' && massMax !== '') {
+      const min = Number(massMin);
+      const max = Number(massMax);
+      if (Number.isFinite(min) && Number.isFinite(max) && min <= max)
+        return [{ column: massColumn, operator: 'between' as const, min, max }];
+    }
+    if (massMin !== '' && Number.isFinite(Number(massMin)))
+      return [{ column: massColumn, operator: 'gte' as const, value: Number(massMin) }];
+    if (massMax !== '' && Number.isFinite(Number(massMax)))
+      return [{ column: massColumn, operator: 'lte' as const, value: Number(massMax) }];
+    return undefined;
+  }, [massColumn, massMax, massMin]);
+  const detailColumns = useMemo(() => context.artifact?.columns?.map((column) => column.name), [context.artifact]);
+  const rememberStructure = useCallback((key: string, structure: RenderedStructure) => {
+    setStructureCache((current) => (current[key] ? current : { ...current, [key]: structure }));
+  }, []);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setDarkMode(document.documentElement.dataset.theme === 'dark'));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!selected) return undefined;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSelected(null);
+    };
+    document.addEventListener('keydown', handleEscape, true);
+    return () => document.removeEventListener('keydown', handleEscape, true);
+  }, [selected]);
+  useEffect(() => {
+    let active = true;
+    if (!client || !context.artifact) {
+      void Promise.resolve().then(() => {
+        if (!active) return;
+        setLoading(false);
+        setError('Suspect target data is unavailable.');
+      });
+      return () => {
+        active = false;
+      };
+    }
+    void client
+      .artifactQuery(context.sessionId, {
+        artifact_id: context.artifact.artifact_id,
+        mode: 'page',
+        columns: overviewColumns,
+        offset: 0,
+        limit: pageSize,
+        filters: massFilters,
+      })
+      .then((result) => {
+        if (!active) return;
+        const loadedRows = Array.isArray(result.rows)
+          ? result.rows.filter(
+              (row): row is SuspectRow => Boolean(row) && typeof row === 'object' && !Array.isArray(row),
+            )
+          : [];
+        setRows(loadedRows);
+        setTotalRows(result.total_rows);
+        setPage(0);
+        setLoading(false);
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(reason instanceof Error ? reason.message : 'Could not load suspect targets.');
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, context.artifact, context.sessionId, massFilters, overviewColumns]);
+  useEffect(() => {
+    if (loading || page === 0 || !client || !context.artifact) return undefined;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) setPageLoading(true);
+    });
+    void client
+      .artifactQuery(context.sessionId, {
+        artifact_id: context.artifact.artifact_id,
+        mode: 'page',
+        columns: overviewColumns,
+        offset: page * pageSize,
+        limit: pageSize,
+        filters: massFilters,
+      })
+      .then((result) => {
+        if (!active) return;
+        setRows(result.rows.filter((row): row is SuspectRow => Boolean(row) && typeof row === 'object'));
+        setTotalRows(result.total_rows);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Could not load suspect targets.');
+      })
+      .finally(() => {
+        if (active) setPageLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, context.artifact, context.sessionId, loading, massFilters, overviewColumns, page]);
+  const openSuspect = useCallback(
+    (row: SuspectRow) => {
+      setSelected(row);
+      if (!client || !context.artifact || !row.row_key || !detailColumns?.length) return;
+      setSelectedLoading(true);
+      void client
+        .artifactQuery(context.sessionId, {
+          artifact_id: context.artifact.artifact_id,
+          mode: 'detail',
+          columns: detailColumns,
+          row_keys: [row.row_key],
+          limit: 1,
+        })
+        .then((result) => {
+          if (result.rows[0]) setSelected(result.rows[0]);
+        })
+        .catch(() => {
+          // Keep the lightweight overview available if the detail request fails.
+        })
+        .finally(() => setSelectedLoading(false));
+    },
+    [client, context.artifact, context.sessionId, detailColumns],
+  );
+  if (loading) return <LoadingLogo label="Loading suspect targets…" />;
+  if (error)
+    return (
+      <div className="sf-suspect-viewer-state" role="alert">
+        {error}
+      </div>
+    );
+  if (!client) return <div className="sf-suspect-viewer-state">Suspect target viewer is unavailable.</div>;
+  if (!rows.length) return <div className="sf-suspect-viewer-state">No suspect compounds are available.</div>;
+  return (
+    <div className={`sf-suspect-viewer${selected ? ' sf-suspect-viewer--modal-open' : ''}`}>
+      <div className="sf-suspect-card-grid">
+        {rows.map((row, index) => (
+          <button
+            type="button"
+            className="sf-suspect-card"
+            key={`${value(row, ['InChIKey', 'SMILES', 'name']) ?? 'compound'}-${index}`}
+            onClick={() => openSuspect(row)}
+          >
+            <StructureImage
+              row={row}
+              large={false}
+              client={client}
+              cache={structureCache}
+              onRendered={rememberStructure}
+            />
+            <strong>{value(row, ['name']) ?? 'Compound'}</strong>
+            <small className="sf-suspect-formula" title={value(row, ['formula']) ?? undefined}>
+              {value(row, ['formula']) ?? 'Formula unavailable'}
+            </small>
+            <span>{displayMass(row)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="sf-suspect-toolbar">
+        {massColumn ? (
+          <form
+            className="sf-suspect-mass-range"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setMassMin(massMinInput);
+              setMassMax(massMaxInput);
+              setPage(0);
+            }}
+          >
+            <strong>Mass range</strong>
+            <label>
+              Minimum
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                value={massMinInput}
+                onChange={(event) => setMassMinInput(event.target.value)}
+                placeholder="Minimum mass"
+              />
+            </label>
+            <label>
+              Maximum
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                value={massMaxInput}
+                onChange={(event) => setMassMaxInput(event.target.value)}
+                placeholder="Maximum mass"
+              />
+            </label>
+            <button type="submit">Apply</button>
+            {(massMin || massMax) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMassMin('');
+                  setMassMax('');
+                  setMassMinInput('');
+                  setMassMaxInput('');
+                  setPage(0);
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </form>
+        ) : null}
+        {totalRows > pageSize ? (
+          <nav className="sf-suspect-pagination" aria-label="Suspect target pages">
+            <button type="button" disabled={page === 0 || pageLoading} onClick={() => setPage(0)}>
+              First
+            </button>
+            <button
+              type="button"
+              disabled={page === 0 || pageLoading}
+              onClick={() => setPage((current) => current - 1)}
+            >
+              Previous
+            </button>
+            <span>
+              {page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalRows)} of {totalRows}
+            </span>
+            <button
+              type="button"
+              disabled={(page + 1) * pageSize >= totalRows || pageLoading}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              disabled={(page + 1) * pageSize >= totalRows || pageLoading}
+              onClick={() => setPage(Math.max(0, Math.ceil(totalRows / pageSize) - 1))}
+            >
+              Last
+            </button>
+          </nav>
+        ) : null}
+      </div>
+      {selected && client
+        ? createPortal(
+            <div
+              className="sf-suspect-modal-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setSelected(null);
+              }}
+            >
+              <div className="sf-suspect-modal">
+                <header className="sf-suspect-modal-header">
+                  <strong>{value(selected, ['name']) ?? 'Compound'}</strong>
+                  <button
+                    type="button"
+                    className="sf-icon-button sf-suspect-modal-close"
+                    aria-label="Close suspect details"
+                    title="Close"
+                    onClick={() => setSelected(null)}
+                  >
+                    <i className="fa-solid fa-xmark" aria-hidden="true" />
+                  </button>
+                </header>
+                <div className="sf-suspect-modal-body">
+                  {selectedLoading ? (
+                    <LoadingLogo label="Loading suspect details…" />
+                  ) : (
+                    <Details
+                      row={selected}
+                      client={client}
+                      darkMode={darkMode}
+                      sourceArtifactId={context.artifact?.artifact_id ?? ''}
+                      cache={structureCache}
+                      onRendered={rememberStructure}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}

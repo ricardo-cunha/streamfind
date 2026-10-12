@@ -21,6 +21,7 @@ ProjectOptions options_from_request(const Json &request, bool read_only = false)
     }
     ProjectOptions options;
     options.database_path = request.at("database_path").get<std::string>();
+    if (request.contains("workflow_metadata")) options.workflow_metadata = request.at("workflow_metadata");
     return options;
 }
 
@@ -120,9 +121,10 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         return detail::workflow_table(project.get_workflow());
     }
     case ProjectCommand::validate_workflow: {
-        if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
         auto project = Project::open(detail::options_from_request(request, true));
-        const auto workflow = Workflow::from_json(request.at("workflow"));
+        const auto workflow = request.contains("workflow")
+            ? Workflow::from_json(request.at("workflow"))
+            : project.get_workflow();
         workflow.validate(registry);
         return {{"valid", true}, {"info", "Workflow validation finished successfully."}};
     }

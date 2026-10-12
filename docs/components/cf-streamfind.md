@@ -1,12 +1,11 @@
 # Cogniflow integration
 
-The Cogniflow integration is a separate future-facing asset. It is not included
-in the current C++ or Rust native packages and is not an alternative MCP server.
+The Cogniflow integration is not included in the native C++ distribution and is
+not an alternative MCP server.
 
-!!! note "Separate availability"
-    Use the native packages on [Releases](../releases.md) for current C++ and
-    Rust API or MCP usage. A Cogniflow installation should not be inferred from
-    the presence of this repository component.
+!!! note "Current platform boundary"
+    Use the native C++ packages on [Releases](../releases.md) for the supported
+    runtime, browser application, and MCP server.
 
-When a supported Cogniflow package becomes available, its installation and
-usage instructions will be documented here.
+The supported native deployment does not include Cogniflow installation or
+runtime instructions.

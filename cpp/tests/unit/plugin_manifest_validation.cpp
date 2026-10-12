@@ -9,7 +9,7 @@ int main() {
     const auto valid = streamfind::sdk::parse_plugin_manifest(R"json({
         "plugin_id": "sensors",
         "name": "Sensors",
-        "version": "0.4.0",
+        "version": "0.4.1",
         "abi_version": {"major": 1, "minor": 0},
         "sdk_compatibility": {"minimum": "0.4.0", "maximum": "0.4.x"},
         "library": {
@@ -28,7 +28,7 @@ int main() {
     const auto traversal = streamfind::sdk::parse_plugin_manifest(R"json({
         "plugin_id": "sensors",
         "name": "Sensors",
-        "version": "0.4.0",
+        "version": "0.4.1",
         "abi_version": {"major": 1, "minor": 0},
         "sdk_compatibility": {"minimum": "0.4.0", "maximum": "0.4.x"},
         "library": {

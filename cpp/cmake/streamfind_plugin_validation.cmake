@@ -15,8 +15,9 @@ function(streamfind_validate_plugin_build target domain)
         VERBATIM)
 endfunction()
 
-# Stage the runtime dependencies required when Windows loads a MinGW plugin by
-# absolute path. The command must be declared in the plugin's own directory.
+# Stage the runtime dependencies in the shared package vendor tree. The host
+# configures that tree before loading any plugin, so plugins do not carry
+# duplicate runtime DLLs.
 function(streamfind_stage_mingw_plugin_runtime target domain)
     if(NOT MINGW OR NOT WIN32)
         return()
@@ -36,18 +37,35 @@ function(streamfind_stage_mingw_plugin_runtime target domain)
                 "Required MinGW runtime is missing: ${_mingw_runtime_path}")
         endif()
         add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${CMAKE_BINARY_DIR}/core/vendors/mingw"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${_mingw_runtime_path}"
-                "$<TARGET_FILE_DIR:${target}>")
-        install(FILES "${_mingw_runtime_path}"
-            DESTINATION "plugins/${domain}")
+                "${CMAKE_BINARY_DIR}/core/vendors/mingw")
     endforeach()
     if(STREAMFIND_DUCKDB_RUNTIME AND EXISTS "${STREAMFIND_DUCKDB_RUNTIME}")
         add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${CMAKE_BINARY_DIR}/core/vendors/duckdb"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${STREAMFIND_DUCKDB_RUNTIME}"
-                "$<TARGET_FILE_DIR:${target}>")
-        install(FILES "${STREAMFIND_DUCKDB_RUNTIME}"
-            DESTINATION "plugins/${domain}")
+                "${CMAKE_BINARY_DIR}/core/vendors/duckdb")
+    endif()
+    if(domain STREQUAL "mass_spec" AND TARGET streamfind_openbabel_runtime)
+        add_dependencies(${target} streamfind_openbabel_runtime)
+        set(_streamfind_openbabel_runtime_dir "${CMAKE_BINARY_DIR}/core/vendors/openbabel")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${_streamfind_openbabel_runtime_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:streamfind_openbabel_runtime>"
+                "${_streamfind_openbabel_runtime_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${STREAMFIND_OPENBABEL_DATA_DIR}"
+                "${_streamfind_openbabel_runtime_dir}/data")
+        install(FILES "$<TARGET_FILE:streamfind_openbabel_runtime>"
+            DESTINATION "core/vendors/openbabel")
+        install(DIRECTORY "${STREAMFIND_OPENBABEL_DATA_DIR}/"
+            DESTINATION "core/vendors/openbabel/data")
     endif()
 endfunction()

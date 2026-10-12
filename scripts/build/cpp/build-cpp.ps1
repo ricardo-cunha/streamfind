@@ -1,6 +1,6 @@
 <#
     build-cpp.ps1 — configure and build the standalone C++ backend (cpp/) with
-    Ninja into tmp/build/core-default, then (optionally) run the CTest suite.
+    MSYS2 UCRT64 Ninja into tmp/build/mingw-ucrt64, then (optionally) run CTest.
 
     Usage:
       powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1
@@ -27,7 +27,7 @@ param(
 
 . "$PSScriptRoot\..\build-common.ps1"
 Start-ScriptLog 'build-cpp'
-$buildDir = Join-Path $Script:TMP_BUILD 'core-default'
+$buildDir = Join-Path $Script:TMP_BUILD 'mingw-ucrt64'
 $srcDir   = Join-Path $Script:REPO_ROOT 'cpp'
 
 Write-Log "build : $buildDir"

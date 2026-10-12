@@ -2433,19 +2433,23 @@ namespace streamfind::mass_spec::nta::deconvolution
       input.blank_names.push_back(::streamfind::mass_spec::nta::utils::text(row, "blank"));
 
       const auto persisted = persisted_headers.find(name);
-      input.headers.push_back(persisted == persisted_headers.end() ? file.get_spectra_headers() : persisted->second);
+      // Persisted headers are keyed by analysis name. An empty or stale persisted
+      // entry must not suppress the native-reader fallback for that analysis.
+      input.headers.push_back(
+          persisted == persisted_headers.end() || persisted->second.index.empty()
+              ? file.get_spectra_headers()
+              : persisted->second);
     }
     input.buffers.resize(input.names.size());
 
-    const auto minimums = parameters.value("rt_windows_min", Json::array());
-    const auto maximums = parameters.value("rt_windows_max", Json::array());
-    if (minimums.size() != maximums.size())
-      throw std::invalid_argument("rt_windows_min and rt_windows_max must have equal lengths");
     std::vector<float> mins, maxs;
-    for (const auto &value : minimums)
-      mins.push_back(value.get<float>());
-    for (const auto &value : maximums)
-      maxs.push_back(value.get<float>());
+    for (const auto &row : parameters.value("rt_windows", Json::array()))
+    {
+      if (!row.is_object() || !row.contains("rtmin") || !row.contains("rtmax"))
+        throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
+      mins.push_back(row.at("rtmin").get<float>());
+      maxs.push_back(row.at("rtmax").get<float>());
+    }
     const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
         ? parameters.at("debug_analysis").get<std::string>() : std::string{};
     const auto debug_mz = parameters.value("debug_mz", 0.0f);

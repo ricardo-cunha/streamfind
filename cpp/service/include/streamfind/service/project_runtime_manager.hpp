@@ -32,9 +32,11 @@ public:
     Json clear_workflow_history(const std::string &session_id);
     Json clear_artifact_cache(const std::string &session_id);
     Json clear_all_artifacts(const std::string &session_id);
+    Json clear_node_artifacts(const std::string &session_id, const std::string &producer_instance);
     Json workflow_snapshot(const std::string &session_id) const;
     Json artifact_inventory(const std::string &session_id) const;
     Json current_artifact_inventory(const std::string &session_id) const;
+    Json artifact_query(const std::string &session_id, const Json &request) const;
     Json artifact_data(const std::string &session_id, const Json &request) const;
     std::string set_workflow_state(const std::string &session_id, const std::string &state);
     std::string start_workflow(const std::string &session_id);
@@ -43,7 +45,8 @@ public:
                        const Json &parameters, const std::string &operation_instance = {});
     std::vector<ProjectSessionDto> list() const;
     bool contains(const std::string &session_id) const;
-    void set_operation_log_callback(std::function<void(const std::string &, std::string_view)> callback);
+    void set_operation_log_callback(std::function<void(const std::string &, std::string_view, std::string_view)> callback);
+    void set_operation_event_callback(std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> callback);
 
 private:
     ProjectSessionDto describe(const std::string &session_id, const Project &project) const;
@@ -51,12 +54,15 @@ private:
     void ensure_database_is_not_open(const std::filesystem::path &path) const;
     mutable std::mutex mutex_;
     std::unordered_map<std::string, std::unique_ptr<Project>> projects_;
+    std::unordered_map<std::string, Workflow> workflow_definitions_;
     std::unordered_map<std::string, std::string> workflow_states_;
     std::unordered_map<std::string, std::thread> workflow_workers_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;
     std::unordered_map<std::string, Json> workflow_progress_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>> workflow_operation_steps_;
     OperationRegistry *operations_;
-    std::function<void(const std::string &, std::string_view)> operation_log_callback_;
+    std::function<void(const std::string &, std::string_view, std::string_view)> operation_log_callback_;
+    std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> operation_event_callback_;
 };
 
 }  // namespace streamfind::service

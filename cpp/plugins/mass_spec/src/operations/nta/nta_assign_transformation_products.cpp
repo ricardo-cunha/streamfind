@@ -559,7 +559,6 @@ using Json = nlohmann::json;
             suspects, tp_rows, phase, mzr_ms2);
         utils::detail::append_transformation_products_to_suspects(data, products);
         utils::detail::emit_transformation_products(access, data, products);
-        utils::detail::emit_suspects(access, data);
         return Json{{"status", "finished"}, {"info", "Transformation products assigned."}};
     }
 }

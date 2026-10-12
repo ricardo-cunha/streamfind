@@ -343,7 +343,8 @@ sfms:rtColumn
     skos:definition "Retention time." ;
     sf:columnName "rt" ;
     sf:type "real" ;
-    sf:storageType "DOUBLE" .
+    sf:storageType "DOUBLE" ;
+    sf:required false .
 
 sfms:mobilityColumn
     a sf:Column ;
@@ -998,6 +999,42 @@ sfms:ms2IntensityColumn
     sf:columnName "ms2_intensity" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
+
+sfms:isotopeTheoreticalPeaksColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Theoretical isotope peaks" ;
+    skos:definition "Number of theoretical isotope peaks retained for suspect matching." ;
+    sf:columnName "isotope_theoretical_peaks" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:isotopeMatchedPeaksColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Matched isotope peaks" ;
+    skos:definition "Number of theoretical isotope peaks matched in the observed MS1 spectrum." ;
+    sf:columnName "isotope_matched_peaks" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:isotopeSimilarityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Isotope similarity" ;
+    skos:definition "Cosine similarity between theoretical and observed isotope intensities." ;
+    sf:columnName "isotope_similarity" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:isotopeMatchColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:prefLabel "Isotope match" ;
+    skos:definition "Whether the observed MS1 isotope pattern satisfies the configured suspect match thresholds." ;
+    sf:columnName "isotope_match" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
 
 sfms:annotationCategoryColumn
     a sf:Column ;
@@ -1703,18 +1740,6 @@ sfms:fragmentsIntensityNegColumn
     sf:items sfcore:realItemParameter ;
     sf:example "[100.0]" .
 
-sfms:suspectNameColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Suspect name" ;
-    skos:definition "Suspect display name used in assignment rows and filtering; an alias of the target identifier." ;
-    sf:columnName "name" ;
-    sf:storageType "VARCHAR" ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:example "caffeine" .
-
 sfms:tpProductNameColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1897,16 +1922,6 @@ sfms:xLogPColumn
     sf:type "real" ;
     sf:storageType "DOUBLE" .
 
-sfms:databaseIdColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Database Id" ;
-    skos:definition "External database identifier." ;
-    sf:columnName "database_id" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
 sfms:dbMs2SizeColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1986,3 +2001,76 @@ sfms:expMs2IntensityColumn
     sf:columnName "exp_ms2_intensity" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
+
+sfms:fragmentIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fragment identifier" ;
+    skos:definition "MetFrag identifier for this generated fragment." ;
+    sf:columnName "fragment_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:fragmentParentIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Parent fragment identifier" ;
+    skos:definition "Identifier of the MetFrag-generated parent fragment, when the CLI exposes it." ;
+    sf:columnName "parent_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:fragmentDepthColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fragmentation depth" ;
+    skos:definition "Top-down tree depth assigned by MetFrag." ;
+    sf:columnName "depth" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:fragmentAtomIndicesColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Precursor atom indices" ;
+    skos:definition "JSON array of precursor-relative atom indices retained in the fragment, when available." ;
+    sf:columnName "atom_indices" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:integerItemParameter .
+
+sfms:fragmentBrokenBondIndicesColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Broken bond indices" ;
+    skos:definition "JSON array of precursor-relative bond indices broken to generate the fragment, when available." ;
+    sf:columnName "broken_bond_indices" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:integerItemParameter .
+
+sfms:fragmentNeutralLossesColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Matched neutral losses" ;
+    skos:definition "JSON array of neutral-loss structures matched to MetFrag patterns, when available." ;
+    sf:columnName "neutral_losses" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfms:neutralLossItemParameter .
+
+sfms:fragmentDataColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fragment data" ;
+    skos:definition "Complete JSON object emitted for this fragment by the MetFrag Fragmenter CLI, preserving additional reported metadata." ;
+    sf:columnName "fragment_data" ;
+    sf:type "object" ;
+    sf:storageType "JSON" .

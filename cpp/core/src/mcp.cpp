@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <set>
+#include <utility>
 
 namespace streamfind::mcp {
 
@@ -35,8 +38,20 @@ std::string lower(std::string value) {
 bool matches_search(const Json &entry, const std::string &search) {
     if (search.empty()) return true;
     const auto query = lower(search);
-    for (const auto &field : {"canonical_id", "label", "definition", "module_id"})
-        if (lower(entry.value(field, "")).find(query) != std::string::npos) return true;
+    for (const auto &field : {"canonical_id", "label", "module_id"}) {
+        const auto value = lower(entry.value(field, ""));
+        if (value.find(query) == std::string::npos) continue;
+        if (query.size() >= 4) return true;
+        std::string token;
+        for (const char character : value + " ") {
+            if (std::isalnum(static_cast<unsigned char>(character))) {
+                token += character;
+            } else {
+                if (token == query) return true;
+                token.clear();
+            }
+        }
+    }
     return false;
 }
 
@@ -46,6 +61,42 @@ Json operation_summary(const Json &entry) {
                 {"domain", entry.value("domain", "")},
                 {"module_id", entry.value("module_id", "")},
                 {"definition", entry.value("definition", "")}};
+}
+
+Json workflow_demos(const OperationRegistry &registry) {
+    Json result = Json::array();
+    std::vector<std::filesystem::path> roots;
+    if (const auto *configured = std::getenv("STREAMFIND_WORKFLOW_RESOURCES")) roots.emplace_back(configured);
+    roots.push_back(std::filesystem::current_path() / "plugins");
+    roots.push_back(std::filesystem::current_path().parent_path() / "plugins");
+    std::set<std::filesystem::path> files;
+    for (const auto &root : roots) {
+        if (!std::filesystem::exists(root)) continue;
+        for (const auto &plugin : std::filesystem::directory_iterator(root)) {
+            if (!plugin.is_directory()) continue;
+            const auto workflows = plugin.path() / "resources" / "workflows";
+            if (!std::filesystem::exists(workflows)) continue;
+            for (const auto &file : std::filesystem::directory_iterator(workflows))
+                if (file.is_regular_file() && file.path().extension() == ".json") files.insert(file.path());
+        }
+    }
+    for (const auto &file : files) {
+        try {
+            std::ifstream input(file);
+            const auto document = Json::parse(std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()));
+            const auto workflow_json = document.contains("workflow") ? document.at("workflow") : document;
+            auto workflow = Workflow::from_json(workflow_json);
+            workflow.validate(registry);
+            const auto metadata = document.value("metadata", Json::object());
+            const auto id = metadata.value("id", file.stem().string());
+            result.push_back({{"id", id}, {"name", metadata.value("name", workflow.name.empty() ? id : workflow.name)},
+                              {"description", metadata.value("description", "Workflow demonstration")},
+                              {"use_case", metadata.value("use_case", "")}, {"domain", metadata.value("domain", "")},
+                              {"workflow", workflow.to_json()}});
+        } catch (const std::exception &) {
+        }
+    }
+    return result;
 }
 
 Json tools() {
@@ -63,6 +114,7 @@ Json tools() {
                           Json::array({"domain"})));
     result.push_back(tool("get_operation", "Return the full catalogue definition for one operation.",
                           Json{{"operation", {{"type", "string"}}}}, Json::array({"operation"})));
+    result.push_back(tool("list_workflow_demos", "List validated workflow demos registered by installed plugins, including metadata and portable workflow definitions.", Json::object(), Json::array()));
     result.push_back(tool("run_operation", "Run one canonical domain operation against a project database. Entry operations may run directly; operations with typed inputs require an existing graph binding or explicit inputs.",
                           Json{{"operation", {{"type", "string"}}},
                                {"database_path", {{"type", "string"}}},
@@ -70,6 +122,12 @@ Json tools() {
                                {"operation_instance", {{"type", "string"}}},
                                {"inputs", {{"type", "object"}}}},
                           Json::array({"operation", "database_path"})));
+    result.push_back(tool("get_dependencies", "List plugin-provided external dependencies and their current availability.",
+                          Json{{"operation", {{"type", "string"}}}}, Json::array()));
+    result.push_back(tool("install_dependencies", "Explicitly install selected plugin dependencies after reviewing their network and license requirements.",
+                          Json{{"dependency_ids", {{"type", "array"}, {"items", {{"type", "string"}}}}},
+                               {"allow_network", {{"type", "boolean"}}}},
+                          Json::array({"dependency_ids"})));
 
     // Core project commands are catalogue entries, but their shared project
     // scope is enforced by the MCP dispatcher rather than by an ontology
@@ -80,8 +138,17 @@ Json tools() {
     };
     const Json database_path = {{"type", "string"}, {"description", "Path to the project DuckDB database."}};
     const Json project_path_schema = schema(Json{{"database_path", database_path}}, Json::array({"database_path"}));
+    const Json workflow_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
+        {"required", Json::array({"name", "description"})},
+        {"properties", Json{{"name", Json{{"type", "string"}, {"minLength", 1}}},
+                             {"description", Json{{"type", "string"}, {"minLength", 1}}}}},
+        {"description", "User-defined workflow metadata. Workflow revision is tracked by the top-level workflow version."}};
+    const Json create_schema = schema(Json{{"database_path", database_path}, {"workflow_metadata", workflow_metadata_schema}},
+                                      Json::array({"database_path"}));
     const Json workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
-                                        Json::array({"database_path", "workflow"}));
+                                        Json::array({"database_path"}));
+    const Json set_workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
+                                            Json::array({"database_path", "workflow"}));
     const Json add_operation_schema = schema(
         Json{{"database_path", database_path}, {"operation_id", {{"type", "string"}}},
              {"operation", {{"type", "string"}}}, {"parameters", {{"type", "object"}}},
@@ -104,7 +171,8 @@ Json tools() {
         Json::array({"database_path"}));
     for (auto &entry : result) {
         const auto name = entry.value("name", "");
-        if (name == "create" || name == "describe" || name == "connect" || name == "validate" ||
+        if (name == "create") entry["inputSchema"] = create_schema;
+        else if (name == "describe" || name == "connect" || name == "validate" ||
             name == "get_project_domains" || name == "get_metadata" || name == "set_metadata" ||
             name == "get_workflow" || name == "get_workflow_execution" || name == "create_workflow_execution" ||
             name == "get_execution" || name == "list_executions" || name == "transition_execution" ||
@@ -113,7 +181,8 @@ Json tools() {
             name == "get_current_artifact_inventory" ||
             name == "resolve_operation_inputs")
             entry["inputSchema"] = project_path_schema;
-        else if (name == "set_workflow" || name == "validate_workflow") entry["inputSchema"] = workflow_schema;
+        else if (name == "set_workflow") entry["inputSchema"] = set_workflow_schema;
+        else if (name == "validate_workflow") entry["inputSchema"] = workflow_schema;
         else if (name == "add_operation") entry["inputSchema"] = add_operation_schema;
         else if (name == "connect_operations") entry["inputSchema"] = connect_operations_schema;
         else if (name == "request_artifact") entry["inputSchema"] = request_artifact_schema;
@@ -177,8 +246,11 @@ std::string interface_guidance() {
         "and inspect their full schemas with get_operation; use add_operation and "
         "connect_operations (or set_workflow for an atomic graph replacement); call "
         "validate_workflow; call get_workflow to confirm the saved graph; call run_workflow; "
-        "then inspect the returned operation results, get_artifact_inventory, request_artifact, "
-        "and resolve_operation_inputs. Table outputs are immutable published artifacts identified "
+        "then inspect the returned operation results, get_artifact_inventory, "
+                "request_artifact, and resolve_operation_inputs. "
+                "Visualization results are persisted artifacts: use their artifact metadata and "
+                "bounded text fallback in MCP, then open the saved workflow in the streamfind web app "
+                "for rich interactive visualization. Table outputs are immutable published artifacts "
         "by workflow revision, producer operation instance, and output contract. Use the artifact "
         "inventory rather than execution text as proof that an output is available to downstream "
         "operations. This operation-graph workflow is stateless at the MCP boundary: every "
@@ -195,37 +267,26 @@ std::string tool_description(const Json &entry, const std::string &fallback) {
 }
 
 Json operation_result(const Json &value) {
-    Json result = {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
-    if (value.is_object() && value.value("schema", "") == "streamfind.visualization/v1") {
-        result["structuredContent"] = value;
-    }
-    return result;
+    // MCP returns a bounded text/metadata fallback only. The persisted
+    // visualization artifact remains the rich-rendering contract owned by the
+    // streamfind web app; do not duplicate it in structuredContent or an MCP
+    // Apps HTML resource.
+    return {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
 }
 
 Json workflow_result(const Json &value) {
-    Json result = {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
-    Json visualizations = Json::array();
-    for (const auto &operation : value.value("operations", Json::array())) {
-        const auto operation_result_value = operation.value("result", Json(nullptr));
-        if (operation_result_value.is_object() &&
-            operation_result_value.value("schema", "") == "streamfind.visualization/v1")
-            visualizations.push_back(operation_result_value);
-    }
-    if (visualizations.size() == 1) {
-        result["structuredContent"] = visualizations.front();
-    } else if (!visualizations.empty()) {
-        result["structuredContent"] = {{"schema", "streamfind.mcp.workflow-visualizations/v1"},
-                                        {"visualizations", visualizations}};
-    }
-    return result;
+    return {{"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})}};
 }
 }
 
-Session::Session(const OperationRegistry &operations) : operations_(operations) {}
+Session::Session(const OperationRegistry &operations, DependencyList dependencies,
+                 DependencyInstaller installer)
+    : operations_(operations), dependencies_(std::move(dependencies)), installer_(std::move(installer)) {}
 
 Json Session::handle(const Json &request) {
     const auto id = request.value("id", Json(nullptr));
     const auto method = request.value("method", "");
+    if (method == "initialized" && !request.contains("id")) return Json(nullptr);
     if (method == "initialize") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"protocolVersion", "2025-03-26"}, {"capabilities", {{"tools", Json::object()}}}, {"serverInfo", {{"name", "streamfind-cpp"}, {"version", std::string(streamfind::version())}}}, {"instructions", detail::interface_guidance()}}}};
     if (method == "tools/list") {
             auto catalogue = detail::tools();
@@ -234,6 +295,20 @@ Json Session::handle(const Json &request) {
 
     if (method != "tools/call") return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32601}, {"message", "Unsupported MCP method"}}}};
     const auto name = request.at("params").value("name", "");
+    if (name == "list_workflow_demos") {
+        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(detail::workflow_demos(operations_))}};
+    }
+    if (name == "get_dependencies") {
+        if (!dependencies_) return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(Json{{"dependencies", Json::array()}})}};
+        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(dependencies_())}};
+    }
+    if (name == "install_dependencies") {
+        if (!installer_) throw Error(ErrorCode::MethodExecution, "dependency installation is unavailable");
+        const auto arguments = request.at("params").value("arguments", Json::object());
+        if (!arguments.value("allow_network", false))
+            throw Error(ErrorCode::InvalidArgument, "install_dependencies requires allow_network=true");
+        return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(installer_(arguments))}};
+    }
     if (name == "connect") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
@@ -312,12 +387,18 @@ Json Session::handle(const Json &request) {
     if (name == "validate_workflow" || name == "set_workflow") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            if (!arguments.contains("database_path") || !arguments.contains("workflow"))
-                throw Error(ErrorCode::InvalidArgument, "Workflow validation requires database_path and workflow");
+            if (!arguments.contains("database_path") ||
+                (name == "set_workflow" && !arguments.contains("workflow")))
+                throw Error(ErrorCode::InvalidArgument,
+                            name == "set_workflow"
+                                ? "Workflow update requires database_path and workflow"
+                                : "Workflow validation requires database_path");
             ProjectOptions options;
             options.database_path = arguments.at("database_path").get<std::string>();
             auto project = Project::open(options);
-            auto workflow = Workflow::from_json(arguments.at("workflow"));
+            auto workflow = arguments.contains("workflow")
+                ? Workflow::from_json(arguments.at("workflow"))
+                : project.get_workflow();
             workflow.validate(operations_);
             if (name == "set_workflow") project.set_workflow(workflow, operations_);
             const Json result = {{"valid", true}, {"workflow", workflow.to_json()}};
@@ -334,11 +415,37 @@ Json Session::handle(const Json &request) {
             ProjectOptions options;
             options.database_path = arguments.at("database_path").get<std::string>();
             auto project = Project::open(options);
+            Json logs = Json::array();
+            Json events = Json::array();
+            project.set_operation_log_callback([&logs](std::string_view operation_id, std::string_view message) {
+                logs.push_back(Json{{"operation_id", std::string(operation_id)}, {"message", std::string(message)}});
+            });
+            project.set_operation_event_callback([&events](std::string_view operation_id, std::string_view type, const Json &payload) {
+                events.push_back(Json{{"type", std::string(type)},
+                                      {"operation_id", std::string(operation_id)},
+                                      {"payload", payload}});
+            });
             const auto workflow = project.get_workflow();
-            if (!workflow.operations.empty() || !workflow.connections.empty()) {
-                const Json result = project.run_operation_graph(operations_);
-                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::workflow_result(result)}};
-            }
+            WorkflowExecutionManager execution_manager(project);
+            const auto worker_id = "mcp-" + id.dump();
+            execution_manager.create(Json{{"workflow_revision", workflow.version},
+                                          {"progress", Json{{"completed", 0},
+                                                              {"total", workflow.operations.size()},
+                                                              {"current_step", 0}}}});
+            const Json result = project.run_worker(worker_id, operations_);
+            const auto execution = project.get_workflow_execution();
+            constexpr std::size_t max_log_entries = 200;
+            const auto first_log = logs.size() > max_log_entries ? logs.size() - max_log_entries : 0;
+            Json bounded_logs = Json::array();
+            for (std::size_t index = first_log; index < logs.size(); ++index)
+                bounded_logs.push_back(logs[index]);
+            Json response = result;
+            response["execution"] = execution;
+            response["events"] = events;
+            response["logs"] = std::move(bounded_logs);
+            response["log_count"] = logs.size();
+            response["logs_truncated"] = first_log != 0;
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::workflow_result(response)}};
         } catch (const Error &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }

@@ -63,9 +63,16 @@ void run() {
         second_definition.domain = "domain_b";
         second_definition.input_ports.push_back({"input", "table", "one", "table", {"duckdb-table"}, false});
         second_definition.output_ports.push_back({"table", "table", "one", "table", {"duckdb-table"}, false});
+        second_definition.parameters.definitions.push_back(
+            {"targets", "Connected table rows", TypeDescriptor{ParameterType::array,
+             std::make_shared<TypeDescriptor>(TypeDescriptor{ParameterType::object})}, nullptr, false});
         registry.register_operation(Operation(
             std::move(second_definition),
-            [](Project &project, const Json &, const std::string &instance, const Json &inputs) {
+            [](Project &project, const Json &parameters, const std::string &instance, const Json &inputs) {
+                if (!parameters.contains("targets") || !parameters.at("targets").is_array() ||
+                    parameters.at("targets").size() != 1 ||
+                    parameters.at("targets").at(0).value("value", "") != "domain-a")
+                    throw std::runtime_error("table parameter binding did not resolve table rows");
                 const auto source_artifact = inputs.at("input").at("artifact_id").get<std::string>();
                 std::string artifact_id;
                 std::string physical_table;
@@ -89,12 +96,13 @@ void run() {
         workflow.version = 7;
         workflow.operations = {
             {"source", "domain_a.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()},
-            {"consumer", "domain_b.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()}};
+            {"consumer", "domain_b.make_table", ParameterValues{Json{{"targets", Json::array()}}}, Json::object(), Json::object()}};
         workflow.connections.push_back({"source", "table", "consumer", "input"});
+        workflow.connections.push_back({"source", "table", "consumer", "parameter:targets"});
 
         project.set_workflow(workflow, registry);
         const auto stored = project.get_workflow();
-        if (stored.operations.size() != 2 || stored.connections.size() != 1 ||
+        if (stored.operations.size() != 2 || stored.connections.size() != 2 ||
             registry.find(stored.operations.at(0).operation)->definition().domain ==
                 registry.find(stored.operations.at(1).operation)->definition().domain)
             throw std::runtime_error("mixed-domain workflow was not persisted without domain rejection");

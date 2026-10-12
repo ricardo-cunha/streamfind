@@ -31,5 +31,6 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &);
 bool target_matches(const TargetRange &, const std::string &, int, int, float, float);
 nlohmann::json filter_target_rows(const nlohmann::json &, const nlohmann::json &, const char *, const char *, const char *, const char *);
 const std::string &input_table(const nlohmann::json &, const char *);
+
 nlohmann::json input_rows(sdk::PluginProjectAccess &, const nlohmann::json &, const char *, const std::vector<std::string> &, const char * = nullptr);
 }

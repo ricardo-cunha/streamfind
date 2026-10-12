@@ -76,7 +76,7 @@ void run() {
         const Json *found = nullptr;
         for (const auto &manifest : manifests) {
             const auto candidate = std::find_if(manifest.begin(), manifest.end(), [&](const auto &entry) {
-                return entry.value("table_name", "") == table.get<std::string>();
+                return entry.value("table_contract_name", "") == table.get<std::string>();
             });
             if (candidate != manifest.end()) {
                 found = &*candidate;

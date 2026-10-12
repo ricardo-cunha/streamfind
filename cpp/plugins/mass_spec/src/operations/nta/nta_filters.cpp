@@ -40,7 +40,6 @@ namespace streamfind::mass_spec::nta::filter_features
       std::optional<int> maxModality;
       std::optional<float> minPlates;
 
-      std::optional<bool> onlyFilled; // TRUE: filter not filled, FALSE: filter filled
       bool removeFilled = false;
 
       std::optional<int> minSizeEIC;
@@ -98,8 +97,6 @@ namespace streamfind::mass_spec::nta::filter_features
       int maxModality,
       bool hasMaxModality,
       double minPlates,
-      bool hasOnlyFilled,
-      bool onlyFilledValue,
       bool removeFilled,
       int minSizeEIC,
       bool hasMinSizeEIC,
@@ -142,7 +139,6 @@ namespace streamfind::mass_spec::nta::filter_features
     if (!std::isnan(maxAsymmetry)) params.maxAsymmetry = static_cast<float>(maxAsymmetry);
     if (hasMaxModality) params.maxModality = maxModality;
     if (!std::isnan(minPlates)) params.minPlates = static_cast<float>(minPlates);
-    if (hasOnlyFilled) params.onlyFilled = onlyFilledValue;
     params.removeFilled = removeFilled;
     if (hasMinSizeEIC) params.minSizeEIC = minSizeEIC;
     if (hasMinSizeMS1) params.minSizeMS1 = minSizeMS1;
@@ -411,22 +407,6 @@ namespace streamfind::mass_spec::nta::filter_features
       });
     }
 
-    if (params.onlyFilled.has_value())
-    {
-      bool onlyFilled = params.onlyFilled.value();
-      if (onlyFilled)
-      {
-        apply_filter("onlyFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
-          return !fts.filled[i];
-        });
-      }
-      else
-      {
-        apply_filter("notFilled", [&](const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts, int i, const std::string &) {
-          return fts.filled[i];
-        });
-      }
-    }
 
     if (params.removeFilled)
     {
@@ -618,7 +598,7 @@ namespace streamfind::mass_spec::nta::filter_suspects
           s.InChI = sus.InChI[i];
           s.InChIKey = sus.InChIKey[i];
           s.xLogP = sus.xLogP[i];
-          s.database_id = sus.database_id[i];
+
           s.db_ms2_size = sus.db_ms2_size[i];
           s.db_ms2_mz = sus.db_ms2_mz[i];
           s.db_ms2_intensity = sus.db_ms2_intensity[i];
@@ -757,7 +737,7 @@ namespace streamfind::mass_spec::nta::filter_internal_standards
           is.InChI = istd.InChI[i];
           is.InChIKey = istd.InChIKey[i];
           is.xLogP = istd.xLogP[i];
-          is.database_id = istd.database_id[i];
+
           is.db_ms2_size = istd.db_ms2_size[i];
           is.db_ms2_mz = istd.db_ms2_mz[i];
           is.db_ms2_intensity = istd.db_ms2_intensity[i];
@@ -1139,14 +1119,6 @@ using Json = nlohmann::json;
         const int minSizeMS2 = opt_int("min_size_ms2");
         const bool hasMinSizeMS2 = has("min_size_ms2");
 
-        // only_filled is tri-state: true=keep only filled, false=keep only non-filled,
-        // null/absent=disabled (matches R onlyFilled=NA).
-        bool hasOnlyFilled = false, onlyFilledValue = false;
-        if (auto it = parameters.find("only_filled"); it != parameters.end() && !it->is_null())
-        {
-            hasOnlyFilled = true;
-            onlyFilledValue = it->get<bool>();
-        }
         const bool removeFilled = parameters.value("remove_filled", false);
         const bool removeIsotopes = parameters.value("remove_isotopes", false);
         const bool removeAdducts = parameters.value("remove_adducts", false);
@@ -1160,7 +1132,7 @@ using Json = nlohmann::json;
             minGaussianA, minGaussianMu, maxGaussianMu, minGaussianSigma, maxGaussianSigma, minGaussianR2,
             maxJaggedness, minSharpness, minAsymmetry, maxAsymmetry,
             maxModality, hasMaxModality, minPlates,
-            hasOnlyFilled, onlyFilledValue, removeFilled,
+            removeFilled,
             minSizeEIC, hasMinSizeEIC, minSizeMS1, hasMinSizeMS1, minSizeMS2, hasMinSizeMS2,
             minRelPresenceReplicate,
             removeIsotopes, removeAdducts, removeLosses);
@@ -1250,7 +1222,7 @@ using Json = nlohmann::json;
         const double min_cosine_similarity = opt_real("min_cosine_similarity");
         if (min_shared_fragments < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid internal standard filtering parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        auto data = utils::detail::load_internal_standards_only(access, parameters);
         utils::detail::load_internal_standards(access, data, parameters);
         ::streamfind::mass_spec::nta::filter_internal_standards::filter_internal_standards_impl(data, names, min_score, max_error_rt, max_error_mass,
                                                                        id_levels, min_shared_fragments, min_cosine_similarity);

@@ -1,0 +1,24 @@
+#include <R.h>
+#include <Rinternals.h>
+#include <stdlib.h> // for NULL
+#include <R_ext/Rdynload.h>
+
+
+/* .Call calls */
+extern SEXP _IsoSpecR_Rinterface(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP _IsoSpecR_RParsePeptideSequence(SEXP, SEXP);
+extern SEXP _IsoSpecR_RIsotopicTable();
+
+static const R_CallMethodDef CallEntries[] = {
+    {"_IsoSpecR_Rinterface", (DL_FUNC) &_IsoSpecR_Rinterface, 10},
+    {"_IsoSpecR_RParsePeptideSequence", (DL_FUNC) &_IsoSpecR_RParsePeptideSequence, 2},
+    {"_IsoSpecR_RIsotopicTable", (DL_FUNC) &_IsoSpecR_RIsotopicTable, 0},
+    {NULL, NULL, 0}
+};
+
+void R_init_IsoSpecR(DllInfo *dll)
+{
+    R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
+    R_useDynamicSymbols(dll, FALSE);
+}
+

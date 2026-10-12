@@ -99,6 +99,13 @@ add_test(NAME streamfind_mcp_discovery_contract COMMAND streamfind_mcp_discovery
 set_tests_properties(streamfind_mcp_discovery_contract PROPERTIES
     LABELS "framework"
     ENVIRONMENT "STREAMFIND_CATALOGUE=${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb")
+if(WIN32)
+    add_custom_command(TARGET streamfind_mcp_discovery_contract POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:streamfind::duckdb>"
+            "$<TARGET_FILE_DIR:streamfind_mcp_discovery_contract>"
+    )
+endif()
 
 add_executable(streamfind_artifact_publication_contract unit/artifact_publication_contract.cpp)
 target_link_libraries(streamfind_artifact_publication_contract PRIVATE streamfind::cpp_core)
@@ -144,7 +151,15 @@ set_tests_properties(streamfind_dependency_smoke PROPERTIES
 )
 
 foreach(_test_target IN ITEMS
+    streamfind_project_lifecycle_contract
+    streamfind_fingerprint_contract
+    streamfind_plugin_loader_failure_contract
+    streamfind_plugin_configuration_validation
+    streamfind_dynamic_schema_contract
     streamfind_project_table_store_manifest_contract
+    streamfind_execution_lifecycle_contract
+    streamfind_mcp_discovery_contract
+    streamfind_mixed_domain_workflow_artifact_contract
     streamfind_project_isolation_contract
 )
     add_dependencies(${_test_target} streamfind_aggregate_catalogue)
@@ -154,5 +169,17 @@ foreach(_test_target IN ITEMS
                 "$<TARGET_FILE:streamfind::duckdb>"
                 "$<TARGET_FILE_DIR:${_test_target}>"
         )
+        if(MINGW)
+            foreach(_mingw_runtime IN ITEMS
+                libgcc_s_seh-1.dll
+                libstdc++-6.dll
+                libwinpthread-1.dll)
+                add_custom_command(TARGET ${_test_target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                        "$<TARGET_FILE_DIR:${_test_target}>"
+                )
+            endforeach()
+        endif()
     endif()
 endforeach()

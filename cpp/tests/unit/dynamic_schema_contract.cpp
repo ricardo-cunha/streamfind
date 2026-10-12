@@ -18,7 +18,7 @@ int main() {
         {"version", 2},
         {"entries", streamfind::Json::array()},
         {"tables", streamfind::Json::array({streamfind::Json{
-            {"table_name", "DYNAMIC_SCHEMA_TABLE"},
+            {"table_contract_name", "DYNAMIC_SCHEMA_TABLE"},
             {"domain", "test"},
             {"module_id", "test.module"},
             {"columns", streamfind::Json::array({

@@ -152,7 +152,9 @@ using Json = nlohmann::json;
         const float min_traces_intensity = parameters.value("min_traces_intensity", 0.0);
         if (blank_threshold < 0 || rt_expand < 0 || mz_expand < 0 || min_traces_intensity < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid blank subtraction parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        auto all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
         ::streamfind::mass_spec::nta::blank_subtraction::subtract_blank_impl(data, blank_threshold, rt_expand, mz_expand, min_traces_intensity);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Blank subtraction completed."}};

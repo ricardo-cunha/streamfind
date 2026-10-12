@@ -1,0 +1,87 @@
+name: Tests
+
+on:
+    push:
+        branches:
+            - ci_test
+            - main
+            - winworkflow
+        tags:
+            - 'v*'
+
+jobs:
+  run_pytest:
+    name: Run pytest on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One failing cell must not cancel the other ~40 and hide whether the
+      # failure is specific to one OS or Python.
+      fail-fast: false
+      matrix:
+        # macos-15-intel is an Intel runner, macos-latest is Apple silicon
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest, windows-11-arm]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        exclude:
+        - os: windows-11-arm
+          python-version: "3.10"
+        - os: windows-11-arm
+          python-version: "3.9"
+
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          # Resolves to the newest release candidate while a version is still
+          # pre-release; a no-op once it is final.
+          allow-prereleases: true
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+      - name: Install GCC (macOS only — Apple Clang/libc++ lacks <experimental/simd>)
+        if: runner.os == 'macOS'
+        run: |
+          brew install gcc
+          GCC_PREFIX="$(brew --prefix gcc)"
+          CC="$(ls "$GCC_PREFIX"/bin/gcc-* | sort -V | tail -1)"
+          CXX="$(ls "$GCC_PREFIX"/bin/g++-* | sort -V | tail -1)"
+          echo "CC=$CC" >> "$GITHUB_ENV"
+          echo "CXX=$CXX" >> "$GITHUB_ENV"
+      - name: Install package
+        env:
+          VERBOSE: '1'
+        run: |
+          python -m pip install -v .[testing]
+      - name: Test with pytest
+        working-directory: ./tests/Python
+        run: |
+          python -m pytest .
+
+  run_cpp_tests:
+    name: Run C++ tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # x86-64 (AVX2 via -march=native) and ARM64 (NEON) — covers the two SIMD
+        # widths available on GitHub-hosted runners.  AVX-512 / the fake-AVX
+        # Opteron are validated locally, never in CI.
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang make
+      - name: Build and run the doctest suite (release, debug, ASan+UBSan)
+        # `make test` also runs the compile-only fasta.h header-isolation check.
+        working-directory: ./tests/C++
+        run: |
+          make -j"$(nproc)" test
+      - name: Build and run the C-ABI suite (cwrapper.h compiled as C11)
+        working-directory: ./tests/C
+        run: |
+          make test
+

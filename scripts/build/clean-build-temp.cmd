@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
-rem Remove generated C++, Rust, frontend, test, and distribution output.
+rem Remove generated C++, frontend, test, and distribution output.
 rem Run from any working directory; the repository root is derived from this file.
 rem
 rem Default behaviour: remove build/test artifacts and disposable scratch, but
@@ -23,7 +23,7 @@ call :remove_dir "%ROOT%\build" "root CMake/build output"
 call :remove_dir "%ROOT%\cpp\build" "C++ in-tree build output"
 call :remove_dir "%ROOT%\core\build" "standalone C++ core build output"
 call :remove_dir "%ROOT%\core\vendor\openbabel\build" "vendored OpenBabel build output"
-call :remove_dir "%ROOT%\rust\target" "Rust target output"
+
 call :remove_dir "%ROOT%\integrations\cf-streamfind\build" "Cogniflow integration build output"
 
 rem Production and test output outside tmp\.
@@ -32,7 +32,7 @@ call :remove_dir "%ROOT%\cpp\dist" "C++ distribution output"
 call :remove_dir "%ROOT%\frontend\dist" "frontend production output"
 call :remove_dir "%ROOT%\test-results" "repository test results"
 call :remove_dir "%ROOT%\cpp\test-results" "C++ test results"
-call :remove_dir "%ROOT%\rust\test-results" "Rust test results"
+
 call :remove_dir "%ROOT%\coverage" "test coverage output"
 call :remove_dir "%ROOT%\cpp\coverage" "C++ coverage output"
 call :remove_dir "%ROOT%\frontend\coverage" "frontend coverage output"
@@ -42,7 +42,7 @@ call :remove_dir "%ROOT%\log" "legacy repository logs (folded into tmp\logs)"
 call :remove_dir "%ROOT%\cache" "legacy repository cache"
 
 rem Build/test artifacts and disposable scratch under tmp\ (always removed).
-call :remove_dir "%ROOT%\tmp\build" "temporary build trees (CMake/Cargo)"
+call :remove_dir "%ROOT%\tmp\build" "temporary build trees (CMake/Ninja)"
 call :remove_dir "%ROOT%\tmp\projects" "temporary test project files (DuckDB fixtures)"
 call :remove_dir "%ROOT%\tmp\scratch" "temporary scratch files"
 call :remove_dir "%ROOT%\tmp\release-output" "temporary release packages"

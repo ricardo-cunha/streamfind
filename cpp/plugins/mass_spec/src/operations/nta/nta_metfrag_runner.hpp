@@ -26,11 +26,12 @@ namespace streamfind::mass_spec::nta
       std::string metfrag_path;          ///< Full path to MetFragCL JAR or native executable.
       std::string database_type;         ///< MetFrag database type: KEGG, PubChem, ExtendedPubChem, ChemSpiderRest, LocalSDF, LocalPSV, or LocalCSV.
       std::string database_path;         ///< Path to local database file (LocalCSV / LocalPSV / LocalSDF).
-      double      ppm            = 5.0;  ///< MS1 precursor mass tolerance (ppm).
-      double      sec            = 10.0; ///< RT tolerance for post-filtering (seconds).
+      double      ppm            = 10.0; ///< MS1 precursor mass tolerance (ppm).
+      double      isotopePpm     = 5.0;  ///< MS1 isotope m/z tolerance (ppm).
+      double      sec            = 15.0; ///< RT tolerance for post-filtering (seconds).
       double      ppmMS2         = 10.0; ///< MS2 fragment tolerance (ppm).
       double      mzrMS2         = 0.008;///< MS2 minimum absolute m/z tolerance.
-      int         top_n          = 1;    ///< Max candidates kept per feature (top-ranked by score).
+      int         top_n          = 5;    ///< Max candidates kept per feature (top-ranked by score).
       std::vector<std::string> score_types = {"FragmenterScore"}; ///< MetFrag score types.
       std::vector<double> score_weights = {1.0}; ///< MetFrag score weights aligned with score_types.
       std::vector<std::string> pre_processing_candidate_filter = {"UnconnectedCompoundFilter", "IsotopeFilter"}; ///< Candidate pre-filters.
@@ -43,6 +44,7 @@ namespace streamfind::mass_spec::nta
       std::string java_path      = "java";///< Path to Java executable (used in JAR mode only).
       std::string run_dir;               ///< Directory for temp files and logs; created if absent.
       std::vector<std::pair<std::string, std::string>> extra_params; ///< Additional MetFrag parameters (override-last).
+      std::vector<SuspectQuery> suspect_targets; ///< Original candidates, including RT and reference metadata.
     };
 
     std::vector<std::string> supported_database_types();
@@ -54,16 +56,14 @@ namespace streamfind::mass_spec::nta
     std::string resolve_run_dir(const MetFragParams &params);
 
     /**
-     * Run MetFragCL screening for all (or selected) analyses in nta_data.
+     * Run MetFragCL screening for all analyses in nta_data.
      * Results are written to nta_data.suspects[i] for each analysis index i.
      *
      * @param nta_data     NTS data with loaded features.
-     * @param analyses     If non-empty, only these analysis names are processed.
      * @param params       MetFrag runner configuration.
      */
     void metfrag_screening_impl(
       NtaProjectData &nta_data,
-        const std::vector<std::string> &analyses,
         const MetFragParams &params);
 
   } // namespace metfrag_runner
@@ -71,3 +71,4 @@ namespace streamfind::mass_spec::nta
 
 #endif // STREAMFIND_NTA_METFRAG_RUNNER_HPP
 namespace streamfind::mass_spec::nta::metfrag_screening { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }
+namespace streamfind::mass_spec::nta::find_internal_standards_metfrag { STREAMFIND_DOMAIN_API nlohmann::json run(sdk::PluginProjectAccess &, const nlohmann::json &); }

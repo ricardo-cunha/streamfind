@@ -234,6 +234,7 @@ Json parameter_schema(const Graph &graph, const std::string &resource) {
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = parameter_schema(graph, item);
     const auto table_contract = value(graph, resource, std::string(sf) + "tableContract");
     if (!table_contract.empty()) {
+        result["x-streamfind-semantic-contract"] = local(table_contract);
         const auto contract_schema = result_schema(graph, table_contract);
         if (contract_schema.contains("properties")) result["properties"] = contract_schema["properties"];
         if (contract_schema.contains("x-streamfind-property-order"))
@@ -304,8 +305,8 @@ Json column_schema(const Graph &graph, const std::string &resource) {
 Json result_schema(const Graph &graph, const std::string &resource) {
     if (resource.empty()) return {{"type", "object"}};
     const auto declared_type = value(graph, resource, std::string(sf) + "type");
-    const auto table_name = value(graph, resource, std::string(sf) + "tableName");
-    Json result = {{"type", declared_type.empty() && !table_name.empty() ? "table" : declared_type}};
+    const auto table_contract_name = value(graph, resource, std::string(sf) + "tableContractName");
+    Json result = {{"type", declared_type.empty() && !table_contract_name.empty() ? "table" : declared_type}};
     const auto label = value(graph, resource, std::string(skos) + "prefLabel"); if (!label.empty()) result["title"] = label;
     const auto definition = value(graph, resource, std::string(skos) + "definition"); if (!definition.empty()) result["description"] = definition;
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = result_schema(graph, item);
@@ -352,20 +353,20 @@ Json project(const Graph &graph, const std::string &domain) {
         Json next = Json::array(); for (const auto &item : values(graph, subject, std::string(sf) + "nextOperation")) next.push_back(value(graph, item, std::string(sf) + "operationId").empty() ? item : value(graph, item, std::string(sf) + "operationId"));
         entry["interface"] = {{"category", category.empty() ? (kind == std::string("method") ? "workflow-method" : "domain-operation") : category}, {"guidance", guidance}, {"next_operations", next}};
         const auto domain_resource = value(graph, subject, std::string(sf) + "availableInDomain"); entry["interface_guidance"] = value(graph, domain_resource, std::string(sf) + "guidance");
-        Json parameters = Json::array(); for (const auto &parameter : values(graph, subject, std::string(sf) + "hasParameter")) { const auto parameter_extensions = extensions(graph, parameter); const auto directory_extensions = extension_values(graph, parameter, std::string(sf) + "directoryExtensions"); Json item = {{"name", wire_name(resource_name(parameter))}, {"type", value(graph, parameter, std::string(sf) + "type")}, {"required", boolean(graph, parameter, std::string(sf) + "required")}, {"constraints", Json::object()}, {"items", nullptr}, {"extensions", parameter_extensions}, {"schema", parameter_schema(graph, parameter)}, {"example", nullptr}, {"description", value(graph, parameter, std::string(skos) + "definition")}, {"default", nullptr}}; const auto declared_default = value(graph, parameter, std::string(sf) + "default"); if (!declared_default.empty()) { item["default"] = literal_json(declared_default); item["schema"]["default"] = literal_json(declared_default); } const auto path_kind = value(graph, parameter, std::string(sf) + "pathKind"); if (!path_kind.empty()) item["path_kind"] = path_kind; if (!parameter_extensions.empty()) item["schema"]["x-streamfind-file-extensions"] = parameter_extensions; if (!path_kind.empty()) item["schema"]["x-streamfind-path-kind"] = path_kind; if (!directory_extensions.empty()) item["directory_extensions"] = directory_extensions; const auto constraint = value(graph, parameter, std::string(sf) + "constraints"); if (!constraint.empty()) item["constraints"] = constraint; const auto item_ref = value(graph, parameter, std::string(sf) + "items"); if (!item_ref.empty()) item["items"] = resource_name(item_ref); const auto example = value(graph, parameter, std::string(sf) + "example"); if (!example.empty()) item["example"] = literal_json(example); parameters.push_back(item); }
+        Json parameters = Json::array(); for (const auto &parameter : values(graph, subject, std::string(sf) + "hasParameter")) { const auto parameter_extensions = extensions(graph, parameter); const auto directory_extensions = extension_values(graph, parameter, std::string(sf) + "directoryExtensions"); Json item = {{"name", wire_name(resource_name(parameter))}, {"label", value(graph, parameter, std::string(skos) + "prefLabel")}, {"type", value(graph, parameter, std::string(sf) + "type")}, {"required", boolean(graph, parameter, std::string(sf) + "required")}, {"constraints", Json::object()}, {"items", nullptr}, {"extensions", parameter_extensions}, {"schema", parameter_schema(graph, parameter)}, {"example", nullptr}, {"description", value(graph, parameter, std::string(skos) + "definition")}, {"default", nullptr}}; const auto declared_default = value(graph, parameter, std::string(sf) + "default"); if (!declared_default.empty()) { item["default"] = literal_json(declared_default); item["schema"]["default"] = literal_json(declared_default); } const auto path_kind = value(graph, parameter, std::string(sf) + "pathKind"); if (!path_kind.empty()) item["path_kind"] = path_kind; if (!parameter_extensions.empty()) item["schema"]["x-streamfind-file-extensions"] = parameter_extensions; if (!path_kind.empty()) item["schema"]["x-streamfind-path-kind"] = path_kind; if (!directory_extensions.empty()) item["directory_extensions"] = directory_extensions; const auto constraint = value(graph, parameter, std::string(sf) + "constraints"); if (!constraint.empty()) item["constraints"] = constraint; const auto item_ref = value(graph, parameter, std::string(sf) + "items"); if (!item_ref.empty()) item["items"] = resource_name(item_ref); const auto example = value(graph, parameter, std::string(sf) + "example"); if (!example.empty()) item["example"] = literal_json(example); parameters.push_back(item); }
         entry["parameters"] = parameters; Json input = {{"type", "object"}, {"title", entry["label"]}, {"description", entry["definition"]}, {"properties", Json::object()}, {"required", Json::array()}}; for (const auto &parameter : parameters) { input["properties"][parameter["name"]] = mcp_schema(parameter["schema"]); if (parameter["required"]) input["required"].push_back(parameter["name"]); } if (std::string(kind) == "operation" || std::string(kind) == "command") entry["mcp"] = {{"name", canonical}, {"input_schema", input}};
         if (std::string(kind) == "method") entry.erase("mcp");
         Json reads = Json::array();
         for (const auto &table : values(graph, subject, std::string(sf) + "reads"))
-            reads.push_back(value(graph, table, std::string(sf) + "tableName"));
+            reads.push_back(value(graph, table, std::string(sf) + "tableContractName"));
         Json writes = Json::array();
         const auto write_contracts = std::string(kind) == "operation"
             ? values(graph, subject, std::string(sf) + "hasOutputPort")
             : values(graph, subject, std::string(sf) + "writes");
         for (const auto &table : write_contracts) {
-            const auto table_name = value(graph, table, std::string(sf) + "tableName");
-            if (!table_name.empty())
-                writes.push_back(table_name);
+            const auto table_contract_name = value(graph, table, std::string(sf) + "tableContractName");
+            if (!table_contract_name.empty())
+                writes.push_back(table_contract_name);
         }
         if (std::string(kind) == "command") {
             entry["effects"] = {{"mutates_project", boolean(graph, subject, std::string(sf) + "mutatesProject")}, {"reads", reads}, {"writes", writes}};
@@ -378,38 +379,45 @@ Json project(const Graph &graph, const std::string &domain) {
         if (entry["operation_version"].get<std::string>().empty()) entry["operation_version"] = "1";
         entry["input_ports"] = Json::array();
         const auto optional_input_ports = values(graph, subject, std::string(sf) + "optionalInputPort");
-        for (const auto &port : values(graph, subject, std::string(sf) + "hasInputPort")) {
+        auto input_ports = values(graph, subject, std::string(sf) + "hasInputPort");
+        for (const auto &port : optional_input_ports) {
+            const auto contract = local(port);
+            const auto already_present = std::any_of(input_ports.begin(), input_ports.end(), [&](const auto &candidate) { return local(candidate) == contract; });
+            if (!already_present)
+                input_ports.push_back(port);
+        }
+        for (const auto &port : input_ports) {
             const auto contract = local(port);
             const bool optional = std::any_of(optional_input_ports.begin(), optional_input_ports.end(), [&](const auto &candidate) { return local(candidate) == contract; });
-            const auto table_name = value(graph, port, std::string(sf) + "tableName");
+            const auto table_contract_name = value(graph, port, std::string(sf) + "tableContractName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
-            if (value_type == "table" && table_name.empty())
+            if (value_type == "table" && table_contract_name.empty())
                 throw std::runtime_error("table input port lacks a canonical DuckDB table contract: " + contract);
-            const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
+            const auto data_kind = !table_contract_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
             entry["input_ports"].push_back({{"id", contract},
                                                 {"semantic_contract", contract},
                                                 {"data_kind", data_kind},
                                                 {"schema", result_schema(graph, port)},
                                                 {"cardinality", "one"},
-                                                {"representations", Json::array({table_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
+                                                {"representations", Json::array({table_contract_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
                                                 {"optional", optional}});
         }
         entry["output_ports"] = Json::array();
         bool has_success_signal = false;
         for (const auto &port : values(graph, subject, std::string(sf) + "hasOutputPort")) {
             const auto contract = local(port);
-            const auto table_name = value(graph, port, std::string(sf) + "tableName");
+            const auto table_contract_name = value(graph, port, std::string(sf) + "tableContractName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
-            if (value_type == "table" && table_name.empty())
+            if (value_type == "table" && table_contract_name.empty())
                 throw std::runtime_error("table output port lacks a canonical DuckDB table contract: " + contract);
-            const auto data_kind = !table_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
+            const auto data_kind = !table_contract_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
             has_success_signal = has_success_signal || contract == "operationSuccessSignal";
             entry["output_ports"].push_back({{"id", contract},
                                              {"semantic_contract", contract},
                                              {"data_kind", data_kind},
                                              {"schema", result_schema(graph, port)},
                                              {"cardinality", "one"},
-                                             {"representations", Json::array({table_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
+                                             {"representations", Json::array({table_contract_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
                                              {"optional", false}});
         }
         if (kind == std::string("operation") && !has_success_signal) {
@@ -430,7 +438,7 @@ Json project(const Graph &graph, const std::string &domain) {
                     ? resource_name(condition) : resource_name(value(graph, condition, std::string(sf) + "parameter"));
                 const auto equals = value(graph, dependency, std::string(sf) + "equals");
                 if (!table.empty() && !parameter.empty()) {
-                    Json condition = {{"table", value(graph, table, std::string(sf) + "tableName")}, {"parameter", wire_name(parameter)}};
+                    Json condition = {{"table", value(graph, table, std::string(sf) + "tableContractName")}, {"parameter", wire_name(parameter)}};
                     if (!equals.empty()) condition["equals"] = equals;
                     entry["conditional_reads"].push_back(std::move(condition));
                 }
@@ -439,8 +447,8 @@ Json project(const Graph &graph, const std::string &domain) {
         output["entries"].push_back(entry);
     }
     for (const auto &[subject, predicates] : graph) {
-        const auto table_name = value(graph, subject, std::string(sf) + "tableName");
-        if (table_name.empty()) continue;
+        const auto table_contract_name = value(graph, subject, std::string(sf) + "tableContractName");
+        if (table_contract_name.empty()) continue;
         const auto domain_resource = value(graph, subject, std::string(sf) + "availableInDomain"); const auto table_domain = domain_resource.empty() ? "streamfind" : local(domain_resource);
         if (!domain.empty() && table_domain != domain) continue;
         Json columns = Json::array();
@@ -455,10 +463,10 @@ Json project(const Graph &graph, const std::string &domain) {
                 columns.push_back(std::move(projected));
             }
         }
-        output["tables"].push_back({{"resource_id", local(subject)}, {"table_name", table_name}, {"domain", table_domain}, {"module_id", module_id(graph, subject, "table", table_domain, table_name)}, {"columns", columns}});
+        output["tables"].push_back({{"resource_id", local(subject)}, {"table_contract_name", table_contract_name}, {"domain", table_domain}, {"module_id", module_id(graph, subject, "table", table_domain, table_contract_name)}, {"columns", columns}});
     }
     std::sort(output["entries"].begin(), output["entries"].end(), [](const Json &a, const Json &b) { return a["canonical_id"] < b["canonical_id"]; });
-    std::sort(output["tables"].begin(), output["tables"].end(), [](const Json &a, const Json &b) { return a["table_name"] < b["table_name"]; });
+    std::sort(output["tables"].begin(), output["tables"].end(), [](const Json &a, const Json &b) { return a["table_contract_name"] < b["table_contract_name"]; });
     return output;
 }
 
@@ -471,7 +479,7 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
     if (duckdb_open(request.output_database.string().c_str(), &database) != DuckDBSuccess || duckdb_connect(database, &connection) != DuckDBSuccess) throw std::runtime_error("cannot open catalogue database");
     const auto exec = [&](const std::string &sql) { if (duckdb_query(connection, sql.c_str(), &result) != DuckDBSuccess) { const std::string error = duckdb_result_error(&result); duckdb_destroy_result(&result); throw std::runtime_error(error); } duckdb_destroy_result(&result); };
     exec("CREATE TABLE catalogue_entries (canonical_id VARCHAR PRIMARY KEY, kind VARCHAR, domain VARCHAR, label VARCHAR, definition VARCHAR, category VARCHAR, invocation_model VARCHAR, requires_connection BOOLEAN, guidance VARCHAR, next_operations JSON, interface_guidance VARCHAR, executable BOOLEAN, exposed BOOLEAN, mcp_name VARCHAR, input_schema JSON, parameters JSON, result_schema JSON, reads_tables JSON, writes_tables JSON, single_occurrence BOOLEAN, mutates_project BOOLEAN, module_id VARCHAR, conditional_reads JSON, result_id VARCHAR, project_entry BOOLEAN, input_ports JSON, output_ports JSON)");
-    exec("CREATE TABLE catalogue_tables (table_name VARCHAR PRIMARY KEY, domain VARCHAR, module_id VARCHAR, resource_id VARCHAR, columns JSON)");
+    exec("CREATE TABLE catalogue_tables (table_contract_name VARCHAR PRIMARY KEY, domain VARCHAR, module_id VARCHAR, resource_id VARCHAR, columns JSON)");
     exec("CREATE TABLE catalogue_metadata (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
     for (const auto &entry : catalogue["entries"]) {
         const auto &iface = entry["interface"]; const auto &effects = entry["effects"];
@@ -489,7 +497,7 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
     }
     for (const auto &table : catalogue["tables"]) {
         const auto sql = "INSERT INTO catalogue_tables VALUES (" +
-            sql_quote(table["table_name"]) + "," +
+            sql_quote(table["table_contract_name"]) + "," +
             sql_quote(table["domain"]) + "," +
             sql_quote(table["module_id"]) + "," +
             sql_quote(table["resource_id"]) + "," +
