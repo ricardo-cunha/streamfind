@@ -126,7 +126,7 @@ To use a different data directory, set:
 STREAMFIND_EXAMPLE_DATA_ROOT=<path-to-streamfind.data/data>
 ```
 
-Only small backend-neutral fixtures remain under `cpp/tests/fixtures/`; large
+Only small backend-neutral fixtures remain under `cpp/core/tests/fixtures/`; large
 example datasets are not release contents.
 
 ## Toolchain detection (recommended standards)

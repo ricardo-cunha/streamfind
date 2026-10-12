@@ -61,7 +61,6 @@ nav:
       - Plugin development: plugin-development.md
       - R package: components/bindings-r.md
       - Python interface: components/bindings-python.md
-      - Cogniflow integration: components/cf-streamfind.md
   - Quickstart:
       - C++ MCP server: quickstart/cpp-mcp.md
   - Compatibility and support: testing.md

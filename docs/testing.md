@@ -27,7 +27,6 @@ not automatically installed by the native packages.
 
 - Use the C++ package for native C++ applications or the C++ MCP server.
 - Use the R package for R and Shiny workflows.
-- The native distribution does not include a Python package or Cogniflow integration.
 
 The native packages do not promise a stable cross-version C++ ABI. Match an
 application or plugin developer kit to the runtime version it targets.

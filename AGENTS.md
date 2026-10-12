@@ -14,6 +14,27 @@
 - Use an explicit named internal namespace such as `streamfind::detail` for non-public helpers, or use a file-local `static` function where appropriate.
 - This rule applies to `cpp/` and project-owned C++ code. Do not rewrite third-party or vendored source under `cpp/vendor/`.
 
+## Test Ownership and Separation
+
+- `cpp/core/tests/` and `cpp/plugins/*/tests/` contain the official native test
+  suite only. Tests in these directories must be C++ unit or contract tests,
+  must be registered with CTest, and must run through the supported CMake/Ninja
+  build. Do not add Python, notebook, workflow, or ad-hoc DuckDB tests there.
+- There is no repository-root `tests/` test suite. Do not recreate one for
+  plugin or mass-spectrometry testing. Plugin-specific C++ tests belong under
+  the owning plugin's `cpp/plugins/<domain>/tests/` directory.
+- Python tests, data-backed workflow checks, NTA/MassSpec integration runs, and
+  disposable project validation are development checks. Keep them under
+  `scripts/dev/` (normally `scripts/dev/cpp/`), invoke them with the repository
+  `.venv`, and do not register them as official CTest tests.
+- Official native tests may use only small backend-neutral fixtures kept next to
+  their owning C++ test area. Mass-spectrometry and other large example data
+  must come from the sibling `streamfind.data` repository at
+  `<parent>/streamfind.data`; development scripts resolve that repository for
+  data-backed checks.
+- Build and release validation may invoke CTest from `scripts/build/`, while
+  development-stage Python and workflow validation remains in `scripts/dev/`.
+
 ## Local-only Rust development
 
 The `rust/` source tree and `rust_scripts/` helper tree are intentionally
@@ -36,7 +57,6 @@ During the active streamfind refactor, the codebase must move toward the target 
 ### Deferred Boundaries
 
 - Treat `bindings/r` as a preserved, functional package during the current C++/Python implementation work. Do not refactor it, redirect it, or add R migration helpers until those implementations are complete.
-- Treat `integrations/cf-streamfind` the same way: defer public-Python integration work until the end-state C++/Python domain implementations are complete.
 
 ### When Compatibility Is Truly Required
 

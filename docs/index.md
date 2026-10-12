@@ -40,7 +40,6 @@ runtime, MCP interface, and extensible domain plugins.
 | MCP | JSON-RPC over stdio for applications and AI agents | Available through the native C++ package |
 | R package | Existing R workflows, non-target screening, and Shiny application | Separate R interface |
 | Python package | — | No public package |
-| Cogniflow integration | — | Not included in the native distribution |
 | React web app | Browser application served by the packaged C++ service; also available from the Vite development server | Included in the Windows and Linux native archives |
 
 ## Supported analytical work

@@ -12,7 +12,6 @@ x64 and Linux x86_64.
 | C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
 | R package | Separate R interface | Existing R and Shiny workflows |
 | Python package | No public package | Use the C++ CLI or MCP interface |
-| Cogniflow integration | Not included in the native distribution | Use the native C++ package or MCP interface |
 | React web app | Browser interface using the C++ service | Included in the Windows and Linux native archives |
 
 See [Releases](releases.md) for package downloads and checksums.
@@ -59,7 +58,6 @@ The native packages do not promise:
 - a stable cross-version C++ ABI;
 - identical support for every vendor format on every platform;
 - automatic installation of Java, MetFrag, or other optional scientific tools;
-- the public Python package or a production Cogniflow adapter.
 
 The R package is a separate interface and installation path. It should not be
 installed as a replacement for the native C++ package.

@@ -42,3 +42,6 @@ install(TARGETS streamfind_raman_plugin
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
     install(TARGETS streamfind_raman_plugin ARCHIVE DESTINATION sdk/lib)
 endif()
+if(STREAMFIND_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

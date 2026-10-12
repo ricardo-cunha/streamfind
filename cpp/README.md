@@ -154,7 +154,7 @@ execution, closed projects, and cancellation.
 The C++ core uses the shared `PROJECT`, `CACHE`, and `AUDIT_TRAIL` DuckDB tables.
 Workflow, metadata, cache, audit, and result JSON are backend-neutral and are
 covered by the lightweight project and execution fixtures in
-`cpp/tests/fixtures/`. Large example datasets are
+`cpp/core/tests/fixtures/`. Large example datasets are
 provided separately through the streamfind.data repository/data directory and
 are exercised by the development PowerShell scripts under `scripts/dev/`.
 
@@ -167,8 +167,8 @@ scripts\build\cpp\build-cpp.cmd -Clean -Tests -Config Release
 scripts\build\cpp\test-cpp.cmd -Config Release
 ```
 
-The official CTest suite is intentionally lightweight and fixture-independent.
-It contains 11 focused contracts covering:
+The official CTest suite is organized by ownership and contains focused
+contracts covering:
 
 - project lifecycle, execution lifecycle, project isolation, and persistence
   manifests;
@@ -178,12 +178,15 @@ It contains 11 focused contracts covering:
 - MassSpec and NTA public interfaces; and
 - DuckDB/OpenBabel dependency smoke coverage.
 
-The corresponding source files are under `cpp/tests/unit/` and use behavior-based
-names such as `project_lifecycle_contract.cpp`,
-`dynamic_plugin_package_contract.cpp`, and `plugin_registration_contract.cpp`.
-Raw vendor corpora, full NTA pipelines, and external-data checks are not part of
-the default CTest run. Invoke those explicitly through the development scripts,
-for example:
+Core contracts are under `cpp/core/tests/`, and mass-spec, Raman, and Sensors
+contracts are under their respective plugin `tests/` directories. Python
+regressions and data-backed workflow checks are development scripts under
+`scripts/dev/cpp/`, not official C++ tests. Official test configuration requires the sibling
+`streamfind.data` checkout; override its location with
+`-DSTREAMFIND_DATA_ROOT=<path>`. The mass-spec data contract verifies the
+wastewater CSV and mzML fixtures before the suite can pass. Raw vendor corpora
+and full NTA pipelines remain opt-in; invoke those explicitly through the
+development scripts, for example:
 
 ```powershell
 scripts\dev\cpp\test-nta.ps1 -RunPipeline

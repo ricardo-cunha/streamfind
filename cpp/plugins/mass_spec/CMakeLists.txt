@@ -107,3 +107,6 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/mass_spec)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
     DESTINATION plugins/mass_spec/resources)
+if(STREAMFIND_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

@@ -125,7 +125,7 @@ $projectId = 'nta-cpp'
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-$testDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64/tests' } else { 'tmp/build/linux-cpp/tests' }
+$testDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64/core/tests' } else { 'tmp/build/linux-cpp/core/tests' }
 $env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue

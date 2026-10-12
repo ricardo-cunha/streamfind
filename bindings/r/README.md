@@ -58,29 +58,6 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
 remotes::install_github("odea-project/streamfind.data")
 ```
 
-## Python / CogniFlow package
-
-This repository also contains the Python CogniFlow package
-`cf-streamfind`.
-
-Install from a local checkout:
-
-``` bash
-pip install .
-```
-
-Within the Cogniflow framework, `cf-streamfind` is intended to be used
-as a step package discovered through the framework contracts/runtime
-layer rather than as a standalone end-user Python API.
-
-It is exposed to Cogniflow through the `cogniflow.steps` entry-point
-mechanism and provides the streamfind native step implementations
-consumed by Cogniflow pipelines.
-
-The package builds the Cogniflow native step library from the
-shared streamfind C++ core under `src/core/` and the CogniFlow adapter
-under `integrations/cf-streamfind/src/cf_streamfind/cpp/`.
-
 ## Framework overview
 
 The typical workflow is:
