@@ -365,7 +365,7 @@ sfms:polarityParameter
     sf:type "integer" ;
     sf:required false ;
     sf:default 0 ;
-    sf:constraints "-1|1" ;
+    sf:constraints "{\"enum\":[-1,0,1]}" ;
     sf:example 1 .
 
 sfms:ppmParameter
