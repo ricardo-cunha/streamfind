@@ -624,10 +624,10 @@ sfms:annotationModificationsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Annotation modifications" ;
-    skos:definition "Optional allow-list of built-in or validated signed molecular-formula modification expressions used by annotate_components. Entries use expressions such as +H, +Na, +NH4, 2M+H, -H2O, -CO2, or +2NOH. A leading plus selects an adduct-like modification and a leading minus selects a neutral loss; formulas and leading coefficients are validated and their masses are derived at runtime. When omitted, all 41 built-in rules are used; an explicit empty array disables adduct and loss matching." ;
+    skos:definition "Optional allow-list of built-in or validated signed molecular-formula modification expressions used by annotate_components. Entries use expressions such as +Na, +NH4, 2M+H, -H2O, -CO2, or +2NOH. The polarity-specific base ions [M+H]+ and [M-H]- are assigned implicitly and are not modifications. A leading plus selects an adduct-like modification and a leading minus selects a neutral loss; formulas and leading coefficients are validated and their masses are derived at runtime. When omitted, the common small-molecule NTS modifications are used: +Na, +NH4, +K, +Cl, +FA-H, +CH3COO, -H2O, -CO2, -NH3, and -CO. Less frequent solvent, dimer, halogen, and other loss rules remain available through an explicit list; an explicit empty array disables modification matching." ;
     sf:type "array" ;
     sf:required false ;
-    sf:default "[\"+H\",\"+Na\",\"+K\",\"+NH4\",\"+ACN+H\",\"+CH3OH+H\",\"2M+H\",\"2M+Na\",\"2M+K\",\"2M+NH4\",\"-H\",\"+Cl\",\"+Br\",\"+CHO2\",\"+CH3COO\",\"+FA-H\",\"2M-H\",\"2M+Cl\",\"2M+FA-H\",\"-H2O\",\"-CO2\",\"-NH3\",\"-CO\",\"-CH3\",\"-CH2O2\",\"-HCl\",\"-HF\",\"-SO2\",\"-SO3\",\"-H2SO4\",\"-CH3OH\",\"-C2H4\",\"-C2H2\",\"-NO\",\"-NO2\",\"-HNO2\",\"-HNO3\",\"-CH2\",\"-C2H6O\",\"-HPO3\",\"-H3PO4\"]" ;
+    sf:default "[\"+Na\",\"+NH4\",\"+K\",\"+Cl\",\"+FA-H\",\"+CH3COO\",\"-H2O\",\"-CO2\",\"-NH3\",\"-CO\"]" ;
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"+H\",\"+2NOH\",\"-H2O\"]" .
 
@@ -1246,8 +1246,9 @@ sfms:maxErrorRtParameter
     skos:prefLabel "Maximum RT error" ;
     skos:definition "Optional maximum absolute retention-time error; null disables." ;
     sf:type "real" ;
+    sf:nullable true ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 30.0 .
 
 sfms:maxErrorMassParameter
@@ -1257,8 +1258,9 @@ sfms:maxErrorMassParameter
     skos:prefLabel "Maximum mass error" ;
     skos:definition "Optional maximum absolute mass error; null disables." ;
     sf:type "real" ;
+    sf:nullable true ;
     sf:required false ;
-    sf:default 0.0 ;
+    sf:default "null" ;
     sf:example 5.0 .
 
 sfms:idLevelsParameter
@@ -1349,12 +1351,12 @@ sfms:postProcessingCandidateFilterParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag post-processing filters" ;
-    skos:definition "MetFrag candidate filters applied after scoring." ;
+    skos:definition "MetFrag candidate filters applied after scoring. The default InChIKeyFilter collapses equivalent structures; set this array to [] to disable post-processing filters and retain otherwise equivalent candidates." ;
     sf:type "array" ;
     sf:required false ;
     sf:default "[\"InChIKeyFilter\"]" ;
     sf:items sfcore:stringItemParameter ;
-    sf:example "[\"InChIKeyFilter\"]" .
+    sf:example "[]" .
 
 sfms:maximumTreeDepthParameter
     a sf:Parameter ;
@@ -1575,6 +1577,57 @@ sfms:fragmentationDepthParameter
     sf:default 2 ;
     sf:example 2 .
 
+sfms:maxInverseCandidatesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum inverse candidates per root" ;
+    skos:definition "Maximum number of unique structure-bearing inverse-fragmentation rows generated for the single MOL-derived main compound root by bounded graph edits." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 500 ;
+    sf:example 100 .
+
+sfms:maxAttachmentVariantsPerFragmentParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum attachment variants per fragment" ;
+    skos:definition "Maximum number of valid Open Babel attachment positions retained for each unique observed fragment unit. A bounded value prevents attachment-site enumeration from dominating inverse expansion." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 8 ;
+    sf:example 4 ;
+    sf:constraints "{\"minimum\":1}" .
+
+sfms:maxFragmentUnitsPerCandidateParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum fragment units per candidate" ;
+    skos:definition "Maximum number of distinct observed fragment structures attached to one MOL-derived root candidate. The bounded structure path supports one or two units; formula-only combinations belong to a separate future operation." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 2 ;
+    sf:example 2 ;
+    sf:constraints "{\"minimum\":1,\"maximum\":2}" .
+
+sfms:maxLocalEditCandidatesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum local edit candidates" ;
+    skos:definition "Maximum number of validated root-local structure hypotheses, including positional H/D exchange, oxygenation, fluorination, chlorination, and bromination, retained before bond-order isomers use the remaining budget." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 64 ;
+    sf:example 32 ;
+    sf:constraints "{\"minimum\":1}" .
+
 sfms:numberDuplicateFormulasParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1584,8 +1637,34 @@ sfms:numberDuplicateFormulasParameter
     sf:type "integer" ;
     sf:required false ;
     sf:defaultRequired true ;
-    sf:default 0 ;
+    sf:default 2 ;
     sf:example 2 .
+
+sfms:fragmentationTreeMinimumMassParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum fragment mass" ;
+    skos:definition "Optional inclusive lower bound for fragment exact mass. Null keeps the lower side unbounded." ;
+    sf:type "real" ;
+    sf:nullable true ;
+    sf:required false ;
+    sf:default "null" ;
+    sf:example 100.0 ;
+    sf:constraints "{\"minimum\":0}" .
+
+sfms:fragmentationTreeMaximumMassParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum fragment mass" ;
+    skos:definition "Optional inclusive upper bound for fragment exact mass. Null keeps the upper side unbounded." ;
+    sf:type "real" ;
+    sf:nullable true ;
+    sf:required false ;
+    sf:default "null" ;
+    sf:example 1000.0 ;
+    sf:constraints "{\"minimum\":0}" .
 
 sfms:neutralLossItemParameter
     a sf:Parameter ;

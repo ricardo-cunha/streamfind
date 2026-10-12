@@ -2435,6 +2435,31 @@ h2 {
   color: var(--sf-text-muted);
   font-size: 0.74rem;
 }
+.sf-canvas-workflow-saving {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--sf-bg) 78%, transparent);
+  color: var(--sf-text);
+  pointer-events: auto;
+}
+.sf-canvas-workflow-saving img {
+  width: min(112px, 20vw);
+  height: auto;
+  animation: sf-rotate 1.8s ease-in-out infinite;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--sf-text) 18%, transparent));
+}
+.sf-canvas-workflow-saving strong {
+  font-size: 0.95rem;
+}
+.sf-canvas-workflow-saving span {
+  color: var(--sf-text-muted);
+  font-size: 0.74rem;
+}
 .sf-empty-workflow-prompt {
   position: absolute;
   top: 50%;
@@ -3491,6 +3516,14 @@ h2 {
   touch-action: auto;
   overscroll-behavior: contain;
 }
+.sf-node-info-pane > *,
+.sf-node-info-pane section,
+.sf-node-info-pane .sf-info-row,
+.sf-node-info-pane .sf-info-row > *,
+.sf-node-info-pane .sf-node-info-heading > * {
+  min-width: 0;
+  max-width: 100%;
+}
 .sf-node-info-heading {
   display: flex;
   justify-content: space-between;
@@ -3505,6 +3538,9 @@ h2 {
   color: var(--sf-text-secondary);
   font-size: 0.78rem;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 .sf-node-info-pane section {
   display: grid;
@@ -3529,6 +3565,16 @@ h2 {
 }
 .sf-info-row span {
   color: var(--sf-text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+.sf-info-row small,
+.sf-info-row button,
+.sf-node-info-heading h2 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 .sf-node-info-note {
   padding: 8px;

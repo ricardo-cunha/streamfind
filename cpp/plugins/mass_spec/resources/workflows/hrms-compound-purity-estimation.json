@@ -97,7 +97,7 @@
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-11",
+      "source_operation": "operation-4",
       "source_port": "featuresTable",
       "target_operation": "operation-13",
       "target_port": "featuresTable"
@@ -129,7 +129,19 @@
     {
       "source_operation": "operation-16",
       "source_port": "fragmentationTreeTable",
+      "target_operation": "operation-21",
+      "target_port": "fragmentationTreeTable"
+    },
+    {
+      "source_operation": "operation-20",
+      "source_port": "fragmentationTreeTable",
       "target_operation": "operation-18",
+      "target_port": "fragmentationTreeTable"
+    },
+    {
+      "source_operation": "operation-21",
+      "source_port": "fragmentationTreeTable",
+      "target_operation": "operation-20",
       "target_port": "fragmentationTreeTable"
     },
     {
@@ -172,8 +184,8 @@
       "operation": "mass_spec.read_mass_spec_files",
       "parameters": {
         "source_paths": [
-          "C:\\example_data\\ms_merck\\sample_01.d",
-          "C:\\example_data\\ms_merck\\sample_02.d"
+          "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4_blank_P1-E-5_1_2022_11895.d",
+          "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4_P1-F-1_1_2022_11896.d"
         ]
       },
       "position": {
@@ -192,8 +204,8 @@
         ]
       },
       "position": {
-        "x": 564.452317204784,
-        "y": 97.1742021068829
+        "x": 408.89840974880053,
+        "y": 114.45796960199216
       }
     },
     {
@@ -207,8 +219,8 @@
         ]
       },
       "position": {
-        "x": 854.6849258289,
-        "y": 92.91681084068773
+        "x": 690.4891346253619,
+        "y": 114.5215202095743
       }
     },
     {
@@ -216,16 +228,16 @@
       "inputs": {},
       "operation": "mass_spec.find_features",
       "parameters": {
-        "base_quantile": 0.99,
+        "base_quantile": 0.2,
         "baseline_window": 200,
         "debug_analysis": "",
         "debug_mz": 0,
         "debug_spec_idx": -1,
         "max_feature_width": 250,
-        "min_snr": 3,
+        "min_snr": 2,
         "min_traces": 3,
-        "noise_threshold": 15,
-        "ppm_threshold": 10,
+        "noise_threshold": 10,
+        "ppm_threshold": 20,
         "rt_windows": [
           {
             "rtmax": 3400,
@@ -234,8 +246,8 @@
         ]
       },
       "position": {
-        "x": 1215.7665126448462,
-        "y": 626.4584916355502
+        "x": 985.3671363355693,
+        "y": 516.8458176013531
       }
     },
     {
@@ -245,15 +257,15 @@
       "parameters": {
         "debug_analysis": "",
         "debug_rt": 0,
-        "min_correlation": 0.8,
+        "min_correlation": 0.9,
         "rt_window": [
-          -2.5,
-          2.5
+          -10,
+          10
         ]
       },
       "position": {
-        "x": 1505.86608094317,
-        "y": 664.6205238104229
+        "x": 1331.3322360133325,
+        "y": 626.3958980730555
       }
     },
     {
@@ -264,7 +276,7 @@
         "debug_analysis": "",
         "debug_component": "",
         "isotope_elements": [
-          "C:1-80",
+          "C:1-130",
           "N:0-10",
           "O:0-20",
           "S:0-4",
@@ -272,47 +284,16 @@
           "Br:0-4"
         ],
         "annotation_modifications": [
-          "+H",
           "+Na",
-          "+K",
           "+NH4",
-          "+ACN+H",
-          "+CH3OH+H",
-          "2M+H",
-          "2M+Na",
-          "2M+K",
-          "2M+NH4",
-          "-H",
+          "+K",
           "+Cl",
-          "+Br",
-          "+CHO2",
-          "+CH3COO",
           "+FA-H",
-          "2M-H",
-          "2M+Cl",
-          "2M+FA-H",
+          "+CH3COO",
           "-H2O",
           "-CO2",
           "-NH3",
-          "-CO",
-          "-CH3",
-          "-CH2O2",
-          "-HCl",
-          "-HF",
-          "-SO2",
-          "-SO3",
-          "-H2SO4",
-          "-CH3OH",
-          "-C2H4",
-          "-C2H2",
-          "-NO",
-          "-NO2",
-          "-HNO2",
-          "-HNO3",
-          "-CH2",
-          "-C2H6O",
-          "-HPO3",
-          "-H3PO4"
+          "-CO"
         ],
         "max_charge": 1,
         "max_gaps": 1,
@@ -320,8 +301,8 @@
         "ppm": 10
       },
       "position": {
-        "x": 1783.6907873762268,
-        "y": 664.1215999488131
+        "x": 1611.374759298665,
+        "y": 625.7679459018269
       }
     },
     {
@@ -329,15 +310,14 @@
       "inputs": {},
       "operation": "mass_spec.filter_features",
       "parameters": {
-        "min_gaussian_r2": 0.1,
         "remove_adducts": true,
         "remove_filled": false,
         "remove_isotopes": true,
         "remove_losses": true
       },
       "position": {
-        "x": 2063.1895176974285,
-        "y": 656.736860904482
+        "x": 1886.9847966932475,
+        "y": 620.8614808143017
       }
     },
     {
@@ -346,8 +326,8 @@
       "operation": "mass_spec.subtract_blank",
       "parameters": {
         "blank_threshold": 5,
-        "mz_expand": 0.005,
-        "rt_expand": 10
+        "mz_expand": 0.001,
+        "rt_expand": 5
       },
       "position": {
         "x": 2394.198960957123,
@@ -360,16 +340,16 @@
       "operation": "mass_spec.load_features_ms1",
       "parameters": {
         "filtered": false,
-        "min_traces_intensity": 150,
+        "min_traces_intensity": 100,
         "mz_clust": 0.008,
         "mz_window": [
-          -200,
-          200
+          -500,
+          500
         ],
         "presence": 0.2,
         "rt_window": [
-          -2.5,
-          2.5
+          -2,
+          2
         ]
       },
       "position": {
@@ -398,11 +378,11 @@
       "inputs": {},
       "operation": "mass_spec.read_csv_targets",
       "parameters": {
-        "targets_csv_path": "C:\\example_data\\ms_merck\\targets.csv"
+        "targets_csv_path": "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4_targets.csv"
       },
       "position": {
-        "x": 3272.2855475261736,
-        "y": 186.07532793886406
+        "x": 1137.8706145618257,
+        "y": 12
       }
     },
     {
@@ -413,12 +393,12 @@
         "analysis_names": [],
         "filtered": false,
         "ppm": 20,
-        "rt_tolerance": 60,
+        "rt_tolerance": 15,
         "targets": []
       },
       "position": {
-        "x": 3612.9394344807706,
-        "y": 65.02232410108056
+        "x": 1474.6499083418048,
+        "y": 12
       }
     },
     {
@@ -439,8 +419,8 @@
         "rt_min": 0
       },
       "position": {
-        "x": 417.6262450877342,
-        "y": 605.1769771953117
+        "x": 402.50294852951356,
+        "y": 497.1534303508787
       }
     },
     {
@@ -449,11 +429,11 @@
       "operation": "mass_spec.read_mol_suspect_target",
       "parameters": {
         "compound_name": "Compound",
-        "mol_file_path": "C:\\example_data\\ms_merck\\suspect_target.mol"
+        "mol_file_path": "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27166_4.mol"
       },
       "position": {
-        "x": 2504.999073742359,
-        "y": 973.4203650633284
+        "x": 1645.9100594184895,
+        "y": 1036.3710958469824
       }
     },
     {
@@ -461,11 +441,11 @@
       "inputs": {},
       "operation": "mass_spec.fragment_suspect_targets",
       "parameters": {
-        "fragmentation_depth": 1
+        "fragmentation_depth": 2
       },
       "position": {
-        "x": 2849.5997651754305,
-        "y": 849.6620403651738
+        "x": 1974.2977628197104,
+        "y": 986.2980191407955
       }
     },
     {
@@ -473,11 +453,11 @@
       "inputs": {},
       "operation": "mass_spec.fragmentation_to_suspect_targets",
       "parameters": {
-        "number_duplicate_formulas": 1
+        "number_duplicate_formulas": 4
       },
       "position": {
-        "x": 3189.8325806053012,
-        "y": 784.2092870859843
+        "x": 2956.550875881522,
+        "y": 808.4387841429758
       }
     },
     {
@@ -487,13 +467,11 @@
       "parameters": {
         "debug": false,
         "filtered": false,
-        "isotope_ppm": 5,
-        "maximum_tree_depth": 2,
+        "isotope_ppm": 10,
+        "maximum_tree_depth": 1,
         "mzr_ms2": 0.008,
         "number_threads": 5,
-        "post_processing_candidate_filter": [
-          "InChIKeyFilter"
-        ],
+        "post_processing_candidate_filter": [],
         "ppm": 10,
         "ppm_ms2": 10,
         "pre_processing_candidate_filter": [
@@ -507,12 +485,39 @@
         ],
         "sec": 15,
         "suspect_targets": [],
-        "top_n": 2,
+        "top_n": 10,
         "use_smiles": true
       },
       "position": {
-        "x": 3600.395015490046,
-        "y": 606.6394179694281
+        "x": 3368.675819375473,
+        "y": 660.3922983104668
+      }
+    },
+    {
+      "id": "operation-20",
+      "inputs": {},
+      "operation": "mass_spec.expand_fragmentation_tree",
+      "parameters": {
+        "max_attachment_variants_per_fragment": 8,
+        "max_fragment_units_per_candidate": 2,
+        "max_inverse_candidates": 5000,
+        "max_local_edit_candidates": 256
+      },
+      "position": {
+        "x": 2631.683023346808,
+        "y": 868.7231687207155
+      }
+    },
+    {
+      "id": "operation-21",
+      "inputs": {},
+      "operation": "mass_spec.filter_fragmentation_tree",
+      "parameters": {
+        "number_duplicate_formulas": 4
+      },
+      "position": {
+        "x": 2299.3144613864188,
+        "y": 937.3323403094741
       }
     }
   ],

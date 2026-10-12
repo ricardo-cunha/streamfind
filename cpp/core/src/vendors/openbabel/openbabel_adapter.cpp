@@ -4,6 +4,8 @@
 
 #include <string>
 #include <filesystem>
+#include <algorithm>
+#include <memory>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -58,6 +60,10 @@ namespace streamfind::core::vendors::openbabel
   using normalize_structure_from_mol_file_fn = int (*)(const char *, streamfind_ob_normalized_result *);
   using formula_from_mass_fn = int (*)(double, double, const char *, streamfind_ob_formula_result *);
   using mass_from_formula_fn = int (*)(const char *, streamfind_ob_mass_result *);
+  using generate_bond_order_variants_fn = int (*)(const char *, int, streamfind_ob_graph_edit_result *);
+  using generate_fragment_attachment_variants_fn = int (*)(const char *, const char *, int, streamfind_ob_graph_edit_result *);
+  using generate_local_transformation_variants_fn = int (*)(const char *, int, streamfind_ob_graph_edit_result *);
+  using generate_dealkylation_variants_fn = int (*)(const char *, int, streamfind_ob_graph_edit_result *);
   using render_structure_svg_fn = int (*)(const char *, const char *, int, int, const char *, streamfind_ob_svg_result *);
   using debug_runtime_fn = int (*)(char *, size_t);
 
@@ -69,6 +75,10 @@ namespace streamfind::core::vendors::openbabel
     normalize_structure_from_mol_file_fn normalize_from_mol = nullptr;
     formula_from_mass_fn formula_from_mass = nullptr;
     mass_from_formula_fn mass_from_formula = nullptr;
+    generate_bond_order_variants_fn generate_bond_order_variants = nullptr;
+    generate_fragment_attachment_variants_fn generate_fragment_attachment_variants = nullptr;
+    generate_local_transformation_variants_fn generate_local_transformation_variants = nullptr;
+    generate_dealkylation_variants_fn generate_dealkylation_variants = nullptr;
     render_structure_svg_fn render_svg = nullptr;
     debug_runtime_fn debug_runtime = nullptr;
     std::string error;
@@ -219,6 +229,14 @@ namespace streamfind::core::vendors::openbabel
         GetProcAddress(api.module, "sf_ob_formula_from_mass"));
     api.mass_from_formula = reinterpret_cast<mass_from_formula_fn>(
         GetProcAddress(api.module, "sf_ob_mass_from_formula"));
+    api.generate_bond_order_variants = reinterpret_cast<generate_bond_order_variants_fn>(
+        GetProcAddress(api.module, "sf_ob_generate_bond_order_variants"));
+    api.generate_fragment_attachment_variants = reinterpret_cast<generate_fragment_attachment_variants_fn>(
+        GetProcAddress(api.module, "sf_ob_generate_fragment_attachment_variants"));
+    api.generate_local_transformation_variants = reinterpret_cast<generate_local_transformation_variants_fn>(
+        GetProcAddress(api.module, "sf_ob_generate_local_transformation_variants"));
+    api.generate_dealkylation_variants = reinterpret_cast<generate_dealkylation_variants_fn>(
+        GetProcAddress(api.module, "sf_ob_generate_dealkylation_variants"));
     api.render_svg = reinterpret_cast<render_structure_svg_fn>(
         GetProcAddress(api.module, "sf_ob_render_structure_svg"));
     api.debug_runtime = reinterpret_cast<debug_runtime_fn>(
@@ -233,6 +251,10 @@ namespace streamfind::core::vendors::openbabel
       api.available = nullptr;
       api.normalize = nullptr;
       api.render_svg = nullptr;
+      api.generate_bond_order_variants = nullptr;
+      api.generate_fragment_attachment_variants = nullptr;
+      api.generate_local_transformation_variants = nullptr;
+      api.generate_dealkylation_variants = nullptr;
       api.debug_runtime = nullptr;
     }
 
@@ -370,6 +392,120 @@ namespace streamfind::core::vendors::openbabel
     out.formula = result.formula;
     out.exact_mass = result.exact_mass;
     out.error = result.error;
+    return out;
+  }
+
+  std::vector<GraphEditCandidate> generate_bond_order_variants(
+      const std::string &smiles,
+      int max_results)
+  {
+    std::vector<GraphEditCandidate> out;
+#ifdef _WIN32
+    const OpenBabelApi api = load_openbabel_api();
+    if (api.generate_bond_order_variants == nullptr)
+      return out;
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    api.generate_bond_order_variants(smiles.c_str(), max_results, result.get());
+#else
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    sf_ob_generate_bond_order_variants(smiles.c_str(), max_results, result.get());
+#endif
+    out.reserve(static_cast<std::size_t>(std::max(result->count, 0)));
+    for (int index = 0; index < result->count; ++index)
+    {
+      GraphEditCandidate candidate;
+      candidate.smiles = result->smiles[index];
+      candidate.label = result->labels[index];
+      candidate.formula = result->formulas[index];
+      candidate.exact_mass = result->masses[index];
+      out.push_back(std::move(candidate));
+    }
+    return out;
+  }
+
+  std::vector<GraphEditCandidate> generate_fragment_attachment_variants(
+      const std::string &root_smiles,
+      const std::string &fragment_smiles,
+      int max_results)
+  {
+    std::vector<GraphEditCandidate> out;
+#ifdef _WIN32
+    const OpenBabelApi api = load_openbabel_api();
+    if (api.generate_fragment_attachment_variants == nullptr)
+      return out;
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    api.generate_fragment_attachment_variants(
+        root_smiles.c_str(), fragment_smiles.c_str(), max_results, result.get());
+#else
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    sf_ob_generate_fragment_attachment_variants(
+        root_smiles.c_str(), fragment_smiles.c_str(), max_results, result.get());
+#endif
+    out.reserve(static_cast<std::size_t>(std::max(result->count, 0)));
+    for (int index = 0; index < result->count; ++index)
+    {
+      GraphEditCandidate candidate;
+      candidate.smiles = result->smiles[index];
+      candidate.label = result->labels[index];
+      candidate.formula = result->formulas[index];
+      candidate.exact_mass = result->masses[index];
+      out.push_back(std::move(candidate));
+    }
+    return out;
+  }
+
+  std::vector<GraphEditCandidate> generate_local_transformation_variants(
+      const std::string &smiles,
+      int max_results)
+  {
+    std::vector<GraphEditCandidate> out;
+#ifdef _WIN32
+    const OpenBabelApi api = load_openbabel_api();
+    if (api.generate_local_transformation_variants == nullptr)
+      return out;
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    api.generate_local_transformation_variants(smiles.c_str(), max_results, result.get());
+#else
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    sf_ob_generate_local_transformation_variants(smiles.c_str(), max_results, result.get());
+#endif
+    out.reserve(static_cast<std::size_t>(std::max(result->count, 0)));
+    for (int index = 0; index < result->count; ++index)
+    {
+      GraphEditCandidate candidate;
+      candidate.smiles = result->smiles[index];
+      candidate.label = result->labels[index];
+      candidate.formula = result->formulas[index];
+      candidate.exact_mass = result->masses[index];
+      out.push_back(std::move(candidate));
+    }
+    return out;
+  }
+
+  std::vector<GraphEditCandidate> generate_dealkylation_variants(
+      const std::string &smiles, int max_results)
+  {
+    std::vector<GraphEditCandidate> out;
+#ifdef _WIN32
+    const OpenBabelApi api = load_openbabel_api();
+    if (api.generate_dealkylation_variants == nullptr)
+      return out;
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    api.generate_dealkylation_variants(smiles.c_str(), max_results, result.get());
+#else
+    const auto result = std::make_unique<streamfind_ob_graph_edit_result>();
+    sf_ob_generate_dealkylation_variants(smiles.c_str(), max_results, result.get());
+#endif
+    out.reserve(static_cast<std::size_t>(std::max(result->count, 0)));
+    for (int index = 0; index < result->count; ++index)
+    {
+      GraphEditCandidate candidate;
+      candidate.smiles = result->smiles[index];
+      candidate.label = result->labels[index];
+      candidate.formula = result->formulas[index];
+      candidate.exact_mass = result->masses[index];
+      out.push_back(std::move(candidate));
+    }
     return out;
   }
 

@@ -54,6 +54,7 @@ private:
     void ensure_database_is_not_open(const std::filesystem::path &path) const;
     mutable std::mutex mutex_;
     std::unordered_map<std::string, std::unique_ptr<Project>> projects_;
+    std::unordered_map<std::string, Workflow> workflow_definitions_;
     std::unordered_map<std::string, std::string> workflow_states_;
     std::unordered_map<std::string, std::thread> workflow_workers_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;

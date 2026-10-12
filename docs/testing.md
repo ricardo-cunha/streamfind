@@ -1,10 +1,10 @@
 # Compatibility and support
 
-The native C++ package is the preview platform for Windows x64 and Linux
-x86_64. It provides the runtime, MCP server, browser application, semantic
+The native C++ package targets Windows x64 and Linux x86_64. It provides the
+runtime, MCP server, browser application, semantic
 catalogues, and built-in domain plugins.
 
-## Native package scope
+## What is included
 
 The native packages provide:
 
@@ -29,10 +29,12 @@ not automatically installed by the native packages.
 - Use the R package for R and Shiny workflows.
 - The native distribution does not include a Python package or Cogniflow integration.
 
-The native packages do not yet provide a stable cross-version C++ ABI.
+The native packages do not promise a stable cross-version C++ ABI. Match an
+application or plugin developer kit to the runtime version it targets.
 
-## Development priority
+## Reporting a compatibility issue
 
-Native readers, persistence behavior, and plugin interfaces are provided by the
-C++ core/plugin framework. The current React development frontend uses the C++
-public service boundary rather than accessing plugin internals directly.
+When a file or workflow does not behave as expected, record the streamfind
+version, operating system, operation name, relevant parameters, and a minimal
+reproducible project or data description. Keep vendor-format support claims
+specific to the tested file family and acquisition mode.

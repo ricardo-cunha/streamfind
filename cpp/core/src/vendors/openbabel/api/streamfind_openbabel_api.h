@@ -24,7 +24,8 @@ enum
   streamfind_OB_SVG_CAPACITY = 262144,
   streamfind_OB_DEBUG_CAPACITY = 16384,
   streamfind_OB_FORMULA_MAX_RESULTS = 256,
-  streamfind_OB_FORMULA_STR_SIZE = 128
+  streamfind_OB_FORMULA_STR_SIZE = 128,
+  streamfind_OB_GRAPH_EDIT_MAX_RESULTS = 512
 };
 
 typedef struct streamfind_ob_normalized_result
@@ -64,6 +65,16 @@ typedef struct streamfind_ob_mass_result
   char error[streamfind_OB_ERROR_CAPACITY];
 } streamfind_ob_mass_result;
 
+typedef struct streamfind_ob_graph_edit_result
+{
+  int count;
+  char smiles[streamfind_OB_GRAPH_EDIT_MAX_RESULTS][streamfind_OB_SMILES_CAPACITY];
+  char labels[streamfind_OB_GRAPH_EDIT_MAX_RESULTS][64];
+  char formulas[streamfind_OB_GRAPH_EDIT_MAX_RESULTS][streamfind_OB_FORMULA_CAPACITY];
+  double masses[streamfind_OB_GRAPH_EDIT_MAX_RESULTS];
+  char error[streamfind_OB_ERROR_CAPACITY];
+} streamfind_ob_graph_edit_result;
+
 streamfind_OPENBABEL_API int sf_ob_openbabel_available(void);
 
 streamfind_OPENBABEL_API int sf_ob_normalize_structure(
@@ -92,6 +103,27 @@ streamfind_OPENBABEL_API int sf_ob_formula_from_mass(
 streamfind_OPENBABEL_API int sf_ob_mass_from_formula(
   const char *formula,
   streamfind_ob_mass_result *out);
+
+streamfind_OPENBABEL_API int sf_ob_generate_bond_order_variants(
+    const char *smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out);
+
+streamfind_OPENBABEL_API int sf_ob_generate_fragment_attachment_variants(
+    const char *root_smiles,
+    const char *fragment_smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out);
+
+streamfind_OPENBABEL_API int sf_ob_generate_local_transformation_variants(
+    const char *smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out);
+
+streamfind_OPENBABEL_API int sf_ob_generate_dealkylation_variants(
+    const char *smiles,
+    int max_results,
+    streamfind_ob_graph_edit_result *out);
 
 streamfind_OPENBABEL_API int sf_ob_debug_runtime(
   char *out,

@@ -70,6 +70,7 @@ ProjectSessionDto ProjectRuntimeManager::create(const std::string &session_id,
             operation_event_callback_(session_id, operation_id, type, payload);
         });
     const auto result = describe(session_id, *project);
+    workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
     workflow_states_[session_id] = kWorkflowIdle;
     return result;
@@ -103,6 +104,7 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
             operation_event_callback_(session_id, operation_id, type, payload);
         });
     const auto result = describe(session_id, *project);
+    workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
     workflow_states_[session_id] = kWorkflowIdle;
     return result;
@@ -129,6 +131,7 @@ ProjectSessionDto ProjectRuntimeManager::close(const std::string &session_id) {
     {
         std::lock_guard lock(mutex_);
         projects_.erase(session_id);
+        workflow_definitions_.erase(session_id);
         workflow_states_.erase(session_id);
         workflow_cancellations_.erase(session_id);
         workflow_progress_.erase(session_id);
@@ -141,7 +144,7 @@ Json ProjectRuntimeManager::workflow_definition(const std::string &session_id) c
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto workflow = iterator->second->get_workflow();
+    const auto workflow = workflow_definitions_.at(session_id);
     Json diagnostics = Json::array();
     try {
         workflow.validate(*operations_);
@@ -156,7 +159,7 @@ Json ProjectRuntimeManager::validate_workflow(const std::string &session_id, con
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    auto workflow = definition.is_null() ? iterator->second->get_workflow() : Workflow::from_json(definition);
+    auto workflow = definition.is_null() ? workflow_definitions_.at(session_id) : Workflow::from_json(definition);
     Json diagnostics = Json::array();
     try {
         workflow.validate(*operations_);
@@ -172,12 +175,13 @@ Json ProjectRuntimeManager::save_workflow(const std::string &session_id, const J
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     auto workflow = Workflow::from_json(definition);
-    const auto current = iterator->second->get_workflow();
+    const auto current = workflow_definitions_.at(session_id);
     if (workflow.workflow_id.empty()) workflow.workflow_id = current.workflow_id.empty() ? "workflow" : current.workflow_id;
     const bool layout_only = detail::workflow_without_positions(workflow.to_json()) ==
                              detail::workflow_without_positions(current.to_json());
     workflow.version = layout_only ? current.version : std::max(current.version + 1, workflow.version);
     iterator->second->set_workflow(workflow, *operations_);
+    workflow_definitions_[session_id] = workflow;
     return Json{{"workflow", workflow.to_json()}, {"valid", true}, {"diagnostics", Json::array()}};
 }
 
@@ -217,7 +221,7 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto workflow = iterator->second->get_workflow();
+    const auto workflow = workflow_definitions_.at(session_id);
     const auto state = workflow_states_.find(session_id);
     const std::string effective_state = state == workflow_states_.end() ? kWorkflowIdle : state->second;
     const auto progress = workflow_progress_.find(session_id);
@@ -228,24 +232,24 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
                                       : progress->second},
                     {"execution", Json::array()}};
     }
-    const auto execution = iterator->second->get_workflow_execution();
+    const auto summary = iterator->second->get_workflow_execution_summary();
     std::string persisted_state = effective_state;
-    std::size_t completed = 0;
-    std::size_t current_step = 0;
-    bool has_running = false;
-    bool has_failed = false;
-    for (const auto &step : execution) {
-        const auto status = step.value("status", std::string{});
-        if (status == "completed") ++completed;
-        if (status == "running") { has_running = true; current_step = step.value("step_index", 0); }
-        if (status == "failed") { has_failed = true; current_step = step.value("step_index", 0); }
-    }
-    if (has_failed) persisted_state = "failed";
-    else if (has_running) persisted_state = "running";
-    else if (!workflow.operations.empty() && completed >= workflow.operations.size()) persisted_state = "completed";
+    const auto completed = [&summary] {
+        try { return static_cast<std::size_t>(std::stoull(summary.value("completed_steps", std::string{"0"}))); }
+        catch (...) { return std::size_t{0}; }
+    }();
+    const auto current_step = [&summary] {
+        try { return static_cast<std::uint64_t>(std::stoull(summary.value("current_step", std::string{"0"}))); }
+        catch (...) { return std::uint64_t{0}; }
+    }();
+    const auto execution_status = summary.value("execution_status", std::string{"idle"});
+    if (execution_status == "failed") persisted_state = "failed";
+    else if (execution_status == "running") persisted_state = "running";
+    else if (execution_status == "completed" || (!workflow.operations.empty() && completed >= workflow.operations.size()))
+        persisted_state = "completed";
     return Json{{"session_id", session_id}, {"state", persisted_state},
                 {"progress", Json{{"completed", completed}, {"total", workflow.operations.size()}, {"current_step", current_step}}},
-                {"execution", execution}};
+                {"execution_available", true}};
 }
 
 Json ProjectRuntimeManager::artifact_inventory(const std::string &session_id) const {
@@ -544,15 +548,15 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
             workflow_workers_.erase(worker);
         }
         workflow_states_[session_id] = "queued";
-        workflow_progress_[session_id] = Json{{"completed", 0}, {"total", iterator->second->get_workflow().operations.size()}, {"current_step", 0}};
+        const auto workflow = workflow_definitions_.at(session_id);
+        workflow_progress_[session_id] = Json{{"completed", 0}, {"total", workflow.operations.size()}, {"current_step", 0}};
         workflow_operation_steps_[session_id].clear();
-        const auto workflow = iterator->second->get_workflow();
         for (std::size_t index = 0; index < workflow.operations.size(); ++index)
             workflow_operation_steps_[session_id][workflow.operations[index].id] = index;
         auto cancellation = std::make_shared<std::atomic_bool>(false);
         workflow_cancellations_[session_id] = cancellation;
         project = iterator->second.get();
-        workflow_workers_[session_id] = std::thread([this, session_id, project, cancellation] {
+        workflow_workers_[session_id] = std::thread([this, session_id, project, cancellation, workflow] {
             try {
                 project->set_cancellation_flag(cancellation.get());
                 if (cancellation->load()) {
@@ -564,8 +568,8 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
                 }
                 set_workflow_state(session_id, "running");
                 WorkflowExecutionManager execution_manager(*project);
-                execution_manager.create(Json{{"workflow_revision", project->get_workflow().version},
-                                              {"progress", Json{{"completed", 0}, {"total", project->get_workflow().operations.size()}, {"current_step", 0}}}});
+                execution_manager.create(Json{{"workflow_revision", workflow.version},
+                                              {"progress", Json{{"completed", 0}, {"total", workflow.operations.size()}, {"current_step", 0}}}});
                 const auto result = project->run_worker(session_id, *operations_);
                 project->set_cancellation_flag(nullptr);
                 set_workflow_state(session_id, result.value("status", std::string{"failed"}));

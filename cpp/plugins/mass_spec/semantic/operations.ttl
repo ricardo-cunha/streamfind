@@ -669,8 +669,8 @@ sfms:fillFeatures
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Fill feature gaps" ;
     skos:definition "Fill missing feature values across analyses by extracting and integrating EIC peaks in the expected windows." ;
+    sf:guidance "Connect featuresTable and use min_traces_intensity as the single MS1 intensity threshold. It is applied when extracting trace points and again when accepting the resulting filled feature; an analysis selector is not required and all analyses in the featuresTable are processed." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:withinReplicateParameter,
         sfms:filteredParameter,
         sfms:rtExpandParameter,
@@ -678,7 +678,6 @@ sfms:fillFeatures
         sfms:maxPeakWidthParameter,
         sfms:minTracesIntensityParameter,
         sfms:minNumberTracesParameter,
-        sfms:minIntensityMs1Parameter,
         sfms:rtApexDeviationParameter,
         sfms:minSignalToNoiseRatioParameter,
         sfms:minGaussianFitParameter ;
@@ -711,7 +710,7 @@ sfms:annotateComponents
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Annotate components" ;
     skos:definition "Annotate feature components from every analysis with isotopic, adduct, and fragment relationships." ;
-    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80, and selected elements are resolved through IsoSpec++. annotation_modifications is an optional allow-list of the 41 built-in signed adduct/loss expressions; omitted uses all defaults, an explicit empty list disables modification matching, and additional signed formulas such as +2NOH or -2NOH are validated and resolved through Open Babel." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80, and selected elements are resolved through IsoSpec++. Each feature receives an implicit polarity-specific base ion ([M+H]+ or [M-H]-). annotation_modifications is an optional allow-list of additional signed adduct/loss expressions; omitted uses the common small-molecule NTS defaults (+Na, +NH4, +K, +Cl, +FA-H, +CH3COO, -H2O, -CO2, -NH3, and -CO), an explicit empty list disables modification matching, and additional built-in or signed formulas such as 2M+Na, +2NOH, or -2NOH are validated and resolved through Open Babel. Adducts attach directly to a base ion; losses may form sequential chains but must ultimately resolve to that base ion." ;
     sf:hasParameter
         sfms:maxIsotopesParameter,
         sfms:maxChargeParameter,
@@ -789,9 +788,9 @@ sfms:correctMatrixSuppression
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Correct matrix suppression" ;
-    skos:definition "Apply matrix/suppression correction factors derived from analysis intensity profiles." ;
+    skos:definition "Apply matrix/suppression correction factors derived from all analysis intensity profiles." ;
+    sf:guidance "Connect featuresTable and, when available, internalStandardsTable. The operation processes every analysis represented by the connected featuresTable; no analysis selector is required. The reference blank replicate may be left empty to use the available blank metadata." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:mpRtWindowParameter,
         sfms:refBlankReplicateParameter ;
     sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
@@ -824,9 +823,9 @@ sfms:filterInternalStandards
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Filter internal standards" ;
-    skos:definition "Refine internal-standard matches by applying name, score, RT/mass error, identification-level, fragment, and cosine-similarity thresholds." ;
+    skos:definition "Refine internal-standard matches using only the rows and evidence stored in internalStandardsTable." ;
+    sf:guidance "Connect internalStandardsTable. The operation does not require featuresTable or an analysis selector; all filters are applied to every persisted internal-standard row and the result is emitted as a new internalStandardsTable." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:namesParameter,
         sfms:minScoreParameter,
         sfms:maxErrorRtParameter,
@@ -834,7 +833,7 @@ sfms:filterInternalStandards
         sfms:idLevelsParameter,
         sfms:minSharedFragmentsParameter,
         sfms:minCosineSimilarityParameter ;
-    sf:hasInputPort sfms:featuresTable, sfms:internalStandardsTable ;
+    sf:hasInputPort sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 
@@ -931,7 +930,33 @@ sfms:fragmentationToSuspectTargets
     skos:prefLabel "Convert fragments to suspect targets" ;
     skos:definition "Convert each generated fragmentationTreeTable row into a chemical candidate row in suspectTargetsTable for downstream suspect screening, normalizing SMILES-derived descriptors with Open Babel when available." ;
     sf:category "structure-conversion" ;
-    sf:guidance "Connect a MetFrag fragmentationTreeTable. Each fragment with a non-empty SMILES becomes one suspect target, with its fragment identifier appended to the source name. Open Babel canonicalizes the SMILES and derives formula, exact mass, InChI, InChIKey, and xLogP when available. Fragment parent/provenance fields remain in the source fragmentation artifact. Set number_duplicate_formulas to a positive integer to retain only the first that many SMILES in input order for each formula; zero keeps all rows." ;
+    sf:guidance "Connect a MetFrag fragmentationTreeTable. Each fragment with a non-empty SMILES becomes one suspect target, with its fragment identifier appended to the source name. Open Babel canonicalizes the SMILES and derives formula, exact mass, InChI, InChIKey, and xLogP when available. Fragment parent/provenance fields remain in the source fragmentation artifact. The default retains at most two representative SMILES per formula to keep screening practical; set number_duplicate_formulas to another positive value for a controlled isomer set, or explicitly use zero to keep all rows." ;
     sf:hasParameter sfms:numberDuplicateFormulasParameter ;
     sf:hasInputPort sfms:fragmentationTreeTable ;
     sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
+sfms:expandFragmentationTree
+    a sf:Operation ;
+    sf:operationId "mass_spec.expand_fragmentation_tree" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Expand fragmentation tree inversely" ;
+    skos:definition "Extend a one-compound fragmentationTreeTable with bounded, structure-bearing inverse-fragmentation candidates and return the same table contract. The MOL-derived row without parent_id is the main compound at depth 0; every generated graph-edit candidate is assigned depth -1." ;
+    sf:category "structure-fragmentation" ;
+    sf:guidance "Connect one fragmentationTreeTable generated from one MOL-derived suspect. The operation requires exactly one row without parent_id and rejects multi-root input to prevent mixing compounds. It preserves all original rows and appends depth -1 candidates. Unique observed fragment SMILES are attached at a bounded number of valid root/fragment positions; a second observed fragment may then be attached to model multi-unit impurities. A separate local-edit layer adds positional H/D exchange and simple oxygenation, fluorination, chlorination, and bromination hypotheses. Remaining capacity is filled with validated non-aromatic bond-order isomers. Open Babel canonicalizes every candidate and derives its formula and exact mass; provenance records the source fragment(s) and transformation. max_inverse_candidates caps the complete result, while the other parameters bound attachment positions, multi-unit expansion, and local edits. Formula-only composition hypotheses are intentionally handled by a separate formula-processing operation." ;
+    sf:hasParameter sfms:maxInverseCandidatesParameter, sfms:maxAttachmentVariantsPerFragmentParameter, sfms:maxFragmentUnitsPerCandidateParameter, sfms:maxLocalEditCandidatesParameter ;
+    sf:hasInputPort sfms:fragmentationTreeTable ;
+    sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .
+
+sfms:filterFragmentationTree
+    a sf:Operation ;
+    sf:operationId "mass_spec.filter_fragmentation_tree" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:baseModule ;
+    skos:prefLabel "Filter fragmentation tree" ;
+    skos:definition "Filter fragmentationTreeTable rows by inclusive exact-mass bounds and limit repeated structures sharing the same formula while preserving the fragmentation-tree schema." ;
+    sf:category "structure-fragmentation" ;
+    sf:guidance "Connect one fragmentationTreeTable. Minimum and maximum fragment mass are inclusive and nullable. number_duplicate_formulas limits the number of rows retained per non-empty formula; zero keeps all rows. Filtering is applied in depth order and does not invent candidates or change parent links." ;
+    sf:hasParameter sfms:fragmentationTreeMinimumMassParameter, sfms:fragmentationTreeMaximumMassParameter, sfms:numberDuplicateFormulasParameter ;
+    sf:hasInputPort sfms:fragmentationTreeTable ;
+    sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .

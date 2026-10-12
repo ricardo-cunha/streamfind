@@ -606,8 +606,13 @@ using Json = nlohmann::json;
             ref_blank_replicate.clear();
         if (mp_rt_window <= 0)
             throw Error(ErrorCode::InvalidArgument, "invalid matrix suppression correction parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
-        utils::detail::load_internal_standards(access, data, parameters);
+        // Matrix suppression correction is project-wide. Do not allow a stale
+        // analysis_names value from an older workflow to silently restrict the
+        // analyses represented by the connected features table.
+        Json all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
+        utils::detail::load_internal_standards(access, data, all_analysis_parameters);
         ::streamfind::mass_spec::nta::correction_algorithms::correct_matrix_suppression_impl(data, mp_rt_window, ref_blank_replicate);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Matrix suppression corrected."}};

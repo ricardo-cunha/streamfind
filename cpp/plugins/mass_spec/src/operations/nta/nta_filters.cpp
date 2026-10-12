@@ -1222,7 +1222,7 @@ using Json = nlohmann::json;
         const double min_cosine_similarity = opt_real("min_cosine_similarity");
         if (min_shared_fragments < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid internal standard filtering parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        auto data = utils::detail::load_internal_standards_only(access, parameters);
         utils::detail::load_internal_standards(access, data, parameters);
         ::streamfind::mass_spec::nta::filter_internal_standards::filter_internal_standards_impl(data, names, min_score, max_error_rt, max_error_mass,
                                                                        id_levels, min_shared_fragments, min_cosine_similarity);

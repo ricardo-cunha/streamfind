@@ -13,15 +13,10 @@ METFRAG_PROJECT = REPO_ROOT / "tmp/projects/metfrag_verify_annotate_verification
 
 
 ADDUCTS = {
-    "+H", "+Na", "+K", "+NH4", "+ACN+H", "+CH3OH+H",
-    "2M+H", "2M+Na", "2M+K", "2M+NH4", "-H", "+Cl", "+Br",
-    "+CHO2", "+CH3COO", "+FA-H", "2M-H", "2M+Cl", "2M+FA-H",
+    "+Na", "+NH4", "+K", "+Cl", "+FA-H", "+CH3COO",
 }
 LOSSES = {
-    "-H2O", "-CO2", "-NH3", "-CO", "-CH3", "-CH2O2", "-HCl",
-    "-HF", "-SO2", "-SO3", "-H2SO4", "-CH3OH", "-C2H4", "-C2H2",
-    "-NO", "-NO2", "-HNO2", "-HNO3", "-CH2", "-C2H6O", "-HPO3",
-    "-H3PO4",
+    "-H2O", "-CO2", "-NH3", "-CO",
 }
 
 
@@ -62,7 +57,7 @@ class AnnotationContractTests(unittest.TestCase):
         default = re.search(r"sf:default\s+\"(\[.*?\])\"\s*;", parameter.group(1))
         self.assertIsNotNone(default)
         expressions = json.loads(default.group(1).replace('\\"', '"'))
-        self.assertEqual(len(expressions), 41)
+        self.assertEqual(len(expressions), 10)
         self.assertEqual(set(expressions), ADDUCTS | LOSSES)
         self.assertEqual(len(expressions), len(set(expressions)))
 

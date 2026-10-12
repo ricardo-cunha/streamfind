@@ -48,6 +48,83 @@
   gap: 14px;
 }
 
+.sf-suspect-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 0;
+  color: var(--muted-foreground);
+}
+
+.sf-suspect-pagination button {
+  border: 0;
+  padding: 6px 4px;
+  background: transparent;
+  color: var(--sf-text);
+  cursor: pointer;
+}
+
+.sf-suspect-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sf-suspect-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 14px 0 18px;
+}
+
+.sf-suspect-mass-range {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: var(--muted-foreground);
+}
+
+.sf-suspect-mass-range strong {
+  align-self: center;
+  color: var(--sf-text);
+}
+
+.sf-suspect-mass-range label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.sf-suspect-mass-range input {
+  width: 130px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
+}
+
+.sf-suspect-mass-range button {
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--sf-text);
+  cursor: pointer;
+}
+
+.sf-suspect-pagination button:hover,
+.sf-suspect-pagination button:focus-visible,
+.sf-suspect-mass-range button:hover,
+.sf-suspect-mass-range button:focus-visible {
+  background: color-mix(in srgb, var(--sf-accent) 12%, transparent);
+}
+
 .sf-suspect-card {
   display: flex;
   min-height: 0;
@@ -73,6 +150,13 @@
 }
 
 .sf-suspect-card strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-suspect-formula {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -288,6 +372,13 @@
 }
 
 @media (max-width: 760px) {
+  .sf-suspect-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sf-suspect-pagination {
+    justify-content: center;
+  }
   .sf-suspect-detail-grid {
     grid-template-columns: 1fr;
   }

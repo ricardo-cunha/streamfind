@@ -286,7 +286,7 @@ export class StreamFindApiClient {
     return response.json() as Promise<WorkflowStateResponse>;
   }
 
-  async workflowEvents(sessionId: string, after = 0, limit = 20000): Promise<WorkflowEventHistoryResponse> {
+  async workflowEvents(sessionId: string, after = 0, limit = 500): Promise<WorkflowEventHistoryResponse> {
     const response = await fetch(
       `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/events?after=${after}&limit=${limit}`,
     );

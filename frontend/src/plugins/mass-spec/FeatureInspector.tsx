@@ -50,6 +50,29 @@ const featureOverviewColumns = [
   'filtered',
   'blank',
 ] as const;
+const signalArrayColumns: Record<QueryKind, readonly string[]> = {
+  eic: ['eic_size', 'eic_rt', 'eic_intensity'],
+  ms1: ['ms1_size', 'ms1_mz', 'ms1_intensity'],
+  ms2: ['ms2_size', 'ms2_mz', 'ms2_intensity'],
+};
+const featureNetworkColumns = [
+  'feature',
+  'feature_id',
+  'analysis',
+  'feature_component',
+  'feature_group',
+  'mz',
+  'rt',
+  'intensity',
+  'adduct',
+  'annotation_type',
+  'annotation_category',
+  'annotation_element',
+  'annotation_parent_feature',
+  'component_best_partner',
+  'component_max_correlation',
+  'component_mean_correlation',
+] as const;
 
 export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [rows, setRows] = useState<FeatureRow[]>([]);
@@ -73,7 +96,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [detailSelectionKey, setDetailSelectionKey] = useState<string | null>(null);
   const [networkRows, setNetworkRows] = useState<FeatureRow[]>([]);
   const [networkSelectionKey, setNetworkSelectionKey] = useState<string | null>(null);
-  const [detailErrorKey, setDetailErrorKey] = useState<string | null>(null);
+  const [signalRows, setSignalRows] = useState<FeatureRow[]>([]);
+  const [signalSelectionKey, setSignalSelectionKey] = useState<string | null>(null);
+  const [signalTotalRows, setSignalTotalRows] = useState(0);
+  const [loadAllSignalRows, setLoadAllSignalRows] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('eic');
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const inspectorRef = useRef<HTMLDivElement>(null);
@@ -83,6 +109,22 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [viewport, setViewport] = useState<PlotViewport | null>(null);
   const overviewColumns = useMemo(
     () => selectFeatureOverviewColumns(context.artifact?.columns),
+    [context.artifact?.columns],
+  );
+  const signalColumns = useMemo(
+    () =>
+      selectOverviewColumns(
+        context.artifact?.columns?.map((column) => column.name),
+        signalArrayColumns[activeTab as QueryKind] ?? [],
+      ),
+    [activeTab, context.artifact?.columns],
+  );
+  const networkColumns = useMemo(
+    () =>
+      selectOverviewColumns(
+        context.artifact?.columns?.map((column) => column.name),
+        featureNetworkColumns,
+      ),
     [context.artifact?.columns],
   );
 
@@ -301,28 +343,72 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       };
     }
     const querySelection = async () => {
-      const loadSelection = async (selectionFilters: ArtifactQueryFilter[]) => {
+      const loadSelection = async (selectionFilters: ArtifactQueryFilter[], columns = overviewColumns) => {
         const overview = await api.artifactQuery(context.sessionId, {
           artifact_id: artifact.artifact_id,
           mode: 'page',
-          columns: overviewColumns,
+          columns,
           filters: selectionFilters,
-          limit: 50000,
+          limit: 2000,
         });
-        const rowKeys = overview.rows.map((row) => row.row_key).filter((key): key is string => Boolean(key));
-        if (!rowKeys.length) return [];
-        const detail = await api.artifactQuery(context.sessionId, {
-          artifact_id: artifact.artifact_id,
-          mode: 'detail',
-          row_keys: rowKeys,
-          limit: 50000,
-        });
-        return detail.rows;
+        return overview.rows;
       };
-      const [evidenceRows, expandedNetworkRows] = await Promise.all([
-        loadSelection(buildSelectionQueryFilters(selectBy, representative)),
-        loadSelection(buildNetworkSelectionQueryFilters(selectBy, representative)),
-      ]);
+      const loadNetworkSelection = async (selectionFilters: ArtifactQueryFilter[]) => {
+        const response = await api.artifactQuery(context.sessionId, {
+          artifact_id: artifact.artifact_id,
+          mode: 'page',
+          columns: networkColumns,
+          filters: selectionFilters,
+          limit: 2000,
+        });
+        return response.rows;
+      };
+      const evidenceRows = await loadSelection(buildSelectionQueryFilters(selectBy, representative));
+      const networkRepresentative = evidenceRows[0] ?? representative;
+      let expandedNetworkRows: FeatureRow[];
+      if (selectBy === 'feature_group' || selectBy === 'feature_group_component') {
+        // Isotope/adduct/loss rows deliberately retain their own feature_group.
+        // Expand the selected group anchors through their analysis-local
+        // components so those child groups remain visible in the same network.
+        const groupFilters: ArtifactQueryFilter[] = [
+          { column: 'feature_group', operator: 'eq', value: String(networkRepresentative.feature_group ?? '') },
+        ];
+        const groupRows = await loadNetworkSelection(groupFilters);
+        const componentAnchors = Array.from(
+          new Map(
+            groupRows
+              .filter((row) => String(row.analysis ?? '').trim() && String(row.feature_component ?? '').trim())
+              .map((row) => [`${String(row.analysis)}\u0000${String(row.feature_component)}`, row]),
+          ).values(),
+        );
+        const componentValues = Array.from(
+          new Set(componentAnchors.map((row) => String(row.feature_component ?? '').trim()).filter(Boolean)),
+        );
+        const componentRows = componentValues.length
+          ? await loadNetworkSelection([{ column: 'feature_component', operator: 'in', values: componentValues }])
+          : [];
+        const rowsByKey = new Map<string, FeatureRow>();
+        [...groupRows, ...componentRows.flat()].forEach((row, index) => {
+          const key = String(row.row_key ?? `${row.analysis ?? ''}\u0000${row.feature ?? row.feature_id ?? index}`);
+          rowsByKey.set(key, row);
+        });
+        expandedNetworkRows = Array.from(rowsByKey.values());
+      } else {
+        expandedNetworkRows = await loadNetworkSelection(
+          buildNetworkSelectionQueryFilters(selectBy, networkRepresentative),
+        );
+      }
+      // A feature row can be an isotope/adduct/loss child and may not carry the
+      // component metadata in the overview response. In that case, broaden only
+      // this feature's network lookup to its analysis so persisted parent links
+      // can recover the direct network. This is a sparse fallback, not the normal
+      // query path, and keeps the bounded component lookup fast for large tables.
+      if (selectBy === 'feature' && expandedNetworkRows.length <= 1 && networkRepresentative.analysis) {
+        const analysisRows = await loadNetworkSelection([
+          { column: 'analysis', operator: 'eq', value: String(networkRepresentative.analysis) },
+        ]);
+        if (analysisRows.length > expandedNetworkRows.length) expandedNetworkRows = analysisRows;
+      }
       return { evidenceRows, expandedNetworkRows };
     };
     void querySelection()
@@ -332,12 +418,9 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           setDetailSelectionKey(selectedKey);
           setNetworkRows(expandedNetworkRows);
           setNetworkSelectionKey(selectedKey);
-          setDetailErrorKey(null);
         }
       })
-      .catch(() => {
-        if (active) setDetailErrorKey(selectedKey);
-      });
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -346,15 +429,77 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     context.pluginApi,
     context.sessionId,
     overviewColumns,
+    networkColumns,
     sampledSelectedRows,
     selectBy,
     selectedKey,
   ]);
 
+  useEffect(() => {
+    if (
+      (activeTab !== 'eic' && activeTab !== 'ms1' && activeTab !== 'ms2') ||
+      !signalColumns?.length ||
+      !context.artifact ||
+      !context.pluginApi?.client ||
+      !selectedKey ||
+      !sampledSelectedRows[0]
+    )
+      return undefined;
+    let active = true;
+    const loadSignalRows = async () => {
+      const api = context.pluginApi!.client;
+      const artifact = context.artifact!;
+      const overview = await api.artifactQuery(context.sessionId, {
+        artifact_id: artifact.artifact_id,
+        mode: 'page',
+        columns: signalColumns,
+        filters: buildSelectionQueryFilters(selectBy, sampledSelectedRows[0]),
+        // Plotting every row of a component can transfer hundreds of large
+        // encoded traces. Keep the initial view responsive; the feature map
+        // still exposes the full selection for navigation.
+        limit: loadAllSignalRows ? 2000 : 250,
+      });
+      const rowKeys = overview.rows.map((row) => row.row_key).filter((key): key is string => Boolean(key));
+      if (!rowKeys.length) return { rows: [], totalRows: overview.total_rows };
+      const detail = await api.artifactQuery(context.sessionId, {
+        artifact_id: artifact.artifact_id,
+        mode: 'detail',
+        columns: signalColumns,
+        row_keys: rowKeys,
+        limit: loadAllSignalRows ? 2000 : 250,
+      });
+      return { rows: detail.rows, totalRows: overview.total_rows };
+    };
+    void loadSignalRows()
+      .then((loaded) => {
+        if (!active) return;
+        setSignalRows(loaded.rows);
+        setSignalTotalRows(loaded.totalRows);
+        setSignalSelectionKey(selectedKey);
+      })
+      .catch(() => {
+        if (active) setSignalSelectionKey(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    activeTab,
+    context.artifact,
+    context.pluginApi,
+    context.sessionId,
+    sampledSelectedRows,
+    selectBy,
+    selectedKey,
+    loadAllSignalRows,
+    signalColumns,
+  ]);
+
   const selectedRows = detailSelectionKey === selectedKey && detailRows.length ? detailRows : sampledSelectedRows;
   const selectedNetworkRows = networkSelectionKey === selectedKey && networkRows.length ? networkRows : selectedRows;
-  const detailPending = Boolean(
-    selectedKey && sampledSelectedRows.length && detailSelectionKey !== selectedKey && detailErrorKey !== selectedKey,
+  const selectedSignalRows = signalSelectionKey === selectedKey && signalRows.length ? signalRows : selectedRows;
+  const signalPending = Boolean(
+    selectedKey && sampledSelectedRows.length && signalSelectionKey !== selectedKey && activeTab !== 'network',
   );
 
   const selectPoint = (key: string) => {
@@ -547,18 +692,25 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           <div className="sf-feature-inspector-empty">Select a point in the scatter plot.</div>
         ) : null}
         {selectedRows.length && activeTab === 'details' ? <FeatureDetails rows={selectedRows} /> : null}
-        {detailPending && (activeTab === 'eic' || activeTab === 'ms1' || activeTab === 'ms2') ? (
+        {signalPending && (activeTab === 'eic' || activeTab === 'ms1' || activeTab === 'ms2') ? (
           <LoadingLogo label={`Loading ${activeTab.toUpperCase()}…`} />
         ) : null}
         {selectedRows.length &&
-        !detailPending &&
+        !signalPending &&
         (activeTab === 'eic' || activeTab === 'ms1' || activeTab === 'ms2') ? (
-          <FeatureSignalPlot
-            kind={activeTab}
-            rows={selectedRows}
-            artifactId={context.artifact?.artifact_id ?? context.artifactId}
-            darkMode={darkMode}
-          />
+          <>
+            {signalTotalRows > selectedSignalRows.length && !loadAllSignalRows ? (
+              <button type="button" onClick={() => setLoadAllSignalRows(true)}>
+                Load all {activeTab.toUpperCase()} traces ({signalTotalRows} rows)
+              </button>
+            ) : null}
+            <FeatureSignalPlot
+              kind={activeTab}
+              rows={selectedSignalRows}
+              artifactId={context.artifact?.artifact_id ?? context.artifactId}
+              darkMode={darkMode}
+            />
+          </>
         ) : null}
         {selectedRows.length && activeTab === 'network' ? (
           <FeatureNetwork
@@ -813,34 +965,42 @@ export function buildFeatureNetwork(
   selectedKey: string | null,
   selectBy: SelectionMode,
 ): FeatureNetworkModel {
-  const selected = rows.filter((row) => selectionKey(row, selectBy) === selectedKey);
+  const selectedByKey = rows.filter((row) => selectionKey(row, selectBy) === selectedKey);
+  const selected =
+    selectBy === 'feature_group_component' && selectedByKey[0]?.feature_group
+      ? rows.filter((row) => row.feature_group === selectedByKey[0].feature_group)
+      : selectedByKey;
   const selectedAnalysis = selected[0]?.analysis ?? null;
   const sameAnalysis = (row: FeatureRow) => String(row.analysis ?? '') === String(selectedAnalysis ?? '');
   const components = new Set(selected.map((row) => row.feature_component).filter(Boolean));
   const groups = new Set(selected.map((row) => row.feature_group).filter(Boolean));
+  const componentKeys = new Set(
+    selected
+      .filter((row) => String(row.analysis ?? '').trim() && String(row.feature_component ?? '').trim())
+      .map((row) => `${String(row.analysis)}\u0000${String(row.feature_component)}`),
+  );
   const featureNodeId = (row: FeatureRow, index = 0) =>
     `${String(row.analysis ?? '')}\u0000${String(row.feature ?? row.feature_id ?? index)}`;
   const members = rows.filter((row) => {
     if (selectBy === 'feature_component')
       return sameAnalysis(row) && Boolean(row.feature_component && components.has(row.feature_component));
-    if (selectBy === 'feature_group') return Boolean(row.feature_group && groups.has(row.feature_group));
-    if (selectBy === 'feature_group_component')
-      return selected.some(
-        (item) =>
-          item.feature_group &&
-          item.feature_component &&
-          item.feature_group === row.feature_group &&
-          item.feature_component === row.feature_component,
+    if (selectBy === 'feature_group')
+      return (
+        Boolean(row.feature_group && groups.has(row.feature_group)) ||
+        componentKeys.has(`${String(row.analysis ?? '')}\u0000${String(row.feature_component ?? '')}`)
       );
+    if (selectBy === 'feature_group_component')
+      return componentKeys.has(`${String(row.analysis ?? '')}\u0000${String(row.feature_component ?? '')}`);
     if (selected[0]?.feature_component)
       return (
         sameAnalysis(row) && Boolean(row.feature_component && row.feature_component === selected[0].feature_component)
       );
     if (selected[0]?.feature_group)
       return sameAnalysis(row) && Boolean(row.feature_group && row.feature_group === selected[0].feature_group);
-    return selected.some(
-      (item) => String(item.analysis ?? '') === String(row.analysis ?? '') && item.feature === row.feature,
-    );
+    // If component/group metadata is unavailable for the selected child, keep
+    // all rows from the analysis and let the persisted annotation links reduce
+    // this to the connected isotope/adduct/loss network below.
+    return sameAnalysis(row);
   });
   const ids = new Set(members.map((row) => featureNodeId(row)).filter(Boolean));
   const nodes = members.map((row, index) => ({
@@ -905,7 +1065,46 @@ export function buildFeatureNetwork(
     linked.add(`${edge.source}|${edge.target}`);
     return true;
   });
-  const edges = validPersistedEdges;
+  const groupEdges =
+    selectBy === 'feature_group' || selectBy === 'feature_group_component'
+      ? Array.from(
+          members
+            .filter((row) => {
+              const adduct = String(row.adduct ?? '')
+                .trim()
+                .toLowerCase();
+              return Boolean(String(row.feature_group ?? '').trim()) && (adduct === '[m+h]+' || adduct === '[m-h]-');
+            })
+            .reduce((groupsById, row) => {
+              const group = String(row.feature_group ?? '').trim();
+              const groupRows = groupsById.get(group) ?? [];
+              groupRows.push(row);
+              groupsById.set(group, groupRows);
+              return groupsById;
+            }, new Map<string, FeatureRow[]>())
+            .values(),
+        ).flatMap((groupRows) => {
+          const groupEdgesForRows: Array<{ source: string; target: string; weight: number }> = [];
+          for (let i = 0; i < groupRows.length; i += 1) {
+            for (let j = i + 1; j < groupRows.length; j += 1) {
+              const source = featureNodeId(groupRows[i]);
+              const target = featureNodeId(groupRows[j]);
+              if (source !== target && ids.has(source) && ids.has(target))
+                groupEdgesForRows.push({ source, target, weight: 0.55 });
+            }
+          }
+          return groupEdgesForRows;
+        })
+      : [];
+  const persistedPairs = new Set(validPersistedEdges.map((edge) => [edge.source, edge.target].sort().join('\u0000')));
+  const groupPairs = new Set<string>();
+  const uniqueGroupEdges = groupEdges.filter((edge) => {
+    const pair = [edge.source, edge.target].sort().join('\u0000');
+    if (persistedPairs.has(pair) || groupPairs.has(pair)) return false;
+    groupPairs.add(pair);
+    return true;
+  });
+  const edges = [...validPersistedEdges, ...uniqueGroupEdges];
   const selectedIds = new Set(selected.map((row) => featureNodeId(row)).filter(Boolean));
   const connectedIds = new Set(selectedIds);
   let expanded = true;
@@ -1411,20 +1610,15 @@ function buildSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): A
 
 function buildNetworkSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ArtifactQueryFilter[] {
   if (selectBy !== 'feature') return buildSelectionQueryFilters(selectBy, row);
-  const component = String(row.feature_component ?? '').trim();
-  const group = String(row.feature_group ?? '').trim();
   const analysis = String(row.analysis ?? '').trim();
-  if (component) {
-    const filters: ArtifactQueryFilter[] = [{ column: 'feature_component', operator: 'eq', value: component }];
-    if (analysis) filters.unshift({ column: 'analysis', operator: 'eq', value: analysis });
-    return filters;
-  }
-  if (group) {
-    const filters: ArtifactQueryFilter[] = [{ column: 'feature_group', operator: 'eq', value: group }];
-    if (analysis) filters.unshift({ column: 'analysis', operator: 'eq', value: analysis });
-    return filters;
-  }
-  return buildSelectionQueryFilters(selectBy, row);
+  // Fetch the selected analysis first. The network builder then narrows this
+  // bounded result to the selected component/group and follows persisted
+  // annotation_parent_feature/component_best_partner links. Querying directly
+  // by component here can lose the parent when an annotation child has stale
+  // or incomplete component metadata.
+  return analysis
+    ? [{ column: 'analysis', operator: 'eq', value: analysis }]
+    : buildSelectionQueryFilters(selectBy, row);
 }
 
 function selectOverviewColumns<T extends string>(

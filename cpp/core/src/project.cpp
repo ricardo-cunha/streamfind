@@ -2144,6 +2144,18 @@ namespace streamfind
         return query_json("SELECT workflow_revision, step_index, operation, parameters, parameter_hash, status, completed_at, result_reference, error_message AS error, cache_key FROM WORKFLOW_EXECUTION_STEP ORDER BY workflow_revision, step_index");
     }
 
+    Json Project::get_workflow_execution_summary() const
+    {
+        const auto rows = query_json(
+            "SELECT "
+            "COALESCE((SELECT status FROM WORKFLOW_EXECUTION LIMIT 1), 'idle') AS execution_status, "
+            "COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_steps, "
+            "COALESCE(MAX(CASE WHEN status IN ('running', 'failed') THEN step_index ELSE 0 END), 0) AS current_step "
+            "FROM WORKFLOW_EXECUTION_STEP");
+        if (rows.empty()) return Json{{"execution_status", "idle"}, {"completed_steps", 0}, {"current_step", 0}};
+        return rows.front();
+    }
+
     Json Project::get_artifact_inventory() const
     {
         return query_json("SELECT artifact_id, contract_id, representation, physical_table, payload, producer_operation, producer_instance, workflow_revision, status, created_at FROM ARTIFACT_INVENTORY ORDER BY created_at, artifact_id");

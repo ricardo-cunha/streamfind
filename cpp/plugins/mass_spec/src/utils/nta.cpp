@@ -741,6 +741,24 @@ namespace streamfind::mass_spec::nta::utils::detail
             return data;
         }
 
+        ::streamfind::mass_spec::nta::NtaProjectData load_internal_standards_only(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
+        {
+            std::vector<std::string> names;
+            std::string previous_name;
+            for (const auto &row : access.query(
+                "SELECT analysis FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            {
+                const auto name = row.at("analysis").get<std::string>();
+                if (name == previous_name)
+                    continue;
+                previous_name = name;
+                names.push_back(name);
+            }
+            std::vector<std::string> paths(names.size());
+            std::vector<::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> headers(names.size());
+            return ::streamfind::mass_spec::nta::NtaProjectData(std::move(names), std::move(paths), std::move(headers));
+        }
+
         // Map the JSON `suspect_targets` array into SuspectQuery objects.
         std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters, bool allow_table_input)
         {

@@ -492,6 +492,8 @@ public:
     std::vector<AuditEntry> get_audit_trail() const;
     /** @brief Return persisted execution rows for every workflow step. */
     Json get_workflow_execution() const;
+    /** @brief Return only the lightweight persisted workflow execution summary. */
+    Json get_workflow_execution_summary() const;
     /** @brief Return immutable table and structured result artifacts published by workflows. */
     Json get_artifact_inventory() const;
     /** @brief Return the newest published artifact for each producer/output contract. */

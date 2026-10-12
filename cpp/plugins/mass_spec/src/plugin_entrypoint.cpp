@@ -3,6 +3,8 @@
 #include "operations/base.hpp"
 #include "operations/fragmentation/fragment_suspect_targets.hpp"
 #include "operations/fragmentation/fragmentation_to_suspect_targets.hpp"
+#include "operations/fragmentation/expand_fragmentation_tree.hpp"
+#include "operations/fragmentation/filter_fragmentation_tree.hpp"
 #include "operations/chromatograms/operations.hpp"
 #include "operations/nta/nta_deconvolution.hpp"
 #include "operations/nta/operations.hpp"
@@ -36,6 +38,8 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.read_mol_suspect_target", sdk::CapabilityKind::Operation, &base::read_mol_suspect_target},
         {"mass_spec.fragment_suspect_targets", sdk::CapabilityKind::Operation, &fragmentation::fragment_suspect_targets::run},
         {"mass_spec.fragmentation_to_suspect_targets", sdk::CapabilityKind::Operation, &fragmentation::fragmentation_to_suspect_targets::run},
+        {"mass_spec.expand_fragmentation_tree", sdk::CapabilityKind::Operation, &fragmentation::expand_fragmentation_tree::run},
+        {"mass_spec.filter_fragmentation_tree", sdk::CapabilityKind::Operation, &fragmentation::filter_fragmentation_tree::run},
 
         {"mass_spec.remove_analyses", sdk::CapabilityKind::Operation, &base::remove_analyses},
         {"mass_spec.get_analyses", sdk::CapabilityKind::Operation, &base::get_analyses},

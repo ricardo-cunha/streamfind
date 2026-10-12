@@ -598,7 +598,6 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
     float maxPeakWidth,
     float minTracesIntensity,
     int minNumberTraces,
-    float minIntensity,
     float rtApexDeviation,
     float minSignalToNoiseRatio,
     float minGaussianFit,
@@ -616,7 +615,7 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
     DEBUG_LOG("  maxPeakWidth: " << maxPeakWidth << std::endl);
     DEBUG_LOG("  minTracesIntensity: " << minTracesIntensity << std::endl);
     DEBUG_LOG("  minNumberTraces: " << minNumberTraces << std::endl);
-    DEBUG_LOG("  minIntensity: " << minIntensity << std::endl);
+    DEBUG_LOG("  minIntensity (shared with minTracesIntensity): " << minTracesIntensity << std::endl);
     DEBUG_LOG("  rtApexDeviation: " << rtApexDeviation << std::endl);
     DEBUG_LOG("  minSignalToNoiseRatio: " << minSignalToNoiseRatio << std::endl);
     DEBUG_LOG("  minGaussianFit: " << minGaussianFit << std::endl);
@@ -948,7 +947,7 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
       if (is_debug_fg)
       {
         DEBUG_LOG("  Peak picking results:" << std::endl);
-        DEBUG_LOG("    Intensity: " << filled_feature.intensity << " (min: " << minIntensity << ")" << std::endl);
+        DEBUG_LOG("    Intensity: " << filled_feature.intensity << " (min: " << minTracesIntensity << ")" << std::endl);
         DEBUG_LOG("    S/N: " << filled_feature.sn << " (min: " << minSignalToNoiseRatio << ")" << std::endl);
         DEBUG_LOG("    Gaussian R²: " << filled_feature.gaussian_r2 << " (min: " << minGaussianFit << ")" << std::endl);
         DEBUG_LOG("    RT: " << filled_feature.rt << " (target: " << gap.median_rt << ")" << std::endl);
@@ -958,11 +957,11 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
       }
 
       // Check if filling was successful
-      if (filled_feature.intensity < minIntensity)
+      if (filled_feature.intensity < minTracesIntensity)
       {
         if (is_debug_fg)
         {
-          DEBUG_LOG("  -> SKIPPED: Intensity too low (" << filled_feature.intensity << " < " << minIntensity << ")" << std::endl);
+          DEBUG_LOG("  -> SKIPPED: Intensity too low (" << filled_feature.intensity << " < " << minTracesIntensity << ")" << std::endl);
         }
         continue;
       }
@@ -1067,17 +1066,20 @@ using Json = nlohmann::json;
         const float max_peak_width = parameters.value("max_peak_width", 30.0);
         const float min_traces_intensity = parameters.value("min_traces_intensity", 1000.0);
         const int min_number_traces = parameters.value("min_number_traces", 5);
-        const float min_intensity_ms1 = parameters.value("min_intensity", parameters.value("min_intensity_ms1", 5000.0));
         const float rt_apex_deviation = parameters.value("rt_apex_deviation", 5.0);
         const float min_signal_to_noise_ratio = parameters.value("min_signal_to_noise_ratio", 3.0);
         const float min_gaussian_fit = parameters.value("min_gaussian_fit", 0.2);
         if (rt_expand < 0 || mz_expand < 0 || max_peak_width <= 0 || min_traces_intensity < 0 ||
-            min_number_traces < 1 || min_intensity_ms1 < 0 || rt_apex_deviation < 0 ||
+            min_number_traces < 1 || rt_apex_deviation < 0 ||
             min_signal_to_noise_ratio < 0 || min_gaussian_fit < 0 || min_gaussian_fit > 1)
             throw Error(ErrorCode::InvalidArgument, "invalid gap filling parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        // This operation always processes every analysis in the features table.
+        // Ignore the selector if it is present in a workflow saved with an older schema.
+        auto load_parameters = parameters;
+        load_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, load_parameters);
         ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(data, within_replicate, filtered, rt_expand, mz_expand,
-                                             max_peak_width, min_traces_intensity, min_number_traces, min_intensity_ms1,
+                                             max_peak_width, min_traces_intensity, min_number_traces,
                                              rt_apex_deviation, min_signal_to_noise_ratio, min_gaussian_fit);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "Feature gaps filled."}};

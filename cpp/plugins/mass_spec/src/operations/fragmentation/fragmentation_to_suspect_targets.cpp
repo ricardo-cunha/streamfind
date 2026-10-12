@@ -22,7 +22,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         throw std::invalid_argument("Connect a fragmentationTreeTable input.");
 
     const auto table = input->at("physical_table").get<std::string>();
-    const auto duplicate_formula_limit = parameters.value("number_duplicate_formulas", Json(0));
+    const auto duplicate_formula_limit = parameters.value("number_duplicate_formulas", Json(2));
     if (!duplicate_formula_limit.is_number_integer() || duplicate_formula_limit.get<int>() < 0)
         throw std::invalid_argument("number_duplicate_formulas must be a non-negative integer");
     const auto max_duplicate_formulas = duplicate_formula_limit.get<std::size_t>();

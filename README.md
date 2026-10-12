@@ -1,13 +1,15 @@
 # streamfind
 
 <p align="center">
-  <img src="docs\assets\streamfind.png" width="70%" />
+  <img src="docs/assets/streamfind.png" width="70%" />
 </p>
 
-streamfind is a DuckDB-backed framework for analytical data processing. Its
-active native backend is C++, with mass-spectrometry data access, a shared
-semantic catalogue, a dynamic plugin framework, a browser-facing development
-application, and MCP servers for applications and AI agents.
+streamfind is an open-source platform for reproducible analytical data
+processing. Projects are stored in DuckDB and processing is expressed as
+validated workflows. The platform includes a browser application, a native C++
+runtime, an MCP interface for applications and AI agents, and extensible
+domain plugins. Mass-spectrometry processing is provided by the built-in
+mass-spec plugin.
 
 ## Start here
 
@@ -19,40 +21,50 @@ application, and MCP servers for applications and AI agents.
 - [Use the R interface](docs/components/bindings-r.md).
 - [Check the supported platform and interfaces](docs/status.md).
 
-## Current availability
+## What you can do
+
+- Create portable projects with metadata, workflows, artifacts, and execution
+  history.
+- Discover operations and their typed inputs, outputs, parameters, constraints,
+  and results from the shared semantic catalogue.
+- Build mass-spectrometry workflows for analyses, spectra, chromatograms,
+  feature processing, isotope/adduct/loss annotation, and suspect screening.
+- Run workflows interactively in the browser or programmatically through MCP.
+- Extend the runtime with C++ domain plugins and build compatible frontend
+  viewers or editors.
+
+## Available interfaces
 
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | 0.5.0 test packages for Windows x64 and Linux x86_64 | Native C++ applications and C++ MCP clients |
+| Native C++ runtime | Windows x64 and Linux x86_64 packages | Native applications and integrations |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
-| React web app | Windows and Linux archives include built assets and a browser launcher | Local browser UI over the C++ service |
+| Browser application | Included in native packages | Local project and workflow editing |
+| C++ developer kit | Separate Windows and Linux archives | Out-of-tree C++ plugins |
 | R package | Separate R interface | Existing R and Shiny workflows |
 | Python package | No public package | Use the C++ CLI or MCP interface |
 | Cogniflow integration | Not included in the native distribution | Use the native C++ package or MCP interface |
 
-The native C++ project version is currently `0.5.0` and is maintained in the
-repository `VERSION` file so CMake, documentation, and release tooling share one
-version source. See [Releases](docs/releases.md) for downloadable assets.
+The current native package version is `0.5.0`. See [Releases](docs/releases.md)
+for archives, checksums, package contents, and developer kits.
 
-## Native implementation
+## How it is used
 
-The C++ implementation is the native implementation. Its core owns project
-files, DuckDB transactions, operation-graph execution, schema lifecycle, and the
-generic host ABI. Domain plugins own their semantic catalogues, native readers,
-processing algorithms, and operations. Plugins access project data through the
-generic SDK host boundary.
+The native runtime owns project files, DuckDB transactions, workflow
+validation and execution, schemas, artifacts, and audit information. Domain
+plugins provide readers, algorithms, schemas, and catalogue entries.
+Applications can use the browser UI, the C++ API, the CLI, or MCP depending on
+the integration.
 
 The C++ development guide documents the current MSYS2 UCRT64/GCC and Linux GCC
 toolchains, build and test commands, runtime package layout, plugin generator,
 optional developer kit, out-of-tree consumer check, and extracted-package release
 validation routines: [`cpp/README.md`](cpp/README.md).
 
-The React web app is a development and preview application. The native 0.5.0
-archives include its built static assets and a root-level `streamfind` launcher;
-running that launcher starts the local C++ service and opens the app in the
-default browser. The frontend consumes the typed service boundary and does not
-access DuckDB files or plugin internals directly. See
-[`docs/web-app.md`](docs/web-app.md) for launch and development instructions.
+The native archives include the built web app and a root-level `streamfind`
+launcher. Running it starts the local service and opens the app in the default
+browser. See [`docs/web-app.md`](docs/web-app.md) for installation and local
+development instructions.
 
 ## Vendor compatibility and trademarks
 
@@ -76,9 +88,10 @@ vendor format. Review applicable agreements, laws, and licence obligations
 before redistributing vendor-format data or software. See
 [`NOTICE.md`](NOTICE.md).
 
-## MCP usage model
+## MCP automation
 
-The C++ MCP server exposes the catalogue-backed public contract.
+The C++ MCP server exposes the same catalogue-backed contract used by the web
+application.
 A typical client:
 
 1. calls `initialize`;
@@ -89,8 +102,9 @@ A typical client:
 6. validates and runs the graph, then inspects its artifacts.
 
 Operations are discovered through `tools/list` and operation metadata. A
-multi-step workflow is a persisted graph, not an ordered list of methods.
-See the C++ MCP quickstart for request examples.
+multi-step workflow is a persisted graph with typed connections, validation,
+execution, and inspectable artifacts. See the [C++ MCP quickstart](docs/quickstart/cpp-mcp.md)
+for request examples.
 
 ## Shared semantic catalogue
 

@@ -1,8 +1,7 @@
 # Releases
 
-The current distribution is a versioned **preview release** of the native C++
-platform. Version 0.5.0 provides self-contained C++ runtime packages for
-Windows x64 and Linux x86_64, plus optional developer-kit packages.
+Version 0.5.0 provides native runtime packages for Windows x64 and Linux
+x86_64, plus matching C++ plugin developer kits.
 
 The GitHub Release is the authoritative distribution location.
 
@@ -13,7 +12,7 @@ The project source is maintained at
 
 The native C++ project version is **{{ streamfind_version }}**.
 
-## 0.5.0 test release scope
+## Available packages
 
 Version 0.5.0 contains:
 
@@ -22,8 +21,9 @@ Version 0.5.0 contains:
 - an optional C++ plugin developer-kit archive;
 - a checksum manifest covering the published C++ archives.
 
-The archives are intended for testing on other machines. They do not provide a
-stable cross-version C++ ABI.
+Runtime archives are intended for local use and application integration.
+Developer kits must be used with the matching runtime version; the C++ ABI is
+not guaranteed across versions.
 
 | Package | Archive | Platform | SHA-256 |
 | --- | --- | --- | --- |
@@ -37,20 +37,24 @@ archives.
 
 ## Package contents
 
-### C++ core archive
+### Runtime archive
 
-The C++ archives contain:
+The runtime archives contain:
 
 - the `streamfind_mcp.exe` or `streamfind_mcp` MCP server and C++ runtime libraries;
-- public C++ headers and libraries;
 - `core/catalogue.duckdb` and packaged plugin catalogues;
 - the native runtime dependencies assembled by CPack.
 
-Both archives contain the built React web app under `app/` and a `streamfind`
-launcher at the package root. Running the launcher starts the local C++ service
-and opens the packaged app in the default browser. The development Vite app is
-also available separately when frontend source changes are being developed. See
-the [Web app](web-app.md) page for the platform-specific instructions.
+Both archives contain the built web app under `app/` and a `streamfind` launcher
+at the package root. Running the launcher starts the local C++ service and opens
+the app in the default browser. See the [Web app](web-app.md) page for
+platform-specific instructions.
+
+### Developer kit
+
+The developer kit adds the headers, static libraries, CMake package, plugin
+validator, catalogue tools, and example plugin needed to build an out-of-tree
+C++ plugin. It is not required for normal use of the runtime package.
 
 ## Legal and attribution files
 

@@ -37,18 +37,6 @@
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-7",
-      "source_port": "featuresTable",
-      "target_operation": "operation-8",
-      "target_port": "featuresTable"
-    },
-    {
-      "source_operation": "operation-8",
-      "source_port": "featuresTable",
-      "target_operation": "operation-9",
-      "target_port": "featuresTable"
-    },
-    {
       "source_operation": "operation-3",
       "source_port": "analysesTable",
       "target_operation": "operation-9",
@@ -59,12 +47,6 @@
       "source_port": "spectraHeadersTable",
       "target_operation": "operation-9",
       "target_port": "spectraHeadersTable"
-    },
-    {
-      "source_operation": "operation-9",
-      "source_port": "featuresTable",
-      "target_operation": "operation-10",
-      "target_port": "featuresTable"
     },
     {
       "source_operation": "operation-3",
@@ -109,35 +91,127 @@
       "target_port": "analysesTable"
     },
     {
+      "source_operation": "operation-17",
+      "source_port": "suspectTargetsTable",
+      "target_operation": "operation-16",
+      "target_port": "parameter:suspect_targets"
+    },
+    {
+      "source_operation": "operation-16",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-19",
+      "target_port": "parameter:internal_standards"
+    },
+    {
+      "source_operation": "operation-8",
+      "source_port": "featuresTable",
+      "target_operation": "operation-9",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-7",
+      "source_port": "featuresTable",
+      "target_operation": "operation-10",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-11",
+      "source_port": "featuresTable",
+      "target_operation": "operation-16",
+      "target_port": "featuresTable"
+    },
+    {
       "source_operation": "operation-11",
       "source_port": "featuresTable",
       "target_operation": "operation-19",
       "target_port": "featuresTable"
     },
     {
+      "source_operation": "operation-19",
+      "source_port": "featuresTable",
+      "target_operation": "operation-20",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-3",
+      "source_port": "analysesTable",
+      "target_operation": "operation-20",
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": "operation-1",
+      "source_port": "spectraHeadersTable",
+      "target_operation": "operation-20",
+      "target_port": "spectraHeadersTable"
+    },
+    {
+      "source_operation": "operation-20",
+      "source_port": "featuresTable",
+      "target_operation": "operation-21",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-16",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-22",
+      "target_port": "internalStandardsTable"
+    },
+    {
+      "source_operation": "operation-22",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-18",
+      "target_port": "internalStandardsTable"
+    },
+    {
+      "source_operation": "operation-19",
+      "source_port": "featuresTable",
+      "target_operation": "operation-18",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-18",
+      "source_port": "internalStandardsTable",
+      "target_operation": "operation-21",
+      "target_port": "internalStandardsTable"
+    },
+    {
       "source_operation": "operation-21",
+      "source_port": "featuresTable",
+      "target_operation": "operation-8",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-9",
+      "source_port": "featuresTable",
+      "target_operation": "operation-23",
+      "target_port": "featuresTable"
+    },
+    {
+      "source_operation": "operation-24",
       "source_port": "suspectTargetsTable",
-      "target_operation": "operation-19",
+      "target_operation": "operation-23",
       "target_port": "parameter:suspect_targets"
     }
   ],
-  "domain": "mass_spec",
   "metadata": {
     "name": "Non-target Screening basic demo",
-    "description": "Basic non-target screening workflow for high-resolution mass-spectrometry data with suspect screening.",
+    "description": "Complete non-target screening workflow for high-resolution mass-spectrometry data, including feature processing, internal-standard handling, and suspect screening.",
     "methods": [
       "Blank and replicate naming",
       "Feature detection and componentization",
       "Isotope, adduct, and loss annotation",
-      "Feature filtering and blank subtraction",
       "MS1 and MS2 feature spectrum loading",
+      "Internal-standard detection and enrichment",
+      "Feature grouping and gap filling",
+      "Matrix-suppression correction and internal-standard filtering",
+      "Blank subtraction and feature filtering",
       "Suspect screening with MetFrag",
       "Total ion chromatogram visualization"
     ],
     "owner": "StreamFind mass-spectrometry demos",
-    "purpose": "Demonstrate a basic non-target screening workflow",
+    "purpose": "Demonstrate an end-to-end non-target screening workflow",
     "sample_type": "High-resolution mass-spectrometry samples",
-    "use_case": "Non-target screening with suspect identification"
+    "use_case": "Non-target screening with internal-standard quality control and suspect identification"
   },
   "name": "Workflow",
   "operations": [
@@ -147,8 +221,24 @@
       "operation": "mass_spec.read_mass_spec_files",
       "parameters": {
         "source_paths": [
-          "C:\\example_data\\mass_spec\\wastewater\\sample_01.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\sample_02.mzML"
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r003.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r001.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r002.mzML",
+          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r003.mzML"
         ]
       },
       "position": {
@@ -183,8 +273,8 @@
         ]
       },
       "position": {
-        "x": 413.5819488634469,
-        "y": 117.8664232395177
+        "x": 410.79599035714386,
+        "y": 12
       }
     },
     {
@@ -214,8 +304,8 @@
         ]
       },
       "position": {
-        "x": 715.7656051312684,
-        "y": 108.11556846745685
+        "x": 712.9796466249653,
+        "y": 12
       }
     },
     {
@@ -268,6 +358,18 @@
       "inputs": {},
       "operation": "mass_spec.annotate_components",
       "parameters": {
+        "annotation_modifications": [
+          "+Na",
+          "+NH4",
+          "+K",
+          "+Cl",
+          "+FA-H",
+          "+CH3COO",
+          "-H2O",
+          "-CO2",
+          "-NH3",
+          "-CO"
+        ],
         "debug_analysis": "",
         "debug_component": "",
         "isotope_elements": [
@@ -277,49 +379,6 @@
           "S:0-4",
           "Cl:0-6",
           "Br:0-4"
-        ],
-        "annotation_modifications": [
-          "+H",
-          "+Na",
-          "+K",
-          "+NH4",
-          "+ACN+H",
-          "+CH3OH+H",
-          "2M+H",
-          "2M+Na",
-          "2M+K",
-          "2M+NH4",
-          "-H",
-          "+Cl",
-          "+Br",
-          "+CHO2",
-          "+CH3COO",
-          "+FA-H",
-          "2M-H",
-          "2M+Cl",
-          "2M+FA-H",
-          "-H2O",
-          "-CO2",
-          "-NH3",
-          "-CO",
-          "-CH3",
-          "-CH2O2",
-          "-HCl",
-          "-HF",
-          "-SO2",
-          "-SO3",
-          "-H2SO4",
-          "-CH3OH",
-          "-C2H4",
-          "-C2H2",
-          "-NO",
-          "-NO2",
-          "-HNO2",
-          "-HNO3",
-          "-CH2",
-          "-C2H6O",
-          "-HPO3",
-          "-H3PO4"
         ],
         "max_charge": 1,
         "max_gaps": 1,
@@ -343,8 +402,8 @@
         "remove_losses": true
       },
       "position": {
-        "x": 1878.8019254802603,
-        "y": 591.8597451243674
+        "x": 3968.3521140513035,
+        "y": 509.5833875411721
       }
     },
     {
@@ -357,8 +416,8 @@
         "rt_expand": 5
       },
       "position": {
-        "x": 2162.007178165133,
-        "y": 533.5085535629692
+        "x": 4273.601958093979,
+        "y": 472.5567886198749
       }
     },
     {
@@ -367,7 +426,7 @@
       "operation": "mass_spec.load_features_ms1",
       "parameters": {
         "filtered": false,
-        "min_traces_intensity": 150,
+        "min_traces_intensity": 500,
         "mz_clust": 0.008,
         "mz_window": [
           -10,
@@ -380,8 +439,8 @@
         ]
       },
       "position": {
-        "x": 2461.4031291046826,
-        "y": 528.6891271820684
+        "x": 1948.3143923409907,
+        "y": 532.3923227674709
       }
     },
     {
@@ -392,12 +451,12 @@
         "filtered": false,
         "isolation_window": 1.3,
         "min_traces_intensity": 50,
-        "mz_clust": 0.005,
+        "mz_clust": 0.008,
         "presence": 0.5
       },
       "position": {
-        "x": 2752.6024210508845,
-        "y": 528.8250955100427
+        "x": 2239.5136842871925,
+        "y": 532.5282910954452
       }
     },
     {
@@ -418,41 +477,173 @@
         "rt_min": 0
       },
       "position": {
-        "x": 436.5421889971973,
-        "y": 742.3104270555694
+        "x": 429.57729273143957,
+        "y": 661.5176303727796
+      }
+    },
+    {
+      "id": "operation-16",
+      "inputs": {},
+      "operation": "mass_spec.find_internal_standards_metfrag",
+      "parameters": {
+        "debug": false,
+        "filtered": false,
+        "isotope_ppm": 10,
+        "maximum_tree_depth": 2,
+        "mzr_ms2": 0.008,
+        "number_threads": 5,
+        "post_processing_candidate_filter": [
+          "InChIKeyFilter"
+        ],
+        "ppm": 10,
+        "ppm_ms2": 10,
+        "pre_processing_candidate_filter": [
+          "UnconnectedCompoundFilter"
+        ],
+        "score_types": [
+          "FragmenterScore"
+        ],
+        "score_weights": [
+          1
+        ],
+        "sec": 15,
+        "suspect_targets": [],
+        "top_n": 2,
+        "use_smiles": true
+      },
+      "position": {
+        "x": 2601.906332861184,
+        "y": 794.1155444724089
+      }
+    },
+    {
+      "id": "operation-17",
+      "inputs": {},
+      "operation": "mass_spec.read_csv_suspect_targets",
+      "parameters": {
+        "suspect_targets_csv_path": "C:\\example_data\\mass_spec\\wastewater\\internal_standards.csv"
+      },
+      "position": {
+        "x": 2242.9130239420024,
+        "y": 979.056521463041
+      }
+    },
+    {
+      "id": "operation-18",
+      "inputs": {},
+      "operation": "mass_spec.enrich_internal_standards",
+      "parameters": {},
+      "position": {
+        "x": 3281.7393735618934,
+        "y": 926.0304643387345
+      }
+    },
+    {
+      "id": "operation-19",
+      "inputs": {},
+      "operation": "mass_spec.group_features",
+      "parameters": {
+        "bin_size": 5,
+        "grouping_method": "obi_warp",
+        "internal_standards": [],
+        "min_samples": 1,
+        "ppm": 10,
+        "rt_deviation": 5
+      },
+      "position": {
+        "x": 2959.9540591288164,
+        "y": 554.211513091606
+      }
+    },
+    {
+      "id": "operation-20",
+      "inputs": {},
+      "operation": "mass_spec.fill_features",
+      "parameters": {
+        "filtered": false,
+        "max_peak_width": 30,
+        "min_gaussian_fit": 0.2,
+        "min_number_traces": 5,
+        "min_signal_to_noise_ratio": 3,
+        "min_traces_intensity": 0,
+        "mz_expand": 0.005,
+        "rt_apex_deviation": 1,
+        "rt_expand": 10,
+        "within_replicate": true
+      },
+      "position": {
+        "x": 3313.038382198185,
+        "y": 501.3310233214569
       }
     },
     {
       "id": "operation-21",
+      "inputs": {},
+      "operation": "mass_spec.correct_matrix_suppression",
+      "parameters": {
+        "mp_rt_window": 60
+      },
+      "position": {
+        "x": 3664.3305381426317,
+        "y": 504.95059078418035
+      }
+    },
+    {
+      "id": "operation-22",
+      "inputs": {},
+      "operation": "mass_spec.filter_internal_standards",
+      "parameters": {
+        "id_levels": [
+          1,
+          2,
+          3
+        ],
+        "min_cosine_similarity": 0,
+        "min_score": 0,
+        "min_shared_fragments": 0,
+        "names": []
+      },
+      "position": {
+        "x": 2957.1930648200228,
+        "y": 943.4853576373348
+      }
+    },
+    {
+      "id": "operation-23",
+      "inputs": {},
+      "operation": "mass_spec.suspect_screening",
+      "parameters": {
+        "analysis_names": [],
+        "filtered": false,
+        "isotope_ppm": 10,
+        "min_cosine_similarity": 0.7,
+        "min_shared_fragments": 3,
+        "mzr_ms2": 0.008,
+        "ppm": 10,
+        "ppm_ms2": 10,
+        "sec": 15,
+        "suspect_targets": []
+      },
+      "position": {
+        "x": 4805.1307428763575,
+        "y": 581.5229574557948
+      }
+    },
+    {
+      "id": "operation-24",
       "inputs": {},
       "operation": "mass_spec.read_csv_suspect_targets",
       "parameters": {
         "suspect_targets_csv_path": "C:\\example_data\\mass_spec\\wastewater\\suspects.csv"
       },
       "position": {
-        "x": 2689.0340271568525,
-        "y": 918.9405819473807
-      }
-    },
-    {
-      "id": "operation-19",
-      "inputs": {},
-      "operation": "mass_spec.metfrag_screening",
-      "parameters": {
-        "filtered": false,
-        "isotope_ppm": 10,
-        "number_threads": 10,
-        "ppm": 10,
-        "sec": 15,
-        "top_n": 2
-      },
-      "position": {
-        "x": 3148.7912909670936,
-        "y": 679.759264851716
+        "x": 4475.393704994414,
+        "y": 852.268461758057
       }
     }
   ],
   "schema_version": 1,
   "version": 1,
-  "workflow_id": "mass-spec-non-target-screening-basic"
+  "workflow_id": "mass-spec-non-target-screening-basic",
+  "domain": "mass_spec"
 }

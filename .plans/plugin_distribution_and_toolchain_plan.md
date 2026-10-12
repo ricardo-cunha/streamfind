@@ -43,12 +43,14 @@ Keep `cpp/sdk` as the internal plugin framework while producing lean, relocatabl
 - Added plugin-development documentation and linked it from the documentation index.
 - Verified the runtime CPack archive contains no `sdk/` entries, no vendor DLLs under `bin/` or plugin directories, and the extracted MCP smoke test passes.
 - Verified the developer-kit configuration, build, and install still produce the SDK package.
+- Prepared the 0.5.0 runtime and developer-kit release workflow for Windows and
+  Linux, including extracted-package validation and checksum generation.
 
 ## Remaining work
 
 - Add a first-class backend/frontend plugin project generator rather than only templates and documentation. **Implemented** by `scripts/dev/plugin_generator.py`.
 - Add a dedicated developer-kit archive command and out-of-tree consumer test to the release pipeline. **Implemented** by the Windows/Linux dev-kit packaging commands and `scripts/dev/test_plugin_consumer.py`.
-- Add Linux extracted-archive startup testing and recursive ELF/PE dependency-closure validation. **Implemented** by the Linux release smoke test and `scripts/dev/validate_native_dependencies.py`; Linux execution remains to be run on a Linux host/CI runner.
+- Add Linux extracted-archive startup testing and recursive ELF/PE dependency-closure validation. **Implemented** by the Linux release smoke test and `scripts/dev/validate_native_dependencies.py`; the 0.5.0 Linux package validation is run through the repository's WSL2 Ubuntu environment.
 
 ## Developer commands
 

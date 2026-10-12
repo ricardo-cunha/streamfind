@@ -119,6 +119,186 @@ describe('FeatureInspector', () => {
     );
 
     expect(model.nodes.map((node) => node.id)).toEqual(['positive\u0000POS-F1', 'negative\u0000NEG-F1']);
+    expect(model.edges).toEqual([{ source: 'positive\u0000POS-F1', target: 'negative\u0000NEG-F1', weight: 0.55 }]);
+  });
+
+  it('connects group anchors across analyses while retaining their annotation networks', () => {
+    const model = buildFeatureNetwork(
+      [
+        {
+          feature: 'POS-MAIN',
+          analysis: 'positive',
+          feature_group: 'G42',
+          feature_component: 'CPOS',
+          adduct: '[M+H]+',
+        },
+        {
+          feature: 'POS-ISO',
+          analysis: 'positive',
+          feature_group: 'G42',
+          feature_component: 'CPOS',
+          adduct: 'isotope [M+1]',
+          annotation_category: 'isotope',
+          annotation_parent_feature: 'POS-MAIN',
+        },
+        {
+          feature: 'NEG-MAIN',
+          analysis: 'negative',
+          feature_group: 'G42',
+          feature_component: 'CNEG',
+          adduct: '[M-H]-',
+        },
+        {
+          feature: 'NEG-LOSS',
+          analysis: 'negative',
+          feature_group: 'G42',
+          feature_component: 'CNEG',
+          adduct: 'loss M-H2O',
+          annotation_category: 'loss',
+          annotation_parent_feature: 'NEG-MAIN',
+        },
+      ],
+      'G42',
+      'feature_group',
+    );
+
+    expect(model.edges).toContainEqual({
+      source: 'positive\u0000POS-MAIN',
+      target: 'negative\u0000NEG-MAIN',
+      weight: 0.55,
+    });
+    expect(model.edges).toContainEqual({
+      source: 'positive\u0000POS-ISO',
+      target: 'positive\u0000POS-MAIN',
+      weight: 0,
+    });
+    expect(model.edges).toContainEqual({
+      source: 'negative\u0000NEG-LOSS',
+      target: 'negative\u0000NEG-MAIN',
+      weight: 0,
+    });
+  });
+
+  it('keeps child groups in a selected group network through their components', () => {
+    const model = buildFeatureNetwork(
+      [
+        {
+          feature: 'MAIN',
+          analysis: 'sample-a',
+          feature_group: 'G-MAIN',
+          feature_component: 'C1',
+          adduct: '[M+H]+',
+        },
+        {
+          feature: 'ISO-1',
+          analysis: 'sample-a',
+          feature_group: 'G-ISO',
+          feature_component: 'C1',
+          adduct: 'isotope [M+1]',
+          annotation_category: 'isotope',
+          annotation_parent_feature: 'MAIN',
+        },
+      ],
+      'G-MAIN',
+      'feature_group',
+    );
+
+    expect(model.nodes.map((node) => node.id)).toEqual(['sample-a\u0000MAIN', 'sample-a\u0000ISO-1']);
+    expect(model.edges).toContainEqual({
+      source: 'sample-a\u0000ISO-1',
+      target: 'sample-a\u0000MAIN',
+      weight: 0,
+    });
+  });
+
+  it('maps group-component selection to the corresponding component in every analysis', () => {
+    const model = buildFeatureNetwork(
+      [
+        {
+          feature: 'POS-MAIN',
+          analysis: 'positive',
+          feature_group: 'G42',
+          feature_component: 'CPOS',
+          adduct: '[M+H]+',
+        },
+        {
+          feature: 'POS-ISO',
+          analysis: 'positive',
+          feature_group: 'G42-ISO',
+          feature_component: 'CPOS',
+          adduct: 'isotope [M+1]',
+          annotation_parent_feature: 'POS-MAIN',
+        },
+        {
+          feature: 'NEG-MAIN',
+          analysis: 'negative',
+          feature_group: 'G42',
+          feature_component: 'CNEG',
+          adduct: '[M-H]-',
+        },
+        {
+          feature: 'NEG-LOSS',
+          analysis: 'negative',
+          feature_group: 'G42-LOSS',
+          feature_component: 'CNEG',
+          adduct: 'loss M-H2O',
+          annotation_parent_feature: 'NEG-MAIN',
+        },
+      ],
+      'G42\u0000CPOS',
+      'feature_group_component',
+    );
+
+    expect(model.nodes.map((node) => node.id)).toEqual([
+      'positive\u0000POS-MAIN',
+      'positive\u0000POS-ISO',
+      'negative\u0000NEG-MAIN',
+      'negative\u0000NEG-LOSS',
+    ]);
+    expect(model.edges).toContainEqual({
+      source: 'positive\u0000POS-ISO',
+      target: 'positive\u0000POS-MAIN',
+      weight: 0,
+    });
+    expect(model.edges).toContainEqual({
+      source: 'negative\u0000NEG-LOSS',
+      target: 'negative\u0000NEG-MAIN',
+      weight: 0,
+    });
+  });
+
+  it('recovers a feature child network when component metadata is absent', () => {
+    const model = buildFeatureNetwork(
+      [
+        {
+          feature: 'MAIN',
+          analysis: 'sample-a',
+          adduct: '[M+H]+',
+          mz: '300',
+        },
+        {
+          feature: 'ISO-1',
+          analysis: 'sample-a',
+          adduct: 'isotope [M+1]',
+          annotation_category: 'isotope',
+          annotation_parent_feature: 'MAIN',
+          mz: '301',
+        },
+        {
+          feature: 'OTHER',
+          analysis: 'sample-a',
+          adduct: '[M+H]+',
+          mz: '500',
+        },
+      ],
+      'sample-a\u0000ISO-1',
+      'feature',
+    );
+
+    expect(model.nodes.map((node) => node.id)).toEqual(['sample-a\u0000MAIN', 'sample-a\u0000ISO-1']);
+    expect(model.edges).toEqual([
+      { source: 'sample-a\u0000ISO-1', target: 'sample-a\u0000MAIN', weight: 0 },
+    ]);
   });
 
   it('collects every selected-analysis component member and preserves its loss chain', () => {

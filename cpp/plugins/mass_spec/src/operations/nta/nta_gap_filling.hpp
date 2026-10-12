@@ -137,7 +137,6 @@ namespace streamfind::mass_spec::nta
         float maxPeakWidth,
         float minTracesIntensity,
         int minNumberTraces,
-        float minIntensity,
         float rtApexDeviation,
         float minSignalToNoiseRatio,
         float minGaussianFit,

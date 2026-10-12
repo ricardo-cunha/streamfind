@@ -188,10 +188,15 @@ export default function CanvasShell({
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
   const [, setWorkflowProgress] = useState({ completed: 0, total: 0, current_step: 0 });
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [savingWorkflow, setSavingWorkflow] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
+  const lastObservedWorkflowStateRef = useRef<WorkflowState | null>(null);
+  const artifactsLoadedRef = useRef(false);
+  const currentArtifactsRef = useRef<ArtifactRecord[]>([]);
+  const artifactsRefreshInFlightRef = useRef<Promise<ArtifactRecord[]> | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [documentationFocus, setDocumentationFocus] = useState<DocumentationFocus | null>(null);
@@ -228,6 +233,7 @@ export default function CanvasShell({
   const showOutputRendererMenu = (key: string) => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
     setHoveredOutputAnchor(key);
+    if (!artifactsLoadedRef.current) void refreshArtifacts();
   };
   const hideOutputRendererMenu = () => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
@@ -272,15 +278,24 @@ export default function CanvasShell({
     },
     [appendLog],
   );
-  const refreshArtifacts = useCallback(() => {
+  const refreshArtifacts = useCallback((force = false) => {
     if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
-    return client
+    if (!force && artifactsLoadedRef.current) return Promise.resolve(currentArtifactsRef.current);
+    if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
+    const request = client
       .currentArtifacts(project.session_id)
       .then((artifacts) => {
         setCurrentArtifacts(artifacts);
+        currentArtifactsRef.current = artifacts;
+        artifactsLoadedRef.current = true;
         return artifacts;
       })
       .catch(() => []);
+    artifactsRefreshInFlightRef.current = request;
+    void request.finally(() => {
+      artifactsRefreshInFlightRef.current = null;
+    });
+    return request;
   }, [client, project.session_id]);
 
   useEffect(() => {
@@ -428,7 +443,7 @@ export default function CanvasShell({
         event.type === 'workflow.failed' ||
         event.type === 'workflow.cancelled'
       )
-        void refreshArtifacts();
+        void refreshArtifacts(true);
     },
     [appendLog, project.session_id, refreshArtifacts],
   );
@@ -449,7 +464,7 @@ export default function CanvasShell({
 
   useEffect(() => {
     if (!client || surface === 'workflow') return undefined;
-    void refreshArtifacts();
+    void refreshArtifacts(true);
     return undefined;
   }, [client, refreshArtifacts, surface]);
 
@@ -464,7 +479,7 @@ export default function CanvasShell({
             setWorkflowState(result.state);
             if (result.progress) setWorkflowProgress(result.progress);
             if (result.state === 'completed' || result.state === 'failed' || result.state === 'cancelled') {
-              void refreshArtifacts();
+              void refreshArtifacts(true);
             }
           }
         })
@@ -549,7 +564,6 @@ export default function CanvasShell({
         }));
         setWorkflowLoaded(true);
         setStatus('Workflow loaded from the project.');
-        window.setTimeout(() => void refreshArtifacts(), 0);
       })
       .catch((error) => {
         if (active) {
@@ -643,6 +657,7 @@ export default function CanvasShell({
   const saveCurrentWorkflow = async (workflowToSave: WorkflowDefinition = currentWorkflow): Promise<boolean> => {
     if (!client || !workflowLoaded) return false;
     setWorkflowBusy(true);
+    setSavingWorkflow(true);
     try {
       const validation = await client.validateWorkflow(project.session_id, workflowToSave);
       if (!validation.valid) {
@@ -659,6 +674,7 @@ export default function CanvasShell({
       setStatus(error instanceof Error ? error.message : 'Workflow could not be saved.');
       return false;
     } finally {
+      setSavingWorkflow(false);
       setWorkflowBusy(false);
     }
   };
@@ -695,7 +711,7 @@ export default function CanvasShell({
       await client.clearArtifactCache(project.session_id);
       historyRef.current = { past: [], current: historyRef.current.current, future: [] };
       setStatus('Cached data and cache history were cleared; published artifacts were retained.');
-      await refreshArtifacts();
+      await refreshArtifacts(true);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Cached data could not be cleared.');
     } finally {
@@ -709,7 +725,7 @@ export default function CanvasShell({
     try {
       await client.clearAllArtifacts(project.session_id);
       setStatus('All artifacts and cache entries were cleared; the workflow definition was retained.');
-      await refreshArtifacts();
+      await refreshArtifacts(true);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Artifacts could not be cleared.');
     } finally {
@@ -1186,7 +1202,7 @@ export default function CanvasShell({
     if (!window.confirm(`Delete all published output data for “${node.title}”?`)) return;
     try {
       await client.clearNodeArtifacts(project.session_id, node.id);
-      await refreshArtifacts();
+      await refreshArtifacts(true);
       setStatus(`Deleted published output data for ${node.title}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Node artifact cleanup failed.');
@@ -1624,7 +1640,7 @@ export default function CanvasShell({
             : item,
         ),
       );
-      const artifacts = await refreshArtifacts();
+      const artifacts = await refreshArtifacts(true);
       const visualization = artifacts.find(
         (artifact) => artifact.producer_instance === node.id && isVisualizationArtifact(artifact),
       );
@@ -1638,7 +1654,7 @@ export default function CanvasShell({
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
-      const artifacts = await refreshArtifacts();
+      const artifacts = await refreshArtifacts(true);
       const published = artifacts.some(
         (artifact) =>
           artifact.producer_instance === node.id &&
@@ -1950,6 +1966,13 @@ export default function CanvasShell({
           <img src={logo} alt="streamfind" />
           <strong>Loading workflow</strong>
           <span>Restoring nodes and connections…</span>
+        </div>
+      ) : null}
+      {surface === 'workflow' && savingWorkflow ? (
+        <div className="sf-canvas-workflow-saving" role="status" aria-live="polite">
+          <img src={logo} alt="streamfind" />
+          <strong>Saving workflow</strong>
+          <span>Updating the project definition…</span>
         </div>
       ) : null}
       {surface === 'workflow' && workflowLoaded && nodes.length === 0 ? (

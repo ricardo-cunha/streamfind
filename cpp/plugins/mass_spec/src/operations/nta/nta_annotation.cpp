@@ -46,6 +46,40 @@ namespace streamfind::mass_spec::nta
       return has_carbon;
     }
 
+    bool isotope_combination_has_supported_envelope(
+        const std::vector<std::string> &combination,
+        int step,
+        double relative_intensity,
+        double number_carbons,
+        double carbon_isotope_ratio,
+        double isotope_ratio,
+        double maximum_element_count)
+    {
+      // A pure M+2 isotope assignment must explain a physically meaningful
+      // number of atoms after accounting for the carbon-only M+2 envelope.
+      // This prevents a 4% peak from being labelled 37Cl (~32% per chlorine)
+      // while retaining valid one- and multi-halogen envelopes. The same
+      // abundance-ratio rule applies to user-enabled elements such as S, Se,
+      // Ga, or other isotopes represented by IsoSpec.
+      if (step != 2 || combination.size() != 1 || number_carbons <= 0.0 ||
+          carbon_isotope_ratio <= 0.0 || isotope_ratio <= 0.0 ||
+          maximum_element_count <= 0.0)
+        return true;
+
+      const double carbon_m2 =
+          number_carbons * (number_carbons - 1.0) *
+          carbon_isotope_ratio * carbon_isotope_ratio / 2.0;
+      const double residual_intensity = relative_intensity - carbon_m2;
+
+      // Keep the existing 30% intensity tolerance, with a small floor so
+      // that numerical noise cannot turn a sub-atom residual into a match.
+      const double minimum_atom_equivalent = 0.7;
+      const double maximum_atom_equivalent = maximum_element_count * 1.3;
+      const double atom_equivalent = residual_intensity / isotope_ratio;
+      return atom_equivalent >= minimum_atom_equivalent &&
+             atom_equivalent <= maximum_atom_equivalent;
+    }
+
     namespace streamfind::nta_annotation_detail
     {
       std::string fmt_num(double value, int precision)
@@ -337,11 +371,9 @@ namespace streamfind::mass_spec::nta
         if (parent_it == state.end() || parent_it->second.is_default)
           return false;
 
-        // Only an already-selected loss chain may continue below the chosen
-        // molecular root. Adducts and dimers must attach directly to that
-        // root; otherwise an unselected default feature can become an
-        // accidental parent merely because it happens to precede the target
-        // in the local update order.
+        // Adducts must attach directly to the selected base ion. Losses may
+        // form sequential chains, but only through an already-selected loss
+        // that ultimately resolves to that same base ion.
         return candidate.cat == "loss" && parent_it->second.cat == "loss";
       }
 
@@ -817,20 +849,19 @@ namespace streamfind::mass_spec::nta
     const std::vector<std::string> &default_adduct_expressions()
     {
       static const std::vector<std::string> expressions{
-          "+H", "+Na", "+K", "+NH4", "+ACN+H", "+CH3OH+H",
-          "2M+H", "2M+Na", "2M+K", "2M+NH4",
-          "-H", "+Cl", "+Br", "+CHO2", "+CH3COO", "+FA-H",
-          "2M-H", "2M+Cl", "2M+FA-H"};
+          // Common small-molecule ESI ions for environmental NTS. Less
+          // frequent solvent, halogen, and dimer ions remain available
+          // through the explicit annotation_modifications allow-list.
+          "+Na", "+NH4", "+K",
+          "+Cl", "+FA-H", "+CH3COO"};
       return expressions;
     }
 
     const std::vector<std::string> &default_loss_expressions()
     {
       static const std::vector<std::string> expressions{
-          "-H2O", "-CO2", "-NH3", "-CO", "-CH3", "-CH2O2",
-          "-HCl", "-HF", "-SO2", "-SO3", "-H2SO4", "-CH3OH",
-          "-C2H4", "-C2H2", "-NO", "-NO2", "-HNO2", "-HNO3",
-          "-CH2", "-C2H6O", "-HPO3", "-H3PO4"};
+          // Frequent neutral losses in small-molecule LC-ESI NTS.
+          "-H2O", "-CO2", "-NH3", "-CO"};
       return expressions;
     }
 
@@ -841,8 +872,7 @@ namespace streamfind::mass_spec::nta
       if (suffix.empty())
         throw std::invalid_argument("invalid adduct expression: " + expression);
 
-      const bool negative = expression == "-H" || expression == "+Cl" ||
-          expression == "+Br" || expression == "+CHO2" || expression == "+CH3COO" ||
+      const bool negative = expression == "+Cl" || expression == "+CH3COO" ||
           expression == "+FA-H" || expression == "2M-H" || expression == "2M+Cl" ||
           expression == "2M+FA-H";
       const int polarity = negative ? -1 : 1;
@@ -1291,6 +1321,25 @@ namespace streamfind::mass_spec::nta
 
                 const float rel_int = intensity / mono_ion.intensity;
 
+                const auto isotope_ratio_for = [&combinations](const std::string &label) {
+                  const auto iterator = std::find(combinations.isotopes_str.begin(), combinations.isotopes_str.end(), label);
+                  if (iterator == combinations.isotopes_str.end())
+                    return 0.0;
+                  const auto index = static_cast<std::size_t>(std::distance(combinations.isotopes_str.begin(), iterator));
+                  const double mono_abundance = combinations.abundances_monoisotopic[index];
+                  return mono_abundance > 0.0
+                      ? static_cast<double>(combinations.abundances[index]) / mono_abundance
+                      : 0.0;
+                };
+                const double carbon_isotope_ratio = isotope_ratio_for("13C");
+                const auto combination_isotope = combination.size() == 1 ? combination.front() : std::string{};
+                const double combination_isotope_ratio = isotope_ratio_for(combination_isotope);
+                const double combination_max_element_count = combination.size() == 1
+                    ? static_cast<double>(combinations.max[std::distance(
+                        combinations.isotopes_str.begin(),
+                        std::find(combinations.isotopes_str.begin(), combinations.isotopes_str.end(), combination_isotope))])
+                    : 0.0;
+
                 // In a carbon-rich organic envelope, M+2 and later peaks can
                 // receive meaningful contributions from multiple light
                 // isotopes. Keep a carbon-only explanation eligible when the
@@ -1315,7 +1364,15 @@ namespace streamfind::mass_spec::nta
                 if ((mass_is_better || chemically_preferred_tie) &&
                     candidate_mass_distance_error <= mzr * 1.3 &&
                     rel_int >= min_rel_int * 0.7 &&
-                    rel_int <= intensity_upper_bound)
+                    rel_int <= intensity_upper_bound &&
+                    isotope_combination_has_supported_envelope(
+                        combination,
+                        s,
+                        rel_int,
+                        iso_chain.number_carbons,
+                        carbon_isotope_ratio,
+                        combination_isotope_ratio,
+                        combination_max_element_count))
                 {
                   if (debug)
                   {

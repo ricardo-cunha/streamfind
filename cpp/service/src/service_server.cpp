@@ -952,7 +952,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                             const auto suffix = std::string("/workflow/events");
                             const auto session_id = detail::percent_decode(route.substr(prefix.size(), route.size() - prefix.size() - suffix.size()));
                 std::uint64_t after = 0;
-                std::size_t limit = 20000;
+                std::size_t limit = 2000;
                 try { if (!query_value("after").empty()) after = std::stoull(query_value("after")); } catch (...) { throw std::invalid_argument("invalid event history cursor"); }
                 try { if (!query_value("limit").empty()) limit = std::stoull(query_value("limit")); } catch (...) { throw std::invalid_argument("invalid event history limit"); }
                 detail::send_http(socket, 200, events_.history(session_id, after, limit));

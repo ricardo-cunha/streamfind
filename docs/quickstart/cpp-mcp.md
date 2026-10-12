@@ -1,22 +1,22 @@
-# C++ MCP server
+# Use the C++ MCP server
 
 The C++ MCP server is included in the
 [Windows x64 and Linux x86_64 C++ packages](../releases.md). It communicates
 with MCP clients using JSON-RPC messages over standard input/output.
 
-## Package paths
+## Start the server
 
-After extracting a release package, launch:
+After extracting a release package, configure your MCP client to launch:
 
 ```text
 Windows: <package>\bin\streamfind_mcp_launcher.exe
 Linux:   <package>/bin/streamfind_mcp
 ```
 
-Keep the package's `share/streamfind/catalogue.duckdb` available. It is required
-runtime data for the server.
+Keep the extracted package layout intact. The catalogue and native libraries
+are required runtime data for the server.
 
-## Project and Operation flow
+## Create and run a project
 
 A typical client or AI agent uses this sequence:
 
@@ -35,11 +35,10 @@ Example requests, one JSON object per line:
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"mass_spec.get_analyses","arguments":{"database_path":"demo.duckdb"}}}
 ```
 
-Direct domain Operations are stateless. Include `database_path` on every
-applicable request; operation-specific parameters are documented by
-`tools/list`. `connect` is not required for this path.
+Include `database_path` on every applicable request. Operation-specific
+parameters and constraints are returned by `tools/list` and `get_operation`.
 
-## Operation graphs
+## Build a workflow
 
 Use a persisted operation graph for every multi-step workflow:
 
@@ -51,8 +50,9 @@ Use a persisted operation graph for every multi-step workflow:
 6. call `run_workflow`;
 7. call `get_artifact_inventory` to inspect published outputs.
 
-The workflow is stored in the project database. Do not replace a connected
-graph with separate direct operation calls when downstream operations depend on
+The workflow is stored in the project database, so it can be reopened,
+validated, rerun, and inspected by another client. Use direct operation calls
+for independent queries; use a persisted graph when downstream steps depend on
 upstream artifacts.
 
 ## MCP client configuration

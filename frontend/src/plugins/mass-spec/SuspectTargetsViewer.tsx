@@ -10,6 +10,64 @@ type SuspectRow = Record<string, string | null>;
 type RenderedStructure = { svg: string; dataUri: string };
 type StructureCache = Record<string, RenderedStructure>;
 
+type StructureRenderTask = {
+  run: () => void;
+  cancelled: boolean;
+  cancel: () => void;
+};
+
+const structureRenderQueue: StructureRenderTask[] = [];
+const structureRenderPromises = new Map<string, Promise<string>>();
+let activeStructureRenders = 0;
+const maxConcurrentStructureRenders = 4;
+
+function drainStructureRenderQueue() {
+  while (activeStructureRenders < maxConcurrentStructureRenders && structureRenderQueue.length) {
+    const task = structureRenderQueue.shift();
+    if (!task) return;
+    if (task.cancelled) continue;
+    activeStructureRenders += 1;
+    task.run();
+  }
+}
+
+function queuedStructureSvg(
+  key: string,
+  client: StreamFindApiClient,
+  request: { smiles?: string; inchi?: string; width: number; height: number; bond_color?: string },
+): { promise: Promise<string>; cancel: () => void } {
+  const existing = structureRenderPromises.get(key);
+  if (existing) return { promise: existing, cancel: () => undefined };
+  let task: StructureRenderTask;
+  let rejectPromise: ((reason?: unknown) => void) | undefined;
+  const promise = new Promise<string>((resolve, reject) => {
+    rejectPromise = reject;
+    task = {
+      cancelled: false,
+      cancel: () => {
+        if (task.cancelled) return;
+        task.cancelled = true;
+        rejectPromise?.(new Error('Structure render cancelled'));
+        if (structureRenderPromises.get(key) === promise) structureRenderPromises.delete(key);
+      },
+      run: () => {
+        if (task.cancelled) return;
+        void client
+          .structureSvg(request)
+          .then(resolve, reject)
+          .finally(() => {
+            activeStructureRenders -= 1;
+            drainStructureRenderQueue();
+          });
+      },
+    };
+    structureRenderQueue.push(task);
+    drainStructureRenderQueue();
+  });
+  structureRenderPromises.set(key, promise);
+  return { promise, cancel: () => task.cancel() };
+}
+
 function value(row: SuspectRow, names: string[]): string | null {
   for (const name of names) {
     const candidate = row[name];
@@ -52,7 +110,10 @@ function displayMass(row: SuspectRow): string {
 }
 
 function structureCacheKey(row: SuspectRow): string {
-  return `${value(row, ['SMILES', 'smiles']) ?? ''}\\u0000${value(row, ['InChI', 'inchi']) ?? ''}`;
+  // SMILES is the stable structure identity for rows produced by the
+  // fragmentation-to-suspect conversion. Do not miss cache hits merely
+  // because equivalent rows carry different InChI serializations.
+  return value(row, ['SMILES', 'smiles']) ?? value(row, ['InChI', 'inchi']) ?? '';
 }
 
 export function StructureImage({
@@ -89,7 +150,7 @@ export function StructureImage({
           observer.disconnect();
         }
       },
-      { rootMargin: '240px' },
+      { rootMargin: '40px' },
     );
     observer.observe(elementRef.current);
     return () => observer.disconnect();
@@ -106,16 +167,16 @@ export function StructureImage({
         active = false;
       };
     }
-    void client
+    const renderTask = queuedStructureSvg(cacheKey, client, {
       // Use one Open Babel render size for cards and details. The detail view
       // scales this SVG with CSS instead of requesting a second oversized render.
-      .structureSvg({
-        ...(smiles ? { smiles } : {}),
-        ...(inchi ? { inchi } : {}),
-        width: 300,
-        height: 240,
-        bond_color: darkMode ? '#ffffff' : undefined,
-      })
+      ...(smiles ? { smiles } : {}),
+      ...(inchi ? { inchi } : {}),
+      width: 300,
+      height: 240,
+      bond_color: darkMode ? '#ffffff' : undefined,
+    });
+    void renderTask.promise
       .then((svg) => {
         if (active) {
           const rendered = { svg, dataUri: svgDataUri(svg) };
@@ -128,6 +189,7 @@ export function StructureImage({
       });
     return () => {
       active = false;
+      renderTask.cancel();
     };
   }, [cache, cacheKey, client, darkMode, inchi, large, onRendered, smiles, visible]);
   const displayedStructure = structure ?? cache[cacheKey] ?? null;
@@ -419,11 +481,45 @@ function Details({
 export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNode {
   const [rows, setRows] = useState<SuspectRow[]>([]);
   const [selected, setSelected] = useState<SuspectRow | null>(null);
+  const [selectedLoading, setSelectedLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [totalRows, setTotalRows] = useState(0);
+  const [massMin, setMassMin] = useState('');
+  const [massMax, setMassMax] = useState('');
+  const [massMinInput, setMassMinInput] = useState('');
+  const [massMaxInput, setMassMaxInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const [structureCache, setStructureCache] = useState<StructureCache>({});
   const client = context.pluginApi?.client;
+  // Keep the DOM and Open Babel queue bounded. Large inverse-expansion tables
+  // can contain thousands of distinct, complex structures.
+  const pageSize = 24;
+  const overviewColumns = useMemo(() => {
+    const available = new Set((context.artifact?.columns ?? []).map((column) => column.name));
+    return ['name', 'mass', 'formula', 'SMILES', 'InChIKey'].filter((column) => available.has(column));
+  }, [context.artifact]);
+  const massColumn = useMemo(() => {
+    const available = new Set((context.artifact?.columns ?? []).map((column) => column.name));
+    return available.has('mass') ? 'mass' : available.has('exact_mass') ? 'exact_mass' : null;
+  }, [context.artifact]);
+  const massFilters = useMemo(() => {
+    if (!massColumn) return undefined;
+    if (massMin !== '' && massMax !== '') {
+      const min = Number(massMin);
+      const max = Number(massMax);
+      if (Number.isFinite(min) && Number.isFinite(max) && min <= max)
+        return [{ column: massColumn, operator: 'between' as const, min, max }];
+    }
+    if (massMin !== '' && Number.isFinite(Number(massMin)))
+      return [{ column: massColumn, operator: 'gte' as const, value: Number(massMin) }];
+    if (massMax !== '' && Number.isFinite(Number(massMax)))
+      return [{ column: massColumn, operator: 'lte' as const, value: Number(massMax) }];
+    return undefined;
+  }, [massColumn, massMax, massMin]);
+  const detailColumns = useMemo(() => context.artifact?.columns?.map((column) => column.name), [context.artifact]);
   const rememberStructure = useCallback((key: string, structure: RenderedStructure) => {
     setStructureCache((current) => (current[key] ? current : { ...current, [key]: structure }));
   }, []);
@@ -456,7 +552,14 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
       };
     }
     void client
-      .artifactData(context.sessionId, { artifact_id: context.artifact.artifact_id, offset: 0, limit: 5000 })
+      .artifactQuery(context.sessionId, {
+        artifact_id: context.artifact.artifact_id,
+        mode: 'page',
+        columns: overviewColumns,
+        offset: 0,
+        limit: pageSize,
+        filters: massFilters,
+      })
       .then((result) => {
         if (!active) return;
         const loadedRows = Array.isArray(result.rows)
@@ -465,6 +568,8 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
             )
           : [];
         setRows(loadedRows);
+        setTotalRows(result.total_rows);
+        setPage(0);
         setLoading(false);
       })
       .catch((reason: unknown) => {
@@ -475,7 +580,60 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
     return () => {
       active = false;
     };
-  }, [client, context.artifact, context.sessionId]);
+  }, [client, context.artifact, context.sessionId, massFilters, overviewColumns]);
+  useEffect(() => {
+    if (loading || page === 0 || !client || !context.artifact) return undefined;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) setPageLoading(true);
+    });
+    void client
+      .artifactQuery(context.sessionId, {
+        artifact_id: context.artifact.artifact_id,
+        mode: 'page',
+        columns: overviewColumns,
+        offset: page * pageSize,
+        limit: pageSize,
+        filters: massFilters,
+      })
+      .then((result) => {
+        if (!active) return;
+        setRows(result.rows.filter((row): row is SuspectRow => Boolean(row) && typeof row === 'object'));
+        setTotalRows(result.total_rows);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Could not load suspect targets.');
+      })
+      .finally(() => {
+        if (active) setPageLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, context.artifact, context.sessionId, loading, massFilters, overviewColumns, page]);
+  const openSuspect = useCallback(
+    (row: SuspectRow) => {
+      setSelected(row);
+      if (!client || !context.artifact || !row.row_key || !detailColumns?.length) return;
+      setSelectedLoading(true);
+      void client
+        .artifactQuery(context.sessionId, {
+          artifact_id: context.artifact.artifact_id,
+          mode: 'detail',
+          columns: detailColumns,
+          row_keys: [row.row_key],
+          limit: 1,
+        })
+        .then((result) => {
+          if (result.rows[0]) setSelected(result.rows[0]);
+        })
+        .catch(() => {
+          // Keep the lightweight overview available if the detail request fails.
+        })
+        .finally(() => setSelectedLoading(false));
+    },
+    [client, context.artifact, context.sessionId, detailColumns],
+  );
   if (loading) return <LoadingLogo label="Loading suspect targets…" />;
   if (error)
     return (
@@ -493,7 +651,7 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
             type="button"
             className="sf-suspect-card"
             key={`${value(row, ['InChIKey', 'SMILES', 'name']) ?? 'compound'}-${index}`}
-            onClick={() => setSelected(row)}
+            onClick={() => openSuspect(row)}
           >
             <StructureImage
               row={row}
@@ -503,9 +661,97 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
               onRendered={rememberStructure}
             />
             <strong>{value(row, ['name']) ?? 'Compound'}</strong>
+            <small className="sf-suspect-formula" title={value(row, ['formula']) ?? undefined}>
+              {value(row, ['formula']) ?? 'Formula unavailable'}
+            </small>
             <span>{displayMass(row)}</span>
           </button>
         ))}
+      </div>
+      <div className="sf-suspect-toolbar">
+        {massColumn ? (
+          <form
+            className="sf-suspect-mass-range"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setMassMin(massMinInput);
+              setMassMax(massMaxInput);
+              setPage(0);
+            }}
+          >
+            <strong>Mass range</strong>
+            <label>
+              Minimum
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                value={massMinInput}
+                onChange={(event) => setMassMinInput(event.target.value)}
+                placeholder="Minimum mass"
+              />
+            </label>
+            <label>
+              Maximum
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                value={massMaxInput}
+                onChange={(event) => setMassMaxInput(event.target.value)}
+                placeholder="Maximum mass"
+              />
+            </label>
+            <button type="submit">Apply</button>
+            {(massMin || massMax) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMassMin('');
+                  setMassMax('');
+                  setMassMinInput('');
+                  setMassMaxInput('');
+                  setPage(0);
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </form>
+        ) : null}
+        {totalRows > pageSize ? (
+          <nav className="sf-suspect-pagination" aria-label="Suspect target pages">
+            <button type="button" disabled={page === 0 || pageLoading} onClick={() => setPage(0)}>
+              First
+            </button>
+            <button
+              type="button"
+              disabled={page === 0 || pageLoading}
+              onClick={() => setPage((current) => current - 1)}
+            >
+              Previous
+            </button>
+            <span>
+              {page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalRows)} of {totalRows}
+            </span>
+            <button
+              type="button"
+              disabled={(page + 1) * pageSize >= totalRows || pageLoading}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              disabled={(page + 1) * pageSize >= totalRows || pageLoading}
+              onClick={() => setPage(Math.max(0, Math.ceil(totalRows / pageSize) - 1))}
+            >
+              Last
+            </button>
+          </nav>
+        ) : null}
       </div>
       {selected && client
         ? createPortal(
@@ -529,14 +775,18 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
                   </button>
                 </header>
                 <div className="sf-suspect-modal-body">
-                  <Details
-                    row={selected}
-                    client={client}
-                    darkMode={darkMode}
-                    sourceArtifactId={context.artifact?.artifact_id ?? ''}
-                    cache={structureCache}
-                    onRendered={rememberStructure}
-                  />
+                  {selectedLoading ? (
+                    <LoadingLogo label="Loading suspect details…" />
+                  ) : (
+                    <Details
+                      row={selected}
+                      client={client}
+                      darkMode={darkMode}
+                      sourceArtifactId={context.artifact?.artifact_id ?? ''}
+                      cache={structureCache}
+                      onRendered={rememberStructure}
+                    />
+                  )}
                 </div>
               </div>
             </div>,

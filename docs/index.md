@@ -4,10 +4,10 @@
   <img src="assets/streamfind.png" width="70%" />
 </p>
 
-streamfind is a DuckDB-backed framework for analytical data processing. Its
-active native backend is C++, with mass-spectrometry data access, a shared
-semantic catalogue, a dynamic plugin framework, and MCP servers for applications
-and AI agents.
+streamfind is an open-source platform for reproducible analytical data
+processing. Projects are stored in DuckDB and processing is expressed as
+validated workflows. The platform includes a browser application, native C++
+runtime, MCP interface, and extensible domain plugins.
 
 ## Start here
 
@@ -17,10 +17,20 @@ and AI agents.
 - [Check supported interfaces and limitations](status.md).
 - [Use the R interface](components/bindings-r.md).
 
+## Typical workflow
+
+1. Install a native package and launch the browser application, or configure an
+   MCP client.
+2. Create or open a DuckDB project.
+3. Discover operations and configure their parameters.
+4. Connect compatible typed ports into a workflow.
+5. Validate and run the workflow.
+6. Inspect tables, visualizations, artifacts, and execution history.
+
 !!! note "Version {{ streamfind_version }}"
-    The native C++ project version is **{{ streamfind_version }}**. Native
-    packages target Windows x64 and Linux x86_64. Cross-version API and ABI
-    stability is not guaranteed for this preview platform.
+    The native C++ package version is **{{ streamfind_version }}**. Packages
+    target Windows x64 and Linux x86_64. Cross-version C++ ABI stability is not
+    guaranteed; use matching runtime and developer-kit versions.
 
 ## Interfaces
 
@@ -32,6 +42,14 @@ and AI agents.
 | Python package | — | No public package |
 | Cogniflow integration | — | Not included in the native distribution |
 | React web app | Browser application served by the packaged C++ service; also available from the Vite development server | Included in the Windows and Linux native archives |
+
+## Supported analytical work
+
+The mass-spec plugin supports workflows that combine analysis metadata, raw
+file readers, spectra, chromatograms, feature detection and grouping, isotope
+and molecular-link annotation, suspect screening, and downstream filtering or
+visualization. Exact reader and operation support depends on the file format
+and operation parameters.
 
 ## MCP at a glance
 

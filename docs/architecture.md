@@ -75,8 +75,8 @@ domain capabilities to be deployed selectively.
 ## Data and runtime assets
 
 Native packages include the runtime data needed by the MCP servers, especially
-the semantic catalogue under `share/streamfind/`. Keep the catalogue with the
-server executable. Optional scientific tools remain separate user-installed
+the semantic catalogue under `core/`. Keep the catalogue with the package.
+Optional scientific tools remain separate user-installed
 components.
 
 See [Releases](releases.md) for package layouts and

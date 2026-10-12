@@ -58,6 +58,7 @@ nav:
   - Components:
       - Semantic catalogue: components/semantic.md
       - C++ core: components/core-cpp.md
+      - Plugin development: plugin-development.md
       - R package: components/bindings-r.md
       - Python interface: components/bindings-python.md
       - Cogniflow integration: components/cf-streamfind.md

@@ -59,6 +59,31 @@ namespace streamfind::core::vendors::openbabel
 
   FormulaMass mass_from_formula(const std::string &formula);
 
+  struct GraphEditCandidate
+  {
+    std::string smiles;
+    std::string label;
+    std::string formula;
+    double exact_mass = 0.0;
+  };
+
+  std::vector<GraphEditCandidate> generate_bond_order_variants(
+      const std::string &smiles,
+      int max_results = 512);
+
+  std::vector<GraphEditCandidate> generate_fragment_attachment_variants(
+      const std::string &root_smiles,
+      const std::string &fragment_smiles,
+      int max_results = 1);
+
+  std::vector<GraphEditCandidate> generate_local_transformation_variants(
+      const std::string &smiles,
+      int max_results = 64);
+
+  std::vector<GraphEditCandidate> generate_dealkylation_variants(
+      const std::string &smiles,
+      int max_results = 64);
+
   StructureSvg render_structure_svg(
       const std::string &smiles,
       const std::string &inchi,

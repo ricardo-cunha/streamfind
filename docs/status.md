@@ -1,14 +1,14 @@
 # Availability and compatibility
 
 streamfind is a native C++ analytical platform with a browser application,
-catalogue-backed MCP server, and domain plugins. The current preview platform
-targets Windows x64 and Linux x86_64.
+catalogue-backed MCP server, and domain plugins. Native packages target Windows
+x64 and Linux x86_64.
 
 ## Available interfaces
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
-| C++ backend | Version {{ streamfind_version }} project version; test packages target Windows x64 and Linux x86_64 | Native C++ applications and MCP clients |
+| Native C++ runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Native applications and integrations |
 | C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
 | R package | Separate R interface | Existing R and Shiny workflows |
 | Python package | No public package | Use the C++ CLI or MCP interface |
@@ -27,8 +27,8 @@ The current native packages include:
 - mass-spectrometry analysis management and metadata/query operations;
 - raw and persisted spectrum and chromatogram access;
 - native mzML and vendor-container reader implementations;
-- feature-processing and non-target-analysis operations at different stages of
-  validation across domains and file formats.
+- feature-processing and non-target-analysis operations, subject to the
+  selected file format and workflow parameters.
 
 Vendor-specific behavior depends on the file format and the available fixture
 or data source. A package should not be interpreted as support for every vendor
@@ -54,7 +54,7 @@ flow.
 
 ## Compatibility scope
 
-The native packages are preview releases. They do not currently promise:
+The native packages do not promise:
 
 - a stable cross-version C++ ABI;
 - identical support for every vendor format on every platform;
@@ -83,7 +83,7 @@ SCIEX WIFF2 decryption is not implemented.
 See the root [`NOTICE.md`](https://github.com/ricardo-cunha/streamfind/blob/dev_refactoring/NOTICE.md)
 for the distribution notice and compatibility boundaries.
 
-The React web app is a development/preview application backed by the C++ service.
+The browser application is backed by the C++ service.
 Both native archives include the built static assets and a root-level `streamfind`
 launcher, which starts the local service and opens the app in the default browser.
 For development, the app can be run from `frontend/` with the Vite launcher. It

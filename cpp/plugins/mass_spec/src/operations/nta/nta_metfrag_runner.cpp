@@ -332,7 +332,11 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     w("MetFragScoreTypes", join_strings(params.score_types, ","));
     w("MetFragScoreWeights", join_doubles(params.score_weights, ","));
     w("MetFragPreProcessingCandidateFilter", join_strings(params.pre_processing_candidate_filter, ","));
-    w("MetFragPostProcessingCandidateFilter", join_strings(params.post_processing_candidate_filter, ","));
+    // MetFrag treats an empty filter property as a filter with an invalid
+    // empty name.  Omitting the optional property is the documented way to
+    // run without post-processing filters.
+    if (!params.post_processing_candidate_filter.empty())
+      w("MetFragPostProcessingCandidateFilter", join_strings(params.post_processing_candidate_filter, ","));
     w("MetFragCandidateWriter", join_strings(params.candidate_writer, ","));
     w("ResultsPath", fwd(results_dir));
     w("MaximumTreeDepth", std::to_string(params.maximum_tree_depth));
@@ -1074,8 +1078,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       throw std::invalid_argument("MetFrag score_types and score_weights must have the same length.");
     if (out.pre_processing_candidate_filter.empty())
       throw std::invalid_argument("MetFrag pre_processing_candidate_filter must not be empty.");
-    if (out.post_processing_candidate_filter.empty())
-      throw std::invalid_argument("MetFrag post_processing_candidate_filter must not be empty.");
     if (out.candidate_writer.empty())
       throw std::invalid_argument("MetFrag candidate_writer must not be empty.");
     for (const auto &writer : out.candidate_writer)
