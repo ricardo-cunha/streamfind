@@ -698,7 +698,7 @@ namespace streamfind::mass_spec::base
                     if ((!requested_levels.empty() && std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end()) ||
                         spectra[i][1][j] < minimum_intensity)
                         continue;
-                    Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"name", std::string{}}, {"polarity", headers.polarity[i]}, {"level", headers.level[i]}, {"precursor_mz", headers.precursor_mz[i]}, {"activation_ce", headers.activation_ce[i]}, {"rt", headers.rt[i]}, {"mobility", headers.mobility[i]}, {"mz", mz}, {"intensity", spectra[i][1][j]}};
+                    Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"name", std::string{}}, {"polarity", headers.polarity[i]}, {"level", headers.level[i]}, {"pre_mz", headers.precursor_mz[i]}, {"pre_mzlow", headers.window_mzlow[i]}, {"pre_mzhigh", headers.window_mzhigh[i]}, {"pre_ce", headers.activation_ce[i]}, {"rt", headers.rt[i]}, {"mobility", headers.mobility[i]}, {"mz", mz}, {"intensity", spectra[i][1][j]}};
                     if (indexed)
                         result.push_back(std::move(point));
                     else
@@ -710,6 +710,14 @@ namespace streamfind::mass_spec::base
                             }
                 }
         }
+        const std::vector<std::string> columns = {
+            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
+            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
+            "mz", "intensity"};
+        const std::vector<std::string> types = {
+            "string", "string", "string", "integer", "integer", "real", "real",
+            "real", "real", "real", "real", "real", "real"};
+        access.emit_table_rows("spectraTable", columns, types, result);
         return result;
     }
 

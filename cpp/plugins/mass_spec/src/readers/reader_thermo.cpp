@@ -13,6 +13,7 @@
 #include <limits>
 #include <stdexcept>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 
 namespace mass_spec::reader::thermo
@@ -21,14 +22,17 @@ namespace mass_spec::reader::thermo
   {
     struct ScanMetadata
     {
+      int index = 0;
       int scan = 0;
       std::size_t packet_start = 0;
+      std::size_t packet_size = 0;
       std::size_t centroid_offset = 0;
       std::size_t centroid_count = 0;
       int level = 0;
       int mode = 0;
       int polarity = 0;
       double precursor_mz = 0.0;
+      double window_mz = 0.0;
       int precursor_charge = 0;
       float collision_energy = 0.0f;
       float isolation_width = 0.0f;
@@ -44,7 +48,12 @@ namespace mass_spec::reader::thermo
       float retention_time = 0.0f;
     };
 
-    std::vector<std::uint8_t> read_file(const std::string &path)
+    bool is_centroid_scan(const ScanMetadata &scan)
+    {
+      return scan.centroid_count > 0;
+    }
+
+    std::size_t file_size(const std::string &path)
     {
       std::ifstream input(path, std::ios::binary | std::ios::ate);
       if (!input)
@@ -52,12 +61,25 @@ namespace mass_spec::reader::thermo
       const auto size = input.tellg();
       if (size < 0)
         throw std::runtime_error("Unable to determine Thermo RAW file size: " + path);
-      std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
-      input.seekg(0);
+      return static_cast<std::size_t>(size);
+    }
+
+    std::vector<std::uint8_t> read_range(const std::string &path, std::size_t offset, std::size_t size)
+    {
+      std::ifstream input(path, std::ios::binary);
+      if (!input)
+        throw std::runtime_error("Unable to open Thermo RAW file: " + path);
+      if (offset > static_cast<std::size_t>(std::numeric_limits<std::streamoff>::max()) ||
+          size > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max()))
+        throw std::runtime_error("Thermo RAW range exceeds the supported stream size.");
+      input.seekg(static_cast<std::streamoff>(offset));
+      if (!input)
+        throw std::runtime_error("Unable to seek Thermo RAW file: " + path);
+      std::vector<std::uint8_t> bytes(size);
       if (!bytes.empty())
         input.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
       if (!input)
-        throw std::runtime_error("Unable to read Thermo RAW file: " + path);
+        throw std::runtime_error("Thermo RAW range is truncated at byte " + std::to_string(offset) + ".");
       return bytes;
     }
 
@@ -125,12 +147,12 @@ namespace mass_spec::reader::thermo
       std::size_t event_count = 0;
     };
 
-    Layout read_layout(const std::vector<std::uint8_t> &bytes)
+    Layout read_layout(const std::string &path, const std::vector<std::uint8_t> &bytes, std::size_t total_size)
     {
       if ((u32_at(bytes, 0) & 0xffffU) != 0xa101U)
         throw std::runtime_error("invalid Thermo RAW file header.");
       const auto version = u32_at(bytes, 0x24);
-      if (version < 64)
+      if (version != 66)
         throw std::runtime_error("unsupported Thermo RAW format version: " + std::to_string(version) + ".");
       std::size_t cursor = 1356 + 64;
       for (int i = 0; i < 14; ++i)
@@ -172,21 +194,25 @@ namespace mass_spec::reader::thermo
       const auto controller_count = u32_at(bytes, raw_info + 28);
       const auto data_addr = static_cast<std::size_t>(u64_at(bytes, raw_info + 808));
       const auto run_header_addr = static_cast<std::size_t>(u64_at(bytes, raw_info + 824));
-      if (controller_count == 0 || data_addr >= bytes.size() || run_header_addr >= bytes.size())
+      if (controller_count == 0 || data_addr >= total_size || run_header_addr >= total_size)
         throw std::runtime_error("Thermo RAW controller pointers are invalid.");
-      const auto first_scan = u32_at(bytes, run_header_addr + 8);
-      const auto last_scan = u32_at(bytes, run_header_addr + 12);
+      constexpr std::size_t run_header_size = 592 + 13 * 520 + 16 + 96;
+      if (run_header_addr > total_size || run_header_size > total_size - run_header_addr)
+        throw std::runtime_error("Thermo RAW run header is truncated.");
+      const auto run_header = read_range(path, run_header_addr, run_header_size);
+      const auto first_scan = u32_at(run_header, 8);
+      const auto last_scan = u32_at(run_header, 12);
       if (last_scan < first_scan)
         throw std::runtime_error("Thermo RAW scan range is invalid.");
-      const auto address_base = run_header_addr + 592 + 13 * 520 + 16 + 40;
-      const auto scan_index_addr = static_cast<std::size_t>(u64_at(bytes, address_base));
-      const auto run_data_addr = static_cast<std::size_t>(u64_at(bytes, address_base + 8));
-      const auto error_log_addr = static_cast<std::size_t>(u64_at(bytes, address_base + 24));
-      const auto scan_trailer_addr = static_cast<std::size_t>(u64_at(bytes, address_base + 40));
-      const auto scan_params_addr = static_cast<std::size_t>(u64_at(bytes, address_base + 48));
-      const auto event_count = static_cast<std::size_t>(u32_at(bytes, run_header_addr + 592 + 13 * 520 + 16 + 8));
-      if (run_data_addr != data_addr || scan_index_addr >= bytes.size() ||
-          scan_trailer_addr >= bytes.size() || scan_params_addr > bytes.size() || event_count == 0)
+      constexpr std::size_t address_base = 592 + 13 * 520 + 16 + 40;
+      const auto scan_index_addr = static_cast<std::size_t>(u64_at(run_header, address_base));
+      const auto run_data_addr = static_cast<std::size_t>(u64_at(run_header, address_base + 8));
+      const auto error_log_addr = static_cast<std::size_t>(u64_at(run_header, address_base + 24));
+      const auto scan_trailer_addr = static_cast<std::size_t>(u64_at(run_header, address_base + 40));
+      const auto scan_params_addr = static_cast<std::size_t>(u64_at(run_header, address_base + 48));
+      const auto event_count = static_cast<std::size_t>(u32_at(run_header, 592 + 13 * 520 + 16 + 8));
+      if (run_data_addr != data_addr || scan_index_addr >= total_size ||
+          scan_trailer_addr >= total_size || scan_params_addr > total_size || event_count == 0)
         throw std::runtime_error("Thermo RAW run-header pointers are inconsistent.");
       return {timestamp, data_addr, scan_index_addr, first_scan, last_scan, error_log_addr, scan_trailer_addr, scan_params_addr, event_count};
     }
@@ -238,6 +264,12 @@ namespace mass_spec::reader::thermo
     {
       if (frequency == 0.0)
         return 0.0;
+      // Ion-trap profile packets are already in m/z space and do not carry
+      // frequency-to-m/z coefficients.  An absent calibration is therefore
+      // valid only for this native m/z representation; unknown coefficient
+      // layouts must not silently be presented as calibrated m/z values.
+      if (coefficients.empty())
+        return frequency;
       if (coefficients.size() == 4)
         return coefficients[1] + coefficients[2] / frequency + coefficients[3] / (frequency * frequency);
       if (coefficients.size() == 5 || coefficients.size() == 7)
@@ -245,7 +277,7 @@ namespace mass_spec::reader::thermo
         const auto f2 = frequency * frequency;
         return coefficients[2] + coefficients[3] / f2 + coefficients[4] / (f2 * f2);
       }
-      return frequency;
+      throw std::runtime_error("unsupported Thermo RAW profile calibration model.");
     }
 
     std::size_t generic_field_size(std::uint32_t type_code, std::uint32_t length)
@@ -327,31 +359,21 @@ namespace mass_spec::reader::thermo
       return true;
     }
 
-    bool find_scan_params(const std::vector<std::uint8_t> &bytes, const Layout &layout, std::size_t scan_count, ScanParamsHeader &header)
+    bool find_scan_params(const std::vector<std::uint8_t> &bytes, std::size_t scan_count,
+                          std::size_t expected_record_size, ScanParamsHeader &header)
     {
-      const auto tail = bytes.size() > layout.scan_params_addr ? bytes.size() - layout.scan_params_addr : 0;
-      const auto expected = scan_count > 0 && tail >= 4 ? tail / scan_count : 0;
-      const auto start = std::min(layout.error_log_addr, bytes.size() > 4 ? bytes.size() - 4 : 0);
-      const auto end = std::min(layout.scan_trailer_addr, bytes.size() > 4 ? bytes.size() - 4 : 0);
-      const auto probe_end = std::min<std::size_t>(end - start, 4 * 1024 * 1024);
-      for (int pass = 0; pass < 2; ++pass)
+      const auto probe_end = std::min<std::size_t>(bytes.size(), 4 * 1024 * 1024);
+      for (std::size_t offset = 0; offset + 4 <= probe_end; offset += 2)
       {
-        for (std::size_t offset = start; offset + 4 <= start + probe_end; offset += 2)
-        {
-          ScanParamsHeader candidate;
-          if (!generic_header_at(bytes, offset, candidate))
-            continue;
-          const bool size_ok = pass == 0 && expected > 0 ? candidate.record_size == expected : true;
-          if (!size_ok)
-            continue;
-          if (layout.scan_params_addr > bytes.size() ||
-              scan_count * std::max<std::size_t>(candidate.record_size, 1) > bytes.size() - layout.scan_params_addr)
-            continue;
-          header = std::move(candidate);
-          return true;
-        }
-        if (expected == 0)
-          break;
+        ScanParamsHeader candidate;
+        if (!generic_header_at(bytes, offset, candidate))
+          continue;
+        if (expected_record_size > 0 && candidate.record_size != expected_record_size)
+          continue;
+        if (scan_count > 0 && candidate.record_size > std::numeric_limits<std::size_t>::max() / scan_count)
+          continue;
+        header = std::move(candidate);
+        return true;
       }
       return false;
     }
@@ -359,6 +381,7 @@ namespace mass_spec::reader::thermo
     struct ScanParamsValues
     {
       double precursor_mz = 0.0;
+      double window_mz = 0.0;
       int precursor_charge = 0;
       std::string hcd_energy;
       double hcd_energy_ev = 0.0;
@@ -395,8 +418,9 @@ namespace mass_spec::reader::thermo
         else if (type_code == 11)
         {
           const auto value = f64_at(bytes, cursor);
-          if (field.label == "Monoisotopic M/Z:" || field.label == "MS2 Isolation M/Z:" ||
-              field.label == "Isolation Center M/Z:" || field.label == "Precursor M/Z:")
+          if (field.label == "MS2 Isolation M/Z:" || field.label == "Isolation Center M/Z:")
+            values.window_mz = value;
+          else if (field.label == "Monoisotopic M/Z:" || field.label == "Precursor M/Z:")
             values.precursor_mz = value;
           else if (field.label == "HCD Energy (eV):" || field.label == "HCD Energy eV:")
             values.hcd_energy_ev = value;
@@ -443,11 +467,11 @@ namespace mass_spec::reader::thermo
       return 0.0f;
     }
 
-    bool packet_header(const std::vector<std::uint8_t> &bytes, std::size_t offset,
+    bool packet_header(const std::vector<std::uint8_t> &bytes, std::size_t offset, std::size_t packet_end,
                        std::size_t &centroid_offset, std::size_t &centroid_count,
-                       float &low_mz, float &high_mz)
+                       float &low_mz, float &high_mz, bool validate_payload)
     {
-      if (offset > bytes.size() || bytes.size() - offset < 72)
+      if (offset > packet_end || packet_end > bytes.size() || packet_end - offset < 72)
         return false;
       const auto profile_tokens = static_cast<std::size_t>(u32_at(bytes, offset + 4));
       const auto profile_groups = u32_at(bytes, offset + 8);
@@ -465,7 +489,8 @@ namespace mass_spec::reader::thermo
       if (profile_tokens > (std::numeric_limits<std::size_t>::max() - 11) / 4)
         return false;
       centroid_offset = offset + (profile_tokens + 11) * 4;
-      if (centroid_offset > bytes.size() || bytes.size() - centroid_offset < centroid_count * 8)
+      if (centroid_count > std::numeric_limits<std::size_t>::max() / 8 || centroid_offset > packet_end ||
+          (validate_payload && packet_end - centroid_offset < centroid_count * 8))
         return false;
       if (centroid_count == 0)
         return true;
@@ -473,18 +498,6 @@ namespace mass_spec::reader::thermo
       const float first_intensity = f32_at(bytes, centroid_offset + 4);
       return std::isfinite(first_mz) && std::isfinite(first_intensity) && first_intensity >= 0.0f &&
              first_mz >= low_mz - 5.0f && first_mz <= high_mz + 5.0f;
-    }
-
-    int polarity_for_path(const std::string &path)
-    {
-      std::string lower = path;
-      std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value)
-                     { return static_cast<char>(std::tolower(value)); });
-      if (lower.find("_neg") != std::string::npos)
-        return -1;
-      if (lower.find("_pos") != std::string::npos)
-        return 1;
-      return 0;
     }
 
     int scan_level(const std::vector<std::uint8_t> &bytes, std::size_t packet_start)
@@ -501,6 +514,9 @@ namespace mass_spec::reader::thermo
                         std::vector<float> &mz, std::vector<float> &intensity)
     {
       const auto profile = metadata.packet_start + 40;
+      const auto packet_end = metadata.packet_start + metadata.packet_size;
+      if (metadata.packet_start > packet_end || packet_end > bytes.size() || packet_end - metadata.packet_start < 64)
+        throw std::runtime_error("Thermo RAW profile packet is truncated.");
       const auto first = f64_at(bytes, profile);
       const auto step = f64_at(bytes, profile + 8);
       const auto chunks = static_cast<std::size_t>(u32_at(bytes, profile + 16));
@@ -515,16 +531,22 @@ namespace mass_spec::reader::thermo
       const auto encoding = u32_at(bytes, metadata.packet_start + 12);
       for (std::size_t chunk = 0; chunk < chunks; ++chunk)
       {
+        if (cursor > packet_end || packet_end - cursor < 8)
+          throw std::runtime_error("Thermo RAW profile chunk header is truncated.");
         const auto first_bin = static_cast<std::size_t>(u32_at(bytes, cursor));
         const auto count = static_cast<std::size_t>(u32_at(bytes, cursor + 4));
         cursor += 8;
         double fudge = 0.0;
         if (encoding != 0)
         {
+          if (cursor > packet_end || packet_end - cursor < 4)
+            throw std::runtime_error("Thermo RAW profile chunk calibration is truncated.");
           fudge = f32_at(bytes, cursor);
           cursor += 4;
         }
-        if (count == 0 || first_bin >= bins || count > bins - first_bin || cursor > bytes.size() || count * 4 > bytes.size() - cursor)
+        if (count == 0 || first_bin >= bins || count > bins - first_bin ||
+            count > (std::numeric_limits<std::size_t>::max() / 4) ||
+            cursor > packet_end || count * 4 > packet_end - cursor)
           throw std::runtime_error("Thermo RAW profile chunk is invalid.");
         for (std::size_t i = 0; i < count; ++i)
         {
@@ -545,68 +567,195 @@ namespace mass_spec::reader::thermo
     public:
       explicit ThermoReader(const std::string &path) : MASS_SPEC_READER(path), path_(path)
       {
-        const auto bytes = read_file(path);
-        const auto layout = read_layout(bytes);
+        const auto total_size = file_size(path);
+        if (total_size < 4)
+          throw std::runtime_error("Thermo RAW file is empty or truncated.");
+        constexpr std::size_t header_probe_size = 64 * 1024;
+        const auto header_bytes = read_range(path, 0, std::min(total_size, header_probe_size));
+        const auto layout = read_layout(path, header_bytes, total_size);
         timestamp_ = layout.timestamp;
-        const int fallback_polarity = polarity_for_path(path);
-        ScanParamsHeader scan_params;
         const auto scan_count = static_cast<std::size_t>(layout.last_scan - layout.first_scan + 1);
-        const bool has_scan_params = find_scan_params(bytes, layout, scan_count, scan_params);
-        constexpr std::size_t record_size = 88;
+        if (scan_count == 0 || layout.scan_index_addr > total_size)
+          throw std::runtime_error("Thermo RAW scan index exceeds the file bounds.");
+        constexpr std::size_t validated_stride = 88;
+        constexpr std::size_t documented_stride = 92;
+        const auto can_read_index = [&](std::size_t stride)
+        {
+          return scan_count <= std::numeric_limits<std::size_t>::max() / stride &&
+                 scan_count * stride <= total_size - layout.scan_index_addr;
+        };
+        const auto maximum_stride = std::max(validated_stride, documented_stride);
+        if (!can_read_index(maximum_stride))
+          throw std::runtime_error("Thermo RAW scan index exceeds the file bounds.");
+        const auto index_bytes = read_range(path, layout.scan_index_addr, scan_count * maximum_stride);
+        const auto valid_index_stride = [&](std::size_t stride)
+        {
+          if (!can_read_index(stride))
+            return false;
+          std::uint64_t previous_offset = 0;
+          bool first = true;
+          for (std::size_t index = 0; index < scan_count; ++index)
+          {
+            const auto record = index * stride;
+            if (record > index_bytes.size() || index_bytes.size() - record < stride)
+              return false;
+            const auto packet_offset = u64_at(index_bytes, record + 72);
+            const auto packet_size = static_cast<std::size_t>(u32_at(index_bytes, record + 20));
+            if (packet_size == 0 || packet_offset > std::numeric_limits<std::size_t>::max() - layout.data_addr)
+              return false;
+            const auto packet_start = layout.data_addr + static_cast<std::size_t>(packet_offset);
+            if (packet_start > total_size || packet_size > total_size - packet_start ||
+                (!first && packet_offset <= previous_offset))
+              return false;
+            previous_offset = packet_offset;
+            first = false;
+          }
+          return true;
+        };
+        const bool validated_index = valid_index_stride(validated_stride);
+        const bool documented_index = valid_index_stride(documented_stride);
+        if (validated_index == documented_index)
+          throw std::runtime_error("Thermo RAW scan index layout is invalid or ambiguous.");
+        const auto record_size = documented_index ? documented_stride : validated_stride;
+
+        std::vector<std::uint8_t> event_bytes;
+        Layout event_layout = layout;
+        const auto event_start = layout.scan_trailer_addr + 4;
+        if (layout.scan_trailer_addr > total_size || layout.scan_params_addr < event_start ||
+            layout.scan_params_addr > total_size)
+          throw std::runtime_error("Thermo RAW event stream exceeds the file bounds.");
+        const auto event_buffer_start = layout.scan_trailer_addr;
+        event_bytes = read_range(path, event_buffer_start, layout.scan_params_addr - event_buffer_start);
+        event_layout.scan_trailer_addr = 0;
+        event_layout.scan_params_addr = event_bytes.size();
+
+        ScanParamsHeader scan_params;
+        std::vector<std::uint8_t> scan_param_bytes;
+        Layout scan_param_layout = layout;
+        const auto parameter_search_start = std::min(layout.error_log_addr, total_size);
+        const auto parameter_search_end = std::min(layout.scan_trailer_addr, total_size);
+        const auto parameter_search = parameter_search_end > parameter_search_start
+                                          ? read_range(path, parameter_search_start, parameter_search_end - parameter_search_start)
+                                          : std::vector<std::uint8_t>{};
+        const auto parameter_tail = total_size - layout.scan_params_addr;
+        const auto expected_record_size = scan_count > 0 && parameter_tail % scan_count == 0
+                                              ? parameter_tail / scan_count
+                                              : 0;
+        const bool has_scan_params = find_scan_params(parameter_search, scan_count, expected_record_size, scan_params);
+        if (has_scan_params)
+        {
+          if (scan_params.record_size == 0 || scan_count > std::numeric_limits<std::size_t>::max() / scan_params.record_size ||
+              layout.scan_params_addr > total_size || scan_count * scan_params.record_size > total_size - layout.scan_params_addr)
+            throw std::runtime_error("Thermo RAW scan-parameter records exceed the file bounds.");
+          scan_param_bytes = read_range(path, layout.scan_params_addr, scan_count * scan_params.record_size);
+          scan_param_layout.scan_params_addr = 0;
+        }
         std::uint64_t previous_packet_offset = 0;
         bool first = true;
         for (std::size_t index = 0; index < scan_count; ++index)
         {
-          const std::size_t record = layout.scan_index_addr + index * record_size;
-          const auto packet_offset = u64_at(bytes, record + 72);
+          const std::size_t record = index * record_size;
+          if (record > index_bytes.size() || index_bytes.size() - record < record_size)
+            throw std::runtime_error("Thermo RAW scan index is truncated at scan " + std::to_string(index + 1) + ".");
+          const auto packet_offset = u64_at(index_bytes, record + 72);
           if (!first && packet_offset <= previous_packet_offset)
             throw std::runtime_error("Thermo RAW scan-index offsets are not increasing.");
           if (packet_offset > std::numeric_limits<std::size_t>::max() - layout.data_addr)
             throw std::runtime_error("Thermo RAW packet offset overflows the host size.");
           const std::size_t packet_start = layout.data_addr + static_cast<std::size_t>(packet_offset);
-          const auto packet_size = static_cast<std::size_t>(u32_at(bytes, record + 20));
-          if (packet_start > bytes.size() || packet_size > bytes.size() - packet_start)
+          const auto packet_size = static_cast<std::size_t>(u32_at(index_bytes, record + 20));
+          if (packet_size == 0 || packet_start > total_size || packet_size > total_size - packet_start)
             throw std::runtime_error("Thermo RAW scan packet is truncated at scan " + std::to_string(index + 1) + ".");
+          const auto packet_probe = read_range(path, packet_start, std::min<std::size_t>(packet_size, 72));
+          const auto profile_tokens = static_cast<std::size_t>(u32_at(packet_probe, 4));
+          if (profile_tokens > (std::numeric_limits<std::size_t>::max() - 11) / 4)
+            throw std::runtime_error("Thermo RAW packet profile token count overflows at scan " + std::to_string(index + 1) + ".");
+          const auto packet_probe_size = std::min<std::size_t>(packet_size, std::max<std::size_t>(72, (profile_tokens + 11) * 4 + 8));
+          const auto packet_bytes = packet_probe_size == packet_probe.size()
+                                        ? packet_probe
+                                        : read_range(path, packet_start, packet_probe_size);
           std::size_t centroid_offset = 0;
           std::size_t centroid_count = 0;
           float packet_low = 0.0f;
           float packet_high = 0.0f;
-          if (!packet_header(bytes, packet_start, centroid_offset, centroid_count, packet_low, packet_high))
+          if (!packet_header(packet_bytes, 0, packet_bytes.size(), centroid_offset, centroid_count, packet_low, packet_high, false))
             throw std::runtime_error("Thermo RAW packet header is invalid at scan " + std::to_string(index + 1) + ".");
-          const auto event = event_info(bytes, layout, index);
+          if (centroid_count > std::numeric_limits<std::size_t>::max() / 8 || centroid_offset > packet_size ||
+              centroid_count * 8 > packet_size - centroid_offset)
+            throw std::runtime_error("Thermo RAW centroid section exceeds its scan packet at scan " + std::to_string(index + 1) + ".");
+          centroid_offset += packet_start;
+          const auto event = event_info(event_bytes, event_layout, index);
           const auto params = has_scan_params
-                                  ? scan_params_values(bytes, layout, scan_params, index)
+                                  ? scan_params_values(scan_param_bytes, scan_param_layout, scan_params, index)
                                   : ScanParamsValues{};
-          const auto level = event.level == 0 ? scan_level(bytes, packet_start) : event.level;
+          const auto level = event.level == 0 ? scan_level(packet_bytes, 0) : event.level;
           const auto params_energy = collision_energy_from(params);
-          const auto profile_offset = packet_start + 40;
-          const auto profile_first = profile_offset + 24 <= bytes.size() ? f64_at(bytes, profile_offset) : 0.0;
-          const auto profile_step = profile_offset + 24 <= bytes.size() ? f64_at(bytes, profile_offset + 8) : 0.0;
-          const auto profile_bins = profile_offset + 24 <= bytes.size()
-                                        ? static_cast<int>(u32_at(bytes, profile_offset + 20))
-                                        : 0;
-          scans_.push_back({static_cast<int>(u32_at(bytes, record + 4) + 1), packet_start, centroid_offset, centroid_count,
+          const auto profile_offset = static_cast<std::size_t>(40);
+          const auto profile_first = profile_offset + 24 <= packet_bytes.size() ? f64_at(packet_bytes, profile_offset) : 0.0;
+          const auto profile_step = profile_offset + 24 <= packet_bytes.size() ? f64_at(packet_bytes, profile_offset + 8) : 0.0;
+          const auto raw_profile_bins = profile_offset + 24 <= packet_bytes.size()
+                                            ? static_cast<std::size_t>(u32_at(packet_bytes, profile_offset + 20))
+                                            : 0;
+          if (raw_profile_bins > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+            throw std::runtime_error("Thermo RAW profile bin count exceeds the supported API range at scan " +
+                                     std::to_string(index + 1) + ".");
+          const auto profile_bins = static_cast<int>(raw_profile_bins);
+          scans_.push_back({static_cast<int>(index),
+                            static_cast<int>(u32_at(index_bytes, record + 4) + 1),
+                            packet_start, packet_size, centroid_offset, centroid_count,
                             level, event.mode,
-                            event.polarity == 0 ? fallback_polarity : event.polarity,
+                            event.polarity,
                             params.precursor_mz > 0.0 ? params.precursor_mz
                                                       : (level >= 2 && event.precursor_mz > 0.0 ? event.precursor_mz : 0.0),
+                            params.window_mz > 0.0 ? params.window_mz
+                                                   : (level >= 2 && event.precursor_mz > 0.0 ? event.precursor_mz : params.precursor_mz),
                             level >= 2 ? params.precursor_charge : 0,
                             level >= 2 ? (params_energy > 0.0f ? params_energy : static_cast<float>(event.collision_energy)) : 0.0f,
                             level >= 2 ? (params.isolation_width > 0.0 ? static_cast<float>(params.isolation_width)
                                                                        : static_cast<float>(event.isolation_width))
                                        : 0.0f,
                             profile_bins, profile_first, profile_step, event.coefficients,
-                            static_cast<float>(f64_at(bytes, record + 56)),
-                            static_cast<float>(f64_at(bytes, record + 64)),
-                            static_cast<float>(f64_at(bytes, record + 48)),
-                            static_cast<float>(f64_at(bytes, record + 40)),
-                            static_cast<float>(f64_at(bytes, record + 32)),
-                            static_cast<float>(f64_at(bytes, record + 24) * 60.0)});
+                            static_cast<float>(f64_at(index_bytes, record + 56)),
+                            static_cast<float>(f64_at(index_bytes, record + 64)),
+                            static_cast<float>(f64_at(index_bytes, record + 48)),
+                            static_cast<float>(f64_at(index_bytes, record + 40)),
+                            static_cast<float>(f64_at(index_bytes, record + 32)),
+                            static_cast<float>(f64_at(index_bytes, record + 24) * 60.0)});
           previous_packet_offset = packet_offset;
           first = false;
         }
         if (scans_.empty())
           throw std::runtime_error("Thermo RAW scan index is empty.");
+
+        // Some Thermo exports contain separate profile and centroid records
+        // for the same vendor scan.  The reader API exposes one spectrum per
+        // logical scan, so keep the centroid representation when both are
+        // available.  The vendor scan number is the primary identity; level,
+        // polarity, and retention time are included so an unusual file that
+        // reuses a scan number for unrelated records is not collapsed.
+        std::unordered_map<std::string, std::size_t> logical_scan_positions;
+        std::vector<ScanMetadata> selected_scans;
+        selected_scans.reserve(scans_.size());
+        for (const auto &scan : scans_)
+        {
+          const auto retention_key = static_cast<long long>(std::llround(static_cast<double>(scan.retention_time) * 1000000.0));
+          const auto logical_key = std::to_string(scan.scan) + ":" + std::to_string(scan.level) + ":" +
+                                  std::to_string(scan.polarity) + ":" + std::to_string(retention_key);
+          const auto existing = logical_scan_positions.find(logical_key);
+          if (existing == logical_scan_positions.end())
+          {
+            logical_scan_positions.emplace(logical_key, selected_scans.size());
+            selected_scans.push_back(scan);
+            continue;
+          }
+
+          auto &previous = selected_scans[existing->second];
+          if (!is_centroid_scan(previous) && is_centroid_scan(scan))
+            previous = scan;
+        }
+        scans_ = std::move(selected_scans);
+        for (std::size_t index = 0; index < scans_.size(); ++index)
+          scans_[index].index = static_cast<int>(index);
       }
 
       int get_number_spectra() override { return static_cast<int>(scans_.size()); }
@@ -656,7 +805,7 @@ namespace mass_spec::reader::thermo
         return summary;
       }
 
-      std::vector<int> get_spectra_index(std::vector<int> indices = {}) override { return selected_int(indices, &ScanMetadata::scan); }
+      std::vector<int> get_spectra_index(std::vector<int> indices = {}) override { return normalize(std::move(indices)); }
       std::vector<int> get_spectra_scan_number(std::vector<int> indices = {}) override { return selected_int(indices, &ScanMetadata::scan); }
       std::vector<int> get_spectra_array_length(std::vector<int> indices = {}) override
       {
@@ -664,8 +813,13 @@ namespace mass_spec::reader::thermo
         std::vector<int> output;
         output.reserve(indices.size());
         for (int index : indices)
+        {
           if (index >= 0 && static_cast<std::size_t>(index) < scans_.size())
-            output.push_back(static_cast<int>(scans_[static_cast<std::size_t>(index)].centroid_count));
+          {
+            const auto &scan = scans_[static_cast<std::size_t>(index)];
+            output.push_back(static_cast<int>(scan.centroid_count > 0 ? scan.centroid_count : scan.profile_bins));
+          }
+        }
         return output;
       }
       std::vector<int> get_spectra_level(std::vector<int> indices = {}) override { return selected_int(indices, &ScanMetadata::level); }
@@ -681,7 +835,22 @@ namespace mass_spec::reader::thermo
       std::vector<float> get_spectra_mobility(std::vector<int> indices = {}) override { return std::vector<float>(normalize(std::move(indices)).size(), 0.0f); }
       std::vector<int> get_spectra_precursor_scan(std::vector<int> indices = {}) override { return std::vector<int>(normalize(std::move(indices)).size(), 0); }
       std::vector<float> get_spectra_precursor_mz(std::vector<int> indices = {}) override { return selected_double(std::move(indices), &ScanMetadata::precursor_mz); }
-      std::vector<float> get_spectra_precursor_window_mz(std::vector<int> indices = {}) override { return selected_double(std::move(indices), &ScanMetadata::precursor_mz); }
+      std::vector<float> get_spectra_precursor_window_mz(std::vector<int> indices = {}) override
+      {
+        if (indices.empty())
+        {
+          indices.resize(scans_.size());
+          std::iota(indices.begin(), indices.end(), 0);
+        }
+        std::vector<float> output;
+        output.reserve(indices.size());
+        for (const int index : indices)
+        {
+          const auto &scan = scans_.at(static_cast<std::size_t>(index));
+          output.push_back(static_cast<float>(scan.window_mz > 0.0 ? scan.window_mz : scan.precursor_mz));
+        }
+        return output;
+      }
       std::vector<float> get_spectra_precursor_window_mzlow(std::vector<int> indices = {}) override
       {
         indices = normalize(std::move(indices));
@@ -690,7 +859,8 @@ namespace mass_spec::reader::thermo
         for (const int index : indices)
         {
           const auto &scan = scans_.at(static_cast<std::size_t>(index));
-          output.push_back(scan.level >= 2 && scan.precursor_mz > 0.0 ? static_cast<float>(scan.precursor_mz - scan.isolation_width / 2.0) : 0.0f);
+          const double window_mz = scan.window_mz > 0.0 ? scan.window_mz : scan.precursor_mz;
+          output.push_back(scan.level >= 2 && window_mz > 0.0 ? static_cast<float>(window_mz - scan.isolation_width / 2.0) : 0.0f);
         }
         return output;
       }
@@ -702,7 +872,8 @@ namespace mass_spec::reader::thermo
         for (const int index : indices)
         {
           const auto &scan = scans_.at(static_cast<std::size_t>(index));
-          output.push_back(scan.level >= 2 && scan.precursor_mz > 0.0 ? static_cast<float>(scan.precursor_mz + scan.isolation_width / 2.0) : 0.0f);
+          const double window_mz = scan.window_mz > 0.0 ? scan.window_mz : scan.precursor_mz;
+          output.push_back(scan.level >= 2 && window_mz > 0.0 ? static_cast<float>(window_mz + scan.isolation_width / 2.0) : 0.0f);
         }
         return output;
       }
@@ -716,9 +887,9 @@ namespace mass_spec::reader::thermo
         for (std::size_t i = 0; i < indices.size(); ++i)
         {
           const auto &scan = scans_.at(static_cast<std::size_t>(indices[i]));
-          headers.index[i] = static_cast<int>(i);
+          headers.index[i] = indices[i];
           headers.scan[i] = scan.scan;
-          headers.array_length[i] = static_cast<int>(scan.centroid_count);
+          headers.array_length[i] = static_cast<int>(scan.centroid_count > 0 ? scan.centroid_count : scan.profile_bins);
           headers.level[i] = scan.level;
           headers.mode[i] = scan.mode;
           headers.polarity[i] = scan.polarity;
@@ -730,12 +901,13 @@ namespace mass_spec::reader::thermo
           headers.configuration[i] = 0;
           headers.rt[i] = scan.retention_time;
           headers.mobility[i] = 0.0f;
-          headers.window_mz[i] = scan.level >= 2 ? static_cast<float>(scan.precursor_mz) : 0.0f;
-          headers.window_mzlow[i] = scan.level >= 2 && scan.precursor_mz > 0.0
-                                        ? static_cast<float>(scan.precursor_mz - scan.isolation_width / 2.0)
+          const double window_mz = scan.window_mz > 0.0 ? scan.window_mz : scan.precursor_mz;
+          headers.window_mz[i] = scan.level >= 2 ? static_cast<float>(window_mz) : 0.0f;
+          headers.window_mzlow[i] = scan.level >= 2 && window_mz > 0.0
+                                        ? static_cast<float>(window_mz - scan.isolation_width / 2.0)
                                         : 0.0f;
-          headers.window_mzhigh[i] = scan.level >= 2 && scan.precursor_mz > 0.0
-                                         ? static_cast<float>(scan.precursor_mz + scan.isolation_width / 2.0)
+          headers.window_mzhigh[i] = scan.level >= 2 && window_mz > 0.0
+                                         ? static_cast<float>(window_mz + scan.isolation_width / 2.0)
                                          : 0.0f;
           headers.precursor_mz[i] = static_cast<float>(scan.precursor_mz);
           headers.precursor_intensity[i] = 0.0f;
@@ -846,10 +1018,12 @@ namespace mass_spec::reader::thermo
         const auto &metadata = scans_[static_cast<std::size_t>(index)];
         if (metadata.centroid_count == 0)
         {
-          const auto bytes = read_file(path_);
+          const auto packet = read_range(path_, metadata.packet_start, metadata.packet_size);
+          ScanMetadata packet_metadata = metadata;
+          packet_metadata.packet_start = 0;
           std::vector<float> mz;
           std::vector<float> intensity;
-          decode_profile(bytes, metadata, mz, intensity);
+          decode_profile(packet, packet_metadata, mz, intensity);
           MASS_SPEC_SPECTRUM spectrum{};
           spectrum.index = index;
           spectrum.scan = metadata.scan;
@@ -857,26 +1031,37 @@ namespace mass_spec::reader::thermo
           spectrum.level = metadata.level;
           spectrum.mode = metadata.mode;
           spectrum.polarity = metadata.polarity;
+          spectrum.configuration = 0;
           spectrum.lowmz = metadata.low_mz;
           spectrum.highmz = metadata.high_mz;
           spectrum.bpmz = metadata.base_peak_mz;
           spectrum.bpint = metadata.base_peak_intensity;
           spectrum.tic = metadata.tic;
           spectrum.rt = metadata.retention_time;
+          spectrum.mobility = 0.0f;
+        const double window_mz = metadata.window_mz > 0.0 ? metadata.window_mz : metadata.precursor_mz;
+        spectrum.window_mz = metadata.level >= 2 ? static_cast<float>(window_mz) : 0.0f;
+        spectrum.window_mzlow = metadata.level >= 2 && window_mz > 0.0
+                                      ? static_cast<float>(window_mz - metadata.isolation_width / 2.0)
+                                      : 0.0f;
+        spectrum.window_mzhigh = metadata.level >= 2 && window_mz > 0.0
+                                       ? static_cast<float>(window_mz + metadata.isolation_width / 2.0)
+                                       : 0.0f;
+          spectrum.precursor_mz = static_cast<float>(metadata.precursor_mz);
+          spectrum.precursor_intensity = 0.0f;
+          spectrum.precursor_charge = metadata.precursor_charge;
+          spectrum.activation_ce = metadata.collision_energy;
           spectrum.binary_arrays_count = 2;
           spectrum.binary_names = {"mz", "intensity"};
           spectrum.binary_data = {std::move(mz), std::move(intensity)};
           return spectrum;
         }
-        std::ifstream input(path_, std::ios::binary);
-        if (!input)
-          throw std::runtime_error("Unable to open Thermo RAW file: " + path_);
-        const auto byte_count = metadata.centroid_count * 8;
-        std::vector<std::uint8_t> payload(byte_count);
-        input.seekg(static_cast<std::streamoff>(metadata.centroid_offset));
-        input.read(reinterpret_cast<char *>(payload.data()), static_cast<std::streamsize>(payload.size()));
-        if (!input)
-          throw std::runtime_error("Thermo RAW centroid section is truncated at scan " + std::to_string(index + 1) + ".");
+        if (metadata.centroid_count > std::numeric_limits<std::size_t>::max() / 8 ||
+            metadata.centroid_offset < metadata.packet_start ||
+            metadata.centroid_offset - metadata.packet_start > metadata.packet_size ||
+            metadata.centroid_count * 8 > metadata.packet_size - (metadata.centroid_offset - metadata.packet_start))
+          throw std::runtime_error("Thermo RAW centroid section exceeds its scan packet at scan " + std::to_string(index + 1) + ".");
+        const auto payload = read_range(path_, metadata.centroid_offset, metadata.centroid_count * 8);
         MASS_SPEC_SPECTRUM spectrum{};
         spectrum.index = index;
         spectrum.scan = metadata.scan;
@@ -892,12 +1077,13 @@ namespace mass_spec::reader::thermo
         spectrum.configuration = 0;
         spectrum.rt = metadata.retention_time;
         spectrum.mobility = 0.0f;
-        spectrum.window_mz = metadata.level >= 2 ? static_cast<float>(metadata.precursor_mz) : 0.0f;
-        spectrum.window_mzlow = metadata.level >= 2 && metadata.precursor_mz > 0.0
-                                    ? static_cast<float>(metadata.precursor_mz - metadata.isolation_width / 2.0)
+        const double window_mz = metadata.window_mz > 0.0 ? metadata.window_mz : metadata.precursor_mz;
+        spectrum.window_mz = metadata.level >= 2 ? static_cast<float>(window_mz) : 0.0f;
+        spectrum.window_mzlow = metadata.level >= 2 && window_mz > 0.0
+                                    ? static_cast<float>(window_mz - metadata.isolation_width / 2.0)
                                     : 0.0f;
-        spectrum.window_mzhigh = metadata.level >= 2 && metadata.precursor_mz > 0.0
-                                     ? static_cast<float>(metadata.precursor_mz + metadata.isolation_width / 2.0)
+        spectrum.window_mzhigh = metadata.level >= 2 && window_mz > 0.0
+                                     ? static_cast<float>(window_mz + metadata.isolation_width / 2.0)
                                      : 0.0f;
         spectrum.precursor_mz = static_cast<float>(metadata.precursor_mz);
         spectrum.precursor_intensity = 0.0f;

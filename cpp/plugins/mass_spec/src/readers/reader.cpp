@@ -1451,6 +1451,8 @@ namespace mass_spec
       constexpr std::string_view accession_charge_state = "MS:1000041";
       constexpr std::string_view accession_collision_energy = "MS:1000045";
       constexpr std::string_view accession_isolation_window_target_mz = "MS:1000827";
+      constexpr std::string_view accession_isolation_window_lower_offset = "MS:1000828";
+      constexpr std::string_view accession_isolation_window_upper_offset = "MS:1000829";
       constexpr std::string_view accession_ion_mobility_drift_time = "MS:1002476";
       constexpr std::string_view accession_inverse_reduced_ion_mobility = "MS:1002815";
       constexpr std::string_view accession_zlib_compression = "MS:1000574";
@@ -1757,6 +1759,31 @@ namespace mass_spec
           auto precursor = prec_list.child("precursor");
           if (precursor)
           {
+            float isolation_lower_offset = 0.0f;
+            float isolation_upper_offset = 0.0f;
+            auto isolation_window = precursor.child("isolationWindow");
+            if (isolation_window)
+            {
+              for (auto cv : isolation_window.children("cvParam"))
+              {
+                const std::string_view accession = cv.attribute("accession").as_string();
+                const float value = cv.attribute("value").as_float(0.0f);
+                if ((!accession.empty() && accession == accession_isolation_window_target_mz) ||
+                    (accession.empty() && name_contains(cv, "isolation window target m/z")))
+                  s.window_mz = value;
+                else if ((!accession.empty() && accession == accession_isolation_window_lower_offset) ||
+                         (accession.empty() && name_contains(cv, "isolation window lower offset")))
+                  isolation_lower_offset = value;
+                else if ((!accession.empty() && accession == accession_isolation_window_upper_offset) ||
+                         (accession.empty() && name_contains(cv, "isolation window upper offset")))
+                  isolation_upper_offset = value;
+              }
+            }
+            if (s.window_mz > 0.0f)
+            {
+              s.window_mzlow = s.window_mz - isolation_lower_offset;
+              s.window_mzhigh = s.window_mz + isolation_upper_offset;
+            }
             for (auto match : precursor.select_nodes(".//cvParam"))
             {
               auto cv = match.node();
@@ -1794,6 +1821,12 @@ namespace mass_spec
             }
           }
         }
+        if (s.window_mz == 0.0f)
+          s.window_mz = prec_mz;
+        if (s.window_mzlow == 0.0f && s.window_mz > 0.0f)
+          s.window_mzlow = s.window_mz;
+        if (s.window_mzhigh == 0.0f && s.window_mz > 0.0f)
+          s.window_mzhigh = s.window_mz;
         s.precursor_mz = prec_mz;
         s.precursor_intensity = prec_int;
         s.precursor_charge = prec_charge;

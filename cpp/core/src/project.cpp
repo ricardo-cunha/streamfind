@@ -916,6 +916,20 @@ namespace streamfind
                         throw Error(ErrorCode::WorkflowValidation,
                                     "Invalid value for parameter '" + definition.name + "'; expected one of: " + allowed);
                 }
+                else if (first != std::string::npos && allowed[first] == '{')
+                {
+                    const auto schema = Json::parse(allowed);
+                    if (schema.contains("enum") && schema.at("enum").is_array())
+                    {
+                        const auto &value = resolved.at(definition.name);
+                        const auto matched = std::any_of(schema.at("enum").begin(), schema.at("enum").end(),
+                                                         [&](const auto &candidate) { return candidate == value; });
+                        if (!matched)
+                            throw Error(ErrorCode::WorkflowValidation,
+                                        "Invalid value for parameter '" + definition.name + "'; expected one of: " +
+                                            schema.at("enum").dump());
+                    }
+                }
             }
             try
             {
