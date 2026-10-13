@@ -92,6 +92,19 @@
   align-items: center;
 }
 
+.sf-suspects-explorer-filter-section {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.sf-suspects-explorer-filter-section h3 {
+  margin: 0 0 2px;
+  color: var(--sf-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .sf-suspects-explorer-filter-list {
   display: grid;
   gap: 10px;
@@ -280,10 +293,15 @@
   overflow: auto;
 }
 
-/* The identification modal is a single borderless surface. */
-.sf-suspects-explorer-modal,
+/* Keep the identification content borderless while retaining the modal frame. */
 .sf-suspects-explorer-modal * {
   border: 0 !important;
+}
+
+.sf-suspects-explorer-modal {
+  border: 1px solid var(--sf-border) !important;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
 }
 
 .sf-suspects-explorer-identification {

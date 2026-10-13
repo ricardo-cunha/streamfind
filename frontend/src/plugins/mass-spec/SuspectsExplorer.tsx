@@ -500,6 +500,15 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [columns, setColumns] = useState<Column[]>([]);
   const [booleanFilters, setBooleanFilters] = useState<Record<string, boolean>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
+  const [annotationSearch, setAnnotationSearch] = useState({
+    formula: '',
+    parent: '',
+  });
+  const [annotationPresence, setAnnotationPresence] = useState({
+    annotated: false,
+    estimatedFormula: false,
+    networkParent: false,
+  });
   const initialLoadComplete = useRef(false);
   const [isotopeOnly, setIsotopeOnly] = useState(false);
   const [showFiltered, setShowFiltered] = useState(false);
@@ -669,6 +678,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   const filteredSuspects = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const annotationFormulaQuery = annotationSearch.formula.trim().toLowerCase();
+    const annotationParentQuery = annotationSearch.parent.trim().toLowerCase();
     return suspects.filter((row) => {
       if (
         query &&
@@ -681,6 +692,15 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         return false;
       if (isotopeOnly && text(row, 'isotope_match').toLowerCase() !== 'true') return false;
       if (!showFiltered && text(row, 'filtered').toLowerCase() === 'true') return false;
+      const annotationCategory = text(row, 'annotation_category').trim();
+      const annotationType = text(row, 'annotation_type').trim();
+      const annotationParent = text(row, 'annotation_parent_feature').trim();
+      const estimatedFormula = text(row, 'annotation_estimated_formula').trim();
+      if (annotationPresence.annotated && !annotationCategory && !annotationType) return false;
+      if (annotationPresence.estimatedFormula && !estimatedFormula) return false;
+      if (annotationPresence.networkParent && !annotationParent) return false;
+      if (annotationFormulaQuery && !estimatedFormula.toLowerCase().includes(annotationFormulaQuery)) return false;
+      if (annotationParentQuery && !annotationParent.toLowerCase().includes(annotationParentQuery)) return false;
       return (
         filterColumns.numeric.every((column) => {
           const key = column.name;
@@ -702,7 +722,18 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         })
       );
     });
-  }, [booleanFilters, filterColumns, isotopeOnly, numericFilters, search, showFiltered, suspects, textFilters]);
+  }, [
+    annotationPresence,
+    annotationSearch,
+    booleanFilters,
+    filterColumns,
+    isotopeOnly,
+    numericFilters,
+    search,
+    showFiltered,
+    suspects,
+    textFilters,
+  ]);
 
   const featureRows = useMemo(() => {
     const unique = new Map<string, Row>();
@@ -852,6 +883,80 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
             Show filtered features
             <input type="checkbox" checked={showFiltered} onChange={(event) => setShowFiltered(event.target.checked)} />
           </label>
+          <section className="sf-suspects-explorer-filter-section" aria-labelledby="annotation-filter-heading">
+            <h3 id="annotation-filter-heading">Annotation</h3>
+            {filterColumns.text
+              .filter((column) =>
+                ['annotation_category', 'annotation_type', 'annotation_element'].includes(column.name),
+              )
+              .map((column) => (
+                <label className="sf-suspects-explorer-filter-label" key={column.name}>
+                  {filterLabel(column.name)}
+                  <select
+                    aria-label={`${filterLabel(column.name)} value`}
+                    value={textFilters[column.name] ?? ''}
+                    onChange={(event) =>
+                      setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))
+                    }
+                  >
+                    <option value="">Any</option>
+                    {getDistinctValues(suspects, column.name).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            {['annotation_estimated_formula', 'annotation_parent_feature'].map((column) => (
+              <label className="sf-suspects-explorer-filter-label" key={column}>
+                {column === 'annotation_estimated_formula' ? 'Estimated formula contains' : 'Parent feature contains'}
+                <input
+                  aria-label={
+                    column === 'annotation_estimated_formula' ? 'Estimated formula contains' : 'Parent feature contains'
+                  }
+                  value={column === 'annotation_estimated_formula' ? annotationSearch.formula : annotationSearch.parent}
+                  placeholder="Filter text…"
+                  onChange={(event) =>
+                    setAnnotationSearch((current) => ({
+                      ...current,
+                      [column === 'annotation_estimated_formula' ? 'formula' : 'parent']: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ))}
+            <label className="sf-suspects-explorer-filter-checkbox">
+              Has annotation
+              <input
+                type="checkbox"
+                checked={annotationPresence.annotated}
+                onChange={(event) =>
+                  setAnnotationPresence((current) => ({ ...current, annotated: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="sf-suspects-explorer-filter-checkbox">
+              Has estimated formula
+              <input
+                type="checkbox"
+                checked={annotationPresence.estimatedFormula}
+                onChange={(event) =>
+                  setAnnotationPresence((current) => ({ ...current, estimatedFormula: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="sf-suspects-explorer-filter-checkbox">
+              Has network parent
+              <input
+                type="checkbox"
+                checked={annotationPresence.networkParent}
+                onChange={(event) =>
+                  setAnnotationPresence((current) => ({ ...current, networkParent: event.target.checked }))
+                }
+              />
+            </label>
+          </section>
           <div className="sf-suspects-explorer-filter-list">
             {filterColumns.numeric.map((column) => {
               const key = column.name;
@@ -895,23 +1000,29 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                   />
                 </label>
               ))}
-            {filterColumns.text.map((column) => (
-              <label key={column.name}>
-                {filterLabel(column.name)}
-                <select
-                  aria-label={`${filterLabel(column.name)} value`}
-                  value={textFilters[column.name] ?? ''}
-                  onChange={(event) => setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))}
-                >
-                  <option value="">Any</option>
-                  {getDistinctValues(suspects, column.name).map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
+            {filterColumns.text
+              .filter(
+                (column) => !['annotation_category', 'annotation_type', 'annotation_element'].includes(column.name),
+              )
+              .map((column) => (
+                <label key={column.name}>
+                  {filterLabel(column.name)}
+                  <select
+                    aria-label={`${filterLabel(column.name)} value`}
+                    value={textFilters[column.name] ?? ''}
+                    onChange={(event) =>
+                      setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))
+                    }
+                  >
+                    <option value="">Any</option>
+                    {getDistinctValues(suspects, column.name).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
           </div>
         </aside>
         <div
