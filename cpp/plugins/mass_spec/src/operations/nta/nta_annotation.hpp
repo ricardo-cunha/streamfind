@@ -252,6 +252,7 @@ namespace streamfind::mass_spec::nta
         int maxGaps,
         float ppm,
         const std::vector<std::string> &isotopeElements,
+        const std::vector<std::string> &formulaElements,
         const std::vector<std::string> &modifications,
         bool useDefaultModifications,
         const std::string &debugComponent = "",

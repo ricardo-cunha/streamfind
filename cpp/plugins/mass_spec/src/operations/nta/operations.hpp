@@ -22,6 +22,9 @@ namespace streamfind::mass_spec::nta
   namespace annotate_components { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
   namespace suspect_screening { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
   namespace read_csv_suspect_targets { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
+  namespace internal_standards_to_suspects { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
+  namespace suspects_to_suspect_targets { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
+  namespace update_suspect_targets { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
   namespace find_internal_standards { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
   namespace enrich_internal_standards { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }
   namespace filter_suspects { STREAMFIND_DOMAIN_API Json run(sdk::PluginProjectAccess &, const Json &); }

@@ -6,9 +6,11 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 #include <limits>
 #include <cctype>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace streamfind::mass_spec::nta
 {
@@ -125,6 +127,208 @@ namespace streamfind::mass_spec::nta
         if (candidate.cat.empty() || candidate.type.empty())
           return "";
         return candidate.cat + " " + candidate.type;
+      }
+
+      struct FORMULA_COMPOSITION
+      {
+        std::unordered_map<std::string, int> counts;
+        double exact_mass = 0.0;
+        bool valid = false;
+      };
+
+      double formula_element_mass(const std::string &element)
+      {
+        static const std::unordered_map<std::string, double> masses = {
+            {"H", 1.00782503223}, {"C", 12.0}, {"N", 14.00307400443}, {"O", 15.99491461957},
+            {"F", 18.99840316273}, {"P", 30.97376199842}, {"S", 31.9720711744}, {"Cl", 34.968852682},
+            {"Br", 78.9183376}, {"I", 126.904468}, {"B", 11.00930536}, {"Si", 27.97692653465},
+            {"Se", 79.9165218}, {"As", 74.92159457}};
+        const auto it = masses.find(element);
+        return it == masses.end() ? 0.0 : it->second;
+      }
+
+      FORMULA_COMPOSITION parse_formula_composition(const std::string &formula)
+      {
+        FORMULA_COMPOSITION composition;
+        if (formula.empty())
+          return composition;
+
+        std::size_t cursor = 0;
+        while (cursor < formula.size())
+        {
+          if (!std::isupper(static_cast<unsigned char>(formula[cursor])))
+            return composition;
+          std::string element(1, formula[cursor++]);
+          if (cursor < formula.size() && std::islower(static_cast<unsigned char>(formula[cursor])))
+            element.push_back(formula[cursor++]);
+          const double atomic_mass = formula_element_mass(element);
+          if (atomic_mass <= 0.0)
+            return composition;
+          const std::size_t count_start = cursor;
+          while (cursor < formula.size() && std::isdigit(static_cast<unsigned char>(formula[cursor])))
+            ++cursor;
+          const int count = count_start == cursor ? 1 : std::stoi(formula.substr(count_start, cursor - count_start));
+          composition.counts[element] += count;
+          composition.exact_mass += static_cast<double>(count) * atomic_mass;
+        }
+        composition.valid = !composition.counts.empty();
+        return composition;
+      }
+
+      int formula_carbon_count(const std::string &formula)
+      {
+        const auto composition = parse_formula_composition(formula);
+        const auto it = composition.counts.find("C");
+        return it == composition.counts.end() ? 0 : it->second;
+      }
+
+      void populate_halogen_descriptors(::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
+      {
+        feature.annotation_fluorine_to_carbon = 0.0;
+        feature.annotation_hydrogen_to_fluorine = 0.0;
+        feature.annotation_fluorine_mass_percent = 0.0;
+        feature.annotation_fluorination_score = 0.0;
+        feature.annotation_chlorine_to_carbon = 0.0;
+        feature.annotation_hydrogen_to_chlorine = 0.0;
+        feature.annotation_chlorine_mass_percent = 0.0;
+        feature.annotation_bromine_to_carbon = 0.0;
+        feature.annotation_hydrogen_to_bromine = 0.0;
+        feature.annotation_bromine_mass_percent = 0.0;
+        feature.annotation_iodine_to_carbon = 0.0;
+        feature.annotation_hydrogen_to_iodine = 0.0;
+        feature.annotation_iodine_mass_percent = 0.0;
+        feature.annotation_halogenation_score = 0.0;
+
+        const auto composition = parse_formula_composition(feature.annotation_estimated_formula);
+        if (!composition.valid || composition.exact_mass <= 0.0)
+          return;
+        const auto count = [&composition](const std::string &element) {
+          const auto it = composition.counts.find(element);
+          return it == composition.counts.end() ? 0.0 : static_cast<double>(it->second);
+        };
+        const double carbon = count("C");
+        const double hydrogen = count("H");
+        const double fluorine = count("F");
+        const double chlorine = count("Cl");
+        const double bromine = count("Br");
+        const double iodine = count("I");
+        const auto ratio_to_carbon = [carbon](double value) { return carbon > 0.0 ? value / carbon : 0.0; };
+        const auto hydrogen_to = [hydrogen](double value) { return value > 0.0 ? hydrogen / value : 0.0; };
+        const auto mass_percent = [&composition](const std::string &element, double value) {
+          return 100.0 * value * formula_element_mass(element) / composition.exact_mass;
+        };
+        feature.annotation_fluorine_to_carbon = ratio_to_carbon(fluorine);
+        feature.annotation_hydrogen_to_fluorine = hydrogen_to(fluorine);
+        feature.annotation_fluorine_mass_percent = mass_percent("F", fluorine);
+        feature.annotation_fluorination_score = (carbon + fluorine) > 0.0 ? fluorine / (carbon + fluorine) : 0.0;
+        feature.annotation_chlorine_to_carbon = ratio_to_carbon(chlorine);
+        feature.annotation_hydrogen_to_chlorine = hydrogen_to(chlorine);
+        feature.annotation_chlorine_mass_percent = mass_percent("Cl", chlorine);
+        feature.annotation_bromine_to_carbon = ratio_to_carbon(bromine);
+        feature.annotation_hydrogen_to_bromine = hydrogen_to(bromine);
+        feature.annotation_bromine_mass_percent = mass_percent("Br", bromine);
+        feature.annotation_iodine_to_carbon = ratio_to_carbon(iodine);
+        feature.annotation_hydrogen_to_iodine = hydrogen_to(iodine);
+        feature.annotation_iodine_mass_percent = mass_percent("I", iodine);
+        const double halogens = fluorine + chlorine + bromine + iodine;
+        feature.annotation_halogenation_score = (carbon + halogens) > 0.0 ? halogens / (carbon + halogens) : 0.0;
+      }
+
+      std::string estimate_formula_from_mass(double mass, double estimated_carbon_count, double tolerance_ppm,
+                                             const std::vector<std::string> &formula_elements,
+                                             const std::unordered_set<std::string> &isotope_evidence)
+      {
+        if (!(mass > 0.0) || !(estimated_carbon_count >= 1.0))
+          return {};
+
+        const int estimated_carbon = std::clamp(static_cast<int>(std::lround(estimated_carbon_count)), 1, 130);
+        const int minimum_carbon = std::max(1, estimated_carbon - 2);
+        const int maximum_carbon = std::min(130, estimated_carbon + 2);
+        const std::unordered_set<std::string> allowed(formula_elements.begin(), formula_elements.end());
+        if (allowed.count("C") == 0 || allowed.count("H") == 0)
+          throw std::invalid_argument("formula_elements must include C and H");
+
+        const std::vector<std::pair<std::string, int>> maximums = {
+            {"C", maximum_carbon}, {"H", std::min(260, static_cast<int>(mass / 1.00782503223) + 1)},
+            {"N", 20}, {"O", 30}, {"P", 3}, {"S", 8}, {"F", 50}, {"Cl", 6}, {"Br", 4},
+            {"I", 2}, {"B", 4}, {"Si", 6}, {"Se", 2}, {"As", 2}};
+        std::ostringstream constraints;
+        constraints << "C:" << minimum_carbon << "-" << maximum_carbon
+                    << ";H:0-" << std::min(260, static_cast<int>(mass / 1.00782503223) + 1);
+        for (const auto &[element, maximum] : maximums)
+        {
+          if (element == "C" || element == "H" || allowed.count(element) > 0)
+          {
+            if (element != "C" && element != "H")
+              constraints << ";";
+            if (element != "C" && element != "H")
+              constraints << element << ":0-" << maximum;
+          }
+        }
+
+        const auto matches = ::streamfind::core::vendors::openbabel::formula_from_mass(
+            mass, std::max(5.0, tolerance_ppm), constraints.str());
+        const ::streamfind::core::vendors::openbabel::FormulaMatch *best = nullptr;
+        double best_score = std::numeric_limits<double>::infinity();
+        for (const auto &match : matches)
+        {
+          const auto composition = parse_formula_composition(match.formula);
+          if (!composition.valid)
+            continue;
+          const auto count = [&composition](const std::string &element) {
+            const auto it = composition.counts.find(element);
+            return it == composition.counts.end() ? 0 : it->second;
+          };
+          const int carbon_count = count("C");
+          const int hydrogen_count = count("H");
+          const int nitrogen_count = count("N");
+          const int halogen_count = count("F") + count("Cl") + count("Br") + count("I");
+          const double dbe = (2.0 * carbon_count + 2.0 + nitrogen_count - hydrogen_count - halogen_count) / 2.0;
+          if (dbe < -0.25 || dbe > 100.0 || std::abs(dbe - std::round(dbe)) > 0.25)
+            continue;
+
+          double score = std::abs(match.error_ppm) + 2.0 * std::abs(carbon_count - estimated_carbon);
+          for (const std::string &optional : {std::string("B"), std::string("Si"), std::string("Se"), std::string("As")})
+          {
+            if (count(optional) > 0)
+              score += 8.0 * count(optional);
+          }
+          for (const auto &[element, isotope_label] : std::vector<std::pair<std::string, std::string>>{
+                   {"Cl", "37Cl"}, {"Br", "81Br"}, {"I", "127I"}, {"S", "34S"}, {"Si", "29Si"}})
+          {
+            if (count(element) > 0)
+              score += isotope_evidence.count(isotope_label) > 0 ? -4.0 : 1.0;
+          }
+          if (best == nullptr || score < best_score)
+          {
+            best = &match;
+            best_score = score;
+          }
+        }
+        return best == nullptr ? std::string{} : best->formula;
+      }
+
+      bool carbon_isotope_assignment_is_plausible(
+          double mass,
+          double relative_intensity,
+          double tolerance_ppm,
+          const std::vector<std::string> &formula_elements)
+      {
+        constexpr double carbon_isotope_abundance = 0.011145;
+        if (!(mass > 0.0) || !(relative_intensity > 0.0))
+          return false;
+
+        const double estimated_carbon_count = relative_intensity / carbon_isotope_abundance;
+        // Even a pure-carbon formula cannot contain more carbon atoms than
+        // its monoisotopic mass permits. The small allowance covers ion
+        // protonation and rounding without accepting clearly spurious ratios.
+        if (estimated_carbon_count > (mass / 12.0) + 1.0)
+          return false;
+
+        std::unordered_set<std::string> no_isotope_evidence;
+        return !estimate_formula_from_mass(
+                    mass, estimated_carbon_count, tolerance_ppm, formula_elements, no_isotope_evidence)
+                    .empty();
       }
 
       double score_mass(double mass_error_ppm, double ppm)
@@ -1863,6 +2067,7 @@ namespace streamfind::mass_spec::nta
         int maxGaps,
         float ppm,
         const std::vector<std::string> &isotopeElements,
+        const std::vector<std::string> &formulaElements,
         const std::vector<std::string> &modifications,
         bool useDefaultModifications,
         const std::string &debugComponent,
@@ -1982,6 +2187,7 @@ namespace streamfind::mass_spec::nta
         int total_adducts_found = 0;
         int total_fragments_found = 0;
         int default_adducts_assigned = 0;
+        std::unordered_map<std::string, std::string> estimated_formula_cache;
 
         std::vector<std::string> component_ids;
         component_ids.reserve(component_groups.size());
@@ -2451,6 +2657,28 @@ namespace streamfind::mass_spec::nta
             }
           }
 
+          // A large M+1/M ratio can be produced by overlap, coelution, or an
+          // incorrectly selected isotope child. Do not let such a ratio turn
+          // the child into an isotope-network member when it cannot describe
+          // any plausible formula for the parent mass. The child then falls
+          // through to the polarity-specific independent base ion below.
+          for (auto candidate_it = final_candidate.begin(); candidate_it != final_candidate.end();)
+          {
+            const auto &candidate = candidate_it->second;
+            if (candidate.cat == "isotope" && candidate.element_or_delta == "13C")
+            {
+              const auto parent = fts.get_feature(candidate.parent_index);
+              if (!carbon_isotope_assignment_is_plausible(
+                      parent.mass, candidate.rel_intensity, ppm, formulaElements))
+              {
+                reserved_targets.erase(candidate_it->first);
+                candidate_it = final_candidate.erase(candidate_it);
+                continue;
+              }
+            }
+            ++candidate_it;
+          }
+
           for (int idx : sorted_indices)
           {
             auto ft = fts.get_feature(idx);
@@ -2469,6 +2697,10 @@ namespace streamfind::mass_spec::nta
               ft.annotation_expected_rel_intensity_min = 0.0;
               ft.annotation_expected_rel_intensity_max = 0.0;
               ft.annotation_score = 0.0;
+              ft.annotation_estimated_carbon_count = 0.0;
+              ft.annotation_mass_to_carbon = 0.0;
+              ft.annotation_mass_defect_to_carbon = 0.0;
+              ft.annotation_estimated_formula.clear();
               default_adducts_assigned++;
             }
             else
@@ -2485,6 +2717,10 @@ namespace streamfind::mass_spec::nta
               ft.annotation_expected_rel_intensity_min = it->second.expected_rel_intensity_min;
               ft.annotation_expected_rel_intensity_max = it->second.expected_rel_intensity_max;
               ft.annotation_score = it->second.score;
+              ft.annotation_estimated_carbon_count = 0.0;
+              ft.annotation_mass_to_carbon = 0.0;
+              ft.annotation_mass_defect_to_carbon = 0.0;
+              ft.annotation_estimated_formula.clear();
               if (it->second.cat == "isotope")
                 total_isotopes_found++;
               else if (it->second.cat == "adduct")
@@ -2492,6 +2728,51 @@ namespace streamfind::mass_spec::nta
               else if (it->second.cat == "loss")
                 total_fragments_found++;
             }
+
+            if (it == final_candidate.end() || it->second.parent_index == idx || it->second.cat != "isotope")
+            {
+              const ANNOTATION_CANDIDATE *carbon_isotope = nullptr;
+              for (const auto &[child_index, isotope_candidate] : final_candidate)
+              {
+                (void)child_index;
+                if (isotope_candidate.cat == "isotope" && isotope_candidate.parent_index == idx &&
+                    isotope_candidate.element_or_delta == "13C" &&
+                    (carbon_isotope == nullptr || isotope_candidate.mass_error_ppm < carbon_isotope->mass_error_ppm))
+                  carbon_isotope = &isotope_candidate;
+              }
+              if (carbon_isotope != nullptr && ft.intensity > 0.0 && ft.mass > 0.0)
+              {
+                constexpr double carbon_isotope_abundance = 0.011145;
+                const double estimated_carbon_count = carbon_isotope->rel_intensity / carbon_isotope_abundance;
+                if (estimated_carbon_count >= 0.5)
+                {
+                  ft.annotation_estimated_carbon_count = estimated_carbon_count;
+                  ft.annotation_mass_to_carbon = ft.mass / estimated_carbon_count;
+                  ft.annotation_mass_defect_to_carbon =
+                      (ft.mass - std::round(ft.mass)) / estimated_carbon_count;
+
+                  std::ostringstream cache_key;
+                  cache_key << std::fixed << std::setprecision(4) << ft.mass << ":" << estimated_carbon_count;
+                  const auto cached_formula = estimated_formula_cache.find(cache_key.str());
+                  if (cached_formula != estimated_formula_cache.end())
+                    ft.annotation_estimated_formula = cached_formula->second;
+                  else
+                  {
+                    std::unordered_set<std::string> isotope_evidence;
+                    for (const auto &[child_index, isotope_candidate] : final_candidate)
+                    {
+                      (void)child_index;
+                      if (isotope_candidate.cat == "isotope" && isotope_candidate.parent_index == idx)
+                        isotope_evidence.insert(isotope_candidate.element_or_delta);
+                    }
+                    ft.annotation_estimated_formula = estimate_formula_from_mass(
+                        ft.mass, estimated_carbon_count, ppm, formulaElements, isotope_evidence);
+                    estimated_formula_cache.emplace(cache_key.str(), ft.annotation_estimated_formula);
+                  }
+                }
+              }
+            }
+            populate_halogen_descriptors(ft);
             fts.set_feature(idx, ft);
           }
 
@@ -2534,6 +2815,19 @@ using Json = nlohmann::json;
                 throw Error(ErrorCode::InvalidArgument, "isotope_elements entries must be strings");
             isotope_elements.push_back(v.get<std::string>());
         }
+        std::vector<std::string> formula_elements;
+        const auto formula_elements_param = parameters.value("formula_elements", Json::array({Json("C"), Json("H"), Json("N"), Json("O"), Json("P"), Json("S"), Json("F"), Json("Cl"), Json("Br"), Json("I")}));
+        if (!formula_elements_param.is_array())
+            throw Error(ErrorCode::InvalidArgument, "formula_elements must be an array");
+        for (const auto &v : formula_elements_param)
+        {
+            if (!v.is_string())
+                throw Error(ErrorCode::InvalidArgument, "formula_elements entries must be strings");
+            formula_elements.push_back(v.get<std::string>());
+        }
+        if (std::find(formula_elements.begin(), formula_elements.end(), "C") == formula_elements.end() ||
+            std::find(formula_elements.begin(), formula_elements.end(), "H") == formula_elements.end())
+            throw Error(ErrorCode::InvalidArgument, "formula_elements must include C and H");
         std::vector<std::string> modifications;
         const bool use_default_modifications = !parameters.contains("annotation_modifications");
         if (!use_default_modifications)
@@ -2564,6 +2858,7 @@ using Json = nlohmann::json;
             sdk::DebugOptions{debug_analysis, 0.0, -1, !debug_component.empty() && !debug_analysis.empty(), false});
         ::streamfind::mass_spec::nta::annotation::annotate_components_impl(
             data, max_isotopes, max_charge, max_gaps, ppm, isotope_elements,
+            formula_elements,
             modifications, use_default_modifications,
             debug_component, debug_analysis, &debug);
         utils::detail::emit_features(access, data);

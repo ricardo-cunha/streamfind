@@ -1303,18 +1303,14 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           if (!std::isnan(db_rt_val))
             error_rt = static_cast<double>(feats.rt[fi]) - db_rt_val;
 
-          // Assign the MetFrag identification level from the in-silico
-          // MetFrag spectrum and supporting RT evidence. The supplied target
-          // fragment columns are intentionally not used by this operation.
+          // MetFrag supplies in-silico MS2 evidence, not a reference-library
+          // MS2 confirmation. Therefore it can support Cat. 3, while Cat. 1
+          // and Cat. 2 remain reserved for reference MS2 screening.
           bool rt_match  = (!std::isnan(db_rt_val) &&
                            std::abs(static_cast<double>(feats.rt[fi]) - db_rt_val) <= params.sec);
           bool ms2_match = (shared > 0);
           int  id_level  = 4;
-          const bool has_structure = target &&
-              (!target->SMILES.empty() || !target->InChI.empty() || !target->InChIKey.empty());
-          if      (rt_match && ms2_match) id_level = 1;
-          else if (ms2_match)             id_level = 2;
-          else if (has_structure || rt_match) id_level = 3;
+          if (ms2_match || rt_match) id_level = 3;
 
           // Populate SUSPECT.
           ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW s;

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -124,7 +125,7 @@ namespace streamfind::mass_spec::target_csv
                 throw std::invalid_argument(std::string("CSV columns '") + mz_column + "' and '" + int_column + "' must have equal lengths");
         }
 
-        void normalize_structure(nlohmann::json &row, bool suspect_targets)
+        void normalize_structure(nlohmann::json &row, bool suspect_targets, std::size_t row_index)
         {
             rename_alias(row, "smiles", "SMILES");
             rename_alias(row, "inchi", "InChI");
@@ -162,10 +163,21 @@ namespace streamfind::mass_spec::target_csv
                                          structure.exact_mass * 1e6;
                 if (error_ppm > mass_tolerance_ppm)
                 {
-                    throw std::invalid_argument(
-                        "Supplied mass does not agree with the structure-derived exact mass " +
-                        std::to_string(structure.exact_mass) + " within " +
-                        std::to_string(mass_tolerance_ppm) + " ppm");
+                    std::ostringstream message;
+                    message << std::setprecision(12)
+                            << "CSV row " << (row_index + 2);
+                    if (row.contains("name") && row.at("name").is_string() && !row.at("name").get<std::string>().empty())
+                        message << " (" << row.at("name").get<std::string>() << ")";
+                    message << ": supplied mass " << supplied_exact_mass
+                            << " Da does not agree with the structure-derived exact mass "
+                            << structure.exact_mass << " Da (" << error_ppm << " ppm; tolerance "
+                            << mass_tolerance_ppm << " ppm)."
+                            << " Supplied SMILES: " << (smiles.empty() ? "<empty>" : smiles)
+                            << ". Supplied InChI: " << (inchi.empty() ? "<empty>" : inchi)
+                            << ". Open Babel parsed formula: " << structure.formula
+                            << ", canonical SMILES: " << structure.canonical_smiles
+                            << ", canonical InChIKey: " << structure.inchikey;
+                    throw std::invalid_argument(message.str());
                 }
             }
             row["SMILES"] = structure.canonical_smiles;
@@ -178,7 +190,7 @@ namespace streamfind::mass_spec::target_csv
 
         nlohmann::json canonical_row(nlohmann::json row, bool suspect_targets, std::size_t index)
         {
-            normalize_structure(row, suspect_targets);
+            normalize_structure(row, suspect_targets, index);
             if (!present(row, "mass") && !present(row, "mz"))
                 throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires mass or mz");
             if (suspect_targets)

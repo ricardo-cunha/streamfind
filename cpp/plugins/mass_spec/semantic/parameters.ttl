@@ -619,6 +619,18 @@ sfms:isotopeElementsParameter
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" .
 
+sfms:formulaElementsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Formula elements" ;
+    skos:definition "Allowed elemental symbols for estimated formula generation in annotate_components. The default is an organic non-target screening set. Boron, silicon, selenium, and arsenic can be added explicitly when the sample context supports them. C and H are required." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[\"C\",\"H\",\"N\",\"O\",\"P\",\"S\",\"F\",\"Cl\",\"Br\",\"I\"]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"C\",\"H\",\"N\",\"O\",\"P\",\"S\",\"F\",\"Cl\",\"Br\",\"I\",\"Si\"]" .
+
 sfms:annotationModificationsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

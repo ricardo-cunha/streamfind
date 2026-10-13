@@ -380,6 +380,7 @@
           "Cl:0-6",
           "Br:0-4"
         ],
+        "formula_elements": ["C", "H", "N", "O", "P", "S", "F", "Cl", "Br", "I"],
         "max_charge": 1,
         "max_gaps": 1,
         "max_isotopes": 8,
