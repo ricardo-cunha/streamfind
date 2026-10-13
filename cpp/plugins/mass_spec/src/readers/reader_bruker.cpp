@@ -94,6 +94,87 @@ std::vector<std::uint8_t> decode_hex_blob(const std::string &value)
   return bytes;
 }
 
+std::vector<std::uint8_t> value_blob(duckdb_result &result, const idx_t column, const idx_t row)
+{
+  const auto blob = duckdb_value_blob(&result, column, row);
+  if (blob.size > 0 && blob.data == nullptr)
+    throw std::runtime_error("Unable to read Bruker chromatogram blob.");
+  std::vector<std::uint8_t> bytes(blob.size);
+  if (blob.size > 0)
+    std::memcpy(bytes.data(), blob.data, blob.size);
+  if (blob.data != nullptr)
+    duckdb_free(blob.data);
+  return bytes;
+}
+
+std::string bruker_chromatogram_channel(const std::string &description)
+{
+  const auto prefix = description.find("DAD: ");
+  if (prefix != std::string::npos)
+  {
+    const auto begin = prefix + 5;
+    const auto end = description.find(',', begin);
+    return description.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+  }
+  const auto unit = description.find(" - [");
+  return unit == std::string::npos ? description : description.substr(0, unit);
+}
+
+float bruker_chromatogram_wavelength(const std::string &description)
+{
+  const auto nm = description.find(" nm");
+  if (nm == std::string::npos)
+    return std::numeric_limits<float>::quiet_NaN();
+  const auto comma = description.rfind(',', nm);
+  if (comma == std::string::npos)
+    return std::numeric_limits<float>::quiet_NaN();
+  const auto begin = description.find_first_of("0123456789.", comma);
+  if (begin == std::string::npos || begin >= nm)
+    return std::numeric_limits<float>::quiet_NaN();
+  try
+  {
+    return std::stof(description.substr(begin, nm - begin));
+  }
+  catch (const std::exception &)
+  {
+    return std::numeric_limits<float>::quiet_NaN();
+  }
+}
+
+std::string bruker_chromatogram_units(const std::string &description)
+{
+  const auto begin = description.find('[');
+  const auto end = begin == std::string::npos ? std::string::npos : description.find(']', begin + 1);
+  if (begin != std::string::npos && end != std::string::npos && end > begin + 1)
+    return description.substr(begin + 1, end - begin - 1);
+  if (description.rfind("BPC", 0) == 0)
+    return "counts";
+  return {};
+}
+
+void classify_bruker_chromatogram(BrukerChromatogram &chromatogram)
+{
+  if (chromatogram.description.rfind("DAD:", 0) == 0)
+  {
+    chromatogram.signal_type = "UV";
+    chromatogram.chromatogram_type = "UV Trace";
+    chromatogram.detector = "DAD";
+  }
+  else if (chromatogram.description.rfind("BPC", 0) == 0)
+  {
+    chromatogram.signal_type = "MS";
+    chromatogram.chromatogram_type = "BPC";
+    chromatogram.detector = chromatogram.instrument;
+  }
+  else
+  {
+    chromatogram.signal_type = "Analog";
+    chromatogram.chromatogram_type = "Analog Trace";
+    chromatogram.detector = chromatogram.instrument;
+  }
+  chromatogram.units = bruker_chromatogram_units(chromatogram.description);
+}
+
 double read_le_double(const std::vector<std::uint8_t> &bytes, const std::size_t offset)
 {
   if (offset + sizeof(double) > bytes.size()) throw std::runtime_error("Truncated Bruker transformator blob.");
@@ -426,6 +507,67 @@ std::vector<BafSpectrumMetadata> read_baf_spectra_metadata(const std::string &pa
   return spectra;
 }
 
+std::vector<BrukerChromatogram> read_chromatograms(const std::string &path)
+{
+  const auto database_path = std::filesystem::path(path) / "chromatography-data.sqlite";
+  if (!std::filesystem::is_regular_file(database_path))
+    return {};
+
+  detail::SqliteScan database(database_path.string());
+  auto sources = database.query("SELECT Id,Description,Instrument,InstrumentId FROM " +
+                                database.scan("TraceSources") +
+                                " ORDER BY Id");
+  std::vector<BrukerChromatogram> chromatograms;
+  chromatograms.reserve(duckdb_row_count(&sources));
+  for (idx_t row = 0; row < duckdb_row_count(&sources); ++row)
+  {
+    BrukerChromatogram chromatogram;
+    chromatogram.source_id = static_cast<std::int32_t>(duckdb_value_int64(&sources, 0, row));
+    chromatogram.description = detail::value_string(sources, 1, row);
+    chromatogram.instrument = detail::value_string(sources, 2, row);
+    chromatogram.instrument_id = detail::value_string(sources, 3, row);
+    chromatogram.channel = detail::bruker_chromatogram_channel(chromatogram.description);
+    chromatogram.wavelength_nm = detail::bruker_chromatogram_wavelength(chromatogram.description);
+    detail::classify_bruker_chromatogram(chromatogram);
+
+    auto chunks = database.query("SELECT Times,Intensities FROM " + database.scan("TraceChunks") +
+                                 " WHERE Trace=" + std::to_string(chromatogram.source_id) +
+                                 " ORDER BY rowid");
+    for (idx_t chunk = 0; chunk < duckdb_row_count(&chunks); ++chunk)
+    {
+      const auto times = detail::value_blob(chunks, 0, chunk);
+      const auto intensities = detail::value_blob(chunks, 1, chunk);
+      if (times.size() % sizeof(double) != 0 || intensities.size() % sizeof(float) != 0 ||
+          times.size() / sizeof(double) != intensities.size() / sizeof(float))
+      {
+        duckdb_destroy_result(&chunks);
+        duckdb_destroy_result(&sources);
+        throw std::runtime_error("Mismatched Bruker chromatogram time and intensity arrays.");
+      }
+      const auto point_count = times.size() / sizeof(double);
+      for (std::size_t point = 0; point < point_count; ++point)
+      {
+        double time = 0.0;
+        float intensity = 0.0f;
+        std::memcpy(&time, times.data() + point * sizeof(double), sizeof(time));
+        std::memcpy(&intensity, intensities.data() + point * sizeof(float), sizeof(intensity));
+        if (!std::isfinite(time) || !std::isfinite(intensity))
+        {
+          duckdb_destroy_result(&chunks);
+          duckdb_destroy_result(&sources);
+          throw std::runtime_error("Non-finite Bruker chromatogram point.");
+        }
+        chromatogram.time.push_back(static_cast<float>(time));
+        chromatogram.intensity.push_back(intensity);
+      }
+    }
+    duckdb_destroy_result(&chunks);
+    chromatograms.push_back(std::move(chromatogram));
+  }
+  duckdb_destroy_result(&sources);
+  return chromatograms;
+}
+
 namespace detail
 {
 class BafBitReader
@@ -611,12 +753,74 @@ BafProfileSpectrum read_baf_profile_spectrum(const std::string &path, const std:
   }
 }
 
+namespace detail
+{
+std::vector<int> normalize_chromatogram_indices(const std::vector<BrukerChromatogram> &chromatograms,
+                                                std::vector<int> indices)
+{
+  if (indices.empty())
+  {
+    indices.resize(chromatograms.size());
+    std::iota(indices.begin(), indices.end(), 0);
+  }
+  return indices;
+}
+
+MASS_SPEC_CHROMATOGRAMS_HEADERS make_chromatogram_headers(const std::vector<BrukerChromatogram> &chromatograms,
+                                                          std::vector<int> indices)
+{
+  indices = normalize_chromatogram_indices(chromatograms, std::move(indices));
+  MASS_SPEC_CHROMATOGRAMS_HEADERS headers;
+  headers.resize_all(static_cast<int>(indices.size()));
+  for (std::size_t output = 0; output < indices.size(); ++output)
+  {
+    const auto index = indices[output];
+    if (index < 0 || static_cast<std::size_t>(index) >= chromatograms.size())
+      throw std::out_of_range("Bruker chromatogram index is outside the available traces.");
+    const auto &chromatogram = chromatograms[static_cast<std::size_t>(index)];
+    headers.index[output] = index;
+    headers.chromatogram_id[output] = chromatogram.description;
+    headers.array_length[output] = static_cast<int>(std::min(chromatogram.time.size(), chromatogram.intensity.size()));
+    headers.signal_type[output] = chromatogram.signal_type;
+    headers.chromatogram_type[output] = chromatogram.chromatogram_type;
+    headers.detector[output] = chromatogram.detector;
+    headers.channel[output] = chromatogram.channel;
+    headers.units[output] = chromatogram.units;
+    headers.wavelength_nm[output] = chromatogram.wavelength_nm;
+    if (headers.array_length[output] > 1)
+      headers.interval_ms[output] = (chromatogram.time[1] - chromatogram.time[0]) * 1000.0f;
+    if (headers.array_length[output] > 0)
+    {
+      headers.start_time[output] = chromatogram.time.front();
+      headers.end_time[output] = chromatogram.time[static_cast<std::size_t>(headers.array_length[output] - 1)];
+    }
+  }
+  return headers;
+}
+
+std::vector<std::vector<std::vector<float>>> make_chromatogram_arrays(const std::vector<BrukerChromatogram> &chromatograms,
+                                                                       std::vector<int> indices)
+{
+  indices = normalize_chromatogram_indices(chromatograms, std::move(indices));
+  std::vector<std::vector<std::vector<float>>> arrays;
+  arrays.reserve(indices.size());
+  for (const auto index : indices)
+  {
+    if (index < 0 || static_cast<std::size_t>(index) >= chromatograms.size())
+      throw std::out_of_range("Bruker chromatogram index is outside the available traces.");
+    const auto &chromatogram = chromatograms[static_cast<std::size_t>(index)];
+    arrays.push_back({chromatogram.time, chromatogram.intensity});
+  }
+  return arrays;
+}
+}
+
 class TsfReader final : public MASS_SPEC_READER
 {
 public:
-  explicit TsfReader(const std::string &file) : MASS_SPEC_READER(file), frames_(read_tsf_frames(file)), msms_(read_tsf_msms_info(file)) {}
+  explicit TsfReader(const std::string &file) : MASS_SPEC_READER(file), frames_(read_tsf_frames(file)), msms_(read_tsf_msms_info(file)), chromatograms_(read_chromatograms(file)) {}
   int get_number_spectra() override { return static_cast<int>(frames_.size()); }
-  int get_number_chromatograms() override { return 0; }
+  int get_number_chromatograms() override { return static_cast<int>(chromatograms_.size()); }
   int get_number_spectra_binary_arrays() override { return static_cast<int>(frames_.size() * 2); }
   std::string get_format() override { return "BrukerTSF"; }
   std::string get_type() override { return "MS"; }
@@ -632,7 +836,7 @@ public:
   bool has_ion_mobility() override { return false; }
   MASS_SPEC_SUMMARY get_summary() override
   {
-    MASS_SPEC_SUMMARY s{}; s.number_spectra = get_number_spectra(); s.number_chromatograms = 0;
+    MASS_SPEC_SUMMARY s{}; s.number_spectra = get_number_spectra(); s.number_chromatograms = get_number_chromatograms();
     s.number_spectra_binary_arrays = get_number_spectra_binary_arrays(); s.format = get_format(); s.type = get_type();
     s.min_mz = get_min_mz(); s.max_mz = get_max_mz(); s.start_rt = get_start_rt(); s.end_rt = get_end_rt();
     s.has_ion_mobility = false; s.polarity = get_polarity(); s.mode = get_mode(); s.level = get_level(); s.configuration = get_configuration(); return s;
@@ -663,9 +867,9 @@ public:
     for (std::size_t n = 0; n < selected.size(); ++n) { const auto &f = frames_.at(selected[n]); out.index[n] = static_cast<int>(selected[n]); out.scan[n] = static_cast<int>(f.id); out.array_length[n] = f.num_peaks; out.level[n] = f.msms_type == 0 ? 1 : 2; out.mode[n] = 1; out.polarity[n] = f.polarity == "+" ? 1 : f.polarity == "-" ? -1 : 0; out.lowmz[n] = 95.0f; out.highmz[n] = 2505.0f; out.bpint[n] = static_cast<float>(f.max_intensity); out.tic[n] = static_cast<float>(f.summed_intensities); out.rt[n] = static_cast<float>(f.retention_time); const auto *i = find_msms(f.id); if (i) { out.precursor_mz[n] = static_cast<float>(i->trigger_mass); out.window_mz[n] = static_cast<float>(i->trigger_mass); out.window_mzlow[n] = static_cast<float>(i->trigger_mass - i->isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(i->trigger_mass + i->isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(i->collision_energy); out.precursor_charge[n] = i->precursor_charge; } }
     return out;
   }
-  MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> = {}) override { return {}; }
+  MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> indices = {}) override { return detail::make_chromatogram_headers(chromatograms_, std::move(indices)); }
   std::vector<std::vector<std::vector<float>>> get_spectra(std::vector<int> indices = {}) override { std::vector<std::vector<std::vector<float>>> out; for (const auto i : normalize(indices)) out.push_back(get_spectrum(i).binary_data); return out; }
-  std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> = {}) override { return {}; }
+  std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> indices = {}) override { return detail::make_chromatogram_arrays(chromatograms_, std::move(indices)); }
   std::vector<std::vector<std::string>> get_software() override { return {}; }
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
@@ -680,7 +884,7 @@ private:
   template <typename F> std::vector<int> metadata_int(F f) const { return values({}, f); }
   const TsfMsMsInfo *find_msms(std::int64_t frame) const { for (const auto &i : msms_) if (i.frame == frame) return &i; return nullptr; }
   float base_peak_mz(const TsfFrame &frame) const { const auto raw = read_tsf_line_spectrum(file_, frame); const auto cal = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(cal, frame.t1, frame.t2, raw.tof); const auto it = std::max_element(raw.intensity.begin(), raw.intensity.end()); return it == raw.intensity.end() ? 0.0f : static_cast<float>(mz[static_cast<std::size_t>(std::distance(raw.intensity.begin(), it))]); }
-  std::vector<TsfFrame> frames_; std::vector<TsfMsMsInfo> msms_;
+  std::vector<TsfFrame> frames_; std::vector<TsfMsMsInfo> msms_; std::vector<BrukerChromatogram> chromatograms_;
 };
 
 std::unique_ptr<MASS_SPEC_READER> create_tsf_reader(const std::string &path)
@@ -705,13 +909,13 @@ std::size_t baf_profile_point_count(const std::string &path, const std::uint64_t
 class BafReader final : public MASS_SPEC_READER
 {
 public:
-  explicit BafReader(const std::string &file) : MASS_SPEC_READER(file), spectra_(read_baf_spectra_metadata(file))
+  explicit BafReader(const std::string &file) : MASS_SPEC_READER(file), spectra_(read_baf_spectra_metadata(file)), chromatograms_(read_chromatograms(file))
   {
     if (spectra_.empty())
       throw std::runtime_error("Bruker BAF contains no spectra.");
   }
   int get_number_spectra() override { return static_cast<int>(spectra_.size()); }
-  int get_number_chromatograms() override { return 0; }
+  int get_number_chromatograms() override { return static_cast<int>(chromatograms_.size()); }
   int get_number_spectra_binary_arrays() override { return static_cast<int>(spectra_.size() * 2); }
   std::string get_format() override { return "BrukerBAF"; }
   std::string get_type() override { return "MS"; }
@@ -727,7 +931,7 @@ public:
   bool has_ion_mobility() override { return false; }
   MASS_SPEC_SUMMARY get_summary() override
   {
-    MASS_SPEC_SUMMARY s{}; s.number_spectra = get_number_spectra(); s.number_chromatograms = 0;
+    MASS_SPEC_SUMMARY s{}; s.number_spectra = get_number_spectra(); s.number_chromatograms = get_number_chromatograms();
     s.number_spectra_binary_arrays = get_number_spectra_binary_arrays(); s.format = get_format(); s.type = get_type();
     s.min_mz = get_min_mz(); s.max_mz = get_max_mz(); s.start_rt = get_start_rt(); s.end_rt = get_end_rt();
     s.has_ion_mobility = false; s.polarity = get_polarity(); s.mode = get_mode(); s.level = get_level(); s.configuration = get_configuration(); return s;
@@ -765,9 +969,9 @@ public:
     }
     return out;
   }
-  MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> = {}) override { return {}; }
+  MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> indices = {}) override { return detail::make_chromatogram_headers(chromatograms_, std::move(indices)); }
   std::vector<std::vector<std::vector<float>>> get_spectra(std::vector<int> indices = {}) override { std::vector<std::vector<std::vector<float>>> out; for (const auto i : normalize(indices)) out.push_back(get_spectrum(static_cast<int>(i)).binary_data); return out; }
-  std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> = {}) override { return {}; }
+  std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> indices = {}) override { return detail::make_chromatogram_arrays(chromatograms_, std::move(indices)); }
   std::vector<std::vector<std::string>> get_software() override { return {}; }
   std::vector<std::vector<std::string>> get_hardware() override { return {}; }
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
@@ -836,7 +1040,7 @@ private:
     }
     return 0.0f;
   }
-  std::vector<BafSpectrumMetadata> spectra_;
+  std::vector<BafSpectrumMetadata> spectra_; std::vector<BrukerChromatogram> chromatograms_;
 };
 
 std::unique_ptr<MASS_SPEC_READER> create_baf_reader(const std::string &path)
