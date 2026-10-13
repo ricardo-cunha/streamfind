@@ -1521,6 +1521,8 @@ export default function CanvasShell({
       const paths =
         parameter.path_kind === 'directory'
           ? await client.pickFolders()
+          : parameter.path_kind === 'file-output'
+            ? [await client.pickSaveFile()]
           : await client.pickFiles(fileParameterExtensions(parameter));
       if (paths[0]) updateNodeParameter(node.id, parameter.name, paths[0]);
     } catch (error) {

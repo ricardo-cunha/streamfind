@@ -298,6 +298,53 @@
   width: 100%;
 }
 
+.sf-suspect-fragment-arrays {
+  position: relative;
+  z-index: 2;
+  clear: both;
+  width: 100%;
+  margin-top: 56px;
+  padding-top: 18px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.sf-suspect-fragment-arrays h3 {
+  margin: 0 0 12px;
+}
+
+.sf-suspect-fragment-array-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sf-suspect-fragment-array {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.sf-suspect-fragment-array span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.sf-suspect-fragment-array code {
+  margin: 0;
+  color: var(--sf-text);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .sf-suspect-modal-backdrop {
   position: fixed;
   z-index: 1000;
@@ -346,10 +393,15 @@
   margin: 0;
 }
 
-/* Keep suspect details consistent with the borderless explorer modal. */
-.sf-suspect-modal,
+/* Keep the inner detail surface borderless while retaining the modal frame. */
 .sf-suspect-modal * {
   border: 0 !important;
+}
+
+.sf-suspect-modal {
+  border: 1px solid var(--sf-border) !important;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
 }
 
 .sf-suspect-modal-close {

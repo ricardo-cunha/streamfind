@@ -314,7 +314,11 @@ export class StreamFindApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ producer_instance: producerInstance }),
     });
-    if (!response.ok) throw new Error(`Node artifact cleanup failed (${response.status})`);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
+      const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
+      throw new Error(`Node artifact cleanup failed (${response.status})${detail}`);
+    }
   }
 
   async artifactData(sessionId: string, request: ArtifactDataRequest): Promise<ArtifactDataResponse> {
@@ -441,6 +445,13 @@ export class StreamFindApiClient {
     const result = (await response.json()) as { paths?: string[]; error?: string };
     if (!response.ok || !result.paths) throw new Error(result.error || `File selection failed (${response.status})`);
     return result.paths;
+  }
+
+  async pickSaveFile(): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/projects/file-picker/save-file`, { method: 'POST' });
+    const result = (await response.json()) as { path?: string; error?: string };
+    if (!response.ok || !result.path) throw new Error(result.error || `Output file selection failed (${response.status})`);
+    return result.path;
   }
 
   async pickFolders(): Promise<string[]> {

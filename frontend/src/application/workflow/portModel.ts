@@ -179,11 +179,17 @@ export function portMatchesParameter(sourcePort: NodePort, parameter: Capability
 }
 
 export function portMatchesPort(sourcePort: NodePort, targetPort: NodePort): boolean {
+  const dynamicTableConnection =
+    (targetPort.semanticContract === 'anyTable' ||
+      sourcePort.semanticContract === 'anyTable') &&
+    targetPort.dataKind === 'duckdb_table' &&
+    sourcePort.dataKind === 'duckdb_table';
+  const typeCompatible = dynamicTableConnection || sourcePort.typeKey === targetPort.typeKey;
   return (
     Boolean(sourcePort.semanticContract) &&
-    sourcePort.semanticContract === targetPort.semanticContract &&
+    (sourcePort.semanticContract === targetPort.semanticContract || dynamicTableConnection) &&
     sourcePort.typeKey !== 'unknown' &&
     targetPort.typeKey !== 'unknown' &&
-    sourcePort.typeKey === targetPort.typeKey
+    typeCompatible
   );
 }

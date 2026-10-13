@@ -180,7 +180,7 @@ export type CapabilityParameter = {
   description?: string;
   required?: boolean;
   extensions?: string[];
-  path_kind?: 'file' | 'directory' | 'file-or-directory';
+  path_kind?: 'file' | 'file-output' | 'directory' | 'file-or-directory';
   directory_extensions?: string[];
   schema: JsonSchema;
   default?: JsonValue;
