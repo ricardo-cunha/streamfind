@@ -190,6 +190,25 @@ std::string pick_database_file(bool create) {
     return result;
 }
 
+std::string pick_csv_output_file() {
+    wchar_t filename[MAX_PATH]{};
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = GetForegroundWindow();
+    dialog.lpstrFile = filename;
+    dialog.nMaxFile = MAX_PATH;
+    dialog.lpstrFilter = L"CSV files\0*.csv\0All files\0*.*\0";
+    dialog.nFilterIndex = 1;
+    dialog.lpstrDefExt = L"csv";
+    dialog.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
+    if (!GetSaveFileNameW(&dialog)) throw std::invalid_argument("CSV output file selection cancelled");
+    const int size = WideCharToMultiByte(CP_UTF8, 0, filename, -1, nullptr, 0, nullptr, nullptr);
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, filename, -1, result.data(), size, nullptr, nullptr);
+    result.pop_back();
+    return result;
+}
+
 std::string utf8(const std::wstring &value) {
     const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
     std::string result(static_cast<std::size_t>(size), '\0');
@@ -883,6 +902,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 for (const auto &extension : input.value("extensions", Json::array())) extensions.push_back(extension.get<std::string>());
                 if (extensions.empty()) throw std::invalid_argument("at least one file extension is required");
                 detail::send_http(socket, 200, Json{{"paths", detail::pick_files(extensions)}});
+#else
+                detail::send_http(socket, 501, Json{{"error", "native file picker is only available on Windows"}});
+#endif
+            } else if (method == "POST" && path == "/projects/file-picker/save-file") {
+#ifdef _WIN32
+                detail::send_http(socket, 200, Json{{"path", detail::pick_csv_output_file()}});
 #else
                 detail::send_http(socket, 501, Json{{"error", "native file picker is only available on Windows"}});
 #endif

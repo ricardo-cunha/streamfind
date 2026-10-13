@@ -24,6 +24,16 @@ sfcore:filePathColumn
     sf:pathKind "file-or-directory" ;
     sf:storageType "VARCHAR" .
 
+sfcore:stringColumn
+    a sf:Column ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "String" ;
+    skos:definition "A generic string value used in dynamic table operation parameters." ;
+    sf:columnName "value" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
 sfcore:projectWorkflowColumn
     a sf:Column ;
     sf:availableInDomain sfcore:streamfind ;

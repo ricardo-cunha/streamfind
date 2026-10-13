@@ -64,6 +64,65 @@ struct STREAMFIND_CORE_API TableSchema {
     static TableSchema from_json(const Json &value);
 };
 
+/** @brief Runtime metadata for one column of a persisted DuckDB table. */
+struct STREAMFIND_CORE_API RuntimeTableColumn {
+    std::string name;
+    std::string duckdb_type;
+    ParameterType type{ParameterType::string};
+    bool nullable{true};
+    Json metadata = Json::object();
+};
+
+/** @brief Shared contract representation for static and runtime-resolved tables. */
+class STREAMFIND_CORE_API TableContract {
+public:
+    enum class Kind { static_schema, dynamic_schema };
+
+    virtual ~TableContract() = default;
+    virtual Kind kind() const noexcept = 0;
+    virtual bool accepts(const TableContract &provided) const noexcept;
+
+    const std::string &id() const noexcept { return id_; }
+    const std::string &table_name() const noexcept { return table_name_; }
+    const std::vector<RuntimeTableColumn> &columns() const noexcept { return columns_; }
+    const std::optional<TableSchema> &schema() const noexcept { return schema_; }
+    Json to_json() const;
+
+protected:
+    TableContract(std::string id, std::string table_name,
+                  std::vector<RuntimeTableColumn> columns,
+                  std::optional<TableSchema> schema);
+    std::string id_;
+    std::string table_name_;
+    std::vector<RuntimeTableColumn> columns_;
+    std::optional<TableSchema> schema_;
+};
+
+/** @brief Ontology-defined table contract with a fixed schema. */
+class STREAMFIND_CORE_API StaticTableContract final : public TableContract {
+public:
+    StaticTableContract(std::string id, std::string table_name, TableSchema schema);
+    Kind kind() const noexcept override { return Kind::static_schema; }
+};
+
+/** @brief Schema-free table contract resolved from a physical DuckDB table. */
+class STREAMFIND_CORE_API DynamicTableContract final : public TableContract {
+public:
+    DynamicTableContract(std::string id, std::string table_name,
+                         std::vector<RuntimeTableColumn> columns);
+    Kind kind() const noexcept override { return Kind::dynamic_schema; }
+};
+
+/** @brief Inspect a physical table and resolve its runtime contract. */
+STREAMFIND_CORE_API DynamicTableContract inspect_dynamic_table_contract(
+    const Project &project, const std::string &physical_table,
+    const std::string &contract_id = "anyTable");
+
+/** @brief Central compatibility rule for workflow table contracts. */
+STREAMFIND_CORE_API bool table_contracts_compatible(
+    std::string_view provided_contract, std::string_view required_contract,
+    std::string_view provided_data_kind, std::string_view required_data_kind) noexcept;
+
 /** @brief One typed, column-oriented table value. */
 struct STREAMFIND_CORE_API TableColumn {
     /// Column name.
@@ -248,6 +307,8 @@ struct STREAMFIND_CORE_API OperationDefinition {
         std::string data_kind;
         std::vector<std::string> representations;
         bool optional{false};
+        /// Generated JSON schema used for runtime validation of dynamic tables.
+        Json schema = Json::object();
 
         Json to_json() const;
         static Port from_json(const Json &value);

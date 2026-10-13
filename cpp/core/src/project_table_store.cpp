@@ -539,8 +539,13 @@ std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
     const std::string physical_table = "ARTIFACT_" + token;
     std::vector<std::string> definitions;
     for (const auto &column : columns) {
-        const auto name = detail::manifest_identifier(column.at("name").get<std::string>());
-        definitions.push_back(name + " " + detail::manifest_sql_type(column));
+        const auto name = column.at("name").get<std::string>();
+        if (name.empty() || name.find('\0') != std::string::npos)
+            throw Error(ErrorCode::InvalidArgument, "invalid dynamic table column name");
+        std::string quoted_name = "\"";
+        for (const char character : name)
+            quoted_name += character == '\"' ? "\"\"" : std::string(1, character);
+        definitions.push_back(quoted_name + "\" " + detail::manifest_sql_type(column));
     }
     std::string ddl = "CREATE TABLE " + physical_table + " (";
     for (std::size_t index = 0; index < definitions.size(); ++index) {

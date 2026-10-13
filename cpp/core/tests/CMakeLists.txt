@@ -39,6 +39,14 @@ add_executable(streamfind_dynamic_schema_contract unit/dynamic_schema_contract.c
 target_link_libraries(streamfind_dynamic_schema_contract PRIVATE streamfind::cpp_core)
 add_test(NAME streamfind_dynamic_schema_contract COMMAND streamfind_dynamic_schema_contract)
 set_tests_properties(streamfind_dynamic_schema_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_table_contract_contract unit/table_contract_contract.cpp)
+target_link_libraries(streamfind_table_contract_contract PRIVATE streamfind::cpp_core)
+target_compile_definitions(streamfind_table_contract_contract PRIVATE
+    STREAMFIND_CATALOGUE_PATH="${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
+)
+add_test(NAME streamfind_table_contract_contract COMMAND streamfind_table_contract_contract)
+set_tests_properties(streamfind_table_contract_contract PROPERTIES LABELS "framework")
 add_library(streamfind_stage9_fixture SHARED fixtures/dynamic_plugin.cpp)
 target_include_directories(streamfind_stage9_fixture PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../sdk/include)

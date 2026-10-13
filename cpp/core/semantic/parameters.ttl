@@ -104,6 +104,42 @@ sfcore:pathsParameter
     sf:items sfcore:filePathColumn ;
     sf:example "[\"data/sample.wiff\",\"data/batch.d\"]" .
 
+sfcore:csvPathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "CSV output path" ;
+    skos:definition "Filesystem path where a connected table is written as a UTF-8 CSV file, including a header row." ;
+    sf:type "string" ;
+    sf:pathKind "file-output" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "results/features.csv" .
+
+sfcore:csvInputPathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "CSV input path" ;
+    skos:definition "Filesystem path of a UTF-8 CSV file with a header row to import as a runtime AnyTable." ;
+    sf:type "string" ;
+    sf:pathKind "file" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "data/features.csv" .
+
+sfcore:rowKeyColumnsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Row key columns" ;
+    skos:definition "One or more columns that uniquely identify and align rows in both tables for horizontal binding." ;
+    sf:type "array" ;
+    sf:items sfcore:stringColumn ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[\"sample_id\",\"feature_id\"]" .
+
 sfcore:destinationDatabasePathParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;

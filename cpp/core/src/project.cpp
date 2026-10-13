@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 
@@ -620,6 +621,147 @@ namespace streamfind
         return schema;
     }
 
+    TableContract::TableContract(std::string id, std::string table_name,
+                                 std::vector<RuntimeTableColumn> columns,
+                                 std::optional<TableSchema> schema)
+        : id_(std::move(id)), table_name_(std::move(table_name)),
+          columns_(std::move(columns)), schema_(std::move(schema)) {}
+
+    bool TableContract::accepts(const TableContract &provided) const noexcept
+    {
+        if (kind() == Kind::dynamic_schema)
+            return true;
+        if (provided.kind() == Kind::dynamic_schema || !schema_ || !provided.schema_)
+            return false;
+        for (const auto &required : schema_->columns) {
+            const auto found = std::find_if(provided.schema_->columns.begin(), provided.schema_->columns.end(),
+                [&](const auto &column) { return column.name == required.name; });
+            if (found == provided.schema_->columns.end()) {
+                if (required.required) return false;
+                continue;
+            }
+            if (found->type != required.type)
+                return false;
+        }
+        return true;
+    }
+
+    Json TableContract::to_json() const
+    {
+        Json output = {{"id", id_}, {"table_name", table_name_},
+                       {"kind", kind() == Kind::dynamic_schema ? "dynamic" : "static"},
+                       {"columns", Json::array()}};
+        for (const auto &column : columns_)
+            output["columns"].push_back({{"name", column.name},
+                                          {"duckdb_type", column.duckdb_type},
+                                          {"type", detail::parameter_type_name(column.type)},
+                                          {"nullable", column.nullable},
+                                          {"metadata", column.metadata}});
+        if (schema_) output["schema"] = schema_->to_json();
+        return output;
+    }
+
+    StaticTableContract::StaticTableContract(std::string id, std::string table_name,
+                                             TableSchema schema)
+        : TableContract(std::move(id), std::move(table_name), {}, std::move(schema))
+    {
+        for (const auto &column : schema_->columns)
+            columns_.push_back({column.name, {}, column.type, !column.required, Json::object()});
+    }
+
+    DynamicTableContract::DynamicTableContract(std::string id, std::string table_name,
+                                               std::vector<RuntimeTableColumn> columns)
+        : TableContract(std::move(id), std::move(table_name), std::move(columns), std::nullopt) {}
+
+    bool table_contracts_compatible(std::string_view provided_contract,
+                                    std::string_view required_contract,
+                                    std::string_view provided_data_kind,
+                                    std::string_view required_data_kind) noexcept
+    {
+        if (provided_data_kind != "duckdb_table" || required_data_kind != "duckdb_table")
+            return false;
+        return provided_contract == required_contract || required_contract == "anyTable" ||
+               provided_contract == "anyTable";
+    }
+
+    DynamicTableContract inspect_dynamic_table_contract(const Project &project,
+                                                        const std::string &physical_table,
+                                                        const std::string &contract_id)
+    {
+        if (physical_table.empty())
+            throw Error(ErrorCode::InvalidArgument, "Physical table name must not be empty");
+        std::string quoted = "\"";
+        for (const char character : physical_table)
+            quoted += character == '\"' ? "\"\"" : std::string(1, character);
+        quoted += "\"";
+        const auto description = project.query_json("DESCRIBE " + quoted);
+        if (!description.is_array())
+            throw Error(ErrorCode::DatabaseError, "DuckDB table description is not tabular");
+        std::vector<RuntimeTableColumn> columns;
+        for (const auto &row : description) {
+            const auto name = row.value("column_name", std::string{});
+            const auto duckdb_type = row.value("column_type", std::string{});
+            if (name.empty()) continue;
+            ParameterType type = ParameterType::string;
+            const auto upper = [&]() {
+                std::string value = duckdb_type;
+                std::transform(value.begin(), value.end(), value.begin(),
+                               [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+                return value;
+            }();
+            if (upper.find("BOOL") != std::string::npos) type = ParameterType::boolean;
+            else if (upper.find("INT") != std::string::npos || upper.find("DECIMAL") != std::string::npos)
+                type = ParameterType::integer;
+            else if (upper.find("DOUBLE") != std::string::npos || upper.find("FLOAT") != std::string::npos || upper.find("REAL") != std::string::npos)
+                type = ParameterType::real;
+            const auto nullable_value = row.value("null", Json("YES"));
+            const bool nullable = nullable_value.is_boolean() ? nullable_value.get<bool>() :
+                nullable_value.get<std::string>() != "NO";
+            columns.push_back({name, duckdb_type, type, nullable, row});
+        }
+        return DynamicTableContract(contract_id, physical_table, std::move(columns));
+    }
+
+    namespace detail
+    {
+        void validate_runtime_table_input(const Project &project,
+                                          const OperationDefinition::Port &port,
+                                          const Json &input)
+        {
+            if (port.data_kind != "duckdb_table" || port.semantic_contract == "anyTable" ||
+                !input.is_object() || input.value("contract_id", "") != "anyTable")
+                return;
+            const auto physical_table = input.value("physical_table", "");
+            if (physical_table.empty())
+                throw Error(ErrorCode::WorkflowValidation,
+                            "Dynamic table input has no physical DuckDB table: " + port.id);
+            const auto runtime = inspect_dynamic_table_contract(project, physical_table);
+            if (!port.schema.is_object() || !port.schema.contains("properties"))
+                return;
+            const auto &properties = port.schema.at("properties");
+            if (!properties.is_object()) return;
+            for (const auto &[name, property] : properties.items())
+            {
+                const auto found = std::find_if(runtime.columns().begin(), runtime.columns().end(),
+                    [&](const RuntimeTableColumn &column) { return column.name == name; });
+                if (found == runtime.columns().end())
+                    throw Error(ErrorCode::WorkflowValidation,
+                                "Dynamic table is missing required column '" + name +
+                                "' for input " + port.id);
+                std::string expected = property.value("type", "");
+                if (expected == "array" && property.contains("items") && property.at("items").is_object())
+                    expected = property.at("items").value("type", "");
+                const auto actual = parameter_type_name(found->type);
+                const bool compatible = expected.empty() || expected == actual ||
+                    (expected == "number" && actual == "real");
+                if (!compatible)
+                    throw Error(ErrorCode::WorkflowValidation,
+                                "Dynamic table column '" + name + "' has type " + actual +
+                                "; input " + port.id + " requires " + expected);
+            }
+        }
+    }
+
     std::size_t Table::row_count() const
     {
         if (columns.empty())
@@ -1127,7 +1269,8 @@ namespace streamfind
                 {"cardinality", cardinality},
                 {"data_kind", data_kind},
                 {"representations", representations},
-                {"optional", optional}};
+                {"optional", optional},
+                {"schema", schema}};
     }
 
     OperationDefinition::Port OperationDefinition::Port::from_json(const Json &value)
@@ -1141,6 +1284,7 @@ namespace streamfind
         port.data_kind = value.value("data_kind", "");
         port.representations = value.value("representations", std::vector<std::string>{});
         port.optional = value.value("optional", false);
+        port.schema = value.value("schema", Json::object());
         if (port.semantic_contract.empty())
             throw Error(ErrorCode::SchemaMismatch, "Operation port requires semantic_contract: " + port.id);
         if (port.cardinality != "one" && port.cardinality != "many")
@@ -1384,7 +1528,10 @@ namespace streamfind
                             "Workflow target port has more than one connection: " + connection.target_operation +
                             "." + connection.target_port);
             if (input_port != target->second->input_ports.end() &&
-                source_port->semantic_contract != input_port->semantic_contract)
+                !table_contracts_compatible(source_port->semantic_contract,
+                                            input_port->semantic_contract,
+                                            source_port->data_kind,
+                                            input_port->data_kind))
                 throw Error(ErrorCode::WorkflowValidation,
                             "Workflow connection has incompatible contracts: " + connection.source_port +
                             " -> " + connection.target_port);
@@ -1934,10 +2081,15 @@ namespace streamfind
         std::vector<std::string> artifact_ids;
         std::vector<std::string> physical_tables;
         for (const auto &artifact : inventory) {
-            if (artifact.value("producer_instance", std::string{}) != producer_instance) continue;
-            const auto artifact_id = artifact.value("artifact_id", std::string{});
+            const auto text = [&artifact](const char *key) {
+                const auto value = artifact.find(key);
+                return value != artifact.end() && value->is_string()
+                    ? value->get<std::string>() : std::string{};
+            };
+            if (text("producer_instance") != producer_instance) continue;
+            const auto artifact_id = text("artifact_id");
             if (!artifact_id.empty()) artifact_ids.push_back(artifact_id);
-            const auto table = artifact.value("physical_table", std::string{});
+            const auto table = text("physical_table");
             if (!table.empty() && detail::is_generated_artifact_table(table)) physical_tables.push_back(table);
         }
         if (artifact_ids.empty()) return;
@@ -2253,6 +2405,7 @@ namespace streamfind
                     break;
                 const auto contract = artifact.value("contract_id", "");
                 const bool port_matches = contract == connection.source_port ||
+                    contract == "anyTable" ||
                     (contract.size() > connection.source_port.size() + 1 &&
                      contract.ends_with("#" + connection.source_port));
                 if (artifact.value("producer_instance", "") == connection.source_operation &&
@@ -2363,6 +2516,9 @@ namespace streamfind
                 throw Error(ErrorCode::WorkflowValidation,
                             "Unknown workflow operation: " + operation.operation);
             const auto inputs = resolve_workflow_inputs(operation_id, current_artifacts);
+            for (const auto &port : executor->definition().input_ports)
+                if (inputs.contains(port.id))
+                    detail::validate_runtime_table_input(*this, port, inputs.at(port.id));
             Json effective_parameters = operation.parameters.values;
             for (auto it = inputs.begin(); it != inputs.end(); ++it) {
                 if (it.key().rfind("parameter:", 0) != 0) continue;
@@ -2584,6 +2740,9 @@ namespace streamfind
                 if (!provided_inputs.is_null() && provided_inputs.is_object())
                     for (auto it = provided_inputs.begin(); it != provided_inputs.end(); ++it)
                         inputs[it.key()] = it.value();
+                for (const auto &port : operation->definition().input_ports)
+                    if (inputs.contains(port.id))
+                        detail::validate_runtime_table_input(*this, port, inputs.at(port.id));
                 Json effective_parameters = parameters;
                 for (auto it = inputs.begin(); it != inputs.end(); ++it) {
                     if (it.key().rfind("parameter:", 0) != 0) continue;

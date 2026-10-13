@@ -18,6 +18,40 @@ sfcore:projectTable
         sfcore:schemaVersionColumn,
         sfcore:frameworkVersionColumn .
 
+sfcore:anyTable
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Any table" ;
+    skos:definition "Generic input contract for operations that accept any persisted DuckDB table artifact without requiring a domain-specific schema." ;
+    sf:tableContractName "ANY_TABLE" ;
+    sf:dataKind "duckdb_table" ;
+    sf:dynamicSchema true .
+
+sfcore:leftAnyTablePort
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Left any table" ;
+    skos:definition "Operation-local AnyTable input port used as the left side of a generic table binding." ;
+    sf:tableContractName "ANY_TABLE_LEFT_PORT" ;
+    sf:dataKind "duckdb_table" ;
+    sf:dynamicSchema true ;
+    sf:portId "leftTable" ;
+    sf:semanticContract "anyTable" .
+
+sfcore:rightAnyTablePort
+    a sf:Table ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Right any table" ;
+    skos:definition "Operation-local AnyTable input port used as the right side of a generic table binding." ;
+    sf:tableContractName "ANY_TABLE_RIGHT_PORT" ;
+    sf:dataKind "duckdb_table" ;
+    sf:dynamicSchema true ;
+    sf:portId "rightTable" ;
+    sf:semanticContract "anyTable" .
+
 
 sfcore:auditTrailTable
     a sf:Table ;

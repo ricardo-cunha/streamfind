@@ -19,7 +19,7 @@ Operation make_table_operation(const std::string &operation_id,
     definition.id = operation_id;
     definition.name = operation_id;
     definition.domain = domain;
-    definition.output_ports.push_back({"table", contract, "one", "table", {"duckdb-table"}, false});
+    definition.output_ports.push_back({"table", contract, "one", "duckdb_table", {"duckdb-table"}, false});
     return Operation(std::move(definition),
                      [contract](Project &project, const Json &, const std::string &instance,
                                 const Json &inputs) {
@@ -55,14 +55,14 @@ void run() {
         OperationRegistry registry;
         {
             auto project = Project::create({path, {}});
-        registry.register_operation(make_table_operation("domain_a.make_table", "domain_a", "table"));
+        registry.register_operation(make_table_operation("domain_a.make_table", "domain_a", "anyTable"));
 
         OperationDefinition second_definition;
         second_definition.id = "domain_b.make_table";
         second_definition.name = "domain_b.make_table";
         second_definition.domain = "domain_b";
-        second_definition.input_ports.push_back({"input", "table", "one", "table", {"duckdb-table"}, false});
-        second_definition.output_ports.push_back({"table", "table", "one", "table", {"duckdb-table"}, false});
+        second_definition.input_ports.push_back({"input", "anyTable", "one", "duckdb_table", {"duckdb-table"}, false});
+        second_definition.output_ports.push_back({"table", "anyTable", "one", "duckdb_table", {"duckdb-table"}, false});
         second_definition.parameters.definitions.push_back(
             {"targets", "Connected table rows", TypeDescriptor{ParameterType::array,
              std::make_shared<TypeDescriptor>(TypeDescriptor{ParameterType::object})}, nullptr, false});
@@ -79,7 +79,7 @@ void run() {
                 const auto workflow_revision = project.get_workflow().version;
                 ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
                     const auto allocation = tables.allocate_table_artifact(
-                        "table", "domain_b.make_table", instance, workflow_revision,
+                        "anyTable", "domain_b.make_table", instance, workflow_revision,
                         Json::array({{{"name", "value"}, {"type", "string"}}}));
                     artifact_id = allocation.first;
                     physical_table = allocation.second;
@@ -122,8 +122,8 @@ void run() {
         });
         if (source == inventory.end() || consumer == inventory.end())
             throw std::runtime_error("artifact inventory lost producer instances");
-        if (source->value("contract_id", "") != "table" ||
-            consumer->value("contract_id", "") != "table" ||
+        if (source->value("contract_id", "") != "anyTable" ||
+            consumer->value("contract_id", "") != "anyTable" ||
             source->value("workflow_revision", "") != "7" ||
             consumer->value("workflow_revision", "") != "7" ||
             source->value("artifact_id", "") == consumer->value("artifact_id", "") ||
