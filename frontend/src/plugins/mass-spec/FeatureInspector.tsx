@@ -55,6 +55,17 @@ const signalArrayColumns: Record<QueryKind, readonly string[]> = {
   ms1: ['ms1_size', 'ms1_mz', 'ms1_intensity'],
   ms2: ['ms2_size', 'ms2_mz', 'ms2_intensity'],
 };
+const signalIdentityColumns = [
+  'feature',
+  'feature_id',
+  'analysis',
+  'replicate',
+  'feature_group',
+  'feature_component',
+  'mz',
+  'rt',
+  'intensity',
+] as const;
 const featureNetworkColumns = [
   'feature',
   'feature_id',
@@ -111,14 +122,13 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     () => selectFeatureOverviewColumns(context.artifact?.columns),
     [context.artifact?.columns],
   );
-  const signalColumns = useMemo(
-    () =>
-      selectOverviewColumns(
-        context.artifact?.columns?.map((column) => column.name),
-        signalArrayColumns[activeTab as QueryKind] ?? [],
-      ),
-    [activeTab, context.artifact?.columns],
-  );
+  const signalColumns = useMemo(() => {
+    const signalKind = activeTab as QueryKind;
+    return selectOverviewColumns(
+      context.artifact?.columns?.map((column) => column.name),
+      [...signalIdentityColumns, ...(signalArrayColumns[signalKind] ?? [])],
+    );
+  }, [activeTab, context.artifact?.columns]);
   const networkColumns = useMemo(
     () =>
       selectOverviewColumns(
@@ -354,14 +364,25 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         return overview.rows;
       };
       const loadNetworkSelection = async (selectionFilters: ArtifactQueryFilter[]) => {
-        const response = await api.artifactQuery(context.sessionId, {
-          artifact_id: artifact.artifact_id,
-          mode: 'page',
-          columns: networkColumns,
-          filters: selectionFilters,
-          limit: 2000,
-        });
-        return response.rows;
+        const pageSize = 1000;
+        const rows: FeatureRow[] = [];
+        let offset = 0;
+        let totalRows = 0;
+        do {
+          const response = await api.artifactQuery(context.sessionId, {
+            artifact_id: artifact.artifact_id,
+            mode: 'page',
+            columns: networkColumns,
+            filters: selectionFilters,
+            offset,
+            limit: pageSize,
+          });
+          rows.push(...response.rows);
+          totalRows = response.total_rows;
+          offset += response.rows.length;
+          if (!response.rows.length) break;
+        } while (offset < totalRows);
+        return rows;
       };
       const evidenceRows = await loadSelection(buildSelectionQueryFilters(selectBy, representative));
       const networkRepresentative = evidenceRows[0] ?? representative;
@@ -394,9 +415,20 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         });
         expandedNetworkRows = Array.from(rowsByKey.values());
       } else {
-        expandedNetworkRows = await loadNetworkSelection(
-          buildNetworkSelectionQueryFilters(selectBy, networkRepresentative),
-        );
+        const featureNetworkFilters =
+          selectBy === 'feature' &&
+          String(networkRepresentative.analysis ?? '').trim() &&
+          String(networkRepresentative.feature_component ?? '').trim()
+            ? [
+                { column: 'analysis', operator: 'eq' as const, value: String(networkRepresentative.analysis) },
+                {
+                  column: 'feature_component',
+                  operator: 'eq' as const,
+                  value: String(networkRepresentative.feature_component),
+                },
+              ]
+            : buildNetworkSelectionQueryFilters(selectBy, networkRepresentative);
+        expandedNetworkRows = await loadNetworkSelection(featureNetworkFilters);
       }
       // A feature row can be an isotope/adduct/loss child and may not carry the
       // component metadata in the overview response. In that case, broaden only
@@ -508,7 +540,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
 
   if (loading)
     return (
-      <div className="sf-feature-loading" role="status" aria-live="polite">
+      <div className="sf-feature-loading">
         <LoadingLogo label="Loading feature data…" />
       </div>
     );
@@ -709,6 +741,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
               rows={selectedSignalRows}
               artifactId={context.artifact?.artifact_id ?? context.artifactId}
               darkMode={darkMode}
+              groupBy={groupBy}
+              selectBy={selectBy}
             />
           </>
         ) : null}
@@ -1329,21 +1363,25 @@ function FeatureSignalPlot({
   rows,
   artifactId,
   darkMode,
+  groupBy,
+  selectBy,
 }: {
   kind: QueryKind;
   rows: FeatureRow[];
   artifactId: string;
   darkMode: boolean;
+  groupBy: string;
+  selectBy: SelectionMode;
 }) {
   const plotTheme = getPlotTheme(darkMode);
   const prefix = kind === 'eic' ? 'eic' : kind;
-  const labels = rows.map((row) => String(row.feature ?? row.feature_id ?? row.name ?? 'feature'));
+  const labels = rows.map((row) => signalTraceLabel(row, groupBy, selectBy));
   const categories = Array.from(new Set(labels)).sort();
   const traces = rows.flatMap((row) => {
     const x = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`], row[`${prefix}_size`]);
     const y = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'intensity' : 'intensity'}`], row[`${prefix}_size`]);
     if (!x.length || !y.length) return [];
-    const label = String(row.feature ?? row.feature_id ?? row.name ?? 'feature');
+    const label = signalTraceLabel(row, groupBy, selectBy);
     const color = colorFor(label, categories);
     const isSpectrum = kind === 'ms1' || kind === 'ms2';
     return [
@@ -1726,18 +1764,26 @@ function numericValue(row: FeatureRow, names: string[]): number | undefined {
 // eslint-disable-next-line react-refresh/only-export-components
 export function colorFor(value: string, categories: string[] = [value]): string {
   const palette = [
-    '#11696f',
-    '#0f9f6e',
-    '#a16207',
-    '#465d5e',
-    '#0b5056',
-    '#7c3aed',
-    '#c2410c',
-    '#0369a1',
-    '#be123c',
-    '#4d7c0f',
-    '#9333ea',
-    '#0891b2',
+    '#0072b2',
+    '#d55e00',
+    '#009e73',
+    '#cc79a7',
+    '#e69f00',
+    '#56b4e9',
+    '#f0e442',
+    '#882255',
+    '#117733',
+    '#332288',
+    '#aa4499',
+    '#44aa99',
   ];
   return palette[Math.max(0, categories.indexOf(value)) % palette.length];
+}
+
+function signalTraceLabel(row: FeatureRow, groupBy: string, selectBy: SelectionMode): string {
+  const feature = String(row.feature ?? row.feature_id ?? row.name ?? 'feature');
+  const identity =
+    groupBy === 'replicate' && selectBy === 'feature_group' ? String(row.feature_group ?? feature) : feature;
+  const group = String(row[groupBy] ?? row.analysis ?? row.replicate ?? '').trim();
+  return group ? `${identity} · ${group}` : identity;
 }

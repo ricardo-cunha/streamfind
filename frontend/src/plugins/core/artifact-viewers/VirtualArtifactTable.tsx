@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ArtifactDataResponse } from '../../../framework/backend/StreamFindApiClient';
+import { LoadingLogo } from '../../../framework/ui/LoadingLogo';
 
 export function VirtualArtifactTable({
   columns,
@@ -66,7 +67,11 @@ export function VirtualArtifactTable({
       aria-rowcount={page?.total_rows ?? undefined}
       tabIndex={0}
     >
-      {loading ? <div className="sf-artifact-viewer-loading">Loading rows…</div> : null}
+      {loading ? (
+        <div className="sf-artifact-viewer-loading">
+          <LoadingLogo label="Loading table rows…" />
+        </div>
+      ) : null}
       <div className="sf-artifact-virtual-header" style={{ width: totalWidth, height: headerHeight }}>
         {virtualColumns.map((virtualColumn) => {
           const column = columns[virtualColumn.index];

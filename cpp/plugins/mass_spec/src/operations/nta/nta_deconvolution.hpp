@@ -199,6 +199,7 @@ namespace streamfind::mass_spec::nta
       std::vector<std::string> blank_names;
       std::vector<::streamfind::mass_spec::nta::api::NTA_FEATURES> buffers;
       std::function<void(std::string_view)> log;
+      std::function<void(double, std::string_view)> progress;
 
       const std::vector<std::string> &analysis_names() const { return names; }
       const std::vector<std::string> &file_paths() const { return paths; }
@@ -206,6 +207,10 @@ namespace streamfind::mass_spec::nta
       int analysis_index_at(std::size_t index) const { return analysis_indices.at(index); }
       auto &feature_buffers() { return buffers; }
       void report(std::string_view message) const { if (log) log(message); }
+      void report_progress(double fraction, std::string_view message) const {
+        if (progress) progress(fraction, message);
+        else report(message);
+      }
     };
 
     void find_features(

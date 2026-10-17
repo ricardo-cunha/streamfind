@@ -76,7 +76,8 @@ namespace streamfind::mass_spec::nta
         double maxErrorMass,
         const std::vector<int> &idLevels,
         int minSharedFragments,
-        double minCosineSimilarity);
+        double minCosineSimilarity,
+        bool deduplicate);
   } // namespace filter_internal_standards
 
   namespace filter_features_ms2

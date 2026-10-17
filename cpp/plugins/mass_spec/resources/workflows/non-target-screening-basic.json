@@ -470,6 +470,7 @@
           1
         ],
         "plot_downsize": 0,
+        "plot_max_points": 5000,
         "plot_group_by": "analysis",
         "plot_title": "Total Ion Chromatograms (TICs)",
         "plot_x_label": "Retention time / seconds",
@@ -602,7 +603,8 @@
         "min_cosine_similarity": 0,
         "min_score": 0,
         "min_shared_fragments": 0,
-        "names": []
+        "names": [],
+        "deduplicate_internal_standards": true
       },
       "position": {
         "x": 2957.1930648200228,

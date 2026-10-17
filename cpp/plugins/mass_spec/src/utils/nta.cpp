@@ -1024,14 +1024,14 @@ namespace streamfind::mass_spec::nta::utils::detail
         std::vector<std::optional<std::string>> internal_standard_cells(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
         {
             return {
-                str_cell(r.analysis), std::nullopt, str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
+                str_cell(r.analysis), str_cell(r.replicate), str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
                 inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
                 dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
                 dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
                 str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP),
                 inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity), str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
-                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                std::nullopt, std::nullopt, std::nullopt,
+                inum_cell(r.eic_size), str_cell(r.eic_rt), str_cell(r.eic_mz), str_cell(r.eic_intensity), str_cell(r.eic_baseline), str_cell(r.eic_smoothed),
+                inum_cell(r.ms1_size), str_cell(r.ms1_mz), str_cell(r.ms1_intensity),
                 inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
                 inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match)};
         }
@@ -1054,7 +1054,7 @@ namespace streamfind::mass_spec::nta::utils::detail
         void enrich_suspect_with_feature(Json &suspect, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
         {
             const auto feature_payload = ::streamfind::mass_spec::nta::utils::feature_row(feature);
-            for (const auto *column : {"replicate", "feature_component", "adduct", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline",
+            for (const auto *column : {"replicate", "feature_group", "feature_component", "adduct", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline",
                                        "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity"})
                 suspect[column] = feature_payload.at(column);
         }
@@ -1106,7 +1106,20 @@ namespace streamfind::mass_spec::nta::utils::detail
             s.db_ms2_size=r.db_ms2_size; s.db_ms2_mz=r.db_ms2_mz; s.db_ms2_intensity=r.db_ms2_intensity; s.db_ms2_formula=r.db_ms2_formula; s.db_ms2_smiles=r.db_ms2_smiles;
             s.exp_ms2_size=r.exp_ms2_size; s.exp_ms2_mz=r.exp_ms2_mz; s.exp_ms2_intensity=r.exp_ms2_intensity;
             s.isotope_theoretical_peaks=r.isotope_theoretical_peaks; s.isotope_matched_peaks=r.isotope_matched_peaks; s.isotope_similarity=r.isotope_similarity; s.isotope_match=r.isotope_match;
-            auto out = suspect_json(s); out["feature_component"] = r.feature_component; out["adduct"] = r.adduct; return out;
+            auto out = suspect_json(s);
+            out["replicate"] = r.replicate;
+            out["feature_component"] = r.feature_component;
+            out["adduct"] = r.adduct;
+            out["eic_size"] = r.eic_size;
+            out["eic_rt"] = r.eic_rt;
+            out["eic_mz"] = r.eic_mz;
+            out["eic_intensity"] = r.eic_intensity;
+            out["eic_baseline"] = r.eic_baseline;
+            out["eic_smoothed"] = r.eic_smoothed;
+            out["ms1_size"] = r.ms1_size;
+            out["ms1_mz"] = r.ms1_mz;
+            out["ms1_intensity"] = r.ms1_intensity;
+            return out;
         }
 
         void emit_internal_standards(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
@@ -1214,6 +1227,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     return;
                 ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW r;
                 r.analysis = an;
+                r.replicate = col_s(row, "replicate");
                 r.feature = col_s(row, "feature");
                 r.feature_group = col_s(row, "feature_group");
                 r.feature_component = col_s(row, "feature_component");
@@ -1243,6 +1257,15 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
                 r.db_ms2_formula = col_s(row, "db_ms2_formula");
                 r.db_ms2_smiles = col_s(row, "db_ms2_smiles");
+                r.eic_size = col_i(row, "eic_size");
+                r.eic_rt = col_s(row, "eic_rt");
+                r.eic_mz = col_s(row, "eic_mz");
+                r.eic_intensity = col_s(row, "eic_intensity");
+                r.eic_baseline = col_s(row, "eic_baseline");
+                r.eic_smoothed = col_s(row, "eic_smoothed");
+                r.ms1_size = col_i(row, "ms1_size");
+                r.ms1_mz = col_s(row, "ms1_mz");
+                r.ms1_intensity = col_s(row, "ms1_intensity");
                 r.exp_ms2_size = col_i(row, "ms2_size");
                 r.exp_ms2_mz = col_s(row, "ms2_mz");
                 r.exp_ms2_intensity = col_s(row, "ms2_intensity");
@@ -1261,7 +1284,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     append_row(row);
                 return;
             }
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,ms2_size,ms2_mz,ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis,replicate,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,eic_size,eic_rt,eic_mz,eic_intensity,eic_baseline,eic_smoothed,ms1_size,ms1_mz,ms1_intensity,ms2_size,ms2_mz,ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
                 append_row(row);
         }
 

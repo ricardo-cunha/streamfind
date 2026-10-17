@@ -141,14 +141,16 @@ namespace streamfind::mass_spec::target_csv
             validate_fragment_pair(row, "fragments_mz_pos", "fragments_intensity_pos");
             validate_fragment_pair(row, "fragments_mz_neg", "fragments_intensity_neg");
 
+            // MASS_SPEC_TARGETS is intentionally a matching-only table. CSV
+            // structure columns are accepted as input noise but are never
+            // normalized, validated, or carried into the target artifact.
+            if (!suspect_targets) return;
+
             const std::string smiles = text(row, "SMILES");
             const std::string inchi = text(row, "InChI");
-            if (smiles.empty() && inchi.empty())
-            {
-                if (suspect_targets)
-                    throw std::invalid_argument("Each suspect target requires SMILES or InChI");
-                return;
-            }
+            // Target rows may be mass/mz-only. Chemical structures are optional
+            // metadata and are normalized only when the caller supplied one.
+            if (smiles.empty() && inchi.empty()) return;
             const bool supplied_mass = present(row, "mass");
             const double supplied_exact_mass = supplied_mass ? number(row, "mass") : 0.0;
             if (!streamfind::core::vendors::openbabel::openbabel_available())
@@ -195,10 +197,8 @@ namespace streamfind::mass_spec::target_csv
                 throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires mass or mz");
             if (suspect_targets)
             {
-                if (!present(row, "name")) throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires name");
-                if (!present(row, "formula")) throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires formula");
-                if (!present(row, "SMILES") && !present(row, "InChI"))
-                    throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires SMILES or InChI");
+                // Suspect-target matching is driven by mass/mz and optional RT.
+                // Name, formula, identifiers, and reference MS2 remain optional.
             }
             const char *numeric[] = {"mass", "mass_min", "mass_max", "mz", "mz_min", "mz_max", "rt", "rtmin", "rtmax", "xLogP"};
             for (const auto *key : numeric)
@@ -235,9 +235,13 @@ namespace streamfind::mass_spec::target_csv
             for (std::size_t i = 0; i < header.size(); ++i)
             {
                 const auto key = detail::lower(detail::trim(header[i]));
-                if (key == "ms2_positive" || key == "ms2_negative")
+                if (suspect_targets && (key == "ms2_positive" || key == "ms2_negative"))
                     throw std::invalid_argument("CSV MS2 columns must use the schema names fragments_mz_pos, fragments_intensity_pos, fragments_mz_neg, and fragments_intensity_neg");
-                if (!key.empty() && target_columns.contains(key) && !fields[i].empty()) row[key] = fields[i];
+                const bool structure_column = key == "formula" || key == "smiles" ||
+                                              key == "inchi" || key == "inchikey";
+                if (!key.empty() && target_columns.contains(key) &&
+                    (suspect_targets || !structure_column) && !fields[i].empty())
+                    row[key] = fields[i];
             }
             rows.push_back(detail::canonical_row(std::move(row), suspect_targets, rows.size()));
         }

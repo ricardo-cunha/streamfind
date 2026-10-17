@@ -24,7 +24,7 @@ namespace streamfind::mass_spec::nta
     struct MetFragParams
     {
       std::string metfrag_path;          ///< Full path to MetFragCL JAR or native executable.
-      std::string database_type;         ///< MetFrag database type: KEGG, PubChem, ExtendedPubChem, ChemSpiderRest, LocalSDF, LocalPSV, or LocalCSV.
+      std::string database_type;         ///< MetFrag database type or StreamFind PubChemLite alias.
       std::string database_path;         ///< Path to local database file (LocalCSV / LocalPSV / LocalSDF).
       double      ppm            = 10.0; ///< MS1 precursor mass tolerance (ppm).
       double      isotopePpm     = 5.0;  ///< MS1 isotope m/z tolerance (ppm).
@@ -39,6 +39,9 @@ namespace streamfind::mass_spec::nta
       std::vector<std::string> candidate_writer = {"CSV", "FragmentSmilesPSV"}; ///< Output writers (CSV for standard data, FragmentSmilesPSV for fragment SMILES).
       int         maximum_tree_depth = 2; ///< Maximum fragmentation tree depth.
       int         number_threads = 1; ///< Number of threads requested from MetFrag.
+      int         feature_parallelism = 2; ///< Number of independent feature-level MetFrag jobs.
+      bool        cache_candidates = true; ///< Cache identical MetFrag feature queries in this run.
+      bool        include_fragment_smiles = true; ///< Retain MetFrag fragment SMILES PSV output.
       bool        use_smiles = true; ///< Use SMILES rather than InChI for fragmentation.
       bool        filtered       = false;///< Include filtered features when true.
       std::string java_path      = "java";///< Path to Java executable (used in JAR mode only).

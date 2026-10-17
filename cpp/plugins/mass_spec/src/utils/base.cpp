@@ -10,6 +10,35 @@
 
 namespace streamfind::mass_spec::base::utils
 {
+static constexpr double proton_mass = 1.007276466621;
+
+static bool neutral_mass_matches(const TargetRange &target, int polarity, double mz)
+{
+    const double neutral = (target.mass_min + target.mass_max) / 2.0;
+    const double tolerance = std::max(target.mass_max - target.mass_min, 0.0) /
+                             (2.0 * static_cast<double>(target.charge));
+    const auto matches = [&](double offset) {
+        const double expected = (neutral + offset) / static_cast<double>(target.charge);
+        return mz >= expected - tolerance && mz <= expected + tolerance;
+    };
+    if (polarity < 0) return matches(-proton_mass);
+    if (polarity > 0) return matches(proton_mass);
+    return matches(proton_mass) || matches(-proton_mass);
+}
+
+static bool neutral_mass_overlaps(const TargetRange &target, int polarity, double low_mz, double high_mz)
+{
+    const double neutral = (target.mass_min + target.mass_max) / 2.0;
+    const double tolerance = std::max(target.mass_max - target.mass_min, 0.0) /
+                             (2.0 * static_cast<double>(target.charge));
+    const auto overlaps = [&](double offset) {
+        const double expected = (neutral + offset) / static_cast<double>(target.charge);
+        return high_mz >= expected - tolerance && low_mz <= expected + tolerance;
+    };
+    if (polarity < 0) return overlaps(-proton_mass);
+    if (polarity > 0) return overlaps(proton_mass);
+    return overlaps(proton_mass) || overlaps(-proton_mass);
+}
 
 nlohmann::json summarize_eic(const nlohmann::json &rows)
 {
@@ -67,11 +96,14 @@ nlohmann::json merge_ms_rows(const nlohmann::json &rows, double mz_cluster, doub
 }
 
 static double row_real_or(const nlohmann::json &row, const char *column, double fallback);
+static bool row_has_value(const nlohmann::json &row, const char *column);
+static double row_real_or_any(const nlohmann::json &row, const char *primary,
+                              const char *alternate, double fallback);
 
 std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
 {
     std::vector<TargetRange> result;
-    const auto sources = parameters.value("targets", nlohmann::json::array({nlohmann::json::object()}));
+    const auto sources = parameters.value("targets", nlohmann::json::array());
     for (std::size_t index = 0; index < sources.size(); ++index)
     {
         const auto &source = sources[index];
@@ -79,13 +111,16 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
         target.id = source.value("name", "target" + std::to_string(index));
         const auto analyses = source.contains("analysis") ? source.at("analysis") : parameters.value("analysis_names", nlohmann::json::array());
         if (analyses.is_string())
-            target.analyses.push_back(analyses.get<std::string>());
+        {
+            const auto value = analyses.get<std::string>();
+            if (!value.empty()) target.analyses.push_back(value);
+        }
         else if (analyses.is_number_integer())
             target.analysis_indices.push_back(analyses.get<int>());
         else if (analyses.is_array())
             for (const auto &analysis : analyses)
             {
-                if (analysis.is_string()) target.analyses.push_back(analysis.get<std::string>());
+                if (analysis.is_string() && !analysis.get<std::string>().empty()) target.analyses.push_back(analysis.get<std::string>());
                 else if (analysis.is_number_integer()) target.analysis_indices.push_back(analysis.get<int>());
             }
         // Polarity is an optional per-target constraint.  Do not inherit a
@@ -110,16 +145,28 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
             target.levels = levels.get<std::vector<int>>();
         const double ppm = parameters.value("ppm", 20.0);
         const double mass = row_real_or(source, "mass", 0.0), mz = row_real_or(source, "mz", 0.0), rt = row_real_or(source, "rt", 0.0);
-        const bool has_mass_min = source.contains("mass_min") && !source.at("mass_min").is_null();
-        const bool has_mass_max = source.contains("mass_max") && !source.at("mass_max").is_null();
+        const bool has_mass_min = row_has_value(source, "mass_min");
+        const bool has_mass_max = row_has_value(source, "mass_max");
         target.has_mass = (source.contains("mass") && !source.at("mass").is_null()) || has_mass_min || has_mass_max;
         target.mass_min = row_real_or(source, "mass_min", mass == 0.0 ? -std::numeric_limits<double>::infinity() : mass - mass * ppm / 1e6);
         target.mass_max = row_real_or(source, "mass_max", mass == 0.0 ? std::numeric_limits<double>::infinity() : mass + mass * ppm / 1e6);
-        target.mz_min = row_real_or(source, "mz_min", mz == 0.0 ? -std::numeric_limits<double>::infinity() : mz - mz * ppm / 1e6);
-        target.mz_max = row_real_or(source, "mz_max", mz == 0.0 ? std::numeric_limits<double>::infinity() : mz + mz * ppm / 1e6);
+        target.mz_min = row_real_or_any(source, "mz_min", "mzmin", mz == 0.0 ? -std::numeric_limits<double>::infinity() : mz - mz * ppm / 1e6);
+        target.mz_max = row_real_or_any(source, "mz_max", "mzmax", mz == 0.0 ? std::numeric_limits<double>::infinity() : mz + mz * ppm / 1e6);
+        target.has_mz = mz != 0.0 ||
+            row_has_value(source, "mz_min") || row_has_value(source, "mz_max") ||
+            row_has_value(source, "mzmin") || row_has_value(source, "mzmax");
+        if (target.mass_min > target.mass_max) std::swap(target.mass_min, target.mass_max);
+        if (target.mz_min > target.mz_max) std::swap(target.mz_min, target.mz_max);
         const double tolerance = parameters.value("rt_tolerance", 60.0);
-        target.rt_min = row_real_or(source, "rt_min", rt == 0.0 ? -std::numeric_limits<double>::infinity() : rt - tolerance);
-        target.rt_max = row_real_or(source, "rt_max", rt == 0.0 ? std::numeric_limits<double>::infinity() : rt + tolerance);
+        target.rt_min = row_real_or_any(source, "rt_min", "rtmin", rt == 0.0 ? -std::numeric_limits<double>::infinity() : rt - tolerance);
+        target.rt_max = row_real_or_any(source, "rt_max", "rtmax", rt == 0.0 ? std::numeric_limits<double>::infinity() : rt + tolerance);
+        target.charge = source.contains("charge") && !source.at("charge").is_null()
+            ? std::max(1, static_cast<int>(row_real_or(source, "charge", 1.0)))
+            : std::max(1, parameters.value("charge", 1));
+        if (!source.contains("polarity") && parameters.value("polarity", 0) != 0)
+            target.polarities.push_back(parameters.value("polarity", 0));
+        if (!target.has_mass && !std::isfinite(target.mz_min) && !std::isfinite(target.mz_max))
+            continue;
         result.push_back(std::move(target));
     }
     return result;
@@ -127,11 +174,34 @@ std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
 
 bool target_matches(const TargetRange &target, const std::string &analysis, int polarity, int level, float rt, float mz)
 {
-    return (target.analyses.empty() || std::find(target.analyses.begin(), target.analyses.end(), analysis) != target.analyses.end()) &&
+    if (!((target.analyses.empty() || std::find(target.analyses.begin(), target.analyses.end(), analysis) != target.analyses.end()) &&
            (target.polarities.empty() || std::find(target.polarities.begin(), target.polarities.end(), 0) != target.polarities.end() ||
             std::find(target.polarities.begin(), target.polarities.end(), polarity) != target.polarities.end()) &&
            (target.levels.empty() || std::find(target.levels.begin(), target.levels.end(), level) != target.levels.end()) &&
-           mz >= target.mz_min && mz <= target.mz_max && rt >= target.rt_min && rt <= target.rt_max;
+           rt >= target.rt_min && rt <= target.rt_max)) return false;
+    if (target.has_mass && !target.has_mz)
+    {
+        // Neutral-mass targets are converted to the ion m/z implied by the
+        // observed polarity.  This prevents a mass-only target from becoming
+        // an accidental all-m/z match.
+        return neutral_mass_matches(target, polarity, mz);
+    }
+    return mz >= target.mz_min && mz <= target.mz_max;
+}
+
+bool target_may_match_spectrum(const TargetRange &target, const std::string &analysis, int polarity,
+                               int level, float rt, float low_mz, float high_mz)
+{
+    if (!((target.analyses.empty() || std::find(target.analyses.begin(), target.analyses.end(), analysis) != target.analyses.end()) &&
+          (target.polarities.empty() || std::find(target.polarities.begin(), target.polarities.end(), 0) != target.polarities.end() ||
+           std::find(target.polarities.begin(), target.polarities.end(), polarity) != target.polarities.end()) &&
+          (target.levels.empty() || std::find(target.levels.begin(), target.levels.end(), level) != target.levels.end()) &&
+          rt >= target.rt_min && rt <= target.rt_max)) return false;
+    if (target.has_mass && !target.has_mz)
+    {
+        return neutral_mass_overlaps(target, polarity, low_mz, high_mz);
+    }
+    return high_mz >= target.mz_min && low_mz <= target.mz_max;
 }
 
 static std::string row_text(const nlohmann::json &row, const char *column)
@@ -166,6 +236,21 @@ static double row_real_or(const nlohmann::json &row, const char *column, double 
     if (it == row.end() || it->is_null()) return fallback;
     if (it->is_number()) return it->get<double>();
     if (it->is_string()) return it->get<std::string>().empty() ? fallback : std::stod(it->get<std::string>());
+    return fallback;
+}
+
+static bool row_has_value(const nlohmann::json &row, const char *column)
+{
+    const auto it = row.find(column);
+    return it != row.end() && !it->is_null() &&
+           !(it->is_string() && it->get<std::string>().empty());
+}
+
+static double row_real_or_any(const nlohmann::json &row, const char *primary,
+                              const char *alternate, double fallback)
+{
+    if (row_has_value(row, primary)) return row_real_or(row, primary, fallback);
+    if (row_has_value(row, alternate)) return row_real_or(row, alternate, fallback);
     return fallback;
 }
 

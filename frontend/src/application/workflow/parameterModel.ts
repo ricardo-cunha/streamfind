@@ -195,6 +195,8 @@ export function normalizeInlineTableRows(parameter: CapabilityParameter, rows: R
     Object.fromEntries(
       Object.entries(row).map(([name, value]) => {
         const type = properties[name]?.type;
+        if ((type === 'number' || type === 'integer') && (value === '' || value === null || value === undefined))
+          return [name, null];
         if (type === 'number' || type === 'integer') return [name, Number(value)];
         if (type === 'boolean' && (value === 'true' || value === 'false')) return [name, value === 'true'];
         return [name, value];
@@ -253,11 +255,13 @@ export function validateJsonValue(value: unknown, schema: JsonSchema, path = 'va
         const row = value[index];
         if (!row || typeof row !== 'object' || Array.isArray(row)) return `${path}[${index}] must be an object.`;
         const properties = schema.properties || {};
+        const requiredColumns = new Set(schema.required || []);
         for (const required of schema.required || []) {
           if (!(required in row)) return `${path}[${index}] is missing required column “${required}”.`;
         }
         for (const [name, item] of Object.entries(row)) {
           if (properties[name]) {
+            if ((item === '' || item === null || item === undefined) && !requiredColumns.has(name)) continue;
             const error = validateJsonValue(item, properties[name] as JsonSchema, `${path}[${index}].${name}`);
             if (error) return error;
           } else if (schema.additionalProperties === false) {

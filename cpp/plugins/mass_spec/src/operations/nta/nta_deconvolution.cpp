@@ -2165,8 +2165,10 @@ namespace streamfind::mass_spec::nta::deconvolution
 
     for (size_t a = 0; a < analysis_names.size(); ++a)
     {
-      input.report(std::to_string(a + 1) + "/" + std::to_string(analysis_names.size()) +
-                   " Processing analysis " + analysis_names[a]);
+      const auto analysis_count = std::max<std::size_t>(1, analysis_names.size());
+      input.report_progress(static_cast<double>(a) / static_cast<double>(analysis_count),
+                            std::to_string(a + 1) + "/" + std::to_string(analysis_names.size()) +
+                            " Processing analysis " + analysis_names[a]);
 
       if (debug.enabled() && debug.matches_analysis(analysis_names[a]))
         debug.write_line("Processing analysis: " + analysis_names[a]);
@@ -2217,7 +2219,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::vector<float> spec_pos_rt, spec_pos_mz, spec_pos_intensity, spec_pos_noise;
       std::vector<float> spec_neg_rt, spec_neg_mz, spec_neg_intensity, spec_neg_noise;
 
-      input.report("  1/5 Denoising " + std::to_string(idx_load.size()) + " spectra");
+      input.report_progress(static_cast<double>(a) / static_cast<double>(analysis_count),
+                            "  1/5 Denoising " + std::to_string(idx_load.size()) + " spectra");
 
       size_t total_raw_points = 0;
       size_t total_clean_points = 0;
@@ -2275,11 +2278,16 @@ namespace streamfind::mass_spec::nta::deconvolution
               baseQuantile,
               &debug);
         }
-        if ((i + 1) % 100 == 0 || i + 1 == idx_load.size())
-          input.report("      Denoised " + std::to_string(i + 1) + "/" + std::to_string(idx_load.size()) + " spectra");
+        const auto report_interval = std::max<std::size_t>(1, idx_load.size() / 10);
+        if ((i + 1) % report_interval == 0 || i + 1 == idx_load.size())
+          input.report_progress(
+              (static_cast<double>(a) + static_cast<double>(i + 1) / std::max<std::size_t>(1, idx_load.size())) /
+                  static_cast<double>(analysis_count),
+              "      Denoised " + std::to_string(i + 1) + "/" + std::to_string(idx_load.size()) + " spectra");
       }
 
-      input.report("      Polarity distribution: " + std::to_string(pos_count) + " positive, " + std::to_string(neg_count) + " negative spectra");
+      input.report_progress(static_cast<double>(a + 1) / static_cast<double>(analysis_count),
+                            "      Polarity distribution: " + std::to_string(pos_count) + " positive, " + std::to_string(neg_count) + " negative spectra");
 
       // Show denoising statistics
       float denoising_efficiency = total_raw_points > 0 ? (1.0f - static_cast<float>(total_clean_points) / static_cast<float>(total_raw_points)) * 100.0f : 0.0f;
@@ -2355,9 +2363,10 @@ namespace streamfind::mass_spec::nta::deconvolution
       all_features.insert(all_features.end(), pos_features.begin(), pos_features.end());
       all_features.insert(all_features.end(), neg_features.begin(), neg_features.end());
 
-      input.report("  4/5 Found " + std::to_string(all_features.size()) + " total features (" +
-                   std::to_string(pos_features.size()) + " positive, " +
-                   std::to_string(neg_features.size()) + " negative)");
+      input.report_progress(static_cast<double>(a + 1) / static_cast<double>(analysis_count),
+                            "  4/5 Found " + std::to_string(all_features.size()) + " total features (" +
+                            std::to_string(pos_features.size()) + " positive, " +
+                            std::to_string(neg_features.size()) + " negative)");
 
       feature_buffers[a] = ::streamfind::mass_spec::nta::api::NTA_FEATURES();
       feature_buffers[a].analysis = analysis_names[a];
@@ -2371,10 +2380,10 @@ namespace streamfind::mass_spec::nta::deconvolution
         feature_buffers[a].append_feature(enriched);
       }
 
-      input.report("  5/5 Processing complete");
+      input.report_progress(static_cast<double>(a + 1) / static_cast<double>(analysis_count), "  5/5 Processing complete");
     }
 
-    input.report("Completed!");
+    input.report_progress(1.0, "Completed!");
   };
 
   Json find_features(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -2420,6 +2429,9 @@ namespace streamfind::mass_spec::nta::deconvolution
     }
     FeatureInput input;
     input.log = [&access](std::string_view message) { access.report_progress(0.0, message); };
+    input.progress = [&access](double fraction, std::string_view message) {
+      access.report_progress(fraction, message);
+    };
     for (const auto &row : rows)
     {
       const auto name = ::streamfind::mass_spec::nta::utils::text(row, "analysis");

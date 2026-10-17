@@ -587,11 +587,7 @@ sfms:targetsTable
         sfms:mzMaxColumn,
         sfms:rtColumn,
         sfms:rtMinColumn,
-        sfms:rtMaxColumn,
-        sfms:formulaColumn,
-        sfms:smilesColumn,
-        sfms:inChIColumn,
-        sfms:inChIKeyColumn .
+        sfms:rtMaxColumn .
 
 sfms:rtWindowsTable
     a sf:Table ;
@@ -612,7 +608,7 @@ sfms:suspectTargetsTable
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspect targets table" ;
-    skos:definition "Schema for suspect or MetFrag candidate rows. Chemical identity is sufficient; retention time and positive- or negative-mode MS2 reference spectra are optional." ;
+    skos:definition "Schema for suspect or MetFrag candidate rows. Mass or m/z is sufficient for matching; chemical identity, retention time, and positive- or negative-mode MS2 reference spectra are optional." ;
     sf:tableContractName "MASS_SPEC_SUSPECT_TARGETS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn

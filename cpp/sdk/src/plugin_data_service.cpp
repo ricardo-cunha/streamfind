@@ -1,5 +1,6 @@
 #include "streamfind/sdk/plugin_data_service.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cctype>
 #include <iostream>
@@ -596,13 +597,16 @@ streamfind_plugin_status plugin_report_progress(
     const char *message,
     uint32_t message_size,
     void *) {
-    if (execution_context == nullptr || !std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0) {
+    if (execution_context == nullptr) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     }
     auto *context = detail::context_from(execution_context);
     if (context->progress) {
-        context->progress(fraction, message == nullptr ? std::string_view{} :
-                                                   std::string_view(message, message_size));
+        const auto normalized = std::isfinite(fraction)
+            ? std::clamp(fraction, 0.0, 1.0)
+            : 0.0;
+        context->progress(normalized, message == nullptr ? std::string_view{} :
+                                                       std::string_view(message, message_size));
     }
     return STREAMFIND_PLUGIN_OK;
 }

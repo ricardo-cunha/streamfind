@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
-
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <limits>
@@ -246,16 +246,16 @@ namespace streamfind::mass_spec::base
         const auto parsed = target_csv::read_targets_csv(path, false);
         const std::vector<std::string> columns = {
             "name", "analysis", "polarity", "level", "mass", "mass_min", "mass_max",
-            "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax", "formula", "SMILES", "InChI", "InChIKey"};
+            "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"};
         const std::vector<std::string> types = {
             "string", "string", "integer", "integer", "real", "real", "real", "real", "real",
-            "real", "real", "real", "real", "string", "string", "string", "string"};
+            "real", "real", "real", "real"};
         Json rows = Json::array();
         for (const auto &source : parsed)
         {
             Json row = Json::object();
             for (const auto &column : columns) row[column] = nullptr;
-            for (const auto &key : {"name", "analysis", "formula", "SMILES", "InChI", "InChIKey"})
+            for (const auto &key : {"name", "analysis"})
                 if (source.contains(key)) row[key] = source.at(key);
             for (const auto &key : {"polarity", "level", "mass", "mass_min", "mass_max", "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"})
             {
@@ -451,6 +451,44 @@ namespace streamfind::mass_spec::base
             const auto rows = base::utils::input_rows(access, parameters, "analysesTable", columns, "analysis");
             const auto wanted_names = parameters.value("analysis_names", Json::array());
             const auto wanted_indices = filter_indices ? parameters.value("indices", Json::array()) : Json::array();
+
+            // A target row may carry its own analysis selector.  This is the
+            // authoritative selector for target-driven operations such as EIC
+            // extraction; an empty global analysis_names parameter must not
+            // broaden those rows back to every analysis.
+            std::set<std::string> target_analysis_names;
+            std::set<int> target_analysis_indices;
+            bool has_target_analysis_constraint = false;
+            bool has_unrestricted_target = false;
+            const auto targets = parameters.value("targets", Json::array());
+            if (targets.is_array() && !targets.empty())
+            {
+                for (const auto &target : targets)
+                {
+                    if (!target.is_object() || !target.contains("analysis") || target.at("analysis").is_null())
+                    {
+                        has_unrestricted_target = true;
+                        continue;
+                    }
+                    const auto &analysis = target.at("analysis");
+                    bool added_analysis = false;
+                    const auto add_analysis = [&](const Json &value) {
+                        if (value.is_string() && !value.get<std::string>().empty()) {
+                            target_analysis_names.insert(value.get<std::string>());
+                            added_analysis = true;
+                        } else if (value.is_number_integer()) {
+                            target_analysis_indices.insert(value.get<int>());
+                            added_analysis = true;
+                        }
+                    };
+                    if (analysis.is_array())
+                        for (const auto &value : analysis) add_analysis(value);
+                    else
+                        add_analysis(analysis);
+                    if (added_analysis) has_target_analysis_constraint = true;
+                    else has_unrestricted_target = true;
+                }
+            }
             Json selected_rows = Json::array();
             for (std::size_t row_index = 0; row_index < rows.size(); ++row_index)
             {
@@ -462,6 +500,9 @@ namespace streamfind::mass_spec::base
                     : static_cast<int>(row_index);
                 if (!wanted_indices.empty() &&
                     std::find(wanted_indices.begin(), wanted_indices.end(), data_index) == wanted_indices.end())
+                    continue;
+                if (has_target_analysis_constraint && !has_unrestricted_target &&
+                    !target_analysis_names.contains(name) && !target_analysis_indices.contains(data_index))
                     continue;
                 selected_rows.push_back(rows[row_index]);
             }
@@ -619,19 +660,54 @@ namespace streamfind::mass_spec::base
         if (group_by != "analysis" && group_by != "replicate" && group_by != "polarity" && group_by != "level")
             throw std::invalid_argument("group_by must be analysis, replicate, polarity, or level");
 
-        struct Aggregate { double rt{}; double tic{}; std::size_t count{}; };
-        std::map<std::string, std::map<double, Aggregate>> groups;
+        const auto max_points = parameters.value("plot_max_points", 5000);
+        if (max_points < 0)
+            throw std::invalid_argument("plot_max_points must be non-negative");
+
+        struct TicPoint { std::string group; double rt{}; double tic{}; };
+        std::vector<TicPoint> tic_points;
+        tic_points.reserve(rows.size());
+        std::map<std::string, std::pair<double, double>> ranges;
         for (const auto &row : rows)
         {
             const auto group = group_by == "analysis" ? row.value("analysis", std::string{}) :
                                group_by == "replicate" ? row.value("replicate", std::string{}) :
                                group_by == "polarity" ? std::to_string(json_integer(row, "polarity")) :
                                                          std::to_string(json_integer(row, "level"));
-            auto rt = json_real(row, "rt");
-            if (downsize > 0.0) rt = std::floor(rt / downsize) * downsize;
-            auto &aggregate = groups[group][rt];
+            const auto rt = json_real(row, "rt");
+            tic_points.push_back({group, rt, json_real(row, "tic")});
+            auto range = ranges.find(group);
+            if (range == ranges.end())
+                ranges.emplace(group, std::make_pair(rt, rt));
+            else
+            {
+                range->second.first = std::min(range->second.first, rt);
+                range->second.second = std::max(range->second.second, rt);
+            }
+        }
+
+        struct Aggregate { double rt{}; double tic{}; std::size_t count{}; };
+        std::map<std::string, std::map<double, Aggregate>> groups;
+        for (const auto &point : tic_points)
+        {
+            auto bin_width = downsize;
+            double bin_origin = 0.0;
+            if (bin_width == 0.0 && max_points > 1)
+            {
+                const auto range = ranges.at(point.group);
+                const auto span = range.second - range.first;
+                if (span > 0.0)
+                {
+                    bin_width = span / static_cast<double>(max_points - 1);
+                    bin_origin = range.first;
+                }
+            }
+            auto rt = point.rt;
+            if (bin_width > 0.0)
+                rt = bin_origin + std::floor((rt - bin_origin) / bin_width) * bin_width;
+            auto &aggregate = groups[point.group][rt];
             aggregate.rt = rt;
-            aggregate.tic += json_real(row, "tic");
+            aggregate.tic += point.tic;
             ++aggregate.count;
         }
 
@@ -674,41 +750,144 @@ namespace streamfind::mass_spec::base
         const bool has_requested_targets = requested_targets.is_array() && !requested_targets.empty();
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();
+        const bool eic_logging = parameters.value("_eic_logging", false);
         Json result = Json::array();
-        for (const auto &row : analyses)
+        for (std::size_t analysis_number = 0; analysis_number < analyses.size(); ++analysis_number)
         {
+            const auto &row = analyses[analysis_number];
             const auto analysis = row.value("analysis", std::string{});
+            const auto data_index = row.contains("index")
+                ? row.at("index").get<int>()
+                : static_cast<int>(analysis_number);
+            std::vector<const base::utils::TargetRange *> active_targets;
+            active_targets.reserve(targets.size());
+            for (const auto &target : targets)
+            {
+                const bool name_selected = target.analyses.empty() ||
+                    std::find(target.analyses.begin(), target.analyses.end(), analysis) != target.analyses.end();
+                const bool index_selected = target.analysis_indices.empty() ||
+                    std::find(target.analysis_indices.begin(), target.analysis_indices.end(), data_index) != target.analysis_indices.end();
+                if (name_selected && index_selected)
+                    active_targets.push_back(&target);
+            }
+            if (!indexed && active_targets.empty())
+                continue;
+            if (eic_logging)
+                access.report_progress(
+                    analyses.empty() ? 0.0 : static_cast<double>(analysis_number) / static_cast<double>(analyses.size()),
+                    "EIC: reading analysis " + std::to_string(analysis_number + 1) + "/" +
+                        std::to_string(analyses.size()) + " (" + analysis + ").");
+
+            Json cached_eic_headers = Json::array();
+            if (eic_logging)
+            {
+                access.read_batches(
+                    base::utils::input_table(parameters, "spectraHeadersTable"),
+                    {"analysis", "index", "level", "polarity", "lowmz", "highmz", "rt"},
+                    "analysis",
+                    [&](const Json &batch) {
+                        for (const auto &header : batch)
+                            if (header.value("analysis", std::string{}) == analysis)
+                                cached_eic_headers.push_back(header);
+                    });
+            }
 
             ::mass_spec::reader::MASS_SPEC_FILE file(row.at("file_path").get<std::string>());
             file.select_analysis(analysis_index(row));
             std::vector<int> selected_indices;
             for (const auto &value : indices)
                 selected_indices.push_back(value.get<int>());
-            const auto headers = indexed ? file.get_spectra_headers(selected_indices) : file.get_spectra_headers();
-            const auto spectra = indexed ? file.get_spectra(selected_indices) : file.get_spectra();
             const auto requested_levels = parameters.value("levels", Json::array());
-            for (std::size_t i = 0; i < spectra.size() && i < headers.index.size(); ++i)
-                for (std::size_t j = 0; j < spectra[i][0].size() && j < spectra[i][1].size(); ++j)
+            if (eic_logging && !indexed)
+            {
+                for (const auto &header : cached_eic_headers)
                 {
-                    const auto mz = spectra[i][0][j];
-                    const auto level = headers.level[i];
-                    const double minimum_intensity = level == 1
-                                                         ? parameters.value("min_intensity_ms1", 0.0)
-                                                         : parameters.value("min_intensity_ms2", 0.0);
-                    if ((!requested_levels.empty() && std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end()) ||
-                        spectra[i][1][j] < minimum_intensity)
+                    if (header.value("analysis", std::string{}) != analysis)
                         continue;
-                    Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"name", std::string{}}, {"polarity", headers.polarity[i]}, {"level", headers.level[i]}, {"pre_mz", headers.precursor_mz[i]}, {"pre_mzlow", headers.window_mzlow[i]}, {"pre_mzhigh", headers.window_mzhigh[i]}, {"pre_ce", headers.activation_ce[i]}, {"rt", headers.rt[i]}, {"mobility", headers.mobility[i]}, {"mz", mz}, {"intensity", spectra[i][1][j]}};
-                    if (indexed)
-                        result.push_back(std::move(point));
-                    else
-                        for (const auto &target : targets)
-                            if (base::utils::target_matches(target, analysis, headers.polarity[i], headers.level[i], headers.rt[i], mz))
-                            {
-                                if (has_requested_targets) point["name"] = target.id;
-                                result.push_back(point);
-                            }
+                    const auto level = header.value("level", 0);
+                    if (!requested_levels.empty() &&
+                        std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end())
+                        continue;
+                    bool possible = false;
+                    for (const auto *target : active_targets)
+                        if (base::utils::target_may_match_spectrum(*target, analysis, header.value("polarity", 0), level,
+                                                                    header.value("rt", 0.0f), header.value("lowmz", 0.0f),
+                                                                    header.value("highmz", 0.0f)))
+                        {
+                            possible = true;
+                            break;
+                        }
+                    if (possible)
+                        selected_indices.push_back(header.value("index", 0));
                 }
+            }
+            if (eic_logging && selected_indices.empty())
+                continue;
+            const auto headers = (indexed || eic_logging)
+                ? file.get_spectra_headers(selected_indices)
+                : file.get_spectra_headers();
+
+            std::unordered_map<int, std::size_t> header_positions;
+            header_positions.reserve(headers.index.size());
+            for (std::size_t i = 0; i < headers.index.size(); ++i)
+                header_positions.emplace(headers.index[i], i);
+            std::unordered_map<int, bool> candidate_lookup;
+            candidate_lookup.reserve(selected_indices.size());
+            for (const auto index : selected_indices)
+                candidate_lookup.emplace(index, true);
+            const auto &decode_indices = indexed ? selected_indices : headers.index;
+            constexpr std::size_t decode_batch_size = 256;
+            int last_logged_percent = -1;
+            for (std::size_t batch_start = 0; batch_start < decode_indices.size(); batch_start += decode_batch_size)
+            {
+                const auto batch_end = std::min(batch_start + decode_batch_size, decode_indices.size());
+                const std::vector<int> batch_indices(
+                    decode_indices.begin() + static_cast<std::ptrdiff_t>(batch_start),
+                    decode_indices.begin() + static_cast<std::ptrdiff_t>(batch_end));
+                const auto spectra = file.get_spectra(batch_indices);
+                for (std::size_t batch_offset = 0; batch_offset < spectra.size(); ++batch_offset)
+                {
+                    const auto position = header_positions.find(batch_indices[batch_offset]);
+                    if (position == header_positions.end() || spectra[batch_offset].size() < 2)
+                        continue;
+                    const auto source = position->second;
+                    if (!indexed && candidate_lookup.find(batch_indices[batch_offset]) == candidate_lookup.end())
+                        continue;
+                    for (std::size_t j = 0; j < spectra[batch_offset][0].size() && j < spectra[batch_offset][1].size(); ++j)
+                    {
+                        const auto mz = spectra[batch_offset][0][j];
+                        const auto level = headers.level[source];
+                        const double minimum_intensity = level == 1
+                                                             ? parameters.value("min_intensity_ms1", 0.0)
+                                                             : parameters.value("min_intensity_ms2", 0.0);
+                        if ((!requested_levels.empty() && std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end()) ||
+                            spectra[batch_offset][1][j] < minimum_intensity)
+                            continue;
+                        Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"name", std::string{}}, {"polarity", headers.polarity[source]}, {"level", headers.level[source]}, {"pre_mz", headers.precursor_mz[source]}, {"pre_mzlow", headers.window_mzlow[source]}, {"pre_mzhigh", headers.window_mzhigh[source]}, {"pre_ce", headers.activation_ce[source]}, {"rt", headers.rt[source]}, {"mobility", headers.mobility[source]}, {"mz", mz}, {"intensity", spectra[batch_offset][1][j]}};
+                        if (indexed)
+                            result.push_back(std::move(point));
+                        else
+                            for (const auto *target : active_targets)
+                                if (base::utils::target_matches(*target, analysis, headers.polarity[source], headers.level[source], headers.rt[source], mz))
+                                {
+                                    if (has_requested_targets) point["name"] = target->id;
+                                    result.push_back(point);
+                                }
+                    }
+                }
+                if (eic_logging && !decode_indices.empty())
+                {
+                    const auto percent = static_cast<int>((75.0 * static_cast<double>(batch_end)) /
+                                                          static_cast<double>(decode_indices.size()));
+                    if (percent != last_logged_percent)
+                    {
+                        last_logged_percent = percent;
+                        access.report_progress(percent / 100.0,
+                            "EIC: " + analysis + " decoded " + std::to_string(batch_end) + "/" +
+                            std::to_string(decode_indices.size()) + " spectra.");
+                    }
+                }
+            }
         }
         const std::vector<std::string> columns = {
             "analysis", "replicate", "name", "polarity", "level", "pre_mz",
@@ -717,7 +896,8 @@ namespace streamfind::mass_spec::base
         const std::vector<std::string> types = {
             "string", "string", "string", "integer", "integer", "real", "real",
             "real", "real", "real", "real", "real", "real"};
-        access.emit_table_rows("spectraTable", columns, types, result);
+        if (!parameters.value("_suppress_raw_table", false))
+            access.emit_table_rows("spectraTable", columns, types, result);
         return result;
     }
 
@@ -725,7 +905,23 @@ namespace streamfind::mass_spec::base
     {
         auto copy = parameters;
         copy["levels"] = Json::array({1});
-        return base::utils::summarize_eic(get_raw_spectra(access, copy));
+        copy["_suppress_raw_table"] = true;
+        copy["_eic_logging"] = true;
+        const auto analyses = selected_analysis_rows(access, parameters);
+        const auto targets = base::utils::normalize_targets(parameters);
+        access.report_progress(0.0, "EIC: preparing " + std::to_string(analyses.size()) +
+            " analyses and " + std::to_string(targets.size()) + " targets.");
+        const auto result = base::utils::summarize_eic(get_raw_spectra(access, copy));
+        const std::vector<std::string> columns = {
+            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
+            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
+            "mz", "intensity"};
+        const std::vector<std::string> types = {
+            "string", "string", "string", "integer", "integer", "real", "real",
+            "real", "real", "real", "real", "real", "real"};
+        access.emit_table_rows("eicTable", columns, types, result);
+        access.report_progress(1.0, "EIC extraction complete: " + std::to_string(result.size()) + " summarized rows.");
+        return result;
     }
 
     Json get_raw_spectra_ms1(sdk::PluginProjectAccess &access, const Json &parameters)

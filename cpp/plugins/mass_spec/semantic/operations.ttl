@@ -22,7 +22,7 @@ sfms:readCsvTargets
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Read CSV with targets" ;
-    skos:definition "Read a target CSV, validate numeric matching fields, normalize optional chemical structures with Open Babel, and publish a reusable targetsTable artifact." ;
+    skos:definition "Read a mass/mz target CSV, validate numeric matching fields, ignore any chemical-identity columns, and publish a reusable targetsTable artifact." ;
     sf:category "mass-spec-ingestion" ;
     sf:hasParameter sfms:targetsCsvPathParameter ;
     sf:hasOutputPort sfms:targetsTable, sfcore:operationSuccessSignal .
@@ -33,7 +33,7 @@ sfms:readCsvSuspectTargets
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Read CSV with suspect targets" ;
-    skos:definition "Read a suspect-target CSV, require chemical identity fields, normalize them with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
+    skos:definition "Read a suspect-target CSV with mass/mz-driven matching fields, normalize optional chemical structures with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
     sf:category "nta-identification" ;
     sf:hasParameter sfms:suspectTargetsCsvPathParameter ;
     sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
@@ -270,6 +270,7 @@ sfms:plotSpectraTic
         sfms:rtMinParameter,
         sfms:rtMaxParameter,
         sfms:plotDownsizeParameter,
+        sfms:plotMaxPointsParameter,
         sfms:plotGroupByParameter,
         sfms:plotTitleParameter,
         sfms:plotXLabelParameter,
@@ -302,9 +303,9 @@ sfms:getRawSpectraEic
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get extracted ion chromatograms" ;
-    skos:definition "Read MS1 raw points grouped as extracted-ion chromatograms for independent target ranges. Each target must provide mass/mz bounds or a chemical structure; optional id, analysis, polarity, level, and retention-time fields narrow the result." ;
+    skos:definition "Read MS1 raw points grouped as extracted-ion chromatograms for independent mass/mz target ranges; optional analysis, polarity, level, and retention-time fields narrow the result." ;
     sf:category "mass-spec-query" ;
-    sf:guidance "Use mz for a measured ion such as 275.23457, mass for a neutral mass, or SMILES/InChI when the exact mass should be derived. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Use the operation catalogue and tools/list to discover this operation; do not use method discovery." ;
+    sf:guidance "Use mz for a measured ion such as 275.23457 or mass for a neutral mass. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Use the operation catalogue and tools/list to discover this operation; do not use method discovery." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:targetsParameter,
@@ -408,6 +409,16 @@ sfms:getFeatures
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:filteredParameter ;
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+
+sfms:dropFilteredFeatures
+    a sf:Operation ;
+    sf:operationId "mass_spec.drop_filtered_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Drop filtered features" ;
+    skos:definition "Return a new featuresTable containing only feature rows not marked as filtered." ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -872,7 +883,7 @@ sfms:filterInternalStandards
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Filter internal standards" ;
     skos:definition "Refine internal-standard matches using only the rows and evidence stored in internalStandardsTable." ;
-    sf:guidance "Connect internalStandardsTable. The operation does not require featuresTable or an analysis selector; all filters are applied to every persisted internal-standard row and the result is emitted as a new internalStandardsTable." ;
+    sf:guidance "Connect internalStandardsTable. The operation does not require featuresTable or an analysis selector; all filters are applied to every persisted internal-standard row and the result is emitted as a new internalStandardsTable. Enable Deduplicate internal-standard matches to keep one chemically identical candidate per analysis and polarity. Deduplication prioritizes the smallest absolute RT error, then mass error, shared fragments, score, intensity, area, cosine similarity, identification level, and candidate rank." ;
     sf:hasParameter
         sfms:namesParameter,
         sfms:minScoreParameter,
@@ -880,7 +891,8 @@ sfms:filterInternalStandards
         sfms:maxErrorMassParameter,
         sfms:idLevelsParameter,
         sfms:minSharedFragmentsParameter,
-        sfms:minCosineSimilarityParameter ;
+        sfms:minCosineSimilarityParameter,
+        sfms:deduplicateInternalStandardsParameter ;
     sf:hasInputPort sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
@@ -907,8 +919,8 @@ sfms:metfragScreening
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Suspect screening with MetFrag" ;
-    skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Provide candidate structures through the suspect_targets parameter; retention time and MS2 reference peaks are optional. MetFrag in-silico MS2 evidence is Cat. 3, as is a mass-and-RT match without qualifying reference MS2; a mass-only candidate remains Cat. 4. Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
+    skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features using a selectable candidate database, then rank resulting candidates into the suspect results." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Select LocalCSV (the default) to screen the supplied suspect_targets candidates, PubChem or ExtendedPubChem for online candidate retrieval, or PubChemLite for a local PubChemLite CSV. PubChemLite requires pubchem_lite_path; suspect_targets may be empty for the database-backed modes. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Retention time and MS2 reference peaks are optional. MetFrag in-silico MS2 evidence is Cat. 3, as is a mass-and-RT match without qualifying reference MS2; a mass-only candidate remains Cat. 4. Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -916,6 +928,8 @@ sfms:metfragScreening
         sfms:ppmMs2Parameter,
         sfms:mzrMs2Parameter,
         sfms:isotopePpmParameter,
+        sfms:databaseTypeParameter,
+        sfms:pubchemLitePathParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -923,6 +937,9 @@ sfms:metfragScreening
         sfms:postProcessingCandidateFilterParameter,
         sfms:maximumTreeDepthParameter,
         sfms:numberThreadsParameter,
+        sfms:featureParallelismParameter,
+        sfms:cacheCandidatesParameter,
+        sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
         sfms:filteredParameter,
         sfms:debugParameter ;
@@ -935,8 +952,8 @@ sfms:findInternalStandardsMetfrag
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards with MetFrag" ;
-    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
-    skos:guidance "Use after loadFeaturesMs2 when experimental MS2 is available; features without experimental MS2 can still receive precursor-mass candidate assignments. Provide targets through the Mass spectrometry suspect targets parameter, using the same target configuration as Find internal standards. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and internal-standard suspect targets using a selectable candidate database, then publish the resulting assignments in the independent internalStandardsTable contract." ;
+    skos:guidance "Use after loadFeaturesMs2 when experimental MS2 is available; features without experimental MS2 can still receive precursor-mass candidate assignments. Select LocalCSV (the default), PubChem, ExtendedPubChem, or PubChemLite; PubChemLite requires pubchem_lite_path. LocalCSV requires suspect targets; the database-backed modes may be used without them. feature_parallelism controls bounded feature-level concurrency and cache_candidates reuses identical queries. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -944,6 +961,8 @@ sfms:findInternalStandardsMetfrag
         sfms:ppmMs2Parameter,
         sfms:mzrMs2Parameter,
         sfms:isotopePpmParameter,
+        sfms:databaseTypeParameter,
+        sfms:pubchemLitePathParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -951,6 +970,9 @@ sfms:findInternalStandardsMetfrag
         sfms:postProcessingCandidateFilterParameter,
         sfms:maximumTreeDepthParameter,
         sfms:numberThreadsParameter,
+        sfms:featureParallelismParameter,
+        sfms:cacheCandidatesParameter,
+        sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
         sfms:filteredParameter,
         sfms:debugParameter ;

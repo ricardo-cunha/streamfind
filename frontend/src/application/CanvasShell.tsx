@@ -15,7 +15,7 @@ import {
   type ProjectSession,
 } from '../framework/backend/StreamFindApiClient';
 import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
-import logo from '../assets/streamfind.png';
+import { LoadingLogo } from '../framework/ui/LoadingLogo';
 
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from '../framework/notifications/notificationBus';
@@ -128,32 +128,32 @@ export default function CanvasShell({
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
   const initialViewportFittedRef = useRef(false);
   const [worldSize, setWorldSize] = useState({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
+  const worldSizeRef = useRef({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
   const viewportRef = useRef({ offset, scale });
   useEffect(() => {
     viewportRef.current = { offset, scale };
   }, [offset, scale]);
+  useEffect(() => {
+    worldSizeRef.current = worldSize;
+  }, [worldSize]);
   const canvasWorldSize = useMemo(() => {
-    const minimumX = Math.min(0, ...nodes.map((node) => node.x));
     const maximumX = Math.max(NODE_WIDTH, ...nodes.map((node) => node.x + NODE_WIDTH));
-    const minimumY = Math.min(0, ...nodes.map((node) => node.y));
     const maximumY = Math.max(NODE_HEIGHT, ...nodes.map((node) => node.y + NODE_HEIGHT));
-    const requiredWidth = Math.max(CANVAS_WORLD_WIDTH, maximumX - minimumX + 800);
-    const requiredHeight = Math.max(CANVAS_WORLD_HEIGHT, maximumY - minimumY + 600);
-    const aspectRatio = CANVAS_WORLD_WIDTH / CANVAS_WORLD_HEIGHT;
-    const width = Math.max(requiredWidth, worldSize.width, requiredHeight * aspectRatio, worldSize.height * aspectRatio);
-    const height = width / aspectRatio;
     return {
-      width,
-      height,
+      width: Math.max(CANVAS_WORLD_WIDTH, worldSize.width, maximumX + 800),
+      height: Math.max(CANVAS_WORLD_HEIGHT, worldSize.height, maximumY + 600),
     };
   }, [nodes, worldSize]);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
-  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(
+    null,
+  );
   const rightDragRef = useRef<{ start: Point; moved: boolean } | null>(null);
   const suppressContextMenuRef = useRef(false);
   const dragPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
+  const dragExpandedEdgesRef = useRef({ left: false, right: false, top: false, bottom: false });
   const [connection, setConnection] = useState<ConnectionDraft | null>(null);
   const pendingConnectionRef = useRef<{
     source: string;
@@ -187,8 +187,11 @@ export default function CanvasShell({
   const [gridVisible, setGridVisible] = useState(false);
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
   const [, setWorkflowProgress] = useState({ completed: 0, total: 0, current_step: 0 });
+  const workflowExecutionIdRef = useRef<string | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [savingWorkflow, setSavingWorkflow] = useState(false);
+  const [artifactCleanupNode, setArtifactCleanupNode] = useState<CanvasNode | null>(null);
+  const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
@@ -230,6 +233,13 @@ export default function CanvasShell({
     setArtifactViewerMode(mode);
     setArtifactViewerId(viewerId);
   };
+  const openDefaultArtifactViewer = (artifact: ArtifactRecord) => {
+    const defaultViewer = compatibleArtifactViewers({
+      semanticType: artifact.contract_id,
+      representation: artifact.representation,
+    })[0];
+    openArtifactViewer(artifact, 'default', defaultViewer?.id ?? null);
+  };
   const showOutputRendererMenu = (key: string) => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
     setHoveredOutputAnchor(key);
@@ -257,6 +267,10 @@ export default function CanvasShell({
       ...current.slice(0, 4999),
     ]);
   }, []);
+  const resetActivityLog = useCallback(() => {
+    logSequenceRef.current = 0;
+    setActivityLog([]);
+  }, []);
   useEffect(() => {
     return subscribeAppNotifications((notification) => {
       const level: CanvasLogLine['level'] =
@@ -278,25 +292,28 @@ export default function CanvasShell({
     },
     [appendLog],
   );
-  const refreshArtifacts = useCallback((force = false) => {
-    if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
-    if (!force && artifactsLoadedRef.current) return Promise.resolve(currentArtifactsRef.current);
-    if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
-    const request = client
-      .currentArtifacts(project.session_id)
-      .then((artifacts) => {
-        setCurrentArtifacts(artifacts);
-        currentArtifactsRef.current = artifacts;
-        artifactsLoadedRef.current = true;
-        return artifacts;
-      })
-      .catch(() => []);
-    artifactsRefreshInFlightRef.current = request;
-    void request.finally(() => {
-      artifactsRefreshInFlightRef.current = null;
-    });
-    return request;
-  }, [client, project.session_id]);
+  const refreshArtifacts = useCallback(
+    (force = false) => {
+      if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
+      if (!force && artifactsLoadedRef.current) return Promise.resolve(currentArtifactsRef.current);
+      if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
+      const request = client
+        .currentArtifacts(project.session_id)
+        .then((artifacts) => {
+          setCurrentArtifacts(artifacts);
+          currentArtifactsRef.current = artifacts;
+          artifactsLoadedRef.current = true;
+          return artifacts;
+        })
+        .catch(() => []);
+      artifactsRefreshInFlightRef.current = request;
+      void request.finally(() => {
+        artifactsRefreshInFlightRef.current = null;
+      });
+      return request;
+    },
+    [client, project.session_id],
+  );
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -309,6 +326,10 @@ export default function CanvasShell({
         setJsonEditor(null);
         setPathWizard(null);
         setTableEditor(null);
+        return;
+      }
+      if (artifactCleanupNode && !artifactCleanupBusy) {
+        setArtifactCleanupNode(null);
         return;
       }
       if (selectedNodeId || pickerCapabilityId) {
@@ -325,7 +346,7 @@ export default function CanvasShell({
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [artifactViewer, jsonEditor, pathWizard, picker, pickerCapabilityId, selectedNodeId, tableEditor]);
+  }, [artifactCleanupBusy, artifactCleanupNode, artifactViewer, jsonEditor, pathWizard, picker, pickerCapabilityId, selectedNodeId, tableEditor]);
   const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
     () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata),
@@ -390,6 +411,13 @@ export default function CanvasShell({
             ? String(event.project.session_id)
             : undefined;
       if (projectId && projectId !== project.session_id) return;
+      if (
+        event.type !== 'workflow.started' &&
+        event.execution_id &&
+        workflowExecutionIdRef.current &&
+        event.execution_id !== workflowExecutionIdRef.current
+      )
+        return;
       if (event.event_id !== undefined) {
         if (seenEventIdsRef.current.has(event.event_id)) return;
         seenEventIdsRef.current.add(event.event_id);
@@ -431,6 +459,11 @@ export default function CanvasShell({
           );
         }
       }
+      if (event.type === 'workflow.started') {
+        workflowExecutionIdRef.current = event.execution_id ?? workflowExecutionIdRef.current;
+        resetActivityLog();
+        setWorkflowState('queued');
+      }
       if (event.type !== 'workflow.completed') {
         appendLog(
           detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`,
@@ -442,10 +475,30 @@ export default function CanvasShell({
         event.type === 'workflow.completed' ||
         event.type === 'workflow.failed' ||
         event.type === 'workflow.cancelled'
-      )
+      ) {
+        const terminalState =
+          event.type === 'workflow.completed' ? 'completed' : event.type === 'workflow.failed' ? 'failed' : 'cancelled';
+        setWorkflowState(terminalState);
+        setNodes((current) =>
+          current.map((node) =>
+            node.executionState === 'running'
+              ? {
+                  ...node,
+                  executionState: terminalState === 'cancelled' ? 'idle' : terminalState,
+                  executionMessage:
+                    terminalState === 'completed'
+                      ? undefined
+                      : terminalState === 'failed'
+                        ? node.executionMessage
+                        : 'Workflow cancellation completed.',
+                }
+              : node,
+          ),
+        );
         void refreshArtifacts(true);
+      }
     },
-    [appendLog, project.session_id, refreshArtifacts],
+    [appendLog, project.session_id, refreshArtifacts, resetActivityLog],
   );
 
   useEffect(() => {
@@ -476,6 +529,7 @@ export default function CanvasShell({
         .workflowState(project.session_id)
         .then((result) => {
           if (active) {
+            workflowExecutionIdRef.current = result.execution_id ?? null;
             setWorkflowState(result.state);
             if (result.progress) setWorkflowProgress(result.progress);
             if (result.state === 'completed' || result.state === 'failed' || result.state === 'cancelled') {
@@ -497,16 +551,28 @@ export default function CanvasShell({
       return undefined;
     let active = true;
     client
-      .workflowEvents(project.session_id)
-      .then((result) => {
+      .workflowState(project.session_id)
+      .then(async (state) => {
         if (!active) return;
-        for (const event of result.events) applyWorkflowEvent(event);
+        workflowExecutionIdRef.current = state.execution_id ?? null;
+        setWorkflowState(state.state);
+        if (state.progress) setWorkflowProgress(state.progress);
+        resetActivityLog();
+        if (!['queued', 'running', 'cancelling'].includes(state.state)) {
+          return;
+        }
+        const result = await client.workflowEvents(project.session_id, 0, 500);
+        if (!active) return;
+        for (const event of result.events) {
+          if (!workflowExecutionIdRef.current || event.execution_id === workflowExecutionIdRef.current)
+            applyWorkflowEvent(event);
+        }
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [applyWorkflowEvent, client, project.session_id, surface, workflowLoaded]);
+  }, [appendLog, applyWorkflowEvent, client, project.session_id, resetActivityLog, surface, workflowLoaded]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
@@ -616,6 +682,10 @@ export default function CanvasShell({
         action === 'run'
           ? await client.runWorkflow(project.session_id)
           : await client.cancelWorkflow(project.session_id);
+      if (action === 'run') {
+        workflowExecutionIdRef.current = result.execution_id ?? workflowExecutionIdRef.current;
+        resetActivityLog();
+      }
       setWorkflowState(result.state);
       if (result.progress) setWorkflowProgress(result.progress);
       setStatus(`Workflow ${action} request accepted.`);
@@ -920,10 +990,7 @@ export default function CanvasShell({
             nodesRef.current
               .filter(
                 (node) =>
-                  node.x < x + width &&
-                  node.x + NODE_WIDTH > x &&
-                  node.y < y + height &&
-                  node.y + NODE_HEIGHT > y,
+                  node.x < x + width && node.x + NODE_WIDTH > x && node.y < y + height && node.y + NODE_HEIGHT > y,
               )
               .map((node) => node.id),
           );
@@ -955,27 +1022,76 @@ export default function CanvasShell({
             const minimumY = selectedOrigins.length
               ? Math.min(...selectedOrigins.map((origin) => origin.y + deltaY))
               : y;
-            const shiftX = Math.max(0, 12 - minimumX);
-            const shiftY = Math.max(0, 12 - minimumY);
-            if (shiftX || shiftY) {
-              setOffset((current) => ({
-                x: current.x - shiftX * scale,
-                y: current.y - shiftY * scale,
-              }));
+            // Grow the canvas when a drag reaches an edge.  For the top/left
+            // edges, moving the world origin creates visible space in that
+            // direction; the node remains under the pointer and is not
+            // clamped at the old boundary.
+            const edgeMargin = 240;
+            const minimumNodeX = selectedOrigins.length ? minimumX : x;
+            const minimumNodeY = selectedOrigins.length ? minimumY : y;
+            const proposedMaximumX = selectedOrigins.length
+              ? Math.max(...selectedOrigins.map((origin) => origin.x + deltaX + NODE_WIDTH))
+              : x + NODE_WIDTH;
+            const proposedMaximumY = selectedOrigins.length
+              ? Math.max(...selectedOrigins.map((origin) => origin.y + deltaY + NODE_HEIGHT))
+              : y + NODE_HEIGHT;
+            const currentWorld = worldSizeRef.current;
+            const edges = {
+              left: minimumNodeX < edgeMargin,
+              right: proposedMaximumX > currentWorld.width - edgeMargin,
+              top: minimumNodeY < edgeMargin,
+              bottom: proposedMaximumY > currentWorld.height - edgeMargin,
+            };
+            // Keep an expansion allocated to an edge. It is re-armed only
+            // after the dragged group has moved well clear of that edge;
+            // releasing and grabbing the same node must not grow/jump again.
+            const resetMargin = edgeMargin * 2;
+            if (minimumNodeX > resetMargin) dragExpandedEdgesRef.current.left = false;
+            if (proposedMaximumX < currentWorld.width - resetMargin) dragExpandedEdgesRef.current.right = false;
+            if (minimumNodeY > resetMargin) dragExpandedEdgesRef.current.top = false;
+            if (proposedMaximumY < currentWorld.height - resetMargin) dragExpandedEdgesRef.current.bottom = false;
+            const growWidth =
+              (edges.left && !dragExpandedEdgesRef.current.left) ||
+              (edges.right && !dragExpandedEdgesRef.current.right);
+            const growHeight =
+              (edges.top && !dragExpandedEdgesRef.current.top) ||
+              (edges.bottom && !dragExpandedEdgesRef.current.bottom);
+            if (edges.left) dragExpandedEdgesRef.current.left = true;
+            if (edges.right) dragExpandedEdgesRef.current.right = true;
+            if (edges.top) dragExpandedEdgesRef.current.top = true;
+            if (edges.bottom) dragExpandedEdgesRef.current.bottom = true;
+            const rightGrowth = growWidth ? Math.ceil((currentWorld.width * 0.3) / GRID_SIZE) * GRID_SIZE : 0;
+            const bottomGrowth = growHeight ? Math.ceil((currentWorld.height * 0.3) / GRID_SIZE) * GRID_SIZE : 0;
+            const nextWorld = {
+              width: currentWorld.width + rightGrowth,
+              height: currentWorld.height + bottomGrowth,
+            };
+            if (rightGrowth || bottomGrowth) {
+              worldSizeRef.current = nextWorld;
+              setWorldSize(nextWorld);
             }
-            const adjustedDeltaX = deltaX + shiftX;
-            const adjustedDeltaY = deltaY + shiftY;
+            // The world grows by 30%, but only a small amount of that new
+            // space needs to be revealed immediately.  Moving by the full
+            // growth amount makes the whole workflow jump far away from the
+            // pointer and produces very long connector segments.
+            const edgeRevealDistance = 240;
+            if (edges.left && growWidth) {
+              setOffset((current) => ({ ...current, x: current.x + edgeRevealDistance * scale }));
+            }
+            if (edges.top && growHeight) {
+              setOffset((current) => ({ ...current, y: current.y + edgeRevealDistance * scale }));
+            }
             setNodes((current) =>
               current.map((node) => {
                 const origin = interaction.origins?.[node.id];
                 if (!origin)
                   return node.id === draggedNodeId
-                    ? { ...node, x: Math.max(12, x + shiftX), y: Math.max(12, y + shiftY) }
+                    ? { ...node, x, y }
                     : node;
                 return {
                   ...node,
-                  x: Math.max(12, origin.x + adjustedDeltaX),
-                  y: Math.max(12, origin.y + adjustedDeltaY),
+                  x: origin.x + deltaX,
+                  y: origin.y + deltaY,
                 };
               }),
             );
@@ -1082,8 +1198,7 @@ export default function CanvasShell({
 
   const beginPan = (event: ReactMouseEvent) => {
     const target = event.target as HTMLElement;
-    if (target.closest('.sf-canvas-node, .sf-canvas-toolbar, .sf-canvas-picker'))
-      return;
+    if (target.closest('.sf-canvas-node, .sf-canvas-toolbar, .sf-canvas-picker')) return;
     if (event.button === 2) {
       rightDragRef.current = { start: toWorld(event), moved: false };
       setSelectionBox(null);
@@ -1113,7 +1228,9 @@ export default function CanvasShell({
     setPicker(null);
     const selectedIds = selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
     const origins = Object.fromEntries(
-      nodes.filter((candidate) => selectedIds.includes(candidate.id)).map((candidate) => [candidate.id, { x: candidate.x, y: candidate.y }]),
+      nodes
+        .filter((candidate) => selectedIds.includes(candidate.id))
+        .map((candidate) => [candidate.id, { x: candidate.x, y: candidate.y }]),
     );
     setSelectedNodeIds(selectedIds);
     setInteraction({
@@ -1197,15 +1314,24 @@ export default function CanvasShell({
     setSelectedNodeId(null);
     setStatus('Deleted node and its connected connectors.');
   };
+  const requestClearNodeArtifacts = (node: CanvasNode) => {
+    if (!client || nodeControlsLocked) return;
+    setArtifactCleanupNode(node);
+  };
   const clearNodeArtifacts = async (node: CanvasNode) => {
-    if (!client || workflowExecutionActive) return;
-    if (!window.confirm(`Delete all published output data for “${node.title}”?`)) return;
+    if (!client || nodeControlsLocked) return;
+    setArtifactCleanupNode(null);
+    setArtifactCleanupBusy(true);
+    setWorkflowBusy(true);
     try {
       await client.clearNodeArtifacts(project.session_id, node.id);
       await refreshArtifacts(true);
       setStatus(`Deleted published output data for ${node.title}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Node artifact cleanup failed.');
+    } finally {
+      setArtifactCleanupBusy(false);
+      setWorkflowBusy(false);
     }
   };
   useEffect(() => {
@@ -1222,9 +1348,7 @@ export default function CanvasShell({
         event.preventDefault();
         const ids = new Set(selectedNodeIds.length ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : []);
         setNodes((current) => current.filter((node) => !ids.has(node.id)));
-        setEdges((current) =>
-          current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
-        );
+        setEdges((current) => current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)));
         setSelectedNodeIds([]);
         setSelectedNodeId(null);
         setStatus('Deleted node and its connected connectors.');
@@ -1392,12 +1516,7 @@ export default function CanvasShell({
         if (!parents.length) return Number.POSITIVE_INFINITY;
         return parents.reduce((sum, parent) => sum + parent.y + NODE_HEIGHT / 2, 0) / parents.length;
       };
-      column.sort(
-        (a, b) =>
-          parentCenter(a) - parentCenter(b) ||
-          a.y - b.y ||
-          a.id.localeCompare(b.id),
-      );
+      column.sort((a, b) => parentCenter(a) - parentCenter(b) || a.y - b.y || a.id.localeCompare(b.id));
       column.forEach((node, row) => {
         const target = byId.get(node.id);
         if (!target) return;
@@ -1461,12 +1580,16 @@ export default function CanvasShell({
     if (!jsonEditor) return;
     try {
       const parsed = JSON.parse(jsonEditorText);
-      const validationError = validateJsonValue(parsed, jsonEditor.parameter.schema);
+      const normalized =
+        jsonEditor.parameter.schema.type === 'table' && Array.isArray(parsed)
+          ? normalizeInlineTableRows(jsonEditor.parameter, parsed as Record<string, unknown>[])
+          : parsed;
+      const validationError = validateJsonValue(normalized, jsonEditor.parameter.schema);
       if (validationError) {
         setJsonEditorError(validationError);
         return;
       }
-      updateNodeParameter(jsonEditor.nodeId, jsonEditor.parameter.name, parsed);
+      updateNodeParameter(jsonEditor.nodeId, jsonEditor.parameter.name, normalized);
       setJsonEditor(null);
       setJsonEditorError(null);
     } catch (error) {
@@ -1523,7 +1646,7 @@ export default function CanvasShell({
           ? await client.pickFolders()
           : parameter.path_kind === 'file-output'
             ? [await client.pickSaveFile()]
-          : await client.pickFiles(fileParameterExtensions(parameter));
+            : await client.pickFiles(fileParameterExtensions(parameter));
       if (paths[0]) updateNodeParameter(node.id, parameter.name, paths[0]);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Path selection failed.');
@@ -1642,13 +1765,7 @@ export default function CanvasShell({
             : item,
         ),
       );
-      const artifacts = await refreshArtifacts(true);
-      const visualization = artifacts.find(
-        (artifact) => artifact.producer_instance === node.id && isVisualizationArtifact(artifact),
-      );
-      if (visualization) {
-        openArtifactViewer(visualization, 'default');
-      }
+      await refreshArtifacts(true);
       const cacheHit =
         result !== null && typeof result === 'object' && !Array.isArray(result) && result.cache_hit === true;
       setStatus(
@@ -1965,16 +2082,39 @@ export default function CanvasShell({
       </div>
       {surface === 'workflow' && !workflowLoaded ? (
         <div className="sf-canvas-workflow-loading" role="status" aria-live="polite">
-          <img src={logo} alt="streamfind" />
-          <strong>Loading workflow</strong>
-          <span>Restoring nodes and connections…</span>
+          <LoadingLogo
+            size="large"
+            label={
+              <>
+                <strong>Loading workflow</strong>
+                <span>Restoring nodes and connections…</span>
+              </>
+            }
+          />
         </div>
       ) : null}
       {surface === 'workflow' && savingWorkflow ? (
         <div className="sf-canvas-workflow-saving" role="status" aria-live="polite">
-          <img src={logo} alt="streamfind" />
-          <strong>Saving workflow</strong>
-          <span>Updating the project definition…</span>
+          <LoadingLogo
+            label={
+              <>
+                <strong>Saving workflow</strong>
+                <span>Updating the project definition…</span>
+              </>
+            }
+          />
+        </div>
+      ) : null}
+      {surface === 'workflow' && artifactCleanupBusy ? (
+        <div className="sf-canvas-workflow-saving" role="status" aria-live="polite">
+          <LoadingLogo
+            label={
+              <>
+                <strong>Cleaning published output</strong>
+                <span>Updating the project artifacts…</span>
+              </>
+            }
+          />
         </div>
       ) : null}
       {surface === 'workflow' && workflowLoaded && nodes.length === 0 ? (
@@ -1995,7 +2135,10 @@ export default function CanvasShell({
         <div className="sf-canvas-status-heading">
           <strong>{surface === 'workflow' ? 'Workflow terminal' : 'Explorer terminal'}</strong>
         </div>
-        <div className="sf-canvas-status-current">{status}</div>
+        <div className="sf-canvas-status-current">
+          <span>State: {workflowState}</span>
+          <span>{status}</span>
+        </div>
         <div className="sf-canvas-status-feed">
           {activityLog.map((entry) => (
             <div className={`sf-canvas-status-line ${entry.level}`} key={entry.id}>
@@ -2153,11 +2296,11 @@ export default function CanvasShell({
                     className="sf-node-info sf-node-clear-artifacts"
                     aria-label={`Delete output data for ${node.title}`}
                     title="Delete published output data"
-                    disabled={workflowExecutionActive || !client}
+                    disabled={nodeControlsLocked || !client}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      void clearNodeArtifacts(node);
+                      requestClearNodeArtifacts(node);
                     }}
                   >
                     <i className="fa-solid fa-eraser" />
@@ -2230,7 +2373,7 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) openArtifactViewer(artifact as ArtifactRecord, 'default');
+                          if (artifact) openDefaultArtifactViewer(artifact as ArtifactRecord);
                         }}
                         onClick={(event) => {
                           if (event.detail !== 2) return;
@@ -2238,7 +2381,7 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) openArtifactViewer(artifact as ArtifactRecord, 'default');
+                          if (artifact) openDefaultArtifactViewer(artifact as ArtifactRecord);
                         }}
                       >
                         <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
@@ -2263,7 +2406,7 @@ export default function CanvasShell({
                               semanticType: artifact.contract_id,
                               representation: artifact.representation,
                             });
-                            return compatibleViewers.length ? (
+                            return compatibleViewers.length || isVisualizationArtifact(artifact) ? (
                               <>
                                 {compatibleViewers.map((viewer) => (
                                   <button
@@ -2277,6 +2420,17 @@ export default function CanvasShell({
                                     {viewer.label}
                                   </button>
                                 ))}
+                                {isVisualizationArtifact(artifact) ? (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openArtifactViewer(artifact, 'default');
+                                    }}
+                                  >
+                                    View JSON
+                                  </button>
+                                ) : null}
                               </>
                             ) : null;
                           })()}
@@ -2659,6 +2813,51 @@ export default function CanvasShell({
                 Validate and apply
               </button>
             </footer>
+          </section>
+        </div>
+      ) : null}
+      {artifactCleanupNode ? (
+        <div
+          className="sf-dialog-backdrop sf-canvas-confirmation-backdrop"
+          role="presentation"
+          onMouseDown={() => setArtifactCleanupNode(null)}
+        >
+          <section
+            className="sf-dialog sf-canvas-confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sf-clear-artifacts-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="sf-dialog-heading">
+              <div>
+                <h2 id="sf-clear-artifacts-title">Delete published output data?</h2>
+                <small>
+                  This removes all published artifacts created by <strong>{artifactCleanupNode.title}</strong> while
+                  keeping the workflow node and its parameters.
+                </small>
+              </div>
+              <button
+                type="button"
+                className="sf-icon-button"
+                aria-label="Close cleanup confirmation"
+                onClick={() => setArtifactCleanupNode(null)}
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+            <div className="sf-dialog-actions">
+              <button type="button" className="sf-button secondary" onClick={() => setArtifactCleanupNode(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sf-button primary"
+                onClick={() => void clearNodeArtifacts(artifactCleanupNode)}
+              >
+                Delete published data
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
