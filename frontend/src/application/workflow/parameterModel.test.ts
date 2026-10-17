@@ -43,6 +43,15 @@ describe('workflow parameter model', () => {
     expect(isFileListParameter(pathParameter)).toBe(false);
     expect(isPathListParameter(pathParameter)).toBe(true);
     expect(isJsonParameter(pathParameter)).toBe(true);
+    const stringPathListParameter: CapabilityParameter = {
+      ...numberParameter,
+      schema: { type: 'array', items: { type: 'string' } },
+      extensions: ['asc', 'sif', 'txt', 'wip', 'smf'],
+    };
+    expect(isSimplePathParameter(stringPathListParameter)).toBe(true);
+    expect(isFileListParameter(stringPathListParameter)).toBe(false);
+    expect(isPathListParameter(stringPathListParameter)).toBe(true);
+    expect(isJsonParameter(stringPathListParameter)).toBe(true);
     const csvPathParameter: CapabilityParameter = {
       ...numberParameter,
       schema: { type: 'string', extensions: ['.csv'] },

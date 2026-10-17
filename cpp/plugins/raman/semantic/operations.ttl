@@ -3,21 +3,132 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfram:ramanAddAnalyses
+sfram:readRamanFiles
     a sf:Operation ;
-    sf:operationId "raman.add_analyses" ;
+    sf:operationId "raman.read_raman_files" ;
     sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
     sf:projectEntry true ;
-    skos:prefLabel "Add Raman analyses" ;
-    skos:definition "Add Raman analysis files to a project." ;
-    sf:hasParameter sfram:analysesParameter ;
-    sf:hasOutputPort sfcore:operationStatusResult, sfcore:operationSuccessSignal .
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Read Raman files" ;
+    skos:definition "Read supported Raman or infrared ASC, SIF, WIP, SMF, and WiTec text files. Detect technique and spectral-axis metadata from each file, apply standard units for recognized axes, and retain unknown where the source is inconclusive. Emit one analysis row per file, one spectraTable row per spectral coordinate with spectrum and acquisition-time metadata repeated on its points, and parsed source metadata." ;
+    sf:hasParameter sfram:sourcePathsParameter ;
+    sf:hasOutputPort
+        sfram:analysesTable,
+        sfram:spectraTable,
+        sfram:sourceMetadataTable,
+        sfcore:operationSuccessSignal .
 
 sfram:ramanRemoveAnalyses
     a sf:Operation ;
     sf:operationId "raman.remove_analyses" ;
     sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
     skos:prefLabel "Remove Raman analyses" ;
-    skos:definition "Remove Raman analysis files from a project." ;
+    skos:definition "Remove source analyses whose names exactly match a requested name or match a regular expression, filtering the corresponding rows from every supplied Raman table." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:hasOutputPort sfcore:operationStatusResult, sfcore:operationSuccessSignal .
+    sf:hasInputPort
+        sfram:analysesTable,
+        sfram:spectraTable,
+        sfram:sourceMetadataTable ;
+    sf:hasOutputPort
+        sfram:analysesTable,
+        sfram:spectraTable,
+        sfram:sourceMetadataTable,
+        sfcore:operationSuccessSignal .
+
+sfram:normalizeSpectra
+    a sf:Operation ;
+    sf:operationId "raman.normalize_spectra" ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Normalize spectra" ;
+    skos:definition "Transform each spectrum independently in point order using min-max scaling, standard normal variate (SNV), standard-deviation scaling, length block weighting, or mean centering. The operation reads and emits only spectraTable and leaves repeated per-spectrum metadata unchanged." ;
+    sf:hasParameter
+        sfram:normalizationAlgorithmParameter,
+        sfram:liftToZeroParameter ;
+    sf:hasInputPort sfram:spectraTable ;
+    sf:hasOutputPort
+        sfram:spectraTable,
+        sfcore:operationSuccessSignal .
+
+sfram:correctSpectraBaseline
+    a sf:Operation ;
+    sf:operationId "raman.correct_spectra_baseline" ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Correct spectra baseline" ;
+    skos:definition "Estimate an adaptive iteratively reweighted penalized least-squares (airPLS) baseline independently for each spectrum in spectraTable, subtract it from the signal, and emit the estimated baseline aligned to source spectral points. Repeated per-spectrum metadata is unchanged." ;
+    sf:hasParameter
+        sfram:baselineAlgorithmParameter,
+        sfram:baselineLambdaParameter,
+        sfram:baselineDifferencesParameter,
+        sfram:baselineItermaxParameter ;
+    sf:hasInputPort sfram:spectraTable ;
+    sf:hasOutputPort
+        sfram:spectraTable,
+        sfram:baselineTable,
+        sfcore:operationSuccessSignal .
+
+sfram:filterSpectralRange
+    a sf:Operation ;
+    sf:operationId "raman.filter_spectral_range" ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Filter spectral range" ;
+    skos:definition "Retain or remove points inside an inclusive spectral-coordinate interval using spectral coordinates and spectrum identifiers in spectraTable. Per-spectrum metadata on retained points is preserved." ;
+    sf:hasParameter
+        sfram:minimumSpectralCoordinateParameter,
+        sfram:maximumSpectralCoordinateParameter,
+        sfram:spectralRangeModeParameter ;
+    sf:hasInputPort sfram:spectraTable ;
+    sf:hasOutputPort
+        sfram:spectraTable,
+        sfcore:operationSuccessSignal .
+
+sfram:summarizeSpectra
+    a sf:Operation ;
+    sf:operationId "raman.summarize_spectra" ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Summarize spectra" ;
+    skos:definition "Group spectraTable points by spectrum_id and produce one summary row per spectrum, including frame metadata and the current point count." ;
+    sf:hasInputPort sfram:spectraTable ;
+    sf:hasOutputPort sfram:spectraSummaryTable, sfcore:operationSuccessSignal .
+
+sfram:smoothSpectra
+    a sf:Operation ;
+    sf:operationId "raman.smooth_spectra" ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Smooth spectra" ;
+    skos:definition "Apply a centered moving average to each spectrum in spectraTable point order. The window length is odd and edge windows are truncated to the available points. Per-spectrum metadata is preserved." ;
+    sf:hasParameter
+        sfram:smoothingAlgorithmParameter,
+        sfram:smoothingWindowSizeParameter ;
+    sf:hasInputPort sfram:spectraTable ;
+    sf:hasOutputPort
+        sfram:spectraTable,
+        sfcore:operationSuccessSignal .
+
+sfram:smoothSpectraSavitzkyGolay
+    a sf:Operation ;
+    sf:operationId "raman.smooth_spectra_savgol" ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Smooth spectra (Savitzky-Golay)" ;
+    skos:definition "Smooth each spectrum in spectraTable with a native local-polynomial Savitzky-Golay fit. Requires finite intensities and a strictly monotonic, evenly spaced spectral axis; edge windows shift inward to retain the full window length. This operation currently computes smoothing only (derivative order zero) and preserves per-spectrum metadata." ;
+    sf:hasParameter
+        sfram:savitzkyGolayWindowLengthParameter,
+        sfram:savitzkyGolayPolynomialOrderParameter ;
+    sf:hasInputPort sfram:spectraTable ;
+    sf:hasOutputPort
+        sfram:spectraTable,
+        sfcore:operationSuccessSignal .

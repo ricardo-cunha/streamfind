@@ -47,6 +47,8 @@ export function isSimplePathParameter(parameter: CapabilityParameter): boolean {
     parameter.schema.type === 'array' &&
     parameter.schema.items?.type !== 'object' &&
     Boolean(
+      parameter.extensions?.length ||
+      parameter.path_kind ||
       parameter.schema.items?.path_kind ||
       parameter.schema.items?.extensions ||
       parameter.schema.items?.type === 'path',

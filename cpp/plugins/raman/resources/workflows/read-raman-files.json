@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "id": "raman-read-files",
+    "name": "Read Raman files",
+    "description": "Starter workflow with a single Read Raman files operation. Update source_paths to the Raman or infrared files you want to import.",
+    "domain": "raman",
+    "use_case": "Import Raman or infrared spectra",
+    "owner": "StreamFind Raman demos"
+  },
+  "workflow": {
+    "schema_version": 1,
+    "workflow_id": "raman-read-files",
+    "name": "Read Raman files",
+    "version": 1,
+    "metadata": {
+      "name": "Read Raman files",
+      "description": "Read source spectra into the Raman project. Replace the example path before running this workflow.",
+      "domain": "raman"
+    },
+    "operations": [
+      {
+        "id": "read-raman-files",
+        "operation": "raman.read_raman_files",
+        "parameters": {
+          "source_paths": [
+            "E:\\example_files\\raman\\asc_format\\raman_Bevacizumab_11731.asc"
+          ]
+        },
+        "inputs": {},
+        "position": {
+          "x": 160,
+          "y": 140
+        }
+      }
+    ],
+    "connections": []
+  }
+}

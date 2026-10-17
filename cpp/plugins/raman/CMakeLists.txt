@@ -1,6 +1,14 @@
 add_library(streamfind_raman_plugin SHARED
     src/plugin_entrypoint.cpp
     src/operations/operations.cpp
+    src/operations/spectral_normalization.cpp
+    src/operations/spectral_savgol.cpp
+    src/readers/asc_reader.cpp
+    src/readers/format_reader.cpp
+    src/readers/sif_reader.cpp
+    src/readers/smf_reader.cpp
+    src/readers/text_reader.cpp
+    src/readers/wip_reader.cpp
     src/utils/error.cpp)
 target_link_libraries(streamfind_raman_plugin PRIVATE streamfind::cpp_sdk)
 streamfind_configure_cpp_library(streamfind_raman_plugin raman
@@ -29,11 +37,16 @@ add_custom_command(TARGET streamfind_raman_plugin POST_BUILD
         "$<TARGET_FILE_DIR:streamfind_raman_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
-        "$<TARGET_FILE_DIR:streamfind_raman_plugin>/catalogue.duckdb")
+        "$<TARGET_FILE_DIR:streamfind_raman_plugin>/catalogue.duckdb"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:streamfind_raman_plugin>/resources")
 streamfind_validate_plugin_build(streamfind_raman_plugin raman)
 streamfind_stage_mingw_plugin_runtime(streamfind_raman_plugin raman)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/raman/ontology)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
+    DESTINATION plugins/raman/resources)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/raman)
 install(TARGETS streamfind_raman_plugin

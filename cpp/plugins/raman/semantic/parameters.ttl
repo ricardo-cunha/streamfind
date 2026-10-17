@@ -3,15 +3,163 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfram:analysesParameter
+sfram:sourcePathsParameter
     a sf:Parameter ;
     sf:availableInDomain sfram:raman ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Analyses" ;
-    skos:definition "Raman analysis files to add to the project." ;
+    skos:prefLabel "Source paths" ;
+    skos:definition "Paths to supported Raman or infrared spectrum files to import." ;
     sf:type "array" ;
     sf:required true ;
     sf:default "[]" ;
-    sf:items sfcore:analysisFileParameter ;
-    sf:example "[{\"path\":\"data/sample.asc\"}]" ;
-    sf:extensions "asc,sif" .
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"data/sample.asc\"]" ;
+    sf:extensions "asc,sif,txt,wip,smf" .
+
+sfram:normalizationAlgorithmParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Normalization algorithm" ;
+    skos:definition "Normalization method applied independently to each spectrum. Constant or otherwise degenerate inputs are rejected where the selected method is undefined." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "minmax" ;
+    sf:enum "minmax,snv,scale,blockweight,meancenter" ;
+    sf:example "snv" .
+
+sfram:liftToZeroParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Lift SNV spectrum to zero" ;
+    skos:definition "Shift an SNV-normalized spectrum so its minimum valid value is zero; applies only to the snv algorithm." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default "false" ;
+    sf:example "false" .
+
+sfram:baselineAlgorithmParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Baseline algorithm" ;
+    skos:definition "Baseline estimation method. The native Raman operation currently implements adaptive iteratively reweighted penalized least squares (airPLS)." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "airpls" ;
+    sf:enum "airpls" ;
+    sf:example "airpls" .
+
+sfram:baselineLambdaParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "airPLS smoothing penalty (lambda)" ;
+    skos:definition "Positive finite Whittaker smoothing penalty (lambda) controlling baseline smoothness; the default is 10." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "10" ;
+    sf:example "10" .
+
+sfram:baselineDifferencesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Baseline difference order" ;
+    skos:definition "Finite-difference order used by the airPLS Whittaker penalty; supported values are 1, 2, or 3." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "1" ;
+    sf:enum "1,2,3" ;
+    sf:example "1" .
+
+sfram:baselineItermaxParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Baseline maximum iterations" ;
+    skos:definition "Maximum number of adaptive airPLS reweighting iterations; supported values are 1 through 1000." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "20" ;
+    sf:example "20" .
+
+sfram:minimumSpectralCoordinateParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum spectral coordinate" ;
+    skos:definition "Optional inclusive lower bound for spectral_coordinate, expressed in the spectrum header's axis_unit. At least one of the lower or upper bounds is required." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "400" .
+
+sfram:maximumSpectralCoordinateParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum spectral coordinate" ;
+    skos:definition "Optional inclusive upper bound for spectral_coordinate, expressed in the spectrum header's axis_unit. At least one of the lower or upper bounds is required." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "1800" .
+
+sfram:spectralRangeModeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Spectral range mode" ;
+    skos:definition "Whether to retain points inside the inclusive coordinate interval (include) or remove points inside it (exclude)." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "include" ;
+    sf:enum "include,exclude" ;
+    sf:example "include" .
+
+sfram:smoothingAlgorithmParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Smoothing algorithm" ;
+    skos:definition "Moving-average method applied along the stored point order within each spectrum." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "moving_average" ;
+    sf:enum "moving_average" ;
+    sf:example "moving_average" .
+
+sfram:smoothingWindowSizeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Smoothing window size" ;
+    skos:definition "Odd window length in points for the centered moving average; supported values are 1 through 1001. At spectrum edges, only available neighboring points are averaged." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "5" ;
+    sf:example "5" .
+
+sfram:savitzkyGolayWindowLengthParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Savitzky-Golay window length" ;
+    skos:definition "Odd Savitzky-Golay local-fit window length in points; supported values are 3 through 1001 and it cannot exceed the point count of any spectrum." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "11" ;
+    sf:example "11" .
+
+sfram:savitzkyGolayPolynomialOrderParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Savitzky-Golay polynomial order" ;
+    skos:definition "Polynomial degree for the local least-squares fits; the native implementation supports integers from 0 through 6, strictly less than window_length." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "4" ;
+    sf:example "4" .

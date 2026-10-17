@@ -1,9 +1,17 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
 @prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfram:raman
     a sf:Domain ;
-    skos:prefLabel "raman" ;
-    skos:definition "Raman spectroscopy project domain." ;
-    sf:guidance "Raman workflow: create or describe the project, discover canonical operations with get_operations(domain=raman), add configured operation nodes, connect typed ports, validate the graph, and run_workflow." .
+    skos:prefLabel "Raman and infrared spectroscopy" ;
+    skos:definition "Project domain for importing and processing Raman and infrared spectra, including acquisitions that contain one spectrum or a time-ordered series of spectra." ;
+    sf:guidance "Start with raman.read_raman_files. Each spectraTable point carries its spectrum identifiers, source frame, axis and signal descriptors, and acquisition time when available. Use raman.summarize_spectra to derive one row per spectrum with a current point count. Pointwise operations process each spectrum independently and do not combine time points." .
+
+sfram:baseModule
+    a sf:DomainModule ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Spectral ingestion and processing" ;
+    skos:definition "Native file ingestion and per-spectrum processing operations for Raman and infrared data." .

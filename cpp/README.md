@@ -29,7 +29,7 @@ The current package manifests are:
 | Domain | Windows library | POSIX library | Domain state |
 | --- | --- | --- | --- |
 | `mass_spec` | `streamfind_mass_spec.dll` | `libstreamfind_mass_spec.so` | Native readers and NTA methods |
-| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Dynamic operation boundary; processing is not implemented yet |
+| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Native ASC/SIF and WiTec text readers for Raman/IR spectra and time-resolved spectra; processing operations are in development |
 | `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty domain; no executable capabilities yet |
 
 For a development-tree runtime, place `streamfind.json` beside
@@ -262,7 +262,7 @@ The shipped plugin domains are:
 | Domain | Current state |
 | --- | --- |
 | `mass_spec` | Native readers and NTA methods; primary production domain |
-| `raman` | Dynamic plugin boundary; processing remains incomplete |
+| `raman` | Native ASC/SIF and WiTec text ingestion with Raman/IR spectrum tables; processing remains in development |
 | `sensors` | Dynamic empty domain; no executable capabilities yet |
 
 
