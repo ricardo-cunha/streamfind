@@ -1,0 +1,10 @@
+{
+  "id": "streamfind.raman",
+  "name": "streamfind Raman viewers",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/raman/index.ts",
+  "domains": ["raman"],
+  "artifactContracts": ["spectraTable"]
+}

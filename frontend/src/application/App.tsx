@@ -1843,7 +1843,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
           <span>Service {serviceState}</span>
         </div>
       </aside>
-      <main className="sf-main">
+      <main className={`sf-main${activeProject ? ' sf-main-workspace' : ''}`}>
         <header className="sf-topbar">
           <div className="sf-context">
             <img className="sf-topbar-logo" src={logo} alt="" />

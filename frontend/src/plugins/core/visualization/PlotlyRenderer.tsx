@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { PlotlyPayload, VisualizationSpec } from '../../../framework/visualization/visualizationTypes';
 import type {
   VisualizationPointClick,
@@ -47,7 +47,6 @@ export function PlotlyRenderer({
   const doubleClickRef = useRef(onDoubleClick);
   const relayoutRef = useRef(onRelayout);
   const [error, setError] = useState<string | null>(null);
-  const renderKey = useMemo(() => JSON.stringify(spec.payload), [spec.payload]);
   useEffect(() => {
     pointClickRef.current = onPointClick;
     plotClickRef.current = onPlotClick;
@@ -55,8 +54,10 @@ export function PlotlyRenderer({
     relayoutRef.current = onRelayout;
   }, [onPointClick, onPlotClick, onDoubleClick, onRelayout]);
 
-  // The serialized payload is the dependency by design: artifact refreshes recreate
-  // the spec object, but must not reset Plotly's zoom/camera when its data is unchanged.
+  // The payload object identity is the dependency by design. Callers that update
+  // data create a new payload; avoiding JSON serialization here is important for
+  // large scatter plots because stringifying hundreds of thousands of points
+  // blocks the browser before Plotly can render.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     const element = chartRef.current;
@@ -85,7 +86,11 @@ export function PlotlyRenderer({
     const handleDoubleClick = () => doubleClickRef.current?.();
     const handleRelayout = (event: VisualizationRelayout) => relayoutRef.current?.(event);
     setError(null);
-    const layout = { ...spec.payload.layout, autosize: true };
+    // Keep Plotly's interaction state (zoom/pan and legend visibility) when
+    // React supplies a new data/layout object after an interaction. Without a
+    // stable uirevision, Plotly.react resets the axes to the autorange, which
+    // is particularly noticeable for component EICs.
+    const layout = { ...spec.payload.layout, autosize: true, uirevision: spec.visualization_id };
     const render = runtime.react ?? runtime.newPlot;
     Promise.resolve(render(element, spec.payload.data, layout, spec.payload.config))
       .then(() => {
@@ -102,7 +107,7 @@ export function PlotlyRenderer({
       eventElement.removeListener?.('plotly_doubleclick', handleDoubleClick);
       eventElement.removeListener?.('plotly_relayout', handleRelayout);
     };
-  }, [renderKey, runtime]);
+  }, [spec.payload, runtime]);
 
   useEffect(() => {
     return () => {

@@ -2,7 +2,7 @@ import type { VisualizationRenderer } from '../../../framework/visualization/Vis
 import { PlotlyRenderer, type PlotlyRuntime } from './PlotlyRenderer';
 
 export function createPlotlyRenderer(runtime: PlotlyRuntime): VisualizationRenderer {
-  return ({ spec, className, onPointClick, onPlotClick, onDoubleClick }) => (
+  return ({ spec, className, onPointClick, onPlotClick, onDoubleClick, onRelayout }) => (
     <PlotlyRenderer
       runtime={runtime}
       spec={spec}
@@ -10,6 +10,7 @@ export function createPlotlyRenderer(runtime: PlotlyRuntime): VisualizationRende
       onPointClick={onPointClick}
       onPlotClick={onPlotClick}
       onDoubleClick={onDoubleClick}
+      onRelayout={onRelayout}
     />
   );
 }

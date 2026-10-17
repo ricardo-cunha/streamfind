@@ -242,15 +242,16 @@ function SuspectScatter({
   onRelayout: (event: Record<string, unknown>) => void;
   artifactId: string;
 }): ReactNode {
+  const userViewportGesture = useRef(false);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const theme = {
     background: cssThemeValue('--sf-surface-raised'),
     grid: cssThemeValue('--sf-border'),
     text: cssThemeValue('--sf-text'),
   };
   const keys = points.map((point) => featureKey(point.row));
-  const intensities = points.map((point) => point.intensity);
-  const intensityMin = Math.min(...intensities);
-  const intensityMax = Math.max(...intensities);
+  const intensityMin = points.reduce((minimum, point) => Math.min(minimum, point.intensity), Infinity);
+  const intensityMax = points.reduce((maximum, point) => Math.max(maximum, point.intensity), -Infinity);
   const markerSizes = points.map((point) =>
     intensityMax > intensityMin ? 10 + ((point.intensity - intensityMin) / (intensityMax - intensityMin)) * 20 : 20,
   );
@@ -270,12 +271,12 @@ function SuspectScatter({
           mode: 'markers',
           x: points.map((point) => Number(point.row.rt)),
           y: points.map((point) => Number(point.row.mz)),
-          customdata: keys,
-          text: points.map((point) => {
-            const analysis = text(point.row, 'analysis');
-            const feature = text(point.row, 'feature') || text(point.row, 'name');
-            return `Analysis: ${analysis}<br>Feature: ${feature}`;
-          }),
+          // Keep hover metadata compact so large suspect tables do not carry a
+          // duplicated formatted text string for every plotted point.
+          customdata: points.map((point) => [
+            text(point.row, 'analysis'),
+            text(point.row, 'feature') || text(point.row, 'name'),
+          ]),
           marker: {
             color: points.map((point) => point.color),
             size: selectedKey
@@ -284,7 +285,7 @@ function SuspectScatter({
             opacity: markerOpacity,
             line: { color: theme.text, width: markerLineWidth },
           },
-          hovertemplate: '%{text}<br>RT %{x}<br>m/z %{y}<extra></extra>',
+          hovertemplate: 'Analysis: %{customdata[0]}<br>Feature: %{customdata[1]}<br>RT %{x}<br>m/z %{y}<extra></extra>',
         },
       ],
       layout: {
@@ -326,22 +327,44 @@ function SuspectScatter({
     fallback: { description: 'The suspect feature scatter renderer is unavailable.' },
   };
   return (
-    <VisualizationRenderer
-      spec={spec}
+    <div
       className="sf-feature-scatter-plotly"
-      onPointClick={(point) => {
-        const index =
-          typeof point.pointNumber === 'number'
-            ? point.pointNumber
-            : typeof point.pointIndex === 'number'
-              ? point.pointIndex
-              : -1;
-        if (index >= 0 && points[index]) onSelect(keys[index]);
+      onPointerDown={(event) => {
+        pointerStart.current = { x: event.clientX, y: event.clientY };
       }}
-      onPlotClick={onClearSelection}
-      onDoubleClick={onClearSelection}
-      onRelayout={onRelayout}
-    />
+      onPointerMove={(event) => {
+        const start = pointerStart.current;
+        if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4)
+          userViewportGesture.current = true;
+      }}
+      onPointerUp={() => {
+        pointerStart.current = null;
+      }}
+      onWheel={() => {
+        userViewportGesture.current = true;
+      }}
+    >
+      <VisualizationRenderer
+        spec={spec}
+        className="sf-feature-scatter-plotly"
+        onPointClick={(point) => {
+          const index =
+            typeof point.pointNumber === 'number'
+              ? point.pointNumber
+              : typeof point.pointIndex === 'number'
+                ? point.pointIndex
+                : -1;
+          if (index >= 0 && points[index]) onSelect(keys[index]);
+        }}
+        onPlotClick={onClearSelection}
+        onDoubleClick={onClearSelection}
+        onRelayout={(event) => {
+          if (!userViewportGesture.current) return;
+          userViewportGesture.current = false;
+          onRelayout(event);
+        }}
+      />
+    </div>
   );
 }
 
@@ -490,6 +513,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [totalSuspects, setTotalSuspects] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedFeatureDetail, setSelectedFeatureDetail] = useState<Row | null>(null);
+  const featureDetailCache = useRef(new Map<string, Row>());
   const [selectedSuspect, setSelectedSuspect] = useState<Row | null>(null);
   const [selectedSuspectLoading, setSelectedSuspectLoading] = useState(false);
   const [rightTab, setRightTab] = useState<'eic' | 'suspects'>('eic');
@@ -650,9 +674,12 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         })
         .then((response) => {
           if (!active) return;
-          setSuspects(response.rows.filter((row) => row && typeof row === 'object'));
+          const nextRows = response.rows.filter((row) => row && typeof row === 'object');
+          setSuspects(nextRows);
           setTotalSuspects(response.total_rows);
-          setSelectedKey(null);
+          setSelectedKey((current) =>
+            current && nextRows.some((row) => featureKey(row) === current) ? current : null,
+          );
         })
         .catch(() => {
           // Keep the last successful overview visible while a transient query fails.
@@ -777,6 +804,14 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         active = false;
       };
     }
+    const cached = featureDetailCache.current.get(rowKey);
+    if (cached) {
+      setSelectedFeatureDetail(cached);
+      return () => {
+        active = false;
+      };
+    }
+    setSelectedFeatureDetail(null);
     void client
       .artifactQuery(context.sessionId, {
         artifact_id: context.artifact.artifact_id,
@@ -785,7 +820,9 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         limit: 1,
       })
       .then((response) => {
-        if (active) setSelectedFeatureDetail(response.rows[0] ?? null);
+        const detail = response.rows[0] ?? null;
+        if (detail) featureDetailCache.current.set(rowKey, detail);
+        if (active) setSelectedFeatureDetail(detail);
       })
       .catch(() => {
         if (active) setSelectedFeatureDetail(null);

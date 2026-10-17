@@ -70,7 +70,7 @@ export type ArtifactQueryFilter = {
 };
 export type ArtifactQueryRequest = {
   artifact_id: string;
-  mode?: 'page' | 'sample' | 'detail' | 'eic';
+  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   columns?: string[];
   filters?: ArtifactQueryFilter[];
   offset?: number;
@@ -80,15 +80,19 @@ export type ArtifactQueryRequest = {
   descending?: boolean;
   x_column?: string;
   y_column?: string;
+  x_min?: number;
+  x_max?: number;
   row_keys?: string[];
   sampling_strategy?: 'ordered' | 'grid';
   x_bins?: number;
   y_bins?: number;
   eic_max_points?: number;
+  trace_columns?: string[];
+  max_points_per_trace?: number;
 };
 export type ArtifactQueryResponse = ArtifactDataResponse & {
   returned_rows: number;
-  mode: 'page' | 'sample' | 'detail' | 'eic';
+  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   has_more: boolean;
 };
 export type StructureSvgRequest = {
