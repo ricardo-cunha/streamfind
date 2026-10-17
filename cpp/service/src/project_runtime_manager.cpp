@@ -344,8 +344,8 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
         return output + "\"";
     };
     const auto mode = request.value("mode", std::string{"page"});
-    if (mode != "page" && mode != "sample" && mode != "detail")
-        throw std::invalid_argument("artifact query mode must be page, sample, or detail");
+    if (mode != "page" && mode != "sample" && mode != "detail" && mode != "eic")
+        throw std::invalid_argument("artifact query mode must be page, sample, detail, or eic");
     std::vector<std::string> selected_columns;
     if (request.contains("columns")) {
         if (!request.at("columns").is_array()) throw std::invalid_argument("artifact query columns must be an array");
@@ -457,7 +457,8 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
         order = " ORDER BY " + quote_identifier(x_column) + ", " + quote_identifier(y_column);
         requested_grid_sampling = request.value("sampling_strategy", std::string{"ordered"}) == "grid";
     }
-    const auto limit = std::clamp(request.value("limit", mode == "sample" ? 50000 : 100), 1, mode == "sample" ? 50000 : 1000);
+    const auto limit = std::clamp(request.value("limit", mode == "sample" ? 50000 : mode == "eic" ? 250000 : 100), 1,
+                                  mode == "sample" ? 50000 : mode == "eic" ? 250000 : 1000);
     const auto offset = std::max(0, request.value("offset", 0));
     std::size_t total_rows = 0;
     if (mode == "sample") {

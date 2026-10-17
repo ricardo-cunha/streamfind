@@ -96,12 +96,11 @@ button {
   text-transform: uppercase;
 }
 @keyframes sf-rotate {
-  0%,
-  100% {
-    transform: perspective(600px) rotateY(-18deg);
+  from {
+    transform: perspective(600px) rotateY(0deg);
   }
-  50% {
-    transform: perspective(600px) rotateY(198deg);
+  to {
+    transform: perspective(600px) rotateY(360deg);
   }
 }
 @keyframes sf-splash-in {
@@ -936,6 +935,20 @@ h2 {
   justify-content: flex-end;
   gap: 5px;
   padding-top: 5px;
+}
+.sf-canvas-confirmation-backdrop {
+  z-index: 40;
+}
+.sf-canvas-confirmation-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+.sf-canvas-confirmation-dialog h2 {
+  margin: 0 0 5px;
+  color: var(--sf-text);
+  font-size: 1rem;
+}
+.sf-canvas-confirmation-dialog strong {
+  color: var(--sf-text);
 }
 .sf-operation-parameters,
 .sf-file-list-field,
@@ -2425,8 +2438,17 @@ h2 {
 .sf-canvas-workflow-loading img {
   width: min(150px, 24vw);
   height: auto;
-  animation: sf-rotate 3s ease-in-out infinite;
-  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--sf-text) 18%, transparent));
+}
+.sf-canvas-workflow-loading .sf-loading-logo,
+.sf-canvas-workflow-saving .sf-loading-logo {
+  min-height: 0;
+  color: var(--sf-text);
+}
+.sf-canvas-workflow-loading .sf-loading-logo > span,
+.sf-canvas-workflow-saving .sf-loading-logo > span {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
 }
 .sf-canvas-workflow-loading strong {
   font-size: 0.95rem;
@@ -2527,11 +2549,21 @@ h2 {
   font-size: 0.62rem;
 }
 .sf-canvas-status-current {
+  display: flex;
+  gap: 0.55rem;
   overflow: hidden;
   padding: 5px 0;
   color: var(--sf-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sf-canvas-status-current span:first-child {
+  color: var(--sf-text-muted);
+  flex: 0 0 auto;
+}
+.sf-canvas-status-current span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sf-canvas-status-feed {
   display: flex;
@@ -3257,15 +3289,16 @@ h2 {
 }
 .sf-artifact-viewer-loading {
   position: absolute;
-  top: 8px;
-  right: 10px;
+  inset: 0;
   z-index: 6;
   min-height: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--sf-border);
-  border-radius: 4px;
-  background: var(--sf-surface-raised);
-  box-shadow: 0 2px 8px color-mix(in srgb, #020617 18%, transparent);
+  padding: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+.sf-artifact-viewer-loading .sf-loading-logo {
+  min-height: 0;
+  height: auto;
 }
 .sf-artifact-viewer-json {
   min-height: 0;
@@ -3296,13 +3329,6 @@ h2 {
 }
 .sf-edge-artifact-picker select {
   min-width: 0;
-}
-.sf-artifact-viewer-loading {
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 2;
-  padding: 8px;
-  background: color-mix(in srgb, var(--sf-accent) 14%, var(--sf-surface-raised));
 }
 @keyframes sf-output-available {
   0%,

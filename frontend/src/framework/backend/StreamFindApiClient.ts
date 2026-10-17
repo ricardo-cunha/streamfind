@@ -70,7 +70,7 @@ export type ArtifactQueryFilter = {
 };
 export type ArtifactQueryRequest = {
   artifact_id: string;
-  mode?: 'page' | 'sample' | 'detail';
+  mode?: 'page' | 'sample' | 'detail' | 'eic';
   columns?: string[];
   filters?: ArtifactQueryFilter[];
   offset?: number;
@@ -84,10 +84,11 @@ export type ArtifactQueryRequest = {
   sampling_strategy?: 'ordered' | 'grid';
   x_bins?: number;
   y_bins?: number;
+  eic_max_points?: number;
 };
 export type ArtifactQueryResponse = ArtifactDataResponse & {
   returned_rows: number;
-  mode: 'page' | 'sample' | 'detail';
+  mode: 'page' | 'sample' | 'detail' | 'eic';
   has_more: boolean;
 };
 export type StructureSvgRequest = {
@@ -450,7 +451,8 @@ export class StreamFindApiClient {
   async pickSaveFile(): Promise<string> {
     const response = await fetch(`${this.baseUrl}/projects/file-picker/save-file`, { method: 'POST' });
     const result = (await response.json()) as { path?: string; error?: string };
-    if (!response.ok || !result.path) throw new Error(result.error || `Output file selection failed (${response.status})`);
+    if (!response.ok || !result.path)
+      throw new Error(result.error || `Output file selection failed (${response.status})`);
     return result.path;
   }
 

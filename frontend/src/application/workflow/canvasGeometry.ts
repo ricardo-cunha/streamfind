@@ -3,8 +3,8 @@ import type { CanvasNode, Point } from './workflowModel';
 export const NODE_WIDTH = 224;
 export const NODE_HEIGHT = 260;
 export const CONNECTED_NODE_GAP = 72;
-export const CANVAS_WORLD_WIDTH = 6000;
-export const CANVAS_WORLD_HEIGHT = 4000;
+export const CANVAS_WORLD_WIDTH = 7800;
+export const CANVAS_WORLD_HEIGHT = 5200;
 export const GRID_SIZE = 22;
 
 export function connectedNodePosition(source: CanvasNode, nodes: CanvasNode[]): Point {

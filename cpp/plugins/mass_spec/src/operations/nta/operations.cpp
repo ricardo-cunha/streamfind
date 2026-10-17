@@ -33,6 +33,23 @@ Json get_features(sdk::PluginProjectAccess &access, const Json &parameters)
     return Json{{"status", "finished"}, {"features", output.size()}};
 }
 
+namespace drop_filtered_features
+{
+Json run(sdk::PluginProjectAccess &access, const Json &parameters)
+{
+    const auto rows = base::utils::input_rows(access, parameters, "featuresTable", utils::feature_columns(), "analysis");
+    Json output = Json::array();
+    for (const auto &row : rows)
+    {
+        if (utils::integer(row, "filtered") == 0)
+            output.push_back(row);
+    }
+    access.emit_table_rows("featuresTable", utils::feature_columns(), utils::feature_types(), output);
+    return Json{{"status", "finished"}, {"input_features", rows.size()}, {"output_features", output.size()},
+                {"dropped_features", rows.size() - output.size()}};
+}
+}
+
 Json get_suspects(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto rows = base::utils::input_rows(access, parameters, "suspectsTable", utils::suspects_columns(), "analysis");

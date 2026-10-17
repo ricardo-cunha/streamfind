@@ -90,6 +90,7 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.metfrag_screening", sdk::CapabilityKind::Operation, &nta::metfrag_screening::run},
         {"mass_spec.find_internal_standards_metfrag", sdk::CapabilityKind::Operation, &nta::find_internal_standards_metfrag::run},
         {"mass_spec.get_features", sdk::CapabilityKind::Operation, &nta::get_features},
+        {"mass_spec.drop_filtered_features", sdk::CapabilityKind::Operation, &nta::drop_filtered_features::run},
         {"mass_spec.get_suspects", sdk::CapabilityKind::Operation, &nta::get_suspects},
         {"mass_spec.get_internal_standards", sdk::CapabilityKind::Operation, &nta::get_internal_standards},
         {"mass_spec.get_transformation_products", sdk::CapabilityKind::Operation, &nta::get_transformation_products},

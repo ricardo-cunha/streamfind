@@ -50,6 +50,18 @@ sfms:plotDownsizeParameter
     sf:units "seconds" ;
     sf:example 5.0 .
 
+sfms:plotMaxPointsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum TIC points per trace" ;
+    skos:definition "Maximum number of averaged retention-time points emitted for each plotted trace when Plot downsize is zero. The backend chooses an adaptive bin width to keep large multi-sample TIC visualizations responsive; zero disables the automatic cap." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default 5000 ;
+    sf:units "points per trace" ;
+    sf:example 5000 .
+
 sfms:plotGroupByParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -285,7 +297,7 @@ sfms:targetsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry targets" ;
-    skos:definition "Optional target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. For feature matching, provide mass or mz, optionally rt or explicit bounds, and optionally analysis, polarity, and name. Formula, SMILES, InChI, and InChIKey are accepted target metadata but do not replace mass or mz matching." ;
+    skos:definition "Optional mass-spectrometry target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. The matching contract contains mass/mz and optional retention-time, analysis, polarity, level, and name fields; chemical identity fields are not part of this table." ;
     sf:guidance "Use an array of objects such as [{\"mass\":267.1834,\"name\":\"Metoprolol\"}]. Omit analysis_names and analysis to search all analyses. Omit polarity to search both polarities; include polarity in a row only when it is a deliberate constraint. A mass or mz value is expanded by ppm; an exact rt value is expanded by rt_tolerance seconds. Use mass_min/mass_max, mzmin/mzmax, or rtmin/rtmax for explicit inclusive ranges. The returned featuresTable is a new persisted artifact." ;
     sf:type "table" ;
     sf:tableContract sfms:targetsTable ;
@@ -298,7 +310,7 @@ sfms:targetsCsvPathParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Targets CSV path" ;
-    skos:definition "CSV file containing target rows. A target requires mass or mz, while optional chemical structure columns are normalized with Open Babel when supplied." ;
+    skos:definition "CSV file containing mass-spectrometry target rows. A target requires mass or mz; optional formula, SMILES, InChI, and InChIKey columns are ignored because they are not part of the targetsTable contract." ;
     sf:type "string" ;
     sf:required true ;
     sf:defaultRequired true ;
@@ -1275,6 +1287,17 @@ sfms:maxErrorMassParameter
     sf:default "null" ;
     sf:example 5.0 .
 
+sfms:deduplicateInternalStandardsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Deduplicate internal-standard matches" ;
+    skos:definition "Keep one candidate per analysis, polarity, and chemical identity when duplicate internal-standard matches remain. Candidates are prioritized by absolute RT error, absolute mass error, shared fragments, score, intensity, area, cosine similarity, identification level, and candidate rank." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default false ;
+    sf:example true .
+
 sfms:idLevelsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1321,6 +1344,30 @@ sfms:topNParameter
     sf:required false ;
     sf:default 5 ;
     sf:example 5 .
+
+sfms:databaseTypeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag database type" ;
+    skos:definition "Candidate database used by MetFrag for suspect screening." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "LocalCSV" ;
+    sf:constraints "LocalCSV|PubChem|ExtendedPubChem|PubChemLite" ;
+    sf:example "LocalCSV" .
+
+sfms:pubchemLitePathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PubChemLite database path" ;
+    skos:definition "Path to the local PubChemLite CSV file used when database_type is PubChemLite." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:extensions ".csv" ;
+    sf:example "H:/Project_261009_fa_nts_ring_trail/PubChemLite.csv" .
 
 sfms:scoreTypesParameter
     a sf:Parameter ;
@@ -1391,6 +1438,40 @@ sfms:numberThreadsParameter
     sf:required false ;
     sf:default 1 ;
     sf:example 1 .
+
+sfms:featureParallelismParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag feature parallelism" ;
+    skos:definition "Maximum number of independent feature-level MetFrag jobs running at once. Keep this low when number_threads is high." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default 2 ;
+    sf:constraints "{\"minimum\":1}" ;
+    sf:example 2 .
+
+sfms:cacheCandidatesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache MetFrag candidate results" ;
+    skos:definition "Reuse results for identical database, mass, polarity, tolerance, and MS2 queries within the operation." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default true ;
+    sf:example true .
+
+sfms:includeFragmentSmilesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Include MetFrag fragment SMILES" ;
+    skos:definition "Write and retain MetFrag FragmentSmilesPSV output used for fragment-level SMILES annotations. Disable to reduce output I/O when those annotations are not needed." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default true ;
+    sf:example true .
 
 sfms:useSmilesParameter
     a sf:Parameter ;

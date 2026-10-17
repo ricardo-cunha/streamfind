@@ -16,7 +16,9 @@ struct TargetRange
     std::vector<int> analysis_indices;
     std::vector<int> polarities;
     std::vector<int> levels;
+    int charge = 1;
     bool has_mass = false;
+    bool has_mz = false;
     double mass_min = 0.0;
     double mass_max = 0.0;
     double mz_min = 0.0;
@@ -29,6 +31,7 @@ nlohmann::json summarize_eic(const nlohmann::json &);
 nlohmann::json merge_ms_rows(const nlohmann::json &, double, double);
 std::vector<TargetRange> normalize_targets(const nlohmann::json &);
 bool target_matches(const TargetRange &, const std::string &, int, int, float, float);
+bool target_may_match_spectrum(const TargetRange &, const std::string &, int, int, float, float, float);
 nlohmann::json filter_target_rows(const nlohmann::json &, const nlohmann::json &, const char *, const char *, const char *, const char *);
 const std::string &input_table(const nlohmann::json &, const char *);
 

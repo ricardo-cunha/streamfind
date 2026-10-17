@@ -56,6 +56,7 @@ export type WorkflowProgress = {
 export type WorkflowStateResponse = {
   session_id: string;
   state: WorkflowState;
+  execution_id?: string;
   progress?: WorkflowProgress;
 };
 

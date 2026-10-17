@@ -838,6 +838,7 @@ namespace streamfind::mass_spec::nta::api
     {
         std::vector<std::string> analysis;
         std::vector<std::string> feature;
+        std::vector<std::string> feature_group;
         std::vector<int> candidate_rank;
         std::vector<std::string> name;
         std::vector<int> polarity;
@@ -879,6 +880,7 @@ namespace streamfind::mass_spec::nta::api
             NTA_SUSPECT_ROW suspect_i;
             suspect_i.analysis = analysis[i];
             suspect_i.feature = feature[i];
+            suspect_i.feature_group = feature_group[i];
             suspect_i.candidate_rank = candidate_rank[i];
             suspect_i.name = name[i];
             suspect_i.polarity = polarity[i];
@@ -918,6 +920,7 @@ namespace streamfind::mass_spec::nta::api
         {
             analysis.push_back(s.analysis);
             feature.push_back(s.feature);
+            feature_group.push_back(s.feature_group);
             candidate_rank.push_back(s.candidate_rank);
             name.push_back(s.name);
             polarity.push_back(s.polarity);
@@ -1157,6 +1160,7 @@ namespace streamfind::mass_spec::nta::api
     {
         std::string created_at;
         std::string analysis;
+        std::string replicate;
         std::string feature;
         std::string feature_group;
         std::string feature_component;
@@ -1187,6 +1191,15 @@ namespace streamfind::mass_spec::nta::api
         std::string db_ms2_intensity;
         std::string db_ms2_formula;
         std::string db_ms2_smiles;
+        int eic_size = 0;
+        std::string eic_rt;
+        std::string eic_mz;
+        std::string eic_intensity;
+        std::string eic_baseline;
+        std::string eic_smoothed;
+        int ms1_size = 0;
+        std::string ms1_mz;
+        std::string ms1_intensity;
         int exp_ms2_size = 0;
         std::string exp_ms2_mz;
         std::string exp_ms2_intensity;
@@ -1200,6 +1213,7 @@ namespace streamfind::mass_spec::nta::api
     struct NTA_INTERNAL_STANDARDS
     {
         std::vector<std::string> analysis;
+        std::vector<std::string> replicate;
         std::vector<std::string> feature;
         std::vector<std::string> feature_group;
         std::vector<std::string> feature_component;
@@ -1230,6 +1244,15 @@ namespace streamfind::mass_spec::nta::api
         std::vector<std::string> db_ms2_intensity;
         std::vector<std::string> db_ms2_formula;
         std::vector<std::string> db_ms2_smiles;
+        std::vector<int> eic_size;
+        std::vector<std::string> eic_rt;
+        std::vector<std::string> eic_mz;
+        std::vector<std::string> eic_intensity;
+        std::vector<std::string> eic_baseline;
+        std::vector<std::string> eic_smoothed;
+        std::vector<int> ms1_size;
+        std::vector<std::string> ms1_mz;
+        std::vector<std::string> ms1_intensity;
         std::vector<int> exp_ms2_size;
         std::vector<std::string> exp_ms2_mz;
         std::vector<std::string> exp_ms2_intensity;
@@ -1244,6 +1267,7 @@ namespace streamfind::mass_spec::nta::api
         {
             NTA_INTERNAL_STANDARD_ROW standard_i;
             standard_i.analysis = analysis[i];
+            standard_i.replicate = replicate[i];
             standard_i.feature = feature[i];
             standard_i.feature_group = feature_group[i];
             standard_i.feature_component = feature_component[i];
@@ -1273,6 +1297,15 @@ namespace streamfind::mass_spec::nta::api
             standard_i.db_ms2_intensity = db_ms2_intensity[i];
             standard_i.db_ms2_formula = db_ms2_formula[i];
             standard_i.db_ms2_smiles = db_ms2_smiles[i];
+            standard_i.eic_size = eic_size[i];
+            standard_i.eic_rt = eic_rt[i];
+            standard_i.eic_mz = eic_mz[i];
+            standard_i.eic_intensity = eic_intensity[i];
+            standard_i.eic_baseline = eic_baseline[i];
+            standard_i.eic_smoothed = eic_smoothed[i];
+            standard_i.ms1_size = ms1_size[i];
+            standard_i.ms1_mz = ms1_mz[i];
+            standard_i.ms1_intensity = ms1_intensity[i];
             standard_i.exp_ms2_size = exp_ms2_size[i];
             standard_i.exp_ms2_mz = exp_ms2_mz[i];
             standard_i.exp_ms2_intensity = exp_ms2_intensity[i];
@@ -1286,6 +1319,7 @@ namespace streamfind::mass_spec::nta::api
         void append(const NTA_INTERNAL_STANDARD_ROW &is)
         {
             analysis.push_back(is.analysis);
+            replicate.push_back(is.replicate);
             feature.push_back(is.feature);
             feature_group.push_back(is.feature_group);
             feature_component.push_back(is.feature_component);
@@ -1315,6 +1349,15 @@ namespace streamfind::mass_spec::nta::api
             db_ms2_intensity.push_back(is.db_ms2_intensity);
             db_ms2_formula.push_back(is.db_ms2_formula);
             db_ms2_smiles.push_back(is.db_ms2_smiles);
+            eic_size.push_back(is.eic_size);
+            eic_rt.push_back(is.eic_rt);
+            eic_mz.push_back(is.eic_mz);
+            eic_intensity.push_back(is.eic_intensity);
+            eic_baseline.push_back(is.eic_baseline);
+            eic_smoothed.push_back(is.eic_smoothed);
+            ms1_size.push_back(is.ms1_size);
+            ms1_mz.push_back(is.ms1_mz);
+            ms1_intensity.push_back(is.ms1_intensity);
             exp_ms2_size.push_back(is.exp_ms2_size);
             exp_ms2_mz.push_back(is.exp_ms2_mz);
             exp_ms2_intensity.push_back(is.exp_ms2_intensity);

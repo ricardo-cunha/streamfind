@@ -40,10 +40,10 @@ struct Compound
     std::string smiles;
     std::string inchi;
     std::string inchikey;
-    int polarity = 0;
     std::vector<double> masses;
     std::vector<double> rts;
-    std::vector<Peak> peaks;
+    std::map<int, std::vector<Peak>> peaks_by_polarity;
+    std::map<int, int> polarities;
     std::map<std::string, int> names;
     std::map<std::string, int> formulas;
     std::map<std::string, int> smiles_values;
@@ -105,16 +105,15 @@ std::vector<std::string> fragment_formulas(const std::string &encoded)
     return result;
 }
 
-std::string compound_key(const Json &row, int polarity)
+std::string compound_key(const Json &row)
 {
     const auto inchikey = text(row, "InChIKey");
-    if (!inchikey.empty()) return "inchikey:" + inchikey + "|polarity:" + std::to_string(polarity);
+    if (!inchikey.empty()) return "inchikey:" + inchikey;
     const auto smiles = text(row, "SMILES");
-    if (!smiles.empty()) return "smiles:" + smiles + "|polarity:" + std::to_string(polarity);
+    if (!smiles.empty()) return "smiles:" + smiles;
     const auto formula = text(row, "formula");
     const auto mass = number(row, "db_mass");
-    return "fallback:" + formula + "|" + std::to_string(mass) + "|" + text(row, "name") +
-           "|polarity:" + std::to_string(polarity);
+    return "fallback:" + formula + "|" + std::to_string(mass) + "|" + text(row, "name");
 }
 
 double quality_number(const Json &row, const char *column)
@@ -155,7 +154,7 @@ bool better_representative(const Json &candidate, const Json &current)
     return text(candidate, "name") < text(current, "name");
 }
 
-void add_spectrum(Compound &compound, const Json &row)
+void add_spectrum(Compound &compound, const Json &row, const int polarity)
 {
     const auto size = integer(row, "db_ms2_size");
     const auto mz = decode(text(row, "db_ms2_mz"));
@@ -165,7 +164,7 @@ void add_spectrum(Compound &compound, const Json &row)
     const auto count = std::min(static_cast<std::size_t>(size), mz.size());
     for (std::size_t i = 0; i < count; ++i)
         if (!formulas[i].empty() && std::isfinite(mz[i]) && std::isfinite(intensity[i]) && mz[i] > 0.0 && intensity[i] >= 0.0)
-            compound.peaks.push_back({mz[i], intensity[i]});
+            compound.peaks_by_polarity[polarity].push_back({mz[i], intensity[i]});
 }
 
 std::vector<Cluster> cluster(std::vector<Peak> peaks, double tolerance)
@@ -204,9 +203,9 @@ Json numeric_array(const std::vector<double> &values, const int decimals)
     return result;
 }
 
-std::vector<double> harmonize(const Compound &compound, double tolerance)
+std::vector<double> harmonize(const std::vector<Peak> &peaks, double tolerance)
 {
-    const auto clusters = cluster(compound.peaks, tolerance);
+    const auto clusters = cluster(peaks, tolerance);
     std::vector<double> intensities;
     intensities.reserve(clusters.size());
     for (const auto &candidate : clusters)
@@ -222,9 +221,9 @@ std::vector<double> harmonize(const Compound &compound, double tolerance)
     return intensities;
 }
 
-std::vector<double> harmonized_mz(const Compound &compound, double tolerance)
+std::vector<double> harmonized_mz(const std::vector<Peak> &peaks, double tolerance)
 {
-    const auto clusters = cluster(compound.peaks, tolerance);
+    const auto clusters = cluster(peaks, tolerance);
     std::vector<double> result;
     result.reserve(clusters.size());
     for (const auto &candidate : clusters)
@@ -266,7 +265,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 
     const std::vector<std::string> input_columns = {
         "analysis", "name", "polarity", "db_mass", "error_mass", "exp_rt", "intensity", "area", "id_level", "candidate_rank", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-        "shared_fragments", "cosine_similarity", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity"};
+        "shared_fragments", "cosine_similarity", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula"};
     const auto rows = access.read(table, input_columns, "analysis");
     std::map<std::string, detail::Compound> compounds;
     std::map<std::string, Json> representatives;
@@ -280,9 +279,9 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
             continue;
 
         const int polarity = detail::integer(row, "polarity");
-        const auto key = detail::compound_key(row, polarity);
+        const auto key = detail::compound_key(row);
         const auto analysis = detail::text(row, "analysis");
-        const auto representative_key = analysis + "|" + key;
+        const auto representative_key = analysis + "|" + key + "|polarity:" + std::to_string(polarity);
         const auto representative = representatives.find(representative_key);
         if (representative == representatives.end() || detail::better_representative(row, representative->second))
             representatives[representative_key] = row;
@@ -293,13 +292,12 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         (void)representative_key;
         const int polarity = detail::integer(row, "polarity");
-        const auto key = detail::compound_key(row, polarity);
+        const auto key = detail::compound_key(row);
         auto [it, inserted] = compounds.emplace(key, detail::Compound{});
         auto &compound = it->second;
         if (inserted)
         {
             compound.key = key;
-            compound.polarity = polarity;
             compound.name = detail::text(row, "name");
             compound.formula = detail::text(row, "formula");
             compound.smiles = detail::text(row, "SMILES");
@@ -317,7 +315,8 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         if (std::isfinite(rt)) compound.rts.push_back(rt);
         const auto xlogp = detail::number(row, "xLogP");
         if (std::isfinite(xlogp)) compound.xlogp_values.push_back(xlogp);
-        detail::add_spectrum(compound, row);
+        ++compound.polarities[polarity];
+        detail::add_spectrum(compound, row, polarity);
     }
 
     const std::vector<std::string> output_columns = {
@@ -329,16 +328,13 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     Json output = Json::array();
     for (const auto &[key, compound] : compounds)
     {
-        const auto mz = detail::harmonized_mz(compound, tolerance);
-        const auto intensity = detail::harmonize(compound, tolerance);
-        if (mz.size() != intensity.size()) continue;
         Json row = Json::object();
         for (const auto &column : output_columns) row[column] = nullptr;
         row["name"] = detail::mode(compound.names, compound.name);
         if (!compound.masses.empty())
             row["mass"] = detail::rounded(std::accumulate(compound.masses.begin(), compound.masses.end(), 0.0) /
                                            compound.masses.size(), 4);
-        row["polarity"] = compound.polarity;
+        if (compound.polarities.size() == 1) row["polarity"] = compound.polarities.begin()->first;
         if (!compound.rts.empty())
             row["rt"] = detail::rounded(std::accumulate(compound.rts.begin(), compound.rts.end(), 0.0) /
                                          compound.rts.size(), 0);
@@ -349,15 +345,21 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         if (!compound.xlogp_values.empty())
             row["xLogP"] = detail::rounded(std::accumulate(compound.xlogp_values.begin(), compound.xlogp_values.end(), 0.0) /
                                             compound.xlogp_values.size(), 2);
-        if (compound.polarity > 0)
+        for (const auto &[polarity, peaks] : compound.peaks_by_polarity)
         {
-            row["fragments_mz_pos"] = detail::numeric_array(mz, 4);
-            row["fragments_intensity_pos"] = detail::numeric_array(intensity, 1);
-        }
-        else if (compound.polarity < 0)
-        {
-            row["fragments_mz_neg"] = detail::numeric_array(mz, 4);
-            row["fragments_intensity_neg"] = detail::numeric_array(intensity, 1);
+            const auto mz = detail::harmonized_mz(peaks, tolerance);
+            const auto intensity = detail::harmonize(peaks, tolerance);
+            if (mz.size() != intensity.size() || mz.empty()) continue;
+            if (polarity > 0)
+            {
+                row["fragments_mz_pos"] = detail::numeric_array(mz, 4);
+                row["fragments_intensity_pos"] = detail::numeric_array(intensity, 1);
+            }
+            else if (polarity < 0)
+            {
+                row["fragments_mz_neg"] = detail::numeric_array(mz, 4);
+                row["fragments_intensity_neg"] = detail::numeric_array(intensity, 1);
+            }
         }
         output.push_back(std::move(row));
     }

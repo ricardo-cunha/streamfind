@@ -6,6 +6,7 @@ import {
   isJsonParameter,
   isSimplePathParameter,
   isPathListParameter,
+  normalizeInlineTableRows,
   parameterInputValue,
   scalarInputValue,
   schemaTypeLabel,
@@ -75,5 +76,21 @@ describe('workflow parameter model', () => {
     const schema = { type: 'string', enum: ['internal_standards', 'obi_warp'] };
     expect(validateJsonValue('internal_standards', schema)).toBeNull();
     expect(validateJsonValue('other', schema)).toContain('declared options');
+  });
+
+  it('accepts blank optional numeric cells in target table rows', () => {
+    const parameter = {
+      name: 'targets',
+      label: 'Targets',
+      description: '',
+      schema: {
+        type: 'table',
+        properties: { mass: { type: 'number' }, mz: { type: 'number' }, name: { type: 'string' } },
+      },
+    } as CapabilityParameter;
+    const rows = [{ mass: 211.140891, mz: '', name: '' }];
+    const normalized = normalizeInlineTableRows(parameter, rows);
+    expect(normalized).toEqual([{ mass: 211.140891, mz: null, name: '' }]);
+    expect(validateJsonValue(normalized, parameter.schema)).toBeNull();
   });
 });

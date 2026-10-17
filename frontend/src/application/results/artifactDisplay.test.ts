@@ -33,4 +33,14 @@ describe('artifact display model', () => {
     expect(artifactContractMatches('sf:table', 'table')).toBe(true);
     expect(isVisualizationArtifact({ ...artifact, contract_id: 'sf:visualizationSpecResult' })).toBe(true);
   });
+
+  it('summarizes visualization artifacts without exposing the full plot payload', () => {
+    const visualization: ArtifactRecord = {
+      ...artifact,
+      contract_id: 'sf:visualizationSpecResult',
+      representation: 'json',
+      payload: JSON.stringify({ payload: { data: [{ name: 'sample-a', x: [1, 2, 3], y: [4, 5, 6] }] } }),
+    };
+    expect(artifactSummary(visualization)).toBe('JSON\n1 legend traces · 3 total points · trace length 3');
+  });
 });

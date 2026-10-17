@@ -1,0 +1,73 @@
+.sf-eic-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.sf-viewer-error-boundary > .sf-eic-viewer {
+  flex: 1 1 auto;
+}
+
+.sf-eic-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 0 12px;
+  color: var(--sf-text-secondary);
+  font-size: 0.82rem;
+}
+
+.sf-eic-viewer-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sf-text);
+}
+
+.sf-eic-viewer-toolbar-label {
+  font-weight: 600;
+}
+
+.sf-eic-viewer-summary {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.sf-eic-viewer-plot {
+  flex: 1 1 auto;
+  min-height: 360px;
+  min-width: 0;
+}
+
+.sf-eic-viewer-plot,
+.sf-eic-viewer-plot > section,
+.sf-eic-viewer-plot > section > [role='img'],
+.sf-eic-viewer-plot > div,
+.sf-eic-viewer-plot .js-plotly-plot,
+.sf-eic-viewer-plot .plot-container,
+.sf-eic-viewer-plot .svg-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.sf-eic-viewer-plot > section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sf-eic-viewer-plot > section > [role='img'] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.sf-eic-viewer-state {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  color: var(--sf-text-secondary);
+}
