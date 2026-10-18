@@ -285,7 +285,8 @@ function SuspectScatter({
             opacity: markerOpacity,
             line: { color: theme.text, width: markerLineWidth },
           },
-          hovertemplate: 'Analysis: %{customdata[0]}<br>Feature: %{customdata[1]}<br>RT %{x}<br>m/z %{y}<extra></extra>',
+          hovertemplate:
+            'Analysis: %{customdata[0]}<br>Feature: %{customdata[1]}<br>RT %{x}<br>m/z %{y}<extra></extra>',
         },
       ],
       layout: {
@@ -557,6 +558,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     networkParent: false,
   });
   const initialLoadComplete = useRef(false);
+  const skipInitialOverviewQuery = useRef(true);
   const [isotopeOnly, setIsotopeOnly] = useState(false);
   const [showFiltered, setShowFiltered] = useState(false);
   const [, refreshTheme] = useState(0);
@@ -625,20 +627,31 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     }
     const suspectsArtifactId = context.artifact.artifact_id;
     const load = async () => {
-      const suspectData = await client.artifactQuery(context.sessionId, {
+      skipInitialOverviewQuery.current = true;
+      const baseRequest = {
         artifact_id: suspectsArtifactId,
-        mode: 'sample',
         columns: overviewColumns,
         filters: overviewColumns?.includes('filtered')
-          ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
+          ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
           : undefined,
-        sampling_strategy: 'grid',
-        x_bins: 512,
-        y_bins: 512,
-        x_column: 'exp_mass',
-        y_column: 'exp_rt',
-        limit: 50000,
+      } as const;
+      let suspectData = await client.artifactQuery(context.sessionId, {
+        ...baseRequest,
+        mode: 'page',
+        limit: 1000,
       });
+      if (suspectData.total_rows > suspectData.returned_rows) {
+        suspectData = await client.artifactQuery(context.sessionId, {
+          ...baseRequest,
+          mode: 'sample',
+          sampling_strategy: 'grid',
+          x_bins: 512,
+          y_bins: 512,
+          x_column: 'exp_mass',
+          y_column: 'exp_rt',
+          limit: 50000,
+        });
+      }
       if (!active) return;
       setSuspects(suspectData.rows.filter((row) => row && typeof row === 'object'));
       setTotalSuspects(suspectData.total_rows);
@@ -668,6 +681,10 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   useEffect(() => {
     if (!initialLoadComplete.current || !client || !context.artifact) return;
+    if (skipInitialOverviewQuery.current) {
+      skipInitialOverviewQuery.current = false;
+      return;
+    }
     let active = true;
     const timer = window.setTimeout(() => {
       void client

@@ -636,7 +636,10 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     auto split_fn = is_psv ? split_psv_line : split_csv_line;
     auto headers = split_fn(header_line);
 
-    int ci_name  = find_col(headers, {"Name", "CompoundName", "compound_name"});
+    // PubChem MetFrag output uses IUPACName rather than Name. Keep the
+    // generic name columns first, then use the IUPAC name as a fallback.
+    int ci_name  = find_col(headers, {"Name", "CompoundName", "compound_name",
+                                     "IUPACName", "IUPAC_Name"});
     int ci_form  = find_col(headers, {"MolecularFormula", "formula"});
     int ci_smi   = find_col(headers, {"SMILES", "smiles", "CanonicalSMILES"});
     int ci_inchi = find_col(headers, {"InChI", "inchi1", "StandardInChI"});
@@ -1458,9 +1461,22 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           // before scoring so all database modes receive MS1 isotope values.
           SuspectQuery candidate_target;
           const SuspectQuery *isotope_target = target;
+          std::string display_name = row.name;
+          const bool pubchem_database = params.database_type == "PubChem" ||
+              params.database_type == "ExtendedPubChem";
+          if (pubchem_database && !row.identifier.empty())
+          {
+            display_name = display_name.empty()
+                ? "PubChem CID " + row.identifier
+                : display_name + " | " + row.identifier;
+          }
+          else if (display_name.empty())
+          {
+            display_name = row.identifier;
+          }
           if (isotope_target == nullptr)
           {
-            candidate_target.name = row.name.empty() ? row.identifier : row.name;
+            candidate_target.name = display_name;
             candidate_target.formula = row.formula;
             candidate_target.SMILES = row.SMILES;
             candidate_target.InChI = row.InChI;
@@ -1535,7 +1551,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           s.feature_group = fi < static_cast<int>(feats.feature_group.size())
               ? feats.feature_group[fi] : std::string{};
           s.candidate_rank = rank;
-          s.name = row.name.empty() ? row.identifier : row.name;
+          s.name = display_name;
           s.polarity = feats.polarity[fi];
           s.db_mass = database_mass;
           s.exp_mass = precursor_mass;
