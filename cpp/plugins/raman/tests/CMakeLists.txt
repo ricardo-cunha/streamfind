@@ -18,6 +18,17 @@ add_test(NAME streamfind_raman_savgol_unit
 set_tests_properties(streamfind_raman_savgol_unit PROPERTIES
     LABELS "raman;unit")
 
+add_executable(streamfind_raman_sif_reader_unit
+    unit/sif_reader_test.cpp
+    ../src/readers/sif_reader.cpp)
+target_include_directories(streamfind_raman_sif_reader_unit PRIVATE ../src)
+target_compile_definitions(streamfind_raman_sif_reader_unit PRIVATE
+    RAMAN_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME streamfind_raman_sif_reader_unit
+    COMMAND streamfind_raman_sif_reader_unit)
+set_tests_properties(streamfind_raman_sif_reader_unit PROPERTIES
+    LABELS "raman;unit")
+
 add_executable(streamfind_raman_normalization_operation_contract
     unit/normalization_operation_contract.cpp
     ../src/operations/operations.cpp

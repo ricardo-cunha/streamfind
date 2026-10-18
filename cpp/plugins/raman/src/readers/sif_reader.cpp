@@ -1,5 +1,6 @@
 #include "readers/reader.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cctype>
@@ -53,6 +54,43 @@ std::size_t positive_integer(const std::string &word, const std::string &label) 
         *value > static_cast<double>(std::numeric_limits<std::size_t>::max()))
         throw std::runtime_error("invalid Andor SIF " + label);
     return static_cast<std::size_t>(*value);
+}
+
+float decode_float(const std::array<unsigned char, 4> &bytes, bool big_endian) {
+    const auto bits = big_endian
+        ? (static_cast<std::uint32_t>(bytes[3]) |
+           (static_cast<std::uint32_t>(bytes[2]) << 8) |
+           (static_cast<std::uint32_t>(bytes[1]) << 16) |
+           (static_cast<std::uint32_t>(bytes[0]) << 24))
+        : (static_cast<std::uint32_t>(bytes[0]) |
+           (static_cast<std::uint32_t>(bytes[1]) << 8) |
+           (static_cast<std::uint32_t>(bytes[2]) << 16) |
+           (static_cast<std::uint32_t>(bytes[3]) << 24));
+    return std::bit_cast<float>(bits);
+}
+
+double plausible_count_fraction(const std::filesystem::path &path,
+                                std::uintmax_t payload_offset,
+                                std::size_t pixel_count, bool big_endian) {
+    std::ifstream input(path, std::ios::binary);
+    input.seekg(static_cast<std::streamoff>(payload_offset));
+    if (!input) throw std::runtime_error("cannot inspect Andor SIF pixel byte order");
+    const auto sample_count = std::min<std::size_t>(pixel_count, 4096);
+    std::size_t plausible = 0;
+    std::size_t active = 0;
+    for (std::size_t i = 0; i < sample_count; ++i) {
+        std::array<unsigned char, 4> bytes{};
+        input.read(reinterpret_cast<char *>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+        if (!input) throw std::runtime_error("Andor SIF pixel payload is truncated");
+        const auto value = decode_float(bytes, big_endian);
+        if (std::isfinite(value) && std::abs(value) <= 1.0e7F) {
+            ++plausible;
+            if (std::abs(value) >= 1.0e-3F) ++active;
+        }
+    }
+    if (plausible == 0) return 0.0;
+    return static_cast<double>(active) / static_cast<double>(sample_count);
 }
 
 }  // namespace streamfind::raman::reader::sif_detail
@@ -169,6 +207,11 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
     if (file_size < footer_size || payload_size > file_size - footer_size)
         throw std::runtime_error("Andor SIF float payload exceeds the source file size");
     const auto payload_offset = file_size - footer_size - payload_size;
+    const auto little_endian_score = plausible_count_fraction(
+        path, payload_offset, pixel_count, false);
+    const auto big_endian_score = plausible_count_fraction(
+        path, payload_offset, pixel_count, true);
+    const bool big_endian = big_endian_score > little_endian_score;
     std::ifstream pixels(path, std::ios::binary);
     pixels.seekg(static_cast<std::streamoff>(payload_offset));
     if (!pixels) throw std::runtime_error("cannot seek to Andor SIF pixel payload");
@@ -182,12 +225,11 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
             pixels.read(reinterpret_cast<char *>(bytes.data()),
                         static_cast<std::streamsize>(bytes.size()));
             if (!pixels) throw std::runtime_error("Andor SIF pixel payload is truncated");
-            const auto bits = static_cast<std::uint32_t>(bytes[0]) |
-                              (static_cast<std::uint32_t>(bytes[1]) << 8) |
-                              (static_cast<std::uint32_t>(bytes[2]) << 16) |
-                              (static_cast<std::uint32_t>(bytes[3]) << 24);
-            intensity = std::bit_cast<float>(bits);
-            if (!std::isfinite(intensity)) ++missing_intensity_count;
+            intensity = decode_float(bytes, big_endian);
+            if (!std::isfinite(intensity) || std::abs(intensity) > 1.0e7F) {
+                intensity = std::numeric_limits<float>::quiet_NaN();
+                ++missing_intensity_count;
+            }
         }
         SpectrumFrame spectrum;
         spectrum.index = frame_index;
@@ -219,7 +261,8 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
     if (missing_intensity_count != 0)
         result.metadata.push_back({"Missing detector values",
                                    std::to_string(missing_intensity_count) +
-                                       " non-finite source values stored as null intensities", 0});
+                                       " non-finite or out-of-range source values stored as null intensities", 0});
+    result.metadata.push_back({"Pixel byte order", big_endian ? "big-endian" : "little-endian", 0});
     return result;
 }
 
