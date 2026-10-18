@@ -26,6 +26,7 @@ namespace streamfind::mass_spec::nta
       std::string metfrag_path;          ///< Full path to MetFragCL JAR or native executable.
       std::string database_type;         ///< MetFrag database type or StreamFind PubChemLite alias.
       std::string database_path;         ///< Path to local database file (LocalCSV / LocalPSV / LocalSDF).
+      bool        comp_tox_database = false; ///< The LocalCSV path uses the CompTox column mapping.
       double      ppm            = 10.0; ///< MS1 precursor mass tolerance (ppm).
       double      isotopePpm     = 5.0;  ///< MS1 isotope m/z tolerance (ppm).
       double      sec            = 15.0; ///< RT tolerance for post-filtering (seconds).

@@ -154,7 +154,7 @@
       "source_operation": "operation-18",
       "source_port": "suspectTargetsTable",
       "target_operation": "operation-19",
-      "target_port": "parameter:suspect_targets"
+      "target_port": "suspectTargetsTable"
     }
   ],
   "metadata": {

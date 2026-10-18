@@ -346,7 +346,17 @@ export default function CanvasShell({
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [artifactCleanupBusy, artifactCleanupNode, artifactViewer, jsonEditor, pathWizard, picker, pickerCapabilityId, selectedNodeId, tableEditor]);
+  }, [
+    artifactCleanupBusy,
+    artifactCleanupNode,
+    artifactViewer,
+    jsonEditor,
+    pathWizard,
+    picker,
+    pickerCapabilityId,
+    selectedNodeId,
+    tableEditor,
+  ]);
   const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
     () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata),
@@ -937,11 +947,9 @@ export default function CanvasShell({
           x: (rect.left + rect.width / 2 - canvasRect.left - offset.x) / scale,
           y: (rect.top + rect.height / 2 - canvasRect.top - offset.y) / scale,
         };
-        capability.parameters
-          .filter((parameter) => parameter.name !== 'database_path')
-          .forEach((parameter) => {
-            next[`${node.id}|input|parameter:${parameter.name}`] = point;
-          });
+        capability.parameters.forEach((parameter) => {
+          next[`${node.id}|input|parameter:${parameter.name}`] = point;
+        });
       });
       const previous = anchorCentersRef.current;
       const keys = Object.keys(next);
@@ -1084,10 +1092,7 @@ export default function CanvasShell({
             setNodes((current) =>
               current.map((node) => {
                 const origin = interaction.origins?.[node.id];
-                if (!origin)
-                  return node.id === draggedNodeId
-                    ? { ...node, x, y }
-                    : node;
+                if (!origin) return node.id === draggedNodeId ? { ...node, x, y } : node;
                 return {
                   ...node,
                   x: origin.x + deltaX,
@@ -2442,7 +2447,7 @@ export default function CanvasShell({
                   <div className="sf-node-empty">No declared outputs</div>
                 )}
               </section>
-              {capability && capability.parameters.some((parameter) => parameter.name !== 'database_path') ? (
+              {capability && capability.parameters.length > 0 ? (
                 <>
                   <button
                     type="button"
@@ -2467,188 +2472,9 @@ export default function CanvasShell({
                   </button>
                   {(expandedParameters[node.id] ?? node.projectEntry) ? (
                     <div className="sf-canvas-node-parameters" onMouseDown={(event) => event.stopPropagation()}>
-                      {capability.parameters
-                        .filter((parameter) => parameter.name !== 'database_path')
-                        .map((parameter) => {
-                          const value = node.parameters?.[parameter.name];
-                          if (isTableParameter(parameter)) {
-                            return (
-                              <div className="sf-canvas-parameter" key={parameter.name}>
-                                <button
-                                  type="button"
-                                  className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
-                                  data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
-                                  aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
-                                  onMouseDown={(event) => event.stopPropagation()}
-                                  onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
-                                >
-                                  <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
-                                </button>
-                                <div className="sf-canvas-parameter-heading">
-                                  <button
-                                    type="button"
-                                    className="sf-node-ontology-link"
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
-                                    }}
-                                  >
-                                    {parameter.label || parameter.name}
-                                  </button>
-                                </div>
-                                <div className="sf-json-parameter-actions">
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => openJsonEditor(node, parameter)}
-                                  >
-                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          }
-                          if (isFileListParameter(parameter)) {
-                            const entries = Array.isArray(value) ? value : [];
-                            return (
-                              <div className="sf-canvas-parameter" key={parameter.name}>
-                                <button
-                                  type="button"
-                                  className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
-                                  data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
-                                  aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
-                                  onMouseDown={(event) => event.stopPropagation()}
-                                  onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
-                                >
-                                  <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
-                                </button>
-                                <div className="sf-canvas-parameter-heading">
-                                  <button
-                                    type="button"
-                                    className="sf-node-ontology-link"
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
-                                    }}
-                                  >
-                                    {parameter.label || parameter.name}
-                                  </button>
-                                  <span>
-                                    {parameter.extensions?.length ? `.${parameter.extensions.join(', .')}` : ''}
-                                    {parameter.directory_extensions?.length
-                                      ? ` · folders: .${parameter.directory_extensions.join(', .')}`
-                                      : ''}
-                                  </span>
-                                </div>
-                                <div className="sf-canvas-parameter-actions">
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => openJsonEditor(node, parameter)}
-                                  >
-                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => void addSelectedPaths(node, parameter, false)}
-                                  >
-                                    <i className="fa-solid fa-file" /> Choose files
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => void addSelectedPaths(node, parameter, true)}
-                                  >
-                                    <i className="fa-solid fa-folder" /> Choose folders
-                                  </button>
-                                </div>
-                                <small className="sf-canvas-file-summary">
-                                  {entries.length
-                                    ? `${entries.length} path${entries.length === 1 ? '' : 's'} selected`
-                                    : 'No paths selected'}
-                                </small>
-                                {entries.map((entry, index) => {
-                                  const isSimplePath = isSimplePathParameter(parameter);
-                                  const record =
-                                    typeof entry === 'object' && entry !== null
-                                      ? (entry as Record<string, unknown>)
-                                      : {};
-                                  const pathValue = typeof entry === 'string' ? entry : String(record.path || '');
-                                  return (
-                                    <div className="sf-canvas-file-entry" key={`${pathValue || 'new'}-${index}`}>
-                                      <input
-                                        aria-label={`Path ${index + 1}`}
-                                        value={pathValue}
-                                        placeholder="Path"
-                                        onChange={(event) => {
-                                          const next = entries.map((item, itemIndex) =>
-                                            itemIndex === index
-                                              ? isSimplePath
-                                                ? event.target.value
-                                                : { ...record, path: event.target.value }
-                                              : item,
-                                          );
-                                          updateNodeParameter(node.id, parameter.name, next);
-                                        }}
-                                      />
-                                      {!isSimplePath ? (
-                                        <>
-                                          <input
-                                            aria-label={`Replicate ${index + 1}`}
-                                            value={String(record.replicate_name || '')}
-                                            placeholder="Replicate"
-                                            onChange={(event) => {
-                                              const next = entries.map((item, itemIndex) =>
-                                                itemIndex === index
-                                                  ? { ...record, replicate_name: event.target.value }
-                                                  : item,
-                                              );
-                                              updateNodeParameter(node.id, parameter.name, next);
-                                            }}
-                                          />
-                                          <input
-                                            aria-label={`Blank ${index + 1}`}
-                                            value={String(record.blank_name || '')}
-                                            placeholder="Blank"
-                                            onChange={(event) => {
-                                              const next = entries.map((item, itemIndex) =>
-                                                itemIndex === index
-                                                  ? { ...record, blank_name: event.target.value }
-                                                  : item,
-                                              );
-                                              updateNodeParameter(node.id, parameter.name, next);
-                                            }}
-                                          />
-                                        </>
-                                      ) : null}
-                                      <button
-                                        type="button"
-                                        className="sf-button secondary"
-                                        onClick={() =>
-                                          updateNodeParameter(
-                                            node.id,
-                                            parameter.name,
-                                            entries.filter((_, itemIndex) => itemIndex !== index),
-                                          )
-                                        }
-                                      >
-                                        Remove
-                                      </button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          }
-                          const constrainedValues = Array.isArray(parameter.schema.enum)
-                            ? parameter.schema.enum.filter(
-                                (candidate) =>
-                                  candidate === null || ['string', 'number', 'boolean'].includes(typeof candidate),
-                              )
-                            : [];
+                      {capability.parameters.map((parameter) => {
+                        const value = node.parameters?.[parameter.name];
+                        if (isTableParameter(parameter)) {
                           return (
                             <div className="sf-canvas-parameter" key={parameter.name}>
                               <button
@@ -2674,102 +2500,277 @@ export default function CanvasShell({
                                   {parameter.label || parameter.name}
                                 </button>
                               </div>
-                              {isJsonParameter(parameter) ? (
-                                <div className="sf-json-parameter-actions">
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => openJsonEditor(node, parameter)}
-                                  >
-                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
-                                  </button>
-                                </div>
-                              ) : (
-                                <div
-                                  className={isSimplePathParameter(parameter) ? 'sf-canvas-scalar-path-row' : undefined}
+                              <div className="sf-json-parameter-actions">
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => openJsonEditor(node, parameter)}
                                 >
-                                  {constrainedValues.length > 0 ? (
-                                    <select
-                                      value={
-                                        constrainedValues.some(
-                                          (candidate) => String(candidate) === parameterInputValue(parameter, value),
-                                        )
-                                          ? parameterInputValue(parameter, value)
-                                          : ''
-                                      }
-                                      onChange={(event) =>
+                                  <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        if (isFileListParameter(parameter)) {
+                          const entries = Array.isArray(value) ? value : [];
+                          return (
+                            <div className="sf-canvas-parameter" key={parameter.name}>
+                              <button
+                                type="button"
+                                className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
+                                data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
+                                aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
+                              >
+                                <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
+                              </button>
+                              <div className="sf-canvas-parameter-heading">
+                                <button
+                                  type="button"
+                                  className="sf-node-ontology-link"
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
+                                  }}
+                                >
+                                  {parameter.label || parameter.name}
+                                </button>
+                                <span>
+                                  {parameter.extensions?.length ? `.${parameter.extensions.join(', .')}` : ''}
+                                  {parameter.directory_extensions?.length
+                                    ? ` · folders: .${parameter.directory_extensions.join(', .')}`
+                                    : ''}
+                                </span>
+                              </div>
+                              <div className="sf-canvas-parameter-actions">
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => openJsonEditor(node, parameter)}
+                                >
+                                  <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => void addSelectedPaths(node, parameter, false)}
+                                >
+                                  <i className="fa-solid fa-file" /> Choose files
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => void addSelectedPaths(node, parameter, true)}
+                                >
+                                  <i className="fa-solid fa-folder" /> Choose folders
+                                </button>
+                              </div>
+                              <small className="sf-canvas-file-summary">
+                                {entries.length
+                                  ? `${entries.length} path${entries.length === 1 ? '' : 's'} selected`
+                                  : 'No paths selected'}
+                              </small>
+                              {entries.map((entry, index) => {
+                                const isSimplePath = isSimplePathParameter(parameter);
+                                const record =
+                                  typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
+                                const pathValue = typeof entry === 'string' ? entry : String(record.path || '');
+                                return (
+                                  <div className="sf-canvas-file-entry" key={`${pathValue || 'new'}-${index}`}>
+                                    <input
+                                      aria-label={`Path ${index + 1}`}
+                                      value={pathValue}
+                                      placeholder="Path"
+                                      onChange={(event) => {
+                                        const next = entries.map((item, itemIndex) =>
+                                          itemIndex === index
+                                            ? isSimplePath
+                                              ? event.target.value
+                                              : { ...record, path: event.target.value }
+                                            : item,
+                                        );
+                                        updateNodeParameter(node.id, parameter.name, next);
+                                      }}
+                                    />
+                                    {!isSimplePath ? (
+                                      <>
+                                        <input
+                                          aria-label={`Replicate ${index + 1}`}
+                                          value={String(record.replicate_name || '')}
+                                          placeholder="Replicate"
+                                          onChange={(event) => {
+                                            const next = entries.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? { ...record, replicate_name: event.target.value }
+                                                : item,
+                                            );
+                                            updateNodeParameter(node.id, parameter.name, next);
+                                          }}
+                                        />
+                                        <input
+                                          aria-label={`Blank ${index + 1}`}
+                                          value={String(record.blank_name || '')}
+                                          placeholder="Blank"
+                                          onChange={(event) => {
+                                            const next = entries.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? { ...record, blank_name: event.target.value }
+                                                : item,
+                                            );
+                                            updateNodeParameter(node.id, parameter.name, next);
+                                          }}
+                                        />
+                                      </>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="sf-button secondary"
+                                      onClick={() =>
                                         updateNodeParameter(
                                           node.id,
                                           parameter.name,
-                                          scalarInputValue(parameter, event.target.value),
+                                          entries.filter((_, itemIndex) => itemIndex !== index),
                                         )
                                       }
                                     >
-                                      {!parameter.required ? <option value="">Select an option</option> : null}
-                                      {constrainedValues.map((candidate) => (
-                                        <option key={String(candidate)} value={String(candidate)}>
-                                          {String(candidate)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type={
-                                        String(
-                                          Array.isArray(parameter.schema.type)
-                                            ? parameter.schema.type[0]
-                                            : parameter.schema.type,
-                                        ) === 'boolean'
-                                          ? 'checkbox'
-                                          : ['integer', 'number', 'real', 'float', 'double'].includes(
-                                                String(
-                                                  Array.isArray(parameter.schema.type)
-                                                    ? parameter.schema.type[0]
-                                                    : parameter.schema.type,
-                                                ),
-                                              )
-                                            ? 'number'
-                                            : 'text'
-                                      }
-                                      {...(String(
+                                      Remove
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+                        const constrainedValues = Array.isArray(parameter.schema.enum)
+                          ? parameter.schema.enum.filter(
+                              (candidate) =>
+                                candidate === null || ['string', 'number', 'boolean'].includes(typeof candidate),
+                            )
+                          : [];
+                        return (
+                          <div className="sf-canvas-parameter" key={parameter.name}>
+                            <button
+                              type="button"
+                              className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
+                              data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
+                              aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
+                              onMouseDown={(event) => event.stopPropagation()}
+                              onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
+                            >
+                              <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
+                            </button>
+                            <div className="sf-canvas-parameter-heading">
+                              <button
+                                type="button"
+                                className="sf-node-ontology-link"
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
+                                }}
+                              >
+                                {parameter.label || parameter.name}
+                              </button>
+                            </div>
+                            {isJsonParameter(parameter) ? (
+                              <div className="sf-json-parameter-actions">
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => openJsonEditor(node, parameter)}
+                                >
+                                  <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                </button>
+                              </div>
+                            ) : (
+                              <div
+                                className={isSimplePathParameter(parameter) ? 'sf-canvas-scalar-path-row' : undefined}
+                              >
+                                {constrainedValues.length > 0 ? (
+                                  <select
+                                    value={
+                                      constrainedValues.some(
+                                        (candidate) => String(candidate) === parameterInputValue(parameter, value),
+                                      )
+                                        ? parameterInputValue(parameter, value)
+                                        : ''
+                                    }
+                                    onChange={(event) =>
+                                      updateNodeParameter(
+                                        node.id,
+                                        parameter.name,
+                                        scalarInputValue(parameter, event.target.value),
+                                      )
+                                    }
+                                  >
+                                    {!parameter.required ? <option value="">Select an option</option> : null}
+                                    {constrainedValues.map((candidate) => (
+                                      <option key={String(candidate)} value={String(candidate)}>
+                                        {String(candidate)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type={
+                                      String(
                                         Array.isArray(parameter.schema.type)
                                           ? parameter.schema.type[0]
                                           : parameter.schema.type,
                                       ) === 'boolean'
-                                        ? {
-                                            checked: Boolean(
-                                              value ?? parameter.default ?? parameter.schema.default ?? false,
-                                            ),
-                                            onChange: (event: ChangeEvent<HTMLInputElement>) =>
-                                              updateNodeParameter(node.id, parameter.name, event.target.checked),
-                                          }
-                                        : {
-                                            value: parameterInputValue(parameter, value),
-                                            onChange: (event: ChangeEvent<HTMLInputElement>) =>
-                                              updateNodeParameter(
-                                                node.id,
-                                                parameter.name,
-                                                scalarInputValue(parameter, event.target.value),
+                                        ? 'checkbox'
+                                        : ['integer', 'number', 'real', 'float', 'double'].includes(
+                                              String(
+                                                Array.isArray(parameter.schema.type)
+                                                  ? parameter.schema.type[0]
+                                                  : parameter.schema.type,
                                               ),
-                                          })}
-                                    />
-                                  )}
-                                  {isSimplePathParameter(parameter) ? (
-                                    <button
-                                      type="button"
-                                      className="sf-icon-button sf-canvas-path-picker"
-                                      aria-label={`Choose ${parameter.label || parameter.name}`}
-                                      title="Choose file or folder"
-                                      onClick={() => void chooseSinglePath(node, parameter)}
-                                    >
-                                      <i className="fa-solid fa-folder-open" aria-hidden="true" />
-                                    </button>
-                                  ) : null}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                                            )
+                                          ? 'number'
+                                          : 'text'
+                                    }
+                                    {...(String(
+                                      Array.isArray(parameter.schema.type)
+                                        ? parameter.schema.type[0]
+                                        : parameter.schema.type,
+                                    ) === 'boolean'
+                                      ? {
+                                          checked: Boolean(
+                                            value ?? parameter.default ?? parameter.schema.default ?? false,
+                                          ),
+                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                            updateNodeParameter(node.id, parameter.name, event.target.checked),
+                                        }
+                                      : {
+                                          value: parameterInputValue(parameter, value),
+                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                            updateNodeParameter(
+                                              node.id,
+                                              parameter.name,
+                                              scalarInputValue(parameter, event.target.value),
+                                            ),
+                                        })}
+                                  />
+                                )}
+                                {isSimplePathParameter(parameter) ? (
+                                  <button
+                                    type="button"
+                                    className="sf-icon-button sf-canvas-path-picker"
+                                    aria-label={`Choose ${parameter.label || parameter.name}`}
+                                    title="Choose file or folder"
+                                    onClick={() => void chooseSinglePath(node, parameter)}
+                                  >
+                                    <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </>
@@ -3317,60 +3318,58 @@ export default function CanvasShell({
             </section>
             <section>
               <h3>Parameters</h3>
-              {documentationCapability.parameters
-                .filter((parameter) => parameter.name !== 'database_path')
-                .map((parameter) => (
-                  <div
-                    className="sf-info-row"
-                    key={parameter.name}
-                    data-ontology-focus="true"
-                    data-ontology-focus-section="parameters"
-                    data-ontology-focus-key={parameter.name}
-                    tabIndex={-1}
-                  >
-                    {onOpenOntologyWiki ? (
-                      <button
-                        type="button"
-                        className="sf-ontology-term-link"
-                        onClick={() => onOpenOntologyWiki(parameter.name)}
-                      >
-                        {parameter.label || parameter.name}
-                      </button>
-                    ) : (
-                      <strong>{parameter.label || parameter.name}</strong>
-                    )}
-                    <span>
-                      {parameter.description || parameter.schema.type || 'value'}
-                      <br />
-                      <small>type: {schemaTypeLabel(parameter.schema)}</small>
-                      {parameterOntologyDetails(parameter).map((detail) => (
-                        <Fragment key={detail}>
-                          <br />
-                          <small>{detail}</small>
-                        </Fragment>
-                      ))}
-                      {parameter.default !== undefined || parameter.schema.default !== undefined ? (
-                        <>
-                          <br />
-                          <small>Default: {JSON.stringify(parameter.default ?? parameter.schema.default)}</small>
-                        </>
-                      ) : null}
-                      {Array.isArray(parameter.schema.examples) && parameter.schema.examples.length ? (
-                        <>
-                          <br />
-                          <small>
-                            Examples:{' '}
-                            {JSON.stringify(
-                              parameter.schema.examples.length === 1
-                                ? parameter.schema.examples[0]
-                                : parameter.schema.examples,
-                            )}
-                          </small>
-                        </>
-                      ) : null}
-                    </span>
-                  </div>
-                ))}
+              {documentationCapability.parameters.map((parameter) => (
+                <div
+                  className="sf-info-row"
+                  key={parameter.name}
+                  data-ontology-focus="true"
+                  data-ontology-focus-section="parameters"
+                  data-ontology-focus-key={parameter.name}
+                  tabIndex={-1}
+                >
+                  {onOpenOntologyWiki ? (
+                    <button
+                      type="button"
+                      className="sf-ontology-term-link"
+                      onClick={() => onOpenOntologyWiki(parameter.name)}
+                    >
+                      {parameter.label || parameter.name}
+                    </button>
+                  ) : (
+                    <strong>{parameter.label || parameter.name}</strong>
+                  )}
+                  <span>
+                    {parameter.description || parameter.schema.type || 'value'}
+                    <br />
+                    <small>type: {schemaTypeLabel(parameter.schema)}</small>
+                    {parameterOntologyDetails(parameter).map((detail) => (
+                      <Fragment key={detail}>
+                        <br />
+                        <small>{detail}</small>
+                      </Fragment>
+                    ))}
+                    {parameter.default !== undefined || parameter.schema.default !== undefined ? (
+                      <>
+                        <br />
+                        <small>Default: {JSON.stringify(parameter.default ?? parameter.schema.default)}</small>
+                      </>
+                    ) : null}
+                    {Array.isArray(parameter.schema.examples) && parameter.schema.examples.length ? (
+                      <>
+                        <br />
+                        <small>
+                          Examples:{' '}
+                          {JSON.stringify(
+                            parameter.schema.examples.length === 1
+                              ? parameter.schema.examples[0]
+                              : parameter.schema.examples,
+                          )}
+                        </small>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
             </section>
           </aside>
         </div>

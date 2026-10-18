@@ -34,6 +34,14 @@ import {
 } from './shell/appShellModel';
 
 type ThemeMode = 'light' | 'dark';
+
+function initialTheme(): ThemeMode {
+  const stored = localStorage.getItem('streamfind.theme');
+  if (stored === 'dark' || stored === 'light') return stored;
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
+}
 type WorkflowSummary = {
   operationCount?: number;
   revision?: number;
@@ -1667,9 +1675,7 @@ function BackendStatusPane({
 }
 function AppShell({ client, serviceState }: { client: StreamFindApiClient; serviceState: ServiceState }) {
   const [routeState, setRouteState] = useState<ParsedRoute>(routeFromHash);
-  const [theme, setTheme] = useState<ThemeMode>(
-    () => (localStorage.getItem('streamfind.theme') as ThemeMode) || 'light',
-  );
+  const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [palette, setPalette] = useState<Palette>(
     () => (localStorage.getItem('streamfind.palette') as Palette) || 'streamfind',
   );

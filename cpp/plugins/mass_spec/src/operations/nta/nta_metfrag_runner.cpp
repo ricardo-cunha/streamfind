@@ -29,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #ifdef _WIN32
 #include <windows.h>
@@ -51,6 +52,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     "PubChem",
     "ExtendedPubChem",
     "PubChemLite",
+    "CompToxCSV",
     "ChemSpiderRest",
     "LocalSDF",
     "LocalPSV",
@@ -862,7 +864,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
   // and returns the path to use (original if already correct, new copy otherwise).
   std::string normalize_localcsv_database(
       const std::string &db_path,
-      const std::string &run_dir_path)
+      const std::string &run_dir_path,
+      bool comp_tox_database = false)
   {
     if (db_path.empty()) return db_path;
 
@@ -901,13 +904,27 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     // Rename map: MetFrag target → accepted user column names (first match wins).
     struct RenameRule { std::string target; std::vector<std::string> aliases; };
     const std::vector<RenameRule> rules = {
-      { "Identifier",       { "Identifier", "identifier", "id" } },
-      { "MonoisotopicMass", { "MonoisotopicMass", "mass" } },
-      { "MolecularFormula", { "MolecularFormula", "formula" } },
-      { "SMILES",           { "SMILES", "smiles", "Smiles" } },
-      { "InChI",            { "InChI", "inchi", "Inchi" } },
-      { "InChIKey",         { "InChIKey", "inchikey", "Inchikey" } },
-      { "Name",             { "Name", "name", "CompoundName", "compound_name" } }
+      { "Identifier",       comp_tox_database
+          ? std::vector<std::string>{ "DTXCID_INDIVIDUAL_COMPONENT", "DTXCID", "Identifier", "identifier", "id" }
+          : std::vector<std::string>{ "Identifier", "identifier", "id" } },
+      { "MonoisotopicMass", comp_tox_database
+          ? std::vector<std::string>{ "MONOISOTOPIC_MASS_DTXCID", "MonoisotopicMass", "mass" }
+          : std::vector<std::string>{ "MonoisotopicMass", "mass" } },
+      { "MolecularFormula", comp_tox_database
+          ? std::vector<std::string>{ "FORMULA_INDIVIDUAL_COMPONENT", "MolecularFormula", "formula" }
+          : std::vector<std::string>{ "MolecularFormula", "formula" } },
+      { "SMILES",           comp_tox_database
+          ? std::vector<std::string>{ "SMILES_INDIVIDUAL_COMPONENT" }
+          : std::vector<std::string>{ "SMILES", "smiles", "Smiles" } },
+      { "InChI",            comp_tox_database
+          ? std::vector<std::string>{ "INCHI_STRING_DTXCID", "InChI", "inchi", "Inchi" }
+          : std::vector<std::string>{ "InChI", "inchi", "Inchi" } },
+      { "InChIKey",         comp_tox_database
+          ? std::vector<std::string>{ "INCHIKEY_DTXCID", "InChIKey", "inchikey", "Inchikey" }
+          : std::vector<std::string>{ "InChIKey", "inchikey", "Inchikey" } },
+      { "Name",             comp_tox_database
+          ? std::vector<std::string>{ "PREFERRED_NAME_DTXSID", "Name", "name", "CompoundName", "compound_name" }
+          : std::vector<std::string>{ "Name", "name", "CompoundName", "compound_name" } }
     };
 
     struct OutputColumn
@@ -923,13 +940,13 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       output_columns.push_back({rule.target, idx});
     }
 
-    int id_idx   = find_col({ "Identifier", "identifier", "id" });
-    int name_idx = find_col({ "Name", "name", "CompoundName", "compound_name" });
-    int ikey_idx = find_col({ "InChIKey", "inchikey", "Inchikey" });
-    int inchi_idx = find_col({ "InChI", "inchi", "Inchi" });
-    int smiles_idx = find_col({ "SMILES", "smiles", "Smiles" });
-    int formula_idx = find_col({ "MolecularFormula", "formula" });
-    int mass_idx = find_col({ "MonoisotopicMass", "mass" });
+    int id_idx   = find_col(rules[0].aliases);
+    int mass_idx = find_col(rules[1].aliases);
+    int formula_idx = find_col(rules[2].aliases);
+    int smiles_idx = find_col(rules[3].aliases);
+    int inchi_idx = find_col(rules[4].aliases);
+    int ikey_idx = find_col(rules[5].aliases);
+    int name_idx = find_col(rules[6].aliases);
     int xlogp_idx = find_col({ "XLogP", "xLogP", "xlogp", "XLogP3", "LogP", "XLogP-3" });
     std::string out_path = run_dir_path + "/metfrag_localcsv_normalized.csv";
     std::ofstream out(out_path);
@@ -951,6 +968,9 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     // Stream data rows into the reduced schema.
     std::string row;
     std::size_t generated_identifier_index = 0;
+    std::size_t excluded_incomplete = 0;
+    std::size_t excluded_duplicate = 0;
+    std::unordered_set<std::string> seen_identifiers;
     while (std::getline(in, row))
     {
       std::vector<std::string> fields = split_csv_line(row);
@@ -970,6 +990,31 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       std::string inchikey = field_at(ikey_idx);
       std::string formula = field_at(formula_idx);
       std::string identifier = field_at(id_idx);
+
+      if (comp_tox_database)
+      {
+        // CompTox rows without a stable component identifier, name, neutral
+        // mass, formula, or individual-component SMILES cannot be queried or
+        // represented reliably by MetFrag and are excluded up front.
+        if (identifier.empty() || name.empty() || formula.empty() || smiles.empty())
+        {
+          ++excluded_incomplete;
+          continue;
+        }
+        const std::string mass_value = field_at(mass_idx);
+        char *mass_end = nullptr;
+        const double parsed_mass = std::strtod(mass_value.c_str(), &mass_end);
+        if (mass_value.empty() || mass_end == mass_value.c_str() || !std::isfinite(parsed_mass))
+        {
+          ++excluded_incomplete;
+          continue;
+        }
+        if (!seen_identifiers.insert(identifier).second)
+        {
+          ++excluded_duplicate;
+          continue;
+        }
+      }
 
       double mass = std::numeric_limits<double>::quiet_NaN();
       const std::string mass_raw = field_at(mass_idx);
@@ -1040,6 +1085,11 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       }
       out << '\n';
     }
+
+    if (comp_tox_database)
+      std::cerr << "[metfrag] CompTox normalization excluded " << excluded_incomplete
+                << " incomplete rows and " << excluded_duplicate
+                << " duplicate identifiers.\n";
 
     return out_path;
   }
@@ -1194,12 +1244,13 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     }
     std::cerr << "[metfrag_runner] run_dir: " << run_dir << std::endl;
 
-    // Normalise LocalCSV column names once before the feature loop.
+    // Normalise local database column names once before the feature loop.
     std::string effective_db_path = params.database_path;
     if (!effective_db_path.empty())
     {
-      if (params.database_type == "LocalCSV")
-        effective_db_path = normalize_localcsv_database(effective_db_path, run_dir);
+      if (params.database_type == "LocalCSV" || params.comp_tox_database)
+        effective_db_path = normalize_localcsv_database(
+            effective_db_path, run_dir, params.comp_tox_database);
     }
 
     const std::string common_params_template =
@@ -1276,7 +1327,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       "MetFrag prepared " + std::to_string(total_work) +
         " features; feature workers=" + std::to_string(params.feature_parallelism) +
         ", MetFrag threads=" + std::to_string(params.number_threads) +
-        ", cache=" + (params.cache_candidates ? "on" : "off"));
+        ", cache=" + (params.cache_candidates ? "on" : "off") +
+        ", mass-only=always");
 
     for (size_t ai = 0; ai < n_ana; ++ai)
     {
@@ -1318,6 +1370,17 @@ namespace streamfind::mass_spec::nta::metfrag_runner
             ? static_cast<double>(feats.mass[fi])
             : static_cast<double>(feats.mz[fi]) - feats.polarity[fi] * 1.007276;
         const bool has_ms2 = !ms2_mz.empty();
+        // Database-backed MetFrag searches can also be used as precursor-mass
+        // candidate retrieval when a feature has no experimental MS2. The
+        // shared empty peak list keeps the normal MetFrag database path and
+        // candidate writers in use; the resulting candidates are assigned
+        // level 4 below because no fragment or RT evidence is available.
+        const bool run_mass_only = !has_ms2 &&
+          (params.database_type == "PubChem" ||
+           params.database_type == "ExtendedPubChem" ||
+           params.database_type == "LocalCSV" ||
+           params.comp_tox_database);
+        const bool run_metfrag_search = has_ms2 || run_mass_only;
         // Include the row index: feature labels are user/data-derived and may
         // repeat within an analysis, especially after gap filling.
         const std::string sid = safe_id(ana, feats.feature[fi]) + "_" + std::to_string(fi);
@@ -1331,7 +1394,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         const std::string cache_key = query_cache_key(
           effective_db_path, precursor_mass, feats.polarity[fi],
           feats.ms2_mz[fi], feats.ms2_intensity[fi]);
-        if (params.cache_candidates && has_ms2)
+        if (params.cache_candidates && run_metfrag_search)
         {
           std::lock_guard<std::mutex> lock(candidate_cache_mutex);
           const auto cached = candidate_cache.find(cache_key);
@@ -1342,7 +1405,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           }
         }
 
-        if (!result.cache_hit && has_ms2)
+        if (!result.cache_hit && run_metfrag_search)
         {
           write_peak_list(ms2_path, ms2_mz, ms2_int);
           write_params_file(params_path, common_params_template, precursor_mass,
@@ -1388,13 +1451,14 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           const std::string db_ms2_int_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_intf);
 
           const SuspectQuery *target = find_target_metadata(row, params.suspect_targets);
-          // Database-backed MetFrag candidates (PubChem/PubChemLite) are not
-          // necessarily present in the original suspect-target table.  Use
-          // the candidate formula as isotope metadata in that case; otherwise
-          // the isotope columns silently remain at their zero defaults.
+          // Every candidate source must use the same isotope scorer. Database
+          // candidates are normally absent from suspect_targets, so construct
+          // equivalent metadata from the MetFrag row. Some database exports
+          // omit MolecularFormula but include a structure; derive the formula
+          // before scoring so all database modes receive MS1 isotope values.
           SuspectQuery candidate_target;
           const SuspectQuery *isotope_target = target;
-          if (!isotope_target && !row.formula.empty())
+          if (isotope_target == nullptr)
           {
             candidate_target.name = row.name.empty() ? row.identifier : row.name;
             candidate_target.formula = row.formula;
@@ -1406,7 +1470,41 @@ namespace streamfind::mass_spec::nta::metfrag_runner
               candidate_target.mass = row.neutral_mass;
               candidate_target.has_mass = true;
             }
-            isotope_target = &candidate_target;
+            if (candidate_target.formula.empty() &&
+                (!candidate_target.SMILES.empty() || !candidate_target.InChI.empty()))
+            {
+              std::lock_guard<std::mutex> lock(g_openbabel_normalization_mutex);
+              double mass = candidate_target.has_mass
+                  ? candidate_target.mass : std::numeric_limits<double>::quiet_NaN();
+              double xlogp = std::numeric_limits<double>::quiet_NaN();
+              normalize_structure_fields(candidate_target.SMILES,
+                                         candidate_target.InChI,
+                                         candidate_target.InChIKey,
+                                         candidate_target.formula,
+                                         mass, xlogp);
+              if (!candidate_target.has_mass && std::isfinite(mass))
+              {
+                candidate_target.mass = mass;
+                candidate_target.has_mass = true;
+              }
+            }
+            isotope_target = candidate_target.formula.empty() ? nullptr : &candidate_target;
+          }
+          else if (isotope_target->formula.empty() &&
+                   (!isotope_target->SMILES.empty() || !isotope_target->InChI.empty()))
+          {
+            candidate_target = *isotope_target;
+            std::lock_guard<std::mutex> lock(g_openbabel_normalization_mutex);
+            double mass = candidate_target.has_mass
+                ? candidate_target.mass : std::numeric_limits<double>::quiet_NaN();
+            double xlogp = candidate_target.has_xLogP
+                ? candidate_target.xLogP : std::numeric_limits<double>::quiet_NaN();
+            normalize_structure_fields(candidate_target.SMILES,
+                                       candidate_target.InChI,
+                                       candidate_target.InChIKey,
+                                       candidate_target.formula,
+                                       mass, xlogp);
+            isotope_target = candidate_target.formula.empty() ? isotope_target : &candidate_target;
           }
           const auto isotope = isotope_target
               ? ::streamfind::mass_spec::nta::suspect_screening::matches_isotope_pattern(
@@ -1590,14 +1688,10 @@ using Json = nlohmann::json;
         const bool include_fragment_smiles = parameters.value("include_fragment_smiles", true);
         const bool use_smiles = parameters.value("use_smiles", true);
         const bool filtered = parameters.value("filtered", false);
-        const std::string database_type = metfrag_runner::canonicalize_database_type(
-            parameters.value("database_type", std::string("LocalCSV")));
-        if (database_type != "LocalCSV" &&
-            database_type != "PubChem" &&
-            database_type != "ExtendedPubChem" &&
-            database_type != "PubChemLite")
-            throw Error(ErrorCode::InvalidArgument,
-                        "database_type must be one of: LocalCSV, PubChem, ExtendedPubChem, PubChemLite");
+        std::string database_type = output_internal_standards
+            ? std::string("LocalCSV")
+            : metfrag_runner::canonicalize_database_type(
+                parameters.value("database_type", std::string("LocalCSV")));
         // `debug` is accepted for schema parity; the runner keeps the inspectable
         // PSV output for features with candidates regardless (R never forwards it).
 
@@ -1614,20 +1708,55 @@ using Json = nlohmann::json;
         if (score_types.size() != score_weights.size())
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
 
-        // Internal-standard MetFrag screening follows the same target source
-        // contract as the normal operation: targets are supplied through the
-        // Mass spectrometry suspect targets parameter, not a table connection.
-        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, !output_internal_standards);
-        if (suspect_targets.empty() && database_type == "LocalCSV")
+        // Targets supplied directly or through suspectTargetsTable are the
+        // complete LocalCSV candidate source. Internal standards deliberately
+        // require the connected suspectTargetsTable: deuterated standards are
+        // user-defined targets, never a public/database candidate search.
+        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, true);
+        const auto inputs = parameters.value("_inputs", Json::object());
+        const bool has_connected_targets = inputs.is_object() &&
+            inputs.contains("suspectTargetsTable") &&
+            inputs.at("suspectTargetsTable").is_object() &&
+            !inputs.at("suspectTargetsTable").value("physical_table", std::string{}).empty();
+        if (output_internal_standards && !has_connected_targets)
             throw Error(ErrorCode::InvalidArgument,
-                        "metfrag_screening with database_type LocalCSV requires at least one suspect_targets row with chemical identity.");
+                        "find_internal_standards_metfrag requires a connected suspectTargetsTable.");
+        if (output_internal_standards && suspect_targets.empty())
+            throw Error(ErrorCode::InvalidArgument,
+                        "find_internal_standards_metfrag requires at least one suspect target row.");
+        if (!suspect_targets.empty())
+            database_type = "LocalCSV";
+
+        const std::string database_path = parameters.value("database_path", std::string{});
+        const bool external_local_database = suspect_targets.empty() &&
+            (database_type == "LocalCSV" || database_type == "PubChemLite" || database_type == "CompToxCSV");
+        if (!output_internal_standards && external_local_database && database_path.empty())
+            throw Error(ErrorCode::InvalidArgument,
+                        "database_type '" + database_type + "' requires an existing database_path when suspect targets are not supplied.");
 
         Json local_database = Json::array();
-        const std::string pubchem_lite_path = parameters.value("pubchem_lite_path", std::string{});
-        if (database_type == "PubChemLite" &&
-            (pubchem_lite_path.empty() || !std::filesystem::exists(pubchem_lite_path)))
+        if (external_local_database && !database_path.empty() &&
+            !std::filesystem::exists(database_path))
             throw Error(ErrorCode::InvalidArgument,
-                        "database_type PubChemLite requires an existing pubchem_lite_path.");
+                        "database_path does not exist for selected database_type '" + database_type + "': " + database_path);
+        if (!output_internal_standards && suspect_targets.empty() &&
+            !external_local_database &&
+            !metfrag_runner::trim_ws(database_path).empty())
+            throw Error(ErrorCode::InvalidArgument,
+                        "database_path is only valid with LocalCSV, PubChemLite, or CompToxCSV; selected database_type is '" + database_type + "'.");
+        if (external_local_database && !database_path.empty())
+        {
+            const std::string extension = metfrag_runner::to_lower_ascii(
+                std::filesystem::path(database_path).extension().string());
+            const bool supported_extension = extension == ".csv" || extension == ".psv" || extension == ".sdf";
+            if (!supported_extension)
+                throw Error(ErrorCode::InvalidArgument,
+                            "database_path for selected database_type '" + database_type +
+                            "' must have a .csv, .psv, or .sdf extension.");
+            if ((database_type == "PubChemLite" || database_type == "CompToxCSV") && extension != ".csv")
+                throw Error(ErrorCode::InvalidArgument,
+                            "database_type '" + database_type + "' requires a .csv database_path.");
+        }
         std::vector<SuspectQuery> normalized_targets;
         normalized_targets.reserve(suspect_targets.size());
         for (const auto &target : suspect_targets)
@@ -1670,7 +1799,9 @@ using Json = nlohmann::json;
         ::streamfind::mass_spec::nta::metfrag_runner::MetFragParams p;
         p.metfrag_path = tool->second; // MetFragCL.jar
         p.java_path = tool->first;     // java executable
-        p.database_type = database_type == "PubChemLite" ? "LocalCSV" : database_type;
+        p.database_type = (database_type == "PubChemLite" || database_type == "CompToxCSV")
+            ? "LocalCSV" : database_type;
+        p.comp_tox_database = database_type == "CompToxCSV";
         p.feature_parallelism = feature_parallelism;
         p.cache_candidates = cache_candidates;
         p.ppm = ppm;
@@ -1694,10 +1825,12 @@ using Json = nlohmann::json;
         p.run_dir = ::streamfind::mass_spec::nta::metfrag_runner::resolve_run_dir(p);
         p.suspect_targets = std::move(normalized_targets);
         std::filesystem::create_directories(p.run_dir);
-        if (database_type == "PubChemLite")
-            p.database_path = pubchem_lite_path;
+        if (database_type == "PubChemLite" || database_type == "CompToxCSV")
+            p.database_path = database_path;
         else if (p.database_type == "LocalCSV")
-            p.database_path = utils::detail::write_local_metfrag_database(local_database, p.run_dir);
+            p.database_path = suspect_targets.empty()
+                ? database_path
+                : utils::detail::write_local_metfrag_database(local_database, p.run_dir);
         ::streamfind::mass_spec::nta::metfrag_runner::metfrag_screening_impl(access, data, p);
         if (output_internal_standards)
         {

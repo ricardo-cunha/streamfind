@@ -1354,19 +1354,19 @@ sfms:databaseTypeParameter
     sf:type "string" ;
     sf:required false ;
     sf:default "LocalCSV" ;
-    sf:constraints "LocalCSV|PubChem|ExtendedPubChem|PubChemLite" ;
+    sf:constraints "LocalCSV|PubChem|ExtendedPubChem|PubChemLite|CompToxCSV" ;
     sf:example "LocalCSV" .
 
-sfms:pubchemLitePathParameter
+sfms:databasePathParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "PubChemLite database path" ;
-    skos:definition "Path to the local PubChemLite CSV file used when database_type is PubChemLite." ;
+    skos:prefLabel "MetFrag database path" ;
+    skos:definition "Path to the local CSV, PSV, or SDF database used by MetFrag. For PubChemLite or CompToxCSV, provide the selected database file; for LocalCSV, provide this path when no suspect-target rows are supplied." ;
     sf:type "string" ;
     sf:required false ;
     sf:default "" ;
-    sf:extensions ".csv" ;
+    sf:extensions ".csv, .psv, .sdf" ;
     sf:example "H:/Project_261009_fa_nts_ring_trail/PubChemLite.csv" .
 
 sfms:scoreTypesParameter

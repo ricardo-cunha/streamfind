@@ -920,7 +920,7 @@ sfms:metfragScreening
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Suspect screening with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features using a selectable candidate database, then rank resulting candidates into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Select LocalCSV (the default) to screen the supplied suspect_targets candidates, PubChem or ExtendedPubChem for online candidate retrieval, or PubChemLite for a local PubChemLite CSV. PubChemLite requires pubchem_lite_path; suspect_targets may be empty for the database-backed modes. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Retention time and MS2 reference peaks are optional. MetFrag in-silico MS2 evidence is Cat. 3, as is a mass-and-RT match without qualifying reference MS2; a mass-only candidate remains Cat. 4. Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Select LocalCSV (the default) to screen suspect_targets, PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets are supplied directly or through suspectTargetsTable, they take precedence and the operation automatically uses LocalCSV; otherwise LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -929,7 +929,7 @@ sfms:metfragScreening
         sfms:mzrMs2Parameter,
         sfms:isotopePpmParameter,
         sfms:databaseTypeParameter,
-        sfms:pubchemLitePathParameter,
+        sfms:databasePathParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -944,6 +944,7 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
+    sf:optionalInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 sfms:findInternalStandardsMetfrag
@@ -952,17 +953,14 @@ sfms:findInternalStandardsMetfrag
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards with MetFrag" ;
-    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and internal-standard suspect targets using a selectable candidate database, then publish the resulting assignments in the independent internalStandardsTable contract." ;
-    skos:guidance "Use after loadFeaturesMs2 when experimental MS2 is available; features without experimental MS2 can still receive precursor-mass candidate assignments. Select LocalCSV (the default), PubChem, ExtendedPubChem, or PubChemLite; PubChemLite requires pubchem_lite_path. LocalCSV requires suspect targets; the database-backed modes may be used without them. feature_parallelism controls bounded feature-level concurrency and cache_candidates reuses identical queries. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and user-supplied internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
+    skos:guidance "Connect a Mass spectrometry suspect targets table containing the user-defined internal standards, normally deuterated compounds. The operation always uses that connected table as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure and reported in the internal-standard result. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
     sf:hasParameter
-        sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
         sfms:mzrMs2Parameter,
         sfms:isotopePpmParameter,
-        sfms:databaseTypeParameter,
-        sfms:pubchemLitePathParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -976,7 +974,7 @@ sfms:findInternalStandardsMetfrag
         sfms:useSmilesParameter,
         sfms:filteredParameter,
         sfms:debugParameter ;
-    sf:hasInputPort sfms:featuresTable ;
+    sf:hasInputPort sfms:featuresTable, sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 sfms:fragmentSuspectTargets

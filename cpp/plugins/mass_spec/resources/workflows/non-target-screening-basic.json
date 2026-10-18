@@ -94,7 +94,7 @@
       "source_operation": "operation-17",
       "source_port": "suspectTargetsTable",
       "target_operation": "operation-16",
-      "target_port": "parameter:suspect_targets"
+      "target_port": "suspectTargetsTable"
     },
     {
       "source_operation": "operation-16",
@@ -509,7 +509,6 @@
           1
         ],
         "sec": 15,
-        "suspect_targets": [],
         "top_n": 2,
         "use_smiles": true
       },

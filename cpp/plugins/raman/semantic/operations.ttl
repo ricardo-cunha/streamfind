@@ -13,11 +13,7 @@ sfram:readRamanFiles
     skos:prefLabel "Read Raman files" ;
     skos:definition "Read supported Raman or infrared ASC, SIF, WIP, SMF, and WiTec text files. Detect technique and spectral-axis metadata from each file, apply standard units for recognized axes, and retain unknown where the source is inconclusive. Emit one analysis row per file, one spectraTable row per spectral coordinate with spectrum and acquisition-time metadata repeated on its points, and parsed source metadata." ;
     sf:hasParameter sfram:sourcePathsParameter ;
-    sf:hasOutputPort
-        sfram:analysesTable,
-        sfram:spectraTable,
-        sfram:sourceMetadataTable,
-        sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfram:analysesTable, sfram:spectraTable, sfram:sourceMetadataTable, sfcore:operationSuccessSignal .
 
 sfram:ramanRemoveAnalyses
     a sf:Operation ;
@@ -28,15 +24,8 @@ sfram:ramanRemoveAnalyses
     skos:prefLabel "Remove Raman analyses" ;
     skos:definition "Remove source analyses whose names exactly match a requested name or match a regular expression, filtering the corresponding rows from every supplied Raman table." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:hasInputPort
-        sfram:analysesTable,
-        sfram:spectraTable,
-        sfram:sourceMetadataTable ;
-    sf:hasOutputPort
-        sfram:analysesTable,
-        sfram:spectraTable,
-        sfram:sourceMetadataTable,
-        sfcore:operationSuccessSignal .
+    sf:hasInputPort sfram:analysesTable, sfram:spectraTable, sfram:sourceMetadataTable ;
+    sf:hasOutputPort sfram:analysesTable, sfram:spectraTable, sfram:sourceMetadataTable, sfcore:operationSuccessSignal .
 
 sfram:normalizeSpectra
     a sf:Operation ;
@@ -50,9 +39,7 @@ sfram:normalizeSpectra
         sfram:normalizationAlgorithmParameter,
         sfram:liftToZeroParameter ;
     sf:hasInputPort sfram:spectraTable ;
-    sf:hasOutputPort
-        sfram:spectraTable,
-        sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfram:spectraTable, sfcore:operationSuccessSignal .
 
 sfram:correctSpectraBaseline
     a sf:Operation ;
@@ -68,10 +55,7 @@ sfram:correctSpectraBaseline
         sfram:baselineDifferencesParameter,
         sfram:baselineItermaxParameter ;
     sf:hasInputPort sfram:spectraTable ;
-    sf:hasOutputPort
-        sfram:spectraTable,
-        sfram:baselineTable,
-        sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfram:spectraTable, sfram:baselineTable, sfcore:operationSuccessSignal .
 
 sfram:filterSpectralRange
     a sf:Operation ;
@@ -86,9 +70,7 @@ sfram:filterSpectralRange
         sfram:maximumSpectralCoordinateParameter,
         sfram:spectralRangeModeParameter ;
     sf:hasInputPort sfram:spectraTable ;
-    sf:hasOutputPort
-        sfram:spectraTable,
-        sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfram:spectraTable, sfcore:operationSuccessSignal .
 
 sfram:summarizeSpectra
     a sf:Operation ;
@@ -113,9 +95,7 @@ sfram:smoothSpectra
         sfram:smoothingAlgorithmParameter,
         sfram:smoothingWindowSizeParameter ;
     sf:hasInputPort sfram:spectraTable ;
-    sf:hasOutputPort
-        sfram:spectraTable,
-        sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfram:spectraTable, sfcore:operationSuccessSignal .
 
 sfram:smoothSpectraSavitzkyGolay
     a sf:Operation ;
@@ -129,6 +109,4 @@ sfram:smoothSpectraSavitzkyGolay
         sfram:savitzkyGolayWindowLengthParameter,
         sfram:savitzkyGolayPolynomialOrderParameter ;
     sf:hasInputPort sfram:spectraTable ;
-    sf:hasOutputPort
-        sfram:spectraTable,
-        sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfram:spectraTable, sfcore:operationSuccessSignal .

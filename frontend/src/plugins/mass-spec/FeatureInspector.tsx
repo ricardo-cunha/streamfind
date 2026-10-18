@@ -1427,12 +1427,16 @@ function FeatureSignalPlot({
   const labels = rows.map((row) => signalTraceLabel(row, groupBy, selectBy));
   const categories = Array.from(new Set(labels)).sort();
   const maxLabelLength = labels.reduce((maximum, label) => Math.max(maximum, label.length), 0);
+  const showLegend = categories.length > 1;
+  const legendGroups = new Set<string>();
   const traces = rows.flatMap((row) => {
     const x = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`], row[`${prefix}_size`]);
     const y = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'intensity' : 'intensity'}`], row[`${prefix}_size`]);
     if (!x.length || !y.length) return [];
     const label = signalTraceLabel(row, groupBy, selectBy);
     const color = colorFor(label, categories);
+    const showTraceLegend = !legendGroups.has(label);
+    legendGroups.add(label);
     const isSpectrum = kind === 'ms1' || kind === 'ms2';
     return [
       {
@@ -1442,6 +1446,7 @@ function FeatureSignalPlot({
         x: isSpectrum ? x.flatMap((value) => [value, value, null]) : x,
         y: isSpectrum ? y.flatMap((value) => [0, value, null]) : y,
         line: { color, width: isSpectrum ? 1 : 2 },
+        showlegend: showTraceLegend,
         ...(kind === 'eic' ? { fill: 'tozeroy', fillcolor: withAlpha(color, 0.4) } : {}),
         hovertemplate: buildSignalHoverTemplate(row, label, kind),
       },
@@ -1484,7 +1489,12 @@ function FeatureSignalPlot({
         // Keep the legend outside the plotting rectangle.  Component EICs can
         // contain dozens of traces; an in-plot legend hides the signal and
         // becomes especially confusing when the plot is zoomed.
-        margin: { l: 50, r: Math.min(360, Math.max(220, 150 + Math.round(maxLabelLength * 2.2))), t: 30, b: 50 },
+        margin: {
+          l: 50,
+          r: showLegend ? Math.min(360, Math.max(220, 150 + Math.round(maxLabelLength * 2.2))) : 20,
+          t: 30,
+          b: 50,
+        },
         xaxis: {
           title: { text: kind === 'eic' ? 'Retention time (s)' : 'm/z' },
           showgrid: true,
@@ -1504,6 +1514,7 @@ function FeatureSignalPlot({
           titlefont: { color: plotTheme.text },
         },
         legend: {
+          showlegend: showLegend,
           orientation: 'v',
           x: 1.02,
           y: 1,

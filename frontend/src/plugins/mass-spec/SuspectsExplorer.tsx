@@ -463,6 +463,11 @@ function evidenceSpec(
       });
     yTitle = 'Relative intensity (experimental + / database −)';
   }
+  const showLegend = data.length > 1;
+  const maxLabelLength = data.reduce((maximum, trace) => {
+    const label = typeof trace.name === 'string' ? trace.name : '';
+    return Math.max(maximum, label.length);
+  }, 0);
   return {
     schema: 'streamfind.visualization/v1',
     visualization_id: `suspect-evidence-${tab}-${artifactId}-${text(row, 'feature')}`,
@@ -474,7 +479,12 @@ function evidenceSpec(
       data,
       layout: {
         autosize: true,
-        margin: { l: 65, r: 20, t: 35, b: 50 },
+        margin: {
+          l: 65,
+          r: showLegend ? Math.min(360, Math.max(220, 150 + Math.round(maxLabelLength * 2.2))) : 20,
+          t: 35,
+          b: 50,
+        },
         xaxis: {
           title: { text: xTitle },
           gridcolor: theme.grid,
@@ -494,7 +504,20 @@ function evidenceSpec(
         paper_bgcolor: theme.background,
         plot_bgcolor: theme.background,
         font: { color: theme.text },
-        legend: { bgcolor: theme.background },
+        legend: {
+          showlegend: showLegend,
+          orientation: 'v',
+          x: 1.02,
+          y: 1,
+          xanchor: 'left',
+          yanchor: 'top',
+          bgcolor: theme.background,
+          bordercolor: theme.grid,
+          borderwidth: 1,
+          maxheight: 0.92,
+          entrywidthmode: 'pixels',
+          entrywidth: 240,
+        },
       },
       config: { displaylogo: false, responsive: true, displayModeBar: true },
     },
