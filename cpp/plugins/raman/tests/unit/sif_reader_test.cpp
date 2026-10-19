@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -20,7 +20,9 @@ void require(bool condition, const std::string &message) {
 }
 
 void write_float(std::ofstream &output, float value, bool big_endian) {
-    const auto bits = std::bit_cast<std::uint32_t>(value);
+    std::uint32_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value));
+    std::memcpy(&bits, &value, sizeof(bits));
     for (int shift : big_endian ? std::array<int, 4>{24, 16, 8, 0}
                                 : std::array<int, 4>{0, 8, 16, 24})
         output.put(static_cast<char>((bits >> shift) & 0xff));

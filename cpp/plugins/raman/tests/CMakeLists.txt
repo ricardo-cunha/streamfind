@@ -21,6 +21,10 @@ set_tests_properties(streamfind_raman_savgol_unit PROPERTIES
 add_executable(streamfind_raman_sif_reader_unit
     unit/sif_reader_test.cpp
     ../src/readers/sif_reader.cpp)
+set_target_properties(streamfind_raman_sif_reader_unit PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
 target_include_directories(streamfind_raman_sif_reader_unit PRIVATE ../src)
 target_compile_definitions(streamfind_raman_sif_reader_unit PRIVATE
     RAMAN_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

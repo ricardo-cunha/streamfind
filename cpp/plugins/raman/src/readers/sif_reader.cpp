@@ -1,10 +1,10 @@
 #include "readers/reader.hpp"
 
 #include <array>
-#include <bit>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -15,6 +15,13 @@
 #include <vector>
 
 namespace streamfind::raman::reader::sif_detail {
+
+float decode_ieee754_float(std::uint32_t bits) {
+    float value = 0.0F;
+    static_assert(sizeof(value) == sizeof(bits));
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
 
 std::vector<std::string> split_words(const std::string &line) {
     std::istringstream input(line);
@@ -76,7 +83,7 @@ float decode_float(const std::array<unsigned char, 4> &bytes) {
                       (static_cast<std::uint32_t>(bytes[1]) << 8) |
                       (static_cast<std::uint32_t>(bytes[2]) << 16) |
                       (static_cast<std::uint32_t>(bytes[3]) << 24);
-    return std::bit_cast<float>(bits);
+    return decode_ieee754_float(bits);
 }
 
 }  // namespace streamfind::raman::reader::sif_detail
