@@ -2650,6 +2650,10 @@ export default function CanvasShell({
                                 candidate === null || ['string', 'number', 'boolean'].includes(typeof candidate),
                             )
                           : [];
+                        const scalarType = String(
+                          Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type,
+                        );
+                        const isDecimalParameter = ['number', 'real', 'float', 'double'].includes(scalarType);
                         return (
                           <div className="sf-canvas-parameter" key={parameter.name}>
                             <button
@@ -2716,27 +2720,15 @@ export default function CanvasShell({
                                 ) : (
                                   <input
                                     type={
-                                      String(
-                                        Array.isArray(parameter.schema.type)
-                                          ? parameter.schema.type[0]
-                                          : parameter.schema.type,
-                                      ) === 'boolean'
+                                      scalarType === 'boolean'
                                         ? 'checkbox'
-                                        : ['integer', 'number', 'real', 'float', 'double'].includes(
-                                              String(
-                                                Array.isArray(parameter.schema.type)
-                                                  ? parameter.schema.type[0]
-                                                  : parameter.schema.type,
-                                              ),
-                                            )
-                                          ? 'number'
-                                          : 'text'
+                                        : isDecimalParameter
+                                          ? 'text'
+                                          : scalarType === 'integer'
+                                            ? 'number'
+                                            : 'text'
                                     }
-                                    {...(String(
-                                      Array.isArray(parameter.schema.type)
-                                        ? parameter.schema.type[0]
-                                        : parameter.schema.type,
-                                    ) === 'boolean'
+                                    {...(scalarType === 'boolean'
                                       ? {
                                           checked: Boolean(
                                             value ?? parameter.default ?? parameter.schema.default ?? false,
@@ -2746,12 +2738,36 @@ export default function CanvasShell({
                                         }
                                       : {
                                           value: parameterInputValue(parameter, value),
+                                          inputMode: isDecimalParameter ? 'decimal' : undefined,
+                                          pattern: isDecimalParameter
+                                            ? '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?'
+                                            : undefined,
+                                          'aria-invalid':
+                                            isDecimalParameter &&
+                                            parameterInputValue(parameter, value).trim() !== '' &&
+                                            !Number.isFinite(Number(parameterInputValue(parameter, value))),
                                           onChange: (event: ChangeEvent<HTMLInputElement>) =>
                                             updateNodeParameter(
                                               node.id,
                                               parameter.name,
-                                              scalarInputValue(parameter, event.target.value),
+                                              isDecimalParameter
+                                                ? event.target.value
+                                                : scalarInputValue(parameter, event.target.value),
                                             ),
+                                          onBlur: isDecimalParameter
+                                            ? (event: ChangeEvent<HTMLInputElement>) => {
+                                                const raw = event.target.value.trim();
+                                                if (!raw) {
+                                                  updateNodeParameter(node.id, parameter.name, null);
+                                                } else if (Number.isFinite(Number(raw))) {
+                                                  updateNodeParameter(node.id, parameter.name, Number(raw));
+                                                } else {
+                                                  setStatus(
+                                                    `${parameter.label || parameter.name} must be a finite number.`,
+                                                  );
+                                                }
+                                              }
+                                            : undefined,
                                         })}
                                   />
                                 )}

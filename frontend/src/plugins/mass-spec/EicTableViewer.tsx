@@ -9,6 +9,17 @@ type EicRow = Record<string, string | null>;
 
 const GROUP_COLUMNS = ['analysis', 'name', 'replicate', 'polarity', 'level'] as const;
 const DEFAULT_GROUP = ['analysis', 'name'];
+type PlotTheme = { text: string; grid: string; background: string };
+
+function getPlotTheme(): PlotTheme {
+  const readThemeColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  return {
+    text: readThemeColor('--sf-text', 'currentColor'),
+    grid: readThemeColor('--sf-border', 'transparent'),
+    background: readThemeColor('--sf-surface-raised', 'transparent'),
+  };
+}
 
 function text(row: EicRow, column: string): string {
   return row[column] ?? '';
@@ -19,7 +30,7 @@ function number(row: EicRow, column: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function makeSpec(rows: EicRow[], colorGrouping: string[], artifactId: string): VisualizationSpec {
+function makeSpec(rows: EicRow[], colorGrouping: string[], artifactId: string, theme: PlotTheme): VisualizationSpec {
   const groups = new Map<string, { rows: EicRow[]; colorKey: string; label: string }>();
   for (const row of rows) {
     const traceKey = [text(row, 'analysis'), text(row, 'name')].map((value) => value || '(empty)').join(' · ');
@@ -60,9 +71,26 @@ function makeSpec(rows: EicRow[], colorGrouping: string[], artifactId: string): 
       layout: {
         autosize: true,
         margin: { l: 60, r: 20, t: 20, b: 50 },
-        xaxis: { title: 'Retention time (s)' },
-        yaxis: { title: 'Intensity' },
+        xaxis: {
+          title: { text: 'Retention time (s)', font: { color: theme.text } },
+          gridcolor: theme.grid,
+          linecolor: theme.text,
+          tickfont: { color: theme.text },
+          zerolinecolor: theme.grid,
+        },
+        yaxis: {
+          title: { text: 'Intensity', font: { color: theme.text } },
+          gridcolor: theme.grid,
+          linecolor: theme.text,
+          tickfont: { color: theme.text },
+          zerolinecolor: theme.grid,
+        },
         hovermode: 'closest',
+        paper_bgcolor: theme.background,
+        plot_bgcolor: theme.background,
+        font: { color: theme.text },
+        hoverlabel: { bgcolor: theme.background, font: { color: theme.text } },
+        legend: { bgcolor: theme.background, font: { color: theme.text } },
       },
       config: { responsive: true, displaylogo: false },
     },
@@ -82,7 +110,14 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
   const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [themeRevision, setThemeRevision] = useState(0);
   const artifactId = artifact?.artifact_id ?? '';
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!artifact || !client) return;
@@ -113,7 +148,11 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
   }, [artifact, client, context.sessionId]);
 
   const rows = data?.rows ?? [];
-  const spec = useMemo(() => (rows.length ? makeSpec(rows, grouping, artifactId) : null), [artifactId, grouping, rows]);
+  const theme = useMemo(() => getPlotTheme(), [themeRevision]);
+  const spec = useMemo(
+    () => (rows.length ? makeSpec(rows, grouping, artifactId, theme) : null),
+    [artifactId, grouping, rows, theme],
+  );
 
   if (!artifact || !client) return <div role="alert">EIC artifact data is unavailable.</div>;
   if (loading) return <LoadingLogo label="Loading EIC rows…" />;

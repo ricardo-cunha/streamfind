@@ -193,18 +193,57 @@ namespace mass_spec::reader::thermo
       }
       const auto controller_count = u32_at(bytes, raw_info + 28);
       const auto data_addr = static_cast<std::size_t>(u64_at(bytes, raw_info + 808));
-      const auto run_header_addr = static_cast<std::size_t>(u64_at(bytes, raw_info + 824));
-      if (controller_count == 0 || data_addr >= total_size || run_header_addr >= total_size)
+      if (controller_count == 0 || data_addr >= total_size)
         throw std::runtime_error("Thermo RAW controller pointers are invalid.");
       constexpr std::size_t run_header_size = 592 + 13 * 520 + 16 + 96;
-      if (run_header_addr > total_size || run_header_size > total_size - run_header_addr)
-        throw std::runtime_error("Thermo RAW run header is truncated.");
-      const auto run_header = read_range(path, run_header_addr, run_header_size);
+      constexpr std::size_t address_base = 592 + 13 * 520 + 16 + 40;
+
+      // A RAW file can contain one RunHeader per detector/controller.  The
+      // first address is not necessarily the MS controller (these files have
+      // several auxiliary streams before the Orbitrap stream).  The previous
+      // implementation always selected the first address and consequently
+      // compared unrelated controller pointers, producing the misleading
+      // "run-header pointers are inconsistent" error.
+      std::vector<std::uint64_t> run_header_addresses;
+      run_header_addresses.reserve(controller_count);
+      for (std::uint32_t controller = 0; controller < controller_count; ++controller)
+      {
+        const auto address_offset = raw_info + 824 + static_cast<std::size_t>(controller) * 16;
+        if (address_offset > bytes.size() || bytes.size() - address_offset < 8)
+          break;
+        const auto address = u64_at(bytes, address_offset);
+        if (address != 0)
+          run_header_addresses.push_back(address);
+      }
+      if (run_header_addresses.empty())
+        throw std::runtime_error("Thermo RAW run-header pointers are invalid.");
+
+      std::vector<std::uint8_t> run_header;
+      bool found_ms_controller = false;
+      for (const auto candidate_address : run_header_addresses)
+      {
+        const auto candidate = static_cast<std::size_t>(candidate_address);
+        if (candidate >= total_size || run_header_size > total_size - candidate)
+          continue;
+        auto candidate_header = read_range(path, candidate, run_header_size);
+        const auto candidate_first_scan = u32_at(candidate_header, 8);
+        const auto candidate_last_scan = u32_at(candidate_header, 12);
+        if (candidate_last_scan < candidate_first_scan)
+          continue;
+        const auto candidate_event_count = static_cast<std::size_t>(u32_at(candidate_header, 592 + 13 * 520 + 16 + 8));
+        const auto candidate_data_addr = static_cast<std::size_t>(u64_at(candidate_header, address_base + 8));
+        const bool is_ms_controller = candidate_event_count > 0 || candidate_data_addr == data_addr;
+        if (!found_ms_controller && is_ms_controller)
+        {
+          run_header = std::move(candidate_header);
+          found_ms_controller = true;
+        }
+      }
+      if (!found_ms_controller)
+        throw std::runtime_error("Thermo RAW MS controller run header was not found.");
+
       const auto first_scan = u32_at(run_header, 8);
       const auto last_scan = u32_at(run_header, 12);
-      if (last_scan < first_scan)
-        throw std::runtime_error("Thermo RAW scan range is invalid.");
-      constexpr std::size_t address_base = 592 + 13 * 520 + 16 + 40;
       const auto scan_index_addr = static_cast<std::size_t>(u64_at(run_header, address_base));
       const auto run_data_addr = static_cast<std::size_t>(u64_at(run_header, address_base + 8));
       const auto error_log_addr = static_cast<std::size_t>(u64_at(run_header, address_base + 24));

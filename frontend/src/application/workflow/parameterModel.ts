@@ -87,8 +87,11 @@ export function isJsonParameter(parameter: CapabilityParameter): boolean {
 export function scalarInputValue(parameter: CapabilityParameter, raw: string): unknown {
   const type = Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type;
   if (type === 'integer') return raw === '' ? null : Number.parseInt(raw, 10);
-  if (type === 'number' || type === 'real' || type === 'float' || type === 'double')
-    return raw === '' ? null : Number.parseFloat(raw);
+  if (type === 'number' || type === 'real' || type === 'float' || type === 'double') {
+    if (raw === '') return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : raw;
+  }
   if (type === 'boolean') return raw === 'true';
   return raw;
 }
@@ -138,9 +141,10 @@ export function wireParameters(
         if (!parameter) return null;
         if (value === null && !parameter.required) return null;
         const type = Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type;
-        if (typeof value === 'string' && (type === 'integer' || type === 'number' || type === 'real')) {
+        if (typeof value === 'string' && ['integer', 'number', 'real', 'float', 'double'].includes(String(type))) {
+          if (value.trim() === '') return parameter.required ? [name, value] : null;
           const normalized = scalarInputValue(parameter, value);
-          return normalized === null && !parameter.required ? null : [name, normalized];
+          return typeof normalized === 'number' && Number.isFinite(normalized) ? [name, normalized] : [name, value];
         }
         if (typeof value === 'string' && type === 'boolean') return [name, value === 'true'];
         return [name, value];

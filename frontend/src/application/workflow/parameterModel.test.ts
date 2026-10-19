@@ -75,6 +75,21 @@ describe('workflow parameter model', () => {
     expect(
       wireParameters({ parameters: [{ name: 'min_sn', schema: { type: 'real' } }] } as never, { min_sn: '' }),
     ).toEqual({});
+    expect(
+      wireParameters({ parameters: [{ name: 'threshold', schema: { type: 'real' } }] } as never, {
+        threshold: '250.125',
+      }),
+    ).toEqual({ threshold: 250.125 });
+    expect(
+      wireParameters({ parameters: [{ name: 'threshold', schema: { type: 'real' } }] } as never, {
+        threshold: '250.',
+      }),
+    ).toEqual({ threshold: 250 });
+    expect(
+      wireParameters({ parameters: [{ name: 'threshold', schema: { type: 'real' } }] } as never, {
+        threshold: '250e',
+      }),
+    ).toEqual({ threshold: '250e' });
     expect(schemaPropertyOrder({ properties: { b: {}, a: {} }, 'x-streamfind-property-order': ['a'] })).toEqual([
       'a',
       'b',
