@@ -1,0 +1,17 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfstat:statistics
+    a sf:Domain ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Statistics" ;
+    skos:definition "Native multivariate and differential statistical analysis of tabular sample-by-variable data." .
+
+sfstat:analysisModule
+    a sf:DomainModule ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Statistical analysis" ;
+    skos:definition "PCA, partial least squares, and two-group intensity fold-change analysis." .
