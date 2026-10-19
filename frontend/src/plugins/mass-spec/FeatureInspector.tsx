@@ -999,6 +999,7 @@ type FeatureNetworkModel = {
     details: string;
     annotation: string;
     tagKind: 'main' | 'isotope' | 'loss' | 'adduct';
+    mass: number;
     x: number;
     y: number;
   }>;
@@ -1106,6 +1107,7 @@ export function buildFeatureNetwork(
       .filter(Boolean)
       .join(' · '),
     tagKind: networkTagKind(row),
+    mass: Number(row.mass ?? row.mz ?? 0),
   }));
   const rowById = new Map(members.map((row, index) => [featureNodeId(row, index), row]));
   const persistedEdges = members.flatMap((row) => {
@@ -1233,7 +1235,7 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
       .filter((event) => event.type !== 'wheel' || (event as WheelEvent).ctrlKey)
       .wheelDelta((event) => {
         const wheelEvent = event as WheelEvent;
-        const modeScale = wheelEvent.deltaMode === 1 ? 0.01 : wheelEvent.deltaMode === 2 ? 0.1 : 0.0002;
+        const modeScale = wheelEvent.deltaMode === 1 ? 0.04 : wheelEvent.deltaMode === 2 ? 0.2 : 0.001;
         return -wheelEvent.deltaY * modeScale;
       })
       .on('zoom', (event) => {
@@ -1241,8 +1243,8 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
         setZoomPercent(Math.round(event.transform.k * 100));
       });
     svg.call(zoom);
-    zoomInRef.current = () => svg.call(zoom.scaleBy, 1.2);
-    zoomOutRef.current = () => svg.call(zoom.scaleBy, 1 / 1.2);
+    zoomInRef.current = () => svg.call(zoom.scaleBy, 1.5);
+    zoomOutRef.current = () => svg.call(zoom.scaleBy, 1 / 1.5);
     const handlePan = (event: WheelEvent) => {
       if (event.ctrlKey) return;
       event.preventDefault();
@@ -1250,7 +1252,23 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
       svg.call(zoom.transform, current.translate(-event.deltaX, -event.deltaY));
     };
     element.addEventListener('wheel', handlePan, { passive: false });
-    const nodes: NetworkNode[] = model.nodes.map((node) => ({ ...node }));
+    const masses = model.nodes.map((node) => (Number.isFinite(node.mass) ? node.mass : 0));
+    const massMin = masses.length ? Math.min(...masses) : 0;
+    const massMax = masses.length ? Math.max(...masses) : 1;
+    const massRange = massMax === massMin ? 1 : massMax - massMin;
+    const maxRadius = Math.max(40, Math.min(width, height) * 0.31);
+    const nodes: NetworkNode[] = model.nodes.map((node, index) => {
+      const normalizedMass = (node.mass - massMin) / massRange;
+      const radius = 24 + normalizedMass * maxRadius;
+      const angle = index * Math.PI * (3 - Math.sqrt(5));
+      return {
+        ...node,
+        // Seed the simulation with low masses near the center and high masses
+        // outward, then reinforce that ordering with the radial force below.
+        x: width / 2 + Math.cos(angle) * radius,
+        y: height / 2 + Math.sin(angle) * radius,
+      };
+    });
     const links: NetworkLink[] = model.edges.map((edge) => ({ ...edge }));
     const simulation = d3
       .forceSimulation<NetworkNode>(nodes)
@@ -1259,17 +1277,45 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
         d3
           .forceLink<NetworkNode, NetworkLink>(links)
           .id((node) => node.id)
-          .distance(90),
+          .distance(58),
       )
-      .force('charge', d3.forceManyBody().strength(-180))
+      .force('charge', d3.forceManyBody().strength(-80))
+      .force(
+        'collision',
+        d3
+          .forceCollide<NetworkNode>()
+          .radius((item) => Math.max(item.tag.length, item.tagKind === 'main' ? item.label.length : 0) * 3.6 + 16),
+      )
+      .force(
+        'mass-order',
+        d3
+          .forceRadial<NetworkNode>(
+            (item) => 24 + ((item.mass - massMin) / massRange) * maxRadius,
+            width / 2,
+            height / 2,
+          )
+          .strength(0.18),
+      )
       .force('center', d3.forceCenter(width / 2, height / 2));
+    const connectorColors = darkMode
+      ? { isotope: '#9aa4b2', adduct: '#63a9ff', loss: '#ff7078' }
+      : { isotope: '#6b7280', adduct: '#2563eb', loss: '#dc2626' };
+    const connectorColor = (edge: NetworkLink) => {
+      const source = edge.source as NetworkNode;
+      const target = edge.target as NetworkNode;
+      if (source.tagKind === 'isotope' || target.tagKind === 'isotope') return connectorColors.isotope;
+      if (source.tagKind === 'loss' || target.tagKind === 'loss') return connectorColors.loss;
+      if (source.tagKind === 'adduct' || target.tagKind === 'adduct') return connectorColors.adduct;
+      return connectorColors.isotope;
+    };
     const link = viewport
       .append('g')
       .attr('class', 'sf-network-links')
       .selectAll<SVGLineElement, NetworkLink>('line')
       .data(links)
       .join('line')
-      .attr('stroke', 'var(--sf-border)')
+      .attr('stroke', connectorColor)
+      .attr('stroke-opacity', 0.82)
       .attr('stroke-width', (edge) => Math.max(1, Math.min(6, Math.abs(edge.weight) * 5)));
     const node = viewport
       .append('g')
@@ -1308,6 +1354,15 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
           loss: { fill: '#9f2d2d', text: '#ffffff' },
           adduct: { fill: '#1d4f91', text: '#ffffff' },
         };
+    const mainMasses = nodes
+      .filter((item) => item.tagKind === 'main' && Number.isFinite(item.mass))
+      .map((item) => item.mass);
+    const minMass = mainMasses.length ? Math.min(...mainMasses) : 0;
+    const maxMass = mainMasses.length ? Math.max(...mainMasses) : 1;
+    const mainFill = d3
+      .scaleLinear<string>()
+      .domain([minMass, maxMass === minMass ? minMass + 1 : maxMass])
+      .range(darkMode ? ['#71ffad', '#075239'] : ['#63f28d', '#0b5d3b']);
     node
       .append('rect')
       .attr(
@@ -1318,8 +1373,8 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
       .attr('width', (item) => Math.max(item.tag.length, item.tagKind === 'main' ? item.label.length : 0) * 7.2 + 18)
       .attr('height', (item) => (item.tagKind === 'main' ? 44 : 24))
       .attr('rx', 7)
-      .attr('fill', (item) => palette[item.tagKind].fill)
-      .attr('stroke', (item) => palette[item.tagKind].text);
+      .attr('fill', (item) => (item.tagKind === 'main' ? mainFill(item.mass) : palette[item.tagKind].fill))
+      .attr('stroke', 'none');
     const nodeText = node
       .append('text')
       .attr('text-anchor', 'middle')

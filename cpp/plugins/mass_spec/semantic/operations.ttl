@@ -707,9 +707,8 @@ sfms:groupFeatures
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Group features" ;
     skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and the selected alignment method. The internal_standards method consumes the optional internalStandardsTable through the internal_standards table parameter; obi_warp does not require that table." ;
-    sf:guidance "Connect featuresTable. Select grouping_method from the constrained internal_standards or obi_warp options. When grouping_method is internal_standards, connect an internalStandardsTable result to the internal_standards table parameter; the operation rejects an empty or missing table in that mode." ;
+    sf:guidance "Connect featuresTable. The operation processes all analyses present in the connected table. Select grouping_method from the constrained internal_standards or obi_warp options. When grouping_method is internal_standards, connect an internalStandardsTable result to the internal_standards table parameter; the operation rejects an empty or missing table in that mode." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:groupingMethodParameter,
         sfms:internalStandardsParameter,
         sfms:rtDeviationParameter,
