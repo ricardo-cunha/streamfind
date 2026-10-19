@@ -1,6 +1,5 @@
 #include "readers/reader.hpp"
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <cctype>
@@ -56,41 +55,28 @@ std::size_t positive_integer(const std::string &word, const std::string &label) 
     return static_cast<std::size_t>(*value);
 }
 
-float decode_float(const std::array<unsigned char, 4> &bytes, bool big_endian) {
-    const auto bits = big_endian
-        ? (static_cast<std::uint32_t>(bytes[3]) |
-           (static_cast<std::uint32_t>(bytes[2]) << 8) |
-           (static_cast<std::uint32_t>(bytes[1]) << 16) |
-           (static_cast<std::uint32_t>(bytes[0]) << 24))
-        : (static_cast<std::uint32_t>(bytes[0]) |
-           (static_cast<std::uint32_t>(bytes[1]) << 8) |
-           (static_cast<std::uint32_t>(bytes[2]) << 16) |
-           (static_cast<std::uint32_t>(bytes[3]) << 24));
-    return std::bit_cast<float>(bits);
+std::optional<std::uint64_t> unsigned_integer_line(const std::string &line) {
+    const auto words = split_words(line);
+    if (words.size() != 1) return std::nullopt;
+    try {
+        std::size_t consumed = 0;
+        const auto value = std::stoull(words.front(), &consumed);
+        if (consumed == words.front().size()) return value;
+    } catch (const std::exception &) {
+    }
+    return std::nullopt;
 }
 
-double plausible_count_fraction(const std::filesystem::path &path,
-                                std::uintmax_t payload_offset,
-                                std::size_t pixel_count, bool big_endian) {
-    std::ifstream input(path, std::ios::binary);
-    input.seekg(static_cast<std::streamoff>(payload_offset));
-    if (!input) throw std::runtime_error("cannot inspect Andor SIF pixel byte order");
-    const auto sample_count = std::min<std::size_t>(pixel_count, 4096);
-    std::size_t plausible = 0;
-    std::size_t active = 0;
-    for (std::size_t i = 0; i < sample_count; ++i) {
-        std::array<unsigned char, 4> bytes{};
-        input.read(reinterpret_cast<char *>(bytes.data()),
-                   static_cast<std::streamsize>(bytes.size()));
-        if (!input) throw std::runtime_error("Andor SIF pixel payload is truncated");
-        const auto value = decode_float(bytes, big_endian);
-        if (std::isfinite(value) && std::abs(value) <= 1.0e7F) {
-            ++plausible;
-            if (std::abs(value) >= 1.0e-3F) ++active;
-        }
-    }
-    if (plausible == 0) return 0.0;
-    return static_cast<double>(active) / static_cast<double>(sample_count);
+float decode_float(const std::array<unsigned char, 4> &bytes) {
+    // Andor SIF stores its float32 pixel block in little-endian byte order.
+    // Do not infer the byte order from the values: a wrong-endian float can
+    // still look finite for a subset of pixels and produce values around
+    // 1e38 in the viewer.
+    const auto bits = static_cast<std::uint32_t>(bytes[0]) |
+                      (static_cast<std::uint32_t>(bytes[1]) << 8) |
+                      (static_cast<std::uint32_t>(bytes[2]) << 16) |
+                      (static_cast<std::uint32_t>(bytes[3]) << 24);
+    return std::bit_cast<float>(bits);
 }
 
 }  // namespace streamfind::raman::reader::sif_detail
@@ -122,11 +108,21 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
     std::size_t pixel_count = 0;
     std::vector<double> calibration;
     std::optional<double> excitation_nm;
-    bool after_calibration = false;
+    std::size_t calibration_state = 0;
     bool saw_pixel_marker = false;
+    std::uint64_t sif_version = 0;
     std::size_t line_number = 1;
     while (std::getline(input, line)) {
         ++line_number;
+        if (line_number == 3) {
+            const auto words = split_words(line);
+            if (!words.empty()) {
+                try {
+                    sif_version = std::stoull(words.front());
+                } catch (const std::exception &) {
+                }
+            }
+        }
         if (line.rfind("Pixel number", 0) == 0) {
             const auto fields = split_words(line);
             if (fields.size() < 9)
@@ -140,7 +136,43 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
             saw_pixel_marker = true;
             break;
         }
-        if (line.rfind("65540", 0) == 0) after_calibration = true;
+        if (calibration_state == 0) {
+            const auto words = split_words(line);
+            if (!words.empty()) {
+                const auto version = number(words.front());
+                if (version && *version == 65540.0)
+                    calibration_state = 2;
+            }
+        } else if (calibration_state == 1) {
+            calibration_state = 2;
+        } else if (calibration_state == 2) {
+            const auto values = numeric_words(line);
+            const auto has_nonzero_tail = values.size() == 4 &&
+                                          (values[1] != 0.0 || values[2] != 0.0 ||
+                                           values[3] != 0.0);
+            if (values.size() == 4 &&
+                ((values.front() > 200.0 && values.front() < 1000.0) ||
+                 (values.front() == 0.0 && has_nonzero_tail))) {
+                calibration = values;
+                calibration_state = 3;
+            } else {
+                // This was another 65540 metadata block, not the
+                // spectrometer calibration record.
+                calibration_state = 0;
+            }
+        } else if (calibration_state == 3) {
+            // Calibration_data_old.
+            calibration_state = 4;
+        } else if (calibration_state == 4) {
+            // Reserved calibration field.
+            calibration_state = 5;
+        } else if (calibration_state == 5 && !excitation_nm) {
+            const auto values = numeric_words(line);
+            if (values.size() == 1) {
+                excitation_nm = values.front();
+                calibration_state = 6;
+            }
+        }
         if (line.find("Raman shift") != std::string::npos) {
             result.axis_kind = "raman_shift";
             result.metadata.push_back({"Axis label", "Raman shift", 0});
@@ -150,13 +182,6 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
             result.signal_unit = "counts";
             result.metadata.push_back({"Data Type", "Counts", 0});
         }
-        const auto values = numeric_words(line);
-        if (after_calibration && calibration.empty() && values.size() == 4 &&
-            values.front() > 200.0 && values.front() < 1000.0)
-            calibration = values;
-        else if (after_calibration && !calibration.empty() && !excitation_nm &&
-                 values.size() == 1 && values.front() > 200.0 && values.front() < 1000.0)
-            excitation_nm = values.front();
     }
     if (!saw_pixel_marker)
         throw std::runtime_error("Andor SIF has no pixel descriptor: " + path.string());
@@ -175,6 +200,11 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
         result.axis_kind = "pixel";
         result.axis_unit = "pixel";
     }
+
+    // ORPL/sif_parser uses the excitation wavelength when Andor writes a
+    // zero placeholder as the first calibration coefficient.
+    if (!calibration.empty() && excitation_nm && calibration.front() == 0.0)
+        calibration.front() = *excitation_nm;
 
     // The line after the pixel descriptor describes the detector ROI. The next
     // frame_count scalar lines are acquisition timestamps in microseconds.
@@ -201,19 +231,60 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
                                        std::to_string(*result.kinetic_cycle_seconds), 0});
     }
 
+    // The pixel block starts after the timestamp/control section.  It is not
+    // safe to infer its location from EOF because SIF versions can append
+    // metadata or padding after the pixel data.
+    auto payload_offset = input.tellg();
+    if (payload_offset < 0)
+        throw std::runtime_error("cannot determine Andor SIF pixel payload offset");
+    const auto control_offset = payload_offset;
+    std::string control_line;
+    bool complete_control_line = false;
+    for (std::size_t probe = 0; probe < 64 && input.good(); ++probe) {
+        char character = '\0';
+        input.get(character);
+        if (!input) break;
+        if (character == '\n') {
+            complete_control_line = true;
+            break;
+        }
+        if (std::isdigit(static_cast<unsigned char>(character)) != 0 ||
+            character == '\r' || character == ' ' || character == '\t')
+            control_line.push_back(character);
+        else
+            break;
+    }
+    input.clear();
+    input.seekg(control_offset);
+    if (complete_control_line) {
+        const auto control = unsigned_integer_line(control_line);
+        if (control && *control == 0) {
+            input.seekg(control_offset);
+            input.seekg(static_cast<std::streamoff>(control_line.size() + 1),
+                        std::ios::cur);
+            payload_offset = input.tellg();
+        } else if (control && *control == 1 && sif_version == 65567) {
+            input.seekg(static_cast<std::streamoff>(control_line.size() + 1),
+                        std::ios::cur);
+            for (std::size_t frame = 0; frame < frame_count; ++frame) {
+                if (!std::getline(input, control_line))
+                    throw std::runtime_error("Andor SIF frame control table is truncated");
+            }
+            payload_offset = input.tellg();
+        } else {
+            payload_offset = control_offset;
+        }
+    } else {
+        payload_offset = control_offset;
+    }
+
     const auto file_size = std::filesystem::file_size(path);
-    constexpr std::uintmax_t footer_size = 8;
     const auto payload_size = static_cast<std::uintmax_t>(pixel_count) * sizeof(float);
-    if (file_size < footer_size || payload_size > file_size - footer_size)
+    if (payload_offset < 0 || static_cast<std::uintmax_t>(payload_offset) > file_size ||
+        payload_size > file_size - static_cast<std::uintmax_t>(payload_offset))
         throw std::runtime_error("Andor SIF float payload exceeds the source file size");
-    const auto payload_offset = file_size - footer_size - payload_size;
-    const auto little_endian_score = plausible_count_fraction(
-        path, payload_offset, pixel_count, false);
-    const auto big_endian_score = plausible_count_fraction(
-        path, payload_offset, pixel_count, true);
-    const bool big_endian = big_endian_score > little_endian_score;
     std::ifstream pixels(path, std::ios::binary);
-    pixels.seekg(static_cast<std::streamoff>(payload_offset));
+    pixels.seekg(payload_offset);
     if (!pixels) throw std::runtime_error("cannot seek to Andor SIF pixel payload");
 
     std::vector<float> intensities(point_count);
@@ -225,7 +296,7 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
             pixels.read(reinterpret_cast<char *>(bytes.data()),
                         static_cast<std::streamsize>(bytes.size()));
             if (!pixels) throw std::runtime_error("Andor SIF pixel payload is truncated");
-            intensity = decode_float(bytes, big_endian);
+            intensity = decode_float(bytes);
             if (!std::isfinite(intensity) || std::abs(intensity) > 1.0e7F) {
                 intensity = std::numeric_limits<float>::quiet_NaN();
                 ++missing_intensity_count;
@@ -238,7 +309,11 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
                                   : std::nullopt;
         spectrum.points.reserve(point_count);
         for (std::size_t point = 0; point < point_count; ++point) {
-            const auto detector_index = point_count - point - 1;
+            // sif_parser exposes the detector axis in the same order as the
+            // Raman calibration polynomial.  Reversing it here mirrors the
+            // spectrum and moves low-shift peaks to the wrong end of the
+            // plotted axis.
+            const auto detector_index = point;
             double coordinate = static_cast<double>(point + 1);
             if (!calibration.empty() && excitation_nm) {
                 const auto pixel = static_cast<double>(point + 1);
@@ -248,6 +323,7 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
                 if (!(wavelength > 0.0))
                     throw std::runtime_error("Andor SIF calibration produced a non-positive wavelength");
                 coordinate = (1.0 / *excitation_nm - 1.0 / wavelength) * 1e7;
+                coordinate = std::round(coordinate);
             }
             const auto intensity = std::isfinite(intensities[detector_index])
                                        ? std::optional<double>(intensities[detector_index])
@@ -262,7 +338,8 @@ SpectrumFile read_sif_file(const std::filesystem::path &path,
         result.metadata.push_back({"Missing detector values",
                                    std::to_string(missing_intensity_count) +
                                        " non-finite or out-of-range source values stored as null intensities", 0});
-    result.metadata.push_back({"Pixel byte order", big_endian ? "big-endian" : "little-endian", 0});
+    result.metadata.push_back({"Pixel byte order", "little-endian", 0});
+    result.metadata.push_back({"Pixel payload offset", std::to_string(payload_offset), 0});
     return result;
 }
 
