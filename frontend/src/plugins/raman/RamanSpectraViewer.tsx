@@ -10,6 +10,10 @@ type RamanRow = Record<string, string | null>;
 
 const GROUP_COLUMNS = ['analysis_id', 'source_frame_index', 'time_seconds', 'axis_kind', 'signal_kind'] as const;
 const DEFAULT_GROUP = ['analysis_id'];
+const INITIAL_MAX_POINTS_PER_TRACE = 1024;
+const INITIAL_MAX_ROWS = 500000;
+const VIEWPORT_MAX_POINTS_PER_TRACE = 2000;
+const VIEWPORT_MAX_ROWS = 1000000;
 
 function text(row: RamanRow, column: string): string {
   return row[column] ?? '';
@@ -189,8 +193,14 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
         x_column: 'spectral_coordinate',
         y_column: 'intensity',
         trace_columns: ['analysis_id', 'source_frame_index', 'time_seconds', 'frame_time_value', 'spectrum_id'],
-        max_points_per_trace: 2000,
-        limit: 1000000,
+        // Raman files can contain many time-resolved spectra. Keep the first
+        // five spectra from every analysis in the viewer; each selected
+        // spectrum still retains its full point resolution.
+        filters: [{ column: 'spectrum_index', operator: 'lte', value: 4 }],
+        // Keep the first render lightweight. A zoomed spectral window loads
+        // the higher-resolution traces on demand through the same query.
+        max_points_per_trace: viewportRange ? VIEWPORT_MAX_POINTS_PER_TRACE : INITIAL_MAX_POINTS_PER_TRACE,
+        limit: viewportRange ? VIEWPORT_MAX_ROWS : INITIAL_MAX_ROWS,
         ...(viewportRange ? { x_min: viewportRange[0], x_max: viewportRange[1] } : {}),
       });
       if (!cancelled) setData({ ...response, offset: 0, limit: response.rows.length });
@@ -207,9 +217,12 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
     };
   }, [artifact, client, context.sessionId, viewportRange]);
 
-  useEffect(() => () => {
-    if (viewportTimer.current) clearTimeout(viewportTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (viewportTimer.current) clearTimeout(viewportTimer.current);
+    },
+    [],
+  );
 
   const handleRelayout = useCallback((event: VisualizationRelayout) => {
     if (event['xaxis.autorange'] === true) {
@@ -263,7 +276,8 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
           </label>
         ))}
         <span className="sf-raman-viewer-summary">
-          {rows.length} displayed rows{data && data.total_rows > rows.length ? ` of ${data.total_rows.toLocaleString()}` : ''} ·{' '}
+          {rows.length} displayed rows
+          {data && data.total_rows > rows.length ? ` of ${data.total_rows.toLocaleString()}` : ''} ·{' '}
           {spec.payload.data.length} traces{loading ? ' · loading viewport…' : ''}
         </span>
       </div>

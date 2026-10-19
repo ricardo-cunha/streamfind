@@ -45,9 +45,8 @@ const suspectOverviewColumns = [
   'name',
   'formula',
   'mass',
-  'SMILES',
-  'InChI',
-  'InChIKey',
+  'polarity',
+  'blank',
   'id_level',
   'error_mass',
   'error_rt',
@@ -56,6 +55,11 @@ const suspectOverviewColumns = [
   'shared_fragments',
   'isotope_match',
   'filtered',
+  'annotation_category',
+  'annotation_type',
+  'annotation_element',
+  'annotation_parent_feature',
+  'annotation_estimated_formula',
 ] as const;
 
 function text(row: Row, key: string): string {
@@ -1348,13 +1352,7 @@ function filterLabel(key: string): string {
 
 function selectSuspectOverviewColumns(available: Column[] | undefined): string[] | undefined {
   if (!available?.length) return undefined;
-  const scalarColumns = available
-    .filter(
-      (column) =>
-        !/array|list|map|struct|blob|binary|json/i.test(column.type ?? '') &&
-        !/^(eic_(rt|intensity)|ms1_(mz|intensity)|ms2_(mz|intensity)|db_ms2_(mz|intensity))$/i.test(column.name),
-    )
-    .map((column) => column.name);
-  const preferred = suspectOverviewColumns.filter((column) => scalarColumns.includes(column));
-  return Array.from(new Set([...preferred, ...scalarColumns]));
+  const availableNames = new Set(available.map((column) => column.name));
+  const selected = suspectOverviewColumns.filter((column) => availableNames.has(column));
+  return selected.length ? [...selected] : undefined;
 }
