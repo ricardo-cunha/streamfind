@@ -126,6 +126,14 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  background: var(--sf-surface-raised);
+}
+.sf-feature-scatter-plotly,
+.sf-feature-scatter-plotly > [role='img'],
+.sf-feature-scatter-plotly .plotly,
+.sf-feature-scatter-plotly .plot-container,
+.sf-feature-scatter-plotly .svg-container {
+  background: var(--sf-surface-raised);
 }
 .sf-feature-network {
   display: block;

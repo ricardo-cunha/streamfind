@@ -13,7 +13,7 @@ import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
-import { colorFor } from './FeatureInspector';
+import { colorFor, stablePlotGroup } from './FeatureInspector';
 import { StructureImage } from './SuspectTargetsViewer';
 
 type Row = Record<string, string | null>;
@@ -271,7 +271,7 @@ function SuspectScatter({
     payload: {
       data: [
         {
-          type: 'scattergl',
+          type: points.length > 5000 ? 'scattergl' : 'scatter',
           mode: 'markers',
           x: points.map((point) => Number(point.row.rt)),
           y: points.map((point) => Number(point.row.mz)),
@@ -362,7 +362,6 @@ function SuspectScatter({
           if (index >= 0 && points[index]) onSelect(keys[index]);
         }}
         onPlotClick={onClearSelection}
-        onDoubleClick={onClearSelection}
         onRelayout={(event) => {
           if (!userViewportGesture.current) return;
           userViewportGesture.current = false;
@@ -719,6 +718,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         .then((response) => {
           if (!active) return;
           const nextRows = response.rows.filter((row) => row && typeof row === 'object');
+          if (viewport && response.total_rows > 0 && nextRows.length === 0) return;
           setSuspects(nextRows);
           setTotalSuspects(response.total_rows);
           setSelectedKey((current) =>
@@ -815,13 +815,6 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     return [...unique.values()];
   }, [filteredSuspects]);
 
-  const categories = useMemo(
-    () =>
-      [
-        ...new Set(featureRows.map((row, index) => text(row, groupBy) || text(row, 'analysis') || String(index))),
-      ].sort(),
-    [featureRows, groupBy],
-  );
   const plotPoints = useMemo<ScatterPoint[]>(() => {
     return featureRows.flatMap((row, index) => {
       const mz = number(row, 'exp_mass');
@@ -831,12 +824,12 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         {
           row: { ...row, mz: String(mz), rt: String(rt) },
           index,
-          color: colorFor(text(row, groupBy) || text(row, 'analysis') || String(index), categories),
+          color: colorFor(stablePlotGroup(row, groupBy)),
           intensity: number(row, 'intensity') ?? 1,
         },
       ];
     });
-  }, [categories, featureRows, groupBy]);
+  }, [featureRows, groupBy]);
 
   const selectedFeature = plotPoints.find((point) => featureKey(point.row) === selectedKey)?.row ?? null;
 

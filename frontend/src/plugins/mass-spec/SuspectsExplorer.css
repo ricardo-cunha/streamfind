@@ -551,7 +551,7 @@
   height: 100%;
   min-height: 0;
   flex: 1 1 auto;
-  background: transparent;
+  background: var(--sf-surface-raised);
 }
 
 .sf-suspects-explorer-right-plot .sf-feature-scatter-plotly > [role='img'] {
@@ -562,6 +562,7 @@
 .sf-suspects-explorer-right-plot .sf-feature-scatter-plotly .svg-container {
   width: 100% !important;
   height: 100% !important;
+  background: var(--sf-surface-raised);
 }
 
 .sf-suspects-explorer-tabs {

@@ -795,6 +795,11 @@ namespace streamfind::mass_spec::nta::deconvolution
     // A valley is a point where intensity is lower than neighbors and then starts increasing
     int left_idx = peak_idx;
     std::string left_stop_reason = "";
+    const int boundary_persistence = std::max(3, min_traces);
+    const int valley_persistence = std::max(3, min_traces);
+    int left_below_baseline = 0;
+    int left_below_minimum = 0;
+    int left_valley_rise = 0;
 
     // Move left from apex, looking for valley points
     for (int i = peak_idx - 1; i >= 0; --i)
@@ -814,13 +819,20 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if at or below baseline (with 10% tolerance)
+      // Require a persistent baseline crossing. A single noisy point on the
+      // shoulder must not truncate the integrated peak.
       if (smoothed_intensity[i] <= baseline[i] * 1.1f)
       {
-        left_idx = i;
-        left_stop_reason = "intensity <= baseline * 1.1";
-        break;
+        ++left_below_baseline;
+        if (left_below_baseline >= boundary_persistence)
+        {
+          left_idx = i;
+          left_stop_reason = "persistent intensity <= baseline * 1.1";
+          break;
+        }
       }
+      else
+        left_below_baseline = 0;
 
       if (smoothed_intensity[i] > apex_intensity * 1.2f)
       {
@@ -829,13 +841,19 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if intensity < 1% of apex
+      // Likewise require two consecutive near-zero points.
       if (smoothed_intensity[i] <= min_intensity_threshold)
       {
-        left_idx = i;
-        left_stop_reason = "intensity <= 1% of apex";
-        break;
+        ++left_below_minimum;
+        if (left_below_minimum >= 2)
+        {
+          left_idx = i;
+          left_stop_reason = "persistent intensity <= 1% of apex";
+          break;
+        }
       }
+      else
+        left_below_minimum = 0;
 
       // Check for valley: detect 2+ consecutive increases when moving left (away from peak)
       // A valley is characterized by a local minimum followed by rising intensity
@@ -843,14 +861,14 @@ namespace streamfind::mass_spec::nta::deconvolution
       {
         // Check if intensity is rising as we move left (away from peak)
         // This indicates we've crossed a valley and are climbing another peak
-        bool first_increase = smoothed_intensity[i - 1] > smoothed_intensity[i];
-        bool second_increase = smoothed_intensity[i - 2] > smoothed_intensity[i - 1];
+        bool rising_away_from_peak = smoothed_intensity[i - 1] > smoothed_intensity[i];
+        left_valley_rise = rising_away_from_peak ? left_valley_rise + 1 : 0;
 
-        if (first_increase && second_increase)
+        if (left_valley_rise >= valley_persistence && smoothed_intensity[i] < apex_intensity * 0.35f)
         {
           // Found a valley - stop here to avoid crossing into another peak
           left_idx = i;
-          left_stop_reason = "valley detected (2+ consecutive increases moving left), intensity=" + std::to_string(smoothed_intensity[i]);
+          left_stop_reason = "persistent valley moving left, intensity=" + std::to_string(smoothed_intensity[i]);
           break;
         }
       }
@@ -864,6 +882,9 @@ namespace streamfind::mass_spec::nta::deconvolution
     // A valley is a point where intensity is lower than neighbors and then starts increasing
     int right_idx = peak_idx;
     std::string right_stop_reason = "";
+    int right_below_baseline = 0;
+    int right_below_minimum = 0;
+    int right_valley_rise = 0;
 
     // Move right from apex, looking for valley points
     for (int i = peak_idx + 1; i < n; ++i)
@@ -883,13 +904,20 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if at or below baseline (with 10% tolerance)
+      // Require a persistent baseline crossing. A single noisy point on the
+      // shoulder must not truncate the integrated peak.
       if (smoothed_intensity[i] <= baseline[i] * 1.1f)
       {
-        right_idx = i;
-        right_stop_reason = "intensity <= baseline * 1.1";
-        break;
+        ++right_below_baseline;
+        if (right_below_baseline >= boundary_persistence)
+        {
+          right_idx = i;
+          right_stop_reason = "persistent intensity <= baseline * 1.1";
+          break;
+        }
       }
+      else
+        right_below_baseline = 0;
 
       if (smoothed_intensity[i] > apex_intensity * 1.2f)
       {
@@ -898,13 +926,19 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if intensity < 1% of apex
+      // Likewise require two consecutive near-zero points.
       if (smoothed_intensity[i] <= min_intensity_threshold)
       {
-        right_idx = i;
-        right_stop_reason = "intensity <= 1% of apex";
-        break;
+        ++right_below_minimum;
+        if (right_below_minimum >= 2)
+        {
+          right_idx = i;
+          right_stop_reason = "persistent intensity <= 1% of apex";
+          break;
+        }
       }
+      else
+        right_below_minimum = 0;
 
       // Check for valley: detect 2+ consecutive increases when moving right (away from peak)
       // A valley is characterized by a local minimum followed by rising intensity
@@ -912,14 +946,14 @@ namespace streamfind::mass_spec::nta::deconvolution
       {
         // Check if intensity is rising as we move right (away from peak)
         // This indicates we've crossed a valley and are climbing another peak
-        bool first_increase = smoothed_intensity[i + 1] > smoothed_intensity[i];
-        bool second_increase = smoothed_intensity[i + 2] > smoothed_intensity[i + 1];
+        bool rising_away_from_peak = smoothed_intensity[i + 1] > smoothed_intensity[i];
+        right_valley_rise = rising_away_from_peak ? right_valley_rise + 1 : 0;
 
-        if (first_increase && second_increase)
+        if (right_valley_rise >= valley_persistence && smoothed_intensity[i] < apex_intensity * 0.35f)
         {
           // Found a valley - stop here to avoid crossing into another peak
           right_idx = i;
-          right_stop_reason = "valley detected (2+ consecutive increases moving right), intensity=" + std::to_string(smoothed_intensity[i]);
+          right_stop_reason = "persistent valley moving right, intensity=" + std::to_string(smoothed_intensity[i]);
           break;
         }
       }
@@ -1226,10 +1260,12 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
 
       auto baseline = ::streamfind::mass_spec::nta::utils::calculate_baseline(cluster_intensity, baseline_window_size);
-      // Use gentle smoothing for derivatives (window_size=2 means averaging 3 points: [i-1, i, i+1])
-      // This reduces noise while preserving sharp peaks
-
-      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 4, 2);
+      // Use a short, odd smoothing window for derivatives. The previous
+      // five-point window was still sensitive to isolated noise excursions in
+      // sparse EICs, which could make the boundary walker stop on the first
+      // noisy shoulder point. Seven points remains local for normal scan
+      // spacing while making the slope and valley tests stable.
+      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 7, 2);
       // auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
 
       if (cluster_matches_debug_mz && debug_session != nullptr) {

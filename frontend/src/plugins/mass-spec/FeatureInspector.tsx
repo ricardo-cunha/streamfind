@@ -282,6 +282,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         })
         .then((response) => {
           if (!active) return;
+          // A viewport query can briefly return metadata without sampled rows
+          // while the backend prepares the requested window. Keep the visible
+          // plot until a non-empty replacement arrives.
+          if (viewport && response.total_rows > 0 && response.rows.length === 0) return;
           setRows(response.rows);
           setTotalRows(response.total_rows);
           setSelectedKey((current) =>
@@ -844,7 +848,6 @@ export function FeaturePlot({
           }
         }}
         onPlotClick={onClearSelection}
-        onDoubleClick={onClearSelection}
         onRelayout={(event) => {
           if (!userViewportGesture.current) return;
           userViewportGesture.current = false;
@@ -882,7 +885,9 @@ function featureScatterSpec(
     payload: {
       data: [
         {
-          type: 'scattergl',
+          // SVG is more reliable for small filtered/zoomed datasets. Keep
+          // WebGL for large overviews where it materially improves latency.
+          type: points.length > 5000 ? 'scattergl' : 'scatter',
           mode: 'markers',
           x: points.map((point) => numericValue(point.row, ['rt', 'retention_time']) ?? 0),
           y: points.map((point) => numericValue(point.row, ['mz', 'feature_mz']) ?? 0),
@@ -1828,7 +1833,7 @@ function makePoints(rows: FeatureRow[], groupBy: string): FeaturePlotPoint[] {
       {
         row,
         index,
-        color: colorFor(String(row[groupBy] ?? row.analysis ?? index), categories),
+        color: colorFor(stablePlotGroup(row, groupBy), categories),
         intensity: numericValue(row, ['intensity', 'feature_intensity', 'max_intensity']) ?? 0,
       },
     ];
@@ -1870,11 +1875,13 @@ function getPlotTheme(darkMode: boolean): { text: string; grid: string; backgrou
     typeof document !== 'undefined'
       ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
       : fallback;
-  void darkMode;
+  const fallback = darkMode
+    ? { text: '#f4fbfa', grid: 'rgba(225, 240, 236, 0.14)', background: '#132226' }
+    : { text: '#061314', grid: 'rgba(10, 48, 51, 0.14)', background: '#ffffff' };
   return {
-    text: readThemeColor('--sf-text', 'currentColor'),
-    grid: readThemeColor('--sf-border', 'transparent'),
-    background: readThemeColor('--sf-surface-raised', 'transparent'),
+    text: readThemeColor('--sf-text', fallback.text),
+    grid: readThemeColor('--sf-border', fallback.grid),
+    background: readThemeColor('--sf-surface-raised', fallback.background),
   };
 }
 
@@ -1898,7 +1905,17 @@ function arrayMax(values: number[]): number {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function colorFor(value: string, categories: string[] = [value]): string {
+export function stablePlotGroup(row: Record<string, string | null | undefined>, groupBy: string): string {
+  const selected = String(row[groupBy] ?? '').trim();
+  if (groupBy !== 'replicate') return selected || String(row.analysis ?? '').trim() || '(unassigned)';
+  const normalized = selected.toLowerCase();
+  if (normalized === 'plant' || normalized === 'substrate') return normalized;
+  const analysis = String(row.analysis ?? '').trim();
+  const sampleClass = analysis.match(/^(plant|substrate)(?:[_\s]|$)/i)?.[1];
+  return sampleClass?.toLowerCase() ?? (selected || '(unassigned)');
+}
+
+export function colorFor(value: string, _categories: string[] = [value]): string {
   const palette = [
     '#0072b2',
     '#d55e00',
@@ -1913,7 +1930,12 @@ export function colorFor(value: string, categories: string[] = [value]): string 
     '#aa4499',
     '#44aa99',
   ];
-  return palette[Math.max(0, categories.indexOf(value)) % palette.length];
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return palette[(hash >>> 0) % palette.length];
 }
 
 function signalTraceLabel(row: FeatureRow, groupBy: string, selectBy: SelectionMode): string {

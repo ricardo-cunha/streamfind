@@ -28,7 +28,7 @@ describe('PlotlyRenderer', () => {
     expect(runtime.newPlot).toHaveBeenCalledWith(
       expect.any(HTMLElement),
       spec.payload.data,
-      { ...spec.payload.layout, autosize: true },
+      { ...spec.payload.layout, autosize: true, uirevision: spec.visualization_id },
       spec.payload.config,
     );
     view.rerender(<PlotlyRenderer runtime={runtime} spec={{ ...spec, title: 'TIC (updated label)' }} />);
