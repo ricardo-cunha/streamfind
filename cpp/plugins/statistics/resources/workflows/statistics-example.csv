@@ -1,0 +1,7 @@
+sample_id,group,response,feature_a,feature_b
+sample_1,control,1.2,10,3
+sample_2,control,1.5,12,4
+sample_3,control,1.1,9,2
+sample_4,treated,2.8,19,8
+sample_5,treated,3.0,22,9
+sample_6,treated,2.7,18,7
