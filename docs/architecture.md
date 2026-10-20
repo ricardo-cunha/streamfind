@@ -36,6 +36,43 @@ The runtime validates the graph, resolves dependencies from typed connections,
 executes each operation, and persists execution records and artifacts. Every
 required input must be connected explicitly.
 
+## Operation cancellation
+
+Cancellation is an operation-level runtime contract, not only a visual action
+on a workflow node. The browser sends the operation instance identifier to the
+service. The service owns a cancellation token for that operation and passes
+the token through the SDK access object used by the plugin.
+
+Long-running operations must check the token at bounded intervals and stop at a
+safe boundary. This applies to analysis and sample loops, table processing,
+statistics, file and network work, nested workflows, and parallel workers. A
+plugin should use the SDK cancellation checkpoint rather than maintaining a
+separate cancellation flag.
+
+Operations that delegate work need an explicit interruption mechanism as well:
+
+- DuckDB work should use an interruptible connection or query boundary.
+- External programs must run in an owned process group or Windows Job Object;
+  cancellation must terminate the complete child process tree and wait for it
+  to exit.
+- Parallel workers must share the operation token and be joined before the
+  operation is reported as cancelled.
+
+The observable state transition is:
+
+```text
+running -> cancelling -> cancelled
+running -> completed
+running -> failed
+```
+
+The service should scope cancellation by operation instance, make repeated
+stop requests idempotent, and report `cancelled` only after workers and child
+processes have stopped. Partial output must not be published as a successful
+artifact. The cancellation contract should be covered by native tests for
+cooperative loops, nested/parallel work, DuckDB interruption, external
+process termination, repeated cancellation, and normal failure handling.
+
 ## Project usage model
 
 A typical application or agent follows this sequence:

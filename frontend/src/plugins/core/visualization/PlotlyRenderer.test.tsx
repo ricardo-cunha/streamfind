@@ -28,7 +28,14 @@ describe('PlotlyRenderer', () => {
     expect(runtime.newPlot).toHaveBeenCalledWith(
       expect.any(HTMLElement),
       spec.payload.data,
-      { ...spec.payload.layout, autosize: true },
+      expect.objectContaining({
+        autosize: true,
+        uirevision: spec.visualization_id,
+        paper_bgcolor: '#ffffff',
+        plot_bgcolor: '#ffffff',
+        xaxis: expect.objectContaining({ showgrid: true, linecolor: '#061314' }),
+        yaxis: expect.objectContaining({ showgrid: true, linecolor: '#061314' }),
+      }),
       spec.payload.config,
     );
     view.rerender(<PlotlyRenderer runtime={runtime} spec={{ ...spec, title: 'TIC (updated label)' }} />);

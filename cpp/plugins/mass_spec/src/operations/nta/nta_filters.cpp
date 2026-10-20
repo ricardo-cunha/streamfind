@@ -578,6 +578,7 @@ namespace streamfind::mass_spec::nta::filter_suspects
           ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW s;
           s.analysis = sus.analysis[i];
           s.feature = sus.feature[i];
+          s.feature_group = sus.feature_group[i];
           s.candidate_rank = sus.candidate_rank[i];
           s.name = sus.name[i];
           s.polarity = sus.polarity[i];
@@ -607,6 +608,10 @@ namespace streamfind::mass_spec::nta::filter_suspects
           s.exp_ms2_size = sus.exp_ms2_size[i];
           s.exp_ms2_mz = sus.exp_ms2_mz[i];
           s.exp_ms2_intensity = sus.exp_ms2_intensity[i];
+          s.isotope_theoretical_peaks = sus.isotope_theoretical_peaks[i];
+          s.isotope_matched_peaks = sus.isotope_matched_peaks[i];
+          s.isotope_similarity = sus.isotope_similarity[i];
+          s.isotope_match = sus.isotope_match[i];
           filtered.append(s);
         }
       }
@@ -627,7 +632,8 @@ namespace streamfind::mass_spec::nta::filter_internal_standards
       double maxErrorMass,
       const std::vector<int> &idLevels,
       int minSharedFragments,
-      double minCosineSimilarity)
+      double minCosineSimilarity,
+      bool deduplicate)
   {
     auto &internal_standard_buffers = nta_data.internal_standard_buffers();
     for (size_t a = 0; a < internal_standard_buffers.size(); ++a)
@@ -708,6 +714,61 @@ namespace streamfind::mass_spec::nta::filter_internal_standards
         }
       }
 
+      if (deduplicate)
+      {
+        std::unordered_map<std::string, int> best_by_identity;
+        auto better_candidate = [&](const int left, const int right) {
+          const auto compare_abs = [](const double a, const double b) {
+            const bool a_valid = std::isfinite(a);
+            const bool b_valid = std::isfinite(b);
+            if (a_valid != b_valid)
+              return a_valid;
+            if (!a_valid)
+              return false;
+            return std::abs(a) < std::abs(b);
+          };
+          if (compare_abs(istd.error_rt[left], istd.error_rt[right]) !=
+              compare_abs(istd.error_rt[right], istd.error_rt[left]))
+            return compare_abs(istd.error_rt[left], istd.error_rt[right]);
+          if (compare_abs(istd.error_mass[left], istd.error_mass[right]) !=
+              compare_abs(istd.error_mass[right], istd.error_mass[left]))
+            return compare_abs(istd.error_mass[left], istd.error_mass[right]);
+          if (istd.shared_fragments[left] != istd.shared_fragments[right])
+            return istd.shared_fragments[left] > istd.shared_fragments[right];
+          if (istd.score[left] != istd.score[right])
+            return istd.score[left] > istd.score[right];
+          if (istd.intensity[left] != istd.intensity[right])
+            return istd.intensity[left] > istd.intensity[right];
+          if (istd.area[left] != istd.area[right])
+            return istd.area[left] > istd.area[right];
+          if (istd.cosine_similarity[left] != istd.cosine_similarity[right])
+            return istd.cosine_similarity[left] > istd.cosine_similarity[right];
+          if (istd.id_level[left] != istd.id_level[right])
+            return istd.id_level[left] > istd.id_level[right];
+          return istd.candidate_rank[left] < istd.candidate_rank[right];
+        };
+
+        for (int i = 0; i < istd.size(); ++i)
+        {
+          if (!keep[i])
+            continue;
+          const std::string identity = !istd.InChIKey[i].empty() ? istd.InChIKey[i] :
+              (!istd.InChI[i].empty() ? istd.InChI[i] :
+              (!istd.SMILES[i].empty() ? istd.SMILES[i] : istd.formula[i]));
+          const std::string key = istd.analysis[i] + "\x1f" + std::to_string(istd.polarity[i]) +
+              "\x1f" + istd.name[i] + "\x1f" + identity;
+          const auto existing = best_by_identity.find(key);
+          if (existing == best_by_identity.end() || better_candidate(i, existing->second))
+            best_by_identity[key] = i;
+        }
+
+        std::vector<bool> best(istd.size(), false);
+        for (const auto &[key, index] : best_by_identity)
+          best[index] = true;
+        for (int i = 0; i < istd.size(); ++i)
+          keep[i] = keep[i] && best[i];
+      }
+
       // Create filtered internal standards
       ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARDS filtered;
       for (int i = 0; i < istd.size(); ++i)
@@ -716,7 +777,11 @@ namespace streamfind::mass_spec::nta::filter_internal_standards
         {
           ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW is;
           is.analysis = istd.analysis[i];
+          is.replicate = istd.replicate[i];
           is.feature = istd.feature[i];
+          is.feature_group = istd.feature_group[i];
+          is.feature_component = istd.feature_component[i];
+          is.adduct = istd.adduct[i];
           is.candidate_rank = istd.candidate_rank[i];
           is.name = istd.name[i];
           is.polarity = istd.polarity[i];
@@ -743,9 +808,22 @@ namespace streamfind::mass_spec::nta::filter_internal_standards
           is.db_ms2_intensity = istd.db_ms2_intensity[i];
           is.db_ms2_formula = istd.db_ms2_formula[i];
           is.db_ms2_smiles = istd.db_ms2_smiles[i];
+          is.eic_size = istd.eic_size[i];
+          is.eic_rt = istd.eic_rt[i];
+          is.eic_mz = istd.eic_mz[i];
+          is.eic_intensity = istd.eic_intensity[i];
+          is.eic_baseline = istd.eic_baseline[i];
+          is.eic_smoothed = istd.eic_smoothed[i];
+          is.ms1_size = istd.ms1_size[i];
+          is.ms1_mz = istd.ms1_mz[i];
+          is.ms1_intensity = istd.ms1_intensity[i];
           is.exp_ms2_size = istd.exp_ms2_size[i];
           is.exp_ms2_mz = istd.exp_ms2_mz[i];
           is.exp_ms2_intensity = istd.exp_ms2_intensity[i];
+          is.isotope_theoretical_peaks = istd.isotope_theoretical_peaks[i];
+          is.isotope_matched_peaks = istd.isotope_matched_peaks[i];
+          is.isotope_similarity = istd.isotope_similarity[i];
+          is.isotope_match = istd.isotope_match[i];
           filtered.append(is);
         }
       }
@@ -1220,12 +1298,13 @@ using Json = nlohmann::json;
             id_levels.push_back(v.get<int>());
         const int min_shared_fragments = parameters.value("min_shared_fragments", 0);
         const double min_cosine_similarity = opt_real("min_cosine_similarity");
+        const bool deduplicate = parameters.value("deduplicate_internal_standards", false);
         if (min_shared_fragments < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid internal standard filtering parameters");
         auto data = utils::detail::load_internal_standards_only(access, parameters);
         utils::detail::load_internal_standards(access, data, parameters);
         ::streamfind::mass_spec::nta::filter_internal_standards::filter_internal_standards_impl(data, names, min_score, max_error_rt, max_error_mass,
-                                                                       id_levels, min_shared_fragments, min_cosine_similarity);
+                                                                       id_levels, min_shared_fragments, min_cosine_similarity, deduplicate);
         utils::detail::emit_internal_standards(access, data);
         return Json{{"status", "finished"}, {"info", "Internal standards filtered."}};
     }

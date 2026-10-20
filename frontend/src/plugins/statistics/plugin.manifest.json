@@ -1,0 +1,15 @@
+{
+  "id": "streamfind.statistics",
+  "name": "streamfind statistics viewers",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/statistics/index.ts",
+  "domains": ["statistics"],
+  "artifactContracts": [
+    "pcaDiagnostics",
+    "plsDiagnostics",
+    "foldChangeDiagnostics"
+  ],
+  "capabilities": ["statistics-linked-results-dashboard"]
+}

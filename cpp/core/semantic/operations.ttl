@@ -15,3 +15,66 @@ sfcore:selectPaths
     sf:category "workflow-input" ;
     sf:hasParameter sfcore:pathsParameter ;
     sf:hasOutputPort sfcore:selectedPathsResult, sfcore:operationSuccessSignal .
+
+sfcore:writeTableCsv
+    a sf:Operation ;
+    sf:operationId "streamfind.write_table_csv" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Write table to CSV" ;
+    skos:definition "Write any connected persisted DuckDB table to a CSV file with column headers. The input is resolved from the published table artifact and is not modified." ;
+    sf:category "data-export" ;
+    sf:guidance "Connect any table output to the table input, choose a writable CSV path, and run the operation. The exporter preserves the table columns and values and writes a header row." ;
+    sf:hasInputPort sfcore:anyTable ;
+    sf:hasParameter sfcore:csvPathParameter ;
+    sf:hasOutputPort sfcore:operationSuccessSignal .
+
+sfcore:writeJson
+    a sf:Operation ;
+    sf:operationId "streamfind.write_json" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Write JSON" ;
+    skos:definition "Write any connected JSON artifact to a formatted UTF-8 JSON file without changing the artifact." ;
+    sf:category "data-export" ;
+    sf:guidance "Connect a JSON result, choose a writable JSON path, and run the operation. The artifact payload is written with readable indentation." ;
+    sf:hasInputPort sfcore:anyJson ;
+    sf:hasParameter sfcore:jsonPathParameter ;
+    sf:hasOutputPort sfcore:operationSuccessSignal .
+
+sfcore:readCsv
+    a sf:Operation ;
+    sf:operationId "streamfind.read_csv" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Read CSV" ;
+    skos:definition "Read a headered UTF-8 CSV file into a persisted DuckDB table with a runtime-resolved AnyTable schema." ;
+    sf:category "data-import" ;
+    sf:guidance "Choose a CSV file with a header row. DuckDB infers the column names and data types at execution time, and the imported table can connect to any AnyTable input." ;
+    sf:hasParameter sfcore:csvInputPathParameter ;
+    sf:hasOutputPort sfcore:anyTable, sfcore:operationSuccessSignal .
+
+sfcore:bindTableRows
+    a sf:Operation ;
+    sf:operationId "streamfind.bind_table_rows" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Bind table rows" ;
+    skos:definition "Append the rows of two persisted DuckDB tables vertically after runtime validation that their column names and types match exactly." ;
+    sf:category "table-binding" ;
+    sf:guidance "Connect two tables with the same runtime schema. The result preserves the left table column order and contains all rows from both inputs." ;
+    sf:hasInputPort sfcore:leftAnyTablePort, sfcore:rightAnyTablePort ;
+    sf:hasOutputPort sfcore:anyTable, sfcore:operationSuccessSignal .
+
+sfcore:bindTableColumns
+    a sf:Operation ;
+    sf:operationId "streamfind.bind_table_columns" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Bind table columns" ;
+    skos:definition "Combine columns from two persisted DuckDB tables after runtime validation that declared row keys are unique, equal, and aligned." ;
+    sf:category "table-binding" ;
+    sf:guidance "Connect two tables and provide row key columns present and unique in both inputs. Key sets must match exactly and non-key column names must not collide." ;
+    sf:hasInputPort sfcore:leftAnyTablePort, sfcore:rightAnyTablePort ;
+    sf:hasParameter sfcore:rowKeyColumnsParameter ;
+    sf:hasOutputPort sfcore:anyTable, sfcore:operationSuccessSignal .

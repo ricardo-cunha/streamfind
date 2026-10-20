@@ -1,7 +1,6 @@
 #pragma once
 
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -23,9 +22,9 @@ struct STREAMFIND_SDK_API DebugOptions {
 };
 
 /**
- * Workflow-local diagnostic log owned by one plugin operation invocation.
- * Debugging must never change the analytical result or make a run fail when
- * the diagnostic file cannot be created.
+ * In-memory diagnostic log owned by one plugin operation invocation.
+ * Debugging must never change the analytical result or depend on a diagnostic
+ * file being created beside the project.
  */
 class STREAMFIND_SDK_API DebugSession final {
 public:
@@ -49,16 +48,15 @@ public:
     bool matches_spectrum(int spectrum_index) const noexcept;
 
     void write_line(std::string_view message);
-    const std::filesystem::path &path() const noexcept { return path_; }
+    std::string text() const;
 
 private:
     DebugSession() = default;
 
     bool enabled_ = false;
     DebugOptions options_;
-    std::filesystem::path path_;
-    std::ofstream stream_;
-    std::mutex mutex_;
+    std::string text_;
+    mutable std::mutex mutex_;
 };
 
 } // namespace streamfind::sdk

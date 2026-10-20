@@ -78,6 +78,9 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.annotate_components", sdk::CapabilityKind::Operation, &nta::annotate_components::run},
         {"mass_spec.suspect_screening", sdk::CapabilityKind::Operation, &nta::suspect_screening::run},
         {"mass_spec.read_csv_suspect_targets", sdk::CapabilityKind::Operation, &nta::read_csv_suspect_targets::run},
+        {"mass_spec.internal_standards_to_suspects", sdk::CapabilityKind::Operation, &nta::internal_standards_to_suspects::run},
+        {"mass_spec.suspects_to_suspect_targets", sdk::CapabilityKind::Operation, &nta::suspects_to_suspect_targets::run},
+        {"mass_spec.update_suspect_targets", sdk::CapabilityKind::Operation, &nta::update_suspect_targets::run},
         {"mass_spec.find_internal_standards", sdk::CapabilityKind::Operation, &nta::find_internal_standards::run},
         {"mass_spec.enrich_internal_standards", sdk::CapabilityKind::Operation, &nta::enrich_internal_standards::run},
         {"mass_spec.filter_suspects", sdk::CapabilityKind::Operation, &nta::filter_suspects::run},
@@ -87,6 +90,7 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.metfrag_screening", sdk::CapabilityKind::Operation, &nta::metfrag_screening::run},
         {"mass_spec.find_internal_standards_metfrag", sdk::CapabilityKind::Operation, &nta::find_internal_standards_metfrag::run},
         {"mass_spec.get_features", sdk::CapabilityKind::Operation, &nta::get_features},
+        {"mass_spec.drop_filtered_features", sdk::CapabilityKind::Operation, &nta::drop_filtered_features::run},
         {"mass_spec.get_suspects", sdk::CapabilityKind::Operation, &nta::get_suspects},
         {"mass_spec.get_internal_standards", sdk::CapabilityKind::Operation, &nta::get_internal_standards},
         {"mass_spec.get_transformation_products", sdk::CapabilityKind::Operation, &nta::get_transformation_products},
@@ -220,7 +224,7 @@ streamfind_plugin_get_descriptor(
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "mass_spec";
-    descriptor->plugin_version = "0.5.0";
+    descriptor->plugin_version = "0.6.0";
     descriptor->register_plugin = &streamfind::mass_spec::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::mass_spec::dynamic_detail::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;

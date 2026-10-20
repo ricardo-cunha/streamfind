@@ -62,7 +62,7 @@ describe('StreamFindApiClient capability discovery', () => {
             id: 'demo',
             name: 'Demo',
             description: 'Example',
-            workflow: { schema_version: 1, version: 1, operations: [], connections: [] },
+            workflow: { schema_version: 2, version: 1, operations: [], connections: [] },
           },
         ],
       }),

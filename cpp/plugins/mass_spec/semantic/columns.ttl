@@ -1135,6 +1135,186 @@ sfms:annotationScoreColumn
     sf:type "real" ;
     sf:storageType "DOUBLE" .
 
+sfms:annotationEstimatedCarbonCountColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Estimated Carbon Count" ;
+    skos:definition "Estimated number of carbon atoms derived from the observed M+1-to-M intensity ratio using the natural-abundance 13C contribution. This is a screening estimate and may be affected by overlapping isotopologues, adducts, charge state, and coelution." ;
+    sf:columnName "annotation_estimated_carbon_count" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationMassToCarbonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass to Carbon" ;
+    skos:definition "Accurate feature mass divided by the isotope-derived estimated carbon count. The descriptor supports fluorinated-compound prioritisation using the MD/C-m/C approach." ;
+    sf:columnName "annotation_mass_to_carbon" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationMassDefectToCarbonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass Defect to Carbon" ;
+    skos:definition "Exact-mass defect relative to the nearest nominal mass, divided by the isotope-derived estimated carbon count. It is a prioritisation descriptor and not a formula identification result." ;
+    sf:columnName "annotation_mass_defect_to_carbon" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationEstimatedFormulaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Estimated Formula" ;
+    skos:definition "Best constrained elemental formula candidate generated from the feature exact mass and the isotope-derived carbon-count estimate. The value is empty when no suitable formula is found and must be treated as a hypothesis rather than a confirmed identification." ;
+    sf:columnName "annotation_estimated_formula" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:annotationFluorineToCarbonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fluorine to Carbon" ;
+    skos:definition "Formula-derived fluorine atom count divided by carbon atom count; zero when the estimated formula is unavailable or contains no carbon." ;
+    sf:columnName "annotation_fluorine_to_carbon" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationHydrogenToFluorineColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Hydrogen to Fluorine" ;
+    skos:definition "Formula-derived hydrogen atom count divided by fluorine atom count; zero when no fluorine is present." ;
+    sf:columnName "annotation_hydrogen_to_fluorine" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationFluorineMassPercentColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fluorine Mass Percent" ;
+    skos:definition "Percentage of the formula-derived exact mass contributed by fluorine atoms." ;
+    sf:columnName "annotation_fluorine_mass_percent" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationFluorinationScoreColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fluorination Score" ;
+    skos:definition "Bounded formula-composition score F/(C+F), useful for prioritising fluorinated organic candidates and not a confirmed fluorination identity." ;
+    sf:columnName "annotation_fluorination_score" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationChlorineToCarbonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Chlorine to Carbon" ;
+    skos:definition "Formula-derived chlorine atom count divided by carbon atom count." ;
+    sf:columnName "annotation_chlorine_to_carbon" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationHydrogenToChlorineColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Hydrogen to Chlorine" ;
+    skos:definition "Formula-derived hydrogen atom count divided by chlorine atom count." ;
+    sf:columnName "annotation_hydrogen_to_chlorine" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationChlorineMassPercentColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Chlorine Mass Percent" ;
+    skos:definition "Percentage of formula-derived exact mass contributed by chlorine atoms." ;
+    sf:columnName "annotation_chlorine_mass_percent" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationBromineToCarbonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Bromine to Carbon" ;
+    skos:definition "Formula-derived bromine atom count divided by carbon atom count." ;
+    sf:columnName "annotation_bromine_to_carbon" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationHydrogenToBromineColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Hydrogen to Bromine" ;
+    skos:definition "Formula-derived hydrogen atom count divided by bromine atom count." ;
+    sf:columnName "annotation_hydrogen_to_bromine" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationBromineMassPercentColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Bromine Mass Percent" ;
+    skos:definition "Percentage of formula-derived exact mass contributed by bromine atoms." ;
+    sf:columnName "annotation_bromine_mass_percent" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationIodineToCarbonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Iodine to Carbon" ;
+    skos:definition "Formula-derived iodine atom count divided by carbon atom count." ;
+    sf:columnName "annotation_iodine_to_carbon" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationHydrogenToIodineColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Hydrogen to Iodine" ;
+    skos:definition "Formula-derived hydrogen atom count divided by iodine atom count." ;
+    sf:columnName "annotation_hydrogen_to_iodine" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationIodineMassPercentColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Iodine Mass Percent" ;
+    skos:definition "Percentage of formula-derived exact mass contributed by iodine atoms." ;
+    sf:columnName "annotation_iodine_mass_percent" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:annotationHalogenationScoreColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Halogenation Score" ;
+    skos:definition "Bounded formula-composition score (F+Cl+Br+I)/(C+F+Cl+Br+I), intended for halogenated-organic prioritisation." ;
+    sf:columnName "annotation_halogenation_score" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
 sfms:componentSizeColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1969,36 +2149,6 @@ sfms:dbMs2SmilesColumn
     skos:prefLabel "Db Ms2 Smiles" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_smiles." ;
     sf:columnName "db_ms2_smiles" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
-sfms:expMs2SizeColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Exp Ms2 Size" ;
-    skos:definition "NTA suspect or internal-standard table column exp_ms2_size." ;
-    sf:columnName "exp_ms2_size" ;
-    sf:type "integer" ;
-    sf:storageType "INTEGER" .
-
-sfms:expMs2MzColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Exp Ms2 Mz" ;
-    skos:definition "NTA suspect or internal-standard table column exp_ms2_mz." ;
-    sf:columnName "exp_ms2_mz" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
-
-sfms:expMs2IntensityColumn
-    a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Exp Ms2 Intensity" ;
-    skos:definition "NTA suspect or internal-standard table column exp_ms2_intensity." ;
-    sf:columnName "exp_ms2_intensity" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 

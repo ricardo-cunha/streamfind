@@ -1,7 +1,15 @@
 # Releases
 
-Version 0.5.0 provides native runtime packages for Windows x64 and Linux
-x86_64, plus matching C++ plugin developer kits.
+## 0.6.0 release
+
+Version **0.6.0** includes the browser viewer improvements, mass-spectrometry
+debugging and annotation work, workflow node improvements, and the unified
+operation cancellation design documented in
+[Operation cancellation](architecture.md#operation-cancellation).
+
+Version 0.6.0 provides native runtime packages for Windows x64 and Linux
+x86_64. The packages include the built browser application, native service,
+MCP server, semantic catalogues, and built-in domain plugins.
 
 The GitHub Release is the authoritative distribution location.
 
@@ -14,12 +22,11 @@ The native C++ project version is **{{ streamfind_version }}**.
 
 ## Available packages
 
-Version 0.5.0 contains:
+The 0.6.0 runtime distribution contains:
 
 - Windows x86_64 ZIP;
 - Linux x86_64 TGZ;
-- an optional C++ plugin developer-kit archive;
-- a checksum manifest covering the published C++ archives.
+- a checksum manifest covering both runtime archives.
 
 Runtime archives are intended for local use and application integration.
 Developer kits must be used with the matching runtime version; the C++ ABI is
@@ -27,13 +34,25 @@ not guaranteed across versions.
 
 | Package | Archive | Platform | SHA-256 |
 | --- | --- | --- | --- |
-| C++ core | `streamfind-core-cpp-0.5.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
-| C++ core | `streamfind-core-cpp-0.5.0-Linux-x86_64.tgz` | Linux x86_64 | See `sha256sums.txt` |
-| Plugin developer kit | `streamfind-plugin-dev-0.5.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
-| Plugin developer kit | `streamfind-plugin-dev-0.5.0-Linux-x86_64.tar.gz` | Linux x86_64 | See `sha256sums.txt` |
+| C++ core | `streamfind-core-cpp-0.6.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
+| C++ core | `streamfind-core-cpp-0.6.0-Linux-x86_64.tgz` | Linux x86_64 | See `sha256sums.txt` |
 
 The complete checksum list is distributed as `sha256sums.txt` alongside the
 archives.
+
+### Validation
+
+Both release packages were built from the same `0.6.0` source revision and
+passed the release checks:
+
+- 24/24 CTest tests on Windows x64;
+- 24/24 CTest tests on Linux x86_64;
+- native dependency-closure validation on each platform;
+- packaged MCP smoke validation exposing 40 tools on each platform.
+
+The release scripts write the packages and checksum manifest to
+`tmp/release-output/` during development. Published copies and their
+checksums are maintained with the GitHub Release.
 
 ## Package contents
 
@@ -85,7 +104,7 @@ see the [C++ MCP quickstart](quickstart/cpp-mcp.md).
 Example C++ package layout:
 
 ```text
-streamfind-core-cpp-0.5.0-Windows-x86_64/
+streamfind-core-cpp-0.6.0-Windows-x86_64/
 ├── app/
 │   ├── index.html
 │   └── assets/

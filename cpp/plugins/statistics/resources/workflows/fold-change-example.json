@@ -1,0 +1,64 @@
+{
+  "metadata": {
+    "id": "statistics-fold-change-example",
+    "name": "Statistics fold-change example",
+    "description": "Import a CSV table and compare two groups. Set csv_input_path to statistics-example.csv from the statistics plugin resources.",
+    "domain": "statistics",
+    "use_case": "Compare two groups",
+    "owner": "StreamFind statistics demos"
+  },
+  "workflow": {
+    "schema_version": 2,
+    "workflow_id": "statistics-fold-change-example",
+    "name": "Statistics fold-change example",
+    "version": 1,
+    "metadata": {
+      "name": "Statistics fold-change example",
+      "description": "Import a wide table and compare group intensities.",
+      "domain": "statistics"
+    },
+    "operations": [
+      {
+        "id": 1,
+        "operation": "streamfind.read_csv",
+        "parameters": {
+          "csv_input_path": "statistics-example.csv"
+        },
+        "inputs": {},
+        "position": {
+          "x": 120,
+          "y": 180
+        }
+      },
+      {
+        "id": 2,
+        "operation": "statistics.fold_change",
+        "parameters": {
+          "layout": "wide",
+          "sample_id_column": "sample_id",
+          "variable_columns": [
+            "feature_a",
+            "feature_b"
+          ],
+          "group_column": "group",
+          "group_a": "control",
+          "group_b": "treated",
+          "pseudocount": 1.0
+        },
+        "inputs": {},
+        "position": {
+          "x": 420,
+          "y": 180
+        }
+      }
+    ],
+    "connections": [
+      {
+        "source_operation": 1,
+        "source_port": "anyTable",
+        "target_operation": 2,
+        "target_port": "tableInput"
+      }
+    ]
+  }
+}

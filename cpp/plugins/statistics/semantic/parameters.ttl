@@ -1,0 +1,178 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfstat:layoutParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Input layout" ;
+    skos:definition "Explicit table layout used to construct the sample-by-variable matrix." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "long" ;
+    sf:constraints "long|wide" ;
+    sf:example "wide" .
+
+sfstat:sampleIdColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sample ID column" ;
+    skos:definition "Column containing a stable identifier for each sample." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "sample_id" ;
+    sf:example "sample_id" .
+
+sfstat:variableIdColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Variable ID column" ;
+    skos:definition "Long-layout column containing stable variable identifiers." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "variable_id" ;
+    sf:example "variable_id" .
+
+sfstat:valueColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Value column" ;
+    skos:definition "Long-layout numeric observation column." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "value" ;
+    sf:example "intensity" .
+
+sfstat:variableColumnsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Variable columns" ;
+    skos:definition "Explicit wide-layout predictor columns, in desired variable order." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"feature_a\",\"feature_b\"]" .
+
+sfstat:groupColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Group column" ;
+    skos:definition "Optional sample-level group label column; required for PLS-DA and fold-change analysis." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "condition" .
+
+sfstat:preprocessingParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Preprocessing" ;
+    skos:definition "Predictor transformation: none, mean center, or mean center and divide by sample standard deviation." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "center" ;
+    sf:constraints "none|center|scale" ;
+    sf:example "scale" .
+
+sfstat:nComponentsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Number of components" ;
+    skos:definition "Requested latent component count, bounded at runtime by the smaller sample and predictor dimensions." ;
+    sf:type "integer" ;
+    sf:required true ;
+    sf:default "2" ;
+    sf:constraints "{\"minimum\":1}" ;
+    sf:example "2" .
+
+sfstat:responseModeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response mode" ;
+    skos:definition "Numeric regression or categorical PLS-DA." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "regression" ;
+    sf:constraints "regression|pls_da" ;
+    sf:example "pls_da" .
+
+sfstat:responseColumnsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response columns" ;
+    skos:definition "Explicit sample-level numeric response columns, separate from the predictor variables." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"response\"]" .
+
+sfstat:groupAParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Group A value" ;
+    skos:definition "Exact group label used as the log2 fold-change denominator." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "A" ;
+    sf:example "control" .
+
+sfstat:groupBParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Group B value" ;
+    skos:definition "Exact group label used as the log2 fold-change numerator." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "B" ;
+    sf:example "treated" .
+
+sfstat:pseudocountParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Pseudocount" ;
+    skos:definition "Positive finite value added to both group means before the log2 fold-change calculation." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "1" ;
+    sf:constraints "{\"exclusiveMinimum\":0}" ;
+    sf:example "1" .
+
+sfstat:duplicateAggregationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Repeated value aggregation" ;
+    skos:definition "How repeated sample-variable values in long-layout input are handled." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "error" ;
+    sf:constraints "error|mean" ;
+    sf:example "mean" .
+
+sfstat:missingValueImputationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Missing value imputation" ;
+    skos:definition "How missing sample-variable combinations are filled before statistical analysis. Mean and median are calculated independently for each variable across observed samples." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "error" ;
+    sf:constraints "error|zero|mean|median" ;
+    sf:example "median" .

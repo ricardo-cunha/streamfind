@@ -2,8 +2,8 @@
 
 #include <cstddef>
 #include <optional>
-#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -11,8 +11,12 @@
 #include "streamfind/sdk/plugin_project_access.hpp"
 #include "readers/reader.hpp"
 
+namespace streamfind::sdk { class DebugSession; }
+
 namespace streamfind::mass_spec::nta::utils
 {
+  void set_debug_session(::streamfind::sdk::DebugSession *session);
+  void write_debug_log(std::string_view value);
   struct NTA_FEATURE_ROW
   {
     std::string analysis;
@@ -74,6 +78,24 @@ namespace streamfind::mass_spec::nta::utils
     double annotation_expected_rel_intensity_min = 0.0;
     double annotation_expected_rel_intensity_max = 0.0;
     double annotation_score = 0.0;
+    double annotation_estimated_carbon_count = 0.0;
+    double annotation_mass_to_carbon = 0.0;
+    double annotation_mass_defect_to_carbon = 0.0;
+    std::string annotation_estimated_formula;
+    double annotation_fluorine_to_carbon = 0.0;
+    double annotation_hydrogen_to_fluorine = 0.0;
+    double annotation_fluorine_mass_percent = 0.0;
+    double annotation_fluorination_score = 0.0;
+    double annotation_chlorine_to_carbon = 0.0;
+    double annotation_hydrogen_to_chlorine = 0.0;
+    double annotation_chlorine_mass_percent = 0.0;
+    double annotation_bromine_to_carbon = 0.0;
+    double annotation_hydrogen_to_bromine = 0.0;
+    double annotation_bromine_mass_percent = 0.0;
+    double annotation_iodine_to_carbon = 0.0;
+    double annotation_hydrogen_to_iodine = 0.0;
+    double annotation_iodine_mass_percent = 0.0;
+    double annotation_halogenation_score = 0.0;
     int component_size = 0;
     double component_rt_center = 0.0;
     double component_rt_spread = 0.0;
@@ -86,9 +108,6 @@ namespace streamfind::mass_spec::nta::utils
     bool component_is_core = false;
     bool component_bridge_flag = false;
   };
-  extern std::ofstream debug_log;
-  void init_debug_log(const std::string &, const std::string & = {}, bool append = false);
-  void close_debug_log();
   float mean(const std::vector<float> &);
   float standard_deviation(const std::vector<float> &, float);
   float quantile(std::vector<float>, float);
@@ -101,6 +120,7 @@ namespace streamfind::mass_spec::nta::utils
   std::vector<int> cluster_by_threshold_float(const std::vector<float> &, const std::vector<float> &);
   std::vector<float> calculate_baseline(const std::vector<float> &, int);
   std::vector<float> smooth_intensity_savitzky_golay(const std::vector<float> &, int, int);
+  std::vector<float> smooth_intensity_adaptive(const std::vector<float> &, int, int);
   void calculate_derivatives(const std::vector<float> &, std::vector<float> &, std::vector<float> &);
   void fit_gaussian(const std::vector<float> &, const std::vector<float> &, float &, float &, float &, float &);
   float gaussian_function_with_baseline(float, float, float, float, float);
@@ -190,6 +210,24 @@ namespace streamfind::mass_spec::nta::api
         std::vector<float> annotation_expected_rel_intensity_min;
         std::vector<float> annotation_expected_rel_intensity_max;
         std::vector<float> annotation_score;
+        std::vector<float> annotation_estimated_carbon_count;
+        std::vector<float> annotation_mass_to_carbon;
+        std::vector<float> annotation_mass_defect_to_carbon;
+        std::vector<std::string> annotation_estimated_formula;
+        std::vector<float> annotation_fluorine_to_carbon;
+        std::vector<float> annotation_hydrogen_to_fluorine;
+        std::vector<float> annotation_fluorine_mass_percent;
+        std::vector<float> annotation_fluorination_score;
+        std::vector<float> annotation_chlorine_to_carbon;
+        std::vector<float> annotation_hydrogen_to_chlorine;
+        std::vector<float> annotation_chlorine_mass_percent;
+        std::vector<float> annotation_bromine_to_carbon;
+        std::vector<float> annotation_hydrogen_to_bromine;
+        std::vector<float> annotation_bromine_mass_percent;
+        std::vector<float> annotation_iodine_to_carbon;
+        std::vector<float> annotation_hydrogen_to_iodine;
+        std::vector<float> annotation_iodine_mass_percent;
+        std::vector<float> annotation_halogenation_score;
         std::vector<int> component_size;
         std::vector<float> component_rt_center;
         std::vector<float> component_rt_spread;
@@ -266,6 +304,24 @@ namespace streamfind::mass_spec::nta::api
             feature_i.annotation_expected_rel_intensity_min = annotation_expected_rel_intensity_min[i];
             feature_i.annotation_expected_rel_intensity_max = annotation_expected_rel_intensity_max[i];
             feature_i.annotation_score = annotation_score[i];
+            feature_i.annotation_estimated_carbon_count = annotation_estimated_carbon_count[i];
+            feature_i.annotation_mass_to_carbon = annotation_mass_to_carbon[i];
+            feature_i.annotation_mass_defect_to_carbon = annotation_mass_defect_to_carbon[i];
+            feature_i.annotation_estimated_formula = annotation_estimated_formula[i];
+            feature_i.annotation_fluorine_to_carbon = annotation_fluorine_to_carbon[i];
+            feature_i.annotation_hydrogen_to_fluorine = annotation_hydrogen_to_fluorine[i];
+            feature_i.annotation_fluorine_mass_percent = annotation_fluorine_mass_percent[i];
+            feature_i.annotation_fluorination_score = annotation_fluorination_score[i];
+            feature_i.annotation_chlorine_to_carbon = annotation_chlorine_to_carbon[i];
+            feature_i.annotation_hydrogen_to_chlorine = annotation_hydrogen_to_chlorine[i];
+            feature_i.annotation_chlorine_mass_percent = annotation_chlorine_mass_percent[i];
+            feature_i.annotation_bromine_to_carbon = annotation_bromine_to_carbon[i];
+            feature_i.annotation_hydrogen_to_bromine = annotation_hydrogen_to_bromine[i];
+            feature_i.annotation_bromine_mass_percent = annotation_bromine_mass_percent[i];
+            feature_i.annotation_iodine_to_carbon = annotation_iodine_to_carbon[i];
+            feature_i.annotation_hydrogen_to_iodine = annotation_hydrogen_to_iodine[i];
+            feature_i.annotation_iodine_mass_percent = annotation_iodine_mass_percent[i];
+            feature_i.annotation_halogenation_score = annotation_halogenation_score[i];
             feature_i.component_size = component_size[i];
             feature_i.component_rt_center = component_rt_center[i];
             feature_i.component_rt_spread = component_rt_spread[i];
@@ -340,6 +396,24 @@ namespace streamfind::mass_spec::nta::api
             annotation_expected_rel_intensity_min[i] = static_cast<float>(feature_i.annotation_expected_rel_intensity_min);
             annotation_expected_rel_intensity_max[i] = static_cast<float>(feature_i.annotation_expected_rel_intensity_max);
             annotation_score[i] = static_cast<float>(feature_i.annotation_score);
+            annotation_estimated_carbon_count[i] = static_cast<float>(feature_i.annotation_estimated_carbon_count);
+            annotation_mass_to_carbon[i] = static_cast<float>(feature_i.annotation_mass_to_carbon);
+            annotation_mass_defect_to_carbon[i] = static_cast<float>(feature_i.annotation_mass_defect_to_carbon);
+            annotation_estimated_formula[i] = feature_i.annotation_estimated_formula;
+            annotation_fluorine_to_carbon[i] = static_cast<float>(feature_i.annotation_fluorine_to_carbon);
+            annotation_hydrogen_to_fluorine[i] = static_cast<float>(feature_i.annotation_hydrogen_to_fluorine);
+            annotation_fluorine_mass_percent[i] = static_cast<float>(feature_i.annotation_fluorine_mass_percent);
+            annotation_fluorination_score[i] = static_cast<float>(feature_i.annotation_fluorination_score);
+            annotation_chlorine_to_carbon[i] = static_cast<float>(feature_i.annotation_chlorine_to_carbon);
+            annotation_hydrogen_to_chlorine[i] = static_cast<float>(feature_i.annotation_hydrogen_to_chlorine);
+            annotation_chlorine_mass_percent[i] = static_cast<float>(feature_i.annotation_chlorine_mass_percent);
+            annotation_bromine_to_carbon[i] = static_cast<float>(feature_i.annotation_bromine_to_carbon);
+            annotation_hydrogen_to_bromine[i] = static_cast<float>(feature_i.annotation_hydrogen_to_bromine);
+            annotation_bromine_mass_percent[i] = static_cast<float>(feature_i.annotation_bromine_mass_percent);
+            annotation_iodine_to_carbon[i] = static_cast<float>(feature_i.annotation_iodine_to_carbon);
+            annotation_hydrogen_to_iodine[i] = static_cast<float>(feature_i.annotation_hydrogen_to_iodine);
+            annotation_iodine_mass_percent[i] = static_cast<float>(feature_i.annotation_iodine_mass_percent);
+            annotation_halogenation_score[i] = static_cast<float>(feature_i.annotation_halogenation_score);
             component_size[i] = feature_i.component_size;
             component_rt_center[i] = static_cast<float>(feature_i.component_rt_center);
             component_rt_spread[i] = static_cast<float>(feature_i.component_rt_spread);
@@ -413,6 +487,24 @@ namespace streamfind::mass_spec::nta::api
             annotation_expected_rel_intensity_min.push_back(static_cast<float>(feature_i.annotation_expected_rel_intensity_min));
             annotation_expected_rel_intensity_max.push_back(static_cast<float>(feature_i.annotation_expected_rel_intensity_max));
             annotation_score.push_back(static_cast<float>(feature_i.annotation_score));
+            annotation_estimated_carbon_count.push_back(static_cast<float>(feature_i.annotation_estimated_carbon_count));
+            annotation_mass_to_carbon.push_back(static_cast<float>(feature_i.annotation_mass_to_carbon));
+            annotation_mass_defect_to_carbon.push_back(static_cast<float>(feature_i.annotation_mass_defect_to_carbon));
+            annotation_estimated_formula.push_back(feature_i.annotation_estimated_formula);
+            annotation_fluorine_to_carbon.push_back(static_cast<float>(feature_i.annotation_fluorine_to_carbon));
+            annotation_hydrogen_to_fluorine.push_back(static_cast<float>(feature_i.annotation_hydrogen_to_fluorine));
+            annotation_fluorine_mass_percent.push_back(static_cast<float>(feature_i.annotation_fluorine_mass_percent));
+            annotation_fluorination_score.push_back(static_cast<float>(feature_i.annotation_fluorination_score));
+            annotation_chlorine_to_carbon.push_back(static_cast<float>(feature_i.annotation_chlorine_to_carbon));
+            annotation_hydrogen_to_chlorine.push_back(static_cast<float>(feature_i.annotation_hydrogen_to_chlorine));
+            annotation_chlorine_mass_percent.push_back(static_cast<float>(feature_i.annotation_chlorine_mass_percent));
+            annotation_bromine_to_carbon.push_back(static_cast<float>(feature_i.annotation_bromine_to_carbon));
+            annotation_hydrogen_to_bromine.push_back(static_cast<float>(feature_i.annotation_hydrogen_to_bromine));
+            annotation_bromine_mass_percent.push_back(static_cast<float>(feature_i.annotation_bromine_mass_percent));
+            annotation_iodine_to_carbon.push_back(static_cast<float>(feature_i.annotation_iodine_to_carbon));
+            annotation_hydrogen_to_iodine.push_back(static_cast<float>(feature_i.annotation_hydrogen_to_iodine));
+            annotation_iodine_mass_percent.push_back(static_cast<float>(feature_i.annotation_iodine_mass_percent));
+            annotation_halogenation_score.push_back(static_cast<float>(feature_i.annotation_halogenation_score));
             component_size.push_back(feature_i.component_size);
             component_rt_center.push_back(static_cast<float>(feature_i.component_rt_center));
             component_rt_spread.push_back(static_cast<float>(feature_i.component_rt_spread));
@@ -493,6 +585,24 @@ namespace streamfind::mass_spec::nta::api
             std::vector<float> annotation_expected_rel_intensity_min_sorted(feature.size());
             std::vector<float> annotation_expected_rel_intensity_max_sorted(feature.size());
             std::vector<float> annotation_score_sorted(feature.size());
+            std::vector<float> annotation_estimated_carbon_count_sorted(feature.size());
+            std::vector<float> annotation_mass_to_carbon_sorted(feature.size());
+            std::vector<float> annotation_mass_defect_to_carbon_sorted(feature.size());
+            std::vector<std::string> annotation_estimated_formula_sorted(feature.size());
+            std::vector<float> annotation_fluorine_to_carbon_sorted(feature.size());
+            std::vector<float> annotation_hydrogen_to_fluorine_sorted(feature.size());
+            std::vector<float> annotation_fluorine_mass_percent_sorted(feature.size());
+            std::vector<float> annotation_fluorination_score_sorted(feature.size());
+            std::vector<float> annotation_chlorine_to_carbon_sorted(feature.size());
+            std::vector<float> annotation_hydrogen_to_chlorine_sorted(feature.size());
+            std::vector<float> annotation_chlorine_mass_percent_sorted(feature.size());
+            std::vector<float> annotation_bromine_to_carbon_sorted(feature.size());
+            std::vector<float> annotation_hydrogen_to_bromine_sorted(feature.size());
+            std::vector<float> annotation_bromine_mass_percent_sorted(feature.size());
+            std::vector<float> annotation_iodine_to_carbon_sorted(feature.size());
+            std::vector<float> annotation_hydrogen_to_iodine_sorted(feature.size());
+            std::vector<float> annotation_iodine_mass_percent_sorted(feature.size());
+            std::vector<float> annotation_halogenation_score_sorted(feature.size());
             std::vector<int> component_size_sorted(feature.size());
             std::vector<float> component_rt_center_sorted(feature.size());
             std::vector<float> component_rt_spread_sorted(feature.size());
@@ -564,6 +674,24 @@ namespace streamfind::mass_spec::nta::api
                 annotation_expected_rel_intensity_min_sorted[i] = annotation_expected_rel_intensity_min[idx];
                 annotation_expected_rel_intensity_max_sorted[i] = annotation_expected_rel_intensity_max[idx];
                 annotation_score_sorted[i] = annotation_score[idx];
+                annotation_estimated_carbon_count_sorted[i] = annotation_estimated_carbon_count[idx];
+                annotation_mass_to_carbon_sorted[i] = annotation_mass_to_carbon[idx];
+                annotation_mass_defect_to_carbon_sorted[i] = annotation_mass_defect_to_carbon[idx];
+                annotation_estimated_formula_sorted[i] = annotation_estimated_formula[idx];
+                annotation_fluorine_to_carbon_sorted[i] = annotation_fluorine_to_carbon[idx];
+                annotation_hydrogen_to_fluorine_sorted[i] = annotation_hydrogen_to_fluorine[idx];
+                annotation_fluorine_mass_percent_sorted[i] = annotation_fluorine_mass_percent[idx];
+                annotation_fluorination_score_sorted[i] = annotation_fluorination_score[idx];
+                annotation_chlorine_to_carbon_sorted[i] = annotation_chlorine_to_carbon[idx];
+                annotation_hydrogen_to_chlorine_sorted[i] = annotation_hydrogen_to_chlorine[idx];
+                annotation_chlorine_mass_percent_sorted[i] = annotation_chlorine_mass_percent[idx];
+                annotation_bromine_to_carbon_sorted[i] = annotation_bromine_to_carbon[idx];
+                annotation_hydrogen_to_bromine_sorted[i] = annotation_hydrogen_to_bromine[idx];
+                annotation_bromine_mass_percent_sorted[i] = annotation_bromine_mass_percent[idx];
+                annotation_iodine_to_carbon_sorted[i] = annotation_iodine_to_carbon[idx];
+                annotation_hydrogen_to_iodine_sorted[i] = annotation_hydrogen_to_iodine[idx];
+                annotation_iodine_mass_percent_sorted[i] = annotation_iodine_mass_percent[idx];
+                annotation_halogenation_score_sorted[i] = annotation_halogenation_score[idx];
                 component_size_sorted[i] = component_size[idx];
                 component_rt_center_sorted[i] = component_rt_center[idx];
                 component_rt_spread_sorted[i] = component_rt_spread[idx];
@@ -633,6 +761,24 @@ namespace streamfind::mass_spec::nta::api
             annotation_expected_rel_intensity_min = annotation_expected_rel_intensity_min_sorted;
             annotation_expected_rel_intensity_max = annotation_expected_rel_intensity_max_sorted;
             annotation_score = annotation_score_sorted;
+            annotation_estimated_carbon_count = annotation_estimated_carbon_count_sorted;
+            annotation_mass_to_carbon = annotation_mass_to_carbon_sorted;
+            annotation_mass_defect_to_carbon = annotation_mass_defect_to_carbon_sorted;
+            annotation_estimated_formula = annotation_estimated_formula_sorted;
+            annotation_fluorine_to_carbon = annotation_fluorine_to_carbon_sorted;
+            annotation_hydrogen_to_fluorine = annotation_hydrogen_to_fluorine_sorted;
+            annotation_fluorine_mass_percent = annotation_fluorine_mass_percent_sorted;
+            annotation_fluorination_score = annotation_fluorination_score_sorted;
+            annotation_chlorine_to_carbon = annotation_chlorine_to_carbon_sorted;
+            annotation_hydrogen_to_chlorine = annotation_hydrogen_to_chlorine_sorted;
+            annotation_chlorine_mass_percent = annotation_chlorine_mass_percent_sorted;
+            annotation_bromine_to_carbon = annotation_bromine_to_carbon_sorted;
+            annotation_hydrogen_to_bromine = annotation_hydrogen_to_bromine_sorted;
+            annotation_bromine_mass_percent = annotation_bromine_mass_percent_sorted;
+            annotation_iodine_to_carbon = annotation_iodine_to_carbon_sorted;
+            annotation_hydrogen_to_iodine = annotation_hydrogen_to_iodine_sorted;
+            annotation_iodine_mass_percent = annotation_iodine_mass_percent_sorted;
+            annotation_halogenation_score = annotation_halogenation_score_sorted;
             component_size = component_size_sorted;
             component_rt_center = component_rt_center_sorted;
             component_rt_spread = component_rt_spread_sorted;
@@ -694,6 +840,7 @@ namespace streamfind::mass_spec::nta::api
     {
         std::vector<std::string> analysis;
         std::vector<std::string> feature;
+        std::vector<std::string> feature_group;
         std::vector<int> candidate_rank;
         std::vector<std::string> name;
         std::vector<int> polarity;
@@ -735,6 +882,7 @@ namespace streamfind::mass_spec::nta::api
             NTA_SUSPECT_ROW suspect_i;
             suspect_i.analysis = analysis[i];
             suspect_i.feature = feature[i];
+            suspect_i.feature_group = feature_group[i];
             suspect_i.candidate_rank = candidate_rank[i];
             suspect_i.name = name[i];
             suspect_i.polarity = polarity[i];
@@ -774,6 +922,7 @@ namespace streamfind::mass_spec::nta::api
         {
             analysis.push_back(s.analysis);
             feature.push_back(s.feature);
+            feature_group.push_back(s.feature_group);
             candidate_rank.push_back(s.candidate_rank);
             name.push_back(s.name);
             polarity.push_back(s.polarity);
@@ -1013,6 +1162,7 @@ namespace streamfind::mass_spec::nta::api
     {
         std::string created_at;
         std::string analysis;
+        std::string replicate;
         std::string feature;
         std::string feature_group;
         std::string feature_component;
@@ -1043,6 +1193,15 @@ namespace streamfind::mass_spec::nta::api
         std::string db_ms2_intensity;
         std::string db_ms2_formula;
         std::string db_ms2_smiles;
+        int eic_size = 0;
+        std::string eic_rt;
+        std::string eic_mz;
+        std::string eic_intensity;
+        std::string eic_baseline;
+        std::string eic_smoothed;
+        int ms1_size = 0;
+        std::string ms1_mz;
+        std::string ms1_intensity;
         int exp_ms2_size = 0;
         std::string exp_ms2_mz;
         std::string exp_ms2_intensity;
@@ -1056,6 +1215,7 @@ namespace streamfind::mass_spec::nta::api
     struct NTA_INTERNAL_STANDARDS
     {
         std::vector<std::string> analysis;
+        std::vector<std::string> replicate;
         std::vector<std::string> feature;
         std::vector<std::string> feature_group;
         std::vector<std::string> feature_component;
@@ -1086,6 +1246,15 @@ namespace streamfind::mass_spec::nta::api
         std::vector<std::string> db_ms2_intensity;
         std::vector<std::string> db_ms2_formula;
         std::vector<std::string> db_ms2_smiles;
+        std::vector<int> eic_size;
+        std::vector<std::string> eic_rt;
+        std::vector<std::string> eic_mz;
+        std::vector<std::string> eic_intensity;
+        std::vector<std::string> eic_baseline;
+        std::vector<std::string> eic_smoothed;
+        std::vector<int> ms1_size;
+        std::vector<std::string> ms1_mz;
+        std::vector<std::string> ms1_intensity;
         std::vector<int> exp_ms2_size;
         std::vector<std::string> exp_ms2_mz;
         std::vector<std::string> exp_ms2_intensity;
@@ -1100,6 +1269,7 @@ namespace streamfind::mass_spec::nta::api
         {
             NTA_INTERNAL_STANDARD_ROW standard_i;
             standard_i.analysis = analysis[i];
+            standard_i.replicate = replicate[i];
             standard_i.feature = feature[i];
             standard_i.feature_group = feature_group[i];
             standard_i.feature_component = feature_component[i];
@@ -1129,6 +1299,15 @@ namespace streamfind::mass_spec::nta::api
             standard_i.db_ms2_intensity = db_ms2_intensity[i];
             standard_i.db_ms2_formula = db_ms2_formula[i];
             standard_i.db_ms2_smiles = db_ms2_smiles[i];
+            standard_i.eic_size = eic_size[i];
+            standard_i.eic_rt = eic_rt[i];
+            standard_i.eic_mz = eic_mz[i];
+            standard_i.eic_intensity = eic_intensity[i];
+            standard_i.eic_baseline = eic_baseline[i];
+            standard_i.eic_smoothed = eic_smoothed[i];
+            standard_i.ms1_size = ms1_size[i];
+            standard_i.ms1_mz = ms1_mz[i];
+            standard_i.ms1_intensity = ms1_intensity[i];
             standard_i.exp_ms2_size = exp_ms2_size[i];
             standard_i.exp_ms2_mz = exp_ms2_mz[i];
             standard_i.exp_ms2_intensity = exp_ms2_intensity[i];
@@ -1142,6 +1321,7 @@ namespace streamfind::mass_spec::nta::api
         void append(const NTA_INTERNAL_STANDARD_ROW &is)
         {
             analysis.push_back(is.analysis);
+            replicate.push_back(is.replicate);
             feature.push_back(is.feature);
             feature_group.push_back(is.feature_group);
             feature_component.push_back(is.feature_component);
@@ -1171,6 +1351,15 @@ namespace streamfind::mass_spec::nta::api
             db_ms2_intensity.push_back(is.db_ms2_intensity);
             db_ms2_formula.push_back(is.db_ms2_formula);
             db_ms2_smiles.push_back(is.db_ms2_smiles);
+            eic_size.push_back(is.eic_size);
+            eic_rt.push_back(is.eic_rt);
+            eic_mz.push_back(is.eic_mz);
+            eic_intensity.push_back(is.eic_intensity);
+            eic_baseline.push_back(is.eic_baseline);
+            eic_smoothed.push_back(is.eic_smoothed);
+            ms1_size.push_back(is.ms1_size);
+            ms1_mz.push_back(is.ms1_mz);
+            ms1_intensity.push_back(is.ms1_intensity);
             exp_ms2_size.push_back(is.exp_ms2_size);
             exp_ms2_mz.push_back(is.exp_ms2_mz);
             exp_ms2_intensity.push_back(is.exp_ms2_intensity);
@@ -1241,17 +1430,15 @@ namespace streamfind::mass_spec::nta
 #define DEBUG_LOG(value)                                          \
   do                                                              \
   {                                                               \
-    if (::streamfind::mass_spec::nta::utils::debug_log.is_open()) \
-      ::streamfind::mass_spec::nta::utils::debug_log << value;    \
+    std::ostringstream streamfind_debug_stream;                   \
+    streamfind_debug_stream << value;                             \
+    ::streamfind::mass_spec::nta::utils::write_debug_log(         \
+        streamfind_debug_stream.str());                          \
   } while (false)
 #define DEBUG_OUT(value)                                          \
   do                                                              \
   {                                                               \
-    if (::streamfind::mass_spec::nta::utils::debug_log.is_open()) \
-    {                                                             \
-      ::streamfind::mass_spec::nta::utils::debug_log << value;    \
-      ::streamfind::mass_spec::nta::utils::debug_log.flush();     \
-    }                                                             \
+    DEBUG_LOG(value);                                             \
     std::cout << value;                                           \
   } while (0)
 

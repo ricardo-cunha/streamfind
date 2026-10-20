@@ -1,0 +1,5 @@
+add_executable(streamfind_sensors_manifest_contract unit/manifest_contract.cpp)
+target_compile_definitions(streamfind_sensors_manifest_contract PRIVATE
+    SENSORS_PLUGIN_MANIFEST="${CMAKE_CURRENT_SOURCE_DIR}/../plugin.json")
+add_test(NAME streamfind_sensors_manifest_contract COMMAND streamfind_sensors_manifest_contract)
+set_tests_properties(streamfind_sensors_manifest_contract PROPERTIES LABELS "sensors;plugin")

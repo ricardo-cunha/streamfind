@@ -70,7 +70,7 @@ export type ArtifactQueryFilter = {
 };
 export type ArtifactQueryRequest = {
   artifact_id: string;
-  mode?: 'page' | 'sample' | 'detail';
+  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   columns?: string[];
   filters?: ArtifactQueryFilter[];
   offset?: number;
@@ -80,14 +80,19 @@ export type ArtifactQueryRequest = {
   descending?: boolean;
   x_column?: string;
   y_column?: string;
+  x_min?: number;
+  x_max?: number;
   row_keys?: string[];
   sampling_strategy?: 'ordered' | 'grid';
   x_bins?: number;
   y_bins?: number;
+  eic_max_points?: number;
+  trace_columns?: string[];
+  max_points_per_trace?: number;
 };
 export type ArtifactQueryResponse = ArtifactDataResponse & {
   returned_rows: number;
-  mode: 'page' | 'sample' | 'detail';
+  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   has_more: boolean;
 };
 export type StructureSvgRequest = {
@@ -253,6 +258,15 @@ export class StreamFindApiClient {
     return result.result;
   }
 
+  async cancelOperation(sessionId: string, operationInstance: string): Promise<{ state: string }> {
+    const response = await fetch(
+      `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationInstance)}/cancel`,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+    );
+    if (!response.ok) throw new Error(`Operation cancellation request failed (${response.status})`);
+    return response.json() as Promise<{ state: string }>;
+  }
+
   async clearWorkflowHistory(sessionId: string): Promise<WorkflowDefinitionResponse> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/history/clear`, {
       method: 'POST',
@@ -314,7 +328,11 @@ export class StreamFindApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ producer_instance: producerInstance }),
     });
-    if (!response.ok) throw new Error(`Node artifact cleanup failed (${response.status})`);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
+      const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
+      throw new Error(`Node artifact cleanup failed (${response.status})${detail}`);
+    }
   }
 
   async artifactData(sessionId: string, request: ArtifactDataRequest): Promise<ArtifactDataResponse> {
@@ -441,6 +459,14 @@ export class StreamFindApiClient {
     const result = (await response.json()) as { paths?: string[]; error?: string };
     if (!response.ok || !result.paths) throw new Error(result.error || `File selection failed (${response.status})`);
     return result.paths;
+  }
+
+  async pickSaveFile(): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/projects/file-picker/save-file`, { method: 'POST' });
+    const result = (await response.json()) as { path?: string; error?: string };
+    if (!response.ok || !result.path)
+      throw new Error(result.error || `Output file selection failed (${response.status})`);
+    return result.path;
   }
 
   async pickFolders(): Promise<string[]> {

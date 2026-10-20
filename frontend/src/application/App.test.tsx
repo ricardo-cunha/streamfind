@@ -30,7 +30,7 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
           description: 'A demo workflow.',
           use_case: 'Show the workflow demo picker.',
           workflow: {
-            schema_version: 1 as const,
+            schema_version: 2 as const,
             workflow_id: 'demo',
             name: 'Demo workflow',
             version: 1,
@@ -48,7 +48,7 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
 
     async saveWorkflow() {
       return {
-        workflow: { schema_version: 1 as const, workflow_id: 'demo', version: 1, operations: [], connections: [] },
+        workflow: { schema_version: 2 as const, workflow_id: 'demo', version: 1, operations: [], connections: [] },
         valid: true,
         diagnostics: [],
       };

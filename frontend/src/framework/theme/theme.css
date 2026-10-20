@@ -20,7 +20,11 @@
   --sf-warning: #a16207;
   --sf-error: #b91c1c;
   --sf-shadow: 0 18px 42px rgba(6, 38, 39, 0.12);
+  --sf-modal-shadow: 0 18px 50px color-mix(in srgb, var(--sf-accent) 25%, transparent);
   --sf-radius: 14px;
+  --sf-node-control-bg: var(--sf-surface-raised);
+  --sf-node-control-text: var(--sf-text);
+  --sf-node-control-border: var(--sf-border);
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
@@ -43,6 +47,9 @@
   --sf-warning: #f2c14e;
   --sf-error: #f87171;
   --sf-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+  --sf-node-control-bg: var(--sf-surface);
+  --sf-node-control-text: var(--sf-text);
+  --sf-node-control-border: color-mix(in srgb, var(--sf-border) 150%, transparent);
 }
 * {
   box-sizing: border-box;
@@ -96,12 +103,11 @@ button {
   text-transform: uppercase;
 }
 @keyframes sf-rotate {
-  0%,
-  100% {
-    transform: perspective(600px) rotateY(-18deg);
+  from {
+    transform: perspective(600px) rotateY(0deg);
   }
-  50% {
-    transform: perspective(600px) rotateY(198deg);
+  to {
+    transform: perspective(600px) rotateY(360deg);
   }
 }
 @keyframes sf-splash-in {
@@ -291,6 +297,18 @@ button:active {
   display: flex;
   flex-direction: column;
 }
+.sf-main-workspace {
+  position: relative;
+}
+.sf-main-workspace .sf-topbar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 10;
+  pointer-events: none;
+}
+.sf-main-workspace .sf-topbar > * {
+  pointer-events: auto;
+}
 .sf-topbar {
   width: 100%;
   min-height: 46px;
@@ -299,7 +317,8 @@ button:active {
   justify-content: space-between;
   gap: 5px;
   padding: 5px;
-  background: var(--sf-bg);
+  background: transparent;
+  backdrop-filter: none;
 }
 .sf-breadcrumb,
 .sf-topbar-actions {
@@ -598,6 +617,11 @@ button:active {
   padding: 5px;
   background: var(--sf-bg);
 }
+.sf-main-workspace > .sf-content {
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
 .sf-page {
   width: 100%;
   min-height: 100%;
@@ -855,7 +879,7 @@ h2 {
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
   background: var(--sf-surface-raised);
-  box-shadow: var(--sf-shadow);
+  box-shadow: var(--sf-modal-shadow);
 }
 .sf-create-workflow-dialog {
   inline-size: 95vw;
@@ -936,6 +960,27 @@ h2 {
   justify-content: flex-end;
   gap: 5px;
   padding-top: 5px;
+}
+.sf-canvas-confirmation-backdrop {
+  z-index: 40;
+  background: color-mix(in srgb, var(--sf-surface) 58%, transparent);
+  backdrop-filter: blur(5px);
+}
+.sf-canvas-confirmation-dialog {
+  width: min(520px, calc(100vw - 32px));
+  box-shadow: var(--sf-modal-shadow);
+}
+.sf-canvas-confirmation-dialog .sf-icon-button,
+.sf-canvas-confirmation-dialog .sf-button {
+  border: 0;
+}
+.sf-canvas-confirmation-dialog h2 {
+  margin: 0 0 5px;
+  color: var(--sf-text);
+  font-size: 1rem;
+}
+.sf-canvas-confirmation-dialog strong {
+  color: var(--sf-text);
 }
 .sf-operation-parameters,
 .sf-file-list-field,
@@ -1259,6 +1304,26 @@ h2 {
   --sf-text: #e8f8eb;
   --sf-text-secondary: #acc4b1;
   --sf-text-muted: #78937e;
+}
+
+/* Domain colors are shared by canvas nodes, overview nodes, and the operation grid. */
+:root {
+  --sf-domain-core: #3157a6;
+  --sf-domain-streamfind: #3157a6;
+  --sf-domain-mass-spec: #147d64;
+  --sf-domain-raman: #7b4bb3;
+  --sf-domain-sensors: #b76818;
+  --sf-domain-statistics: #c14d68;
+  --sf-domain-unknown: #64748b;
+}
+:root[data-theme='dark'] {
+  --sf-domain-core: #78a7ff;
+  --sf-domain-streamfind: #78a7ff;
+  --sf-domain-mass-spec: #45c79b;
+  --sf-domain-raman: #b58be6;
+  --sf-domain-sensors: #e6a04b;
+  --sf-domain-statistics: #ff8ca1;
+  --sf-domain-unknown: #a8b3c7;
 }
 :root[data-style='classic'] {
   --sf-radius: 3px;
@@ -1968,10 +2033,23 @@ h2 {
   opacity: 0.65;
 }
 .sf-workflow-overview-node {
-  --sf-overview-node-base: var(--sf-accent);
+  --sf-overview-node-base: var(--sf-domain-core);
+}
+.sf-workflow-overview-node.sf-domain-streamfind,
+.sf-workflow-overview-node.sf-domain-core {
+  --sf-overview-node-base: var(--sf-domain-streamfind);
 }
 .sf-workflow-overview-node.sf-domain-mass-spec {
-  --sf-overview-node-base: #166534;
+  --sf-overview-node-base: var(--sf-domain-mass-spec);
+}
+.sf-workflow-overview-node.sf-domain-raman {
+  --sf-overview-node-base: var(--sf-domain-raman);
+}
+.sf-workflow-overview-node.sf-domain-sensors {
+  --sf-overview-node-base: var(--sf-domain-sensors);
+}
+.sf-workflow-overview-node.sf-domain-statistics {
+  --sf-overview-node-base: var(--sf-domain-statistics);
 }
 .sf-workflow-overview-node > rect:first-child {
   fill: var(--sf-overview-node-base);
@@ -2128,7 +2206,7 @@ h2 {
   opacity: 0.9;
 }
 .sf-canvas-node {
-  --sf-domain-base: var(--sf-accent);
+  --sf-domain-base: var(--sf-domain-core);
   position: absolute;
   width: 224px;
   min-height: 126px;
@@ -2188,8 +2266,9 @@ h2 {
   min-height: 58px;
   padding: 8px 10px;
   border-radius: calc(var(--sf-radius) - 1px) calc(var(--sf-radius) - 1px) 0 0;
-  background: var(--sf-domain-base);
-  color: #fff;
+  /* Keep the header and body as one uniform domain-coloured node surface. */
+  background: transparent;
+  color: var(--sf-text);
 }
 .sf-canvas-node-header i {
   font-size: 0.82rem;
@@ -2200,16 +2279,19 @@ h2 {
   overflow-wrap: anywhere;
 }
 .sf-canvas-node.sf-domain-streamfind {
-  --sf-domain-base: #08296c;
+  --sf-domain-base: var(--sf-domain-streamfind);
 }
 .sf-canvas-node.sf-domain-mass-spec {
-  --sf-domain-base: #166534;
+  --sf-domain-base: var(--sf-domain-mass-spec);
 }
 .sf-canvas-node.sf-domain-raman {
-  --sf-domain-base: #0f766e;
+  --sf-domain-base: var(--sf-domain-raman);
 }
 .sf-canvas-node.sf-domain-sensors {
-  --sf-domain-base: #92400e;
+  --sf-domain-base: var(--sf-domain-sensors);
+}
+.sf-canvas-node.sf-domain-statistics {
+  --sf-domain-base: var(--sf-domain-statistics);
 }
 .sf-canvas-node-header strong {
   flex: 1;
@@ -2221,6 +2303,7 @@ h2 {
 .sf-node-header-actions {
   position: absolute;
   top: -27px;
+  left: 5px;
   right: 5px;
   display: flex;
   align-items: center;
@@ -2228,6 +2311,21 @@ h2 {
   gap: 2px;
   min-height: 22px;
   flex: 0 0 auto;
+}
+.sf-canvas-node-header .sf-node-number {
+  position: absolute;
+  left: -5px;
+  top: 0;
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  color: var(--sf-domain-base);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 .sf-canvas-node-header span {
   font-size: 0.62rem;
@@ -2294,6 +2392,31 @@ h2 {
   flex: 1 1 70px;
   padding: 5px 6px;
   font-size: 0.7rem;
+}
+.sf-canvas-node input:not([type='checkbox']),
+.sf-canvas-node select,
+.sf-canvas-node textarea,
+.sf-canvas-node .sf-button {
+  border: 0;
+  background: var(--sf-node-control-bg);
+  color: var(--sf-node-control-text);
+}
+.sf-canvas-node input:not([type='checkbox'])::placeholder {
+  color: var(--sf-text-muted);
+}
+.sf-canvas-node select option {
+  background: var(--sf-node-control-bg);
+  color: var(--sf-node-control-text);
+}
+.sf-canvas-node input:not([type='checkbox']):focus,
+.sf-canvas-node select:focus,
+.sf-canvas-node textarea:focus,
+.sf-canvas-node .sf-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sf-accent) 55%, transparent);
+  outline-offset: -1px;
+}
+.sf-canvas-node input[type='checkbox'] {
+  accent-color: var(--sf-accent);
 }
 .sf-canvas-scalar-path-row {
   display: flex;
@@ -2378,6 +2501,9 @@ h2 {
   background: transparent;
   box-shadow: none;
 }
+.sf-main-workspace .sf-canvas-toolbar {
+  top: 40px;
+}
 .sf-canvas-control {
   display: grid;
   place-items: center;
@@ -2425,8 +2551,17 @@ h2 {
 .sf-canvas-workflow-loading img {
   width: min(150px, 24vw);
   height: auto;
-  animation: sf-rotate 3s ease-in-out infinite;
-  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--sf-text) 18%, transparent));
+}
+.sf-canvas-workflow-loading .sf-loading-logo,
+.sf-canvas-workflow-saving .sf-loading-logo {
+  min-height: 0;
+  color: var(--sf-text);
+}
+.sf-canvas-workflow-loading .sf-loading-logo > span,
+.sf-canvas-workflow-saving .sf-loading-logo > span {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
 }
 .sf-canvas-workflow-loading strong {
   font-size: 0.95rem;
@@ -2495,8 +2630,8 @@ h2 {
   z-index: 3;
   display: flex;
   flex-direction: column;
-  width: min(30%, 460px);
-  min-width: 280px;
+  width: min(42%, 720px);
+  min-width: 360px;
   height: min(20%, 220px);
   min-height: 120px;
   overflow: hidden;
@@ -2527,11 +2662,21 @@ h2 {
   font-size: 0.62rem;
 }
 .sf-canvas-status-current {
+  display: flex;
+  gap: 0.55rem;
   overflow: hidden;
   padding: 5px 0;
   color: var(--sf-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sf-canvas-status-current span:first-child {
+  color: var(--sf-text-muted);
+  flex: 0 0 auto;
+}
+.sf-canvas-status-current span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sf-canvas-status-feed {
   display: flex;
@@ -2615,11 +2760,18 @@ h2 {
   font-size: 0.65rem;
 }
 .sf-operation-deck {
-  inset: 12px;
+  position: fixed;
+  top: 2.5vh;
+  left: 2.5vw;
+  z-index: 110;
   display: flex;
   flex-direction: column;
-  width: auto;
-  max-height: calc(100% - 24px);
+  box-sizing: border-box;
+  width: 95vw;
+  height: 95vh;
+  max-width: 95vw;
+  max-height: 95vh;
+  border-color: var(--sf-border);
   padding: 16px;
   overflow: hidden;
   cursor: default;
@@ -2633,7 +2785,6 @@ h2 {
   justify-content: space-between;
   gap: 16px;
   padding: 4px 4px 14px;
-  border-bottom: 1px solid var(--sf-border);
 }
 .sf-operation-deck-heading > div {
   display: grid;
@@ -2646,6 +2797,16 @@ h2 {
 .sf-operation-deck-heading > .sf-icon-button {
   border: 0;
   background: transparent;
+  color: var(--sf-text-secondary);
+}
+.sf-operation-deck-heading > .sf-close-button > i {
+  color: inherit;
+}
+.sf-operation-deck-heading > .sf-close-button:hover,
+.sf-operation-deck-heading > .sf-close-button:focus-visible {
+  border: 0;
+  background: transparent;
+  color: var(--sf-text);
 }
 .sf-operation-deck button:focus,
 .sf-json-editor-modal button:focus,
@@ -2664,7 +2825,6 @@ h2 {
   gap: 8px;
   margin: 10px 0;
   padding: 7px 9px;
-  border: 1px solid var(--sf-border);
   border-radius: 7px;
   color: var(--sf-text-muted);
 }
@@ -2712,23 +2872,26 @@ h2 {
   background: color-mix(in srgb, var(--sf-surface) 72%, var(--sf-surface-raised));
 }
 .sf-operation-deck-card {
-  border-left: 4px solid var(--sf-domain-color, var(--sf-accent));
-  background: color-mix(in srgb, var(--sf-domain-color, var(--sf-accent)) 14%, var(--sf-surface-raised));
+  border-left: 4px solid var(--sf-domain-color, var(--sf-domain-core));
+  background: color-mix(in srgb, var(--sf-domain-color, var(--sf-domain-core)) 14%, var(--sf-surface-raised));
 }
 :root[data-theme='dark'] .sf-operation-deck-card {
-  background: color-mix(in srgb, var(--sf-domain-color, var(--sf-accent)) 22%, var(--sf-surface-raised));
+  background: color-mix(in srgb, var(--sf-domain-color, var(--sf-domain-core)) 22%, var(--sf-surface-raised));
 }
 .sf-operation-deck-card.sf-domain-streamfind {
-  --sf-domain-color: #2563eb;
+  --sf-domain-color: var(--sf-domain-streamfind);
 }
-.sf-operation-deck-card.sf-domain-mass_spec {
-  --sf-domain-color: #16a34a;
+.sf-operation-deck-card.sf-domain-mass-spec {
+  --sf-domain-color: var(--sf-domain-mass-spec);
 }
 .sf-operation-deck-card.sf-domain-raman {
-  --sf-domain-color: #0f766e;
+  --sf-domain-color: var(--sf-domain-raman);
 }
 .sf-operation-deck-card.sf-domain-sensors {
-  --sf-domain-color: #d97706;
+  --sf-domain-color: var(--sf-domain-sensors);
+}
+.sf-operation-deck-card.sf-domain-statistics {
+  --sf-domain-color: var(--sf-domain-statistics);
 }
 .sf-operation-deck-card:hover {
   cursor: default;
@@ -3071,7 +3234,7 @@ h2 {
   color: var(--sf-text);
   cursor: default;
   overflow: hidden;
-  box-shadow: 0 24px 80px color-mix(in srgb, #020617 42%, transparent);
+  box-shadow: var(--sf-modal-shadow);
 }
 .sf-artifact-viewer.wide {
   grid-template-rows: auto minmax(0, 1fr);
@@ -3083,6 +3246,9 @@ h2 {
   min-height: 0;
   min-width: 0;
   flex-direction: column;
+}
+.sf-artifact-viewer > .sf-viewer-error-boundary {
+  height: 100%;
 }
 .sf-viewer-error-boundary > .sf-artifact-viewer-toolbar {
   flex: 0 0 auto;
@@ -3119,6 +3285,84 @@ h2 {
   width: 95vw;
   height: 95vh;
   max-height: 95vh;
+}
+.sf-artifact-viewer-content-only {
+  position: relative;
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--sf-surface-raised);
+}
+.sf-artifact-viewer-content-only > .sf-artifact-viewer-close {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sf-text-secondary);
+  cursor: pointer;
+}
+.sf-artifact-viewer-content-only > .sf-viewer-error-boundary,
+.sf-artifact-viewer-content-only > .sf-viewer-error-boundary > * {
+  min-height: 0;
+}
+.sf-resizable-splitter {
+  position: relative;
+  width: 6px;
+  min-width: 6px;
+  height: 100%;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sf-resizable-splitter::before {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  background: var(--sf-border);
+  content: '';
+  transform: translateX(-50%);
+}
+.sf-resizable-splitter::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 14px;
+  height: 26px;
+  border: 1px solid var(--sf-border);
+  border-radius: 4px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text-secondary);
+  content: '⋮';
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+.sf-resizable-splitter:hover::before,
+.sf-resizable-splitter:active::before {
+  background: var(--sf-accent);
+}
+.sf-resizable-splitter:hover::after,
+.sf-resizable-splitter:active::after {
+  border-color: var(--sf-accent);
+  color: var(--sf-accent);
+}
+/* Plotly injects the modebar after rendering, so keep its controls aligned
+   with the application theme from one shared rule. */
+.js-plotly-plot .modebar,
+.js-plotly-plot .modebar-group,
+.js-plotly-plot .modebar-btn {
+  background: transparent !important;
+}
+.js-plotly-plot .modebar-btn {
+  color: var(--sf-text-secondary) !important;
+}
+.js-plotly-plot .modebar-btn:hover,
+.js-plotly-plot .modebar-btn.active {
+  background: var(--sf-surface-hover) !important;
+  color: var(--sf-text) !important;
+}
+.js-plotly-plot .modebar-btn path {
+  fill: currentColor !important;
 }
 .sf-visualization-preview,
 .sf-visualization-preview > [role='img'] {
@@ -3257,15 +3501,16 @@ h2 {
 }
 .sf-artifact-viewer-loading {
   position: absolute;
-  top: 8px;
-  right: 10px;
+  inset: 0;
   z-index: 6;
   min-height: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--sf-border);
-  border-radius: 4px;
-  background: var(--sf-surface-raised);
-  box-shadow: 0 2px 8px color-mix(in srgb, #020617 18%, transparent);
+  padding: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+.sf-artifact-viewer-loading .sf-loading-logo {
+  min-height: 0;
+  height: auto;
 }
 .sf-artifact-viewer-json {
   min-height: 0;
@@ -3296,13 +3541,6 @@ h2 {
 }
 .sf-edge-artifact-picker select {
   min-width: 0;
-}
-.sf-artifact-viewer-loading {
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 2;
-  padding: 8px;
-  background: color-mix(in srgb, var(--sf-accent) 14%, var(--sf-surface-raised));
 }
 @keyframes sf-output-available {
   0%,
@@ -3664,7 +3902,7 @@ h2 {
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
   background: var(--sf-surface-raised);
-  box-shadow: 0 18px 50px color-mix(in srgb, var(--sf-accent) 25%, transparent);
+  box-shadow: var(--sf-modal-shadow);
   box-sizing: border-box;
   overflow: hidden;
   resize: both;

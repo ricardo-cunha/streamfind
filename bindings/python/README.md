@@ -1,4 +1,4 @@
 # streamfind Python
 
-Reserved for the public Python package. The Cogniflow integration is maintained
-separately under `integrations/cf-streamfind`.
+Reserved for a future public Python package. The supported native interfaces
+are the C++ runtime, MCP server, browser application, and R package.

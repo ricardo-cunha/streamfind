@@ -33,4 +33,40 @@ describe('artifact display model', () => {
     expect(artifactContractMatches('sf:table', 'table')).toBe(true);
     expect(isVisualizationArtifact({ ...artifact, contract_id: 'sf:visualizationSpecResult' })).toBe(true);
   });
+
+  it('summarizes visualization artifacts without exposing the full plot payload', () => {
+    const visualization: ArtifactRecord = {
+      ...artifact,
+      contract_id: 'sf:visualizationSpecResult',
+      representation: 'json',
+      payload: JSON.stringify({ payload: { data: [{ name: 'sample-a', x: [1, 2, 3], y: [4, 5, 6] }] } }),
+    };
+    expect(artifactSummary(visualization)).toBe('JSON\n1 legend traces · 3 total points · trace length 3');
+  });
+
+  it('summarizes JSON artifacts without exposing their raw payload', () => {
+    const summary: ArtifactRecord = {
+      ...artifact,
+      contract_id: 'sfstat:foldChangeDiagnostics',
+      representation: 'json',
+      payload: JSON.stringify({
+        samples_group_a: 3,
+        samples_group_b: 4,
+        variables_tested: 11192,
+        significant_variables: 27,
+      }),
+    };
+    expect(artifactSummary(summary)).toBe('JSON\nObject · 4 fields');
+  });
+
+  it('summarizes debug JSON generically without rendering log content', () => {
+    const debug: ArtifactRecord = {
+      ...artifact,
+      contract_id: 'sfmass:findFeaturesDebugResult',
+      representation: 'json',
+      payload: JSON.stringify({ analysis: 'sample', enabled: true, log_path: 'debug.txt', log_text: 'long log' }),
+    };
+    expect(artifactSummary(debug)).toBe('JSON\nObject · 4 fields');
+    expect(artifactSummary(debug)).not.toContain('long log');
+  });
 });

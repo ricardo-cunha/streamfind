@@ -198,14 +198,13 @@ namespace streamfind::mass_spec::nta
 
         constexpr std::size_t max_isotope_peaks = 12;
         constexpr double minimum_probability = 1e-5;
-        const double ion_offset = static_cast<double>(features.polarity[feature_index]) * 1.007276466621;
         std::vector<double> theoretical_mz;
         std::vector<double> theoretical_probability;
         for (size_t i = 0; i < envelope.confs_no() && theoretical_mz.size() < max_isotope_peaks; ++i)
         {
           if (envelope.prob(i) < minimum_probability)
             continue;
-          theoretical_mz.push_back(envelope.mass(i) + parsed_formula.fixed_mass_delta + ion_offset);
+          theoretical_mz.push_back(envelope.mass(i) + parsed_formula.fixed_mass_delta);
           theoretical_probability.push_back(envelope.prob(i));
         }
         IsotopeMatch result;
@@ -213,6 +212,22 @@ namespace streamfind::mass_spec::nta
         result.evaluated = true;
         if (theoretical_mz.size() < 2)
           return result;
+
+        // MetFrag screens feature neutral mass, while the persisted MS1
+        // spectrum is represented in the instrument's observed m/z frame.
+        // Anchor the theoretical envelope to the observed monoisotopic m/z
+        // instead of assuming a single proton/adduct convention. The
+        // precursor mass tolerance has already validated the candidate; here
+        // we compare isotope spacings and relative abundances in one frame.
+        const double observed_anchor = feature_index < features.mz.size()
+            ? static_cast<double>(features.mz[feature_index])
+            : std::numeric_limits<double>::quiet_NaN();
+        if (std::isfinite(observed_anchor) && observed_anchor > 0.0 && !theoretical_mz.empty())
+        {
+          const double shift = observed_anchor - theoretical_mz.front();
+          for (double &mz : theoretical_mz)
+            mz += shift;
+        }
 
         std::vector<bool> used(experimental_mz.size(), false);
         std::vector<double> observed(theoretical_mz.size(), 0.0);

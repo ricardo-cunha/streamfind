@@ -13,9 +13,9 @@
 #include <set>
 #include <functional>
 #include <iomanip>
-#include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <iterator>
 
 namespace streamfind::mass_spec::nta::deconvolution
 {
@@ -304,15 +304,11 @@ namespace streamfind::mass_spec::nta::deconvolution
 
     if (should_debug)
     {
-      // Initialize debug log with dynamic filename based on spectrum index
-      std::ostringstream log_filename;
-      log_filename << "debug_log_denoising_spec" << spectrumIdx << "_rt" << std::fixed << std::setprecision(2) << rt << ".log";
       std::ostringstream header;
       header << "=== Denoising Debug Log for Spectrum " << spectrumIdx
              << " (RT=" << rt << "s) ===" << std::endl;
       if (debug != nullptr && debug->enabled())
-        ::streamfind::mass_spec::nta::utils::init_debug_log(
-            debug->path().string(), header.str(), true);
+        debug->write_line(header.str());
 
       // Calculate noise level statistics for debug output
       float noise_mean = ::streamfind::mass_spec::nta::utils::mean(raw_noise);
@@ -384,7 +380,6 @@ namespace streamfind::mass_spec::nta::deconvolution
                 << "Denoising summary: " << raw_n_traces << " -> " << final_mz.size()
                 << " traces (" << std::setprecision(1) << reduction_percent << "% reduction)" << std::endl);
 
-      ::streamfind::mass_spec::nta::utils::close_debug_log();
     }
 
     // Add to output vectors
@@ -795,6 +790,11 @@ namespace streamfind::mass_spec::nta::deconvolution
     // A valley is a point where intensity is lower than neighbors and then starts increasing
     int left_idx = peak_idx;
     std::string left_stop_reason = "";
+    const int boundary_persistence = std::max(3, min_traces);
+    const int valley_persistence = std::max(3, min_traces);
+    int left_below_baseline = 0;
+    int left_below_minimum = 0;
+    int left_valley_rise = 0;
 
     // Move left from apex, looking for valley points
     for (int i = peak_idx - 1; i >= 0; --i)
@@ -814,13 +814,20 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if at or below baseline (with 10% tolerance)
+      // Require a persistent baseline crossing. A single noisy point on the
+      // shoulder must not truncate the integrated peak.
       if (smoothed_intensity[i] <= baseline[i] * 1.1f)
       {
-        left_idx = i;
-        left_stop_reason = "intensity <= baseline * 1.1";
-        break;
+        ++left_below_baseline;
+        if (left_below_baseline >= boundary_persistence)
+        {
+          left_idx = i;
+          left_stop_reason = "persistent intensity <= baseline * 1.1";
+          break;
+        }
       }
+      else
+        left_below_baseline = 0;
 
       if (smoothed_intensity[i] > apex_intensity * 1.2f)
       {
@@ -829,13 +836,19 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if intensity < 1% of apex
+      // Likewise require two consecutive near-zero points.
       if (smoothed_intensity[i] <= min_intensity_threshold)
       {
-        left_idx = i;
-        left_stop_reason = "intensity <= 1% of apex";
-        break;
+        ++left_below_minimum;
+        if (left_below_minimum >= 2)
+        {
+          left_idx = i;
+          left_stop_reason = "persistent intensity <= 1% of apex";
+          break;
+        }
       }
+      else
+        left_below_minimum = 0;
 
       // Check for valley: detect 2+ consecutive increases when moving left (away from peak)
       // A valley is characterized by a local minimum followed by rising intensity
@@ -843,14 +856,14 @@ namespace streamfind::mass_spec::nta::deconvolution
       {
         // Check if intensity is rising as we move left (away from peak)
         // This indicates we've crossed a valley and are climbing another peak
-        bool first_increase = smoothed_intensity[i - 1] > smoothed_intensity[i];
-        bool second_increase = smoothed_intensity[i - 2] > smoothed_intensity[i - 1];
+        bool rising_away_from_peak = smoothed_intensity[i - 1] > smoothed_intensity[i];
+        left_valley_rise = rising_away_from_peak ? left_valley_rise + 1 : 0;
 
-        if (first_increase && second_increase)
+        if (left_valley_rise >= valley_persistence && smoothed_intensity[i] < apex_intensity * 0.35f)
         {
           // Found a valley - stop here to avoid crossing into another peak
           left_idx = i;
-          left_stop_reason = "valley detected (2+ consecutive increases moving left), intensity=" + std::to_string(smoothed_intensity[i]);
+          left_stop_reason = "persistent valley moving left, intensity=" + std::to_string(smoothed_intensity[i]);
           break;
         }
       }
@@ -864,6 +877,9 @@ namespace streamfind::mass_spec::nta::deconvolution
     // A valley is a point where intensity is lower than neighbors and then starts increasing
     int right_idx = peak_idx;
     std::string right_stop_reason = "";
+    int right_below_baseline = 0;
+    int right_below_minimum = 0;
+    int right_valley_rise = 0;
 
     // Move right from apex, looking for valley points
     for (int i = peak_idx + 1; i < n; ++i)
@@ -883,13 +899,20 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if at or below baseline (with 10% tolerance)
+      // Require a persistent baseline crossing. A single noisy point on the
+      // shoulder must not truncate the integrated peak.
       if (smoothed_intensity[i] <= baseline[i] * 1.1f)
       {
-        right_idx = i;
-        right_stop_reason = "intensity <= baseline * 1.1";
-        break;
+        ++right_below_baseline;
+        if (right_below_baseline >= boundary_persistence)
+        {
+          right_idx = i;
+          right_stop_reason = "persistent intensity <= baseline * 1.1";
+          break;
+        }
       }
+      else
+        right_below_baseline = 0;
 
       if (smoothed_intensity[i] > apex_intensity * 1.2f)
       {
@@ -898,13 +921,19 @@ namespace streamfind::mass_spec::nta::deconvolution
         break;
       }
 
-      // Stop if intensity < 1% of apex
+      // Likewise require two consecutive near-zero points.
       if (smoothed_intensity[i] <= min_intensity_threshold)
       {
-        right_idx = i;
-        right_stop_reason = "intensity <= 1% of apex";
-        break;
+        ++right_below_minimum;
+        if (right_below_minimum >= 2)
+        {
+          right_idx = i;
+          right_stop_reason = "persistent intensity <= 1% of apex";
+          break;
+        }
       }
+      else
+        right_below_minimum = 0;
 
       // Check for valley: detect 2+ consecutive increases when moving right (away from peak)
       // A valley is characterized by a local minimum followed by rising intensity
@@ -912,14 +941,14 @@ namespace streamfind::mass_spec::nta::deconvolution
       {
         // Check if intensity is rising as we move right (away from peak)
         // This indicates we've crossed a valley and are climbing another peak
-        bool first_increase = smoothed_intensity[i + 1] > smoothed_intensity[i];
-        bool second_increase = smoothed_intensity[i + 2] > smoothed_intensity[i + 1];
+        bool rising_away_from_peak = smoothed_intensity[i + 1] > smoothed_intensity[i];
+        right_valley_rise = rising_away_from_peak ? right_valley_rise + 1 : 0;
 
-        if (first_increase && second_increase)
+        if (right_valley_rise >= valley_persistence && smoothed_intensity[i] < apex_intensity * 0.35f)
         {
           // Found a valley - stop here to avoid crossing into another peak
           right_idx = i;
-          right_stop_reason = "valley detected (2+ consecutive increases moving right), intensity=" + std::to_string(smoothed_intensity[i]);
+          right_stop_reason = "persistent valley moving right, intensity=" + std::to_string(smoothed_intensity[i]);
           break;
         }
       }
@@ -1074,16 +1103,13 @@ namespace streamfind::mass_spec::nta::deconvolution
       float debugMZ,
       sdk::DebugSession *debug_session)
   {
-    // Initialize debug log file with dynamic filename based on debugMZ
     if (debugMZ > 0.0f)
     {
-      std::string filename = "log/debug_log_peak_detection_" + std::to_string(debugMZ) + ".log";
       std::ostringstream header;
       header << "=== Peak Detection Debug Log (m/z = " << std::fixed << std::setprecision(4)
              << debugMZ << ") ===\n";
       if (debug_session != nullptr && debug_session->enabled())
-        ::streamfind::mass_spec::nta::utils::init_debug_log(
-            debug_session->path().string(), header.str(), true);
+        debug_session->write_line(header.str());
     }
 
     std::map<int, std::vector<int>> cluster_indices;
@@ -1143,8 +1169,7 @@ namespace streamfind::mass_spec::nta::deconvolution
                                                 << cluster_min_mz << " to " << cluster_max_mz
                                                 << " (mean: " << cluster_mean_mz << ")" << std::endl);
           DEBUG_LOG("      Target m/z " << debugMZ << " is within cluster range" << std::endl);
-          std::string debug_filename = "log/debug_log_peak_detection_" + std::to_string(debugMZ) + ".log";
-          std::cerr << "      Processing cluster " << cluster_id << " - detailed output in: " << debug_filename << std::endl;
+          std::cerr << "      Processing cluster " << cluster_id << " - detailed output is available in the debug artifact" << std::endl;
         }
       }
 
@@ -1226,10 +1251,11 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
 
       auto baseline = ::streamfind::mass_spec::nta::utils::calculate_baseline(cluster_intensity, baseline_window_size);
-      // Use gentle smoothing for derivatives (window_size=2 means averaging 3 points: [i-1, i, i+1])
-      // This reduces noise while preserving sharp peaks
-
-      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 4, 2);
+      // Use a local adaptive smoother for derivatives. It keeps the broad
+      // seven-point noise suppression, switches to a three-point window at
+      // cluster edges, and preserves sharp local maxima instead of spreading
+      // them across the surrounding scans.
+      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_adaptive(cluster_intensity, 7, 3);
       // auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
 
       if (cluster_matches_debug_mz && debug_session != nullptr) {
@@ -1269,6 +1295,46 @@ namespace streamfind::mass_spec::nta::deconvolution
 
       std::vector<float> first_derivative, second_derivative;
       ::streamfind::mass_spec::nta::utils::calculate_derivatives(smoothed_intensity, first_derivative, second_derivative);
+
+      if (cluster_matches_debug_mz)
+      {
+        if (debug_session != nullptr)
+        {
+          std::ostringstream detail;
+          detail << "first_derivative <- c(";
+          for (size_t i = 0; i < first_derivative.size(); ++i)
+          {
+            detail << std::fixed << std::setprecision(3) << first_derivative[i];
+            if (i + 1 < first_derivative.size()) detail << ", ";
+          }
+          detail << ")\nsecond_derivative <- c(";
+          for (size_t i = 0; i < second_derivative.size(); ++i)
+          {
+            detail << std::fixed << std::setprecision(3) << second_derivative[i];
+            if (i + 1 < second_derivative.size()) detail << ", ";
+          }
+          detail << ")";
+          debug_session->write_line(detail.str());
+        }
+        DEBUG_LOG("      first_derivative <- c(");
+        for (size_t i = 0; i < first_derivative.size(); ++i)
+        {
+          DEBUG_LOG(std::fixed << std::setprecision(3) << first_derivative[i]);
+          if (i < first_derivative.size() - 1)
+            DEBUG_LOG(", ");
+        }
+        DEBUG_LOG(")" << std::endl);
+
+        DEBUG_LOG("      second_derivative <- c(");
+        for (size_t i = 0; i < second_derivative.size(); ++i)
+        {
+          DEBUG_LOG(std::fixed << std::setprecision(3) << second_derivative[i]);
+          if (i < second_derivative.size() - 1)
+            DEBUG_LOG(", ");
+        }
+        DEBUG_LOG(")" << std::endl);
+      }
+
       auto candidates = find_peak_candidates(first_derivative, smoothed_intensity, 0);
 
       if (cluster_matches_debug_mz && debug_session != nullptr) {
@@ -2130,9 +2196,6 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
     }
 
-    // Close debug log at the end of processing to allow new log files to be created
-    ::streamfind::mass_spec::nta::utils::close_debug_log();
-
     return polarity_features;
   };
 
@@ -2165,8 +2228,10 @@ namespace streamfind::mass_spec::nta::deconvolution
 
     for (size_t a = 0; a < analysis_names.size(); ++a)
     {
-      input.report(std::to_string(a + 1) + "/" + std::to_string(analysis_names.size()) +
-                   " Processing analysis " + analysis_names[a]);
+      const auto analysis_count = std::max<std::size_t>(1, analysis_names.size());
+      input.report_progress(static_cast<double>(a) / static_cast<double>(analysis_count),
+                            std::to_string(a + 1) + "/" + std::to_string(analysis_names.size()) +
+                            " Processing analysis " + analysis_names[a]);
 
       if (debug.enabled() && debug.matches_analysis(analysis_names[a]))
         debug.write_line("Processing analysis: " + analysis_names[a]);
@@ -2217,7 +2282,8 @@ namespace streamfind::mass_spec::nta::deconvolution
       std::vector<float> spec_pos_rt, spec_pos_mz, spec_pos_intensity, spec_pos_noise;
       std::vector<float> spec_neg_rt, spec_neg_mz, spec_neg_intensity, spec_neg_noise;
 
-      input.report("  1/5 Denoising " + std::to_string(idx_load.size()) + " spectra");
+      input.report_progress(static_cast<double>(a) / static_cast<double>(analysis_count),
+                            "  1/5 Denoising " + std::to_string(idx_load.size()) + " spectra");
 
       size_t total_raw_points = 0;
       size_t total_clean_points = 0;
@@ -2275,11 +2341,16 @@ namespace streamfind::mass_spec::nta::deconvolution
               baseQuantile,
               &debug);
         }
-        if ((i + 1) % 100 == 0 || i + 1 == idx_load.size())
-          input.report("      Denoised " + std::to_string(i + 1) + "/" + std::to_string(idx_load.size()) + " spectra");
+        const auto report_interval = std::max<std::size_t>(1, idx_load.size() / 10);
+        if ((i + 1) % report_interval == 0 || i + 1 == idx_load.size())
+          input.report_progress(
+              (static_cast<double>(a) + static_cast<double>(i + 1) / std::max<std::size_t>(1, idx_load.size())) /
+                  static_cast<double>(analysis_count),
+              "      Denoised " + std::to_string(i + 1) + "/" + std::to_string(idx_load.size()) + " spectra");
       }
 
-      input.report("      Polarity distribution: " + std::to_string(pos_count) + " positive, " + std::to_string(neg_count) + " negative spectra");
+      input.report_progress(static_cast<double>(a + 1) / static_cast<double>(analysis_count),
+                            "      Polarity distribution: " + std::to_string(pos_count) + " positive, " + std::to_string(neg_count) + " negative spectra");
 
       // Show denoising statistics
       float denoising_efficiency = total_raw_points > 0 ? (1.0f - static_cast<float>(total_clean_points) / static_cast<float>(total_raw_points)) * 100.0f : 0.0f;
@@ -2355,9 +2426,10 @@ namespace streamfind::mass_spec::nta::deconvolution
       all_features.insert(all_features.end(), pos_features.begin(), pos_features.end());
       all_features.insert(all_features.end(), neg_features.begin(), neg_features.end());
 
-      input.report("  4/5 Found " + std::to_string(all_features.size()) + " total features (" +
-                   std::to_string(pos_features.size()) + " positive, " +
-                   std::to_string(neg_features.size()) + " negative)");
+      input.report_progress(static_cast<double>(a + 1) / static_cast<double>(analysis_count),
+                            "  4/5 Found " + std::to_string(all_features.size()) + " total features (" +
+                            std::to_string(pos_features.size()) + " positive, " +
+                            std::to_string(neg_features.size()) + " negative)");
 
       feature_buffers[a] = ::streamfind::mass_spec::nta::api::NTA_FEATURES();
       feature_buffers[a].analysis = analysis_names[a];
@@ -2371,10 +2443,10 @@ namespace streamfind::mass_spec::nta::deconvolution
         feature_buffers[a].append_feature(enriched);
       }
 
-      input.report("  5/5 Processing complete");
+      input.report_progress(static_cast<double>(a + 1) / static_cast<double>(analysis_count), "  5/5 Processing complete");
     }
 
-    input.report("Completed!");
+    input.report_progress(1.0, "Completed!");
   };
 
   Json find_features(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -2420,6 +2492,9 @@ namespace streamfind::mass_spec::nta::deconvolution
     }
     FeatureInput input;
     input.log = [&access](std::string_view message) { access.report_progress(0.0, message); };
+    input.progress = [&access](double fraction, std::string_view message) {
+      access.report_progress(fraction, message);
+    };
     for (const auto &row : rows)
     {
       const auto name = ::streamfind::mass_spec::nta::utils::text(row, "analysis");
@@ -2457,12 +2532,17 @@ namespace streamfind::mass_spec::nta::deconvolution
     auto debug = sdk::DebugSession::open(
         access.database_path(), "mass_spec.find_features", access.operation_instance(),
         sdk::DebugOptions{debug_analysis, debug_mz, debug_spec_idx});
-    if (debug.enabled())
-      input.report("Debug log: " + debug.path().string());
-    find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
-                  parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
-                  parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
-                  debug_analysis, debug_mz, debug_spec_idx, debug);
+    utils::set_debug_session(&debug);
+    try {
+      find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
+                    parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
+                    parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
+                    debug_analysis, debug_mz, debug_spec_idx, debug);
+    } catch (...) {
+      utils::set_debug_session(nullptr);
+      throw;
+    }
+    utils::set_debug_session(nullptr);
     if (debug.enabled())
       debug.write_line("Feature detection completed");
 
@@ -2471,6 +2551,19 @@ namespace streamfind::mass_spec::nta::deconvolution
       for (int index = 0; index < buffer.size(); ++index)
         output.push_back(::streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(index)));
     access.emit_table_rows("featuresTable", ::streamfind::mass_spec::nta::utils::feature_columns(), ::streamfind::mass_spec::nta::utils::feature_types(), output);
-    return Json{{"status", "finished"}, {"features", output.size()}};
+    Json result = {{"status", "finished"}, {"features", output.size()}};
+    if (debug.enabled())
+    {
+      Json debug_result = {
+          {"schema", "streamfind.mass_spec.find_features_debug/v1"},
+          {"enabled", true},
+          {"operation", "mass_spec.find_features"},
+          {"analysis", debug_analysis},
+          {"mz", debug_mz},
+          {"spectrum_index", debug_spec_idx},
+          {"log_text", debug.text()}};
+      access.emit_result("findFeaturesDebugResult", debug_result.dump());
+    }
+    return result;
   }
 }

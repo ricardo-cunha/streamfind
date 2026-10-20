@@ -1,6 +1,7 @@
 #include "streamfind/service/project_runtime_manager.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <system_error>
 #include <tuple>
@@ -117,6 +118,8 @@ ProjectSessionDto ProjectRuntimeManager::close(const std::string &session_id) {
         std::lock_guard lock(mutex_);
         const auto iterator = projects_.find(session_id);
         if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        if (operation_cancellations_.contains(session_id))
+            throw std::invalid_argument("cannot close a project while an operation is running");
         result = describe(session_id, *iterator->second);
         if (const auto cancellation = workflow_cancellations_.find(session_id); cancellation != workflow_cancellations_.end()) {
             cancellation->second->store(true);
@@ -344,8 +347,8 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
         return output + "\"";
     };
     const auto mode = request.value("mode", std::string{"page"});
-    if (mode != "page" && mode != "sample" && mode != "detail")
-        throw std::invalid_argument("artifact query mode must be page, sample, or detail");
+    if (mode != "page" && mode != "sample" && mode != "detail" && mode != "eic" && mode != "visualization")
+        throw std::invalid_argument("artifact query mode must be page, sample, detail, eic, or visualization");
     std::vector<std::string> selected_columns;
     if (request.contains("columns")) {
         if (!request.at("columns").is_array()) throw std::invalid_argument("artifact query columns must be an array");
@@ -358,6 +361,32 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
         }
     }
     if (selected_columns.empty()) selected_columns = columns;
+    if (selected_columns.size() > 128) throw std::invalid_argument("artifact query selects too many columns");
+    std::vector<std::string> trace_columns;
+    if (mode == "visualization") {
+        if (!request.contains("trace_columns") || !request.at("trace_columns").is_array() || request.at("trace_columns").empty())
+            throw std::invalid_argument("visualization mode requires non-empty trace_columns");
+        for (const auto &column : request.at("trace_columns")) {
+            if (!column.is_string()) throw std::invalid_argument("visualization trace column names must be strings");
+            const auto name = column.get<std::string>();
+            if (std::find(columns.begin(), columns.end(), name) == columns.end())
+                throw std::invalid_argument("visualization trace column not found: " + name);
+            trace_columns.push_back(name);
+        }
+    }
+    std::string x_column;
+    std::string y_column;
+    if (mode == "visualization") {
+        x_column = request.value("x_column", std::string{});
+        y_column = request.value("y_column", std::string{});
+        if (std::find(columns.begin(), columns.end(), x_column) == columns.end() ||
+            std::find(columns.begin(), columns.end(), y_column) == columns.end())
+            throw std::invalid_argument("visualization mode requires valid x_column and y_column");
+        if (std::find(selected_columns.begin(), selected_columns.end(), x_column) == selected_columns.end())
+            selected_columns.push_back(x_column);
+        if (std::find(selected_columns.begin(), selected_columns.end(), y_column) == selected_columns.end())
+            selected_columns.push_back(y_column);
+    }
     if (selected_columns.size() > 128) throw std::invalid_argument("artifact query selects too many columns");
     std::string projection;
     for (const auto &column : selected_columns) {
@@ -440,11 +469,19 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
         }
         append_condition("CAST(rowid AS VARCHAR) IN (" + keys + ")");
     }
+    if (mode == "visualization" && (request.contains("x_min") || request.contains("x_max"))) {
+        if (!request.contains("x_min") || !request.contains("x_max") ||
+            !request.at("x_min").is_number() || !request.at("x_max").is_number())
+            throw std::invalid_argument("visualization x_min and x_max must be numeric and supplied together");
+        const auto x_min = request.at("x_min").get<double>();
+        const auto x_max = request.at("x_max").get<double>();
+        if (!std::isfinite(x_min) || !std::isfinite(x_max) || x_min > x_max)
+            throw std::invalid_argument("visualization x_min and x_max must be finite with x_min <= x_max");
+        append_condition(quote_identifier(x_column) + " BETWEEN " + std::to_string(x_min) + " AND " + std::to_string(x_max));
+    }
     const auto sort = request.value("sort_column", std::string{});
     const bool valid_sort = std::find(columns.begin(), columns.end(), sort) != columns.end();
     std::string order = valid_sort ? (" ORDER BY " + quote_identifier(sort) + " " + (request.value("descending", false) ? "DESC" : "ASC")) : std::string{};
-    std::string x_column;
-    std::string y_column;
     bool requested_grid_sampling = false;
     bool grid_sampling = false;
     std::string sample_where = where;
@@ -457,7 +494,9 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
         order = " ORDER BY " + quote_identifier(x_column) + ", " + quote_identifier(y_column);
         requested_grid_sampling = request.value("sampling_strategy", std::string{"ordered"}) == "grid";
     }
-    const auto limit = std::clamp(request.value("limit", mode == "sample" ? 50000 : 100), 1, mode == "sample" ? 50000 : 1000);
+    const auto limit = std::clamp(request.value("limit", mode == "sample" ? 50000 : mode == "eic" ? 250000 :
+                                           mode == "visualization" ? 1000000 : 100), 1,
+                                  mode == "sample" ? 50000 : mode == "eic" ? 250000 : mode == "visualization" ? 1000000 : 1000);
     const auto offset = std::max(0, request.value("offset", 0));
     std::size_t total_rows = 0;
     if (mode == "sample") {
@@ -490,7 +529,38 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
     const auto y_bin = "CASE WHEN " + std::to_string(y_range) + " = 0 THEN 0 ELSE LEAST(" + std::to_string(y_bins - 1) +
         ", GREATEST(0, CAST(FLOOR((" + quote_identifier(y_column) + " - " + std::to_string(min_y) + ") / " + std::to_string(y_range) +
         " * " + std::to_string(y_bins) + ") AS INTEGER))) END";
-    const auto query = grid_sampling
+    std::string trace_expression;
+    if (mode == "visualization") {
+        for (const auto &column : trace_columns) {
+            if (!trace_expression.empty()) trace_expression += ", ";
+            trace_expression += "COALESCE(CAST(" + quote_identifier(column) + " AS VARCHAR), '')";
+        }
+        trace_expression = "concat_ws('\\x1f', " + trace_expression + ")";
+    }
+    std::size_t visualization_trace_count = 0;
+    if (mode == "visualization") {
+        const auto trace_count = iterator->second->query_json(
+            "SELECT COUNT(DISTINCT " + trace_expression + ") AS \"__streamfind_trace_count\" FROM " + quoted_table + where);
+        if (!trace_count.empty())
+            visualization_trace_count = std::stoull(trace_count.front().value("__streamfind_trace_count", std::string{"0"}));
+    }
+    const auto requested_points_per_trace = std::max(1, request.value("max_points_per_trace", 2000));
+    const auto balanced_points_per_trace = mode == "visualization" && visualization_trace_count > 0
+        ? std::min<std::size_t>(static_cast<std::size_t>(requested_points_per_trace),
+                                std::max<std::size_t>(1, static_cast<std::size_t>(limit) / visualization_trace_count))
+        : static_cast<std::size_t>(requested_points_per_trace);
+    const auto visualization_query = mode == "visualization"
+        ? "SELECT " + projection + ", \"row_key\", \"__streamfind_trace_key\" FROM (SELECT " + projection_with_key +
+          ", " + trace_expression + " AS \"__streamfind_trace_key\", ROW_NUMBER() OVER (PARTITION BY " + trace_expression +
+          " ORDER BY rowid) AS \"__streamfind_trace_row\", COUNT(*) OVER (PARTITION BY " + trace_expression +
+          ") AS \"__streamfind_trace_count\" FROM " + quoted_table + where +
+          ") sampled WHERE ((\"__streamfind_trace_row\" - 1) % GREATEST(1, CAST(CEIL(\"__streamfind_trace_count\" / " +
+          std::to_string(balanced_points_per_trace) + ") AS BIGINT))) = 0 LIMIT " +
+          std::to_string(limit)
+        : std::string{};
+    const auto query = mode == "visualization"
+        ? visualization_query
+        : grid_sampling
         ? "SELECT " + projection + ", \"row_key\", \"bin_count\" FROM (SELECT " + projection_with_key + ", " + x_bin +
           " AS \"x_bin\", " + y_bin + " AS \"y_bin\", COUNT(*) OVER (PARTITION BY " + x_bin + ", " + y_bin +
           ") AS \"bin_count\", ROW_NUMBER() OVER (PARTITION BY " + x_bin + ", " + y_bin + " ORDER BY rowid) AS \"bin_row\" FROM " +
@@ -504,7 +574,11 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
           " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
     auto rows = iterator->second->query_json(query);
     if (!rows.empty()) {
-        if (mode != "sample") total_rows = std::stoull(rows.front().value("__streamfind_total_rows", std::string{"0"}));
+        if (mode != "sample" && mode != "visualization") total_rows = std::stoull(rows.front().value("__streamfind_total_rows", std::string{"0"}));
+        if (mode == "visualization") {
+            const auto count = iterator->second->query_json("SELECT COUNT(*) AS \"__streamfind_total_rows\" FROM " + quoted_table + where);
+            if (!count.empty()) total_rows = std::stoull(count.front().value("__streamfind_total_rows", std::string{"0"}));
+        }
         for (auto &row : rows) row.erase("__streamfind_total_rows");
     } else {
         const auto count = iterator->second->query_json("SELECT COUNT(*) AS \"__streamfind_total_rows\" FROM " + quoted_table + where);
@@ -514,9 +588,12 @@ Json ProjectRuntimeManager::artifact_query(const std::string &session_id, const 
     for (const auto &column : description)
         if (std::find(selected_columns.begin(), selected_columns.end(), column.value("column_name", std::string{})) != selected_columns.end())
             column_json.push_back({{"name", column.value("column_name", std::string{})}, {"type", column.value("column_type", std::string{})}});
+    if (mode == "visualization") {
+        column_json.push_back({{"name", "__streamfind_trace_key"}, {"type", "VARCHAR"}});
+    }
     return {{"artifact_id", artifact_id}, {"columns", column_json}, {"rows", rows},
             {"offset", offset}, {"limit", limit}, {"total_rows", total_rows},
-            {"returned_rows", rows.size()}, {"mode", mode}, {"has_more", offset + rows.size() < total_rows}};
+            {"returned_rows", rows.size()}, {"mode", mode}, {"has_more", mode == "visualization" ? false : offset + rows.size() < total_rows}};
 }
 
 Json ProjectRuntimeManager::artifact_data(const std::string &session_id, const Json &request) const {
@@ -539,6 +616,8 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
         std::lock_guard lock(mutex_);
         const auto iterator = projects_.find(session_id);
         if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        if (operation_cancellations_.contains(session_id))
+            throw std::invalid_argument("an operation is already running for this project");
         if (const auto worker = workflow_workers_.find(session_id); worker != workflow_workers_.end() && worker->second.joinable()) {
             const auto state = workflow_states_.find(session_id);
             if (state != workflow_states_.end() &&
@@ -623,16 +702,52 @@ std::string ProjectRuntimeManager::cancel_workflow(const std::string &session_id
     return "cancelling";
 }
 
+std::string ProjectRuntimeManager::cancel_operation(const std::string &session_id,
+                                                     const std::string &operation_instance) {
+    std::lock_guard lock(mutex_);
+    if (projects_.find(session_id) == projects_.end())
+        throw std::invalid_argument("project session not found");
+    const auto cancellation = operation_cancellations_.find(session_id);
+    if (cancellation == operation_cancellations_.end())
+        throw std::invalid_argument("operation is not running");
+    (void)operation_instance;
+    cancellation->second->store(true);
+    return "cancelling";
+}
+
 Json ProjectRuntimeManager::run_operation(const std::string &session_id,
                                           const std::string &operation_id,
                                           const Json &parameters,
                                           const std::string &operation_instance) {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto operation = operations_->find(operation_id);
-    if (!operation) throw std::invalid_argument("operation not found: " + operation_id);
-    return iterator->second->run_operation(operation_id, parameters, *operations_, operation_instance);
+    Project *project = nullptr;
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        const auto operation = operations_->find(operation_id);
+        if (!operation) throw std::invalid_argument("operation not found: " + operation_id);
+        if (workflow_cancellations_.contains(session_id))
+            throw std::invalid_argument("workflow is already running");
+        if (operation_cancellations_.contains(session_id))
+            throw std::invalid_argument("an operation is already running for this project");
+        operation_cancellations_[session_id] = cancellation;
+        project = iterator->second.get();
+    }
+
+    project->set_cancellation_flag(cancellation.get());
+    try {
+        const auto result = project->run_operation(operation_id, parameters, *operations_, operation_instance);
+        project->set_cancellation_flag(nullptr);
+        std::lock_guard lock(mutex_);
+        operation_cancellations_.erase(session_id);
+        return result;
+    } catch (...) {
+        project->set_cancellation_flag(nullptr);
+        std::lock_guard lock(mutex_);
+        operation_cancellations_.erase(session_id);
+        throw;
+    }
 }
 
 std::vector<ProjectSessionDto> ProjectRuntimeManager::list() const {

@@ -6,6 +6,7 @@ import {
   isJsonParameter,
   isSimplePathParameter,
   isPathListParameter,
+  normalizeInlineTableRows,
   parameterInputValue,
   scalarInputValue,
   schemaTypeLabel,
@@ -43,6 +44,15 @@ describe('workflow parameter model', () => {
     expect(isFileListParameter(pathParameter)).toBe(false);
     expect(isPathListParameter(pathParameter)).toBe(true);
     expect(isJsonParameter(pathParameter)).toBe(true);
+    const stringPathListParameter: CapabilityParameter = {
+      ...numberParameter,
+      schema: { type: 'array', items: { type: 'string' } },
+      extensions: ['asc', 'sif', 'txt', 'wip', 'smf'],
+    };
+    expect(isSimplePathParameter(stringPathListParameter)).toBe(true);
+    expect(isFileListParameter(stringPathListParameter)).toBe(false);
+    expect(isPathListParameter(stringPathListParameter)).toBe(true);
+    expect(isJsonParameter(stringPathListParameter)).toBe(true);
     const csvPathParameter: CapabilityParameter = {
       ...numberParameter,
       schema: { type: 'string', extensions: ['.csv'] },
@@ -65,6 +75,21 @@ describe('workflow parameter model', () => {
     expect(
       wireParameters({ parameters: [{ name: 'min_sn', schema: { type: 'real' } }] } as never, { min_sn: '' }),
     ).toEqual({});
+    expect(
+      wireParameters({ parameters: [{ name: 'threshold', schema: { type: 'real' } }] } as never, {
+        threshold: '250.125',
+      }),
+    ).toEqual({ threshold: 250.125 });
+    expect(
+      wireParameters({ parameters: [{ name: 'threshold', schema: { type: 'real' } }] } as never, {
+        threshold: '250.',
+      }),
+    ).toEqual({ threshold: 250 });
+    expect(
+      wireParameters({ parameters: [{ name: 'threshold', schema: { type: 'real' } }] } as never, {
+        threshold: '250e',
+      }),
+    ).toEqual({ threshold: '250e' });
     expect(schemaPropertyOrder({ properties: { b: {}, a: {} }, 'x-streamfind-property-order': ['a'] })).toEqual([
       'a',
       'b',
@@ -75,5 +100,21 @@ describe('workflow parameter model', () => {
     const schema = { type: 'string', enum: ['internal_standards', 'obi_warp'] };
     expect(validateJsonValue('internal_standards', schema)).toBeNull();
     expect(validateJsonValue('other', schema)).toContain('declared options');
+  });
+
+  it('accepts blank optional numeric cells in target table rows', () => {
+    const parameter = {
+      name: 'targets',
+      label: 'Targets',
+      description: '',
+      schema: {
+        type: 'table',
+        properties: { mass: { type: 'number' }, mz: { type: 'number' }, name: { type: 'string' } },
+      },
+    } as CapabilityParameter;
+    const rows = [{ mass: 211.140891, mz: '', name: '' }];
+    const normalized = normalizeInlineTableRows(parameter, rows);
+    expect(normalized).toEqual([{ mass: 211.140891, mz: null, name: '' }]);
+    expect(validateJsonValue(normalized, parameter.schema)).toBeNull();
   });
 });

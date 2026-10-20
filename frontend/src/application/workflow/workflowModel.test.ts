@@ -24,7 +24,7 @@ describe('workflow model', () => {
 
   it('fingerprints equivalent workflows independently of object key order', () => {
     const first: WorkflowDefinition = {
-      schema_version: 1,
+      schema_version: 2,
       metadata: { name: 'Workflow', description: 'Workflow definition.' },
       operations: [],
       connections: [],
@@ -36,7 +36,7 @@ describe('workflow model', () => {
       metadata: { name: 'Workflow', description: 'Workflow definition.' },
       workflow_id: 'workflow',
       operations: [],
-      schema_version: 1,
+      schema_version: 2,
       version: 1,
     };
     expect(workflowFingerprint(first)).toBe(workflowFingerprint(second));
@@ -44,8 +44,8 @@ describe('workflow model', () => {
 
   it('serializes canvas nodes and edges through the backend capability contract', () => {
     const workflow = canvasWorkflow(
-      [{ id: 'operation-1', capabilityId: 'sf:run', x: 10, y: 20 } as never],
-      [{ id: 'edge-1', source: 'operation-1', sourcePort: 'out', target: 'operation-2', targetPort: 'in' } as never],
+      [{ id: '1', capabilityId: 'sf:run', x: 10, y: 20 } as never],
+      [{ id: 'edge-1', source: '1', sourcePort: 'out', target: '2', targetPort: 'in' } as never],
       {
         operations: [{ canonical_id: 'sf:run', parameters: [{ name: 'known', schema: { type: 'string' } }] }],
       } as never,
@@ -53,7 +53,7 @@ describe('workflow model', () => {
     );
     expect(workflow).toMatchObject({ version: 3, operations: [{ operation: 'sf:run', position: { x: 10, y: 20 } }] });
     expect(workflow.connections).toEqual([
-      { source_operation: 'operation-1', source_port: 'out', target_operation: 'operation-2', target_port: 'in' },
+      { source_operation: 1, source_port: 'out', target_operation: 2, target_port: 'in' },
     ]);
   });
 
@@ -75,11 +75,11 @@ describe('workflow model', () => {
   it('hydrates canvas nodes from a workflow using capability metadata', () => {
     const result = workflowToCanvas(
       {
-        schema_version: 1,
+        schema_version: 2,
         metadata: { name: 'Workflow', description: 'Workflow definition.' },
         workflow_id: 'workflow',
         version: 1,
-        operations: [{ id: 'operation-1', operation: 'sf:run', parameters: { known: 'value' } }],
+        operations: [{ id: 1, operation: 'sf:run', parameters: { known: 'value' } }],
         connections: [],
       },
       { operations: [{ canonical_id: 'sf:run', label: 'Run', definition: 'Execute', parameters: [] }] } as never,

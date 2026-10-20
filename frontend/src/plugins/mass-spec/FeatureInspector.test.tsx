@@ -211,6 +211,48 @@ describe('FeatureInspector', () => {
     });
   });
 
+  it('limits feature-network selection to explicit connected members', () => {
+    const model = buildFeatureNetwork(
+      [
+        { feature: 'MAIN', analysis: 'sample-a', feature_group: 'G1', adduct: '[M+H]+' },
+        {
+          feature: 'ISO-1',
+          analysis: 'sample-a',
+          feature_group: 'G1',
+          adduct: 'isotope [M+1]',
+          annotation_category: 'isotope',
+          annotation_parent_feature: 'MAIN',
+        },
+        {
+          feature: 'LOSS-1',
+          analysis: 'sample-a',
+          feature_group: 'G1',
+          adduct: 'loss M-H2O',
+          annotation_category: 'loss',
+          annotation_parent_feature: 'MAIN',
+        },
+        {
+          feature: 'ADDUCT-1',
+          analysis: 'sample-a',
+          feature_group: 'G1',
+          adduct: '[M+Na]+',
+          annotation_parent_feature: 'MAIN',
+        },
+        {
+          feature: 'UNRELATED-MAIN',
+          analysis: 'sample-a',
+          feature_group: 'G1',
+          adduct: '[M+H]+',
+        },
+      ],
+      'sample-a\u0000MAIN',
+      'feature_network',
+    );
+
+    expect(model.nodes.map((node) => node.label)).toEqual(['MAIN', 'ISO-1', 'LOSS-1', 'ADDUCT-1']);
+    expect(model.nodes.map((node) => node.label)).not.toContain('UNRELATED-MAIN');
+  });
+
   it('maps group-component selection to the corresponding component in every analysis', () => {
     const model = buildFeatureNetwork(
       [
@@ -299,6 +341,62 @@ describe('FeatureInspector', () => {
     expect(model.edges).toEqual([
       { source: 'sample-a\u0000ISO-1', target: 'sample-a\u0000MAIN', weight: 0 },
     ]);
+  });
+
+  it('selects only the connected feature network, not the whole component', () => {
+    const model = buildFeatureNetwork(
+      [
+        {
+          feature: 'MAIN',
+          analysis: 'sample-a',
+          feature_component: 'C1',
+          feature_group: 'G1',
+          adduct: '[M+H]+',
+          component_best_partner: 'OTHER-MAIN',
+        },
+        {
+          feature: 'ISO-1',
+          analysis: 'sample-a',
+          feature_component: 'C1',
+          adduct: 'isotope [M+1]',
+          annotation_category: 'isotope',
+          annotation_parent_feature: 'MAIN',
+        },
+        {
+          feature: 'LOSS-1',
+          analysis: 'sample-a',
+          feature_component: 'C1',
+          adduct: 'loss M-H2O',
+          annotation_category: 'loss',
+          annotation_parent_feature: 'MAIN',
+        },
+        {
+          feature: 'OTHER-MAIN',
+          analysis: 'sample-a',
+          feature_component: 'C1',
+          feature_group: 'G1',
+          adduct: '[M+H]+',
+        },
+        {
+          feature: 'UNRELATED',
+          analysis: 'sample-a',
+          feature_component: 'C1',
+          feature_group: 'G3',
+          adduct: '[M+H]+',
+        },
+      ],
+      'sample-a\u0000MAIN',
+      'feature_network',
+    );
+
+    expect(model.nodes.map((node) => node.id)).toEqual([
+      'sample-a\u0000MAIN',
+      'sample-a\u0000ISO-1',
+      'sample-a\u0000LOSS-1',
+      'sample-a\u0000OTHER-MAIN',
+    ]);
+    expect(model.nodes.map((node) => node.tagKind)).toEqual(['main', 'isotope', 'loss', 'main']);
+    expect(model.nodes.map((node) => node.id)).not.toContain('sample-a\u0000UNRELATED');
   });
 
   it('collects every selected-analysis component member and preserves its loss chain', () => {
@@ -459,7 +557,7 @@ describe('FeatureInspector', () => {
     expect(screen.getByText('Features 1 / 2')).toBeInTheDocument();
     expect(artifactQuery).toHaveBeenCalledWith(
       'session-1',
-      expect.objectContaining({ mode: 'sample', x_column: 'mz', y_column: 'rt', limit: 50000 }),
+      expect.objectContaining({ mode: 'sample', x_column: 'rt', y_column: 'mz', limit: 50000 }),
     );
   });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { PlotlyPayload, VisualizationSpec } from '../../../framework/visualization/visualizationTypes';
 import type {
   VisualizationPointClick,
@@ -22,6 +22,42 @@ export type PlotlyRuntime = {
   resize?: (element: HTMLElement) => void | Promise<unknown>;
 };
 
+type PlotlyLayout = Record<string, unknown>;
+
+function readThemeColor(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+function objectValue(value: unknown): PlotlyLayout {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as PlotlyLayout) : {};
+}
+
+/** Apply the application Plotly contract while preserving viewer-specific settings. */
+function applyPlotlyTheme(layout: PlotlyLayout): PlotlyLayout {
+  const text = readThemeColor('--sf-text', '#061314');
+  const grid = readThemeColor('--sf-border', 'rgba(10, 48, 51, 0.14)');
+  const background = readThemeColor('--sf-surface-raised', '#ffffff');
+  const axis = {
+    showgrid: true,
+    gridcolor: grid,
+    linecolor: text,
+    tickcolor: text,
+    tickfont: { color: text },
+    titlefont: { color: text },
+    zerolinecolor: grid,
+  };
+  return {
+    ...layout,
+    paper_bgcolor: layout.paper_bgcolor ?? background,
+    plot_bgcolor: layout.plot_bgcolor ?? background,
+    font: { color: text, ...objectValue(layout.font) },
+    hoverlabel: { bgcolor: background, font: { color: text }, ...objectValue(layout.hoverlabel) },
+    xaxis: { ...axis, ...objectValue(layout.xaxis) },
+    yaxis: { ...axis, ...objectValue(layout.yaxis) },
+  };
+}
+
 export type PlotlyRendererProps = {
   spec: VisualizationSpec;
   className?: string;
@@ -42,12 +78,12 @@ export function PlotlyRenderer({
 }: PlotlyRendererProps & { runtime: PlotlyRuntime }): ReactElement {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const renderedElementRef = useRef<HTMLElement | null>(null);
+  const initializedElementRef = useRef<HTMLElement | null>(null);
   const pointClickRef = useRef(onPointClick);
   const plotClickRef = useRef(onPlotClick);
   const doubleClickRef = useRef(onDoubleClick);
   const relayoutRef = useRef(onRelayout);
   const [error, setError] = useState<string | null>(null);
-  const renderKey = useMemo(() => JSON.stringify(spec.payload), [spec.payload]);
   useEffect(() => {
     pointClickRef.current = onPointClick;
     plotClickRef.current = onPlotClick;
@@ -55,8 +91,10 @@ export function PlotlyRenderer({
     relayoutRef.current = onRelayout;
   }, [onPointClick, onPlotClick, onDoubleClick, onRelayout]);
 
-  // The serialized payload is the dependency by design: artifact refreshes recreate
-  // the spec object, but must not reset Plotly's zoom/camera when its data is unchanged.
+  // The payload object identity is the dependency by design. Callers that update
+  // data create a new payload; avoiding JSON serialization here is important for
+  // large scatter plots because stringifying hundreds of thousands of points
+  // blocks the browser before Plotly can render.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     const element = chartRef.current;
@@ -84,11 +122,41 @@ export function PlotlyRenderer({
     };
     const handleDoubleClick = () => doubleClickRef.current?.();
     const handleRelayout = (event: VisualizationRelayout) => relayoutRef.current?.(event);
+    let resizeFrame: number | undefined;
+    let secondResizeFrame: number | undefined;
+    const scheduleResize = () => {
+      if (typeof requestAnimationFrame === 'undefined') {
+        void runtime.resize?.(element);
+        return;
+      }
+      resizeFrame = requestAnimationFrame(() => {
+        void runtime.resize?.(element);
+        // Plotly may create its canvas one frame after react() resolves,
+        // especially when the modal has just become visible.
+        secondResizeFrame = requestAnimationFrame(() => {
+          void runtime.resize?.(element);
+        });
+      });
+    };
     setError(null);
-    const layout = { ...spec.payload.layout, autosize: true };
-    const render = runtime.react ?? runtime.newPlot;
+    // Keep Plotly's interaction state (zoom/pan and legend visibility) when
+    // React supplies a new data/layout object after an interaction. Without a
+    // stable uirevision, Plotly.react resets the axes to the autorange, which
+    // is particularly noticeable for component EICs.
+    const layout = {
+      ...applyPlotlyTheme(spec.payload.layout ?? {}),
+      autosize: true,
+      uirevision: spec.visualization_id,
+    };
+    // Plotly.react is efficient for updates, but it is unreliable as the
+    // first operation on a newly mounted/hidden modal. Create the graph once
+    // with newPlot, then use react for subsequent payload updates.
+    const render = initializedElementRef.current === element ? runtime.react ?? runtime.newPlot : runtime.newPlot;
     Promise.resolve(render(element, spec.payload.data, layout, spec.payload.config))
       .then(() => {
+        if (!active) return;
+        initializedElementRef.current = element;
+        scheduleResize();
         eventElement.on?.('plotly_click', handlePointClick);
         eventElement.on?.('plotly_doubleclick', handleDoubleClick);
         eventElement.on?.('plotly_relayout', handleRelayout);
@@ -101,12 +169,15 @@ export function PlotlyRenderer({
       eventElement.removeListener?.('plotly_click', handlePointClick);
       eventElement.removeListener?.('plotly_doubleclick', handleDoubleClick);
       eventElement.removeListener?.('plotly_relayout', handleRelayout);
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
+      if (secondResizeFrame !== undefined) cancelAnimationFrame(secondResizeFrame);
     };
-  }, [renderKey, runtime]);
+  }, [spec.payload, runtime]);
 
   useEffect(() => {
     return () => {
       if (renderedElementRef.current) runtime.purge?.(renderedElementRef.current);
+      initializedElementRef.current = null;
     };
   }, [runtime]);
 

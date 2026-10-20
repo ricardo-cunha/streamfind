@@ -11,6 +11,8 @@ endif()
 include(CMakePackageConfigHelpers)
 
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
+set(STREAMFIND_DATA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../streamfind.data" CACHE PATH
+    "Sibling streamfind.data repository used by official tests")
 option(STREAMFIND_BUILD_SHARED "Build shared native libraries" OFF)
 option(STREAMFIND_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
 option(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT
@@ -176,6 +178,7 @@ set(STREAMFIND_CORE_SOURCES
     ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
     core/src/api.cpp
     core/src/project.cpp
+    core/src/project_database.cpp
     core/src/fingerprint.cpp
     core/src/mcp.cpp
     core/src/catalogue.cpp
@@ -383,9 +386,14 @@ add_dependencies(streamfind_plugins ${STREAMFIND_PLUGIN_TARGETS})
 
 if(STREAMFIND_BUILD_TESTS)
     enable_testing()
-    add_subdirectory(tests)
+    if(NOT EXISTS "${STREAMFIND_DATA_ROOT}/data")
+        message(FATAL_ERROR
+            "Official tests require the sibling streamfind.data repository with a data directory: ${STREAMFIND_DATA_ROOT}")
+    endif()
+    add_subdirectory(core/tests)
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
-    add_dependencies(streamfind_project_isolation_contract streamfind_core_catalogue)
+    add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
+    add_dependencies(streamfind_mass_spec_mcp_discovery_contract streamfind_aggregate_catalogue)
 endif()
 
 add_executable(streamfind_mcp core/src/streamfind-mcp.cpp)

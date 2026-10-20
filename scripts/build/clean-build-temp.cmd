@@ -24,8 +24,6 @@ call :remove_dir "%ROOT%\cpp\build" "C++ in-tree build output"
 call :remove_dir "%ROOT%\core\build" "standalone C++ core build output"
 call :remove_dir "%ROOT%\core\vendor\openbabel\build" "vendored OpenBabel build output"
 
-call :remove_dir "%ROOT%\integrations\cf-streamfind\build" "Cogniflow integration build output"
-
 rem Production and test output outside tmp\.
 call :remove_dir "%ROOT%\dist" "distribution output"
 call :remove_dir "%ROOT%\cpp\dist" "C++ distribution output"

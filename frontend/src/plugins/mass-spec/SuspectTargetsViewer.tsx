@@ -422,6 +422,34 @@ function IsotopePattern({
   );
 }
 
+function FragmentArrays({ row }: { row: SuspectRow }) {
+  const arrays = (['pos', 'neg'] as const)
+    .flatMap((polarity) => {
+      const mzKey = `fragments_mz_${polarity}`;
+      const intensityKey = `fragments_intensity_${polarity}`;
+      const label = polarity === 'pos' ? 'Positive' : 'Negative';
+      return [
+        { key: mzKey, label: `${label} fragment m/z`, values: parseNumbers(value(row, [mzKey])) },
+        { key: intensityKey, label: `${label} fragment intensity`, values: parseNumbers(value(row, [intensityKey])) },
+      ];
+    })
+    .filter((item) => item.values.length > 0);
+  if (!arrays.length) return null;
+  return (
+    <section className="sf-suspect-fragment-arrays">
+      <h3>Reference MS2 fragment arrays</h3>
+      <div className="sf-suspect-fragment-array-list">
+        {arrays.map((item) => (
+          <div className="sf-suspect-fragment-array" key={item.key}>
+            <span>{item.label}</span>
+            <code>{JSON.stringify(item.values)}</code>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Details({
   row,
   client,
@@ -437,7 +465,16 @@ function Details({
   cache: StructureCache;
   onRendered: (key: string, structure: RenderedStructure) => void;
 }) {
-  const fields = useMemo(() => Object.entries(row).filter(([, item]) => item !== null && item !== ''), [row]);
+  const fragmentColumns = new Set([
+    'fragments_mz_pos',
+    'fragments_intensity_pos',
+    'fragments_mz_neg',
+    'fragments_intensity_neg',
+  ]);
+  const fields = useMemo(
+    () => Object.entries(row).filter(([key, item]) => item !== null && item !== '' && !fragmentColumns.has(key)),
+    [row],
+  );
   const positiveSpec = ms2Spec(row, 'pos', darkMode, sourceArtifactId);
   const negativeSpec = ms2Spec(row, 'neg', darkMode, sourceArtifactId);
   return (
@@ -474,6 +511,7 @@ function Details({
           </div>
         </section>
       ) : null}
+      <FragmentArrays row={row} />
     </div>
   );
 }

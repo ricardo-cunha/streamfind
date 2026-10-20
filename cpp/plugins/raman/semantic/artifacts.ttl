@@ -1,0 +1,124 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfram:analysesTable
+    a sf:Table ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raman analyses table" ;
+    skos:definition "One row per imported source file, with file identity, technique, acquisition summary, axis and signal descriptors, and file-level metadata." ;
+    sf:tableContractName "RAMAN_ANALYSES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfram:analysisIdColumn,
+        sfram:analysisColumn,
+        sfram:filePathColumn,
+        sfram:fileNameColumn,
+        sfram:formatColumn,
+        sfram:techniqueColumn,
+        sfram:acquisitionKindColumn,
+        sfram:numberSpectraColumn,
+        sfram:numberPointsColumn,
+        sfram:hasTimeColumn,
+        sfram:timeKindColumn,
+        sfram:axisKindColumn,
+        sfram:axisUnitColumn,
+        sfram:signalKindColumn,
+        sfram:signalUnitColumn,
+        sfram:startTimeSecondsColumn,
+        sfram:endTimeSecondsColumn,
+        sfram:metadataJsonColumn .
+
+sfram:spectraSummaryTable
+    a sf:Table ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raman spectra summary table" ;
+    skos:definition "One row per spectrum, derived from spectraTable, containing point count, source frame and acquisition-time coordinates, spectral-axis descriptors, and signal descriptors." ;
+    sf:tableContractName "RAMAN_SPECTRA_SUMMARY" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfram:analysisIdColumn,
+        sfram:spectrumIdColumn,
+        sfram:spectrumIndexColumn,
+        sfram:sourceFrameIndexColumn,
+        sfram:sourcePathColumn,
+        sfram:pointCountColumn,
+        sfram:frameTimeValueColumn,
+        sfram:frameTimeUnitColumn,
+        sfram:timeSecondsColumn,
+        sfram:timeKindColumn,
+        sfram:axisKindColumn,
+        sfram:axisUnitColumn,
+        sfram:sourceAxisKindColumn,
+        sfram:sourceAxisUnitColumn,
+        sfram:axisOrderColumn,
+        sfram:signalKindColumn,
+        sfram:signalUnitColumn .
+
+sfram:spectraTable
+    a sf:Table ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raman spectra table" ;
+    skos:definition "Long-form data with one row per spectral point. Each row carries spectrum and source-frame identity, acquisition-time coordinates, axis and signal descriptors, and both source and current spectral coordinates." ;
+    sf:tableContractName "RAMAN_SPECTRA" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfram:analysisIdColumn,
+        sfram:spectrumIdColumn,
+        sfram:spectrumIndexColumn,
+        sfram:sourceFrameIndexColumn,
+        sfram:sourcePathColumn,
+        sfram:pointIndexColumn,
+        sfram:sourcePointIndexColumn,
+        sfram:frameTimeValueColumn,
+        sfram:frameTimeUnitColumn,
+        sfram:timeSecondsColumn,
+        sfram:timeKindColumn,
+        sfram:axisKindColumn,
+        sfram:axisUnitColumn,
+        sfram:sourceAxisKindColumn,
+        sfram:sourceAxisUnitColumn,
+        sfram:axisOrderColumn,
+        sfram:signalKindColumn,
+        sfram:signalUnitColumn,
+        sfram:sourceSpectralCoordinateColumn,
+        sfram:spectralCoordinateColumn,
+        sfram:intensityColumn .
+
+sfram:baselineTable
+    a sf:Table ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raman baseline table" ;
+    skos:definition "One row per processed spectral point with its estimated pre-subtraction baseline, keyed to the corresponding analysis, spectrum, and point index." ;
+    sf:tableContractName "RAMAN_BASELINE" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfram:analysisIdColumn,
+        sfram:spectrumIdColumn,
+        sfram:pointIndexColumn,
+        sfram:baselineIntensityColumn .
+
+sfram:sourceMetadataTable
+    a sf:Table ;
+    sf:availableInDomain sfram:raman ;
+    sf:providedByModule sfram:baseModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Raman source metadata table" ;
+    skos:definition "Parsed metadata entries emitted by the source-format reader, represented as one row per key occurrence and linked to the source analysis and path." ;
+    sf:tableContractName "RAMAN_SOURCE_METADATA" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfram:analysisIdColumn,
+        sfram:sourcePathColumn,
+        sfram:metadataKeyColumn,
+        sfram:occurrenceColumn,
+        sfram:metadataValueColumn .

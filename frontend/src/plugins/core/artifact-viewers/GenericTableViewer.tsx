@@ -14,7 +14,7 @@ export function GenericTableViewer({ context }: ViewerComponentProps) {
   const [pageSize, setPageSize] = useState(250);
   const [sort, setSort] = useState('');
   const [descending, setDescending] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const requests = useRef(new Set<number>());
   const queryRef = useRef('');
 

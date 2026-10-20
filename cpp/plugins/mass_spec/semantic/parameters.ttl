@@ -25,6 +25,17 @@ sfms:debugComponentParameter
     sf:default "" ;
     sf:example "component_1" .
 
+sfms:debugFeatureGroupParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug feature group" ;
+    skos:definition "Optional feature-group identifier to include in feature gap-filling diagnostics." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "FG_1" .
+
 sfms:levelsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -49,6 +60,18 @@ sfms:plotDownsizeParameter
     sf:default 0.0 ;
     sf:units "seconds" ;
     sf:example 5.0 .
+
+sfms:plotMaxPointsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum TIC points per trace" ;
+    skos:definition "Maximum number of averaged retention-time points emitted for each plotted trace when Plot downsize is zero. The backend chooses an adaptive bin width to keep large multi-sample TIC visualizations responsive; zero disables the automatic cap." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default 5000 ;
+    sf:units "points per trace" ;
+    sf:example 5000 .
 
 sfms:plotGroupByParameter
     a sf:Parameter ;
@@ -285,7 +308,7 @@ sfms:targetsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry targets" ;
-    skos:definition "Optional target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. For feature matching, provide mass or mz, optionally rt or explicit bounds, and optionally analysis, polarity, and name. Formula, SMILES, InChI, and InChIKey are accepted target metadata but do not replace mass or mz matching." ;
+    skos:definition "Optional mass-spectrometry target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. The matching contract contains mass/mz and optional retention-time, analysis, polarity, level, and name fields; chemical identity fields are not part of this table." ;
     sf:guidance "Use an array of objects such as [{\"mass\":267.1834,\"name\":\"Metoprolol\"}]. Omit analysis_names and analysis to search all analyses. Omit polarity to search both polarities; include polarity in a row only when it is a deliberate constraint. A mass or mz value is expanded by ppm; an exact rt value is expanded by rt_tolerance seconds. Use mass_min/mass_max, mzmin/mzmax, or rtmin/rtmax for explicit inclusive ranges. The returned featuresTable is a new persisted artifact." ;
     sf:type "table" ;
     sf:tableContract sfms:targetsTable ;
@@ -298,7 +321,7 @@ sfms:targetsCsvPathParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Targets CSV path" ;
-    skos:definition "CSV file containing target rows. A target requires mass or mz, while optional chemical structure columns are normalized with Open Babel when supplied." ;
+    skos:definition "CSV file containing mass-spectrometry target rows. A target requires mass or mz; optional formula, SMILES, InChI, and InChIKey columns are ignored because they are not part of the targetsTable contract." ;
     sf:type "string" ;
     sf:required true ;
     sf:defaultRequired true ;
@@ -365,7 +388,7 @@ sfms:polarityParameter
     sf:type "integer" ;
     sf:required false ;
     sf:default 0 ;
-    sf:constraints "-1|1" ;
+    sf:constraints "{\"enum\":[-1,0,1]}" ;
     sf:example 1 .
 
 sfms:ppmParameter
@@ -612,12 +635,36 @@ sfms:isotopeElementsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Isotope elements" ;
-    skos:definition "Elements and allowed isotope-count ranges for annotation. Each entry must use Element:min-max syntax, such as C:1-80." ;
+    skos:definition "Elements and allowed isotope-count ranges for annotation. Each entry must use Element:min-max syntax, such as C:1-80. D is an opt-in stable-label transition and uses the exact deuterium-minus-hydrogen mass shift." ;
     sf:type "array" ;
     sf:required false ;
     sf:default "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" ;
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" .
+
+sfms:formulaElementsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Formula elements" ;
+    skos:definition "Allowed elemental symbols for estimated formula generation in annotate_components. The default is an organic non-target screening set. Boron, silicon, selenium, arsenic, and deuterium can be added explicitly when the sample context supports them. C and H are required." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[\"C\",\"H\",\"N\",\"O\",\"P\",\"S\",\"F\",\"Cl\",\"Br\",\"I\"]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"C\",\"H\",\"N\",\"O\",\"P\",\"S\",\"F\",\"Cl\",\"Br\",\"I\",\"Si\"]" .
+
+sfms:formulaConstraintsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Formula constraints" ;
+    skos:definition "Optional elemental-count constraints for estimated formulas. Entries use Element:count or Element:min-max syntax, such as D:22 or D:0-22. This is useful for stable-isotope-labelled compounds; constrained elements are enabled for formula generation automatically." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"D:22\"]" .
 
 sfms:annotationModificationsParameter
     a sf:Parameter ;
@@ -1263,6 +1310,17 @@ sfms:maxErrorMassParameter
     sf:default "null" ;
     sf:example 5.0 .
 
+sfms:deduplicateInternalStandardsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Deduplicate internal-standard matches" ;
+    skos:definition "Keep one candidate per analysis, polarity, and chemical identity when duplicate internal-standard matches remain. Candidates are prioritized by absolute RT error, absolute mass error, shared fragments, score, intensity, area, cosine similarity, identification level, and candidate rank." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default false ;
+    sf:example true .
+
 sfms:idLevelsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1309,6 +1367,30 @@ sfms:topNParameter
     sf:required false ;
     sf:default 5 ;
     sf:example 5 .
+
+sfms:databaseTypeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag database type" ;
+    skos:definition "Candidate database used by MetFrag for suspect screening." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "LocalCSV" ;
+    sf:constraints "LocalCSV|PubChem|ExtendedPubChem|PubChemLite|CompToxCSV" ;
+    sf:example "LocalCSV" .
+
+sfms:databasePathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag database path" ;
+    skos:definition "Path to the local CSV, PSV, or SDF database used by MetFrag. For PubChemLite or CompToxCSV, provide the selected database file; for LocalCSV, provide this path when no suspect-target rows are supplied." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:extensions ".csv, .psv, .sdf" ;
+    sf:example "H:/Project_261009_fa_nts_ring_trail/PubChemLite.csv" .
 
 sfms:scoreTypesParameter
     a sf:Parameter ;
@@ -1379,6 +1461,40 @@ sfms:numberThreadsParameter
     sf:required false ;
     sf:default 1 ;
     sf:example 1 .
+
+sfms:featureParallelismParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MetFrag feature parallelism" ;
+    skos:definition "Maximum number of independent feature-level MetFrag jobs running at once. Keep this low when number_threads is high." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default 2 ;
+    sf:constraints "{\"minimum\":1}" ;
+    sf:example 2 .
+
+sfms:cacheCandidatesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Cache MetFrag candidate results" ;
+    skos:definition "Reuse results for identical database, mass, polarity, tolerance, and MS2 queries within the operation." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default true ;
+    sf:example true .
+
+sfms:includeFragmentSmilesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Include MetFrag fragment SMILES" ;
+    skos:definition "Write and retain MetFrag FragmentSmilesPSV output used for fragment-level SMILES annotations. Disable to reduce output I/O when those annotations are not needed." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default true ;
+    sf:example true .
 
 sfms:useSmilesParameter
     a sf:Parameter ;

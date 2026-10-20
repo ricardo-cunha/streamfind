@@ -4,6 +4,53 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b6f6b" />
+    <style>
+      /* Keep the first paint consistent with the persisted/system theme while the app bundle loads. */
+      html,
+      body,
+      #root {
+        background: #e4efed;
+        color: #061314;
+      }
+
+      html[data-theme='dark'],
+      html[data-theme='dark'] body,
+      html[data-theme='dark'] #root {
+        background: #061113;
+        color: #f4fbfa;
+      }
+
+      html[data-palette='streamfind'][data-theme='dark'],
+      html[data-palette='streamfind'][data-theme='dark'] body,
+      html[data-palette='streamfind'][data-theme='dark'] #root {
+        background: #000000;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme]),
+        html:not([data-theme]) body,
+        html:not([data-theme]) #root {
+          background: #061113;
+          color: #f4fbfa;
+        }
+      }
+    </style>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const savedTheme = window.localStorage.getItem('streamfind.theme');
+        const savedPalette = window.localStorage.getItem('streamfind.palette');
+        const savedStyle = window.localStorage.getItem('streamfind.style');
+        root.dataset.theme =
+          savedTheme === 'dark' || savedTheme === 'light'
+            ? savedTheme
+            : window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+        if (savedPalette) root.dataset.palette = savedPalette;
+        if (savedStyle) root.dataset.style = savedStyle;
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/src/assets/streamfind.png" />
     <link
       rel="stylesheet"

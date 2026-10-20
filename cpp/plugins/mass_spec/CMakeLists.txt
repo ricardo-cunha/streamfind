@@ -29,6 +29,8 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/nta/nta_metfrag_runner.cpp
     src/operations/nta/nta_suspect_screening.cpp
     src/operations/nta/nta_read_csv_suspect_targets.cpp
+    src/operations/nta/nta_suspects_to_suspect_targets.cpp
+    src/operations/nta/nta_update_suspect_targets.cpp
     src/operations/nta/nta_load_features_ms1.cpp
     src/operations/nta/nta_load_features_ms2.cpp
 
@@ -107,3 +109,6 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
     DESTINATION plugins/mass_spec)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
     DESTINATION plugins/mass_spec/resources)
+if(STREAMFIND_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

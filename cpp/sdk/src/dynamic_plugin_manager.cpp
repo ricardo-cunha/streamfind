@@ -3,6 +3,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 
 #include <cstring>
 #include <optional>
@@ -89,6 +90,30 @@ bool supports_platform(const PluginManifest &manifest, const std::string &platfo
 namespace streamfind::sdk {
 
 namespace detail {
+
+streamfind_plugin_column_type dynamic_column_type(const std::string &duckdb_type) {
+    std::string type;
+    type.reserve(duckdb_type.size());
+    for (const auto character : duckdb_type)
+        type.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
+    if (type == "BOOLEAN") return STREAMFIND_PLUGIN_COLUMN_BOOL;
+    if (type.find("INT") != std::string::npos || type == "HUGEINT" || type == "UBIGINT")
+        return STREAMFIND_PLUGIN_COLUMN_INT64;
+    if (type.find("DOUBLE") != std::string::npos || type.find("FLOAT") != std::string::npos ||
+        type.find("DECIMAL") != std::string::npos || type == "REAL")
+        return STREAMFIND_PLUGIN_COLUMN_FLOAT64;
+    if (type.find("TIMESTAMP") != std::string::npos || type == "DATE" || type == "TIME")
+        return STREAMFIND_PLUGIN_COLUMN_TIMESTAMP;
+    return STREAMFIND_PLUGIN_COLUMN_UTF8;
+}
+
+std::string quoted_identifier(const std::string &value) {
+    std::string result = "\"";
+    for (const auto character : value)
+        result += character == '"' ? "\"\"" : std::string(1, character);
+    result += '"';
+    return result;
+}
 
 std::vector<std::string> entry_tables(const Json &entry) {
     std::set<std::string> unique;
@@ -217,6 +242,24 @@ Json invoke_dynamic(
                             : STREAMFIND_PLUGIN_COLUMN_UTF8;
                     }
                     break;
+                }
+            }
+        }
+        // Dynamic input ports such as anyTable intentionally do not declare a
+        // fixed column manifest. Populate their runtime schema from DuckDB so
+        // plugins can validate and read the actual connected artifact columns.
+        if (input_artifacts.is_object()) {
+            for (const auto &[target_port, artifact] : input_artifacts.items()) {
+                if (!artifact.is_object()) continue;
+                const auto physical_table = artifact.value("physical_table", std::string{});
+                if (physical_table.empty()) continue;
+                const auto description = tables.query("DESCRIBE " + detail::quoted_identifier(physical_table));
+                for (const auto &column : description) {
+                    const auto name = column.value("column_name", std::string{});
+                    if (name.empty()) continue;
+                    context.readable_columns[physical_table].insert(name);
+                    context.column_types[physical_table][name] = detail::dynamic_column_type(
+                        column.value("column_type", std::string{}));
                 }
             }
         }

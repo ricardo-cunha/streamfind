@@ -16,7 +16,6 @@
 #include <set>
 #include <functional>
 #include <iomanip>
-#include <fstream>
 #include <sstream>
 
 // MARK: analyze_feature_groups
@@ -603,12 +602,10 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
     float minGaussianFit,
     std::string debugFG)
 {
-  // Initialize debug log if debugFG is specified
   bool debug = !debugFG.empty();
   if (debug)
   {
-    std::string log_file = "log/gap_filling_debug_" + debugFG + ".log";
-    ::streamfind::mass_spec::nta::utils::init_debug_log(log_file, "=== Gap Filling Debug Log for Feature Group: " + debugFG + " ===");
+    DEBUG_LOG("=== Gap Filling Debug Log for Feature Group: " << debugFG << " ===" << std::endl);
     DEBUG_LOG("\n=== Parameters ===" << std::endl);
     DEBUG_LOG("  rtExpand: " << rtExpand << std::endl);
     DEBUG_LOG("  mzExpand: " << mzExpand << std::endl);
@@ -1043,13 +1040,11 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
   std::cerr << "Gap filling complete. Filled " << filled_gaps
               << " out of " << total_gaps << " gaps." << std::endl;
 
-  // Close debug log if it was opened
   if (debug)
   {
     DEBUG_LOG("\n=== Gap Filling Complete ===" << std::endl);
     DEBUG_LOG("Total gaps processed: " << total_gaps << std::endl);
     DEBUG_LOG("Gaps filled: " << filled_gaps << std::endl);
-    ::streamfind::mass_spec::nta::utils::close_debug_log();
   }
 }
 
@@ -1069,6 +1064,7 @@ using Json = nlohmann::json;
         const float rt_apex_deviation = parameters.value("rt_apex_deviation", 5.0);
         const float min_signal_to_noise_ratio = parameters.value("min_signal_to_noise_ratio", 3.0);
         const float min_gaussian_fit = parameters.value("min_gaussian_fit", 0.2);
+        const auto debug_feature_group = parameters.value("debug_feature_group", std::string{});
         if (rt_expand < 0 || mz_expand < 0 || max_peak_width <= 0 || min_traces_intensity < 0 ||
             min_number_traces < 1 || rt_apex_deviation < 0 ||
             min_signal_to_noise_ratio < 0 || min_gaussian_fit < 0 || min_gaussian_fit > 1)
@@ -1078,10 +1074,28 @@ using Json = nlohmann::json;
         auto load_parameters = parameters;
         load_parameters.erase("analysis_names");
         auto data = utils::detail::load_analysis_features(access, load_parameters);
-        ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(data, within_replicate, filtered, rt_expand, mz_expand,
-                                             max_peak_width, min_traces_intensity, min_number_traces,
-                                             rt_apex_deviation, min_signal_to_noise_ratio, min_gaussian_fit);
+        auto debug = sdk::DebugSession::open(
+            access.database_path(), "mass_spec.fill_features", access.operation_instance(),
+            sdk::DebugOptions{"", 0.0, -1, !debug_feature_group.empty(), false});
+        utils::set_debug_session(&debug);
+        try {
+          ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(data, within_replicate, filtered, rt_expand, mz_expand,
+                                               max_peak_width, min_traces_intensity, min_number_traces,
+                                               rt_apex_deviation, min_signal_to_noise_ratio, min_gaussian_fit,
+                                               debug_feature_group);
+        } catch (...) {
+          utils::set_debug_session(nullptr);
+          throw;
+        }
+        utils::set_debug_session(nullptr);
         utils::detail::emit_features(access, data);
+        if (debug.enabled())
+          access.emit_result("fillFeaturesDebugResult", Json{
+              {"schema", "streamfind.mass_spec.fill_features_debug/v1"},
+              {"enabled", true},
+              {"operation", "mass_spec.fill_features"},
+              {"feature_group", debug_feature_group},
+              {"log_text", debug.text()}}.dump());
         return Json{{"status", "finished"}, {"info", "Feature gaps filled."}};
     }
 }

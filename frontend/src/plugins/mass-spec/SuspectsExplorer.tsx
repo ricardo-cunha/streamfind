@@ -13,7 +13,7 @@ import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
-import { colorFor } from './FeatureInspector';
+import { colorFor, stablePlotGroup } from './FeatureInspector';
 import { StructureImage } from './SuspectTargetsViewer';
 
 type Row = Record<string, string | null>;
@@ -45,9 +45,8 @@ const suspectOverviewColumns = [
   'name',
   'formula',
   'mass',
-  'SMILES',
-  'InChI',
-  'InChIKey',
+  'polarity',
+  'blank',
   'id_level',
   'error_mass',
   'error_rt',
@@ -56,6 +55,11 @@ const suspectOverviewColumns = [
   'shared_fragments',
   'isotope_match',
   'filtered',
+  'annotation_category',
+  'annotation_type',
+  'annotation_element',
+  'annotation_parent_feature',
+  'annotation_estimated_formula',
 ] as const;
 
 function text(row: Row, key: string): string {
@@ -242,15 +246,16 @@ function SuspectScatter({
   onRelayout: (event: Record<string, unknown>) => void;
   artifactId: string;
 }): ReactNode {
+  const userViewportGesture = useRef(false);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const theme = {
     background: cssThemeValue('--sf-surface-raised'),
     grid: cssThemeValue('--sf-border'),
     text: cssThemeValue('--sf-text'),
   };
   const keys = points.map((point) => featureKey(point.row));
-  const intensities = points.map((point) => point.intensity);
-  const intensityMin = Math.min(...intensities);
-  const intensityMax = Math.max(...intensities);
+  const intensityMin = points.reduce((minimum, point) => Math.min(minimum, point.intensity), Infinity);
+  const intensityMax = points.reduce((maximum, point) => Math.max(maximum, point.intensity), -Infinity);
   const markerSizes = points.map((point) =>
     intensityMax > intensityMin ? 10 + ((point.intensity - intensityMin) / (intensityMax - intensityMin)) * 20 : 20,
   );
@@ -266,16 +271,16 @@ function SuspectScatter({
     payload: {
       data: [
         {
-          type: 'scattergl',
+          type: points.length > 5000 ? 'scattergl' : 'scatter',
           mode: 'markers',
           x: points.map((point) => Number(point.row.rt)),
           y: points.map((point) => Number(point.row.mz)),
-          customdata: keys,
-          text: points.map((point) => {
-            const analysis = text(point.row, 'analysis');
-            const feature = text(point.row, 'feature') || text(point.row, 'name');
-            return `Analysis: ${analysis}<br>Feature: ${feature}`;
-          }),
+          // Keep hover metadata compact so large suspect tables do not carry a
+          // duplicated formatted text string for every plotted point.
+          customdata: points.map((point) => [
+            text(point.row, 'analysis'),
+            text(point.row, 'feature') || text(point.row, 'name'),
+          ]),
           marker: {
             color: points.map((point) => point.color),
             size: selectedKey
@@ -284,7 +289,8 @@ function SuspectScatter({
             opacity: markerOpacity,
             line: { color: theme.text, width: markerLineWidth },
           },
-          hovertemplate: '%{text}<br>RT %{x}<br>m/z %{y}<extra></extra>',
+          hovertemplate:
+            'Analysis: %{customdata[0]}<br>Feature: %{customdata[1]}<br>RT %{x}<br>m/z %{y}<extra></extra>',
         },
       ],
       layout: {
@@ -326,22 +332,43 @@ function SuspectScatter({
     fallback: { description: 'The suspect feature scatter renderer is unavailable.' },
   };
   return (
-    <VisualizationRenderer
-      spec={spec}
+    <div
       className="sf-feature-scatter-plotly"
-      onPointClick={(point) => {
-        const index =
-          typeof point.pointNumber === 'number'
-            ? point.pointNumber
-            : typeof point.pointIndex === 'number'
-              ? point.pointIndex
-              : -1;
-        if (index >= 0 && points[index]) onSelect(keys[index]);
+      onPointerDown={(event) => {
+        pointerStart.current = { x: event.clientX, y: event.clientY };
       }}
-      onPlotClick={onClearSelection}
-      onDoubleClick={onClearSelection}
-      onRelayout={onRelayout}
-    />
+      onPointerMove={(event) => {
+        const start = pointerStart.current;
+        if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4)
+          userViewportGesture.current = true;
+      }}
+      onPointerUp={() => {
+        pointerStart.current = null;
+      }}
+      onWheel={() => {
+        userViewportGesture.current = true;
+      }}
+    >
+      <VisualizationRenderer
+        spec={spec}
+        className="sf-feature-scatter-plotly"
+        onPointClick={(point) => {
+          const index =
+            typeof point.pointNumber === 'number'
+              ? point.pointNumber
+              : typeof point.pointIndex === 'number'
+                ? point.pointIndex
+                : -1;
+          if (index >= 0 && points[index]) onSelect(keys[index]);
+        }}
+        onPlotClick={onClearSelection}
+        onRelayout={(event) => {
+          if (!userViewportGesture.current) return;
+          userViewportGesture.current = false;
+          onRelayout(event);
+        }}
+      />
+    </div>
   );
 }
 
@@ -440,6 +467,11 @@ function evidenceSpec(
       });
     yTitle = 'Relative intensity (experimental + / database −)';
   }
+  const showLegend = data.length > 1;
+  const maxLabelLength = data.reduce((maximum, trace) => {
+    const label = typeof trace.name === 'string' ? trace.name : '';
+    return Math.max(maximum, label.length);
+  }, 0);
   return {
     schema: 'streamfind.visualization/v1',
     visualization_id: `suspect-evidence-${tab}-${artifactId}-${text(row, 'feature')}`,
@@ -451,7 +483,12 @@ function evidenceSpec(
       data,
       layout: {
         autosize: true,
-        margin: { l: 65, r: 20, t: 35, b: 50 },
+        margin: {
+          l: 65,
+          r: showLegend ? Math.min(360, Math.max(220, 150 + Math.round(maxLabelLength * 2.2))) : 20,
+          t: 35,
+          b: 50,
+        },
         xaxis: {
           title: { text: xTitle },
           gridcolor: theme.grid,
@@ -468,10 +505,23 @@ function evidenceSpec(
           zeroline: true,
           zerolinecolor: theme.grid,
         },
+        showlegend: showLegend,
         paper_bgcolor: theme.background,
         plot_bgcolor: theme.background,
         font: { color: theme.text },
-        legend: { bgcolor: theme.background },
+        legend: {
+          orientation: 'v',
+          x: 1.02,
+          y: 1,
+          xanchor: 'left',
+          yanchor: 'top',
+          bgcolor: theme.background,
+          bordercolor: theme.grid,
+          borderwidth: 1,
+          maxheight: 0.92,
+          entrywidthmode: 'pixels',
+          entrywidth: 240,
+        },
       },
       config: { displaylogo: false, responsive: true, displayModeBar: true },
     },
@@ -490,6 +540,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [totalSuspects, setTotalSuspects] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedFeatureDetail, setSelectedFeatureDetail] = useState<Row | null>(null);
+  const featureDetailCache = useRef(new Map<string, Row>());
   const [selectedSuspect, setSelectedSuspect] = useState<Row | null>(null);
   const [selectedSuspectLoading, setSelectedSuspectLoading] = useState(false);
   const [rightTab, setRightTab] = useState<'eic' | 'suspects'>('eic');
@@ -500,7 +551,17 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [columns, setColumns] = useState<Column[]>([]);
   const [booleanFilters, setBooleanFilters] = useState<Record<string, boolean>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
+  const [annotationSearch, setAnnotationSearch] = useState({
+    formula: '',
+    parent: '',
+  });
+  const [annotationPresence, setAnnotationPresence] = useState({
+    annotated: false,
+    estimatedFormula: false,
+    networkParent: false,
+  });
   const initialLoadComplete = useRef(false);
+  const skipInitialOverviewQuery = useRef(true);
   const [isotopeOnly, setIsotopeOnly] = useState(false);
   const [showFiltered, setShowFiltered] = useState(false);
   const [, refreshTheme] = useState(0);
@@ -569,20 +630,31 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     }
     const suspectsArtifactId = context.artifact.artifact_id;
     const load = async () => {
-      const suspectData = await client.artifactQuery(context.sessionId, {
+      skipInitialOverviewQuery.current = true;
+      const baseRequest = {
         artifact_id: suspectsArtifactId,
-        mode: 'sample',
         columns: overviewColumns,
         filters: overviewColumns?.includes('filtered')
-          ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
+          ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
           : undefined,
-        sampling_strategy: 'grid',
-        x_bins: 512,
-        y_bins: 512,
-        x_column: 'exp_mass',
-        y_column: 'exp_rt',
-        limit: 50000,
+      } as const;
+      let suspectData = await client.artifactQuery(context.sessionId, {
+        ...baseRequest,
+        mode: 'page',
+        limit: 1000,
       });
+      if (suspectData.total_rows > suspectData.returned_rows) {
+        suspectData = await client.artifactQuery(context.sessionId, {
+          ...baseRequest,
+          mode: 'sample',
+          sampling_strategy: 'grid',
+          x_bins: 512,
+          y_bins: 512,
+          x_column: 'exp_mass',
+          y_column: 'exp_rt',
+          limit: 50000,
+        });
+      }
       if (!active) return;
       setSuspects(suspectData.rows.filter((row) => row && typeof row === 'object'));
       setTotalSuspects(suspectData.total_rows);
@@ -612,6 +684,10 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   useEffect(() => {
     if (!initialLoadComplete.current || !client || !context.artifact) return;
+    if (skipInitialOverviewQuery.current) {
+      skipInitialOverviewQuery.current = false;
+      return;
+    }
     let active = true;
     const timer = window.setTimeout(() => {
       void client
@@ -641,9 +717,13 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         })
         .then((response) => {
           if (!active) return;
-          setSuspects(response.rows.filter((row) => row && typeof row === 'object'));
+          const nextRows = response.rows.filter((row) => row && typeof row === 'object');
+          if (viewport && response.total_rows > 0 && nextRows.length === 0) return;
+          setSuspects(nextRows);
           setTotalSuspects(response.total_rows);
-          setSelectedKey(null);
+          setSelectedKey((current) =>
+            current && nextRows.some((row) => featureKey(row) === current) ? current : null,
+          );
         })
         .catch(() => {
           // Keep the last successful overview visible while a transient query fails.
@@ -669,6 +749,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   const filteredSuspects = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const annotationFormulaQuery = annotationSearch.formula.trim().toLowerCase();
+    const annotationParentQuery = annotationSearch.parent.trim().toLowerCase();
     return suspects.filter((row) => {
       if (
         query &&
@@ -681,6 +763,15 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         return false;
       if (isotopeOnly && text(row, 'isotope_match').toLowerCase() !== 'true') return false;
       if (!showFiltered && text(row, 'filtered').toLowerCase() === 'true') return false;
+      const annotationCategory = text(row, 'annotation_category').trim();
+      const annotationType = text(row, 'annotation_type').trim();
+      const annotationParent = text(row, 'annotation_parent_feature').trim();
+      const estimatedFormula = text(row, 'annotation_estimated_formula').trim();
+      if (annotationPresence.annotated && !annotationCategory && !annotationType) return false;
+      if (annotationPresence.estimatedFormula && !estimatedFormula) return false;
+      if (annotationPresence.networkParent && !annotationParent) return false;
+      if (annotationFormulaQuery && !estimatedFormula.toLowerCase().includes(annotationFormulaQuery)) return false;
+      if (annotationParentQuery && !annotationParent.toLowerCase().includes(annotationParentQuery)) return false;
       return (
         filterColumns.numeric.every((column) => {
           const key = column.name;
@@ -702,7 +793,18 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         })
       );
     });
-  }, [booleanFilters, filterColumns, isotopeOnly, numericFilters, search, showFiltered, suspects, textFilters]);
+  }, [
+    annotationPresence,
+    annotationSearch,
+    booleanFilters,
+    filterColumns,
+    isotopeOnly,
+    numericFilters,
+    search,
+    showFiltered,
+    suspects,
+    textFilters,
+  ]);
 
   const featureRows = useMemo(() => {
     const unique = new Map<string, Row>();
@@ -713,13 +815,6 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     return [...unique.values()];
   }, [filteredSuspects]);
 
-  const categories = useMemo(
-    () =>
-      [
-        ...new Set(featureRows.map((row, index) => text(row, groupBy) || text(row, 'analysis') || String(index))),
-      ].sort(),
-    [featureRows, groupBy],
-  );
   const plotPoints = useMemo<ScatterPoint[]>(() => {
     return featureRows.flatMap((row, index) => {
       const mz = number(row, 'exp_mass');
@@ -729,12 +824,12 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         {
           row: { ...row, mz: String(mz), rt: String(rt) },
           index,
-          color: colorFor(text(row, groupBy) || text(row, 'analysis') || String(index), categories),
+          color: colorFor(stablePlotGroup(row, groupBy)),
           intensity: number(row, 'intensity') ?? 1,
         },
       ];
     });
-  }, [categories, featureRows, groupBy]);
+  }, [featureRows, groupBy]);
 
   const selectedFeature = plotPoints.find((point) => featureKey(point.row) === selectedKey)?.row ?? null;
 
@@ -746,6 +841,14 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         active = false;
       };
     }
+    const cached = featureDetailCache.current.get(rowKey);
+    if (cached) {
+      setSelectedFeatureDetail(cached);
+      return () => {
+        active = false;
+      };
+    }
+    setSelectedFeatureDetail(null);
     void client
       .artifactQuery(context.sessionId, {
         artifact_id: context.artifact.artifact_id,
@@ -754,7 +857,9 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         limit: 1,
       })
       .then((response) => {
-        if (active) setSelectedFeatureDetail(response.rows[0] ?? null);
+        const detail = response.rows[0] ?? null;
+        if (detail) featureDetailCache.current.set(rowKey, detail);
+        if (active) setSelectedFeatureDetail(detail);
       })
       .catch(() => {
         if (active) setSelectedFeatureDetail(null);
@@ -852,6 +957,80 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
             Show filtered features
             <input type="checkbox" checked={showFiltered} onChange={(event) => setShowFiltered(event.target.checked)} />
           </label>
+          <section className="sf-suspects-explorer-filter-section" aria-labelledby="annotation-filter-heading">
+            <h3 id="annotation-filter-heading">Annotation</h3>
+            {filterColumns.text
+              .filter((column) =>
+                ['annotation_category', 'annotation_type', 'annotation_element'].includes(column.name),
+              )
+              .map((column) => (
+                <label className="sf-suspects-explorer-filter-label" key={column.name}>
+                  {filterLabel(column.name)}
+                  <select
+                    aria-label={`${filterLabel(column.name)} value`}
+                    value={textFilters[column.name] ?? ''}
+                    onChange={(event) =>
+                      setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))
+                    }
+                  >
+                    <option value="">Any</option>
+                    {getDistinctValues(suspects, column.name).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            {['annotation_estimated_formula', 'annotation_parent_feature'].map((column) => (
+              <label className="sf-suspects-explorer-filter-label" key={column}>
+                {column === 'annotation_estimated_formula' ? 'Estimated formula contains' : 'Parent feature contains'}
+                <input
+                  aria-label={
+                    column === 'annotation_estimated_formula' ? 'Estimated formula contains' : 'Parent feature contains'
+                  }
+                  value={column === 'annotation_estimated_formula' ? annotationSearch.formula : annotationSearch.parent}
+                  placeholder="Filter text…"
+                  onChange={(event) =>
+                    setAnnotationSearch((current) => ({
+                      ...current,
+                      [column === 'annotation_estimated_formula' ? 'formula' : 'parent']: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ))}
+            <label className="sf-suspects-explorer-filter-checkbox">
+              Has annotation
+              <input
+                type="checkbox"
+                checked={annotationPresence.annotated}
+                onChange={(event) =>
+                  setAnnotationPresence((current) => ({ ...current, annotated: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="sf-suspects-explorer-filter-checkbox">
+              Has estimated formula
+              <input
+                type="checkbox"
+                checked={annotationPresence.estimatedFormula}
+                onChange={(event) =>
+                  setAnnotationPresence((current) => ({ ...current, estimatedFormula: event.target.checked }))
+                }
+              />
+            </label>
+            <label className="sf-suspects-explorer-filter-checkbox">
+              Has network parent
+              <input
+                type="checkbox"
+                checked={annotationPresence.networkParent}
+                onChange={(event) =>
+                  setAnnotationPresence((current) => ({ ...current, networkParent: event.target.checked }))
+                }
+              />
+            </label>
+          </section>
           <div className="sf-suspects-explorer-filter-list">
             {filterColumns.numeric.map((column) => {
               const key = column.name;
@@ -895,27 +1074,33 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                   />
                 </label>
               ))}
-            {filterColumns.text.map((column) => (
-              <label key={column.name}>
-                {filterLabel(column.name)}
-                <select
-                  aria-label={`${filterLabel(column.name)} value`}
-                  value={textFilters[column.name] ?? ''}
-                  onChange={(event) => setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))}
-                >
-                  <option value="">Any</option>
-                  {getDistinctValues(suspects, column.name).map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
+            {filterColumns.text
+              .filter(
+                (column) => !['annotation_category', 'annotation_type', 'annotation_element'].includes(column.name),
+              )
+              .map((column) => (
+                <label key={column.name}>
+                  {filterLabel(column.name)}
+                  <select
+                    aria-label={`${filterLabel(column.name)} value`}
+                    value={textFilters[column.name] ?? ''}
+                    onChange={(event) =>
+                      setTextFilters((current) => ({ ...current, [column.name]: event.target.value }))
+                    }
+                  >
+                    <option value="">Any</option>
+                    {getDistinctValues(suspects, column.name).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
           </div>
         </aside>
         <div
-          className="sf-suspects-explorer-splitter sf-suspects-explorer-filters-splitter"
+          className="sf-resizable-splitter sf-suspects-explorer-splitter sf-suspects-explorer-filters-splitter"
           role="separator"
           aria-label="Resize suspect filters panel"
           aria-orientation="vertical"
@@ -948,7 +1133,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
           />
         </main>
         <div
-          className="sf-suspects-explorer-splitter sf-suspects-explorer-details-splitter"
+          className="sf-resizable-splitter sf-suspects-explorer-splitter sf-suspects-explorer-details-splitter"
           role="separator"
           aria-label="Resize suspects panel"
           aria-orientation="vertical"
@@ -1160,13 +1345,7 @@ function filterLabel(key: string): string {
 
 function selectSuspectOverviewColumns(available: Column[] | undefined): string[] | undefined {
   if (!available?.length) return undefined;
-  const scalarColumns = available
-    .filter(
-      (column) =>
-        !/array|list|map|struct|blob|binary|json/i.test(column.type ?? '') &&
-        !/^(eic_(rt|intensity)|ms1_(mz|intensity)|ms2_(mz|intensity)|db_ms2_(mz|intensity))$/i.test(column.name),
-    )
-    .map((column) => column.name);
-  const preferred = suspectOverviewColumns.filter((column) => scalarColumns.includes(column));
-  return Array.from(new Set([...preferred, ...scalarColumns]));
+  const availableNames = new Set(available.map((column) => column.name));
+  const selected = suspectOverviewColumns.filter((column) => availableNames.has(column));
+  return selected.length ? [...selected] : undefined;
 }

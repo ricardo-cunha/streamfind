@@ -79,7 +79,10 @@ public:
         const std::vector<std::tuple<std::string, std::string, std::string>> &inputs) const;
 
 private:
+    friend class Project;
     explicit ProjectTableStore(Project &project, std::vector<std::string> owned_tables);
+    ProjectTableStore(Project &project, std::vector<std::string> owned_tables,
+                      void *connection) noexcept;
     Project *project_;
     std::unique_ptr<Impl> impl_;
 };

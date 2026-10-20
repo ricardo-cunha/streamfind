@@ -154,11 +154,13 @@ struct ProjectTableStore::Impl {
     duckdb_database database{nullptr};
     duckdb_connection connection{nullptr};
     std::vector<std::string> owned_tables;
+    bool owns_connection{true};
 };
 
 namespace detail {
 
 void close_store_connection(ProjectTableStore::Impl &impl) noexcept {
+    if (!impl.owns_connection) return;
     if (impl.connection) duckdb_disconnect(&impl.connection);
     if (impl.database) duckdb_close(&impl.database);
 }
@@ -317,6 +319,15 @@ ProjectTableStore::ProjectTableStore(Project &project, std::vector<std::string> 
 
 }
 
+ProjectTableStore::ProjectTableStore(Project &project,
+                                     std::vector<std::string> owned_tables,
+                                     void *connection) noexcept
+    : project_(&project), impl_(std::make_unique<Impl>()) {
+    impl_->owned_tables = std::move(owned_tables);
+    impl_->connection = static_cast<duckdb_connection>(connection);
+    impl_->owns_connection = false;
+}
+
 ProjectTableStore::~ProjectTableStore() {
     if (impl_) detail::close_store_connection(*impl_);
 }
@@ -324,15 +335,7 @@ ProjectTableStore::~ProjectTableStore() {
 void ProjectTableStore::transaction(Project &project,
                                     const std::vector<std::string> &owned_tables,
                                     const std::function<void(ProjectTableStore &)> &callback) {
-    ProjectTableStore store(project, owned_tables);
-    detail::store_query(*store.impl_, "BEGIN TRANSACTION");
-    try {
-        callback(store);
-        detail::store_query(*store.impl_, "COMMIT");
-    } catch (...) {
-        try { detail::store_query(*store.impl_, "ROLLBACK"); } catch (...) {}
-        throw;
-    }
+    project.table_transaction(owned_tables, callback);
 }
 
 void ProjectTableStore::install_manifest_schema(Project &project,
@@ -344,6 +347,14 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     std::set<std::string> modules;
     for (const auto &table : *manifest)
     {
+        // Dynamic input contracts such as anyTable deliberately have no
+        // declared columns. They are resolved from the connected physical
+        // table at invocation time and must not be materialized as an empty
+        // DuckDB table.
+        if (!table.value("columns", Json::array()).is_array() ||
+            table.value("columns", Json::array()).empty()) {
+            continue;
+        }
         owned_tables.push_back(detail::manifest_identifier(table.at("table_contract_name").get<std::string>()));
         modules.insert(table.value("module_id", std::string{}));
     }
@@ -353,6 +364,10 @@ void ProjectTableStore::install_manifest_schema(Project &project,
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "PRIMARY KEY (domain_id, module_id))");
         for (const auto &table : *manifest) {
+            if (!table.value("columns", Json::array()).is_array() ||
+                table.value("columns", Json::array()).empty()) {
+                continue;
+            }
             const auto table_name = detail::manifest_identifier(table.at("table_contract_name").get<std::string>());
             std::vector<std::string> definitions;
             for (const auto &column : table.value("columns", Json::array())) {
@@ -539,8 +554,13 @@ std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
     const std::string physical_table = "ARTIFACT_" + token;
     std::vector<std::string> definitions;
     for (const auto &column : columns) {
-        const auto name = detail::manifest_identifier(column.at("name").get<std::string>());
-        definitions.push_back(name + " " + detail::manifest_sql_type(column));
+        const auto name = column.at("name").get<std::string>();
+        if (name.empty() || name.find('\0') != std::string::npos)
+            throw Error(ErrorCode::InvalidArgument, "invalid dynamic table column name");
+        std::string quoted_name = "\"";
+        for (const char character : name)
+            quoted_name += character == '\"' ? "\"\"" : std::string(1, character);
+        definitions.push_back(quoted_name + "\" " + detail::manifest_sql_type(column));
     }
     std::string ddl = "CREATE TABLE " + physical_table + " (";
     for (std::size_t index = 0; index < definitions.size(); ++index) {

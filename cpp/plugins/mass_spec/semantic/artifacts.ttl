@@ -3,6 +3,51 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+sfms:findFeaturesDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Find features debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by mass-spec feature detection when debug selectors are enabled." ;
+    sf:type "object" .
+
+sfms:createComponentsDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Create components debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by component creation." ;
+    sf:type "object" .
+
+sfms:annotateComponentsDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Annotate components debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by component annotation." ;
+    sf:type "object" .
+
+sfms:fillFeaturesDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fill feature gaps debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by feature gap filling." ;
+    sf:type "object" .
+
+sfms:groupFeaturesDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Group features debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by feature grouping." ;
+    sf:type "object" .
+
 sfms:analysesTable
     a sf:Table ;
     sf:availableInDomain sfms:mass_spec ;
@@ -220,6 +265,24 @@ sfms:featuresTable
         sfms:annotationExpectedRelIntensityMinColumn,
         sfms:annotationExpectedRelIntensityMaxColumn,
         sfms:annotationScoreColumn,
+        sfms:annotationEstimatedCarbonCountColumn,
+        sfms:annotationMassToCarbonColumn,
+        sfms:annotationMassDefectToCarbonColumn,
+        sfms:annotationEstimatedFormulaColumn,
+        sfms:annotationFluorineToCarbonColumn,
+        sfms:annotationHydrogenToFluorineColumn,
+        sfms:annotationFluorineMassPercentColumn,
+        sfms:annotationFluorinationScoreColumn,
+        sfms:annotationChlorineToCarbonColumn,
+        sfms:annotationHydrogenToChlorineColumn,
+        sfms:annotationChlorineMassPercentColumn,
+        sfms:annotationBromineToCarbonColumn,
+        sfms:annotationHydrogenToBromineColumn,
+        sfms:annotationBromineMassPercentColumn,
+        sfms:annotationIodineToCarbonColumn,
+        sfms:annotationHydrogenToIodineColumn,
+        sfms:annotationIodineMassPercentColumn,
+        sfms:annotationHalogenationScoreColumn,
         sfms:componentSizeColumn,
         sfms:componentRtCenterColumn,
         sfms:componentRtSpreadColumn,
@@ -333,13 +396,6 @@ sfms:internalStandardsTable
         sfms:dbMs2IntensityColumn,
         sfms:dbMs2FormulaColumn,
         sfms:dbMs2SmilesColumn,
-        sfms:expMs2SizeColumn,
-        sfms:expMs2MzColumn,
-        sfms:expMs2IntensityColumn,
-        sfms:isotopeTheoreticalPeaksColumn,
-        sfms:isotopeMatchedPeaksColumn,
-        sfms:isotopeSimilarityColumn,
-        sfms:isotopeMatchColumn,
         sfms:eicSizeColumn,
         sfms:eicRtColumn,
         sfms:eicMzColumn,
@@ -351,7 +407,11 @@ sfms:internalStandardsTable
         sfms:ms1IntensityColumn,
         sfms:ms2SizeColumn,
         sfms:ms2MzColumn,
-        sfms:ms2IntensityColumn .
+        sfms:ms2IntensityColumn,
+        sfms:isotopeTheoreticalPeaksColumn,
+        sfms:isotopeMatchedPeaksColumn,
+        sfms:isotopeSimilarityColumn,
+        sfms:isotopeMatchColumn .
 
 sfms:transformationProductsTable
     a sf:Table ;
@@ -572,11 +632,7 @@ sfms:targetsTable
         sfms:mzMaxColumn,
         sfms:rtColumn,
         sfms:rtMinColumn,
-        sfms:rtMaxColumn,
-        sfms:formulaColumn,
-        sfms:smilesColumn,
-        sfms:inChIColumn,
-        sfms:inChIKeyColumn .
+        sfms:rtMaxColumn .
 
 sfms:rtWindowsTable
     a sf:Table ;
@@ -597,7 +653,7 @@ sfms:suspectTargetsTable
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspect targets table" ;
-    skos:definition "Schema for suspect or MetFrag candidate rows. Chemical identity is sufficient; retention time and positive- or negative-mode MS2 reference spectra are optional." ;
+    skos:definition "Schema for suspect or MetFrag candidate rows. Mass or m/z is sufficient for matching; chemical identity, retention time, and positive- or negative-mode MS2 reference spectra are optional." ;
     sf:tableContractName "MASS_SPEC_SUSPECT_TARGETS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn

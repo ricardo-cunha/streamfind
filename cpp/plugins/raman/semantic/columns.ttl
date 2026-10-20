@@ -1,0 +1,384 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfram:analysisIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Analysis identifier" ;
+    skos:definition "Identifier derived from the normalized source-file path; shared by the analysis and its spectra, points, and metadata." ;
+    sf:columnName "analysis_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:analysisColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Analysis name" ;
+    skos:definition "Human-readable analysis name derived from the source filename." ;
+    sf:columnName "analysis" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:filePathColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "File path" ;
+    skos:definition "Path to the source file." ;
+    sf:columnName "file_path" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:fileNameColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "File name" ;
+    skos:definition "Source filename including extension." ;
+    sf:columnName "file_name" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:formatColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Format" ;
+    skos:definition "Source file format identifier." ;
+    sf:columnName "format" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:techniqueColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Technique" ;
+    skos:definition "Spectroscopic technique." ;
+    sf:columnName "technique" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:acquisitionKindColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Acquisition kind" ;
+    skos:definition "Acquisition shape, distinguishing a single spectrum from a time-resolved sequence and indicating when time units are unknown." ;
+    sf:columnName "acquisition_kind" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:numberSpectraColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Number of spectra" ;
+    skos:definition "Number of spectra in the source." ;
+    sf:columnName "number_spectra" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:numberPointsColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Number of points" ;
+    skos:definition "Total spectral points in the source." ;
+    sf:columnName "number_points" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:hasTimeColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Has time" ;
+    skos:definition "Whether the acquisition has a time coordinate." ;
+    sf:columnName "has_time" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfram:timeKindColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Time kind" ;
+    skos:definition "Semantic interpretation of the acquisition-time coordinate, such as elapsed time or retention time." ;
+    sf:columnName "time_kind" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:axisKindColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Axis kind" ;
+    skos:definition "Semantic kind of the spectral coordinate, such as Raman shift, wavenumber, wavelength, or pixel index." ;
+    sf:columnName "axis_kind" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:axisUnitColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Axis unit" ;
+    skos:definition "Unit used by spectral_coordinate for this analysis or spectrum." ;
+    sf:columnName "axis_unit" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:signalKindColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Signal kind" ;
+    skos:definition "Interpretation of the measured or processed signal, for example intensity, transmittance, or normalized intensity." ;
+    sf:columnName "signal_kind" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:signalUnitColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Signal unit" ;
+    skos:definition "Unit of the measured or processed signal, when known; percent transmittance is represented by signal_kind transmittance and signal_unit %." ;
+    sf:columnName "signal_unit" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:startTimeSecondsColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Start time in seconds" ;
+    skos:definition "First known acquisition time converted to seconds." ;
+    sf:columnName "start_time_seconds" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:endTimeSecondsColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "End time in seconds" ;
+    skos:definition "Last known acquisition time converted to seconds." ;
+    sf:columnName "end_time_seconds" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:metadataJsonColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Metadata JSON" ;
+    skos:definition "File-level metadata entries emitted by the parser, serialized as a JSON object; repeated keys are represented as arrays." ;
+    sf:columnName "metadata_json" ;
+    sf:type "object" ;
+    sf:storageType "JSON" .
+
+sfram:spectrumIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Spectrum identifier" ;
+    skos:definition "Stable identifier of a spectrum within its source." ;
+    sf:columnName "spectrum_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:spectrumIndexColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Spectrum index" ;
+    skos:definition "Zero-based spectrum ordinal." ;
+    sf:columnName "spectrum_index" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:sourceFrameIndexColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source frame index" ;
+    skos:definition "Zero-based frame ordinal in the source file." ;
+    sf:columnName "source_frame_index" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:sourcePathColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source path" ;
+    skos:definition "Path of the file supplying this record." ;
+    sf:columnName "source_path" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:pointCountColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Point count" ;
+    skos:definition "Number of points in a spectrum." ;
+    sf:columnName "point_count" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:frameTimeValueColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Frame time value" ;
+    skos:definition "Original time value recorded for this frame." ;
+    sf:columnName "frame_time_value" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:frameTimeUnitColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Frame time unit" ;
+    skos:definition "Unit of the original frame time value." ;
+    sf:columnName "frame_time_unit" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:timeSecondsColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Time in seconds" ;
+    skos:definition "Frame time converted to seconds when its unit is known." ;
+    sf:columnName "time_seconds" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:sourceAxisKindColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source axis kind" ;
+    skos:definition "Resolved spectral-coordinate kind recorded at import, before downstream point processing." ;
+    sf:columnName "source_axis_kind" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:sourceAxisUnitColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source axis unit" ;
+    skos:definition "Resolved spectral-coordinate unit recorded at import, before downstream point processing." ;
+    sf:columnName "source_axis_unit" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:axisOrderColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Axis order" ;
+    skos:definition "Direction of spectral coordinates in stored point order (increasing or decreasing)." ;
+    sf:columnName "axis_order" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:pointIndexColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Point index" ;
+    skos:definition "Zero-based point ordinal." ;
+    sf:columnName "point_index" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:sourcePointIndexColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source point index" ;
+    skos:definition "Zero-based point ordinal in the source." ;
+    sf:columnName "source_point_index" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:sourceSpectralCoordinateColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source spectral coordinate" ;
+    skos:definition "Unmodified spectral coordinate from the source." ;
+    sf:columnName "source_spectral_coordinate" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:spectralCoordinateColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Spectral coordinate" ;
+    skos:definition "Current spectral coordinate used by downstream processing; initially equal to the source coordinate." ;
+    sf:columnName "spectral_coordinate" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:intensityColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Intensity" ;
+    skos:definition "Current signal value at this spectral point; downstream operations may smooth, normalize, or baseline-correct it." ;
+    sf:columnName "intensity" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:baselineIntensityColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Estimated baseline intensity" ;
+    skos:definition "Baseline estimated before subtraction, aligned to the corresponding spectrum point and not clipped to the observed signal." ;
+    sf:columnName "baseline_intensity" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfram:metadataKeyColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Metadata key" ;
+    skos:definition "Metadata field name emitted by the source-format reader." ;
+    sf:columnName "metadata_key" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfram:occurrenceColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Occurrence" ;
+    skos:definition "Zero-based occurrence of a repeated metadata key." ;
+    sf:columnName "occurrence" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfram:metadataValueColumn
+    a sf:Column ;
+    sf:availableInDomain sfram:raman ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Metadata value" ;
+    skos:definition "Metadata value emitted by the source-format reader, preserved as text." ;
+    sf:columnName "metadata_value" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .

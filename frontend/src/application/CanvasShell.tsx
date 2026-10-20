@@ -15,7 +15,7 @@ import {
   type ProjectSession,
 } from '../framework/backend/StreamFindApiClient';
 import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
-import logo from '../assets/streamfind.png';
+import { LoadingLogo } from '../framework/ui/LoadingLogo';
 
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from '../framework/notifications/notificationBus';
@@ -90,6 +90,7 @@ import { ontologyPortTerm, parameterOntologyDetails, portOntologyDetails } from 
 import {
   artifactContractMatches,
   artifactSummary,
+  isJsonArtifact,
   isVisualizationArtifact,
   prettyArtifactPayload,
 } from './results/artifactDisplay';
@@ -121,6 +122,7 @@ export default function CanvasShell({
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const workflowFileInputRef = useRef<HTMLInputElement | null>(null);
   const nextId = useRef(1);
+  const cancelledOperationIdsRef = useRef(new Set<string>());
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const nodesRef = useRef<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -128,32 +130,32 @@ export default function CanvasShell({
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
   const initialViewportFittedRef = useRef(false);
   const [worldSize, setWorldSize] = useState({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
+  const worldSizeRef = useRef({ width: CANVAS_WORLD_WIDTH, height: CANVAS_WORLD_HEIGHT });
   const viewportRef = useRef({ offset, scale });
   useEffect(() => {
     viewportRef.current = { offset, scale };
   }, [offset, scale]);
+  useEffect(() => {
+    worldSizeRef.current = worldSize;
+  }, [worldSize]);
   const canvasWorldSize = useMemo(() => {
-    const minimumX = Math.min(0, ...nodes.map((node) => node.x));
     const maximumX = Math.max(NODE_WIDTH, ...nodes.map((node) => node.x + NODE_WIDTH));
-    const minimumY = Math.min(0, ...nodes.map((node) => node.y));
     const maximumY = Math.max(NODE_HEIGHT, ...nodes.map((node) => node.y + NODE_HEIGHT));
-    const requiredWidth = Math.max(CANVAS_WORLD_WIDTH, maximumX - minimumX + 800);
-    const requiredHeight = Math.max(CANVAS_WORLD_HEIGHT, maximumY - minimumY + 600);
-    const aspectRatio = CANVAS_WORLD_WIDTH / CANVAS_WORLD_HEIGHT;
-    const width = Math.max(requiredWidth, worldSize.width, requiredHeight * aspectRatio, worldSize.height * aspectRatio);
-    const height = width / aspectRatio;
     return {
-      width,
-      height,
+      width: Math.max(CANVAS_WORLD_WIDTH, worldSize.width, maximumX + 800),
+      height: Math.max(CANVAS_WORLD_HEIGHT, worldSize.height, maximumY + 600),
     };
   }, [nodes, worldSize]);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
-  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(
+    null,
+  );
   const rightDragRef = useRef<{ start: Point; moved: boolean } | null>(null);
   const suppressContextMenuRef = useRef(false);
   const dragPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const dragFrameRef = useRef<number | null>(null);
+  const dragExpandedEdgesRef = useRef({ left: false, right: false, top: false, bottom: false });
   const [connection, setConnection] = useState<ConnectionDraft | null>(null);
   const pendingConnectionRef = useRef<{
     source: string;
@@ -187,8 +189,11 @@ export default function CanvasShell({
   const [gridVisible, setGridVisible] = useState(false);
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
   const [, setWorkflowProgress] = useState({ completed: 0, total: 0, current_step: 0 });
+  const workflowExecutionIdRef = useRef<string | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [savingWorkflow, setSavingWorkflow] = useState(false);
+  const [artifactCleanupNode, setArtifactCleanupNode] = useState<CanvasNode | null>(null);
+  const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
@@ -230,6 +235,13 @@ export default function CanvasShell({
     setArtifactViewerMode(mode);
     setArtifactViewerId(viewerId);
   };
+  const openDefaultArtifactViewer = (artifact: ArtifactRecord) => {
+    const defaultViewer = compatibleArtifactViewers({
+      semanticType: artifact.contract_id,
+      representation: artifact.representation,
+    })[0];
+    openArtifactViewer(artifact, 'default', defaultViewer?.id ?? null);
+  };
   const showOutputRendererMenu = (key: string) => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
     setHoveredOutputAnchor(key);
@@ -257,6 +269,10 @@ export default function CanvasShell({
       ...current.slice(0, 4999),
     ]);
   }, []);
+  const resetActivityLog = useCallback(() => {
+    logSequenceRef.current = 0;
+    setActivityLog([]);
+  }, []);
   useEffect(() => {
     return subscribeAppNotifications((notification) => {
       const level: CanvasLogLine['level'] =
@@ -278,25 +294,28 @@ export default function CanvasShell({
     },
     [appendLog],
   );
-  const refreshArtifacts = useCallback((force = false) => {
-    if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
-    if (!force && artifactsLoadedRef.current) return Promise.resolve(currentArtifactsRef.current);
-    if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
-    const request = client
-      .currentArtifacts(project.session_id)
-      .then((artifacts) => {
-        setCurrentArtifacts(artifacts);
-        currentArtifactsRef.current = artifacts;
-        artifactsLoadedRef.current = true;
-        return artifacts;
-      })
-      .catch(() => []);
-    artifactsRefreshInFlightRef.current = request;
-    void request.finally(() => {
-      artifactsRefreshInFlightRef.current = null;
-    });
-    return request;
-  }, [client, project.session_id]);
+  const refreshArtifacts = useCallback(
+    (force = false) => {
+      if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
+      if (!force && artifactsLoadedRef.current) return Promise.resolve(currentArtifactsRef.current);
+      if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
+      const request = client
+        .currentArtifacts(project.session_id)
+        .then((artifacts) => {
+          setCurrentArtifacts(artifacts);
+          currentArtifactsRef.current = artifacts;
+          artifactsLoadedRef.current = true;
+          return artifacts;
+        })
+        .catch(() => []);
+      artifactsRefreshInFlightRef.current = request;
+      void request.finally(() => {
+        artifactsRefreshInFlightRef.current = null;
+      });
+      return request;
+    },
+    [client, project.session_id],
+  );
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -309,6 +328,10 @@ export default function CanvasShell({
         setJsonEditor(null);
         setPathWizard(null);
         setTableEditor(null);
+        return;
+      }
+      if (artifactCleanupNode && !artifactCleanupBusy) {
+        setArtifactCleanupNode(null);
         return;
       }
       if (selectedNodeId || pickerCapabilityId) {
@@ -325,7 +348,17 @@ export default function CanvasShell({
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [artifactViewer, jsonEditor, pathWizard, picker, pickerCapabilityId, selectedNodeId, tableEditor]);
+  }, [
+    artifactCleanupBusy,
+    artifactCleanupNode,
+    artifactViewer,
+    jsonEditor,
+    pathWizard,
+    picker,
+    pickerCapabilityId,
+    selectedNodeId,
+    tableEditor,
+  ]);
   const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
     () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata),
@@ -390,6 +423,13 @@ export default function CanvasShell({
             ? String(event.project.session_id)
             : undefined;
       if (projectId && projectId !== project.session_id) return;
+      if (
+        event.type !== 'workflow.started' &&
+        event.execution_id &&
+        workflowExecutionIdRef.current &&
+        event.execution_id !== workflowExecutionIdRef.current
+      )
+        return;
       if (event.event_id !== undefined) {
         if (seenEventIdsRef.current.has(event.event_id)) return;
         seenEventIdsRef.current.add(event.event_id);
@@ -431,6 +471,11 @@ export default function CanvasShell({
           );
         }
       }
+      if (event.type === 'workflow.started') {
+        workflowExecutionIdRef.current = event.execution_id ?? workflowExecutionIdRef.current;
+        resetActivityLog();
+        setWorkflowState('queued');
+      }
       if (event.type !== 'workflow.completed') {
         appendLog(
           detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`,
@@ -442,10 +487,30 @@ export default function CanvasShell({
         event.type === 'workflow.completed' ||
         event.type === 'workflow.failed' ||
         event.type === 'workflow.cancelled'
-      )
+      ) {
+        const terminalState =
+          event.type === 'workflow.completed' ? 'completed' : event.type === 'workflow.failed' ? 'failed' : 'cancelled';
+        setWorkflowState(terminalState);
+        setNodes((current) =>
+          current.map((node) =>
+            node.executionState === 'running'
+              ? {
+                  ...node,
+                  executionState: terminalState === 'cancelled' ? 'idle' : terminalState,
+                  executionMessage:
+                    terminalState === 'completed'
+                      ? undefined
+                      : terminalState === 'failed'
+                        ? node.executionMessage
+                        : 'Workflow cancellation completed.',
+                }
+              : node,
+          ),
+        );
         void refreshArtifacts(true);
+      }
     },
-    [appendLog, project.session_id, refreshArtifacts],
+    [appendLog, project.session_id, refreshArtifacts, resetActivityLog],
   );
 
   useEffect(() => {
@@ -476,6 +541,7 @@ export default function CanvasShell({
         .workflowState(project.session_id)
         .then((result) => {
           if (active) {
+            workflowExecutionIdRef.current = result.execution_id ?? null;
             setWorkflowState(result.state);
             if (result.progress) setWorkflowProgress(result.progress);
             if (result.state === 'completed' || result.state === 'failed' || result.state === 'cancelled') {
@@ -497,16 +563,28 @@ export default function CanvasShell({
       return undefined;
     let active = true;
     client
-      .workflowEvents(project.session_id)
-      .then((result) => {
+      .workflowState(project.session_id)
+      .then(async (state) => {
         if (!active) return;
-        for (const event of result.events) applyWorkflowEvent(event);
+        workflowExecutionIdRef.current = state.execution_id ?? null;
+        setWorkflowState(state.state);
+        if (state.progress) setWorkflowProgress(state.progress);
+        resetActivityLog();
+        if (!['queued', 'running', 'cancelling'].includes(state.state)) {
+          return;
+        }
+        const result = await client.workflowEvents(project.session_id, 0, 500);
+        if (!active) return;
+        for (const event of result.events) {
+          if (!workflowExecutionIdRef.current || event.execution_id === workflowExecutionIdRef.current)
+            applyWorkflowEvent(event);
+        }
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [applyWorkflowEvent, client, project.session_id, surface, workflowLoaded]);
+  }, [appendLog, applyWorkflowEvent, client, project.session_id, resetActivityLog, surface, workflowLoaded]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
@@ -531,7 +609,7 @@ export default function CanvasShell({
               ? operation.position
               : workflowLayout(index);
           return {
-            id: operation.id,
+            id: String(operation.id),
             kind: 'operation' as const,
             title: capability?.label || operation.operation,
             description: capability?.definition || '',
@@ -546,9 +624,9 @@ export default function CanvasShell({
         });
         const loadedEdges = result.workflow.connections.map((connection) => ({
           id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
-          source: connection.source_operation,
+          source: String(connection.source_operation),
           sourcePort: connection.source_port,
-          target: connection.target_operation,
+          target: String(connection.target_operation),
           targetPort: connection.target_port,
         }));
         nextId.current = nextCanvasNodeNumber(loadedNodes);
@@ -616,6 +694,10 @@ export default function CanvasShell({
         action === 'run'
           ? await client.runWorkflow(project.session_id)
           : await client.cancelWorkflow(project.session_id);
+      if (action === 'run') {
+        workflowExecutionIdRef.current = result.execution_id ?? workflowExecutionIdRef.current;
+        resetActivityLog();
+      }
       setWorkflowState(result.state);
       if (result.progress) setWorkflowProgress(result.progress);
       setStatus(`Workflow ${action} request accepted.`);
@@ -764,11 +846,11 @@ export default function CanvasShell({
     setWorkflowBusy(true);
     try {
       const parsed = JSON.parse(await file.text()) as Partial<WorkflowDefinition>;
-      if (parsed.schema_version !== 1 || !Array.isArray(parsed.operations) || !Array.isArray(parsed.connections)) {
+      if (parsed.schema_version !== 2 || !Array.isArray(parsed.operations) || !Array.isArray(parsed.connections)) {
         throw new Error('The selected file is not a compatible StreamFind workflow schema.');
       }
       const imported: WorkflowDefinition = {
-        schema_version: 1,
+        schema_version: 2,
         workflow_id: parsed.workflow_id,
         name: parsed.name,
         version: workflowRevision,
@@ -867,11 +949,9 @@ export default function CanvasShell({
           x: (rect.left + rect.width / 2 - canvasRect.left - offset.x) / scale,
           y: (rect.top + rect.height / 2 - canvasRect.top - offset.y) / scale,
         };
-        capability.parameters
-          .filter((parameter) => parameter.name !== 'database_path')
-          .forEach((parameter) => {
-            next[`${node.id}|input|parameter:${parameter.name}`] = point;
-          });
+        capability.parameters.forEach((parameter) => {
+          next[`${node.id}|input|parameter:${parameter.name}`] = point;
+        });
       });
       const previous = anchorCentersRef.current;
       const keys = Object.keys(next);
@@ -920,10 +1000,7 @@ export default function CanvasShell({
             nodesRef.current
               .filter(
                 (node) =>
-                  node.x < x + width &&
-                  node.x + NODE_WIDTH > x &&
-                  node.y < y + height &&
-                  node.y + NODE_HEIGHT > y,
+                  node.x < x + width && node.x + NODE_WIDTH > x && node.y < y + height && node.y + NODE_HEIGHT > y,
               )
               .map((node) => node.id),
           );
@@ -955,27 +1032,73 @@ export default function CanvasShell({
             const minimumY = selectedOrigins.length
               ? Math.min(...selectedOrigins.map((origin) => origin.y + deltaY))
               : y;
-            const shiftX = Math.max(0, 12 - minimumX);
-            const shiftY = Math.max(0, 12 - minimumY);
-            if (shiftX || shiftY) {
-              setOffset((current) => ({
-                x: current.x - shiftX * scale,
-                y: current.y - shiftY * scale,
-              }));
+            // Grow the canvas when a drag reaches an edge.  For the top/left
+            // edges, moving the world origin creates visible space in that
+            // direction; the node remains under the pointer and is not
+            // clamped at the old boundary.
+            const edgeMargin = 240;
+            const minimumNodeX = selectedOrigins.length ? minimumX : x;
+            const minimumNodeY = selectedOrigins.length ? minimumY : y;
+            const proposedMaximumX = selectedOrigins.length
+              ? Math.max(...selectedOrigins.map((origin) => origin.x + deltaX + NODE_WIDTH))
+              : x + NODE_WIDTH;
+            const proposedMaximumY = selectedOrigins.length
+              ? Math.max(...selectedOrigins.map((origin) => origin.y + deltaY + NODE_HEIGHT))
+              : y + NODE_HEIGHT;
+            const currentWorld = worldSizeRef.current;
+            const edges = {
+              left: minimumNodeX < edgeMargin,
+              right: proposedMaximumX > currentWorld.width - edgeMargin,
+              top: minimumNodeY < edgeMargin,
+              bottom: proposedMaximumY > currentWorld.height - edgeMargin,
+            };
+            // Keep an expansion allocated to an edge. It is re-armed only
+            // after the dragged group has moved well clear of that edge;
+            // releasing and grabbing the same node must not grow/jump again.
+            const resetMargin = edgeMargin * 2;
+            if (minimumNodeX > resetMargin) dragExpandedEdgesRef.current.left = false;
+            if (proposedMaximumX < currentWorld.width - resetMargin) dragExpandedEdgesRef.current.right = false;
+            if (minimumNodeY > resetMargin) dragExpandedEdgesRef.current.top = false;
+            if (proposedMaximumY < currentWorld.height - resetMargin) dragExpandedEdgesRef.current.bottom = false;
+            const growWidth =
+              (edges.left && !dragExpandedEdgesRef.current.left) ||
+              (edges.right && !dragExpandedEdgesRef.current.right);
+            const growHeight =
+              (edges.top && !dragExpandedEdgesRef.current.top) ||
+              (edges.bottom && !dragExpandedEdgesRef.current.bottom);
+            if (edges.left) dragExpandedEdgesRef.current.left = true;
+            if (edges.right) dragExpandedEdgesRef.current.right = true;
+            if (edges.top) dragExpandedEdgesRef.current.top = true;
+            if (edges.bottom) dragExpandedEdgesRef.current.bottom = true;
+            const rightGrowth = growWidth ? Math.ceil((currentWorld.width * 0.3) / GRID_SIZE) * GRID_SIZE : 0;
+            const bottomGrowth = growHeight ? Math.ceil((currentWorld.height * 0.3) / GRID_SIZE) * GRID_SIZE : 0;
+            const nextWorld = {
+              width: currentWorld.width + rightGrowth,
+              height: currentWorld.height + bottomGrowth,
+            };
+            if (rightGrowth || bottomGrowth) {
+              worldSizeRef.current = nextWorld;
+              setWorldSize(nextWorld);
             }
-            const adjustedDeltaX = deltaX + shiftX;
-            const adjustedDeltaY = deltaY + shiftY;
+            // The world grows by 30%, but only a small amount of that new
+            // space needs to be revealed immediately.  Moving by the full
+            // growth amount makes the whole workflow jump far away from the
+            // pointer and produces very long connector segments.
+            const edgeRevealDistance = 240;
+            if (edges.left && growWidth) {
+              setOffset((current) => ({ ...current, x: current.x + edgeRevealDistance * scale }));
+            }
+            if (edges.top && growHeight) {
+              setOffset((current) => ({ ...current, y: current.y + edgeRevealDistance * scale }));
+            }
             setNodes((current) =>
               current.map((node) => {
                 const origin = interaction.origins?.[node.id];
-                if (!origin)
-                  return node.id === draggedNodeId
-                    ? { ...node, x: Math.max(12, x + shiftX), y: Math.max(12, y + shiftY) }
-                    : node;
+                if (!origin) return node.id === draggedNodeId ? { ...node, x, y } : node;
                 return {
                   ...node,
-                  x: Math.max(12, origin.x + adjustedDeltaX),
-                  y: Math.max(12, origin.y + adjustedDeltaY),
+                  x: origin.x + deltaX,
+                  y: origin.y + deltaY,
                 };
               }),
             );
@@ -1082,8 +1205,7 @@ export default function CanvasShell({
 
   const beginPan = (event: ReactMouseEvent) => {
     const target = event.target as HTMLElement;
-    if (target.closest('.sf-canvas-node, .sf-canvas-toolbar, .sf-canvas-picker'))
-      return;
+    if (target.closest('.sf-canvas-node, .sf-canvas-toolbar, .sf-canvas-picker')) return;
     if (event.button === 2) {
       rightDragRef.current = { start: toWorld(event), moved: false };
       setSelectionBox(null);
@@ -1113,7 +1235,9 @@ export default function CanvasShell({
     setPicker(null);
     const selectedIds = selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
     const origins = Object.fromEntries(
-      nodes.filter((candidate) => selectedIds.includes(candidate.id)).map((candidate) => [candidate.id, { x: candidate.x, y: candidate.y }]),
+      nodes
+        .filter((candidate) => selectedIds.includes(candidate.id))
+        .map((candidate) => [candidate.id, { x: candidate.x, y: candidate.y }]),
     );
     setSelectedNodeIds(selectedIds);
     setInteraction({
@@ -1197,15 +1321,24 @@ export default function CanvasShell({
     setSelectedNodeId(null);
     setStatus('Deleted node and its connected connectors.');
   };
+  const requestClearNodeArtifacts = (node: CanvasNode) => {
+    if (!client || nodeControlsLocked) return;
+    setArtifactCleanupNode(node);
+  };
   const clearNodeArtifacts = async (node: CanvasNode) => {
-    if (!client || workflowExecutionActive) return;
-    if (!window.confirm(`Delete all published output data for “${node.title}”?`)) return;
+    if (!client || nodeControlsLocked) return;
+    setArtifactCleanupNode(null);
+    setArtifactCleanupBusy(true);
+    setWorkflowBusy(true);
     try {
       await client.clearNodeArtifacts(project.session_id, node.id);
       await refreshArtifacts(true);
       setStatus(`Deleted published output data for ${node.title}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Node artifact cleanup failed.');
+    } finally {
+      setArtifactCleanupBusy(false);
+      setWorkflowBusy(false);
     }
   };
   useEffect(() => {
@@ -1222,9 +1355,7 @@ export default function CanvasShell({
         event.preventDefault();
         const ids = new Set(selectedNodeIds.length ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : []);
         setNodes((current) => current.filter((node) => !ids.has(node.id)));
-        setEdges((current) =>
-          current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
-        );
+        setEdges((current) => current.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)));
         setSelectedNodeIds([]);
         setSelectedNodeId(null);
         setStatus('Deleted node and its connected connectors.');
@@ -1245,7 +1376,7 @@ export default function CanvasShell({
   }, [pickerCapabilityId, selectedNodeId]);
   const addNode = (template: NodeTemplate) => {
     if (!picker) return;
-    const id = `${template.kind}-${nextId.current++}`;
+    const id = String(nextId.current++);
     const source = picker.source;
     const sourceNode = source ? nodeMap.get(source) : undefined;
     const position = sourceNode
@@ -1392,12 +1523,7 @@ export default function CanvasShell({
         if (!parents.length) return Number.POSITIVE_INFINITY;
         return parents.reduce((sum, parent) => sum + parent.y + NODE_HEIGHT / 2, 0) / parents.length;
       };
-      column.sort(
-        (a, b) =>
-          parentCenter(a) - parentCenter(b) ||
-          a.y - b.y ||
-          a.id.localeCompare(b.id),
-      );
+      column.sort((a, b) => parentCenter(a) - parentCenter(b) || a.y - b.y || a.id.localeCompare(b.id));
       column.forEach((node, row) => {
         const target = byId.get(node.id);
         if (!target) return;
@@ -1461,12 +1587,16 @@ export default function CanvasShell({
     if (!jsonEditor) return;
     try {
       const parsed = JSON.parse(jsonEditorText);
-      const validationError = validateJsonValue(parsed, jsonEditor.parameter.schema);
+      const normalized =
+        jsonEditor.parameter.schema.type === 'table' && Array.isArray(parsed)
+          ? normalizeInlineTableRows(jsonEditor.parameter, parsed as Record<string, unknown>[])
+          : parsed;
+      const validationError = validateJsonValue(normalized, jsonEditor.parameter.schema);
       if (validationError) {
         setJsonEditorError(validationError);
         return;
       }
-      updateNodeParameter(jsonEditor.nodeId, jsonEditor.parameter.name, parsed);
+      updateNodeParameter(jsonEditor.nodeId, jsonEditor.parameter.name, normalized);
       setJsonEditor(null);
       setJsonEditorError(null);
     } catch (error) {
@@ -1521,7 +1651,9 @@ export default function CanvasShell({
       const paths =
         parameter.path_kind === 'directory'
           ? await client.pickFolders()
-          : await client.pickFiles(fileParameterExtensions(parameter));
+          : parameter.path_kind === 'file-output'
+            ? [await client.pickSaveFile()]
+            : await client.pickFiles(fileParameterExtensions(parameter));
       if (paths[0]) updateNodeParameter(node.id, parameter.name, paths[0]);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Path selection failed.');
@@ -1607,11 +1739,15 @@ export default function CanvasShell({
     const validation = validateInlineTableRows(tableEditor.parameter, parsed.rows);
     setCsvPreview({ rows: parsed.rows, error: validation || undefined });
   };
-  const runEntryOperation = async (node: CanvasNode, capability: BackendCapability) => {
-    if (!client || !node.capabilityId || nodeControlsLocked) return;
-    if (workflowDirty) {
+  const runEntryOperation = async (
+    node: CanvasNode,
+    capability: BackendCapability,
+    saveBeforeRun = true,
+  ): Promise<boolean> => {
+    if (!client || !node.capabilityId || nodeControlsLocked) return false;
+    if (saveBeforeRun && workflowDirty) {
       const saved = await saveCurrentWorkflow();
-      if (!saved) return;
+      if (!saved) return false;
     }
     const dependencies = await client.dependencies();
     const missing = dependencies.filter(
@@ -1619,7 +1755,7 @@ export default function CanvasShell({
     );
     if (missing.length > 0) {
       const names = missing.map((dependency) => `${dependency.label} ${dependency.version}`).join(', ');
-      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`)) return;
+      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`)) return false;
       await client.installDependencies(
         missing.map((dependency) => dependency.id),
         true,
@@ -1633,6 +1769,7 @@ export default function CanvasShell({
         wireParameters(capability, node.parameters || {}),
         node.id,
       );
+      cancelledOperationIdsRef.current.delete(node.id);
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id
@@ -1640,20 +1777,25 @@ export default function CanvasShell({
             : item,
         ),
       );
-      const artifacts = await refreshArtifacts(true);
-      const visualization = artifacts.find(
-        (artifact) => artifact.producer_instance === node.id && isVisualizationArtifact(artifact),
-      );
-      if (visualization) {
-        openArtifactViewer(visualization, 'default');
-      }
+      await refreshArtifacts(true);
       const cacheHit =
         result !== null && typeof result === 'object' && !Array.isArray(result) && result.cache_hit === true;
       setStatus(
         cacheHit ? `${capability.label} reused cached artifacts; execution skipped.` : `${capability.label} completed.`,
       );
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
+      const wasCancelled = cancelledOperationIdsRef.current.delete(node.id);
+      if (wasCancelled) {
+        setNodes((current) =>
+          current.map((item) =>
+            item.id === node.id ? { ...item, executionState: 'idle', executionMessage: 'Operation cancelled.' } : item,
+          ),
+        );
+        setStatus(`${node.title} cancelled.`);
+        return false;
+      }
       const artifacts = await refreshArtifacts(true);
       const published = artifacts.some(
         (artifact) =>
@@ -1670,7 +1812,7 @@ export default function CanvasShell({
           ),
         );
         setStatus(`Operation completed and artifacts were published, but the response reported an error: ${message}`);
-        return;
+        return true;
       }
       setNodes((current) =>
         current.map((item) =>
@@ -1678,12 +1820,48 @@ export default function CanvasShell({
         ),
       );
       setStatus(message);
+      return false;
     }
+  };
+  const runPrerequisiteChain = async (node: CanvasNode) => {
+    if (!client || !node.capabilityId || nodeControlsLocked) return;
+    const ordered: CanvasNode[] = [];
+    const visited = new Set<string>();
+    const visiting = new Set<string>();
+    const visit = (nodeId: string) => {
+      if (visited.has(nodeId) || visiting.has(nodeId)) return;
+      visiting.add(nodeId);
+      edges.filter((edge) => edge.target === nodeId).forEach((edge) => visit(edge.source));
+      visiting.delete(nodeId);
+      visited.add(nodeId);
+      const upstream = nodeMap.get(nodeId);
+      if (upstream && upstream.id !== node.id && upstream.capabilityId) ordered.push(upstream);
+    };
+    visit(node.id);
+    const executionPlan = [...ordered, node];
+    if (workflowDirty) {
+      const saved = await saveCurrentWorkflow();
+      if (!saved) return;
+    }
+    for (const plannedNode of executionPlan) {
+      const capability = nodeCapability(plannedNode);
+      if (!capability) {
+        setStatus(`Cannot run ${node.title}: an upstream operation is unavailable.`);
+        return;
+      }
+      const completed = await runEntryOperation(plannedNode, capability, false);
+      if (!completed) {
+        setStatus(`Run chain stopped at ${plannedNode.title}.`);
+        return;
+      }
+    }
+    setStatus(`${node.title} and its required upstream operations completed.`);
   };
   const stopOperation = async (node: CanvasNode) => {
     if (!client || node.executionState !== 'running') return;
     try {
-      await client.cancelWorkflow(project.session_id);
+      await client.cancelOperation(project.session_id, node.id);
+      cancelledOperationIdsRef.current.add(node.id);
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id ? { ...item, executionMessage: 'Operation cancellation requested.' } : item,
@@ -1963,16 +2141,39 @@ export default function CanvasShell({
       </div>
       {surface === 'workflow' && !workflowLoaded ? (
         <div className="sf-canvas-workflow-loading" role="status" aria-live="polite">
-          <img src={logo} alt="streamfind" />
-          <strong>Loading workflow</strong>
-          <span>Restoring nodes and connections…</span>
+          <LoadingLogo
+            size="large"
+            label={
+              <>
+                <strong>Loading workflow</strong>
+                <span>Restoring nodes and connections…</span>
+              </>
+            }
+          />
         </div>
       ) : null}
       {surface === 'workflow' && savingWorkflow ? (
         <div className="sf-canvas-workflow-saving" role="status" aria-live="polite">
-          <img src={logo} alt="streamfind" />
-          <strong>Saving workflow</strong>
-          <span>Updating the project definition…</span>
+          <LoadingLogo
+            label={
+              <>
+                <strong>Saving workflow</strong>
+                <span>Updating the project definition…</span>
+              </>
+            }
+          />
+        </div>
+      ) : null}
+      {surface === 'workflow' && artifactCleanupBusy ? (
+        <div className="sf-canvas-workflow-saving" role="status" aria-live="polite">
+          <LoadingLogo
+            label={
+              <>
+                <strong>Cleaning published output</strong>
+                <span>Updating the project artifacts…</span>
+              </>
+            }
+          />
         </div>
       ) : null}
       {surface === 'workflow' && workflowLoaded && nodes.length === 0 ? (
@@ -1993,7 +2194,10 @@ export default function CanvasShell({
         <div className="sf-canvas-status-heading">
           <strong>{surface === 'workflow' ? 'Workflow terminal' : 'Explorer terminal'}</strong>
         </div>
-        <div className="sf-canvas-status-current">{status}</div>
+        <div className="sf-canvas-status-current">
+          <span>State: {workflowState}</span>
+          <span>{status}</span>
+        </div>
         <div className="sf-canvas-status-feed">
           {activityLog.map((entry) => (
             <div className={`sf-canvas-status-line ${entry.level}`} key={entry.id}>
@@ -2091,6 +2295,9 @@ export default function CanvasShell({
             >
               <div className="sf-canvas-node-header">
                 <div className="sf-node-header-actions">
+                  <span className="sf-node-number" aria-label={`Node ${node.id}`} title={`Node ${node.id}`}>
+                    {node.id}
+                  </span>
                   <button
                     type="button"
                     className="sf-node-info"
@@ -2104,6 +2311,20 @@ export default function CanvasShell({
                     }}
                   >
                     <i className="fa-solid fa-circle-info" />
+                  </button>
+                  <button
+                    type="button"
+                    className="sf-node-info sf-node-run-chain"
+                    aria-label={`Run prerequisites and ${node.title}`}
+                    title="Run required upstream operations and this operation"
+                    disabled={!capability || nodeControlsLocked}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void runPrerequisiteChain(node);
+                    }}
+                  >
+                    <i className="fa-solid fa-list-check" />
                   </button>
                   <button
                     type="button"
@@ -2124,7 +2345,7 @@ export default function CanvasShell({
                     className="sf-node-info sf-node-stop"
                     aria-label={`Stop ${node.title}`}
                     title="Stop operation"
-                    disabled={workflowExecutionActive || runningNodeId !== node.id}
+                    disabled={workflowExecutionActive || node.executionState !== 'running'}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -2151,11 +2372,11 @@ export default function CanvasShell({
                     className="sf-node-info sf-node-clear-artifacts"
                     aria-label={`Delete output data for ${node.title}`}
                     title="Delete published output data"
-                    disabled={workflowExecutionActive || !client}
+                    disabled={nodeControlsLocked || !client}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      void clearNodeArtifacts(node);
+                      requestClearNodeArtifacts(node);
                     }}
                   >
                     <i className="fa-solid fa-eraser" />
@@ -2228,7 +2449,7 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) openArtifactViewer(artifact as ArtifactRecord, 'default');
+                          if (artifact) openDefaultArtifactViewer(artifact as ArtifactRecord);
                         }}
                         onClick={(event) => {
                           if (event.detail !== 2) return;
@@ -2236,7 +2457,7 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) openArtifactViewer(artifact as ArtifactRecord, 'default');
+                          if (artifact) openDefaultArtifactViewer(artifact as ArtifactRecord);
                         }}
                       >
                         <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
@@ -2261,7 +2482,7 @@ export default function CanvasShell({
                               semanticType: artifact.contract_id,
                               representation: artifact.representation,
                             });
-                            return compatibleViewers.length ? (
+                            return compatibleViewers.length || isJsonArtifact(artifact) ? (
                               <>
                                 {compatibleViewers.map((viewer) => (
                                   <button
@@ -2275,6 +2496,17 @@ export default function CanvasShell({
                                     {viewer.label}
                                   </button>
                                 ))}
+                                {isJsonArtifact(artifact) ? (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openArtifactViewer(artifact, 'default');
+                                    }}
+                                  >
+                                    View JSON
+                                  </button>
+                                ) : null}
                               </>
                             ) : null;
                           })()}
@@ -2286,7 +2518,7 @@ export default function CanvasShell({
                   <div className="sf-node-empty">No declared outputs</div>
                 )}
               </section>
-              {capability && capability.parameters.some((parameter) => parameter.name !== 'database_path') ? (
+              {capability && capability.parameters.length > 0 ? (
                 <>
                   <button
                     type="button"
@@ -2311,188 +2543,9 @@ export default function CanvasShell({
                   </button>
                   {(expandedParameters[node.id] ?? node.projectEntry) ? (
                     <div className="sf-canvas-node-parameters" onMouseDown={(event) => event.stopPropagation()}>
-                      {capability.parameters
-                        .filter((parameter) => parameter.name !== 'database_path')
-                        .map((parameter) => {
-                          const value = node.parameters?.[parameter.name];
-                          if (isTableParameter(parameter)) {
-                            return (
-                              <div className="sf-canvas-parameter" key={parameter.name}>
-                                <button
-                                  type="button"
-                                  className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
-                                  data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
-                                  aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
-                                  onMouseDown={(event) => event.stopPropagation()}
-                                  onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
-                                >
-                                  <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
-                                </button>
-                                <div className="sf-canvas-parameter-heading">
-                                  <button
-                                    type="button"
-                                    className="sf-node-ontology-link"
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
-                                    }}
-                                  >
-                                    {parameter.label || parameter.name}
-                                  </button>
-                                </div>
-                                <div className="sf-json-parameter-actions">
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => openJsonEditor(node, parameter)}
-                                  >
-                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          }
-                          if (isFileListParameter(parameter)) {
-                            const entries = Array.isArray(value) ? value : [];
-                            return (
-                              <div className="sf-canvas-parameter" key={parameter.name}>
-                                <button
-                                  type="button"
-                                  className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
-                                  data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
-                                  aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
-                                  onMouseDown={(event) => event.stopPropagation()}
-                                  onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
-                                >
-                                  <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
-                                </button>
-                                <div className="sf-canvas-parameter-heading">
-                                  <button
-                                    type="button"
-                                    className="sf-node-ontology-link"
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
-                                    }}
-                                  >
-                                    {parameter.label || parameter.name}
-                                  </button>
-                                  <span>
-                                    {parameter.extensions?.length ? `.${parameter.extensions.join(', .')}` : ''}
-                                    {parameter.directory_extensions?.length
-                                      ? ` · folders: .${parameter.directory_extensions.join(', .')}`
-                                      : ''}
-                                  </span>
-                                </div>
-                                <div className="sf-canvas-parameter-actions">
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => openJsonEditor(node, parameter)}
-                                  >
-                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => void addSelectedPaths(node, parameter, false)}
-                                  >
-                                    <i className="fa-solid fa-file" /> Choose files
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => void addSelectedPaths(node, parameter, true)}
-                                  >
-                                    <i className="fa-solid fa-folder" /> Choose folders
-                                  </button>
-                                </div>
-                                <small className="sf-canvas-file-summary">
-                                  {entries.length
-                                    ? `${entries.length} path${entries.length === 1 ? '' : 's'} selected`
-                                    : 'No paths selected'}
-                                </small>
-                                {entries.map((entry, index) => {
-                                  const isSimplePath = isSimplePathParameter(parameter);
-                                  const record =
-                                    typeof entry === 'object' && entry !== null
-                                      ? (entry as Record<string, unknown>)
-                                      : {};
-                                  const pathValue = typeof entry === 'string' ? entry : String(record.path || '');
-                                  return (
-                                    <div className="sf-canvas-file-entry" key={`${pathValue || 'new'}-${index}`}>
-                                      <input
-                                        aria-label={`Path ${index + 1}`}
-                                        value={pathValue}
-                                        placeholder="Path"
-                                        onChange={(event) => {
-                                          const next = entries.map((item, itemIndex) =>
-                                            itemIndex === index
-                                              ? isSimplePath
-                                                ? event.target.value
-                                                : { ...record, path: event.target.value }
-                                              : item,
-                                          );
-                                          updateNodeParameter(node.id, parameter.name, next);
-                                        }}
-                                      />
-                                      {!isSimplePath ? (
-                                        <>
-                                          <input
-                                            aria-label={`Replicate ${index + 1}`}
-                                            value={String(record.replicate_name || '')}
-                                            placeholder="Replicate"
-                                            onChange={(event) => {
-                                              const next = entries.map((item, itemIndex) =>
-                                                itemIndex === index
-                                                  ? { ...record, replicate_name: event.target.value }
-                                                  : item,
-                                              );
-                                              updateNodeParameter(node.id, parameter.name, next);
-                                            }}
-                                          />
-                                          <input
-                                            aria-label={`Blank ${index + 1}`}
-                                            value={String(record.blank_name || '')}
-                                            placeholder="Blank"
-                                            onChange={(event) => {
-                                              const next = entries.map((item, itemIndex) =>
-                                                itemIndex === index
-                                                  ? { ...record, blank_name: event.target.value }
-                                                  : item,
-                                              );
-                                              updateNodeParameter(node.id, parameter.name, next);
-                                            }}
-                                          />
-                                        </>
-                                      ) : null}
-                                      <button
-                                        type="button"
-                                        className="sf-button secondary"
-                                        onClick={() =>
-                                          updateNodeParameter(
-                                            node.id,
-                                            parameter.name,
-                                            entries.filter((_, itemIndex) => itemIndex !== index),
-                                          )
-                                        }
-                                      >
-                                        Remove
-                                      </button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          }
-                          const constrainedValues = Array.isArray(parameter.schema.enum)
-                            ? parameter.schema.enum.filter(
-                                (candidate) =>
-                                  candidate === null || ['string', 'number', 'boolean'].includes(typeof candidate),
-                              )
-                            : [];
+                      {capability.parameters.map((parameter) => {
+                        const value = node.parameters?.[parameter.name];
+                        if (isTableParameter(parameter)) {
                           return (
                             <div className="sf-canvas-parameter" key={parameter.name}>
                               <button
@@ -2518,102 +2571,293 @@ export default function CanvasShell({
                                   {parameter.label || parameter.name}
                                 </button>
                               </div>
-                              {isJsonParameter(parameter) ? (
-                                <div className="sf-json-parameter-actions">
-                                  <button
-                                    type="button"
-                                    className="sf-button secondary"
-                                    onClick={() => openJsonEditor(node, parameter)}
-                                  >
-                                    <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
-                                  </button>
-                                </div>
-                              ) : (
-                                <div
-                                  className={isSimplePathParameter(parameter) ? 'sf-canvas-scalar-path-row' : undefined}
+                              <div className="sf-json-parameter-actions">
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => openJsonEditor(node, parameter)}
                                 >
-                                  {constrainedValues.length > 0 ? (
-                                    <select
-                                      value={
-                                        constrainedValues.some(
-                                          (candidate) => String(candidate) === parameterInputValue(parameter, value),
-                                        )
-                                          ? parameterInputValue(parameter, value)
-                                          : ''
-                                      }
-                                      onChange={(event) =>
+                                  <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        if (isFileListParameter(parameter)) {
+                          const entries = Array.isArray(value) ? value : [];
+                          return (
+                            <div className="sf-canvas-parameter" key={parameter.name}>
+                              <button
+                                type="button"
+                                className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
+                                data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
+                                aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
+                              >
+                                <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
+                              </button>
+                              <div className="sf-canvas-parameter-heading">
+                                <button
+                                  type="button"
+                                  className="sf-node-ontology-link"
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
+                                  }}
+                                >
+                                  {parameter.label || parameter.name}
+                                </button>
+                                <span>
+                                  {parameter.extensions?.length ? `.${parameter.extensions.join(', .')}` : ''}
+                                  {parameter.directory_extensions?.length
+                                    ? ` · folders: .${parameter.directory_extensions.join(', .')}`
+                                    : ''}
+                                </span>
+                              </div>
+                              <div className="sf-canvas-parameter-actions">
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => openJsonEditor(node, parameter)}
+                                >
+                                  <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => void addSelectedPaths(node, parameter, false)}
+                                >
+                                  <i className="fa-solid fa-file" /> Choose files
+                                </button>
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => void addSelectedPaths(node, parameter, true)}
+                                >
+                                  <i className="fa-solid fa-folder" /> Choose folders
+                                </button>
+                              </div>
+                              <small className="sf-canvas-file-summary">
+                                {entries.length
+                                  ? `${entries.length} path${entries.length === 1 ? '' : 's'} selected`
+                                  : 'No paths selected'}
+                              </small>
+                              {entries.map((entry, index) => {
+                                const isSimplePath = isSimplePathParameter(parameter);
+                                const record =
+                                  typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
+                                const pathValue = typeof entry === 'string' ? entry : String(record.path || '');
+                                return (
+                                  <div className="sf-canvas-file-entry" key={`${pathValue || 'new'}-${index}`}>
+                                    <input
+                                      aria-label={`Path ${index + 1}`}
+                                      value={pathValue}
+                                      placeholder="Path"
+                                      onChange={(event) => {
+                                        const next = entries.map((item, itemIndex) =>
+                                          itemIndex === index
+                                            ? isSimplePath
+                                              ? event.target.value
+                                              : { ...record, path: event.target.value }
+                                            : item,
+                                        );
+                                        updateNodeParameter(node.id, parameter.name, next);
+                                      }}
+                                    />
+                                    {!isSimplePath ? (
+                                      <>
+                                        <input
+                                          aria-label={`Replicate ${index + 1}`}
+                                          value={String(record.replicate_name || '')}
+                                          placeholder="Replicate"
+                                          onChange={(event) => {
+                                            const next = entries.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? { ...record, replicate_name: event.target.value }
+                                                : item,
+                                            );
+                                            updateNodeParameter(node.id, parameter.name, next);
+                                          }}
+                                        />
+                                        <input
+                                          aria-label={`Blank ${index + 1}`}
+                                          value={String(record.blank_name || '')}
+                                          placeholder="Blank"
+                                          onChange={(event) => {
+                                            const next = entries.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? { ...record, blank_name: event.target.value }
+                                                : item,
+                                            );
+                                            updateNodeParameter(node.id, parameter.name, next);
+                                          }}
+                                        />
+                                      </>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="sf-button secondary"
+                                      onClick={() =>
                                         updateNodeParameter(
                                           node.id,
                                           parameter.name,
-                                          scalarInputValue(parameter, event.target.value),
+                                          entries.filter((_, itemIndex) => itemIndex !== index),
                                         )
                                       }
                                     >
-                                      {!parameter.required ? <option value="">Select an option</option> : null}
-                                      {constrainedValues.map((candidate) => (
-                                        <option key={String(candidate)} value={String(candidate)}>
-                                          {String(candidate)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type={
-                                        String(
-                                          Array.isArray(parameter.schema.type)
-                                            ? parameter.schema.type[0]
-                                            : parameter.schema.type,
-                                        ) === 'boolean'
-                                          ? 'checkbox'
-                                          : ['integer', 'number', 'real', 'float', 'double'].includes(
-                                                String(
-                                                  Array.isArray(parameter.schema.type)
-                                                    ? parameter.schema.type[0]
-                                                    : parameter.schema.type,
-                                                ),
-                                              )
-                                            ? 'number'
-                                            : 'text'
-                                      }
-                                      {...(String(
-                                        Array.isArray(parameter.schema.type)
-                                          ? parameter.schema.type[0]
-                                          : parameter.schema.type,
-                                      ) === 'boolean'
-                                        ? {
-                                            checked: Boolean(
-                                              value ?? parameter.default ?? parameter.schema.default ?? false,
-                                            ),
-                                            onChange: (event: ChangeEvent<HTMLInputElement>) =>
-                                              updateNodeParameter(node.id, parameter.name, event.target.checked),
-                                          }
-                                        : {
-                                            value: parameterInputValue(parameter, value),
-                                            onChange: (event: ChangeEvent<HTMLInputElement>) =>
-                                              updateNodeParameter(
-                                                node.id,
-                                                parameter.name,
-                                                scalarInputValue(parameter, event.target.value),
-                                              ),
-                                          })}
-                                    />
-                                  )}
-                                  {isSimplePathParameter(parameter) ? (
-                                    <button
-                                      type="button"
-                                      className="sf-icon-button sf-canvas-path-picker"
-                                      aria-label={`Choose ${parameter.label || parameter.name}`}
-                                      title="Choose file or folder"
-                                      onClick={() => void chooseSinglePath(node, parameter)}
-                                    >
-                                      <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                                      Remove
                                     </button>
-                                  ) : null}
-                                </div>
-                              )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
-                        })}
+                        }
+                        const constrainedValues = Array.isArray(parameter.schema.enum)
+                          ? parameter.schema.enum.filter(
+                              (candidate) =>
+                                candidate === null || ['string', 'number', 'boolean'].includes(typeof candidate),
+                            )
+                          : [];
+                        const scalarType = String(
+                          Array.isArray(parameter.schema.type) ? parameter.schema.type[0] : parameter.schema.type,
+                        );
+                        const isDecimalParameter = ['number', 'real', 'float', 'double'].includes(scalarType);
+                        return (
+                          <div className="sf-canvas-parameter" key={parameter.name}>
+                            <button
+                              type="button"
+                              className={`sf-node-parameter-port ${typeClass(parameterTypeKey(parameter))}`}
+                              data-canvas-anchor={`${node.id}|input|parameter:${parameter.name}`}
+                              aria-label={`Connect to ${node.title} parameter ${parameter.label || parameter.name}`}
+                              onMouseDown={(event) => event.stopPropagation()}
+                              onMouseUp={(event) => finishConnection(event, node, `parameter:${parameter.name}`)}
+                            >
+                              <i className={typeIcon(parameterTypeKey(parameter))} aria-hidden="true" />
+                            </button>
+                            <div className="sf-canvas-parameter-heading">
+                              <button
+                                type="button"
+                                className="sf-node-ontology-link"
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openNodeDocumentation(node.id, { section: 'parameters', key: parameter.name });
+                                }}
+                              >
+                                {parameter.label || parameter.name}
+                              </button>
+                            </div>
+                            {isJsonParameter(parameter) ? (
+                              <div className="sf-json-parameter-actions">
+                                <button
+                                  type="button"
+                                  className="sf-button secondary"
+                                  onClick={() => openJsonEditor(node, parameter)}
+                                >
+                                  <i className={typeIcon(parameterTypeKey(parameter))} /> Edit
+                                </button>
+                              </div>
+                            ) : (
+                              <div
+                                className={isSimplePathParameter(parameter) ? 'sf-canvas-scalar-path-row' : undefined}
+                              >
+                                {constrainedValues.length > 0 ? (
+                                  <select
+                                    value={
+                                      constrainedValues.some(
+                                        (candidate) => String(candidate) === parameterInputValue(parameter, value),
+                                      )
+                                        ? parameterInputValue(parameter, value)
+                                        : ''
+                                    }
+                                    onChange={(event) =>
+                                      updateNodeParameter(
+                                        node.id,
+                                        parameter.name,
+                                        scalarInputValue(parameter, event.target.value),
+                                      )
+                                    }
+                                  >
+                                    {!parameter.required ? <option value="">Select an option</option> : null}
+                                    {constrainedValues.map((candidate) => (
+                                      <option key={String(candidate)} value={String(candidate)}>
+                                        {String(candidate)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type={
+                                      scalarType === 'boolean'
+                                        ? 'checkbox'
+                                        : isDecimalParameter
+                                          ? 'text'
+                                          : scalarType === 'integer'
+                                            ? 'number'
+                                            : 'text'
+                                    }
+                                    {...(scalarType === 'boolean'
+                                      ? {
+                                          checked: Boolean(
+                                            value ?? parameter.default ?? parameter.schema.default ?? false,
+                                          ),
+                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                            updateNodeParameter(node.id, parameter.name, event.target.checked),
+                                        }
+                                      : {
+                                          value: parameterInputValue(parameter, value),
+                                          inputMode: isDecimalParameter ? 'decimal' : undefined,
+                                          pattern: isDecimalParameter
+                                            ? '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?'
+                                            : undefined,
+                                          'aria-invalid':
+                                            isDecimalParameter &&
+                                            parameterInputValue(parameter, value).trim() !== '' &&
+                                            !Number.isFinite(Number(parameterInputValue(parameter, value))),
+                                          onChange: (event: ChangeEvent<HTMLInputElement>) =>
+                                            updateNodeParameter(
+                                              node.id,
+                                              parameter.name,
+                                              isDecimalParameter
+                                                ? event.target.value
+                                                : scalarInputValue(parameter, event.target.value),
+                                            ),
+                                          onBlur: isDecimalParameter
+                                            ? (event: ChangeEvent<HTMLInputElement>) => {
+                                                const raw = event.target.value.trim();
+                                                if (!raw) {
+                                                  updateNodeParameter(node.id, parameter.name, null);
+                                                } else if (Number.isFinite(Number(raw))) {
+                                                  updateNodeParameter(node.id, parameter.name, Number(raw));
+                                                } else {
+                                                  setStatus(
+                                                    `${parameter.label || parameter.name} must be a finite number.`,
+                                                  );
+                                                }
+                                              }
+                                            : undefined,
+                                        })}
+                                  />
+                                )}
+                                {isSimplePathParameter(parameter) ? (
+                                  <button
+                                    type="button"
+                                    className="sf-icon-button sf-canvas-path-picker"
+                                    aria-label={`Choose ${parameter.label || parameter.name}`}
+                                    title="Choose file or folder"
+                                    onClick={() => void chooseSinglePath(node, parameter)}
+                                  >
+                                    <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </>
@@ -2657,6 +2901,51 @@ export default function CanvasShell({
                 Validate and apply
               </button>
             </footer>
+          </section>
+        </div>
+      ) : null}
+      {artifactCleanupNode ? (
+        <div
+          className="sf-dialog-backdrop sf-canvas-confirmation-backdrop"
+          role="presentation"
+          onMouseDown={() => setArtifactCleanupNode(null)}
+        >
+          <section
+            className="sf-dialog sf-canvas-confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sf-clear-artifacts-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="sf-dialog-heading">
+              <div>
+                <h2 id="sf-clear-artifacts-title">Delete published output data?</h2>
+                <small>
+                  This removes all published artifacts created by <strong>{artifactCleanupNode.title}</strong> while
+                  keeping the workflow node and its parameters.
+                </small>
+              </div>
+              <button
+                type="button"
+                className="sf-icon-button"
+                aria-label="Close cleanup confirmation"
+                onClick={() => setArtifactCleanupNode(null)}
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+            <div className="sf-dialog-actions">
+              <button type="button" className="sf-button secondary" onClick={() => setArtifactCleanupNode(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sf-button primary"
+                onClick={() => void clearNodeArtifacts(artifactCleanupNode)}
+              >
+                Delete published data
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -2934,7 +3223,7 @@ export default function CanvasShell({
             </div>
             <button
               type="button"
-              className="sf-icon-button"
+              className="sf-icon-button sf-close-button"
               aria-label="Close operation palette"
               onClick={() => {
                 setPicker(null);
@@ -2975,7 +3264,7 @@ export default function CanvasShell({
                   className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(
                     template.domain || 'unknown'
                   )
-                    .replace(/[^a-z0-9_-]/gi, '-')
+                    .replace(/[^a-z0-9]+/gi, '-')
                     .toLowerCase()}`}
                   key={template.id}
                   data-domain={template.domain || 'unknown'}
@@ -3116,60 +3405,58 @@ export default function CanvasShell({
             </section>
             <section>
               <h3>Parameters</h3>
-              {documentationCapability.parameters
-                .filter((parameter) => parameter.name !== 'database_path')
-                .map((parameter) => (
-                  <div
-                    className="sf-info-row"
-                    key={parameter.name}
-                    data-ontology-focus="true"
-                    data-ontology-focus-section="parameters"
-                    data-ontology-focus-key={parameter.name}
-                    tabIndex={-1}
-                  >
-                    {onOpenOntologyWiki ? (
-                      <button
-                        type="button"
-                        className="sf-ontology-term-link"
-                        onClick={() => onOpenOntologyWiki(parameter.name)}
-                      >
-                        {parameter.label || parameter.name}
-                      </button>
-                    ) : (
-                      <strong>{parameter.label || parameter.name}</strong>
-                    )}
-                    <span>
-                      {parameter.description || parameter.schema.type || 'value'}
-                      <br />
-                      <small>type: {schemaTypeLabel(parameter.schema)}</small>
-                      {parameterOntologyDetails(parameter).map((detail) => (
-                        <Fragment key={detail}>
-                          <br />
-                          <small>{detail}</small>
-                        </Fragment>
-                      ))}
-                      {parameter.default !== undefined || parameter.schema.default !== undefined ? (
-                        <>
-                          <br />
-                          <small>Default: {JSON.stringify(parameter.default ?? parameter.schema.default)}</small>
-                        </>
-                      ) : null}
-                      {Array.isArray(parameter.schema.examples) && parameter.schema.examples.length ? (
-                        <>
-                          <br />
-                          <small>
-                            Examples:{' '}
-                            {JSON.stringify(
-                              parameter.schema.examples.length === 1
-                                ? parameter.schema.examples[0]
-                                : parameter.schema.examples,
-                            )}
-                          </small>
-                        </>
-                      ) : null}
-                    </span>
-                  </div>
-                ))}
+              {documentationCapability.parameters.map((parameter) => (
+                <div
+                  className="sf-info-row"
+                  key={parameter.name}
+                  data-ontology-focus="true"
+                  data-ontology-focus-section="parameters"
+                  data-ontology-focus-key={parameter.name}
+                  tabIndex={-1}
+                >
+                  {onOpenOntologyWiki ? (
+                    <button
+                      type="button"
+                      className="sf-ontology-term-link"
+                      onClick={() => onOpenOntologyWiki(parameter.name)}
+                    >
+                      {parameter.label || parameter.name}
+                    </button>
+                  ) : (
+                    <strong>{parameter.label || parameter.name}</strong>
+                  )}
+                  <span>
+                    {parameter.description || parameter.schema.type || 'value'}
+                    <br />
+                    <small>type: {schemaTypeLabel(parameter.schema)}</small>
+                    {parameterOntologyDetails(parameter).map((detail) => (
+                      <Fragment key={detail}>
+                        <br />
+                        <small>{detail}</small>
+                      </Fragment>
+                    ))}
+                    {parameter.default !== undefined || parameter.schema.default !== undefined ? (
+                      <>
+                        <br />
+                        <small>Default: {JSON.stringify(parameter.default ?? parameter.schema.default)}</small>
+                      </>
+                    ) : null}
+                    {Array.isArray(parameter.schema.examples) && parameter.schema.examples.length ? (
+                      <>
+                        <br />
+                        <small>
+                          Examples:{' '}
+                          {JSON.stringify(
+                            parameter.schema.examples.length === 1
+                              ? parameter.schema.examples[0]
+                              : parameter.schema.examples,
+                          )}
+                        </small>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
             </section>
           </aside>
         </div>

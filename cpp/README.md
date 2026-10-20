@@ -29,7 +29,7 @@ The current package manifests are:
 | Domain | Windows library | POSIX library | Domain state |
 | --- | --- | --- | --- |
 | `mass_spec` | `streamfind_mass_spec.dll` | `libstreamfind_mass_spec.so` | Native readers and NTA methods |
-| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Dynamic operation boundary; processing is not implemented yet |
+| `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Native ASC/SIF and WiTec text readers for Raman/IR spectra and time-resolved spectra; processing operations are in development |
 | `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty domain; no executable capabilities yet |
 
 For a development-tree runtime, place `streamfind.json` beside
@@ -154,7 +154,7 @@ execution, closed projects, and cancellation.
 The C++ core uses the shared `PROJECT`, `CACHE`, and `AUDIT_TRAIL` DuckDB tables.
 Workflow, metadata, cache, audit, and result JSON are backend-neutral and are
 covered by the lightweight project and execution fixtures in
-`cpp/tests/fixtures/`. Large example datasets are
+`cpp/core/tests/fixtures/`. Large example datasets are
 provided separately through the streamfind.data repository/data directory and
 are exercised by the development PowerShell scripts under `scripts/dev/`.
 
@@ -167,8 +167,8 @@ scripts\build\cpp\build-cpp.cmd -Clean -Tests -Config Release
 scripts\build\cpp\test-cpp.cmd -Config Release
 ```
 
-The official CTest suite is intentionally lightweight and fixture-independent.
-It contains 11 focused contracts covering:
+The official CTest suite is organized by ownership and contains focused
+contracts covering:
 
 - project lifecycle, execution lifecycle, project isolation, and persistence
   manifests;
@@ -178,12 +178,15 @@ It contains 11 focused contracts covering:
 - MassSpec and NTA public interfaces; and
 - DuckDB/OpenBabel dependency smoke coverage.
 
-The corresponding source files are under `cpp/tests/unit/` and use behavior-based
-names such as `project_lifecycle_contract.cpp`,
-`dynamic_plugin_package_contract.cpp`, and `plugin_registration_contract.cpp`.
-Raw vendor corpora, full NTA pipelines, and external-data checks are not part of
-the default CTest run. Invoke those explicitly through the development scripts,
-for example:
+Core contracts are under `cpp/core/tests/`, and mass-spec, Raman, and Sensors
+contracts are under their respective plugin `tests/` directories. Python
+regressions and data-backed workflow checks are development scripts under
+`scripts/dev/cpp/`, not official C++ tests. Official test configuration requires the sibling
+`streamfind.data` checkout; override its location with
+`-DSTREAMFIND_DATA_ROOT=<path>`. The mass-spec data contract verifies the
+wastewater CSV and mzML fixtures before the suite can pass. Raw vendor corpora
+and full NTA pipelines remain opt-in; invoke those explicitly through the
+development scripts, for example:
 
 ```powershell
 scripts\dev\cpp\test-nta.ps1 -RunPipeline
@@ -237,7 +240,7 @@ native platforms.
 
 ## Current state
 
-The C++ backend is the authoritative native implementation. The current workspace version is `0.5.0`.
+The C++ backend is the authoritative native implementation. The current workspace version is `0.6.0`.
 
 The normal C++ runtime package is intentionally lean. It contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, and runtime vendors. It does **not** contain `sdk/`.
 
@@ -259,7 +262,7 @@ The shipped plugin domains are:
 | Domain | Current state |
 | --- | --- |
 | `mass_spec` | Native readers and NTA methods; primary production domain |
-| `raman` | Dynamic plugin boundary; processing remains incomplete |
+| `raman` | Native ASC/SIF and WiTec text ingestion with Raman/IR spectrum tables; processing remains in development |
 | `sensors` | Dynamic empty domain; no executable capabilities yet |
 
 
@@ -333,13 +336,13 @@ cd ..
 The Windows runtime release builds the frontend and native package, runs CTest, extracts the archive, checks the runtime payload, validates the recursive PE dependency closure, and starts the packaged MCP server:
 
 ```powershell
-scripts\\release\\cpp\\release-cpp.ps1 -Version 0.5.0
+scripts\\release\\cpp\\release-cpp.ps1 -Version 0.6.0
 ```
 
 The Linux runtime release performs the equivalent extracted-package checks, including recursive ELF dependency validation and packaged MCP startup:
 
 ```bash
-bash scripts/release/cpp/release-cpp-linux.sh 0.5.0
+bash scripts/release/cpp/release-cpp-linux.sh 0.6.0
 ```
 
 Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
@@ -371,7 +374,7 @@ The first-party out-of-tree consumer check is:
 For a distributable developer kit, use:
 
 ```powershell
-scripts\\release\\cpp\\package-plugin-devkit.ps1 -Version 0.5.0
+scripts\\release\\cpp\\package-plugin-devkit.ps1 -Version 0.6.0
 ```
 
 The developer-kit command configures, builds, installs, packages, and validates an out-of-tree C++ consumer. Frontend plugins use the generated TypeScript contract and do not require the C++ SDK headers.

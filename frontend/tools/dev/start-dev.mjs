@@ -77,6 +77,12 @@ function startFrontend() {
     windowsHide: false,
   });
   children.push(child);
+  child.on('exit', (code, signal) => {
+    if (shuttingDown) return;
+    const reason = signal ? `signal ${signal}` : `code ${code ?? 1}`;
+    log(`Frontend exited with ${reason}; shutting down the native service.`);
+    shutdown(code ?? 1);
+  });
 }
 
 function shutdown(exitCode = 0) {

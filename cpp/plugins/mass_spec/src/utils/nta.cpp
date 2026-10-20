@@ -1,5 +1,6 @@
 #include "utils/nta.hpp"
 #include "utils/tools_resolver.hpp"
+#include "streamfind/sdk/debug_session.hpp"
 #include <cctype>
 #include <filesystem>
 #include <iomanip>
@@ -21,17 +22,12 @@
 
 namespace streamfind::mass_spec::nta::utils
 {
-    std::ofstream debug_log;
-    void init_debug_log(const std::string &name, const std::string &header, bool append)
+    thread_local ::streamfind::sdk::DebugSession *active_debug_session = nullptr;
+    void set_debug_session(::streamfind::sdk::DebugSession *session) { active_debug_session = session; }
+    void write_debug_log(std::string_view value)
     {
-        debug_log.open(name, append ? std::ios::app : std::ios::trunc);
-        if (debug_log)
-            debug_log << header << '\n';
-    }
-    void close_debug_log()
-    {
-        if (debug_log.is_open())
-            debug_log.close();
+        if (active_debug_session != nullptr && active_debug_session->enabled())
+            active_debug_session->write_line(value);
     }
     float mean(const std::vector<float> &v) { return v.empty() ? 0.f : std::accumulate(v.begin(), v.end(), 0.f) / v.size(); }
     float standard_deviation(const std::vector<float> &v, float m)
@@ -140,6 +136,37 @@ namespace streamfind::mass_spec::nta::utils
             for (auto j = a; j <= b; ++j)
                 s += v[j];
             out[i] = s / (b - a + 1);
+        }
+        return out;
+    }
+    std::vector<float> smooth_intensity_adaptive(const std::vector<float> &v, int window, int sharp_window)
+    {
+        if (v.empty())
+            return {};
+        const size_t base_half = static_cast<size_t>(std::max(1, window / 2));
+        const size_t sharp_half = static_cast<size_t>(std::max(1, sharp_window / 2));
+        std::vector<float> out(v.size());
+        auto mean_range = [&](size_t center, size_t half)
+        {
+            const size_t begin = center > half ? center - half : 0;
+            const size_t end = std::min(v.size() - 1, center + half);
+            float sum = 0.0f;
+            for (size_t i = begin; i <= end; ++i)
+                sum += v[i];
+            return sum / static_cast<float>(end - begin + 1);
+        };
+        for (size_t i = 0; i < v.size(); ++i)
+        {
+            const size_t edge_half = (i < base_half || v.size() - 1 - i < base_half) ? sharp_half : base_half;
+            const size_t left = i > sharp_half ? i - sharp_half : 0;
+            const size_t right = std::min(v.size() - 1, i + sharp_half);
+            float neighbour_max = 0.0f;
+            if (left < i)
+                neighbour_max = std::max(neighbour_max, v[left]);
+            if (right > i)
+                neighbour_max = std::max(neighbour_max, v[right]);
+            const bool sharp_peak = neighbour_max > 0.0f && v[i] > neighbour_max * 1.1f;
+            out[i] = mean_range(i, sharp_peak ? sharp_half : edge_half);
         }
         return out;
     }
@@ -333,6 +360,11 @@ namespace streamfind::mass_spec::nta::utils
             "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
             "annotation_category", "annotation_type", "annotation_parent_feature", "annotation_element", "annotation_mass_error_da", "annotation_mass_error_ppm",
             "annotation_rt_error", "annotation_rel_intensity", "annotation_expected_rel_intensity_min", "annotation_expected_rel_intensity_max", "annotation_score",
+            "annotation_estimated_carbon_count", "annotation_mass_to_carbon", "annotation_mass_defect_to_carbon", "annotation_estimated_formula",
+            "annotation_fluorine_to_carbon", "annotation_hydrogen_to_fluorine", "annotation_fluorine_mass_percent", "annotation_fluorination_score",
+            "annotation_chlorine_to_carbon", "annotation_hydrogen_to_chlorine", "annotation_chlorine_mass_percent",
+            "annotation_bromine_to_carbon", "annotation_hydrogen_to_bromine", "annotation_bromine_mass_percent",
+            "annotation_iodine_to_carbon", "annotation_hydrogen_to_iodine", "annotation_iodine_mass_percent", "annotation_halogenation_score",
             "component_size", "component_rt_center", "component_rt_spread", "component_density", "component_mean_correlation", "component_best_partner",
             "component_max_correlation", "component_mean_correlation_to_component", "component_membership_score", "component_is_core", "component_bridge_flag", "created_at"};
         return columns;
@@ -341,11 +373,14 @@ namespace streamfind::mass_spec::nta::utils
     const std::vector<std::string> &feature_types()
     {
         static const std::vector<std::string> types = {
-            "string", "string", "string", "string", "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "integer",
+            "string", "string", "string", "string", "string", "string", "string", "string",
+            "real", "real", "real", "real", "real", "real", "real", "integer",
             "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
-            "integer", "real", "integer", "boolean", "string", "boolean", "real", "integer", "string", "string", "string", "string", "string",
-            "integer", "string", "string", "integer", "string", "string", "string", "string", "string", "string", "real", "real", "real", "real",
-            "real", "real", "real", "real", "real", "real", "real", "real", "string", "real", "real", "real", "boolean", "boolean", "timestamp"};
+            "integer", "real", "integer", "boolean", "string", "boolean", "real", "integer",
+            "string", "string", "string", "string", "string", "integer", "string", "string", "integer", "string", "string", "string",
+            "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
+            "string", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
+            "real", "integer", "real", "real", "real", "real", "string", "real", "real", "real", "boolean", "boolean", "timestamp"};
         return types;
     }
 
@@ -362,7 +397,17 @@ namespace streamfind::mass_spec::nta::utils
             {"annotation_parent_feature", r.annotation_parent_feature}, {"annotation_element", r.annotation_element}, {"annotation_mass_error_da", r.annotation_mass_error_da},
             {"annotation_mass_error_ppm", r.annotation_mass_error_ppm}, {"annotation_rt_error", r.annotation_rt_error}, {"annotation_rel_intensity", r.annotation_rel_intensity},
             {"annotation_expected_rel_intensity_min", r.annotation_expected_rel_intensity_min}, {"annotation_expected_rel_intensity_max", r.annotation_expected_rel_intensity_max},
-            {"annotation_score", r.annotation_score}, {"component_size", r.component_size}, {"component_rt_center", r.component_rt_center}, {"component_rt_spread", r.component_rt_spread},
+            {"annotation_score", r.annotation_score}, {"annotation_estimated_carbon_count", r.annotation_estimated_carbon_count},
+            {"annotation_mass_to_carbon", r.annotation_mass_to_carbon}, {"annotation_mass_defect_to_carbon", r.annotation_mass_defect_to_carbon},
+            {"annotation_estimated_formula", r.annotation_estimated_formula},
+            {"annotation_fluorine_to_carbon", r.annotation_fluorine_to_carbon}, {"annotation_hydrogen_to_fluorine", r.annotation_hydrogen_to_fluorine},
+            {"annotation_fluorine_mass_percent", r.annotation_fluorine_mass_percent}, {"annotation_fluorination_score", r.annotation_fluorination_score},
+            {"annotation_chlorine_to_carbon", r.annotation_chlorine_to_carbon}, {"annotation_hydrogen_to_chlorine", r.annotation_hydrogen_to_chlorine},
+            {"annotation_chlorine_mass_percent", r.annotation_chlorine_mass_percent}, {"annotation_bromine_to_carbon", r.annotation_bromine_to_carbon},
+            {"annotation_hydrogen_to_bromine", r.annotation_hydrogen_to_bromine}, {"annotation_bromine_mass_percent", r.annotation_bromine_mass_percent},
+            {"annotation_iodine_to_carbon", r.annotation_iodine_to_carbon}, {"annotation_hydrogen_to_iodine", r.annotation_hydrogen_to_iodine},
+            {"annotation_iodine_mass_percent", r.annotation_iodine_mass_percent}, {"annotation_halogenation_score", r.annotation_halogenation_score},
+            {"component_size", r.component_size}, {"component_rt_center", r.component_rt_center}, {"component_rt_spread", r.component_rt_spread},
             {"component_density", r.component_density}, {"component_mean_correlation", r.component_mean_correlation}, {"component_best_partner", r.component_best_partner},
             {"component_max_correlation", r.component_max_correlation}, {"component_mean_correlation_to_component", r.component_mean_correlation_to_component},
             {"component_membership_score", r.component_membership_score}, {"component_is_core", r.component_is_core}, {"component_bridge_flag", r.component_bridge_flag}, {"created_at", utc_now()}};
@@ -370,13 +415,12 @@ namespace streamfind::mass_spec::nta::utils
 
     const std::vector<std::string> &suspects_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
+        static const std::vector<std::string> columns = {"analysis", "replicate", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity", "isotope_theoretical_peaks", "isotope_matched_peaks", "isotope_similarity", "isotope_match"};
         return columns;
     }
     const std::vector<std::string> &internal_standards_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature", "feature_group", "feature_component", "adduct", "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity", "formula", "smiles", "inchi", "inchikey", "xlogp", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity"};
-        return columns;
+        return suspects_columns();
     }
     const std::vector<std::string> &transformation_products_columns()
     {
@@ -648,7 +692,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 auto v = s(row, col);
                 return v == "true" || v == "TRUE" || v == "1";
             };
-            for (const auto &row : access.query("SELECT analysis, replicate, blank, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM " + input_table(parameters, "featuresTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis, replicate, blank, feature, feature_component, feature_group, adduct, rt, mz, mass, intensity, noise, sn, area, rtmin, rtmax, width, mzmin, mzmax, ppm, fwhm_rt, fwhm_mz, gaussian_A, gaussian_mu, gaussian_sigma, gaussian_r2, jaggedness, sharpness, asymmetry, modality, plates, polarity, filtered, filter, filled, correction, eic_size, eic_rt, eic_mz, eic_intensity, eic_baseline, eic_smoothed, ms1_size, ms1_mz, ms1_intensity, ms2_size, ms2_mz, ms2_intensity, annotation_category, annotation_type, annotation_parent_feature, annotation_element, annotation_mass_error_da, annotation_mass_error_ppm, annotation_rt_error, annotation_rel_intensity, annotation_expected_rel_intensity_min, annotation_expected_rel_intensity_max, annotation_score, annotation_estimated_carbon_count, annotation_mass_to_carbon, annotation_mass_defect_to_carbon, annotation_estimated_formula, annotation_fluorine_to_carbon, annotation_hydrogen_to_fluorine, annotation_fluorine_mass_percent, annotation_fluorination_score, annotation_chlorine_to_carbon, annotation_hydrogen_to_chlorine, annotation_chlorine_mass_percent, annotation_bromine_to_carbon, annotation_hydrogen_to_bromine, annotation_bromine_mass_percent, annotation_iodine_to_carbon, annotation_hydrogen_to_iodine, annotation_iodine_mass_percent, annotation_halogenation_score, component_size, component_rt_center, component_rt_spread, component_density, component_mean_correlation, component_best_partner, component_max_correlation, component_mean_correlation_to_component, component_membership_score, component_is_core, component_bridge_flag FROM " + input_table(parameters, "featuresTable") + " ORDER BY analysis"))
             {
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
@@ -720,6 +764,24 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.annotation_expected_rel_intensity_min = d(row, "annotation_expected_rel_intensity_min");
                 r.annotation_expected_rel_intensity_max = d(row, "annotation_expected_rel_intensity_max");
                 r.annotation_score = d(row, "annotation_score");
+                r.annotation_estimated_carbon_count = d(row, "annotation_estimated_carbon_count");
+                r.annotation_mass_to_carbon = d(row, "annotation_mass_to_carbon");
+                r.annotation_mass_defect_to_carbon = d(row, "annotation_mass_defect_to_carbon");
+                r.annotation_estimated_formula = s(row, "annotation_estimated_formula");
+                r.annotation_fluorine_to_carbon = d(row, "annotation_fluorine_to_carbon");
+                r.annotation_hydrogen_to_fluorine = d(row, "annotation_hydrogen_to_fluorine");
+                r.annotation_fluorine_mass_percent = d(row, "annotation_fluorine_mass_percent");
+                r.annotation_fluorination_score = d(row, "annotation_fluorination_score");
+                r.annotation_chlorine_to_carbon = d(row, "annotation_chlorine_to_carbon");
+                r.annotation_hydrogen_to_chlorine = d(row, "annotation_hydrogen_to_chlorine");
+                r.annotation_chlorine_mass_percent = d(row, "annotation_chlorine_mass_percent");
+                r.annotation_bromine_to_carbon = d(row, "annotation_bromine_to_carbon");
+                r.annotation_hydrogen_to_bromine = d(row, "annotation_hydrogen_to_bromine");
+                r.annotation_bromine_mass_percent = d(row, "annotation_bromine_mass_percent");
+                r.annotation_iodine_to_carbon = d(row, "annotation_iodine_to_carbon");
+                r.annotation_hydrogen_to_iodine = d(row, "annotation_hydrogen_to_iodine");
+                r.annotation_iodine_mass_percent = d(row, "annotation_iodine_mass_percent");
+                r.annotation_halogenation_score = d(row, "annotation_halogenation_score");
                 r.component_size = i(row, "component_size");
                 r.component_rt_center = d(row, "component_rt_center");
                 r.component_rt_spread = d(row, "component_rt_spread");
@@ -913,6 +975,11 @@ namespace streamfind::mass_spec::nta::utils::detail
                 "annotation_category", "annotation_type", "annotation_parent_feature", "annotation_element",
                 "annotation_mass_error_da", "annotation_mass_error_ppm", "annotation_rt_error",
                 "annotation_rel_intensity", "annotation_expected_rel_intensity_min", "annotation_expected_rel_intensity_max", "annotation_score",
+                "annotation_estimated_carbon_count", "annotation_mass_to_carbon", "annotation_mass_defect_to_carbon", "annotation_estimated_formula",
+                "annotation_fluorine_to_carbon", "annotation_hydrogen_to_fluorine", "annotation_fluorine_mass_percent", "annotation_fluorination_score",
+                "annotation_chlorine_to_carbon", "annotation_hydrogen_to_chlorine", "annotation_chlorine_mass_percent",
+                "annotation_bromine_to_carbon", "annotation_hydrogen_to_bromine", "annotation_bromine_mass_percent",
+                "annotation_iodine_to_carbon", "annotation_hydrogen_to_iodine", "annotation_iodine_mass_percent", "annotation_halogenation_score",
                 "component_size", "component_rt_center", "component_rt_spread", "component_density",
                 "component_mean_correlation", "component_best_partner", "component_max_correlation",
                 "component_mean_correlation_to_component", "component_membership_score", "component_is_core", "component_bridge_flag"};
@@ -936,6 +1003,11 @@ namespace streamfind::mass_spec::nta::utils::detail
                 str_cell(r.annotation_category), str_cell(r.annotation_type), str_cell(r.annotation_parent_feature), str_cell(r.annotation_element),
                 fnum_cell(r.annotation_mass_error_da), fnum_cell(r.annotation_mass_error_ppm), fnum_cell(r.annotation_rt_error),
                 fnum_cell(r.annotation_rel_intensity), fnum_cell(r.annotation_expected_rel_intensity_min), fnum_cell(r.annotation_expected_rel_intensity_max), fnum_cell(r.annotation_score),
+                fnum_cell(r.annotation_estimated_carbon_count), fnum_cell(r.annotation_mass_to_carbon), fnum_cell(r.annotation_mass_defect_to_carbon), str_cell(r.annotation_estimated_formula),
+                fnum_cell(r.annotation_fluorine_to_carbon), fnum_cell(r.annotation_hydrogen_to_fluorine), fnum_cell(r.annotation_fluorine_mass_percent), fnum_cell(r.annotation_fluorination_score),
+                fnum_cell(r.annotation_chlorine_to_carbon), fnum_cell(r.annotation_hydrogen_to_chlorine), fnum_cell(r.annotation_chlorine_mass_percent),
+                fnum_cell(r.annotation_bromine_to_carbon), fnum_cell(r.annotation_hydrogen_to_bromine), fnum_cell(r.annotation_bromine_mass_percent),
+                fnum_cell(r.annotation_iodine_to_carbon), fnum_cell(r.annotation_hydrogen_to_iodine), fnum_cell(r.annotation_iodine_mass_percent), fnum_cell(r.annotation_halogenation_score),
                 inum_cell(r.component_size), fnum_cell(r.component_rt_center), fnum_cell(r.component_rt_spread), fnum_cell(r.component_density),
                 fnum_cell(r.component_mean_correlation), str_cell(r.component_best_partner), fnum_cell(r.component_max_correlation),
                 fnum_cell(r.component_mean_correlation_to_component), fnum_cell(r.component_membership_score),
@@ -973,32 +1045,22 @@ namespace streamfind::mass_spec::nta::utils::detail
 
         const std::vector<std::string> &internal_standards_columns()
         {
-            static const std::vector<std::string> cols = {
-                "analysis", "replicate", "feature", "feature_group", "feature_component", "adduct",
-                "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt", "exp_rt", "error_rt",
-                "intensity", "area", "id_level", "score", "shared_fragments", "cosine_similarity",
-                "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-                "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
-                "exp_ms2_size", "exp_ms2_mz", "exp_ms2_intensity",
-                "isotope_theoretical_peaks", "isotope_matched_peaks", "isotope_similarity", "isotope_match",
-                "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed",
-                "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity"};
-            return cols;
+            return suspects_columns();
         }
 
         std::vector<std::optional<std::string>> internal_standard_cells(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
         {
             return {
-                str_cell(r.analysis), std::nullopt, str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
+                str_cell(r.analysis), str_cell(r.replicate), str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
                 inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
                 dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
                 dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
                 str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP),
                 inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity), str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
+                inum_cell(r.eic_size), str_cell(r.eic_rt), str_cell(r.eic_mz), str_cell(r.eic_intensity), str_cell(r.eic_baseline), str_cell(r.eic_smoothed),
+                inum_cell(r.ms1_size), str_cell(r.ms1_mz), str_cell(r.ms1_intensity),
                 inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
-                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match),
-                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt};
+                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match)};
         }
 
         void emit_features(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
@@ -1019,7 +1081,7 @@ namespace streamfind::mass_spec::nta::utils::detail
         void enrich_suspect_with_feature(Json &suspect, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
         {
             const auto feature_payload = ::streamfind::mass_spec::nta::utils::feature_row(feature);
-            for (const auto *column : {"replicate", "feature_component", "adduct", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline",
+            for (const auto *column : {"replicate", "feature_group", "feature_component", "adduct", "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline",
                                        "eic_smoothed", "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity"})
                 suspect[column] = feature_payload.at(column);
         }
@@ -1071,7 +1133,20 @@ namespace streamfind::mass_spec::nta::utils::detail
             s.db_ms2_size=r.db_ms2_size; s.db_ms2_mz=r.db_ms2_mz; s.db_ms2_intensity=r.db_ms2_intensity; s.db_ms2_formula=r.db_ms2_formula; s.db_ms2_smiles=r.db_ms2_smiles;
             s.exp_ms2_size=r.exp_ms2_size; s.exp_ms2_mz=r.exp_ms2_mz; s.exp_ms2_intensity=r.exp_ms2_intensity;
             s.isotope_theoretical_peaks=r.isotope_theoretical_peaks; s.isotope_matched_peaks=r.isotope_matched_peaks; s.isotope_similarity=r.isotope_similarity; s.isotope_match=r.isotope_match;
-            auto out = suspect_json(s); out["feature_component"] = r.feature_component; out["adduct"] = r.adduct; return out;
+            auto out = suspect_json(s);
+            out["replicate"] = r.replicate;
+            out["feature_component"] = r.feature_component;
+            out["adduct"] = r.adduct;
+            out["eic_size"] = r.eic_size;
+            out["eic_rt"] = r.eic_rt;
+            out["eic_mz"] = r.eic_mz;
+            out["eic_intensity"] = r.eic_intensity;
+            out["eic_baseline"] = r.eic_baseline;
+            out["eic_smoothed"] = r.eic_smoothed;
+            out["ms1_size"] = r.ms1_size;
+            out["ms1_mz"] = r.ms1_mz;
+            out["ms1_intensity"] = r.ms1_intensity;
+            return out;
         }
 
         void emit_internal_standards(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
@@ -1093,7 +1168,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     rows.push_back(std::move(row));
                 }
             }
-            access.emit_table_rows("internalStandardsTable", internal_standards_columns(), {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","integer","integer","real","boolean","integer","string","string","string","string","string","integer","string","string","integer","string","string"}, rows);
+            access.emit_table_rows("internalStandardsTable", internal_standards_columns(), {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
         }
 
         // NULL-tolerant accessors (query_json stringifies all column values).
@@ -1118,7 +1193,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             auto &buffers = data.suspect_buffers();
             for (auto &b : buffers)
                 b = ::streamfind::mass_spec::nta::api::NTA_SUSPECTS();
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "suspectsTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis,feature,feature_group,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,ms2_size,ms2_mz,ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "suspectsTable") + " ORDER BY analysis"))
             {
                 const auto an = row.at("analysis").get<std::string>();
                 const auto it = std::find(data.analysis_names().begin(), data.analysis_names().end(), an);
@@ -1153,9 +1228,9 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
                 r.db_ms2_formula = col_s(row, "db_ms2_formula");
                 r.db_ms2_smiles = col_s(row, "db_ms2_smiles");
-                r.exp_ms2_size = col_i(row, "exp_ms2_size");
-                r.exp_ms2_mz = col_s(row, "exp_ms2_mz");
-                r.exp_ms2_intensity = col_s(row, "exp_ms2_intensity");
+                r.exp_ms2_size = col_i(row, "ms2_size");
+                r.exp_ms2_mz = col_s(row, "ms2_mz");
+                r.exp_ms2_intensity = col_s(row, "ms2_intensity");
                 r.isotope_theoretical_peaks = col_i(row, "isotope_theoretical_peaks");
                 r.isotope_matched_peaks = col_i(row, "isotope_matched_peaks");
                 r.isotope_similarity = col_d(row, "isotope_similarity");
@@ -1179,6 +1254,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     return;
                 ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW r;
                 r.analysis = an;
+                r.replicate = col_s(row, "replicate");
                 r.feature = col_s(row, "feature");
                 r.feature_group = col_s(row, "feature_group");
                 r.feature_component = col_s(row, "feature_component");
@@ -1208,9 +1284,18 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
                 r.db_ms2_formula = col_s(row, "db_ms2_formula");
                 r.db_ms2_smiles = col_s(row, "db_ms2_smiles");
-                r.exp_ms2_size = col_i(row, "exp_ms2_size");
-                r.exp_ms2_mz = col_s(row, "exp_ms2_mz");
-                r.exp_ms2_intensity = col_s(row, "exp_ms2_intensity");
+                r.eic_size = col_i(row, "eic_size");
+                r.eic_rt = col_s(row, "eic_rt");
+                r.eic_mz = col_s(row, "eic_mz");
+                r.eic_intensity = col_s(row, "eic_intensity");
+                r.eic_baseline = col_s(row, "eic_baseline");
+                r.eic_smoothed = col_s(row, "eic_smoothed");
+                r.ms1_size = col_i(row, "ms1_size");
+                r.ms1_mz = col_s(row, "ms1_mz");
+                r.ms1_intensity = col_s(row, "ms1_intensity");
+                r.exp_ms2_size = col_i(row, "ms2_size");
+                r.exp_ms2_mz = col_s(row, "ms2_mz");
+                r.exp_ms2_intensity = col_s(row, "ms2_intensity");
                 r.isotope_theoretical_peaks = col_i(row, "isotope_theoretical_peaks");
                 r.isotope_matched_peaks = col_i(row, "isotope_matched_peaks");
                 r.isotope_similarity = col_d(row, "isotope_similarity");
@@ -1226,7 +1311,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     append_row(row);
                 return;
             }
-            for (const auto &row : access.query("SELECT analysis,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,exp_ms2_size,exp_ms2_mz,exp_ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
+            for (const auto &row : access.query("SELECT analysis,replicate,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,eic_size,eic_rt,eic_mz,eic_intensity,eic_baseline,eic_smoothed,ms1_size,ms1_mz,ms1_intensity,ms2_size,ms2_mz,ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
                 append_row(row);
         }
 

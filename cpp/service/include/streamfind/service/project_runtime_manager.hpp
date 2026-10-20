@@ -41,6 +41,7 @@ public:
     std::string set_workflow_state(const std::string &session_id, const std::string &state);
     std::string start_workflow(const std::string &session_id);
     std::string cancel_workflow(const std::string &session_id);
+    std::string cancel_operation(const std::string &session_id, const std::string &operation_instance);
     Json run_operation(const std::string &session_id, const std::string &operation_id,
                        const Json &parameters, const std::string &operation_instance = {});
     std::vector<ProjectSessionDto> list() const;
@@ -58,6 +59,7 @@ private:
     std::unordered_map<std::string, std::string> workflow_states_;
     std::unordered_map<std::string, std::thread> workflow_workers_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;
+    std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> operation_cancellations_;
     std::unordered_map<std::string, Json> workflow_progress_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>> workflow_operation_steps_;
     OperationRegistry *operations_;

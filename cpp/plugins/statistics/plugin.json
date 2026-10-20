@@ -1,0 +1,15 @@
+{
+  "plugin_id": "statistics",
+  "name": "StreamFind statistics plugin",
+  "version": "0.6.0",
+  "abi_version": { "major": 1, "minor": 1 },
+  "sdk_compatibility": { "minimum": "0.6.0", "maximum": "0.6.x" },
+  "library": {
+    "windows-x86_64": "streamfind_statistics.dll",
+    "linux-x86_64": "libstreamfind_statistics.so"
+  },
+  "domain": "statistics",
+  "semantic_catalogue": "catalogue.duckdb",
+  "static_composition": false,
+  "platforms": ["windows-x86_64", "linux-x86_64"]
+}

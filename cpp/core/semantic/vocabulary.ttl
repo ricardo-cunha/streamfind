@@ -207,6 +207,13 @@ sf:hasOutputPort
     skos:prefLabel "has output port" ;
     skos:definition "Associates an operation with a reusable artifact contract published as output." .
 
+sf:optionalOutputPort
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range sf:ArtifactContract ;
+    skos:prefLabel "optional output port" ;
+    skos:definition "Marks an output artifact contract that is published only when the operation produces optional diagnostic or auxiliary data." .
+
 sf:sourceNodeId
     a rdf:Property ;
     rdfs:domain sf:WorkflowConnection ;
@@ -418,6 +425,27 @@ sf:dataKind
     rdfs:range rdfs:Literal ;
     skos:prefLabel "data kind" ;
     skos:definition "Runtime representation kind of an artifact contract. Persisted table contracts use the value duckdb_table." .
+
+sf:dynamicSchema
+    a rdf:Property ;
+    rdfs:domain sf:Table ;
+    rdfs:range xsd:boolean ;
+    skos:prefLabel "dynamic schema" ;
+    skos:definition "Indicates that a table contract has no fixed ontology column set and must resolve its concrete schema from the persisted DuckDB table at runtime." .
+
+sf:portId
+    a rdf:Property ;
+    rdfs:domain sf:ArtifactContract ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "port identifier" ;
+    skos:definition "Operation-local identifier used when a reusable artifact contract occurs more than once as an input port." .
+
+sf:semanticContract
+    a rdf:Property ;
+    rdfs:domain sf:ArtifactContract ;
+    rdfs:range rdfs:Literal ;
+    skos:prefLabel "semantic contract" ;
+    skos:definition "Reusable semantic contract represented by an operation-local artifact port identifier." .
 
 sf:valueType
     a rdf:Property ;

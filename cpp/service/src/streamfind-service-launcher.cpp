@@ -91,13 +91,13 @@ int main(int argc, char **argv) {
             if (attempt == 99) throw std::runtime_error("streamfind_service did not become ready");
         }
         const auto url = std::string("http://127.0.0.1:") + std::to_string(port) + "/";
-        std::cout << "streamfind is running\n"
-                  << "  app:     " << url << "\n"
-                  << "  backend: http://127.0.0.1:" << port << "\n"
-                  << "Close this terminal to stop streamfind.\n" << std::flush;
+        std::cout << "\nStreamFind is ready.\n"
+                  << "Open the application: " << url << "\n"
+                  << "Keep this window open while you work. Closing it stops StreamFind.\n" << std::flush;
         open_browser(url);
         waitpid(child_pid, nullptr, 0);
         child_pid = -1;
+        std::cout << "\nStreamFind has stopped. You may close this window.\n" << std::flush;
         return 0;
     } catch (const std::exception &error) {
         if (child_pid > 0) kill(child_pid, SIGTERM);

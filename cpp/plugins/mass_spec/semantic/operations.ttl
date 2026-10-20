@@ -22,7 +22,7 @@ sfms:readCsvTargets
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Read CSV with targets" ;
-    skos:definition "Read a target CSV, validate numeric matching fields, normalize optional chemical structures with Open Babel, and publish a reusable targetsTable artifact." ;
+    skos:definition "Read a mass/mz target CSV, validate numeric matching fields, ignore any chemical-identity columns, and publish a reusable targetsTable artifact." ;
     sf:category "mass-spec-ingestion" ;
     sf:hasParameter sfms:targetsCsvPathParameter ;
     sf:hasOutputPort sfms:targetsTable, sfcore:operationSuccessSignal .
@@ -33,9 +33,56 @@ sfms:readCsvSuspectTargets
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Read CSV with suspect targets" ;
-    skos:definition "Read a suspect-target CSV, require chemical identity fields, normalize them with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
+    skos:definition "Read a suspect-target CSV with mass/mz-driven matching fields, normalize optional chemical structures with Open Babel, validate optional MS2 reference peaks, and publish a reusable suspectTargetsTable artifact." ;
     sf:category "nta-identification" ;
     sf:hasParameter sfms:suspectTargetsCsvPathParameter ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
+sfms:internalStandardsToSuspects
+    a sf:Operation ;
+    sf:operationId "mass_spec.internal_standards_to_suspects" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Convert internal standards to suspects" ;
+    skos:definition "Project an internalStandardsTable onto the shared suspectsTable contract without changing its physical rows or identification values." ;
+    sf:category "nta-identification" ;
+    skos:guidance "Connect an internalStandardsTable created by Find internal standards or Find internal standards with MetFrag. The operation is a semantic projection only: it preserves the shared suspect columns, including validated database MS2 and experimental MS2 fields, and emits them under the suspectsTable contract for downstream suspect-target aggregation." ;
+    sf:hasInputPort sfms:internalStandardsTable ;
+    sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
+
+sfms:suspectsToSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.suspects_to_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Convert suspects to suspect targets" ;
+    skos:definition "Aggregate validated suspect assignments into one suspect-target row per chemical identity and polarity, including averaged database mass, chemical descriptors, experimental retention time, and harmonized in-silico MS2 reference fragments." ;
+    sf:category "nta-identification" ;
+    skos:guidance "Connect a suspectsTable. An internalStandardsTable is accepted because it is a specialized suspectsTable contract with the same identification columns. Only rows meeting min_shared_fragments and min_cosine_similarity and containing validated db_ms2_mz, db_ms2_intensity, db_ms2_formula, and db_ms2_size are used for the reference spectrum. Before aggregation, duplicate identities within the same analysis and polarity are reduced to one representative: more shared fragments, lower absolute mass error, higher intensity and area, higher cosine similarity, then higher identification level and lower candidate rank. Only database MS2 fragments with a non-empty matching db_ms2_formula are written; experimental ms2_mz and ms2_intensity are not used. Rows are grouped by InChIKey, then SMILES, then formula/mass/name, with polarity kept separate. Fragment m/z values are clustered using mz_clust, cluster m/z values are rounded to four decimal places, and cluster intensities are averaged across contributing rows and normalized so the maximum is 100. The resulting positive- or negative-mode JSON arrays conform directly to suspectTargetsTable and can be connected to later suspect screening or MetFrag operations." ;
+    sf:hasParameter
+        sfms:mzClustParameter,
+        sfms:minCosineSimilarityParameter,
+        sfms:minSharedFragmentsParameter ;
+    sf:hasInputPort sfms:suspectsTable ;
+    sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
+
+sfms:updateSuspectTargets
+    a sf:Operation ;
+    sf:operationId "mass_spec.update_suspect_targets" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Update suspect targets" ;
+    skos:definition "Update an existing suspectTargetsTable with retention-time and polarity-specific MS2 evidence from a connected suspectsTable, preserving unmatched target rows and appending new chemically described suspects." ;
+    sf:category "nta-identification" ;
+    skos:guidance "Connect a suspectTargetsTable, typically produced by Read CSV with suspect targets, and a suspectsTable, typically produced by suspect screening or by converting internal standards. Only suspect rows meeting min_shared_fragments, min_cosine_similarity, and db_ms2_size criteria are used. Duplicate identities within the same analysis and polarity are reduced to one representative. When an existing target has an RT, the representative with the smallest absolute RT difference is selected first; ties use more shared fragments, lower absolute mass error, higher intensity and area, higher cosine similarity, then higher identification level and lower candidate rank. Only database MS2 fragments with a non-empty matching db_ms2_formula are copied into the updated target spectra; experimental ms2_mz and ms2_intensity are not copied. Matching uses InChIKey, InChI, SMILES, or formula plus mass, independently of polarity, so positive and negative MS2 arrays can coexist in one target row. Existing target rows without matching suspect evidence are preserved; valid unmatched suspects are appended. m/z values are clustered using mz_clust and normalized into the target spectrum arrays." ;
+    sf:hasParameter
+        sfms:mzClustParameter,
+        sfms:minCosineSimilarityParameter,
+        sfms:minSharedFragmentsParameter ;
+    sf:hasInputPort sfms:suspectsTable, sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:suspectTargetsTable, sfcore:operationSuccessSignal .
 
 sfms:readMolSuspectTarget
@@ -223,6 +270,7 @@ sfms:plotSpectraTic
         sfms:rtMinParameter,
         sfms:rtMaxParameter,
         sfms:plotDownsizeParameter,
+        sfms:plotMaxPointsParameter,
         sfms:plotGroupByParameter,
         sfms:plotTitleParameter,
         sfms:plotXLabelParameter,
@@ -255,9 +303,9 @@ sfms:getRawSpectraEic
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Get extracted ion chromatograms" ;
-    skos:definition "Read MS1 raw points grouped as extracted-ion chromatograms for independent target ranges. Each target must provide mass/mz bounds or a chemical structure; optional id, analysis, polarity, level, and retention-time fields narrow the result." ;
+    skos:definition "Read MS1 raw points grouped as extracted-ion chromatograms for independent mass/mz target ranges; optional analysis, polarity, level, and retention-time fields narrow the result." ;
     sf:category "mass-spec-query" ;
-    sf:guidance "Use mz for a measured ion such as 275.23457, mass for a neutral mass, or SMILES/InChI when the exact mass should be derived. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Use the operation catalogue and tools/list to discover this operation; do not use method discovery." ;
+    sf:guidance "Use mz for a measured ion such as 275.23457 or mass for a neutral mass. Set polarity to 1 or -1 when known, ppm for mass tolerance, and rt_min/rt_max for an explicit seconds window. Use the operation catalogue and tools/list to discover this operation; do not use method discovery." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:targetsParameter,
@@ -361,6 +409,16 @@ sfms:getFeatures
         sfms:ppmParameter,
         sfms:rtToleranceParameter,
         sfms:filteredParameter ;
+    sf:hasInputPort sfms:featuresTable ;
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+
+sfms:dropFilteredFeatures
+    a sf:Operation ;
+    sf:operationId "mass_spec.drop_filtered_features" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:ntaModule ;
+    skos:prefLabel "Drop filtered features" ;
+    skos:definition "Return a new featuresTable containing only feature rows not marked as filtered." ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 
@@ -519,7 +577,8 @@ sfms:findFeatures
         sfcore:debugSpecIdxParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:findFeaturesDebugResult .
 
 
 sfms:loadFeaturesMs1
@@ -649,17 +708,19 @@ sfms:groupFeatures
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Group features" ;
     skos:definition "Group features across analyses into shared feature groups using RT/mass tolerance and the selected alignment method. The internal_standards method consumes the optional internalStandardsTable through the internal_standards table parameter; obi_warp does not require that table." ;
-    sf:guidance "Connect featuresTable. Select grouping_method from the constrained internal_standards or obi_warp options. When grouping_method is internal_standards, connect an internalStandardsTable result to the internal_standards table parameter; the operation rejects an empty or missing table in that mode." ;
+    sf:guidance "Connect featuresTable. The operation processes all analyses present in the connected table. Select grouping_method from the constrained internal_standards or obi_warp options. When grouping_method is internal_standards, connect an internalStandardsTable result to the internal_standards table parameter; the operation rejects an empty or missing table in that mode." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:groupingMethodParameter,
         sfms:internalStandardsParameter,
         sfms:rtDeviationParameter,
         sfms:ppmParameter,
         sfms:minSamplesParameter,
-        sfms:binSizeParameter ;
+        sfms:binSizeParameter,
+        sfms:debugRtParameter,
+        sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:groupFeaturesDebugResult .
 
 
 sfms:fillFeatures
@@ -680,10 +741,12 @@ sfms:fillFeatures
         sfms:minNumberTracesParameter,
         sfms:rtApexDeviationParameter,
         sfms:minSignalToNoiseRatioParameter,
-        sfms:minGaussianFitParameter ;
+        sfms:minGaussianFitParameter,
+        sfms:debugFeatureGroupParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:fillFeaturesDebugResult .
 
 
 sfms:createComponents
@@ -700,7 +763,8 @@ sfms:createComponents
         sfms:debugRtParameter,
         sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:createComponentsDebugResult .
 
 
 sfms:annotateComponents
@@ -709,19 +773,22 @@ sfms:annotateComponents
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Annotate components" ;
-    skos:definition "Annotate feature components from every analysis with isotopic, adduct, and fragment relationships." ;
-    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter. isotope_elements uses entries in the form Element:min-max, for example C:1-80, and selected elements are resolved through IsoSpec++. Each feature receives an implicit polarity-specific base ion ([M+H]+ or [M-H]-). annotation_modifications is an optional allow-list of additional signed adduct/loss expressions; omitted uses the common small-molecule NTS defaults (+Na, +NH4, +K, +Cl, +FA-H, +CH3COO, -H2O, -CO2, -NH3, and -CO), an explicit empty list disables modification matching, and additional built-in or signed formulas such as 2M+Na, +2NOH, or -2NOH are validated and resolved through Open Babel. Adducts attach directly to a base ion; losses may form sequential chains but must ultimately resolve to that base ion." ;
+    skos:definition "Annotate feature components from every analysis with isotope, adduct, and neutral-loss relationships, and calculate isotope-derived carbon plus formula-derived fluorination and halogenation descriptors." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable. isotope_elements controls isotope-envelope annotation only; D is an opt-in stable-label transition and can be enabled with an entry such as D:1-22. D-containing envelopes are evaluated by their exact mass spacing and coherent RT-contiguous chain rather than natural-abundance intensity ratios, so an observed pattern may grow and then decrease and a detector-saturated plateau may be retained. When D is detected in a validated isotope envelope, the highest-intensity member is used as the unfiltered polarity-specific base ion ([M+H]+ or [M-H]-); lower- and higher-mass members are annotated relative to that base as [M-1], [M-2], [M+1], and so on. A near-equal intensity plateau is centered when selecting the base. formula_elements independently controls the formula allow-list and defaults to C,H,N,O,P,S,F,Cl,Br,I; C and H are required, while B, Si, Se, As, and D are opt-in. formula_constraints accepts elemental counts such as D:22 or ranges such as D:0-22 and automatically enables constrained elements for formula generation. Deuterium uses the exact D-H mass shift and unit stable-label abundance rather than natural-isotope abundance statistics. When no 13C-derived carbon count is available, formulas can still be estimated for features with isotope evidence or explicit formula constraints using a bounded mass-only carbon range. Observed isotope elements are enabled and prioritized in formula ranking. Candidate formulas are filtered for valid composition and plausible DBE, then ranked using mass error, agreement with the isotope-derived carbon estimate when available, penalties for uncommon optional elements, and diagnostic isotope support when observed. From a valid estimated formula it records X/C and H/X ratios and formula-mass percentages for F, Cl, Br, and I, plus fluorination and halogenation scores. These are prioritisation descriptors, not confirmed identities." ;
     sf:hasParameter
         sfms:maxIsotopesParameter,
         sfms:maxChargeParameter,
         sfms:maxGapsParameter,
         sfms:ppmParameter,
         sfms:isotopeElementsParameter,
+        sfms:formulaElementsParameter,
+        sfms:formulaConstraintsParameter,
         sfms:annotationModificationsParameter,
         sfms:debugComponentParameter,
         sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:annotateComponentsDebugResult .
 
 
 sfms:suspectScreening
@@ -732,7 +799,7 @@ sfms:suspectScreening
     skos:prefLabel "Suspect screening" ;
     skos:definition "Match detected features against suspect targets by structure-derived or supplied accurate mass, with optional retention-time, isotope, and MS2 evidence, and persist candidate assignments in a suspectsTable." ;
     sf:category "nta-identification" ;
-    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and MS2 reference peaks are optional. Isotope matching is informational only and does not control candidate retention or identification level. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
+    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and reference MS2 peaks are optional. Cat. 1 requires accurate mass, matching reference MS2 from suspectTargetsTable, and matching RT; Cat. 2 requires accurate mass and matching reference MS2 without matching RT; Cat. 3 requires accurate mass with matching RT when reference MS2 is unavailable or does not match; Cat. 4 is an accurate-mass-only assignment. Isotope matching is informational only and does not control candidate retention or identification level. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
@@ -824,7 +891,7 @@ sfms:filterInternalStandards
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Filter internal standards" ;
     skos:definition "Refine internal-standard matches using only the rows and evidence stored in internalStandardsTable." ;
-    sf:guidance "Connect internalStandardsTable. The operation does not require featuresTable or an analysis selector; all filters are applied to every persisted internal-standard row and the result is emitted as a new internalStandardsTable." ;
+    sf:guidance "Connect internalStandardsTable. The operation does not require featuresTable or an analysis selector; all filters are applied to every persisted internal-standard row and the result is emitted as a new internalStandardsTable. Enable Deduplicate internal-standard matches to keep one chemically identical candidate per analysis and polarity. Deduplication prioritizes the smallest absolute RT error, then mass error, shared fragments, score, intensity, area, cosine similarity, identification level, and candidate rank." ;
     sf:hasParameter
         sfms:namesParameter,
         sfms:minScoreParameter,
@@ -832,7 +899,8 @@ sfms:filterInternalStandards
         sfms:maxErrorMassParameter,
         sfms:idLevelsParameter,
         sfms:minSharedFragmentsParameter,
-        sfms:minCosineSimilarityParameter ;
+        sfms:minCosineSimilarityParameter,
+        sfms:deduplicateInternalStandardsParameter ;
     sf:hasInputPort sfms:internalStandardsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
@@ -859,8 +927,8 @@ sfms:metfragScreening
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Suspect screening with MetFrag" ;
-    skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features: write per-feature MetFrag input, invoke the MetFrag command line (Java) from the ~/.streamfind tool layout, and rank resulting candidate fragments into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Installation is explicit: the operation checks the managed ~/.streamfind/tools installation and reports the missing dependency and expected path. Install Java 21 under tools/java and MetFragCL 2.6.11 as tools/metfrag/MetFragCL.jar, then retry this operation. Provide candidate structures through the suspect_targets parameter; retention time and MS2 reference peaks are optional." ;
+    skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features using a selectable candidate database, then rank resulting candidates into the suspect results." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Select LocalCSV (the default) to screen suspect_targets, PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets are supplied directly or through suspectTargetsTable, they take precedence and the operation automatically uses LocalCSV; otherwise LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -868,6 +936,8 @@ sfms:metfragScreening
         sfms:ppmMs2Parameter,
         sfms:mzrMs2Parameter,
         sfms:isotopePpmParameter,
+        sfms:databaseTypeParameter,
+        sfms:databasePathParameter,
         sfms:topNParameter,
         sfms:scoreTypesParameter,
         sfms:scoreWeightsParameter,
@@ -875,10 +945,14 @@ sfms:metfragScreening
         sfms:postProcessingCandidateFilterParameter,
         sfms:maximumTreeDepthParameter,
         sfms:numberThreadsParameter,
+        sfms:featureParallelismParameter,
+        sfms:cacheCandidatesParameter,
+        sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
+    sf:optionalInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 sfms:findInternalStandardsMetfrag
@@ -887,10 +961,9 @@ sfms:findInternalStandardsMetfrag
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards with MetFrag" ;
-    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
-    skos:guidance "Use after loadFeaturesMs2 when experimental MS2 is available; features without experimental MS2 can still receive precursor-mass candidate assignments. Provide targets through the Mass spectrometry suspect targets parameter, using the same target configuration as Find internal standards. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and user-supplied internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
+    skos:guidance "Connect a Mass spectrometry suspect targets table containing the user-defined internal standards, normally deuterated compounds. The operation always uses that connected table as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure and reported in the internal-standard result. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
     sf:hasParameter
-        sfms:suspectTargetsParameter,
         sfms:ppmParameter,
         sfms:secParameter,
         sfms:ppmMs2Parameter,
@@ -903,10 +976,13 @@ sfms:findInternalStandardsMetfrag
         sfms:postProcessingCandidateFilterParameter,
         sfms:maximumTreeDepthParameter,
         sfms:numberThreadsParameter,
+        sfms:featureParallelismParameter,
+        sfms:cacheCandidatesParameter,
+        sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
         sfms:filteredParameter,
         sfms:debugParameter ;
-    sf:hasInputPort sfms:featuresTable ;
+    sf:hasInputPort sfms:featuresTable, sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 sfms:fragmentSuspectTargets
@@ -944,7 +1020,11 @@ sfms:expandFragmentationTree
     skos:definition "Extend a one-compound fragmentationTreeTable with bounded, structure-bearing inverse-fragmentation candidates and return the same table contract. The MOL-derived row without parent_id is the main compound at depth 0; every generated graph-edit candidate is assigned depth -1." ;
     sf:category "structure-fragmentation" ;
     sf:guidance "Connect one fragmentationTreeTable generated from one MOL-derived suspect. The operation requires exactly one row without parent_id and rejects multi-root input to prevent mixing compounds. It preserves all original rows and appends depth -1 candidates. Unique observed fragment SMILES are attached at a bounded number of valid root/fragment positions; a second observed fragment may then be attached to model multi-unit impurities. A separate local-edit layer adds positional H/D exchange and simple oxygenation, fluorination, chlorination, and bromination hypotheses. Remaining capacity is filled with validated non-aromatic bond-order isomers. Open Babel canonicalizes every candidate and derives its formula and exact mass; provenance records the source fragment(s) and transformation. max_inverse_candidates caps the complete result, while the other parameters bound attachment positions, multi-unit expansion, and local edits. Formula-only composition hypotheses are intentionally handled by a separate formula-processing operation." ;
-    sf:hasParameter sfms:maxInverseCandidatesParameter, sfms:maxAttachmentVariantsPerFragmentParameter, sfms:maxFragmentUnitsPerCandidateParameter, sfms:maxLocalEditCandidatesParameter ;
+    sf:hasParameter
+        sfms:maxInverseCandidatesParameter,
+        sfms:maxAttachmentVariantsPerFragmentParameter,
+        sfms:maxFragmentUnitsPerCandidateParameter,
+        sfms:maxLocalEditCandidatesParameter ;
     sf:hasInputPort sfms:fragmentationTreeTable ;
     sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .
 
@@ -957,6 +1037,9 @@ sfms:filterFragmentationTree
     skos:definition "Filter fragmentationTreeTable rows by inclusive exact-mass bounds and limit repeated structures sharing the same formula while preserving the fragmentation-tree schema." ;
     sf:category "structure-fragmentation" ;
     sf:guidance "Connect one fragmentationTreeTable. Minimum and maximum fragment mass are inclusive and nullable. number_duplicate_formulas limits the number of rows retained per non-empty formula; zero keeps all rows. Filtering is applied in depth order and does not invent candidates or change parent links." ;
-    sf:hasParameter sfms:fragmentationTreeMinimumMassParameter, sfms:fragmentationTreeMaximumMassParameter, sfms:numberDuplicateFormulasParameter ;
+    sf:hasParameter
+        sfms:fragmentationTreeMinimumMassParameter,
+        sfms:fragmentationTreeMaximumMassParameter,
+        sfms:numberDuplicateFormulasParameter ;
     sf:hasInputPort sfms:fragmentationTreeTable ;
     sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .

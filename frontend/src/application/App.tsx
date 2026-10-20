@@ -34,6 +34,14 @@ import {
 } from './shell/appShellModel';
 
 type ThemeMode = 'light' | 'dark';
+
+function initialTheme(): ThemeMode {
+  const stored = localStorage.getItem('streamfind.theme');
+  if (stored === 'dark' || stored === 'light') return stored;
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
+}
 type WorkflowSummary = {
   operationCount?: number;
   revision?: number;
@@ -70,6 +78,11 @@ type OntologyEntry = {
   usages?: string[];
   dataKind?: string;
 };
+
+function workflowDomainClass(operation: string): string {
+  const domain = operation.split('.')[0] || 'core';
+  return domain.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
 
 function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
   const entries = new Map<string, OntologyEntry>();
@@ -843,12 +856,12 @@ const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: 
               return (
                 <g
                   key={operation.id}
-                  className={`sf-workflow-overview-node ${operation.operation.includes('mass_spec') ? 'sf-domain-mass-spec' : ''}`}
+                  className={`sf-workflow-overview-node sf-domain-${workflowDomainClass(operation.operation)}`}
                   transform={`translate(${position.x}, ${position.y})`}
                 >
                   <rect width={nodeWidth} height={nodeHeight} rx="8" />
                   <text className="sf-workflow-overview-node-label" x="14" y="29">
-                    {labelLines(operation.operation || operation.id).map((line, index) => (
+                    {labelLines(operation.operation || String(operation.id)).map((line, index) => (
                       <tspan key={`${operation.id}-${line}`} x="14" dy={index === 0 ? 0 : 16}>
                         {line}
                       </tspan>
@@ -1667,9 +1680,7 @@ function BackendStatusPane({
 }
 function AppShell({ client, serviceState }: { client: StreamFindApiClient; serviceState: ServiceState }) {
   const [routeState, setRouteState] = useState<ParsedRoute>(routeFromHash);
-  const [theme, setTheme] = useState<ThemeMode>(
-    () => (localStorage.getItem('streamfind.theme') as ThemeMode) || 'light',
-  );
+  const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [palette, setPalette] = useState<Palette>(
     () => (localStorage.getItem('streamfind.palette') as Palette) || 'streamfind',
   );
@@ -1843,7 +1854,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
           <span>Service {serviceState}</span>
         </div>
       </aside>
-      <main className="sf-main">
+      <main className={`sf-main${activeProject ? ' sf-main-workspace' : ''}`}>
         <header className="sf-topbar">
           <div className="sf-context">
             <img className="sf-topbar-logo" src={logo} alt="" />

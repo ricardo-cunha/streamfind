@@ -1,0 +1,171 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfstat:tableInputPort
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Input table" ;
+    skos:definition "Any persisted table selected as the source of a statistics matrix." ;
+    sf:tableContractName "STATISTICS_ANY_TABLE_PORT" ;
+    sf:dataKind "duckdb_table" ;
+    sf:dynamicSchema true ;
+    sf:portId "tableInput" ;
+    sf:semanticContract "anyTable" .
+
+sfstat:pcaScoresTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PCA scores table" ;
+    skos:definition "One row per sample and principal component, retaining sample ID and optional group label." ;
+    sf:tableContractName "STATISTICS_PCA_SCORES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:sampleIdColumn,
+        sfstat:componentColumn,
+        sfstat:scoreColumn,
+        sfstat:groupLabelColumn .
+
+sfstat:pcaLoadingsTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PCA loadings table" ;
+    skos:definition "One row per input variable and principal component." ;
+    sf:tableContractName "STATISTICS_PCA_LOADINGS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:variableIdColumn,
+        sfstat:componentColumn,
+        sfstat:loadingColumn .
+
+sfstat:pcaVarianceTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PCA variance table" ;
+    skos:definition "Eigenvalue and explained-variance summary by principal component." ;
+    sf:tableContractName "STATISTICS_PCA_VARIANCE" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:componentColumn,
+        sfstat:eigenvalueColumn,
+        sfstat:explainedVarianceRatioColumn,
+        sfstat:cumulativeVarianceColumn .
+
+sfstat:plsScoresTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PLS scores table" ;
+    skos:definition "One row per sample and latent component with X score, Y score, sample ID, and optional group label." ;
+    sf:tableContractName "STATISTICS_PLS_SCORES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:sampleIdColumn,
+        sfstat:componentColumn,
+        sfstat:xScoreColumn,
+        sfstat:yScoreColumn,
+        sfstat:groupLabelColumn .
+
+sfstat:plsLoadingsTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PLS loadings table" ;
+    skos:definition "One row per X or Y block item and latent component." ;
+    sf:tableContractName "STATISTICS_PLS_LOADINGS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:blockColumn,
+        sfstat:itemIdColumn,
+        sfstat:componentColumn,
+        sfstat:loadingColumn .
+
+sfstat:plsCoefficientsTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PLS coefficients table" ;
+    skos:definition "Regression coefficient and intercept for each predictor-response pair." ;
+    sf:tableContractName "STATISTICS_PLS_COEFFICIENTS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:predictorIdColumn,
+        sfstat:responseIdColumn,
+        sfstat:coefficientColumn,
+        sfstat:interceptColumn .
+
+sfstat:plsPredictionsTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PLS predictions table" ;
+    skos:definition "In-sample fitted value per sample-response for regression or one predicted label and confidence per sample for PLS-DA." ;
+    sf:tableContractName "STATISTICS_PLS_PREDICTIONS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:sampleIdColumn,
+        sfstat:responseIdColumn,
+        sfstat:observedValueColumn,
+        sfstat:predictedValueColumn,
+        sfstat:observedLabelColumn,
+        sfstat:predictedLabelColumn,
+        sfstat:confidenceColumn .
+
+sfstat:foldChangeTable
+    a sf:Table ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:providedByModule sfstat:analysisModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fold-change results table" ;
+    skos:definition "One row per variable with group means, directional log2 fold change, Hedges' g, Welch p-value, Benjamini-Hochberg adjusted p-value, and significance flag." ;
+    sf:tableContractName "STATISTICS_FOLD_CHANGE" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfstat:variableIdColumn,
+        sfstat:meanGroupAColumn,
+        sfstat:meanGroupBColumn,
+        sfstat:log2FoldChangeColumn,
+        sfstat:effectSizeColumn,
+        sfstat:pValueColumn,
+        sfstat:adjustedPValueColumn,
+        sfstat:significantColumn .
+
+sfstat:pcaDiagnostics
+    a sf:OperationResult ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PCA diagnostics" ;
+    skos:definition "Structured PCA method, matrix dimensions, component count, preprocessing, and total variance." ;
+    sf:type "object" .
+
+sfstat:plsDiagnostics
+    a sf:OperationResult ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "PLS diagnostics" ;
+    skos:definition "Structured PLS model, matrix dimensions, response mode, component count, convergence, and in-sample prediction scope." ;
+    sf:type "object" .
+
+sfstat:foldChangeDiagnostics
+    a sf:OperationResult ;
+    sf:availableInDomain sfstat:statistics ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fold-change diagnostics" ;
+    skos:definition "Group counts, tested variable count, significant variable count, method, cutoff, and pseudocount." ;
+    sf:type "object" .

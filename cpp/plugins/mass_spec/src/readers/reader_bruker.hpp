@@ -121,6 +121,22 @@ struct BafSpectrumMetadata
   BafCalibration calibration;
 };
 
+struct BrukerChromatogram
+{
+  std::int32_t source_id = 0;
+  std::string description;
+  std::string instrument;
+  std::string instrument_id;
+  std::string channel;
+  std::string signal_type;
+  std::string chromatogram_type;
+  std::string detector;
+  std::string units;
+  float wavelength_nm = 0.0f;
+  std::vector<float> time;
+  std::vector<float> intensity;
+};
+
 Family detect_family(const std::string &path);
 std::vector<TsfFrame> read_tsf_frames(const std::string &path);
 std::vector<TsfMsMsInfo> read_tsf_msms_info(const std::string &path);
@@ -130,6 +146,7 @@ std::vector<double> tsf_tof_to_mz(const TsfCalibration &calibration, double fram
 BafLineSpectrum read_baf_line_spectrum(const std::string &path, std::uint64_t line_array_id);
 BafProfileSpectrum read_baf_profile_spectrum(const std::string &path, std::uint64_t profile_array_id);
 std::vector<BafSpectrumMetadata> read_baf_spectra_metadata(const std::string &path);
+std::vector<BrukerChromatogram> read_chromatograms(const std::string &path);
 std::unique_ptr<MASS_SPEC_READER> create_tsf_reader(const std::string &path);
 std::unique_ptr<MASS_SPEC_READER> create_baf_reader(const std::string &path);
 }

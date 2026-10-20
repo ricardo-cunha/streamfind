@@ -542,6 +542,8 @@ extern "C"
 
   namespace streamfind::obabel_formula_detail
   {
+    constexpr double deuterium_exact_mass = 2.01410177812;
+
     struct FormulaElement
     {
       std::string symbol;
@@ -581,9 +583,17 @@ extern "C"
         formula += "H";
         if (counts[idx_H] > 1) formula += std::to_string(counts[idx_H]);
       }
+      std::vector<int> remaining_indices;
       for (int i = 0; i < static_cast<int>(elements.size()); ++i)
       {
         if (i == idx_C || i == idx_H) continue;
+        remaining_indices.push_back(i);
+      }
+      std::sort(remaining_indices.begin(), remaining_indices.end(), [&](int lhs, int rhs) {
+        return elements[lhs].symbol < elements[rhs].symbol;
+      });
+      for (const int i : remaining_indices)
+      {
         if (counts[i] > 0)
         {
           formula += elements[i].symbol;
@@ -695,6 +705,14 @@ extern "C"
       return 0;
     }
 
+    double exact_mass_for_symbol(const std::string &symbol)
+    {
+      if (symbol == "D")
+        return deuterium_exact_mass;
+      const int atomic_number = parse_atomic_number(symbol);
+      return atomic_number == 0 ? 0.0 : OpenBabel::OBElements::GetExactMass(atomic_number);
+    }
+
     bool parse_element_constraint(
         const std::string &token,
         std::string &symbol,
@@ -783,9 +801,8 @@ extern "C"
         if (!parse_element_constraint(token, elem.symbol,
                                        elem.min_count, elem.max_count))
           continue;
-        const int an = parse_atomic_number(elem.symbol);
-        if (an == 0) continue;
-        elem.exact_mass = OpenBabel::OBElements::GetExactMass(an);
+        elem.exact_mass = exact_mass_for_symbol(elem.symbol);
+        if (elem.exact_mass <= 0.0) continue;
         if (elem.symbol == "H") h_index = static_cast<int>(elems.size());
         elems.push_back(elem);
       }
@@ -864,8 +881,14 @@ extern "C"
 #ifdef _WIN32
     ensure_openbabel_data_dir();
 #endif
-    const std::string normalized = normalize_formula(formula);
+    // Keep D as an explicit formula token here. Open Babel's molecular
+    // formula boundary uses atomic-number lookup, while deuterium is a
+    // stable-isotope pseudo-element and therefore has no ordinary atomic
+    // number. Its exact mass is accumulated separately below.
+    const std::string normalized(formula);
     OpenBabel::OBMol mol;
+    double deuterium_mass = 0.0;
+    bool has_deuterium = false;
     for (size_t pos = 0; pos < normalized.size();)
     {
       if (normalized[pos] == '[')
@@ -886,9 +909,12 @@ extern "C"
       const unsigned int atomic_number = OpenBabel::OBElements::GetAtomicNum(symbol.c_str());
       if (atomic_number == 0)
       {
-        copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
-                  "Open Babel could not resolve element in formula");
-        return 0;
+        if (symbol != "D")
+        {
+          copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
+                    "Open Babel could not resolve element in formula");
+          return 0;
+        }
       }
       size_t count_end = pos;
       while (count_end < normalized.size() && std::isdigit(static_cast<unsigned char>(normalized[count_end])))
@@ -900,7 +926,12 @@ extern "C"
                   "Open Babel could not parse formula multiplicity");
         return 0;
       }
-      for (int index = 0; index < count; ++index)
+      if (symbol == "D")
+      {
+        deuterium_mass += static_cast<double>(count) * deuterium_exact_mass;
+        has_deuterium = true;
+      }
+      else for (int index = 0; index < count; ++index)
       {
         OpenBabel::OBAtom *atom = mol.NewAtom();
         atom->SetAtomicNum(atomic_number);
@@ -908,15 +939,18 @@ extern "C"
       pos = count_end;
     }
 
-    if (mol.NumAtoms() == 0)
+    if (mol.NumAtoms() == 0 && !has_deuterium)
     {
       copy_text(out->error, streamfind_OB_ERROR_CAPACITY,
                 "Open Babel could not parse formula");
       return 0;
     }
 
-    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, mol.GetFormula());
-    out->exact_mass = mol.GetExactMass();
+    if (has_deuterium)
+      copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, formula);
+    else
+      copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, mol.GetFormula());
+    out->exact_mass = deuterium_mass + (mol.NumAtoms() > 0 ? mol.GetExactMass() : 0.0);
     if (!finite_value(out->exact_mass) || out->exact_mass <= 0.0)
     {
       copy_text(out->error, streamfind_OB_ERROR_CAPACITY,

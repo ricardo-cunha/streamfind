@@ -125,7 +125,7 @@ $projectId = 'nta-cpp'
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-$testDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64/tests' } else { 'tmp/build/linux-cpp/tests' }
+$testDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64/core/tests' } else { 'tmp/build/linux-cpp/core/tests' }
 $env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
@@ -281,16 +281,16 @@ try {
     if ($RunPipeline) {
         $workflowPath = Join-Path $repoRoot 'cpp\plugins\mass_spec\resources\workflows\non-target-screening-basic.json'
         $workflow = Get-Content -LiteralPath $workflowPath -Raw | ConvertFrom-Json
-        $workflow.operations | Where-Object { $_.id -eq 'operation-1' } | ForEach-Object {
+        $workflow.operations | Where-Object { $_.id -eq 1 } | ForEach-Object {
             $_.parameters.source_paths = $sourcePaths
         }
-        $workflow.operations | Where-Object { $_.id -eq 'operation-2' } | ForEach-Object {
+        $workflow.operations | Where-Object { $_.id -eq 2 } | ForEach-Object {
             $_.parameters.replicate_names = $replicateNames
         }
-        $workflow.operations | Where-Object { $_.id -eq 'operation-3' } | ForEach-Object {
+        $workflow.operations | Where-Object { $_.id -eq 3 } | ForEach-Object {
             $_.parameters.blank_names = $blankNames
         }
-        $workflow.operations | Where-Object { $_.id -eq 'operation-21' } | ForEach-Object {
+        $workflow.operations | Where-Object { $_.id -eq 21 } | ForEach-Object {
             $_.parameters.suspect_targets_csv_path = $suspectsPath
         }
         $workflowOperations = @($workflow.operations)

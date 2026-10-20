@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "workflow_id", "version", "metadata", "operations", "connections"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "workflow_id": { "type": "string", "minLength": 1 },
     "name": { "type": "string" },
     "version": { "type": "integer", "minimum": 1 },
@@ -38,7 +38,7 @@
       "additionalProperties": false,
       "required": ["id", "operation", "parameters"],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
+        "id": { "type": "integer", "minimum": 0 },
         "operation": { "type": "string", "minLength": 1 },
         "parameters": { "type": "object" },
         "inputs": {
@@ -63,9 +63,9 @@
       "additionalProperties": false,
       "required": ["source_operation", "source_port", "target_operation", "target_port"],
       "properties": {
-        "source_operation": { "type": "string", "minLength": 1 },
+        "source_operation": { "type": "integer", "minimum": 0 },
         "source_port": { "type": "string", "minLength": 1 },
-        "target_operation": { "type": "string", "minLength": 1 },
+        "target_operation": { "type": "integer", "minimum": 0 },
         "target_port": { "type": "string", "minLength": 1 }
       }
     }

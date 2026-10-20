@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -124,7 +125,7 @@ namespace streamfind::mass_spec::target_csv
                 throw std::invalid_argument(std::string("CSV columns '") + mz_column + "' and '" + int_column + "' must have equal lengths");
         }
 
-        void normalize_structure(nlohmann::json &row, bool suspect_targets)
+        void normalize_structure(nlohmann::json &row, bool suspect_targets, std::size_t row_index)
         {
             rename_alias(row, "smiles", "SMILES");
             rename_alias(row, "inchi", "InChI");
@@ -140,14 +141,16 @@ namespace streamfind::mass_spec::target_csv
             validate_fragment_pair(row, "fragments_mz_pos", "fragments_intensity_pos");
             validate_fragment_pair(row, "fragments_mz_neg", "fragments_intensity_neg");
 
+            // MASS_SPEC_TARGETS is intentionally a matching-only table. CSV
+            // structure columns are accepted as input noise but are never
+            // normalized, validated, or carried into the target artifact.
+            if (!suspect_targets) return;
+
             const std::string smiles = text(row, "SMILES");
             const std::string inchi = text(row, "InChI");
-            if (smiles.empty() && inchi.empty())
-            {
-                if (suspect_targets)
-                    throw std::invalid_argument("Each suspect target requires SMILES or InChI");
-                return;
-            }
+            // Target rows may be mass/mz-only. Chemical structures are optional
+            // metadata and are normalized only when the caller supplied one.
+            if (smiles.empty() && inchi.empty()) return;
             const bool supplied_mass = present(row, "mass");
             const double supplied_exact_mass = supplied_mass ? number(row, "mass") : 0.0;
             if (!streamfind::core::vendors::openbabel::openbabel_available())
@@ -162,10 +165,21 @@ namespace streamfind::mass_spec::target_csv
                                          structure.exact_mass * 1e6;
                 if (error_ppm > mass_tolerance_ppm)
                 {
-                    throw std::invalid_argument(
-                        "Supplied mass does not agree with the structure-derived exact mass " +
-                        std::to_string(structure.exact_mass) + " within " +
-                        std::to_string(mass_tolerance_ppm) + " ppm");
+                    std::ostringstream message;
+                    message << std::setprecision(12)
+                            << "CSV row " << (row_index + 2);
+                    if (row.contains("name") && row.at("name").is_string() && !row.at("name").get<std::string>().empty())
+                        message << " (" << row.at("name").get<std::string>() << ")";
+                    message << ": supplied mass " << supplied_exact_mass
+                            << " Da does not agree with the structure-derived exact mass "
+                            << structure.exact_mass << " Da (" << error_ppm << " ppm; tolerance "
+                            << mass_tolerance_ppm << " ppm)."
+                            << " Supplied SMILES: " << (smiles.empty() ? "<empty>" : smiles)
+                            << ". Supplied InChI: " << (inchi.empty() ? "<empty>" : inchi)
+                            << ". Open Babel parsed formula: " << structure.formula
+                            << ", canonical SMILES: " << structure.canonical_smiles
+                            << ", canonical InChIKey: " << structure.inchikey;
+                    throw std::invalid_argument(message.str());
                 }
             }
             row["SMILES"] = structure.canonical_smiles;
@@ -178,15 +192,13 @@ namespace streamfind::mass_spec::target_csv
 
         nlohmann::json canonical_row(nlohmann::json row, bool suspect_targets, std::size_t index)
         {
-            normalize_structure(row, suspect_targets);
+            normalize_structure(row, suspect_targets, index);
             if (!present(row, "mass") && !present(row, "mz"))
                 throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires mass or mz");
             if (suspect_targets)
             {
-                if (!present(row, "name")) throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires name");
-                if (!present(row, "formula")) throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires formula");
-                if (!present(row, "SMILES") && !present(row, "InChI"))
-                    throw std::invalid_argument("CSV row " + std::to_string(index + 2) + " requires SMILES or InChI");
+                // Suspect-target matching is driven by mass/mz and optional RT.
+                // Name, formula, identifiers, and reference MS2 remain optional.
             }
             const char *numeric[] = {"mass", "mass_min", "mass_max", "mz", "mz_min", "mz_max", "rt", "rtmin", "rtmax", "xLogP"};
             for (const auto *key : numeric)
@@ -223,9 +235,13 @@ namespace streamfind::mass_spec::target_csv
             for (std::size_t i = 0; i < header.size(); ++i)
             {
                 const auto key = detail::lower(detail::trim(header[i]));
-                if (key == "ms2_positive" || key == "ms2_negative")
+                if (suspect_targets && (key == "ms2_positive" || key == "ms2_negative"))
                     throw std::invalid_argument("CSV MS2 columns must use the schema names fragments_mz_pos, fragments_intensity_pos, fragments_mz_neg, and fragments_intensity_neg");
-                if (!key.empty() && target_columns.contains(key) && !fields[i].empty()) row[key] = fields[i];
+                const bool structure_column = key == "formula" || key == "smiles" ||
+                                              key == "inchi" || key == "inchikey";
+                if (!key.empty() && target_columns.contains(key) &&
+                    (suspect_targets || !structure_column) && !fields[i].empty())
+                    row[key] = fields[i];
             }
             rows.push_back(detail::canonical_row(std::move(row), suspect_targets, rows.size()));
         }

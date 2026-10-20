@@ -1,0 +1,320 @@
+.sf-statistics-dashboard {
+  box-sizing: border-box;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
+}
+
+.sf-statistics-workspace {
+  display: grid;
+  grid-template-columns: minmax(200px, var(--sf-statistics-controls-width, 240px)) 6px minmax(0, 1fr) 6px minmax(
+      280px,
+      var(--sf-statistics-details-width, 380px)
+    );
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sf-statistics-controls-panel,
+.sf-statistics-plot-panel,
+.sf-statistics-details-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  color: var(--sf-text);
+}
+
+.sf-statistics-controls-panel,
+.sf-statistics-details-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px;
+}
+
+.sf-statistics-controls-panel {
+  overflow-x: hidden;
+}
+
+.sf-statistics-plot-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sf-statistics-plot-panel > header,
+.sf-statistics-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sf-statistics-plot-panel > header {
+  flex: 0 0 auto;
+  padding: 10px 0 0;
+}
+
+.sf-statistics-plot-panel > header small,
+.sf-statistics-panel-heading span,
+.sf-statistics-empty,
+.sf-statistics-muted {
+  color: var(--sf-text-secondary);
+}
+
+.sf-statistics-panel-heading strong {
+  font-size: 0.9rem;
+}
+
+.sf-statistics-panel-heading span,
+.sf-statistics-plot-panel > header small {
+  font-size: 0.76rem;
+}
+
+.sf-statistics-controls-panel label {
+  display: grid;
+  gap: 5px;
+  color: var(--sf-text-secondary);
+  font-size: 0.76rem;
+}
+
+.sf-statistics-controls-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--sf-border);
+  border-radius: 5px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
+}
+
+.sf-statistics-splitter {
+  position: relative;
+  width: 6px;
+  min-width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sf-statistics-splitter::before {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  background: var(--sf-border);
+  content: '';
+  transform: translateX(-50%);
+}
+
+.sf-statistics-splitter::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 14px;
+  height: 26px;
+  border: 1px solid var(--sf-border);
+  border-radius: 4px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text-secondary);
+  content: '⋮';
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+
+.sf-statistics-splitter:hover::before,
+.sf-statistics-splitter:active::before {
+  background: var(--sf-accent);
+}
+
+.sf-statistics-splitter:hover::after,
+.sf-statistics-splitter:active::after {
+  border-color: var(--sf-accent);
+  color: var(--sf-accent);
+}
+
+.sf-statistics-plot-stage {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  border: 0;
+  background: var(--sf-surface-raised);
+}
+
+.sf-statistics-plot {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+}
+
+.sf-statistics-plot,
+.sf-statistics-plot > section,
+.sf-statistics-plot > section > [role='img'],
+.sf-statistics-plot > div,
+.sf-statistics-plot .js-plotly-plot,
+.sf-statistics-plot .plot-container,
+.sf-statistics-plot .svg-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.sf-statistics-summary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sf-statistics-json {
+  min-width: 0;
+  border-top: 1px solid var(--sf-border);
+  padding-top: 10px;
+  color: var(--sf-text-secondary);
+  font-size: 0.76rem;
+}
+
+.sf-statistics-json summary {
+  cursor: pointer;
+  color: var(--sf-text);
+  font-weight: 600;
+}
+
+.sf-statistics-json pre {
+  max-height: 220px;
+  margin: 8px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+}
+
+.sf-statistics-summary-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  background: var(--sf-surface-raised);
+}
+
+.sf-statistics-summary-item span {
+  color: var(--sf-text-secondary);
+  font-size: 0.73rem;
+  text-transform: capitalize;
+}
+
+.sf-statistics-summary-item strong {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.sf-statistics-clear-selection,
+.sf-statistics-pagination button {
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text);
+  cursor: pointer;
+}
+
+.sf-statistics-selection,
+.sf-statistics-diagnostics {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--sf-surface-raised);
+}
+
+.sf-statistics-selection h3 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.sf-statistics-selection dl {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.8fr) minmax(0, 1.2fr);
+  gap: 5px 10px;
+  margin: 10px 0;
+  font-size: 0.78rem;
+}
+
+.sf-statistics-selection dl div {
+  display: contents;
+}
+
+.sf-statistics-selection dt {
+  color: var(--sf-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.sf-statistics-selection dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sf-statistics-diagnostics {
+  font-size: 0.8rem;
+}
+
+.sf-statistics-diagnostics pre {
+  max-height: 170px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--sf-text-secondary);
+  font-size: 0.72rem;
+}
+
+.sf-statistics-state {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  color: var(--sf-text-secondary);
+}
+
+.sf-statistics-error {
+  color: var(--sf-danger, #b42318);
+}
+
+@media (max-width: 780px) {
+  .sf-statistics-dashboard {
+    overflow: auto;
+  }
+
+  .sf-statistics-workspace {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+
+  .sf-statistics-splitter {
+    display: none;
+  }
+
+  .sf-statistics-controls-panel,
+  .sf-statistics-details-panel {
+    flex: 0 0 auto;
+  }
+
+  .sf-statistics-plot-panel {
+    min-height: 420px;
+  }
+
+  .sf-statistics-plot {
+    min-height: 280px;
+  }
+}

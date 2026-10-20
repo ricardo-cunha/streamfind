@@ -4,6 +4,7 @@
 #include "utils/error.hpp"
 
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -21,11 +22,16 @@ streamfind_plugin_status invoke(
     try {
         const auto request = Json::parse(std::string(request_json, request_size));
         const auto capability = request.at("capability_id").get<std::string>();
+        const auto parameters = request.value("parameters", Json::object());
         const auto *binding = operations::capabilities().find(capability);
         if (binding == nullptr)
             return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
         sdk::PluginHostAccess access(*host, execution_context);
-        const auto response = binding->handler(access, Json{{"capability_id", capability}}).dump();
+        auto operation_parameters = parameters;
+        operation_parameters["_inputs"] = request.value("inputs", Json::object());
+        const auto response = binding->handler(access, operation_parameters).dump();
+        if (response.size() > std::numeric_limits<uint32_t>::max())
+            return STREAMFIND_PLUGIN_ERROR;
         auto *buffer = static_cast<char *>(
             host->allocate(response.size(), alignof(char), host->user_data));
         if (buffer == nullptr) return STREAMFIND_PLUGIN_ERROR;
@@ -76,7 +82,7 @@ streamfind_plugin_get_descriptor(
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "raman";
-    descriptor->plugin_version = "0.5.0";
+    descriptor->plugin_version = "0.6.0";
     descriptor->register_plugin = &streamfind::raman::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::raman::dynamic_detail::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;
