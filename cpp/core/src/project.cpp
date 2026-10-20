@@ -2170,18 +2170,27 @@ namespace streamfind
     {
         if (!callback)
             throw Error(ErrorCode::InvalidArgument, "table transaction callback is required");
-        std::lock_guard lock(impl_->mutex);
+        std::unique_lock lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
         query(connection.get(), "BEGIN TRANSACTION", "begin project table transaction");
         ProjectTableStore store(*this, owned_tables, static_cast<void *>(connection.get()));
+        // The callback may report progress or write operation logs. Those
+        // callbacks need to reacquire the project mutex, so do not hold it
+        // across plugin/table work. The transaction owns its connection and
+        // remains serialized by the workflow execution lock.
+        lock.unlock();
         try
         {
             callback(store);
+            lock.lock();
+            ensure_active(*impl_);
             query(connection.get(), "COMMIT", "commit project table transaction");
         }
         catch (...)
         {
+            if (!lock.owns_lock())
+                lock.lock();
             try
             {
                 query(connection.get(), "ROLLBACK", "rollback project table transaction");

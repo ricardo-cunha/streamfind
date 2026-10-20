@@ -47,6 +47,19 @@ namespace streamfind::mass_spec::nta
       return has_carbon;
     }
 
+    bool isotope_combination_is_pure_deuterium(const std::vector<std::string> &combination)
+    {
+      return !combination.empty() && std::all_of(
+        combination.begin(), combination.end(), [](const std::string &isotope) {
+          return isotope == "D";
+        });
+    }
+
+    bool isotope_combination_contains_deuterium(const std::vector<std::string> &combination)
+    {
+      return std::find(combination.begin(), combination.end(), "D") != combination.end();
+    }
+
     bool isotope_combination_has_supported_envelope(
         const std::vector<std::string> &combination,
         int step,
@@ -1528,6 +1541,8 @@ namespace streamfind::mass_spec::nta
 
                 double combination_mass_error = 10;
                 double combination_preference = -std::numeric_limits<double>::infinity();
+                bool selected_deuterated_combination = false;
+                bool selected_pure_deuterium_combination = false;
 
             if (mass_distance_min - mzr < candidate_mass_distance && mass_distance_max + mzr > candidate_mass_distance)
             {
@@ -1630,6 +1645,8 @@ namespace streamfind::mass_spec::nta
                 const float rel_int = intensity / mono_ion.intensity;
                 const bool deuterated_combination = std::find(
                   combination.begin(), combination.end(), "D") != combination.end();
+                const bool pure_deuterium_combination =
+                  isotope_combination_is_pure_deuterium(combination);
 
                 const auto isotope_ratio_for = [&combinations](const std::string &label) {
                   const auto iterator = std::find(combinations.isotopes_str.begin(), combinations.isotopes_str.end(), label);
@@ -1670,8 +1687,21 @@ namespace streamfind::mass_spec::nta
                 const bool chemically_preferred_tie =
                     std::abs(candidate_mass_distance_error - combination_mass_error) <= mass_tie_tolerance &&
                     chemical_preference > combination_preference;
+                // Stable-label envelopes can contain natural-isotope mixtures
+                // with a slightly smaller theoretical mass error than the
+                // chemically meaningful all-D continuation.  Do not let that
+                // sub-selection de-anchor a coherent deuterium chain: within
+                // 5 mDa, prefer the pure-D transition over a mixed D/13C,
+                // D/15N, or D/halogen explanation.  The final ppm check still
+                // guards the accepted feature against a genuinely poor mass
+                // match.
+                const bool pure_deuterium_preferred =
+                    pure_deuterium_combination && deuterated_combination &&
+                    !selected_pure_deuterium_combination &&
+                    candidate_mass_distance_error <= 0.005 &&
+                    selected_deuterated_combination;
 
-                if ((mass_is_better || chemically_preferred_tie) &&
+                if ((mass_is_better || chemically_preferred_tie || pure_deuterium_preferred) &&
                     candidate_mass_distance_error <= mzr * 1.3 &&
                     (deuterated_combination
                       ? (rel_int > 0.0f && std::isfinite(rel_int))
@@ -1694,6 +1724,8 @@ namespace streamfind::mass_spec::nta
                   }
                   combination_mass_error = candidate_mass_distance_error;
                   combination_preference = chemical_preference;
+                  selected_deuterated_combination = deuterated_combination;
+                  selected_pure_deuterium_combination = pure_deuterium_combination;
 
                   bool is_in_chain = false;
                   size_t is_in_chain_idx = 0;
@@ -2371,6 +2403,8 @@ namespace streamfind::mass_spec::nta
             double total_rt = 0.0;
             double total_score = 0.0;
             double envelope_score = 0.0;
+            int deuterated_children = 0;
+            int pure_deuterium_children = 0;
             bool deuterated_rebased = false;
           };
 
@@ -2382,15 +2416,10 @@ namespace streamfind::mass_spec::nta
           // its highest-intensity member so that this member remains the
           // unfiltered [M+H]+/[M-H]- feature.
           const auto rebase_deuterated_assignment = [&fts, ppm](ISOTOPE_CHAIN_ASSIGNMENT &assignment) {
-            const auto contains_deuterium = [](const std::string &element_label) {
-              const std::vector<std::string> tokens = split_string(element_label, '/');
-              return std::find(tokens.begin(), tokens.end(), "D") != tokens.end();
-            };
-
             bool has_deuterium = false;
             for (const auto &child : assignment.children)
             {
-              if (contains_deuterium(child.element_or_delta))
+              if (isotope_combination_contains_deuterium(split_string(child.element_or_delta, '/')))
               {
                 has_deuterium = true;
                 break;
@@ -2577,6 +2606,14 @@ namespace streamfind::mass_spec::nta
 
               if (!assignment.children.empty())
               {
+                for (const auto &candidate : assignment.children)
+                {
+                  const auto combination = split_string(candidate.element_or_delta, '/');
+                  if (isotope_combination_contains_deuterium(combination))
+                    ++assignment.deuterated_children;
+                  if (isotope_combination_is_pure_deuterium(combination))
+                    ++assignment.pure_deuterium_children;
+                }
                 const double child_count = static_cast<double>(assignment.children.size());
                 const double mean_score = assignment.total_score / child_count;
                 // Reward complete, coherent envelopes while keeping the score
@@ -2591,7 +2628,87 @@ namespace streamfind::mass_spec::nta
             }
           }
 
+          // The candidate search evaluates each possible isotope window
+          // independently.  A labelled envelope can therefore produce
+          // several overlapping windows with the same re-anchored ion, for
+          // example one covering M-4..M+2 and another covering M-2..M+3.
+          // Merge those compatible windows before resolving conflicts so a
+          // valid terminal isotope is not discarded merely because it was
+          // found by a second window.
+          std::vector<ISOTOPE_CHAIN_ASSIGNMENT> merged_assignments;
+          merged_assignments.reserve(isotope_assignments.size());
+          std::unordered_map<int, std::size_t> merged_by_anchor;
+          for (auto &assignment : isotope_assignments)
+          {
+            const auto existing = merged_by_anchor.find(assignment.anchor_idx);
+            if (existing == merged_by_anchor.end())
+            {
+              merged_by_anchor.emplace(assignment.anchor_idx, merged_assignments.size());
+              merged_assignments.push_back(std::move(assignment));
+              continue;
+            }
+
+            auto &merged = merged_assignments[existing->second];
+            for (const auto &candidate : assignment.children)
+            {
+              auto duplicate = std::find_if(
+                merged.children.begin(), merged.children.end(),
+                [&candidate](const ANNOTATION_CANDIDATE &current) {
+                  return current.feature_index == candidate.feature_index;
+                });
+              if (duplicate == merged.children.end())
+              {
+                merged.children.push_back(candidate);
+                continue;
+              }
+
+              const bool candidate_pure_deuterium = isotope_combination_is_pure_deuterium(
+                split_string(candidate.element_or_delta, '/'));
+              const bool duplicate_pure_deuterium = isotope_combination_is_pure_deuterium(
+                split_string(duplicate->element_or_delta, '/'));
+              if ((candidate_pure_deuterium && !duplicate_pure_deuterium) ||
+                  (candidate_pure_deuterium == duplicate_pure_deuterium &&
+                   candidate.mass_error_ppm < duplicate->mass_error_ppm))
+                *duplicate = candidate;
+            }
+          }
+
+          for (auto &assignment : merged_assignments)
+          {
+            std::sort(assignment.children.begin(), assignment.children.end(), [&fts](
+              const ANNOTATION_CANDIDATE &lhs, const ANNOTATION_CANDIDATE &rhs) {
+                if (fts.mz[lhs.feature_index] != fts.mz[rhs.feature_index])
+                  return fts.mz[lhs.feature_index] < fts.mz[rhs.feature_index];
+                return lhs.feature_index < rhs.feature_index;
+              });
+            assignment.deuterated_children = 0;
+            assignment.pure_deuterium_children = 0;
+            assignment.total_ppm = 0.0;
+            assignment.total_rt = 0.0;
+            assignment.total_score = 0.0;
+            for (const auto &candidate : assignment.children)
+            {
+              const auto combination = split_string(candidate.element_or_delta, '/');
+              if (isotope_combination_contains_deuterium(combination))
+                ++assignment.deuterated_children;
+              if (isotope_combination_is_pure_deuterium(combination))
+                ++assignment.pure_deuterium_children;
+              assignment.total_ppm += candidate.mass_error_ppm;
+              assignment.total_rt += candidate.rt_error;
+              assignment.total_score += candidate.score;
+            }
+            const double child_count = static_cast<double>(assignment.children.size());
+            const double mean_score = child_count > 0.0 ? assignment.total_score / child_count : 0.0;
+            assignment.envelope_score = assignment.total_score +
+              (0.15 * std::log1p(child_count)) + (0.10 * mean_score);
+          }
+          isotope_assignments = std::move(merged_assignments);
+
           std::sort(isotope_assignments.begin(), isotope_assignments.end(), [&fts](const ISOTOPE_CHAIN_ASSIGNMENT &lhs, const ISOTOPE_CHAIN_ASSIGNMENT &rhs) {
+            if (lhs.pure_deuterium_children != rhs.pure_deuterium_children)
+              return lhs.pure_deuterium_children > rhs.pure_deuterium_children;
+            if (lhs.deuterated_children != rhs.deuterated_children)
+              return lhs.deuterated_children > rhs.deuterated_children;
             if (lhs.children.size() != rhs.children.size())
               return lhs.children.size() > rhs.children.size();
             if (lhs.envelope_score != rhs.envelope_score)
@@ -2607,6 +2724,30 @@ namespace streamfind::mass_spec::nta
           if (isotope_assignments.size() > max_isotope_anchor_hypotheses)
             isotope_assignments.resize(max_isotope_anchor_hypotheses);
 
+          if (debug_this_component && debug != nullptr)
+          {
+            debug->write_line("=== Isotope assignment arbitration ===");
+            for (const auto &assignment : isotope_assignments)
+            {
+              std::ostringstream line;
+              line << "assignment anchor=" << fts.feature[assignment.anchor_idx]
+                   << " children=" << assignment.children.size()
+                   << " deuterated=" << assignment.deuterated_children
+                   << " pure_deuterium=" << assignment.pure_deuterium_children
+                   << " rebased=" << (assignment.deuterated_rebased ? "true" : "false")
+                   << " score=" << assignment.envelope_score;
+              debug->write_line(line.str());
+              for (const auto &candidate : assignment.children)
+              {
+                std::ostringstream child_line;
+                child_line << "  child=" << fts.feature[candidate.feature_index]
+                           << " type=" << candidate.type
+                           << " elements=" << candidate.element_or_delta;
+                debug->write_line(child_line.str());
+              }
+            }
+          }
+
           std::unordered_set<int> isotope_anchor_children;
           for (const auto &assignment : isotope_assignments)
           {
@@ -2619,9 +2760,17 @@ namespace streamfind::mass_spec::nta
           for (const auto &assignment : isotope_assignments)
           {
             if (isotope_anchor_children.count(assignment.anchor_idx) > 0 && !assignment.deuterated_rebased)
+            {
+              if (debug_this_component && debug != nullptr)
+                debug->write_line("skip assignment: anchor is already an isotope child");
               continue;
+            }
             if (isotope_occupied.count(assignment.anchor_idx) > 0)
+            {
+              if (debug_this_component && debug != nullptr)
+                debug->write_line("skip assignment: anchor is occupied");
               continue;
+            }
 
             bool conflict = false;
             for (const auto &candidate : assignment.children)
@@ -2633,7 +2782,19 @@ namespace streamfind::mass_spec::nta
               }
             }
             if (conflict)
+            {
+              if (debug_this_component && debug != nullptr)
+                debug->write_line("skip assignment: child conflicts with an occupied assignment");
               continue;
+            }
+
+            if (debug_this_component && debug != nullptr)
+            {
+              std::ostringstream line;
+              line << "accept assignment anchor=" << fts.feature[assignment.anchor_idx]
+                   << " children=" << assignment.children.size();
+              debug->write_line(line.str());
+            }
 
             isotope_occupied.insert(assignment.anchor_idx);
             for (const auto &candidate : assignment.children)

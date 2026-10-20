@@ -95,6 +95,17 @@ int main()
         std::string right_rows_artifact;
         std::string left_artifact;
         std::string right_artifact;
+        bool transaction_log_seen = false;
+        project.set_operation_log_callback([&](std::string_view, std::string_view message) {
+            if (message == "transaction callback reached")
+                transaction_log_seen = true;
+        });
+        streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &) {
+            project.log_operation("transaction callback reached");
+        });
+        project.set_operation_log_callback({});
+        if (!transaction_log_seen)
+            throw std::runtime_error("table transaction callback could not report progress");
         const auto workflow_revision = project.get_workflow().version;
         streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &tables) {
             left_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "left-rows-source", workflow_revision,

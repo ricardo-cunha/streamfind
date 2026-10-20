@@ -37,3 +37,25 @@ When a file or workflow does not behave as expected, record the streamfind
 version, operating system, operation name, relevant parameters, and a minimal
 reproducible project or data description. Keep vendor-format support claims
 specific to the tested file family and acquisition mode.
+
+## Release validation
+
+The native 0.6.0 release is validated on both supported package platforms.
+From the repository root, use the platform release scripts so that the
+frontend, native runtime, CTest suite, package contents, dependency closure,
+and packaged MCP interface are checked together:
+
+```powershell
+scripts\release\cpp\release-cpp.ps1 -Version 0.6.0
+```
+
+On Linux, run:
+
+```sh
+scripts/release/cpp/release-cpp-linux.sh 0.6.0
+```
+
+The release validation must report 24/24 CTest tests passing and successful
+packaged MCP smoke validation. The resulting archives and
+`sha256sums.txt` are written to `tmp/release-output/` and should be checked
+before publishing them.
