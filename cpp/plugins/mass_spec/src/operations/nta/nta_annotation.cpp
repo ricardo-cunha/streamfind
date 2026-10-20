@@ -56,6 +56,15 @@ namespace streamfind::mass_spec::nta
         double isotope_ratio,
         double maximum_element_count)
     {
+      // D is a deliberately enabled stable-label transition. Unlike a
+      // natural isotope, its observed envelope is not constrained by an
+      // abundance ratio: labelled material may rise through several members,
+      // and detector saturation may flatten the maximum. m/z and RT
+      // matching, chain continuity, and the later envelope selection still
+      // provide the structural constraints for these candidates.
+      if (std::find(combination.begin(), combination.end(), "D") != combination.end())
+        return true;
+
       // A pure M+2 isotope assignment must explain a physically meaningful
       // number of atoms after accounting for the carbon-only M+2 envelope.
       // This prevents a 4% peak from being labelled 37Cl (~32% per chlorine)
@@ -1619,6 +1628,8 @@ namespace streamfind::mass_spec::nta
                 }
 
                 const float rel_int = intensity / mono_ion.intensity;
+                const bool deuterated_combination = std::find(
+                  combination.begin(), combination.end(), "D") != combination.end();
 
                 const auto isotope_ratio_for = [&combinations](const std::string &label) {
                   const auto iterator = std::find(combinations.isotopes_str.begin(), combinations.isotopes_str.end(), label);
@@ -1662,8 +1673,10 @@ namespace streamfind::mass_spec::nta
 
                 if ((mass_is_better || chemically_preferred_tie) &&
                     candidate_mass_distance_error <= mzr * 1.3 &&
-                    rel_int >= min_rel_int * 0.7 &&
-                    rel_int <= intensity_upper_bound &&
+                    (deuterated_combination
+                      ? (rel_int > 0.0f && std::isfinite(rel_int))
+                      : (rel_int >= min_rel_int * 0.7f &&
+                         rel_int <= intensity_upper_bound)) &&
                     isotope_combination_has_supported_envelope(
                         combination,
                         s,
@@ -2392,14 +2405,37 @@ namespace streamfind::mass_spec::nta
             for (const auto &child : assignment.children)
               members.push_back(child.feature_index);
 
+            std::vector<int> sorted_members = members;
+            std::sort(sorted_members.begin(), sorted_members.end(), [&fts](int lhs, int rhs) {
+              if (fts.mz[lhs] != fts.mz[rhs])
+                return fts.mz[lhs] < fts.mz[rhs];
+              return lhs < rhs;
+            });
+
             int base_idx = assignment.anchor_idx;
+            float maximum_intensity = fts.intensity[base_idx];
             for (const int member_idx : members)
             {
+              maximum_intensity = std::max(maximum_intensity, fts.intensity[member_idx]);
               if (fts.intensity[member_idx] > fts.intensity[base_idx])
                 base_idx = member_idx;
             }
             if (base_idx == assignment.anchor_idx)
               return;
+
+            // A saturated detector can flatten the top of the envelope. If
+            // several adjacent members are within 2% of the maximum, use the
+            // middle of that plateau instead of biasing toward the lowest-m/z
+            // member.
+            std::vector<int> plateau;
+            for (const int member_idx : sorted_members)
+            {
+              if (maximum_intensity > 0.0f &&
+                  fts.intensity[member_idx] >= maximum_intensity * 0.98f)
+                plateau.push_back(member_idx);
+            }
+            if (plateau.size() > 1)
+              base_idx = plateau[plateau.size() / 2];
 
             const auto base = fts.get_feature(base_idx);
             std::unordered_map<int, ANNOTATION_CANDIDATE> original_children;
