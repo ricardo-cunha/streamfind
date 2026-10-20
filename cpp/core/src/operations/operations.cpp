@@ -131,9 +131,10 @@ Json read_csv(Project &project, const Json &parameters,
             streamfind::RuntimeTableColumn{name, type, streamfind::ParameterType::string, true, Json::object()}));
     }
     Json result;
+    const auto workflow_revision = project.get_workflow().version;
     ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
         const auto allocation = tables.allocate_table_artifact("anyTable", "streamfind.read_csv", instance,
-                                                                project.get_workflow().version, columns);
+                                                                workflow_revision, columns);
         std::string target_columns;
         for (std::size_t index = 0; index < columns.size(); ++index) {
             if (index != 0) target_columns += ", ";
@@ -252,9 +253,10 @@ Json bind_table_rows(Project &project, const Json &, const std::string &instance
         select_columns += quote_identifier(left.columns().at(index).name);
     }
     Json result;
+    const auto workflow_revision = project.get_workflow().version;
     ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
         const auto allocation = tables.allocate_table_artifact("anyTable", "streamfind.bind_table_rows", instance,
-                                                                project.get_workflow().version, columns);
+                                                                workflow_revision, columns);
         tables.execute("INSERT INTO " + quote_identifier(allocation.second) + " (" + select_columns + ") SELECT " +
                        select_columns + " FROM " + quote_identifier(left_name) + " UNION ALL SELECT " +
                        select_columns + " FROM " + quote_identifier(right_name));
@@ -309,9 +311,10 @@ Json bind_table_columns(Project &project, const Json &parameters, const std::str
     }
     if (right_select.empty()) throw std::invalid_argument("The right table has no non-key columns to bind.");
     Json result;
+    const auto workflow_revision = project.get_workflow().version;
     ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
         const auto allocation = tables.allocate_table_artifact("anyTable", "streamfind.bind_table_columns", instance,
-                                                                project.get_workflow().version, columns);
+                                                                workflow_revision, columns);
         tables.execute("INSERT INTO " + quote_identifier(allocation.second) + " SELECT " + left_select + ", " +
                        right_select + " FROM " + quote_identifier(left_name) + " l INNER JOIN " +
                        quote_identifier(right_name) + " r ON " + join);

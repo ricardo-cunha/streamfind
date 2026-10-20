@@ -95,17 +95,18 @@ int main()
         std::string right_rows_artifact;
         std::string left_artifact;
         std::string right_artifact;
+        const auto workflow_revision = project.get_workflow().version;
         streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &tables) {
-            left_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "left-rows-source", project.get_workflow().version,
+            left_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "left-rows-source", workflow_revision,
                                                                 streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
                                                                              {{"name", "value"}, {"type", "string"}}})).first;
-            right_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "right-rows-source", project.get_workflow().version,
+            right_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "right-rows-source", workflow_revision,
                                                                  streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
                                                                               {{"name", "value"}, {"type", "string"}}})).first;
-            left_artifact = tables.allocate_table_artifact("anyTable", "test", "left-source", project.get_workflow().version,
+            left_artifact = tables.allocate_table_artifact("anyTable", "test", "left-source", workflow_revision,
                                                            streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
                                                                         {{"name", "left_value"}, {"type", "string"}}})).first;
-            right_artifact = tables.allocate_table_artifact("anyTable", "test", "right-source", project.get_workflow().version,
+            right_artifact = tables.allocate_table_artifact("anyTable", "test", "right-source", workflow_revision,
                                                             streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
                                                                          {{"name", "right_value"}, {"type", "real"}}})).first;
         });
