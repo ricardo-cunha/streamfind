@@ -2358,6 +2358,115 @@ namespace streamfind::mass_spec::nta
             double total_rt = 0.0;
             double total_score = 0.0;
             double envelope_score = 0.0;
+            bool deuterated_rebased = false;
+          };
+
+          // Stable-isotope-labelled envelopes are not guaranteed to have the
+          // lowest-m/z member as their most intense member.  In particular,
+          // a deuterated ion can be intentionally observed with the labelled
+          // member as the dominant peak.  Keep the natural-isotope rule
+          // unchanged, but re-anchor a validated D-containing assignment at
+          // its highest-intensity member so that this member remains the
+          // unfiltered [M+H]+/[M-H]- feature.
+          const auto rebase_deuterated_assignment = [&fts, ppm](ISOTOPE_CHAIN_ASSIGNMENT &assignment) {
+            const auto contains_deuterium = [](const std::string &element_label) {
+              const std::vector<std::string> tokens = split_string(element_label, '/');
+              return std::find(tokens.begin(), tokens.end(), "D") != tokens.end();
+            };
+
+            bool has_deuterium = false;
+            for (const auto &child : assignment.children)
+            {
+              if (contains_deuterium(child.element_or_delta))
+              {
+                has_deuterium = true;
+                break;
+              }
+            }
+            if (!has_deuterium || assignment.anchor_idx < 0 || assignment.children.empty())
+              return;
+
+            std::vector<int> members;
+            members.reserve(assignment.children.size() + 1);
+            members.push_back(assignment.anchor_idx);
+            for (const auto &child : assignment.children)
+              members.push_back(child.feature_index);
+
+            int base_idx = assignment.anchor_idx;
+            for (const int member_idx : members)
+            {
+              if (fts.intensity[member_idx] > fts.intensity[base_idx])
+                base_idx = member_idx;
+            }
+            if (base_idx == assignment.anchor_idx)
+              return;
+
+            const auto base = fts.get_feature(base_idx);
+            std::unordered_map<int, ANNOTATION_CANDIDATE> original_children;
+            for (const auto &child : assignment.children)
+              original_children.emplace(child.feature_index, child);
+
+            constexpr double deuterium_mass_delta = 1.00627674589;
+            std::vector<ANNOTATION_CANDIDATE> rebased_children;
+            rebased_children.reserve(members.size() - 1);
+            for (const int member_idx : members)
+            {
+              if (member_idx == base_idx)
+                continue;
+
+              const auto member = fts.get_feature(member_idx);
+              ANNOTATION_CANDIDATE candidate;
+              const auto original_it = original_children.find(member_idx);
+              if (original_it != original_children.end())
+                candidate = original_it->second;
+
+              const double mass_shift = static_cast<double>(member.mz) - static_cast<double>(base.mz);
+              int signed_step = static_cast<int>(std::llround(mass_shift / deuterium_mass_delta));
+              if (signed_step == 0)
+                signed_step = mass_shift < 0.0 ? -1 : 1;
+
+              candidate.cat = "isotope";
+              candidate.type = signed_step < 0
+                ? "[M" + std::to_string(signed_step) + "]"
+                : "[M+" + std::to_string(signed_step) + "]";
+              candidate.parent_feature = base.feature;
+              candidate.parent_index = base_idx;
+              candidate.feature_index = member_idx;
+              if (candidate.element_or_delta.empty())
+                candidate.element_or_delta = "D";
+              candidate.mass_error_da = std::abs(
+                static_cast<double>(member.mz) -
+                (static_cast<double>(base.mz) + signed_step * deuterium_mass_delta));
+              candidate.mass_error_ppm = ppm_error(member.mz,
+                static_cast<double>(base.mz) + signed_step * deuterium_mass_delta);
+              candidate.rt_error = std::abs(static_cast<double>(member.rt) - static_cast<double>(base.rt));
+              candidate.rel_intensity = base.intensity > 0.0f
+                ? static_cast<double>(member.intensity) / static_cast<double>(base.intensity)
+                : 0.0;
+              if (candidate.expected_rel_intensity_max <= 0.0)
+                candidate.expected_rel_intensity_max = 2.0;
+              candidate.priority = candidate_priority(candidate.cat, candidate.type);
+              candidate.score = candidate_score(candidate, ppm);
+              candidate.label = make_annotation_label(candidate);
+              rebased_children.push_back(std::move(candidate));
+            }
+
+            assignment.anchor_idx = base_idx;
+            assignment.deuterated_rebased = true;
+            assignment.children = std::move(rebased_children);
+            assignment.total_ppm = 0.0;
+            assignment.total_rt = 0.0;
+            assignment.total_score = 0.0;
+            for (const auto &child : assignment.children)
+            {
+              assignment.total_ppm += child.mass_error_ppm;
+              assignment.total_rt += child.rt_error;
+              assignment.total_score += child.score;
+            }
+            const double child_count = static_cast<double>(assignment.children.size());
+            const double mean_score = child_count > 0.0 ? assignment.total_score / child_count : 0.0;
+            assignment.envelope_score = assignment.total_score +
+              (0.15 * std::log1p(child_count)) + (0.10 * mean_score);
           };
 
           std::unordered_map<int, ANNOTATION_CANDIDATE> final_candidate;
@@ -2440,6 +2549,7 @@ namespace streamfind::mass_spec::nta
                 // multi-isotope chain.
                 assignment.envelope_score = assignment.total_score +
                   (0.15 * std::log1p(child_count)) + (0.10 * mean_score);
+                rebase_deuterated_assignment(assignment);
                 isotope_assignments.push_back(std::move(assignment));
               }
             }
@@ -2472,7 +2582,7 @@ namespace streamfind::mass_spec::nta
           std::unordered_set<int> isotope_occupied;
           for (const auto &assignment : isotope_assignments)
           {
-            if (isotope_anchor_children.count(assignment.anchor_idx) > 0)
+            if (isotope_anchor_children.count(assignment.anchor_idx) > 0 && !assignment.deuterated_rebased)
               continue;
             if (isotope_occupied.count(assignment.anchor_idx) > 0)
               continue;
