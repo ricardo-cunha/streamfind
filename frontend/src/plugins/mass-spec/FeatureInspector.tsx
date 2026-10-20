@@ -125,6 +125,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     () => selectFeatureOverviewColumns(context.artifact?.columns),
     [context.artifact?.columns],
   );
+  const detailColumns = useMemo(
+    () => selectFeatureDetailColumns(context.artifact?.columns),
+    [context.artifact?.columns],
+  );
   const featureTraceColumns = useMemo(() => {
     const available = new Set(context.artifact?.columns?.map((column) => column.name));
     return ['analysis', available.has('feature') ? 'feature' : 'feature_id'].filter((column) => available.has(column));
@@ -372,7 +376,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       };
     }
     const querySelection = async () => {
-      const loadSelection = async (selectionFilters: ArtifactQueryFilter[], columns = overviewColumns) => {
+      const loadSelection = async (selectionFilters: ArtifactQueryFilter[], columns = detailColumns) => {
         const overview = await api.artifactQuery(context.sessionId, {
           artifact_id: artifact.artifact_id,
           mode: 'page',
@@ -479,6 +483,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     context.artifact,
     context.pluginApi,
     context.sessionId,
+    detailColumns,
     overviewColumns,
     networkColumns,
     sampledSelectedRows,
@@ -1808,6 +1813,17 @@ function selectFeatureOverviewColumns(available: FeatureColumn[] | undefined): s
     .map((column) => column.name);
   const preferred = selectOverviewColumns(scalarColumns, featureOverviewColumns) ?? [];
   return Array.from(new Set(preferred));
+}
+
+function selectFeatureDetailColumns(available: FeatureColumn[] | undefined): string[] | undefined {
+  if (!available?.length) return undefined;
+  const scalarColumns = available
+    .filter(
+      (column) =>
+        !/array|list|map|struct|blob|binary|json/i.test(column.type ?? '') && !isFeatureDetailColumn(column.name),
+    )
+    .map((column) => column.name);
+  return scalarColumns.length ? Array.from(new Set(scalarColumns)) : undefined;
 }
 
 function isFeatureDetailColumn(name: string): boolean {

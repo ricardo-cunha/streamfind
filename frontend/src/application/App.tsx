@@ -79,6 +79,11 @@ type OntologyEntry = {
   dataKind?: string;
 };
 
+function workflowDomainClass(operation: string): string {
+  const domain = operation.split('.')[0] || 'core';
+  return domain.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
 function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
   const entries = new Map<string, OntologyEntry>();
   const normalizeColumn = (column: TableColumnContract): TableColumnContract => {
@@ -851,7 +856,7 @@ const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: 
               return (
                 <g
                   key={operation.id}
-                  className={`sf-workflow-overview-node ${operation.operation.includes('mass_spec') ? 'sf-domain-mass-spec' : ''}`}
+                  className={`sf-workflow-overview-node sf-domain-${workflowDomainClass(operation.operation)}`}
                   transform={`translate(${position.x}, ${position.y})`}
                 >
                   <rect width={nodeWidth} height={nodeHeight} rx="8" />

@@ -30,7 +30,12 @@ int main() {
                 streamfind::Json{{"name", "payload"}, {"type", "binary"}},
                 streamfind::Json{{"name", "tags"}, {"type", "array"}},
                 streamfind::Json{{"name", "metadata"}, {"type", "object"}},
-            })}}})}
+            })}}, streamfind::Json{
+            {"table_contract_name", "DYNAMIC_INPUT_PORT"},
+            {"domain", "test"},
+            {"module_id", "test.module"},
+            {"columns", streamfind::Json::array()}
+        }})}
     });
 
     streamfind::ProjectOptions options;
@@ -42,6 +47,8 @@ int main() {
     streamfind::ProjectTableStore tables(project);
     if (!tables.has_table("DYNAMIC_SCHEMA_TABLE"))
         throw std::runtime_error("manifest table was not installed");
+    if (tables.has_table("DYNAMIC_INPUT_PORT"))
+        throw std::runtime_error("schema-less dynamic input was materialized");
     const auto state = project.query_json(
         "SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = 'test' AND module_id = 'test.module'");
     if (state.size() != 1 || state.at(0).value("schema_version", std::string{}) != "1")

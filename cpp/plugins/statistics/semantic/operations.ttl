@@ -20,7 +20,9 @@ sfstat:pca
         sfstat:variableColumnsParameter,
         sfstat:groupColumnParameter,
         sfstat:preprocessingParameter,
-        sfstat:nComponentsParameter ;
+        sfstat:nComponentsParameter,
+        sfstat:duplicateAggregationParameter,
+        sfstat:missingValueImputationParameter ;
     sf:hasInputPort sfstat:tableInputPort ;
     sf:hasOutputPort
         sfstat:pcaScoresTable,
@@ -48,7 +50,9 @@ sfstat:pls
         sfstat:preprocessingParameter,
         sfstat:nComponentsParameter,
         sfstat:responseModeParameter,
-        sfstat:responseColumnsParameter ;
+        sfstat:responseColumnsParameter,
+        sfstat:duplicateAggregationParameter,
+        sfstat:missingValueImputationParameter ;
     sf:hasInputPort sfstat:tableInputPort ;
     sf:hasOutputPort
         sfstat:plsScoresTable,
@@ -76,9 +80,11 @@ sfstat:foldChange
         sfstat:groupColumnParameter,
         sfstat:groupAParameter,
         sfstat:groupBParameter,
-        sfstat:pseudocountParameter ;
+        sfstat:pseudocountParameter,
+        sfstat:duplicateAggregationParameter,
+        sfstat:missingValueImputationParameter ;
     sf:hasInputPort sfstat:tableInputPort ;
     sf:hasOutputPort
         sfstat:foldChangeTable,
-        sfstat:foldChangeSummary,
+        sfstat:foldChangeDiagnostics,
         sfcore:operationSuccessSignal .

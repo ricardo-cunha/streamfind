@@ -161,11 +161,11 @@ sfstat:plsDiagnostics
     skos:definition "Structured PLS model, matrix dimensions, response mode, component count, convergence, and in-sample prediction scope." ;
     sf:type "object" .
 
-sfstat:foldChangeSummary
+sfstat:foldChangeDiagnostics
     a sf:OperationResult ;
     sf:availableInDomain sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Fold-change summary" ;
+    skos:prefLabel "Fold-change diagnostics" ;
     skos:definition "Group counts, tested variable count, significant variable count, method, cutoff, and pseudocount." ;
     sf:type "object" .

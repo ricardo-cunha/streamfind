@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { ArtifactDataResponse, ArtifactRecord } from '../../framework/backend/StreamFindApiClient';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import type { ArtifactRecord } from '../../framework/backend/StreamFindApiClient';
 import { localArtifactContract } from '../../framework/artifacts/artifactContracts';
+import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationPointClick } from '../../framework/visualization/VisualizationRegistry';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
@@ -17,7 +25,25 @@ import {
 import './StatisticsDashboard.css';
 
 const PLOT_ROW_LIMIT = 5000;
-const TABLE_PAGE_SIZE = 50;
+
+const STATISTICS_PLOT_COLUMNS: Record<string, string[]> = {
+  pcaScoresTable: ['sample_id', 'component', 'score', 'group_label'],
+  pcaLoadingsTable: ['variable_id', 'component', 'loading'],
+  pcaVarianceTable: ['component', 'explained_variance_ratio'],
+  plsScoresTable: ['sample_id', 'component', 'x_score', 'y_score', 'group_label'],
+  plsLoadingsTable: ['block', 'item_id', 'component', 'loading'],
+  plsCoefficientsTable: ['response_id', 'predictor_id', 'coefficient'],
+  plsPredictionsTable: ['sample_id', 'observed_value', 'predicted_value', 'confidence', 'predicted_label', 'observed_label'],
+  foldChangeTable: ['variable_id', 'log2_fold_change', 'p_value', 'significant'],
+};
+
+function requiredPlotTables(resultContract: string): string[] {
+  if (resultContract === 'pcaDiagnostics') return ['pcaScoresTable', 'pcaLoadingsTable', 'pcaVarianceTable'];
+  if (resultContract === 'plsDiagnostics')
+    return ['plsScoresTable', 'plsPredictionsTable', 'plsLoadingsTable', 'plsCoefficientsTable'];
+  if (resultContract === 'foldChangeDiagnostics') return ['foldChangeTable'];
+  return [...STATISTICS_TABLE_CONTRACTS];
+}
 
 function isStatisticsArtifact(artifact: ArtifactRecord): boolean {
   return (STATISTICS_ARTIFACT_CONTRACTS as readonly string[]).includes(localArtifactContract(artifact.contract_id));
@@ -36,11 +62,21 @@ function plotTheme(): StatisticsPlotTheme {
   };
 }
 
-function payloadText(artifact: ArtifactRecord): string {
-  const payload = artifact.payload;
-  if (typeof payload === 'string') return payload;
-  if (payload && typeof payload === 'object') return JSON.stringify(payload, null, 2);
-  return '';
+function payloadObject(artifact: ArtifactRecord | undefined): Record<string, unknown> {
+  if (!artifact) return {};
+  if (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload))
+    return artifact.payload as Record<string, unknown>;
+  if (typeof artifact.payload === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(artifact.payload);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 function selectionForRow(row: StatisticsRow): string | null {
@@ -52,16 +88,14 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   const client = context.pluginApi?.client;
   const [siblings, setSiblings] = useState<ArtifactRecord[]>([]);
   const [rowsByContract, setRowsByContract] = useState<StatisticsRows>({});
-  const [tableArtifactId, setTableArtifactId] = useState('');
-  const [tablePage, setTablePage] = useState<ArtifactDataResponse | null>(null);
-  const [tableOffset, setTableOffset] = useState(0);
-  const [sortColumn, setSortColumn] = useState('');
-  const [sortDescending, setSortDescending] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activePanelId, setActivePanelId] = useState('');
   const [themeRevision, setThemeRevision] = useState(0);
+  const [controlsWidth, setControlsWidth] = useState(240);
+  const [detailsWidth, setDetailsWidth] = useState(380);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const artifactId = artifact?.artifact_id ?? '';
 
   useEffect(() => {
@@ -86,14 +120,14 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
           (candidate) => isStatisticsArtifact(candidate) && candidate.producer_instance === artifact.producer_instance,
         );
         if (!matching.some((candidate) => candidate.artifact_id === artifact.artifact_id)) matching.unshift(artifact);
+        const requiredTables = new Set(requiredPlotTables(localArtifactContract(artifact.contract_id)));
         return Promise.all(
-          matching.map(async (candidate) => {
+          matching.filter((candidate) => requiredTables.has(localArtifactContract(candidate.contract_id))).map(async (candidate) => {
             const contract = localArtifactContract(candidate.contract_id);
-            if (!(STATISTICS_TABLE_CONTRACTS as readonly string[]).includes(contract))
-              return [contract, [] as StatisticsRow[]] as const;
             const result = await client.artifactQuery(context.sessionId, {
               artifact_id: candidate.artifact_id,
               mode: 'page',
+              columns: STATISTICS_PLOT_COLUMNS[contract],
               offset: 0,
               limit: PLOT_ROW_LIMIT,
             });
@@ -108,12 +142,8 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
           if ((STATISTICS_TABLE_CONTRACTS as readonly string[]).includes(contract))
             rows[contract as (typeof STATISTICS_TABLE_CONTRACTS)[number]] = values;
         }
-        const tableArtifacts = matching.filter((candidate) =>
-          (STATISTICS_TABLE_CONTRACTS as readonly string[]).includes(localArtifactContract(candidate.contract_id)),
-        );
         setSiblings(matching);
         setRowsByContract(rows);
-        setTableArtifactId(tableArtifacts[0]?.artifact_id ?? '');
       })
       .catch((reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load statistics results.');
@@ -126,243 +156,150 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
     };
   }, [artifact, client, context.sessionId]);
 
-  useEffect(() => {
-    if (!client || !tableArtifactId) {
-      setTablePage(null);
-      return;
-    }
-    let cancelled = false;
-    setTableLoading(true);
-    void client
-      .artifactQuery(context.sessionId, {
-        artifact_id: tableArtifactId,
-        mode: 'page',
-        offset: tableOffset,
-        limit: TABLE_PAGE_SIZE,
-        ...(sortColumn ? { sort_column: sortColumn, descending: sortDescending } : {}),
-      })
-      .then((page) => {
-        if (!cancelled) setTablePage(page);
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load the result table.');
-      })
-      .finally(() => {
-        if (!cancelled) setTableLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [client, context.sessionId, tableArtifactId, tableOffset, sortColumn, sortDescending]);
-
   const panels = useMemo(
     () => buildStatisticsPanels(rowsByContract, artifactId, plotTheme(), selectedId),
     [rowsByContract, artifactId, selectedId, themeRevision],
   );
+  useEffect(() => {
+    if (!panels.some((panel) => panel.id === activePanelId)) setActivePanelId(panels[0]?.id ?? '');
+  }, [activePanelId, panels]);
+
+  const activePanel = panels.find((panel) => panel.id === activePanelId) ?? panels[0];
   const selectedDetails = useMemo(() => {
     if (!selectedId) return null;
     for (const rows of Object.values(rowsByContract)) {
       const match = rows?.find((row) => selectionForRow(row) === selectedId);
       if (match) return match;
     }
-    return tablePage?.rows.find((row) => selectionForRow(row) === selectedId) ?? null;
-  }, [rowsByContract, selectedId, tablePage]);
-  const tableArtifact = siblings.find((candidate) => candidate.artifact_id === tableArtifactId);
-  const tableContract = tableArtifact ? localArtifactContract(tableArtifact.contract_id) : '';
+    return null;
+  }, [rowsByContract, selectedId]);
   const diagnosticArtifacts = siblings.filter((candidate) =>
     (STATISTICS_RESULT_CONTRACTS as readonly string[]).includes(localArtifactContract(candidate.contract_id)),
   );
+  const summary = payloadObject(artifact ?? diagnosticArtifacts[0]);
 
-  if (loading)
-    return (
-      <div className="sf-statistics-state" role="status">
-        Loading statistics results…
-      </div>
-    );
+  if (loading) return <LoadingLogo label="Loading statistics plot…" />;
   if (error)
-    return (
-      <div className="sf-statistics-state sf-statistics-error" role="alert">
-        {error}
-      </div>
-    );
-  if (!panels.length && !siblings.length)
-    return (
-      <div className="sf-statistics-state" role="status">
-        No statistics results are available for this operation.
-      </div>
-    );
+    return <div className="sf-statistics-state sf-statistics-error" role="alert">{error}</div>;
+  if (!panels.length)
+    return <div className="sf-statistics-state" role="status">No plot-ready statistics results are available.</div>;
 
   const handlePointClick = (point: VisualizationPointClick) => {
     const selection = getStatisticsSelection(point);
     if (selection) setSelectedId(selection);
   };
-  const columns = tablePage?.columns ?? [];
+
+  const resizeControls = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const move = (moveEvent: PointerEvent) => {
+      const bounds = workspaceRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+      const maximum = Math.max(280, bounds.width - 360 - 6 - 6 - detailsWidth);
+      setControlsWidth(Math.max(200, Math.min(maximum, moveEvent.clientX - bounds.left)));
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  };
+
+  const resizeDetails = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const move = (moveEvent: PointerEvent) => {
+      const bounds = workspaceRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+      const maximum = Math.max(320, bounds.width - controlsWidth - 360 - 6 - 6);
+      setDetailsWidth(Math.max(280, Math.min(maximum, bounds.right - moveEvent.clientX)));
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  };
 
   return (
-    <main className="sf-statistics-dashboard" aria-label="Statistics results">
-      <header className="sf-statistics-header">
-        <div>
-          <h2>Statistics results</h2>
-          <p>Plots and result tables from this analysis are linked by sample and variable ID.</p>
-        </div>
-        {selectedId && (
-          <button type="button" className="sf-statistics-clear-selection" onClick={() => setSelectedId(null)}>
-            Clear selection · {selectedId}
-          </button>
-        )}
-      </header>
-
-      {panels.length > 0 ? (
-        <section className="sf-statistics-plots" aria-label="Result plots">
-          {panels.map((plot) => (
-            <article className="sf-statistics-plot-card" key={plot.id}>
-              <h3>{plot.title}</h3>
-              <VisualizationRenderer
-                spec={plot.spec}
-                className="sf-statistics-plot"
-                onPointClick={plot.selectionKind === 'none' ? undefined : handlePointClick}
-              />
-            </article>
-          ))}
-        </section>
-      ) : (
-        <div className="sf-statistics-state" role="status">
-          This analysis has no plot-ready result rows.
-        </div>
-      )}
-
-      <section className="sf-statistics-lower-panels">
-        <article className="sf-statistics-table-card">
-          <div className="sf-statistics-section-heading">
-            <h3>Result table</h3>
-            <label>
-              <span>Output</span>
-              <select
-                value={tableArtifactId}
-                onChange={(event) => {
-                  setTableArtifactId(event.target.value);
-                  setTableOffset(0);
-                }}
-              >
-                {siblings
-                  .filter((candidate) =>
-                    (STATISTICS_TABLE_CONTRACTS as readonly string[]).includes(
-                      localArtifactContract(candidate.contract_id),
-                    ),
-                  )
-                  .map((candidate) => (
-                    <option key={candidate.artifact_id} value={candidate.artifact_id}>
-                      {localArtifactContract(candidate.contract_id)}
-                    </option>
-                  ))}
-              </select>
-            </label>
+    <main className="sf-statistics-dashboard" aria-label="Statistics plot viewer">
+      <div
+        ref={workspaceRef}
+        className="sf-statistics-workspace"
+        style={
+          {
+            '--sf-statistics-controls-width': `${controlsWidth}px`,
+            '--sf-statistics-details-width': `${detailsWidth}px`,
+          } as CSSProperties
+        }
+      >
+        <aside className="sf-statistics-controls-panel" aria-label="Statistics plot controls">
+          <div className="sf-statistics-panel-heading">
+            <strong>Controls</strong>
+            <span>{panels.length} plots</span>
           </div>
-          {!tableArtifact ? (
-            <p className="sf-statistics-muted">No table output is available.</p>
-          ) : tableLoading ? (
-            <p className="sf-statistics-muted" role="status">
-              Loading table page…
-            </p>
-          ) : tablePage && tablePage.rows.length > 0 ? (
-            <>
-              <div className="sf-statistics-table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      {columns.map((column) => (
-                        <th key={column.name}>
-                          <button
-                            type="button"
-                            className="sf-statistics-sort"
-                            onClick={() => {
-                              setTableOffset(0);
-                              if (sortColumn === column.name) setSortDescending((descending) => !descending);
-                              else {
-                                setSortColumn(column.name);
-                                setSortDescending(false);
-                              }
-                            }}
-                          >
-                            {column.name}
-                            {sortColumn === column.name ? (sortDescending ? ' ↓' : ' ↑') : ''}
-                          </button>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tablePage.rows.map((row, index) => {
-                      const id = selectionForRow(row);
-                      return (
-                        <tr
-                          key={`${id ?? 'row'}-${index}`}
-                          className={id === selectedId ? 'is-selected' : ''}
-                          onClick={() => id && setSelectedId(id)}
-                        >
-                          {columns.map((column) => (
-                            <td key={column.name}>{row[column.name] ?? '—'}</td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="sf-statistics-pagination">
-                <span>
-                  {tablePage.total_rows
-                    ? `${tableOffset + 1}–${Math.min(tableOffset + tablePage.rows.length, tablePage.total_rows)} of ${tablePage.total_rows}`
-                    : 'No rows'}
-                </span>
-                <button
-                  type="button"
-                  disabled={tableOffset === 0 || tableLoading}
-                  onClick={() => setTableOffset(Math.max(0, tableOffset - TABLE_PAGE_SIZE))}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={tableOffset + TABLE_PAGE_SIZE >= tablePage.total_rows || tableLoading}
-                  onClick={() => setTableOffset(tableOffset + TABLE_PAGE_SIZE)}
-                >
-                  Next
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="sf-statistics-muted" role="status">
-              This result table is empty.
-            </p>
-          )}
-          {tableContract && <span className="sf-statistics-contract">{tableContract}</span>}
-        </article>
-
-        <article className="sf-statistics-details-card">
-          <h3>Details</h3>
-          {selectedDetails ? (
-            <dl>
-              {Object.entries(selectedDetails).map(([key, value]) => (
-                <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{value ?? '—'}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : selectedId ? (
-            <p className="sf-statistics-muted">No row details are available for {selectedId}.</p>
-          ) : (
-            <p className="sf-statistics-muted">Select a point or result row to inspect its values.</p>
-          )}
+          <label>
+            Plot
+            <select value={activePanel?.id ?? ''} onChange={(event) => setActivePanelId(event.target.value)}>
+              {panels.map((panel) => <option key={panel.id} value={panel.id}>{panel.title}</option>)}
+            </select>
+          </label>
+          <details className="sf-statistics-json" open>
+            <summary>Analysis summary</summary>
+            <pre>{JSON.stringify(summary, null, 2)}</pre>
+          </details>
           {diagnosticArtifacts.map((candidate) => (
-            <details key={candidate.artifact_id}>
-              <summary>{localArtifactContract(candidate.contract_id)}</summary>
-              <pre>{payloadText(candidate) || 'No diagnostics were returned.'}</pre>
+            <details className="sf-statistics-json" key={candidate.artifact_id}>
+              <summary>{localArtifactContract(candidate.contract_id)} diagnostics</summary>
+              <pre>{JSON.stringify(payloadObject(candidate), null, 2) || '{}'}</pre>
             </details>
           ))}
-        </article>
-      </section>
+        </aside>
+        <div
+          className="sf-statistics-splitter sf-statistics-controls-splitter"
+          role="separator"
+          aria-label="Resize statistics controls panel"
+          aria-orientation="vertical"
+          onPointerDown={resizeControls}
+        />
+        <section className="sf-statistics-plot-panel" aria-label="Statistics plot">
+          <div className="sf-statistics-plot-stage">
+            {activePanel && (
+              <VisualizationRenderer
+                spec={activePanel.spec}
+                className="sf-statistics-plot"
+                onPointClick={activePanel.selectionKind === 'none' ? undefined : handlePointClick}
+                onDoubleClick={() => setSelectedId(null)}
+              />
+            )}
+          </div>
+        </section>
+        <div
+          className="sf-statistics-splitter sf-statistics-details-splitter"
+          role="separator"
+          aria-label="Resize statistics details panel"
+          aria-orientation="vertical"
+          onPointerDown={resizeDetails}
+        />
+        <aside className="sf-statistics-details-panel" aria-label="Statistics selected result details">
+          <div className="sf-statistics-panel-heading">
+            <strong>Details</strong>
+            <span>{selectedId ? 'Selection' : 'No selection'}</span>
+          </div>
+          {selectedDetails ? (
+            <section className="sf-statistics-selection" aria-label="Selected result details">
+              <h3>Selected result: {selectedId}</h3>
+              <dl>
+                {Object.entries(selectedDetails).map(([key, value]) => (
+                  <div key={key}><dt>{key}</dt><dd>{value ?? '—'}</dd></div>
+                ))}
+              </dl>
+            </section>
+          ) : (
+            <p className="sf-statistics-empty">Select a point in the plot to inspect its values.</p>
+          )}
+        </aside>
+      </div>
     </main>
   );
 }

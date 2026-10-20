@@ -43,4 +43,21 @@ describe('artifact display model', () => {
     };
     expect(artifactSummary(visualization)).toBe('JSON\n1 legend traces · 3 total points · trace length 3');
   });
+
+  it('summarizes statistics result artifacts instead of exposing their raw JSON', () => {
+    const summary: ArtifactRecord = {
+      ...artifact,
+      contract_id: 'sfstat:foldChangeDiagnostics',
+      representation: 'json',
+      payload: JSON.stringify({
+        samples_group_a: 3,
+        samples_group_b: 4,
+        variables_tested: 11192,
+        significant_variables: 27,
+      }),
+    };
+    expect(artifactSummary(summary)).toBe(
+      'JSON\n3 group A samples · 4 group B samples · 11,192 variables tested · 27 significant',
+    );
+  });
 });

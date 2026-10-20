@@ -91,6 +91,7 @@ void test_registry_and_long_pca() {
     auto parameters = base_parameters("long");
     parameters["variable_id_column"] = "feature";
     parameters["value_column"] = "intensity";
+    parameters["duplicate_aggregation"] = "error";
     parameters["group_column"] = "condition";
     const auto *binding = registry.find("statistics.pca");
     const auto response = binding->handler(access, parameters);
@@ -135,8 +136,8 @@ void test_wide_fold_change_and_degenerate_values() {
             "matching constant groups did not produce p=q=1");
     require(summary.at("samples_group_a") == 2 && summary.at("samples_group_b") == 2,
             "fold-change structured summary has incorrect group counts");
-    require(access.results.contains("foldChangeSummary"),
-            "fold-change summary result contract was not emitted");
+    require(access.results.contains("foldChangeDiagnostics"),
+            "fold-change diagnostics result contract was not emitted");
 }
 
 void test_pls_regression_and_pls_da_contracts() {
@@ -206,6 +207,17 @@ void test_validation_diagnostics() {
     require(duplicate_rejected, "long-form duplicate pair was not reported with source row context");
 
     access.tables["source"] = Json::array({
+        {{"sample", "s1"}, {"feature", "v1"}, {"intensity", 1.0}},
+        {{"sample", "s1"}, {"feature", "v1"}, {"intensity", 3.0}},
+        {{"sample", "s2"}, {"feature", "v1"}, {"intensity", 2.0}},
+    });
+    parameters["duplicate_aggregation"] = "mean";
+    parameters["missing_value_imputation"] = "zero";
+    const auto duplicate_response = operations::capabilities().find("statistics.pca")->handler(access, parameters);
+    require(duplicate_response.at("samples") == 2 && duplicate_response.at("variables") == 1,
+            "PCA did not aggregate repeated long-layout sample-variable values");
+
+    access.tables["source"] = Json::array({
         {{"sample", "s1"}, {"feature", "v1"}, {"intensity", "bad"}},
         {{"sample", "s2"}, {"feature", "v1"}, {"intensity", 2.0}},
     });
@@ -255,6 +267,34 @@ void test_validation_diagnostics() {
     require(duplicate_wide_sample_rejected, "wide layout accepted duplicate sample IDs");
 }
 
+void test_missing_value_imputation() {
+    MemoryProjectAccess access;
+    access.tables["source"] = Json::array({
+        {{"sample", "s1"}, {"feature", "v1"}, {"intensity", 2.0}},
+        {{"sample", "s1"}, {"feature", "v2"}, {"intensity", 10.0}},
+        {{"sample", "s2"}, {"feature", "v1"}, {"intensity", 4.0}},
+        {{"sample", "s3"}, {"feature", "v1"}, {"intensity", 6.0}},
+        {{"sample", "s3"}, {"feature", "v2"}, {"intensity", 14.0}},
+    });
+    auto parameters = base_parameters("long");
+    parameters["variable_id_column"] = "feature";
+    parameters["value_column"] = "intensity";
+    parameters["missing_value_imputation"] = "mean";
+    const auto response = operations::capabilities().find("statistics.pca")->handler(access, parameters);
+    require(response.at("samples") == 3, "mean imputation changed the sample count");
+    require(access.emitted.at("pcaScoresTable").size() == 3,
+            "mean imputation did not complete the matrix for PCA");
+
+    parameters["missing_value_imputation"] = "error";
+    bool missing_rejected = false;
+    try {
+        operations::capabilities().find("statistics.pca")->handler(access, parameters);
+    } catch (const std::invalid_argument &error) {
+        missing_rejected = std::string(error.what()).find("missing for sample s2") != std::string::npos;
+    }
+    require(missing_rejected, "default missing-value validation was not preserved");
+}
+
 }  // namespace streamfind::statistics::tests
 
 int main() {
@@ -264,6 +304,7 @@ int main() {
         test_wide_fold_change_and_degenerate_values();
         test_pls_regression_and_pls_da_contracts();
         test_validation_diagnostics();
+        test_missing_value_imputation();
         std::cout << "Statistics operation contract tests passed\n";
         return 0;
     } catch (const std::exception &error) {

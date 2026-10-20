@@ -530,9 +530,13 @@ std::vector<BrukerChromatogram> read_chromatograms(const std::string &path)
     chromatogram.wavelength_nm = detail::bruker_chromatogram_wavelength(chromatogram.description);
     detail::classify_bruker_chromatogram(chromatogram);
 
+    // sqlite_scan exposes only declared SQLite columns.  SQLite's implicit
+    // rowid is not part of the relation exposed to DuckDB, so ordering by it
+    // makes DuckDB reject otherwise valid Bruker datasets.  TraceChunks has
+    // no declared chunk ordinal; sqlite_scan returns the chunks in the source
+    // table order, which is the order used by the Bruker export.
     auto chunks = database.query("SELECT Times,Intensities FROM " + database.scan("TraceChunks") +
-                                 " WHERE Trace=" + std::to_string(chromatogram.source_id) +
-                                 " ORDER BY rowid");
+                                 " WHERE Trace=" + std::to_string(chromatogram.source_id));
     for (idx_t chunk = 0; chunk < duckdb_row_count(&chunks); ++chunk)
     {
       const auto times = detail::value_blob(chunks, 0, chunk);

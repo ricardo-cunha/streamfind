@@ -36,6 +36,9 @@ export function artifactSummary(artifact: ArtifactRecord): string {
     const traceLength = minimum === maximum ? `${minimum}` : `${minimum}–${maximum}`;
     return `JSON\n${lengths.length} legend traces · ${totalPoints} total points · trace length ${traceLength}`;
   }
+  const contract = localArtifactContract(artifact.contract_id);
+  const statisticsSummary = summarizeStatisticsResult(contract, artifact.payload);
+  if (statisticsSummary) return `JSON\n${statisticsSummary}`;
   let payload = artifact.payload;
   if (typeof payload === 'string') {
     try {
@@ -54,6 +57,60 @@ export function artifactSummary(artifact: ArtifactRecord): string {
   const rendered = JSON.stringify(bounded, null, 2) ?? String(bounded);
   const preview = rendered.length > 420 ? `${rendered.slice(0, 417)}…` : rendered;
   return `JSON\n${preview}`;
+}
+
+function localArtifactContract(value: string): string {
+  return value.split('#').at(-1)?.split(':').at(-1) ?? value;
+}
+
+function parseObject(payload: ArtifactRecord['payload']): Record<string, unknown> | null {
+  let value: unknown = payload;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function summaryValue(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  if (value === undefined || value === null || value === '') return null;
+  return typeof value === 'number' ? value.toLocaleString('en-US') : String(value);
+}
+
+function summarizeStatisticsResult(contract: string, payload: ArtifactRecord['payload']): string | null {
+  const values = parseObject(payload);
+  if (!values) return null;
+  if (contract === 'foldChangeDiagnostics') {
+    const parts = [
+      summaryValue(values, 'samples_group_a') && `${summaryValue(values, 'samples_group_a')} group A samples`,
+      summaryValue(values, 'samples_group_b') && `${summaryValue(values, 'samples_group_b')} group B samples`,
+      summaryValue(values, 'variables_tested') && `${summaryValue(values, 'variables_tested')} variables tested`,
+      summaryValue(values, 'significant_variables') && `${summaryValue(values, 'significant_variables')} significant`,
+    ].filter((part): part is string => Boolean(part));
+    return parts.length ? parts.join(' · ') : 'Fold-change analysis summary';
+  }
+  if (contract === 'pcaDiagnostics') {
+    const parts = [
+      summaryValue(values, 'samples') && `${summaryValue(values, 'samples')} samples`,
+      summaryValue(values, 'variables') && `${summaryValue(values, 'variables')} variables`,
+      summaryValue(values, 'components') && `${summaryValue(values, 'components')} components`,
+    ].filter((part): part is string => Boolean(part));
+    return parts.length ? `PCA diagnostics · ${parts.join(' · ')}` : 'PCA diagnostics';
+  }
+  if (contract === 'plsDiagnostics') {
+    const parts = [
+      summaryValue(values, 'samples') && `${summaryValue(values, 'samples')} samples`,
+      summaryValue(values, 'predictors') && `${summaryValue(values, 'predictors')} predictors`,
+      summaryValue(values, 'responses') && `${summaryValue(values, 'responses')} responses`,
+      summaryValue(values, 'components') && `${summaryValue(values, 'components')} components`,
+    ].filter((part): part is string => Boolean(part));
+    return parts.length ? `PLS diagnostics · ${parts.join(' · ')}` : 'PLS diagnostics';
+  }
+  return null;
 }
 
 export function prettyArtifactPayload(payload: ArtifactRecord['payload']): string {

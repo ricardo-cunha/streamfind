@@ -344,6 +344,14 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     std::set<std::string> modules;
     for (const auto &table : *manifest)
     {
+        // Dynamic input contracts such as anyTable deliberately have no
+        // declared columns. They are resolved from the connected physical
+        // table at invocation time and must not be materialized as an empty
+        // DuckDB table.
+        if (!table.value("columns", Json::array()).is_array() ||
+            table.value("columns", Json::array()).empty()) {
+            continue;
+        }
         owned_tables.push_back(detail::manifest_identifier(table.at("table_contract_name").get<std::string>()));
         modules.insert(table.value("module_id", std::string{}));
     }
@@ -353,6 +361,10 @@ void ProjectTableStore::install_manifest_schema(Project &project,
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "PRIMARY KEY (domain_id, module_id))");
         for (const auto &table : *manifest) {
+            if (!table.value("columns", Json::array()).is_array() ||
+                table.value("columns", Json::array()).empty()) {
+                continue;
+            }
             const auto table_name = detail::manifest_identifier(table.at("table_contract_name").get<std::string>());
             std::vector<std::string> definitions;
             for (const auto &column : table.value("columns", Json::array())) {

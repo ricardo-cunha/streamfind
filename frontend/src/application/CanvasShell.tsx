@@ -3152,7 +3152,7 @@ export default function CanvasShell({
             </div>
             <button
               type="button"
-              className="sf-icon-button"
+              className="sf-icon-button sf-close-button"
               aria-label="Close operation palette"
               onClick={() => {
                 setPicker(null);
@@ -3193,7 +3193,7 @@ export default function CanvasShell({
                   className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(
                     template.domain || 'unknown'
                   )
-                    .replace(/[^a-z0-9_-]/gi, '-')
+                    .replace(/[^a-z0-9]+/gi, '-')
                     .toLowerCase()}`}
                   key={template.id}
                   data-domain={template.domain || 'unknown'}

@@ -7,17 +7,9 @@
   "source": "src/plugins/statistics/index.ts",
   "domains": ["statistics"],
   "artifactContracts": [
-    "pcaScoresTable",
-    "pcaLoadingsTable",
-    "pcaVarianceTable",
     "pcaDiagnostics",
-    "plsScoresTable",
-    "plsLoadingsTable",
-    "plsCoefficientsTable",
-    "plsPredictionsTable",
     "plsDiagnostics",
-    "foldChangeTable",
-    "foldChangeSummary"
+    "foldChangeDiagnostics"
   ],
   "capabilities": ["statistics-linked-results-dashboard"]
 }

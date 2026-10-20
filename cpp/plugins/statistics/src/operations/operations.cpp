@@ -130,6 +130,13 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     const auto sample_column = string_parameter(parameters, "sample_id_column");
     if (sample_column.empty()) throw std::invalid_argument("sample_id_column must not be empty");
     const auto group_column = string_parameter(parameters, "group_column");
+    const auto duplicate_aggregation = string_parameter(parameters, "duplicate_aggregation", "error");
+    if (duplicate_aggregation != "error" && duplicate_aggregation != "mean")
+        throw std::invalid_argument("duplicate_aggregation must be error or mean");
+    const auto missing_imputation = string_parameter(parameters, "missing_value_imputation", "error");
+    if (missing_imputation != "error" && missing_imputation != "zero" &&
+        missing_imputation != "mean" && missing_imputation != "median")
+        throw std::invalid_argument("missing_value_imputation must be error, zero, mean, or median");
     const auto variable_column = layout == "long" ? string_parameter(parameters, "variable_id_column") : std::string{};
     const auto value_column = layout == "long" ? string_parameter(parameters, "value_column") : std::string{};
     auto wide_variables = layout == "wide" ? string_array(parameters, "variable_columns", true) : std::vector<std::string>{};
@@ -156,6 +163,7 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     Dataset dataset;
     dataset.response_ids = responses;
     std::vector<Row> row_values;
+    std::vector<std::unordered_map<std::size_t, std::size_t>> row_counts;
     std::vector<std::vector<bool>> response_seen;
     std::vector<std::size_t> sample_first_rows;
     std::unordered_map<std::string, std::size_t> sample_indices;
@@ -177,6 +185,7 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
                 dataset.sample_ids.push_back(sample_id);
                 sample_first_rows.push_back(source_row);
                 row_values.emplace_back();
+                row_counts.emplace_back();
                 response_seen.emplace_back(responses.size(), false);
                 dataset.groups.emplace_back();
                 dataset.has_group.push_back(false);
@@ -187,12 +196,18 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
                     throw std::invalid_argument("row " + std::to_string(source_row) + " duplicates sample ID " + sample_id + " in wide layout");
             }
             if (!group_column.empty()) {
-                const auto group = scalar_text(row.value(group_column, Json(nullptr)), group_column, source_row);
-                if (dataset.has_group[sample_index] && dataset.groups[sample_index] != group)
-                    throw std::invalid_argument("row " + std::to_string(source_row) + " column " + group_column +
-                                                " changes within sample " + sample_id);
-                dataset.groups[sample_index] = group;
-                dataset.has_group[sample_index] = true;
+                const auto &group_value = row.value(group_column, Json(nullptr));
+                // Long tables may repeat sample-level metadata only on some
+                // rows. Missing group cells are therefore ignored; a group is
+                // still required once all rows for the sample have been read.
+                if (!group_value.is_null() && !(group_value.is_string() && group_value.get<std::string>().empty())) {
+                    const auto group = scalar_text(group_value, group_column, source_row);
+                    if (dataset.has_group[sample_index] && dataset.groups[sample_index] != group)
+                        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + group_column +
+                                                    " changes within sample " + sample_id);
+                    dataset.groups[sample_index] = group;
+                    dataset.has_group[sample_index] = true;
+                }
             }
             for (std::size_t response_index = 0; response_index < responses.size(); ++response_index) {
                 const auto response = numeric_value(row.value(responses[response_index], Json(nullptr)), responses[response_index], source_row);
@@ -207,17 +222,31 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
                 for (const auto &name : wide_variables) {
                     const auto variable = variable_indices.emplace(name, dataset.variable_ids.size());
                     if (variable.second) dataset.variable_ids.push_back(name);
-                    row_values[sample_index][variable.first->second] = numeric_value(row.value(name, Json(nullptr)), name, source_row);
+                    const auto raw = row.value(name, Json(nullptr));
+                    if (!raw.is_null())
+                        row_values[sample_index][variable.first->second] = numeric_value(raw, name, source_row);
                 }
             } else {
                 const auto variable_id = scalar_text(row.value(variable_column, Json(nullptr)), variable_column, source_row);
                 const auto variable = variable_indices.emplace(variable_id, dataset.variable_ids.size());
                 if (variable.second) dataset.variable_ids.push_back(variable_id);
-                const auto value = numeric_value(row.value(value_column, Json(nullptr)), value_column, source_row);
-                if (row_values[sample_index].contains(variable.first->second))
-                    throw std::invalid_argument("row " + std::to_string(source_row) + " duplicates sample-variable pair " +
-                                                sample_id + "/" + variable_id);
-                row_values[sample_index][variable.first->second] = value;
+                const auto raw = row.value(value_column, Json(nullptr));
+                if (raw.is_null()) continue;
+                const auto value = numeric_value(raw, value_column, source_row);
+                const auto variable_index = variable.first->second;
+                const auto existing = row_values[sample_index].find(variable_index);
+                if (existing != row_values[sample_index].end()) {
+                    if (duplicate_aggregation == "error")
+                        throw std::invalid_argument("row " + std::to_string(source_row) + " duplicates sample-variable pair " +
+                                                    sample_id + "/" + variable_id);
+                    const auto count = row_counts[sample_index][variable_index];
+                    existing->second = (existing->second * static_cast<double>(count) + value) /
+                                       static_cast<double>(count + 1);
+                    row_counts[sample_index][variable_index] = count + 1;
+                } else {
+                    row_values[sample_index][variable_index] = value;
+                    row_counts[sample_index][variable_index] = 1;
+                }
             }
         }
     });
@@ -235,12 +264,35 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     for (std::size_t sample = 0; sample < row_values.size(); ++sample) {
         for (std::size_t variable = 0; variable < dataset.variable_ids.size(); ++variable) {
             const auto found = row_values[sample].find(variable);
-            if (found == row_values[sample].end())
+            if (found != row_values[sample].end()) {
+                dataset.values[sample][variable] = found->second;
+                continue;
+            }
+            if (missing_imputation == "error")
                 throw std::invalid_argument("row " + std::to_string(sample_first_rows[sample]) + " column " +
                     (layout == "long" ? value_column : dataset.variable_ids[variable]) + " is missing for sample " +
                     dataset.sample_ids[sample] + " and variable " + dataset.variable_ids[variable] +
                     (layout == "long" ? " (variable column " + variable_column + ")" : ""));
-            dataset.values[sample][variable] = found->second;
+            if (missing_imputation == "zero") continue;
+            std::vector<double> observed;
+            observed.reserve(row_values.size());
+            for (const auto &row : row_values) {
+                const auto value = row.find(variable);
+                if (value != row.end()) observed.push_back(value->second);
+            }
+            if (observed.empty())
+                throw std::invalid_argument("cannot impute variable " + dataset.variable_ids[variable] +
+                    ": no observed values");
+            if (missing_imputation == "mean") {
+                const auto total = std::accumulate(observed.begin(), observed.end(), 0.0);
+                dataset.values[sample][variable] = total / static_cast<double>(observed.size());
+            } else {
+                std::sort(observed.begin(), observed.end());
+                const auto middle = observed.size() / 2;
+                dataset.values[sample][variable] = observed.size() % 2 == 0
+                    ? (observed[middle - 1] + observed[middle]) / 2.0
+                    : observed[middle];
+            }
         }
     }
     return dataset;
@@ -436,7 +488,7 @@ Json run_fold_change(sdk::PluginProjectAccess &access, const Json &parameters) {
                        {"samples_group_a", count_a}, {"samples_group_b", count_b},
                        {"variables_tested", dataset.variable_ids.size()}, {"significant_variables", significant},
                        {"adjusted_p_value_cutoff", 0.05}, {"pseudocount", pseudocount}};
-    access.emit_result("foldChangeSummary", summary.dump());
+    access.emit_result("foldChangeDiagnostics", summary.dump());
     access.report_progress(1.0, "Fold-change analysis completed");
     return summary;
 }

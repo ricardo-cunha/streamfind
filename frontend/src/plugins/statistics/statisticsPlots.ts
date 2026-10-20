@@ -12,7 +12,7 @@ export const STATISTICS_TABLE_CONTRACTS = [
   'foldChangeTable',
 ] as const;
 
-export const STATISTICS_RESULT_CONTRACTS = ['pcaDiagnostics', 'plsDiagnostics', 'foldChangeSummary'] as const;
+export const STATISTICS_RESULT_CONTRACTS = ['pcaDiagnostics', 'plsDiagnostics', 'foldChangeDiagnostics'] as const;
 
 export const STATISTICS_ARTIFACT_CONTRACTS = [...STATISTICS_TABLE_CONTRACTS, ...STATISTICS_RESULT_CONTRACTS] as const;
 
@@ -67,12 +67,20 @@ function makeSpec(
       data: traces,
       layout: {
         autosize: true,
-        margin: { l: 62, r: 18, t: 14, b: 54 },
+        margin: { l: 62, r: 18, t: 14, b: 92 },
         paper_bgcolor: theme.background,
         plot_bgcolor: theme.background,
         font: { color: theme.text },
         hoverlabel: { bgcolor: theme.background, font: { color: theme.text } },
-        legend: { bgcolor: theme.background, font: { color: theme.text } },
+        legend: {
+          bgcolor: theme.background,
+          font: { color: theme.text },
+          orientation: 'h',
+          x: 0,
+          xanchor: 'left',
+          y: -0.2,
+          yanchor: 'top',
+        },
         xaxis: { title: { text: xTitle }, showgrid: true, gridcolor: theme.grid, zerolinecolor: theme.grid },
         yaxis: { title: { text: yTitle }, showgrid: true, gridcolor: theme.grid, zerolinecolor: theme.grid },
         hovermode: 'closest',
@@ -205,6 +213,7 @@ export function buildStatisticsPanels(
               type: 'scattergl',
               mode: 'markers+text',
               text: points.map((row) => text(row, 'variable_id')),
+              textposition: 'top center',
               x: points.map((row) => number(row, 'component_1')),
               y: points.map((row) => (Number.isFinite(number(row, 'component_2')) ? number(row, 'component_2') : 0)),
               customdata: points.map((row) => text(row, 'variable_id')),

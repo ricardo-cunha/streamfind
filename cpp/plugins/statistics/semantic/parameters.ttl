@@ -152,3 +152,27 @@ sfstat:pseudocountParameter
     sf:default "1" ;
     sf:constraints "{\"exclusiveMinimum\":0}" ;
     sf:example "1" .
+
+sfstat:duplicateAggregationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Repeated value aggregation" ;
+    skos:definition "How repeated sample-variable values in long-layout input are handled." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "error" ;
+    sf:constraints "error|mean" ;
+    sf:example "mean" .
+
+sfstat:missingValueImputationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfstat:statistics ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Missing value imputation" ;
+    skos:definition "How missing sample-variable combinations are filled before statistical analysis. Mean and median are calculated independently for each variable across observed samples." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "error" ;
+    sf:constraints "error|zero|mean|median" ;
+    sf:example "median" .
