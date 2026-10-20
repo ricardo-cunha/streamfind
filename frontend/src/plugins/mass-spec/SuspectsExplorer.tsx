@@ -505,11 +505,11 @@ function evidenceSpec(
           zeroline: true,
           zerolinecolor: theme.grid,
         },
+        showlegend: showLegend,
         paper_bgcolor: theme.background,
         plot_bgcolor: theme.background,
         font: { color: theme.text },
         legend: {
-          showlegend: showLegend,
           orientation: 'v',
           x: 1.02,
           y: 1,
@@ -1100,7 +1100,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
           </div>
         </aside>
         <div
-          className="sf-suspects-explorer-splitter sf-suspects-explorer-filters-splitter"
+          className="sf-resizable-splitter sf-suspects-explorer-splitter sf-suspects-explorer-filters-splitter"
           role="separator"
           aria-label="Resize suspect filters panel"
           aria-orientation="vertical"
@@ -1133,7 +1133,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
           />
         </main>
         <div
-          className="sf-suspects-explorer-splitter sf-suspects-explorer-details-splitter"
+          className="sf-resizable-splitter sf-suspects-explorer-splitter sf-suspects-explorer-details-splitter"
           role="separator"
           aria-label="Resize suspects panel"
           aria-orientation="vertical"

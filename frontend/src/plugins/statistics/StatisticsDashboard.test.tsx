@@ -92,7 +92,7 @@ describe('statistics frontend plugin', () => {
     expect(panels[0].spec.payload.layout?.legend).toMatchObject({
       orientation: 'h',
       x: 0,
-      y: -0.2,
+      y: -0.12,
       yanchor: 'top',
     });
     expect(getStatisticsSelection({ customdata: ['sample-7', 'class-a'] })).toBe('sample-7');

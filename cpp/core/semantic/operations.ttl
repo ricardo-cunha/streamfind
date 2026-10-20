@@ -29,6 +29,19 @@ sfcore:writeTableCsv
     sf:hasParameter sfcore:csvPathParameter ;
     sf:hasOutputPort sfcore:operationSuccessSignal .
 
+sfcore:writeJson
+    a sf:Operation ;
+    sf:operationId "streamfind.write_json" ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Write JSON" ;
+    skos:definition "Write any connected JSON artifact to a formatted UTF-8 JSON file without changing the artifact." ;
+    sf:category "data-export" ;
+    sf:guidance "Connect a JSON result, choose a writable JSON path, and run the operation. The artifact payload is written with readable indentation." ;
+    sf:hasInputPort sfcore:anyJson ;
+    sf:hasParameter sfcore:jsonPathParameter ;
+    sf:hasOutputPort sfcore:operationSuccessSignal .
+
 sfcore:readCsv
     a sf:Operation ;
     sf:operationId "streamfind.read_csv" ;

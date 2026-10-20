@@ -7,6 +7,7 @@ import { SuspectsExplorer } from './SuspectsExplorer';
 import './SuspectsExplorer.css';
 import { EicTableViewer } from './EicTableViewer';
 import './EicTableViewer.css';
+import { FindFeaturesDebugViewer } from './FindFeaturesDebugViewer';
 
 export const massSpecFrontendPlugin: FrontendPlugin = {
   manifest: {
@@ -15,8 +16,8 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
     domains: ['mass_spec'],
-    artifactContracts: ['featuresTable', 'eicTable', 'suspectTargetsTable', 'suspectsTable', 'internalStandardsTable'],
-    capabilities: ['feature-inspector', 'eic-viewer', 'suspect-targets-viewer', 'suspects-explorer'],
+    artifactContracts: ['featuresTable', 'eicTable', 'suspectTargetsTable', 'suspectsTable', 'internalStandardsTable', 'findFeaturesDebugResult'],
+    capabilities: ['feature-inspector', 'eic-viewer', 'suspect-targets-viewer', 'suspects-explorer', 'find-features-debug-viewer'],
   },
   setup(api) {
     api.registerViewer({
@@ -42,6 +43,12 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       label: 'Suspects explorer',
       accepts: ['suspectsTable', 'internalStandardsTable'],
       component: SuspectsExplorer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.find-features-debug-viewer',
+      label: 'Find features diagnostics',
+      accepts: ['findFeaturesDebugResult'],
+      component: FindFeaturesDebugViewer,
     });
   },
 };

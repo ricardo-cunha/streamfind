@@ -79,7 +79,7 @@ float interpolate_rt_shift(
 // Forward declaration for NtaProjectData (already declared above)
 
 // Implementation function for NtaProjectData::group_features
-void group_features_impl(
+std::string group_features_impl(
   ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
   const std::string &method,
   float rt_deviation,

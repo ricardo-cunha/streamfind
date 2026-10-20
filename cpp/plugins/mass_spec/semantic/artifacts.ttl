@@ -3,6 +3,51 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+sfms:findFeaturesDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Find features debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by mass-spec feature detection when debug selectors are enabled." ;
+    sf:type "object" .
+
+sfms:createComponentsDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Create components debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by component creation." ;
+    sf:type "object" .
+
+sfms:annotateComponentsDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Annotate components debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by component annotation." ;
+    sf:type "object" .
+
+sfms:fillFeaturesDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fill feature gaps debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by feature gap filling." ;
+    sf:type "object" .
+
+sfms:groupFeaturesDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Group features debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by feature grouping." ;
+    sf:type "object" .
+
 sfms:analysesTable
     a sf:Table ;
     sf:availableInDomain sfms:mass_spec ;

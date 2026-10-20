@@ -62,17 +62,17 @@ try {
     }
 
     $workflowDefinition = @{
-        schema_version = 1
+        schema_version = 2
         operations = @(
             @{
-                id = 'read-1'
+                id = 1
                 operation = 'mass_spec.read_mass_spec_files'
                 parameters = @{ source_paths = @('fixture.mzML') }
                 inputs = @{}
                 position = @{}
             },
             @{
-                id = 'find-1'
+                id = 2
                 operation = 'mass_spec.find_features'
                 parameters = @{}
                 inputs = @{}
@@ -81,9 +81,9 @@ try {
         )
         connections = @(
             @{
-                source_operation = 'read-1'
+                source_operation = 1
                 source_port = 'analysesTable'
-                target_operation = 'find-1'
+                target_operation = 2
                 target_port = 'analysesTable'
             }
         )

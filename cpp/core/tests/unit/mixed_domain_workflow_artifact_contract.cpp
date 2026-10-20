@@ -31,13 +31,13 @@ Operation make_table_operation(const std::string &operation_id,
                          const auto workflow_revision = project.get_workflow().version;
                          ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
                              const auto allocation = tables.allocate_table_artifact(
-                                 contract, instance == "source" ? "domain_a.make_table" : "domain_b.make_table",
+                                 contract, instance == "1" ? "domain_a.make_table" : "domain_b.make_table",
                                  instance, workflow_revision,
                                  Json::array({{{"name", "value"}, {"type", "string"}}}));
                              artifact_id = allocation.first;
                              physical_table = allocation.second;
                              tables.append(physical_table, {"value"},
-                                           {{{instance == "source" ? "domain-a" : "domain-b"}}});
+                                           {{{instance == "1" ? "domain-a" : "domain-b"}}});
                              if (!source_artifact.empty())
                                  tables.append_artifact_lineage(
                                      artifact_id, {{source_artifact, "table", "input"}});
@@ -95,10 +95,10 @@ void run() {
         workflow.name = "Mixed domain artifact workflow";
         workflow.version = 7;
         workflow.operations = {
-            {"source", "domain_a.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()},
-            {"consumer", "domain_b.make_table", ParameterValues{Json{{"targets", Json::array()}}}, Json::object(), Json::object()}};
-        workflow.connections.push_back({"source", "table", "consumer", "input"});
-        workflow.connections.push_back({"source", "table", "consumer", "parameter:targets"});
+            {"1", "domain_a.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()},
+            {"2", "domain_b.make_table", ParameterValues{Json{{"targets", Json::array()}}}, Json::object(), Json::object()}};
+        workflow.connections.push_back({"1", "table", "2", "input"});
+        workflow.connections.push_back({"1", "table", "2", "parameter:targets"});
 
         project.set_workflow(workflow, registry);
         const auto stored = project.get_workflow();
@@ -115,10 +115,10 @@ void run() {
         if (inventory.size() != 2)
             throw std::runtime_error("expected two table artifacts");
         const auto source = std::find_if(inventory.begin(), inventory.end(), [](const auto &artifact) {
-            return artifact.value("producer_instance", "") == "source";
+            return artifact.value("producer_instance", "") == "1";
         });
         const auto consumer = std::find_if(inventory.begin(), inventory.end(), [](const auto &artifact) {
-            return artifact.value("producer_instance", "") == "consumer";
+            return artifact.value("producer_instance", "") == "2";
         });
         if (source == inventory.end() || consumer == inventory.end())
             throw std::runtime_error("artifact inventory lost producer instances");
@@ -130,7 +130,7 @@ void run() {
             source->value("physical_table", "") == consumer->value("physical_table", ""))
             throw std::runtime_error("table artifacts do not have distinct explicit identity");
 
-        const auto resolved = project.resolve_workflow_inputs("consumer");
+        const auto resolved = project.resolve_workflow_inputs("2");
         if (resolved.at("input").value("artifact_id", "") != source->value("artifact_id", ""))
             throw std::runtime_error("explicit artifact binding did not select the source instance");
         const auto lineage = project.query_json(

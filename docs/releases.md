@@ -1,6 +1,17 @@
 # Releases
 
-Version 0.5.0 provides native runtime packages for Windows x64 and Linux
+## 0.6.0 development notes
+
+The next release is being prepared as **0.6.0**. The release checklist should
+include the current browser viewer improvements, mass-spectrometry debugging
+and annotation work, workflow node improvements, and the unified operation
+cancellation design documented in [Operation cancellation](architecture.md#operation-cancellation).
+
+The 0.6.0 release build is not published until its native, frontend, and
+packaged-runtime validation has passed. The release archives and checksums are
+generated only by the release scripts.
+
+Version 0.6.0 provides native runtime packages for Windows x64 and Linux
 x86_64, plus matching C++ plugin developer kits.
 
 The GitHub Release is the authoritative distribution location.
@@ -14,7 +25,7 @@ The native C++ project version is **{{ streamfind_version }}**.
 
 ## Available packages
 
-Version 0.5.0 contains:
+Version 0.6.0 contains:
 
 - Windows x86_64 ZIP;
 - Linux x86_64 TGZ;
@@ -27,10 +38,10 @@ not guaranteed across versions.
 
 | Package | Archive | Platform | SHA-256 |
 | --- | --- | --- | --- |
-| C++ core | `streamfind-core-cpp-0.5.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
-| C++ core | `streamfind-core-cpp-0.5.0-Linux-x86_64.tgz` | Linux x86_64 | See `sha256sums.txt` |
-| Plugin developer kit | `streamfind-plugin-dev-0.5.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
-| Plugin developer kit | `streamfind-plugin-dev-0.5.0-Linux-x86_64.tar.gz` | Linux x86_64 | See `sha256sums.txt` |
+| C++ core | `streamfind-core-cpp-0.6.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
+| C++ core | `streamfind-core-cpp-0.6.0-Linux-x86_64.tgz` | Linux x86_64 | See `sha256sums.txt` |
+| Plugin developer kit | `streamfind-plugin-dev-0.6.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
+| Plugin developer kit | `streamfind-plugin-dev-0.6.0-Linux-x86_64.tar.gz` | Linux x86_64 | See `sha256sums.txt` |
 
 The complete checksum list is distributed as `sha256sums.txt` alongside the
 archives.
@@ -85,7 +96,7 @@ see the [C++ MCP quickstart](quickstart/cpp-mcp.md).
 Example C++ package layout:
 
 ```text
-streamfind-core-cpp-0.5.0-Windows-x86_64/
+streamfind-core-cpp-0.6.0-Windows-x86_64/
 ├── app/
 │   ├── index.html
 │   └── assets/

@@ -13,9 +13,9 @@
 #include <set>
 #include <functional>
 #include <iomanip>
-#include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <iterator>
 
 namespace streamfind::mass_spec::nta::deconvolution
 {
@@ -304,15 +304,11 @@ namespace streamfind::mass_spec::nta::deconvolution
 
     if (should_debug)
     {
-      // Initialize debug log with dynamic filename based on spectrum index
-      std::ostringstream log_filename;
-      log_filename << "debug_log_denoising_spec" << spectrumIdx << "_rt" << std::fixed << std::setprecision(2) << rt << ".log";
       std::ostringstream header;
       header << "=== Denoising Debug Log for Spectrum " << spectrumIdx
              << " (RT=" << rt << "s) ===" << std::endl;
       if (debug != nullptr && debug->enabled())
-        ::streamfind::mass_spec::nta::utils::init_debug_log(
-            debug->path().string(), header.str(), true);
+        debug->write_line(header.str());
 
       // Calculate noise level statistics for debug output
       float noise_mean = ::streamfind::mass_spec::nta::utils::mean(raw_noise);
@@ -384,7 +380,6 @@ namespace streamfind::mass_spec::nta::deconvolution
                 << "Denoising summary: " << raw_n_traces << " -> " << final_mz.size()
                 << " traces (" << std::setprecision(1) << reduction_percent << "% reduction)" << std::endl);
 
-      ::streamfind::mass_spec::nta::utils::close_debug_log();
     }
 
     // Add to output vectors
@@ -1108,16 +1103,13 @@ namespace streamfind::mass_spec::nta::deconvolution
       float debugMZ,
       sdk::DebugSession *debug_session)
   {
-    // Initialize debug log file with dynamic filename based on debugMZ
     if (debugMZ > 0.0f)
     {
-      std::string filename = "log/debug_log_peak_detection_" + std::to_string(debugMZ) + ".log";
       std::ostringstream header;
       header << "=== Peak Detection Debug Log (m/z = " << std::fixed << std::setprecision(4)
              << debugMZ << ") ===\n";
       if (debug_session != nullptr && debug_session->enabled())
-        ::streamfind::mass_spec::nta::utils::init_debug_log(
-            debug_session->path().string(), header.str(), true);
+        debug_session->write_line(header.str());
     }
 
     std::map<int, std::vector<int>> cluster_indices;
@@ -1177,8 +1169,7 @@ namespace streamfind::mass_spec::nta::deconvolution
                                                 << cluster_min_mz << " to " << cluster_max_mz
                                                 << " (mean: " << cluster_mean_mz << ")" << std::endl);
           DEBUG_LOG("      Target m/z " << debugMZ << " is within cluster range" << std::endl);
-          std::string debug_filename = "log/debug_log_peak_detection_" + std::to_string(debugMZ) + ".log";
-          std::cerr << "      Processing cluster " << cluster_id << " - detailed output in: " << debug_filename << std::endl;
+          std::cerr << "      Processing cluster " << cluster_id << " - detailed output is available in the debug artifact" << std::endl;
         }
       }
 
@@ -1260,12 +1251,11 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
 
       auto baseline = ::streamfind::mass_spec::nta::utils::calculate_baseline(cluster_intensity, baseline_window_size);
-      // Use a short, odd smoothing window for derivatives. The previous
-      // five-point window was still sensitive to isolated noise excursions in
-      // sparse EICs, which could make the boundary walker stop on the first
-      // noisy shoulder point. Seven points remains local for normal scan
-      // spacing while making the slope and valley tests stable.
-      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_savitzky_golay(cluster_intensity, 7, 2);
+      // Use a local adaptive smoother for derivatives. It keeps the broad
+      // seven-point noise suppression, switches to a three-point window at
+      // cluster edges, and preserves sharp local maxima instead of spreading
+      // them across the surrounding scans.
+      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_adaptive(cluster_intensity, 7, 3);
       // auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
 
       if (cluster_matches_debug_mz && debug_session != nullptr) {
@@ -1305,6 +1295,46 @@ namespace streamfind::mass_spec::nta::deconvolution
 
       std::vector<float> first_derivative, second_derivative;
       ::streamfind::mass_spec::nta::utils::calculate_derivatives(smoothed_intensity, first_derivative, second_derivative);
+
+      if (cluster_matches_debug_mz)
+      {
+        if (debug_session != nullptr)
+        {
+          std::ostringstream detail;
+          detail << "first_derivative <- c(";
+          for (size_t i = 0; i < first_derivative.size(); ++i)
+          {
+            detail << std::fixed << std::setprecision(3) << first_derivative[i];
+            if (i + 1 < first_derivative.size()) detail << ", ";
+          }
+          detail << ")\nsecond_derivative <- c(";
+          for (size_t i = 0; i < second_derivative.size(); ++i)
+          {
+            detail << std::fixed << std::setprecision(3) << second_derivative[i];
+            if (i + 1 < second_derivative.size()) detail << ", ";
+          }
+          detail << ")";
+          debug_session->write_line(detail.str());
+        }
+        DEBUG_LOG("      first_derivative <- c(");
+        for (size_t i = 0; i < first_derivative.size(); ++i)
+        {
+          DEBUG_LOG(std::fixed << std::setprecision(3) << first_derivative[i]);
+          if (i < first_derivative.size() - 1)
+            DEBUG_LOG(", ");
+        }
+        DEBUG_LOG(")" << std::endl);
+
+        DEBUG_LOG("      second_derivative <- c(");
+        for (size_t i = 0; i < second_derivative.size(); ++i)
+        {
+          DEBUG_LOG(std::fixed << std::setprecision(3) << second_derivative[i]);
+          if (i < second_derivative.size() - 1)
+            DEBUG_LOG(", ");
+        }
+        DEBUG_LOG(")" << std::endl);
+      }
+
       auto candidates = find_peak_candidates(first_derivative, smoothed_intensity, 0);
 
       if (cluster_matches_debug_mz && debug_session != nullptr) {
@@ -2166,9 +2196,6 @@ namespace streamfind::mass_spec::nta::deconvolution
       }
     }
 
-    // Close debug log at the end of processing to allow new log files to be created
-    ::streamfind::mass_spec::nta::utils::close_debug_log();
-
     return polarity_features;
   };
 
@@ -2505,12 +2532,17 @@ namespace streamfind::mass_spec::nta::deconvolution
     auto debug = sdk::DebugSession::open(
         access.database_path(), "mass_spec.find_features", access.operation_instance(),
         sdk::DebugOptions{debug_analysis, debug_mz, debug_spec_idx});
-    if (debug.enabled())
-      input.report("Debug log: " + debug.path().string());
-    find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
-                  parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
-                  parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
-                  debug_analysis, debug_mz, debug_spec_idx, debug);
+    utils::set_debug_session(&debug);
+    try {
+      find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
+                    parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
+                    parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
+                    debug_analysis, debug_mz, debug_spec_idx, debug);
+    } catch (...) {
+      utils::set_debug_session(nullptr);
+      throw;
+    }
+    utils::set_debug_session(nullptr);
     if (debug.enabled())
       debug.write_line("Feature detection completed");
 
@@ -2519,6 +2551,19 @@ namespace streamfind::mass_spec::nta::deconvolution
       for (int index = 0; index < buffer.size(); ++index)
         output.push_back(::streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(index)));
     access.emit_table_rows("featuresTable", ::streamfind::mass_spec::nta::utils::feature_columns(), ::streamfind::mass_spec::nta::utils::feature_types(), output);
-    return Json{{"status", "finished"}, {"features", output.size()}};
+    Json result = {{"status", "finished"}, {"features", output.size()}};
+    if (debug.enabled())
+    {
+      Json debug_result = {
+          {"schema", "streamfind.mass_spec.find_features_debug/v1"},
+          {"enabled", true},
+          {"operation", "mass_spec.find_features"},
+          {"analysis", debug_analysis},
+          {"mz", debug_mz},
+          {"spectrum_index", debug_spec_idx},
+          {"log_text", debug.text()}};
+      access.emit_result("findFeaturesDebugResult", debug_result.dump());
+    }
+    return result;
   }
 }

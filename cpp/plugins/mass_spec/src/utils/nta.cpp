@@ -1,5 +1,6 @@
 #include "utils/nta.hpp"
 #include "utils/tools_resolver.hpp"
+#include "streamfind/sdk/debug_session.hpp"
 #include <cctype>
 #include <filesystem>
 #include <iomanip>
@@ -21,17 +22,12 @@
 
 namespace streamfind::mass_spec::nta::utils
 {
-    std::ofstream debug_log;
-    void init_debug_log(const std::string &name, const std::string &header, bool append)
+    thread_local ::streamfind::sdk::DebugSession *active_debug_session = nullptr;
+    void set_debug_session(::streamfind::sdk::DebugSession *session) { active_debug_session = session; }
+    void write_debug_log(std::string_view value)
     {
-        debug_log.open(name, append ? std::ios::app : std::ios::trunc);
-        if (debug_log)
-            debug_log << header << '\n';
-    }
-    void close_debug_log()
-    {
-        if (debug_log.is_open())
-            debug_log.close();
+        if (active_debug_session != nullptr && active_debug_session->enabled())
+            active_debug_session->write_line(value);
     }
     float mean(const std::vector<float> &v) { return v.empty() ? 0.f : std::accumulate(v.begin(), v.end(), 0.f) / v.size(); }
     float standard_deviation(const std::vector<float> &v, float m)
@@ -140,6 +136,37 @@ namespace streamfind::mass_spec::nta::utils
             for (auto j = a; j <= b; ++j)
                 s += v[j];
             out[i] = s / (b - a + 1);
+        }
+        return out;
+    }
+    std::vector<float> smooth_intensity_adaptive(const std::vector<float> &v, int window, int sharp_window)
+    {
+        if (v.empty())
+            return {};
+        const size_t base_half = static_cast<size_t>(std::max(1, window / 2));
+        const size_t sharp_half = static_cast<size_t>(std::max(1, sharp_window / 2));
+        std::vector<float> out(v.size());
+        auto mean_range = [&](size_t center, size_t half)
+        {
+            const size_t begin = center > half ? center - half : 0;
+            const size_t end = std::min(v.size() - 1, center + half);
+            float sum = 0.0f;
+            for (size_t i = begin; i <= end; ++i)
+                sum += v[i];
+            return sum / static_cast<float>(end - begin + 1);
+        };
+        for (size_t i = 0; i < v.size(); ++i)
+        {
+            const size_t edge_half = (i < base_half || v.size() - 1 - i < base_half) ? sharp_half : base_half;
+            const size_t left = i > sharp_half ? i - sharp_half : 0;
+            const size_t right = std::min(v.size() - 1, i + sharp_half);
+            float neighbour_max = 0.0f;
+            if (left < i)
+                neighbour_max = std::max(neighbour_max, v[left]);
+            if (right > i)
+                neighbour_max = std::max(neighbour_max, v[right]);
+            const bool sharp_peak = neighbour_max > 0.0f && v[i] > neighbour_max * 1.1f;
+            out[i] = mean_range(i, sharp_peak ? sharp_half : edge_half);
         }
         return out;
     }

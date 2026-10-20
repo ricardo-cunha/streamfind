@@ -28,6 +28,17 @@ sfcore:anyTable
     sf:dataKind "duckdb_table" ;
     sf:dynamicSchema true .
 
+sfcore:anyJson
+    a sf:OperationResult ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Any JSON" ;
+    skos:definition "Generic JSON input contract for operations that accept any structured JSON artifact." ;
+    sf:dataKind "json" ;
+    sf:type "object" ;
+    sf:portId "anyJson" ;
+    sf:semanticContract "anyJson" .
+
 sfcore:leftAnyTablePort
     a sf:Table ;
     sf:availableInDomain sfcore:streamfind ;

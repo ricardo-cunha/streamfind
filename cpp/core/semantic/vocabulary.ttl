@@ -207,6 +207,13 @@ sf:hasOutputPort
     skos:prefLabel "has output port" ;
     skos:definition "Associates an operation with a reusable artifact contract published as output." .
 
+sf:optionalOutputPort
+    a rdf:Property ;
+    rdfs:domain sf:Operation ;
+    rdfs:range sf:ArtifactContract ;
+    skos:prefLabel "optional output port" ;
+    skos:definition "Marks an output artifact contract that is published only when the operation produces optional diagnostic or auxiliary data." .
+
 sf:sourceNodeId
     a rdf:Property ;
     rdfs:domain sf:WorkflowConnection ;

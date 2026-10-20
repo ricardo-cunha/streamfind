@@ -7,7 +7,7 @@ on the local machine.
 
 ## Release package support
 
-The 0.5.0 native archives include the same browser application layout:
+The 0.6.0 native archives include the same browser application layout:
 
 | Package | Web app contents | How to start |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ by the launcher into a browser manually.
 
 ## Windows release
 
-1. Download and extract `streamfind-core-cpp-0.5.0-Windows-x86_64.zip` from the
+1. Download and extract `streamfind-core-cpp-0.6.0-Windows-x86_64.zip` from the
    release assets.
 2. Open the extracted package directory.
 3. Run `streamfind.exe`.
@@ -40,7 +40,7 @@ and vendor-runtime paths relative to the package layout.
 
 ## Linux release
 
-1. Download and extract `streamfind-core-cpp-0.5.0-Linux-x86_64.tgz` from the
+1. Download and extract `streamfind-core-cpp-0.6.0-Linux-x86_64.tgz` from the
    release assets.
 2. Open a terminal in the extracted package directory.
 3. Run:

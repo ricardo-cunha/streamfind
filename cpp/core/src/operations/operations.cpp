@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -60,6 +61,12 @@ void validate_csv_input_path(const Json &parameters) {
         throw std::invalid_argument("csv_input_path must identify an existing file");
 }
 
+void validate_json_path(const Json &parameters) {
+    const auto path = parameters.at("json_path").get<std::string>();
+    if (path.empty())
+        throw std::invalid_argument("json_path must not be empty");
+}
+
 Json runtime_column_definition(const streamfind::RuntimeTableColumn &column);
 
 Json write_table_csv(Project &project, const Json &parameters,
@@ -78,6 +85,32 @@ Json write_table_csv(Project &project, const Json &parameters,
     project.query_json(sql);
     (void)operation_instance;
     return Json{{"status", "finished"}, {"csvPath", csv_path}};
+}
+
+Json write_json(Project &, const Json &parameters,
+                const std::string &operation_instance, const Json &inputs) {
+    validate_json_path(parameters);
+    const auto input = inputs.find("anyJson");
+    if (input == inputs.end() || !input->is_object())
+        throw std::invalid_argument("Connect a JSON input.");
+    const auto payload = input->find("payload");
+    if (payload == input->end() || payload->is_null())
+        throw std::invalid_argument("The connected JSON artifact has no payload.");
+    Json value = *payload;
+    if (value.is_string()) {
+        try { value = Json::parse(value.get<std::string>()); }
+        catch (const std::exception &error) {
+            throw std::invalid_argument(std::string("The connected JSON artifact is invalid: ") + error.what());
+        }
+    }
+    std::ofstream output(parameters.at("json_path").get<std::string>(), std::ios::out | std::ios::trunc);
+    if (!output)
+        throw std::invalid_argument("json_path is not writable");
+    output << value.dump(2) << '\n';
+    if (!output)
+        throw std::runtime_error("Failed while writing JSON output");
+    (void)operation_instance;
+    return Json{{"status", "finished"}, {"jsonPath", parameters.at("json_path")}};
 }
 
 Json read_csv(Project &project, const Json &parameters,
@@ -303,6 +336,10 @@ void register_operations(const Json &entries, OperationRegistry &operations) {
             auto definition = catalogue::operation_definition(entry);
             operations.register_operation(
                 Operation(std::move(definition), &detail::write_table_csv, &detail::validate_csv_path));
+        } else if (canonical_id == "streamfind.write_json") {
+            auto definition = catalogue::operation_definition(entry);
+            operations.register_operation(
+                Operation(std::move(definition), &detail::write_json, &detail::validate_json_path));
         } else if (canonical_id == "streamfind.read_csv") {
             auto definition = catalogue::operation_definition(entry);
             operations.register_operation(
@@ -321,6 +358,8 @@ void register_operations(const Json &entries, OperationRegistry &operations) {
         throw std::invalid_argument("catalogue: core operation is missing streamfind.select_paths");
     if (!operations.find("streamfind.write_table_csv"))
         throw std::invalid_argument("catalogue: core operation is missing streamfind.write_table_csv");
+    if (!operations.find("streamfind.write_json"))
+        throw std::invalid_argument("catalogue: core operation is missing streamfind.write_json");
     if (!operations.find("streamfind.read_csv"))
         throw std::invalid_argument("catalogue: core operation is missing streamfind.read_csv");
     if (!operations.find("streamfind.bind_table_rows"))

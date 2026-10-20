@@ -13,6 +13,7 @@ export type ArtifactViewerHostProps = {
   pluginApi?: FrontendPluginApi;
   title?: string;
   variant?: 'json' | 'wide' | 'visualization';
+  showHeader?: boolean;
   onClose: () => void;
   fallback: ReactNode;
 };
@@ -25,6 +26,7 @@ export function ArtifactViewerHost({
   pluginApi,
   title = artifact.contract_id,
   variant = viewerId || artifact.representation === 'table' || mode === 'table' ? 'wide' : 'json',
+  showHeader = true,
   onClose,
   fallback,
 }: ArtifactViewerHostProps) {
@@ -41,6 +43,7 @@ export function ArtifactViewerHost({
       title={title}
       subtitle={`${artifact.representation} · ${artifact.artifact_id}`}
       variant={variant}
+      showHeader={showHeader}
       onClose={onClose}
     >
       <ViewerErrorBoundary artifactId={artifact.artifact_id}>

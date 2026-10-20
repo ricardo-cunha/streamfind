@@ -1,195 +1,195 @@
 {
   "connections": [
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "analysesTable",
-      "target_operation": "operation-2",
+      "target_operation": 2,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-2",
+      "source_operation": 2,
       "source_port": "analysesTable",
-      "target_operation": "operation-3",
+      "target_operation": 3,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-3",
+      "source_operation": 3,
       "source_port": "analysesTable",
-      "target_operation": "operation-4",
+      "target_operation": 4,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "spectraHeadersTable",
-      "target_operation": "operation-4",
+      "target_operation": 4,
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-4",
+      "source_operation": 4,
       "source_port": "featuresTable",
-      "target_operation": "operation-6",
+      "target_operation": 5,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-6",
+      "source_operation": 5,
       "source_port": "featuresTable",
-      "target_operation": "operation-7",
+      "target_operation": 6,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-3",
+      "source_operation": 3,
       "source_port": "analysesTable",
-      "target_operation": "operation-9",
+      "target_operation": 8,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "spectraHeadersTable",
-      "target_operation": "operation-9",
+      "target_operation": 8,
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-3",
+      "source_operation": 3,
       "source_port": "analysesTable",
-      "target_operation": "operation-10",
+      "target_operation": 9,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "spectraHeadersTable",
-      "target_operation": "operation-10",
+      "target_operation": 9,
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-10",
+      "source_operation": 9,
       "source_port": "featuresTable",
-      "target_operation": "operation-11",
+      "target_operation": 10,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-3",
+      "source_operation": 3,
       "source_port": "analysesTable",
-      "target_operation": "operation-11",
+      "target_operation": 10,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "spectraHeadersTable",
-      "target_operation": "operation-11",
+      "target_operation": 10,
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "spectraHeadersTable",
-      "target_operation": "operation-14",
+      "target_operation": 11,
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "analysesTable",
-      "target_operation": "operation-14",
+      "target_operation": 11,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-17",
+      "source_operation": 13,
       "source_port": "suspectTargetsTable",
-      "target_operation": "operation-16",
+      "target_operation": 12,
       "target_port": "suspectTargetsTable"
     },
     {
-      "source_operation": "operation-16",
+      "source_operation": 12,
       "source_port": "internalStandardsTable",
-      "target_operation": "operation-19",
+      "target_operation": 15,
       "target_port": "parameter:internal_standards"
     },
     {
-      "source_operation": "operation-8",
+      "source_operation": 7,
       "source_port": "featuresTable",
-      "target_operation": "operation-9",
+      "target_operation": 8,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-7",
+      "source_operation": 6,
       "source_port": "featuresTable",
-      "target_operation": "operation-10",
+      "target_operation": 9,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-11",
+      "source_operation": 10,
       "source_port": "featuresTable",
-      "target_operation": "operation-16",
+      "target_operation": 12,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-11",
+      "source_operation": 10,
       "source_port": "featuresTable",
-      "target_operation": "operation-19",
+      "target_operation": 15,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-19",
+      "source_operation": 15,
       "source_port": "featuresTable",
-      "target_operation": "operation-20",
+      "target_operation": 16,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-3",
+      "source_operation": 3,
       "source_port": "analysesTable",
-      "target_operation": "operation-20",
+      "target_operation": 16,
       "target_port": "analysesTable"
     },
     {
-      "source_operation": "operation-1",
+      "source_operation": 1,
       "source_port": "spectraHeadersTable",
-      "target_operation": "operation-20",
+      "target_operation": 16,
       "target_port": "spectraHeadersTable"
     },
     {
-      "source_operation": "operation-20",
+      "source_operation": 16,
       "source_port": "featuresTable",
-      "target_operation": "operation-21",
+      "target_operation": 17,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-16",
+      "source_operation": 12,
       "source_port": "internalStandardsTable",
-      "target_operation": "operation-22",
+      "target_operation": 18,
       "target_port": "internalStandardsTable"
     },
     {
-      "source_operation": "operation-22",
+      "source_operation": 18,
       "source_port": "internalStandardsTable",
-      "target_operation": "operation-18",
+      "target_operation": 14,
       "target_port": "internalStandardsTable"
     },
     {
-      "source_operation": "operation-19",
+      "source_operation": 15,
       "source_port": "featuresTable",
-      "target_operation": "operation-18",
+      "target_operation": 14,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-18",
+      "source_operation": 14,
       "source_port": "internalStandardsTable",
-      "target_operation": "operation-21",
+      "target_operation": 17,
       "target_port": "internalStandardsTable"
     },
     {
-      "source_operation": "operation-21",
+      "source_operation": 17,
       "source_port": "featuresTable",
-      "target_operation": "operation-8",
+      "target_operation": 7,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-9",
+      "source_operation": 8,
       "source_port": "featuresTable",
-      "target_operation": "operation-23",
+      "target_operation": 19,
       "target_port": "featuresTable"
     },
     {
-      "source_operation": "operation-24",
+      "source_operation": 20,
       "source_port": "suspectTargetsTable",
-      "target_operation": "operation-23",
+      "target_operation": 19,
       "target_port": "parameter:suspect_targets"
     }
   ],
@@ -216,7 +216,7 @@
   "name": "Workflow",
   "operations": [
     {
-      "id": "operation-1",
+      "id": 1,
       "inputs": {},
       "operation": "mass_spec.read_mass_spec_files",
       "parameters": {
@@ -247,7 +247,7 @@
       }
     },
     {
-      "id": "operation-2",
+      "id": 2,
       "inputs": {},
       "operation": "mass_spec.set_replicate_names",
       "parameters": {
@@ -278,7 +278,7 @@
       }
     },
     {
-      "id": "operation-3",
+      "id": 3,
       "inputs": {},
       "operation": "mass_spec.set_blank_names",
       "parameters": {
@@ -309,7 +309,7 @@
       }
     },
     {
-      "id": "operation-4",
+      "id": 4,
       "inputs": {},
       "operation": "mass_spec.find_features",
       "parameters": {
@@ -336,7 +336,7 @@
       }
     },
     {
-      "id": "operation-6",
+      "id": 5,
       "inputs": {},
       "operation": "mass_spec.create_components",
       "parameters": {
@@ -354,7 +354,7 @@
       }
     },
     {
-      "id": "operation-7",
+      "id": 6,
       "inputs": {},
       "operation": "mass_spec.annotate_components",
       "parameters": {
@@ -380,7 +380,18 @@
           "Cl:0-6",
           "Br:0-4"
         ],
-        "formula_elements": ["C", "H", "N", "O", "P", "S", "F", "Cl", "Br", "I"],
+        "formula_elements": [
+          "C",
+          "H",
+          "N",
+          "O",
+          "P",
+          "S",
+          "F",
+          "Cl",
+          "Br",
+          "I"
+        ],
         "max_charge": 1,
         "max_gaps": 1,
         "max_isotopes": 8,
@@ -392,7 +403,7 @@
       }
     },
     {
-      "id": "operation-8",
+      "id": 7,
       "inputs": {},
       "operation": "mass_spec.filter_features",
       "parameters": {
@@ -408,7 +419,7 @@
       }
     },
     {
-      "id": "operation-9",
+      "id": 8,
       "inputs": {},
       "operation": "mass_spec.subtract_blank",
       "parameters": {
@@ -422,7 +433,7 @@
       }
     },
     {
-      "id": "operation-10",
+      "id": 9,
       "inputs": {},
       "operation": "mass_spec.load_features_ms1",
       "parameters": {
@@ -445,7 +456,7 @@
       }
     },
     {
-      "id": "operation-11",
+      "id": 10,
       "inputs": {},
       "operation": "mass_spec.load_features_ms2",
       "parameters": {
@@ -461,7 +472,7 @@
       }
     },
     {
-      "id": "operation-14",
+      "id": 11,
       "inputs": {},
       "operation": "mass_spec.plot_spectra_tic",
       "parameters": {
@@ -484,7 +495,7 @@
       }
     },
     {
-      "id": "operation-16",
+      "id": 12,
       "inputs": {},
       "operation": "mass_spec.find_internal_standards_metfrag",
       "parameters": {
@@ -518,7 +529,7 @@
       }
     },
     {
-      "id": "operation-17",
+      "id": 13,
       "inputs": {},
       "operation": "mass_spec.read_csv_suspect_targets",
       "parameters": {
@@ -530,7 +541,7 @@
       }
     },
     {
-      "id": "operation-18",
+      "id": 14,
       "inputs": {},
       "operation": "mass_spec.enrich_internal_standards",
       "parameters": {},
@@ -540,7 +551,7 @@
       }
     },
     {
-      "id": "operation-19",
+      "id": 15,
       "inputs": {},
       "operation": "mass_spec.group_features",
       "parameters": {
@@ -557,7 +568,7 @@
       }
     },
     {
-      "id": "operation-20",
+      "id": 16,
       "inputs": {},
       "operation": "mass_spec.fill_features",
       "parameters": {
@@ -578,7 +589,7 @@
       }
     },
     {
-      "id": "operation-21",
+      "id": 17,
       "inputs": {},
       "operation": "mass_spec.correct_matrix_suppression",
       "parameters": {
@@ -590,7 +601,7 @@
       }
     },
     {
-      "id": "operation-22",
+      "id": 18,
       "inputs": {},
       "operation": "mass_spec.filter_internal_standards",
       "parameters": {
@@ -611,7 +622,7 @@
       }
     },
     {
-      "id": "operation-23",
+      "id": 19,
       "inputs": {},
       "operation": "mass_spec.suspect_screening",
       "parameters": {
@@ -632,7 +643,7 @@
       }
     },
     {
-      "id": "operation-24",
+      "id": 20,
       "inputs": {},
       "operation": "mass_spec.read_csv_suspect_targets",
       "parameters": {
@@ -644,7 +655,7 @@
       }
     }
   ],
-  "schema_version": 1,
+  "schema_version": 2,
   "version": 1,
   "workflow_id": "mass-spec-non-target-screening-basic",
   "domain": "mass_spec"

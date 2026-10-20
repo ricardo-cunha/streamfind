@@ -118,6 +118,8 @@ ProjectSessionDto ProjectRuntimeManager::close(const std::string &session_id) {
         std::lock_guard lock(mutex_);
         const auto iterator = projects_.find(session_id);
         if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        if (operation_cancellations_.contains(session_id))
+            throw std::invalid_argument("cannot close a project while an operation is running");
         result = describe(session_id, *iterator->second);
         if (const auto cancellation = workflow_cancellations_.find(session_id); cancellation != workflow_cancellations_.end()) {
             cancellation->second->store(true);
@@ -614,6 +616,8 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id)
         std::lock_guard lock(mutex_);
         const auto iterator = projects_.find(session_id);
         if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        if (operation_cancellations_.contains(session_id))
+            throw std::invalid_argument("an operation is already running for this project");
         if (const auto worker = workflow_workers_.find(session_id); worker != workflow_workers_.end() && worker->second.joinable()) {
             const auto state = workflow_states_.find(session_id);
             if (state != workflow_states_.end() &&
@@ -698,16 +702,52 @@ std::string ProjectRuntimeManager::cancel_workflow(const std::string &session_id
     return "cancelling";
 }
 
+std::string ProjectRuntimeManager::cancel_operation(const std::string &session_id,
+                                                     const std::string &operation_instance) {
+    std::lock_guard lock(mutex_);
+    if (projects_.find(session_id) == projects_.end())
+        throw std::invalid_argument("project session not found");
+    const auto cancellation = operation_cancellations_.find(session_id);
+    if (cancellation == operation_cancellations_.end())
+        throw std::invalid_argument("operation is not running");
+    (void)operation_instance;
+    cancellation->second->store(true);
+    return "cancelling";
+}
+
 Json ProjectRuntimeManager::run_operation(const std::string &session_id,
                                           const std::string &operation_id,
                                           const Json &parameters,
                                           const std::string &operation_instance) {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto operation = operations_->find(operation_id);
-    if (!operation) throw std::invalid_argument("operation not found: " + operation_id);
-    return iterator->second->run_operation(operation_id, parameters, *operations_, operation_instance);
+    Project *project = nullptr;
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        const auto operation = operations_->find(operation_id);
+        if (!operation) throw std::invalid_argument("operation not found: " + operation_id);
+        if (workflow_cancellations_.contains(session_id))
+            throw std::invalid_argument("workflow is already running");
+        if (operation_cancellations_.contains(session_id))
+            throw std::invalid_argument("an operation is already running for this project");
+        operation_cancellations_[session_id] = cancellation;
+        project = iterator->second.get();
+    }
+
+    project->set_cancellation_flag(cancellation.get());
+    try {
+        const auto result = project->run_operation(operation_id, parameters, *operations_, operation_instance);
+        project->set_cancellation_flag(nullptr);
+        std::lock_guard lock(mutex_);
+        operation_cancellations_.erase(session_id);
+        return result;
+    } catch (...) {
+        project->set_cancellation_flag(nullptr);
+        std::lock_guard lock(mutex_);
+        operation_cancellations_.erase(session_id);
+        throw;
+    }
 }
 
 std::vector<ProjectSessionDto> ProjectRuntimeManager::list() const {

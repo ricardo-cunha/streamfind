@@ -25,6 +25,17 @@ sfms:debugComponentParameter
     sf:default "" ;
     sf:example "component_1" .
 
+sfms:debugFeatureGroupParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Debug feature group" ;
+    skos:definition "Optional feature-group identifier to include in feature gap-filling diagnostics." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "FG_1" .
+
 sfms:levelsParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -624,7 +635,7 @@ sfms:isotopeElementsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Isotope elements" ;
-    skos:definition "Elements and allowed isotope-count ranges for annotation. Each entry must use Element:min-max syntax, such as C:1-80." ;
+    skos:definition "Elements and allowed isotope-count ranges for annotation. Each entry must use Element:min-max syntax, such as C:1-80. D is an opt-in stable-label transition and uses the exact deuterium-minus-hydrogen mass shift." ;
     sf:type "array" ;
     sf:required false ;
     sf:default "[\"C:1-80\",\"N:0-10\",\"O:0-20\",\"S:0-4\",\"Cl:0-6\",\"Br:0-4\"]" ;
@@ -636,12 +647,24 @@ sfms:formulaElementsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Formula elements" ;
-    skos:definition "Allowed elemental symbols for estimated formula generation in annotate_components. The default is an organic non-target screening set. Boron, silicon, selenium, and arsenic can be added explicitly when the sample context supports them. C and H are required." ;
+    skos:definition "Allowed elemental symbols for estimated formula generation in annotate_components. The default is an organic non-target screening set. Boron, silicon, selenium, arsenic, and deuterium can be added explicitly when the sample context supports them. C and H are required." ;
     sf:type "array" ;
     sf:required false ;
     sf:default "[\"C\",\"H\",\"N\",\"O\",\"P\",\"S\",\"F\",\"Cl\",\"Br\",\"I\"]" ;
     sf:items sfcore:stringItemParameter ;
     sf:example "[\"C\",\"H\",\"N\",\"O\",\"P\",\"S\",\"F\",\"Cl\",\"Br\",\"I\",\"Si\"]" .
+
+sfms:formulaConstraintsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Formula constraints" ;
+    skos:definition "Optional elemental-count constraints for estimated formulas. Entries use Element:count or Element:min-max syntax, such as D:22 or D:0-22. This is useful for stable-isotope-labelled compounds; constrained elements are enabled for formula generation automatically." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"D:22\"]" .
 
 sfms:annotationModificationsParameter
     a sf:Parameter ;

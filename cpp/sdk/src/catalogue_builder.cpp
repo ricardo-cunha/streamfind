@@ -408,7 +408,17 @@ Json project(const Graph &graph, const std::string &domain) {
         }
         entry["output_ports"] = Json::array();
         bool has_success_signal = false;
-        for (const auto &port : values(graph, subject, std::string(sf) + "hasOutputPort")) {
+        const auto optional_output_ports = values(graph, subject, std::string(sf) + "optionalOutputPort");
+        auto output_ports = values(graph, subject, std::string(sf) + "hasOutputPort");
+        for (const auto &port : optional_output_ports) {
+            const auto contract = local(port);
+            const auto already_present = std::any_of(output_ports.begin(), output_ports.end(), [&](const auto &candidate) {
+                return local(candidate) == contract;
+            });
+            if (!already_present)
+                output_ports.push_back(port);
+        }
+        for (const auto &port : output_ports) {
             const auto contract = local(port);
             const auto table_contract_name = value(graph, port, std::string(sf) + "tableContractName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
@@ -416,13 +426,16 @@ Json project(const Graph &graph, const std::string &domain) {
                 throw std::runtime_error("table output port lacks a canonical DuckDB table contract: " + contract);
             const auto data_kind = !table_contract_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
             has_success_signal = has_success_signal || contract == "operationSuccessSignal";
+            const bool optional = std::any_of(optional_output_ports.begin(), optional_output_ports.end(), [&](const auto &candidate) {
+                return local(candidate) == contract;
+            });
             entry["output_ports"].push_back({{"id", contract},
                                              {"semantic_contract", contract},
                                              {"data_kind", data_kind},
                                              {"schema", result_schema(graph, port)},
                                              {"cardinality", "one"},
                                              {"representations", Json::array({table_contract_name.empty() ? (value_type.empty() ? "json" : value_type) : "table"})},
-                                             {"optional", false}});
+                                             {"optional", optional}});
         }
         if (kind == std::string("operation") && !has_success_signal) {
             entry["output_ports"].push_back({{"id", "operationSuccessSignal"},

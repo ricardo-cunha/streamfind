@@ -3,7 +3,7 @@
 // Implementation of feature alignment and grouping functions
 
 #include "utils/nta.hpp"
-#include "utils/nta.hpp"
+#include "streamfind/sdk/debug_session.hpp"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -17,6 +17,28 @@
 
 namespace streamfind::mass_spec::nta {
 namespace alignment {
+
+namespace detail {
+class InMemoryDebugLog {
+public:
+  void open(const std::string &, std::ios::openmode) { open_ = true; }
+  bool is_open() const noexcept { return open_; }
+  void close() noexcept { open_ = false; }
+  template <typename Value>
+  InMemoryDebugLog &operator<<(const Value &value) {
+    if (open_) stream_ << value;
+    return *this;
+  }
+  InMemoryDebugLog &operator<<(std::ostream &(*manipulator)(std::ostream &)) {
+    if (open_) manipulator(stream_);
+    return *this;
+  }
+  std::string str() const { return stream_.str(); }
+private:
+  bool open_ = false;
+  std::ostringstream stream_;
+};
+}
 
 // Helper function to interpolate RT shift at a given RT
 float interpolate_rt_shift(
@@ -420,7 +442,7 @@ void group_features(
 }
 
 // MARK: group_features_impl
-void group_features_impl(
+std::string group_features_impl(
   ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
     const std::string &method,
     float rt_deviation,
@@ -430,17 +452,9 @@ void group_features_impl(
     bool debug,
     float debug_rt)
 {
-  std::ofstream debug_log;
+  detail::InMemoryDebugLog debug_log;
   if (debug) {
-    // Create default log filename
-    std::ostringstream log_filename;
-    log_filename << "log/debug_log_group_features_method" << method;
-    if (debug_rt > 0.0f) {
-      log_filename << "_rt" << std::fixed << std::setprecision(2) << debug_rt;
-    }
-    log_filename << ".log";
-
-    debug_log.open(log_filename.str(), std::ios::out | std::ios::trunc);
+    debug_log.open({}, std::ios::out | std::ios::trunc);
     if (debug_log.is_open()) {
       debug_log << "=== Feature Grouping Debug Log ===" << std::endl;
       debug_log << "Method: " << method << std::endl;
@@ -486,7 +500,7 @@ void group_features_impl(
       debug_log << "No features found for grouping." << std::endl;
       debug_log.close();
     }
-    return;
+    return debug_log.str();
   }
 
   // Prepare internal standards for alignment if using internal_standards method
@@ -813,6 +827,7 @@ void group_features_impl(
     debug_log << "=== End Debug Log ===" << std::endl;
     debug_log.close();
   }
+  return debug_log.str();
 }
 
 } // namespace alignment
@@ -829,6 +844,8 @@ using Json = nlohmann::json;
         const float ppm = parameters.value("ppm", 10.0);
         const int min_samples = parameters.value("min_samples", 1);
         const float bin_size = parameters.value("bin_size", 5.0);
+        const auto debug_analysis = parameters.value("debug_analysis", std::string{});
+        const float debug_rt = parameters.value("debug_rt", 0.0f);
         if (method.empty() || rt_deviation < 0 || ppm < 0 || min_samples < 1 || bin_size <= 0)
             throw Error(ErrorCode::InvalidArgument, "invalid feature grouping parameters");
         auto data = utils::detail::load_analysis_features(access, parameters);
@@ -841,8 +858,22 @@ using Json = nlohmann::json;
                             "grouping_method=internal_standards requires a populated internal_standards table parameter");
             utils::detail::load_internal_standards(access, data, parameters);
         }
-        ::streamfind::mass_spec::nta::alignment::group_features_impl(data, method, rt_deviation, ppm, min_samples, bin_size);
+        auto debug = sdk::DebugSession::open(
+            access.database_path(), "mass_spec.group_features", access.operation_instance(),
+            sdk::DebugOptions{debug_analysis, 0.0, -1, debug_rt > 0.0f, false});
+        const auto debug_text = ::streamfind::mass_spec::nta::alignment::group_features_impl(
+            data, method, rt_deviation, ppm, min_samples, bin_size, debug_rt > 0.0f, debug_rt);
+        if (!debug_text.empty())
+            debug.write_line(debug_text);
         utils::detail::emit_features(access, data);
+        if (debug.enabled())
+            access.emit_result("groupFeaturesDebugResult", Json{
+                {"schema", "streamfind.mass_spec.group_features_debug/v1"},
+                {"enabled", true},
+                {"operation", "mass_spec.group_features"},
+                {"analysis", debug_analysis},
+                {"rt", debug_rt},
+                {"log_text", debug.text()}}.dump());
         return Json{{"status", "finished"}, {"info", "Features grouped."}};
     }
 }

@@ -861,7 +861,7 @@ const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: 
                 >
                   <rect width={nodeWidth} height={nodeHeight} rx="8" />
                   <text className="sf-workflow-overview-node-label" x="14" y="29">
-                    {labelLines(operation.operation || operation.id).map((line, index) => (
+                    {labelLines(operation.operation || String(operation.id)).map((line, index) => (
                       <tspan key={`${operation.id}-${line}`} x="14" dy={index === 0 ? 0 : 16}>
                         {line}
                       </tspan>

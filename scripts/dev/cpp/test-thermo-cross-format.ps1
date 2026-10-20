@@ -34,17 +34,17 @@ function Read-ReaderArtifacts {
     Invoke-McpTool $Process $Id 'create' @{ database_path = $Database; domain = 'mass_spec' } | Out-Null
     $analysisName = [System.IO.Path]::GetFileNameWithoutExtension($SourcePath)
     $workflow = @{
-        schema_version = 1
+        schema_version = 2
         operations = @(
-            @{ id = 'read-1'; operation = 'mass_spec.read_mass_spec_files'; parameters = @{ source_paths = @($SourcePath) }; inputs = @{}; position = @{} },
-            @{ id = 'headers-1'; operation = 'mass_spec.get_spectra_headers'; parameters = @{ analysis_names = @($analysisName); indices = @(0) }; inputs = @{}; position = @{} },
-            @{ id = 'spectra-1'; operation = 'mass_spec.get_raw_spectra'; parameters = @{ analysis_names = @($analysisName); indices = @(0); polarity = 1 }; inputs = @{}; position = @{} }
+            @{ id = 1; operation = 'mass_spec.read_mass_spec_files'; parameters = @{ source_paths = @($SourcePath) }; inputs = @{}; position = @{} },
+            @{ id = 2; operation = 'mass_spec.get_spectra_headers'; parameters = @{ analysis_names = @($analysisName); indices = @(0) }; inputs = @{}; position = @{} },
+            @{ id = 3; operation = 'mass_spec.get_raw_spectra'; parameters = @{ analysis_names = @($analysisName); indices = @(0); polarity = 1 }; inputs = @{}; position = @{} }
         )
         connections = @(
-            @{ source_operation = 'read-1'; source_port = 'analysesTable'; target_operation = 'headers-1'; target_port = 'analysesTable' },
-            @{ source_operation = 'read-1'; source_port = 'spectraHeadersTable'; target_operation = 'headers-1'; target_port = 'spectraHeadersTable' },
-            @{ source_operation = 'read-1'; source_port = 'analysesTable'; target_operation = 'spectra-1'; target_port = 'analysesTable' },
-            @{ source_operation = 'headers-1'; source_port = 'spectraHeadersTable'; target_operation = 'spectra-1'; target_port = 'spectraHeadersTable' }
+            @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 2; target_port = 'analysesTable' },
+            @{ source_operation = 1; source_port = 'spectraHeadersTable'; target_operation = 2; target_port = 'spectraHeadersTable' },
+            @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 3; target_port = 'analysesTable' },
+            @{ source_operation = 2; source_port = 'spectraHeadersTable'; target_operation = 3; target_port = 'spectraHeadersTable' }
         )
     }
     Invoke-McpTool $Process ($Id + 1) 'set_workflow' @{ database_path = $Database; workflow = $workflow } | Out-Null
@@ -52,7 +52,7 @@ function Read-ReaderArtifacts {
     if (-not $validation.valid) { throw "Cross-format workflow validation failed for $SourcePath" }
     Invoke-McpTool $Process ($Id + 3) 'run_workflow' @{ database_path = $Database } | Out-Null
     $inventory = @((Invoke-McpTool $Process ($Id + 4) 'get_artifact_inventory' @{ database_path = $Database }).GetEnumerator())
-    $header = $inventory | Where-Object { $_.contract_id -eq 'spectraHeadersTable' -and $_.producer_instance -eq 'read-1' } | Select-Object -Last 1
+    $header = $inventory | Where-Object { $_.contract_id -eq 'spectraHeadersTable' -and $_.producer_instance -eq '1' } | Select-Object -Last 1
     $spectra = $inventory | Where-Object { $_.contract_id -eq 'spectraTable' } | Select-Object -Last 1
     if ($null -eq $header -or $null -eq $spectra) {
         throw "Cross-format artifacts were not published for ${SourcePath}: $($inventory | ConvertTo-Json -Compress -Depth 5)"

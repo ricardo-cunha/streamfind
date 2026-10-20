@@ -116,6 +116,18 @@ sfcore:csvPathParameter
     sf:default "" ;
     sf:example "results/features.csv" .
 
+sfcore:jsonPathParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "JSON output path" ;
+    skos:definition "Filesystem path where a connected JSON artifact is written as formatted UTF-8 JSON." ;
+    sf:type "string" ;
+    sf:pathKind "file-output" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "results/debug.json" .
+
 sfcore:csvInputPathParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;

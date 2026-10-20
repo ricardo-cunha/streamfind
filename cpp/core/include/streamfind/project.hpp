@@ -24,6 +24,7 @@ namespace streamfind {
 using Json = nlohmann::json;
 
 class Project;
+class ProjectTableStore;
 
 /** @brief Primitive and container types supported by method parameters. */
 enum class STREAMFIND_CORE_API ParameterType {
@@ -380,7 +381,7 @@ struct STREAMFIND_CORE_API WorkflowConnection {
 class STREAMFIND_CORE_API Workflow {
 public:
     /// Version of the portable workflow-definition document format.
-    int schema_version{1};
+    int schema_version{2};
     /// Stable identity of the reusable workflow definition.
     std::string workflow_id;
     /// Display name of the workflow.
@@ -532,6 +533,10 @@ public:
     void execute_sql(const std::string &sql) const;
     /** @brief Execute a query and return rows as JSON objects keyed by column name. */
     Json query_json(const std::string &sql) const;
+
+    /** @internal Run a table-store transaction on this project's connection. */
+    void table_transaction(const std::vector<std::string> &owned_tables,
+                           const std::function<void(ProjectTableStore &)> &callback);
 
     /**
      * @brief Bulk-append rows into a table using a single DuckDB Appender session.

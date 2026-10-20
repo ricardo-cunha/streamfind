@@ -109,7 +109,7 @@ export function canvasWorkflow(
   const operations: WorkflowOperationDefinition[] = nodes
     .filter((node) => node.capabilityId)
     .map((node) => ({
-      id: node.id,
+      id: Number(node.id),
       operation: node.capabilityId as string,
       inputs: {},
       parameters: wireParameters(
@@ -119,13 +119,13 @@ export function canvasWorkflow(
       position: { x: node.x, y: node.y },
     }));
   const connections: WorkflowConnectionDefinition[] = edges.map((edge) => ({
-    source_operation: edge.source,
+    source_operation: Number(edge.source),
     source_port: edge.sourcePort,
-    target_operation: edge.target,
+    target_operation: Number(edge.target),
     target_port: edge.targetPort,
   }));
   return {
-    schema_version: 1,
+    schema_version: 2,
     workflow_id: 'workflow',
     name: 'Workflow',
     version: revision,
@@ -150,7 +150,7 @@ export function workflowToCanvas(
         ? operation.position
         : workflowLayout(index);
     return {
-      id: operation.id,
+      id: String(operation.id),
       kind: 'operation' as const,
       title: capability?.label || operation.operation,
       description: capability?.definition || '',
@@ -165,9 +165,9 @@ export function workflowToCanvas(
   });
   const edges = workflow.connections.map((connection) => ({
     id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
-    source: connection.source_operation,
+    source: String(connection.source_operation),
     sourcePort: connection.source_port,
-    target: connection.target_operation,
+    target: String(connection.target_operation),
     targetPort: connection.target_port,
   }));
   return { nodes, edges };
@@ -205,7 +205,7 @@ export function nextCanvasNodeNumber(nodes: CanvasNode[]): number {
     Math.max(
       0,
       ...nodes.map((node) => {
-        const match = /-(\d+)$/.exec(node.id);
+        const match = /^(?:.*-)?(\d+)$/.exec(node.id);
         return match ? Number(match[1]) : 0;
       }),
     ) + 1

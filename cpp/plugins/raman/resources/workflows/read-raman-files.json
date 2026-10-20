@@ -8,7 +8,7 @@
     "owner": "StreamFind Raman demos"
   },
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
     "workflow_id": "raman-read-files",
     "name": "Read Raman files",
     "version": 1,
@@ -19,7 +19,7 @@
     },
     "operations": [
       {
-        "id": "read-raman-files",
+        "id": 1,
         "operation": "raman.read_raman_files",
         "parameters": {
           "source_paths": [

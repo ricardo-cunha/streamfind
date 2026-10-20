@@ -67,7 +67,7 @@ function makeSpec(
       data: traces,
       layout: {
         autosize: true,
-        margin: { l: 62, r: 18, t: 14, b: 92 },
+        margin: { l: 62, r: 18, t: 14, b: 76 },
         paper_bgcolor: theme.background,
         plot_bgcolor: theme.background,
         font: { color: theme.text },
@@ -78,7 +78,7 @@ function makeSpec(
           orientation: 'h',
           x: 0,
           xanchor: 'left',
-          y: -0.2,
+          y: -0.12,
           yanchor: 'top',
         },
         xaxis: { title: { text: xTitle }, showgrid: true, gridcolor: theme.grid, zerolinecolor: theme.grid },

@@ -1357,6 +1357,7 @@ namespace streamfind
                                     "operation did not publish table output " + port.semantic_contract);
                     continue;
                 }
+                if (port.optional) continue;
                 if (already_published) continue;
                 Json payload = port.semantic_contract == "operationSuccessSignal" ? Json(true) : result;
                 if (result.is_object()) {
@@ -1400,7 +1401,11 @@ namespace streamfind
 
     Json WorkflowOperation::to_json() const
     {
-        Json output = {{"id", id}, {"operation", operation},
+        std::size_t consumed = 0;
+        const auto numeric_id = std::stoll(id, &consumed);
+        if (consumed != id.size())
+            throw Error(ErrorCode::WorkflowValidation, "Workflow operation id must be an integer: " + id);
+        Json output = {{"id", numeric_id}, {"operation", operation},
                        {"parameters", parameters.to_json()}, {"inputs", inputs}};
         if (!position.empty()) output["position"] = position;
         return output;
@@ -1408,12 +1413,13 @@ namespace streamfind
 
     WorkflowOperation WorkflowOperation::from_json(const Json &value)
     {
-        if (!value.is_object() || value.value("id", "").empty() ||
-            value.value("operation", "").empty())
+        if (!value.is_object() || !value.contains("id") || !value.at("id").is_number_integer() ||
+            !value.contains("operation") || !value.at("operation").is_string() ||
+            value.at("operation").get<std::string>().empty())
             throw Error(ErrorCode::WorkflowValidation,
-                        "Workflow operation requires id and operation");
+                        "Workflow operation requires an integer id and operation");
         WorkflowOperation output;
-        output.id = value.at("id").get<std::string>();
+        output.id = std::to_string(value.at("id").get<std::int64_t>());
         output.operation = value.at("operation").get<std::string>();
         output.parameters = ParameterValues::from_json(value.value("parameters", Json::object()));
         output.inputs = value.value("inputs", Json::object());
@@ -1433,9 +1439,15 @@ namespace streamfind
 
     Json WorkflowConnection::to_json() const
     {
-        return {{"source_operation", source_operation}, {"source_port", source_port},
+        std::size_t source_consumed = 0;
+        std::size_t target_consumed = 0;
+        const auto source_id = std::stoll(source_operation, &source_consumed);
+        const auto target_id = std::stoll(target_operation, &target_consumed);
+        if (source_consumed != source_operation.size() || target_consumed != target_operation.size())
+            throw Error(ErrorCode::WorkflowValidation, "Workflow connection operation ids must be integers");
+        return {{"source_operation", source_id}, {"source_port", source_port},
 
-                {"target_operation", target_operation}, {"target_port", target_port}};
+                {"target_operation", target_id}, {"target_port", target_port}};
     }
 
     WorkflowConnection WorkflowConnection::from_json(const Json &value)
@@ -1443,12 +1455,18 @@ namespace streamfind
         if (!value.is_object())
             throw Error(ErrorCode::WorkflowValidation,
                         "Workflow connection must be an object");
+        if (!value.contains("source_operation") || !value.at("source_operation").is_number_integer() ||
+            !value.contains("target_operation") || !value.at("target_operation").is_number_integer() ||
+            !value.contains("source_port") || !value.at("source_port").is_string() ||
+            !value.contains("target_port") || !value.at("target_port").is_string())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow connection requires integer source and target operation ids and ports");
         WorkflowConnection output{
-            value.value("source_operation", ""), value.value("source_port", ""),
-
-            value.value("target_operation", ""), value.value("target_port", "")};
-        if (output.source_operation.empty() || output.source_port.empty() ||
-            output.target_operation.empty() || output.target_port.empty())
+            std::to_string(value.at("source_operation").get<std::int64_t>()),
+            value.at("source_port").get<std::string>(),
+            std::to_string(value.at("target_operation").get<std::int64_t>()),
+            value.at("target_port").get<std::string>()};
+        if (output.source_port.empty() || output.target_port.empty())
             throw Error(ErrorCode::WorkflowValidation,
                         "Workflow connection requires source and target operation ports");
         return output;
@@ -1457,7 +1475,7 @@ namespace streamfind
 
     void Workflow::validate(const OperationRegistry &registry) const
     {
-        if (schema_version != 1)
+        if (schema_version != 2)
             throw Error(ErrorCode::SchemaMismatch,
                         "Unsupported workflow schema version: " + std::to_string(schema_version));
         if (!metadata.is_object())
@@ -1588,7 +1606,9 @@ namespace streamfind
         if (value.contains("steps"))
             throw Error(ErrorCode::WorkflowValidation, "Legacy workflow steps are not supported; use operations and connections");
         workflow.name = value.value("name", "");
-        workflow.schema_version = value.value("schema_version", 1);
+        if (!value.contains("schema_version") || !value.at("schema_version").is_number_integer())
+            throw Error(ErrorCode::SchemaMismatch, "Workflow requires schema_version 2");
+        workflow.schema_version = value.at("schema_version").get<int>();
         workflow.workflow_id = value.value("workflow_id", "");
         workflow.version = value.value("version", 1);
         workflow.metadata = value.value("metadata", Json::object());
@@ -1734,7 +1754,7 @@ namespace streamfind
             throw Error(ErrorCode::ProjectAlreadyExists, "DuckDB file already contains a project");
         if (creating)
         {
-            Json initial_workflow = {{"schema_version", 1},
+            Json initial_workflow = {{"schema_version", 2},
                                      {"workflow_id", "workflow"},
                                      {"name", "Workflow"},
                                      {"version", 1},
@@ -1835,7 +1855,7 @@ namespace streamfind
 
     void Project::set_workflow(Workflow workflow_value)
     {
-        if (workflow_value.schema_version != 1)
+        if (workflow_value.schema_version != 2)
             throw Error(ErrorCode::SchemaMismatch, "Unsupported workflow schema version");
         const auto execution = query_json("SELECT status FROM WORKFLOW_EXECUTION LIMIT 1");
         if (!execution.empty())
@@ -2142,6 +2162,35 @@ namespace streamfind
         ensure_active(*impl_);
         Connection connection(*impl_);
         query(connection.get(), sql, "execute project SQL");
+    }
+
+    void Project::table_transaction(
+        const std::vector<std::string> &owned_tables,
+        const std::function<void(ProjectTableStore &)> &callback)
+    {
+        if (!callback)
+            throw Error(ErrorCode::InvalidArgument, "table transaction callback is required");
+        std::lock_guard lock(impl_->mutex);
+        ensure_active(*impl_);
+        Connection connection(*impl_);
+        query(connection.get(), "BEGIN TRANSACTION", "begin project table transaction");
+        ProjectTableStore store(*this, owned_tables, static_cast<void *>(connection.get()));
+        try
+        {
+            callback(store);
+            query(connection.get(), "COMMIT", "commit project table transaction");
+        }
+        catch (...)
+        {
+            try
+            {
+                query(connection.get(), "ROLLBACK", "rollback project table transaction");
+            }
+            catch (...)
+            {
+            }
+            throw;
+        }
     }
 
     void Project::append_rows(const std::string &table_name,

@@ -65,7 +65,7 @@ export type WorkflowValidationResponse = WorkflowStateResponse & { valid: boolea
 export type WorkflowPosition = { x: number; y: number };
 
 export type WorkflowOperationDefinition = {
-  id: string;
+  id: number;
   operation: string;
   parameters: Record<string, JsonValue>;
   inputs?: Record<string, JsonValue>;
@@ -73,15 +73,15 @@ export type WorkflowOperationDefinition = {
 };
 
 export type WorkflowConnectionDefinition = {
-  source_operation: string;
+  source_operation: number;
   source_port: string;
-  target_operation: string;
+  target_operation: number;
   target_port: string;
 };
 
 /** Portable workflow definition. Runtime execution data is persisted separately by the service. */
 export type WorkflowDefinition = {
-  schema_version: 1;
+  schema_version: 2;
   workflow_id?: string;
   name?: string;
   version: number;

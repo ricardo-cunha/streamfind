@@ -3,7 +3,6 @@
 #include "operations/base.hpp"
 #include <iomanip>
 #include <algorithm>
-#include <fstream>
 #include <sstream>
 #include <cmath>
 #include <numeric>
@@ -13,6 +12,40 @@ namespace streamfind::mass_spec::nta
 {
   namespace componentization
   {
+    namespace detail
+    {
+      bool isotope_spacing_compatible(float mz_a, float mz_b)
+      {
+        const double observed_delta = std::abs(static_cast<double>(mz_b) - static_cast<double>(mz_a));
+        if (!(observed_delta > 0.0))
+          return false;
+
+        // Include the principal isotope spacings encountered in ordinary and
+        // explicitly deuterated formulas. Charge states are handled because
+        // the observed m/z spacing is the neutral isotope spacing divided by z.
+        constexpr double isotope_deltas[] = {
+          0.99703489445, // 15N - 14N
+          1.00335483507, // 13C - 12C
+          1.00421693, // 17O - 16O
+          1.00627674589, // D - H
+          1.995795, // 34S - 32S
+          1.997953, // 81Br - 79Br
+          2.004245 // 37Cl - 35Cl
+        };
+        for (const double isotope_delta : isotope_deltas)
+        {
+          for (int charge = 1; charge <= 4; ++charge)
+          {
+            const double expected_delta = isotope_delta / static_cast<double>(charge);
+            const double tolerance = std::max(0.00005, expected_delta * 50.0e-6);
+            if (std::abs(observed_delta - expected_delta) <= tolerance)
+              return true;
+          }
+        }
+        return false;
+      }
+    }
+
     // Helper function to decode base64-encoded EIC data
     std::vector<float> decode_eic_base64(const std::string &base64_str) {
       if (base64_str.empty()) return std::vector<float>();
@@ -138,8 +171,7 @@ namespace streamfind::mass_spec::nta
                << "debug_rt_window: [" << (debugRT + left_offset) << ", "
                << (debugRT + right_offset) << "]\n"
                << "min_correlation: " << minCorrelation << "\n";
-        ::streamfind::mass_spec::nta::utils::init_debug_log(
-            debug->path().string(), header.str(), true);
+        debug->write_line(header.str());
       }
 
       bool debug_triggered = false;
@@ -280,6 +312,17 @@ namespace streamfind::mass_spec::nta
               const bool pair_in_debug_window = should_debug &&
                   ((feature_eics[a].rt >= debugRT + left_offset && feature_eics[a].rt <= debugRT + right_offset) ||
                    (feature_eics[b].rt >= debugRT + left_offset && feature_eics[b].rt <= debugRT + right_offset));
+
+              const auto &feature_a = fts.get_feature(feature_eics[a].idx);
+              const auto &feature_b = fts.get_feature(feature_eics[b].idx);
+              if (detail::isotope_spacing_compatible(feature_a.mz, feature_b.mz)) {
+                adjacency[a].push_back(static_cast<int>(b));
+                adjacency[b].push_back(static_cast<int>(a));
+                if (pair_in_debug_window)
+                  DEBUG_LOG("  pair " << a << "-" << b << ": accepted isotope m/z spacing (" <<
+                            std::abs(feature_b.mz - feature_a.mz) << ")\n");
+                continue;
+              }
               if (minCorrelation <= 0.0f) {
                 adjacency[a].push_back(static_cast<int>(b));
                 adjacency[b].push_back(static_cast<int>(a));
@@ -534,9 +577,6 @@ namespace streamfind::mass_spec::nta
         }
       }
 
-      if (debug_mode) {
-        ::streamfind::mass_spec::nta::utils::close_debug_log();
-      }
     }
 
   } // namespace componentization
@@ -571,9 +611,24 @@ using Json = nlohmann::json;
         auto debug = sdk::DebugSession::open(
             access.database_path(), "mass_spec.create_components", access.operation_instance(),
             sdk::DebugOptions{debug_analysis, 0.0, -1, debug_rt > 0.0f, false});
-        ::streamfind::mass_spec::nta::componentization::create_components_impl(
-            data, rt_window, min_correlation, debug_rt, debug_analysis, &debug);
+        utils::set_debug_session(&debug);
+        try {
+            ::streamfind::mass_spec::nta::componentization::create_components_impl(
+                data, rt_window, min_correlation, debug_rt, debug_analysis, &debug);
+        } catch (...) {
+            utils::set_debug_session(nullptr);
+            throw;
+        }
+        utils::set_debug_session(nullptr);
         utils::detail::emit_features(access, data);
+        if (debug.enabled())
+            access.emit_result("createComponentsDebugResult", Json{
+                {"schema", "streamfind.mass_spec.create_components_debug/v1"},
+                {"enabled", true},
+                {"operation", "mass_spec.create_components"},
+                {"analysis", debug_analysis},
+                {"rt", debug_rt},
+                {"log_text", debug.text()}}.dump());
         return Json{{"status", "finished"}, {"info", "Components created."}};
     }
 }

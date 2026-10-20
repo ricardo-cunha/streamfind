@@ -1,44 +1,8 @@
 #include "streamfind/sdk/debug_session.hpp"
 
-#include <chrono>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
-#include <thread>
 
 namespace streamfind::sdk {
-namespace detail {
-
-std::string timestamp_utc() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm utc{};
-#ifdef _WIN32
-    gmtime_s(&utc, &time);
-#else
-    gmtime_r(&time, &utc);
-#endif
-    std::ostringstream result;
-    result << std::put_time(&utc, "%Y%m%dT%H%M%SZ");
-    return result.str();
-}
-
-std::string safe_component(std::string_view value) {
-    std::string result;
-    result.reserve(value.size());
-    for (const char character : value) {
-        if ((character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z') ||
-            (character >= '0' && character <= '9') || character == '-' || character == '_') {
-            result.push_back(character);
-        } else {
-            result.push_back('_');
-        }
-    }
-    return result.empty() ? "operation" : result;
-}
-
-} // namespace detail
 
 DebugSession DebugSession::open(const std::filesystem::path &database_path,
                                 std::string_view operation_id,
@@ -50,19 +14,8 @@ DebugSession DebugSession::open(const std::filesystem::path &database_path,
     if (!session.enabled_) return session;
 
     try {
-        const auto directory = database_path.parent_path() /
-                               (database_path.stem().string() + ".streamfind-debug");
-        std::filesystem::create_directories(directory);
         const auto instance = operation_instance.empty() ? "direct" : operation_instance;
-        session.path_ = directory /
-            (detail::safe_component(operation_id) + "_" +
-             detail::timestamp_utc() + "_" + detail::safe_component(instance) + ".txt");
-        session.stream_.open(session.path_, std::ios::out | std::ios::trunc);
-        if (!session.stream_) {
-            session.enabled_ = false;
-            session.path_.clear();
-            return session;
-        }
+        (void)database_path;
         session.write_line("StreamFind debug session");
         session.write_line("operation: " + std::string(operation_id));
         session.write_line("operation_instance: " + std::string(instance));
@@ -75,7 +28,6 @@ DebugSession DebugSession::open(const std::filesystem::path &database_path,
         session.write_line("");
     } catch (...) {
         session.enabled_ = false;
-        session.path_.clear();
     }
     return session;
 }
@@ -84,8 +36,7 @@ DebugSession::DebugSession(DebugSession &&other) noexcept {
     std::lock_guard lock(other.mutex_);
     enabled_ = other.enabled_;
     options_ = std::move(other.options_);
-    path_ = std::move(other.path_);
-    stream_ = std::move(other.stream_);
+    text_ = std::move(other.text_);
     other.enabled_ = false;
 }
 
@@ -94,8 +45,7 @@ DebugSession &DebugSession::operator=(DebugSession &&other) noexcept {
     std::scoped_lock lock(mutex_, other.mutex_);
     enabled_ = other.enabled_;
     options_ = std::move(other.options_);
-    path_ = std::move(other.path_);
-    stream_ = std::move(other.stream_);
+    text_ = std::move(other.text_);
     other.enabled_ = false;
     return *this;
 }
@@ -115,10 +65,15 @@ bool DebugSession::matches_spectrum(int spectrum_index) const noexcept {
 }
 
 void DebugSession::write_line(std::string_view message) {
-    if (!enabled_ || !stream_) return;
+    if (!enabled_) return;
     std::lock_guard lock(mutex_);
-    stream_ << message << '\n';
-    stream_.flush();
+    text_.append(message);
+    text_.push_back('\n');
+}
+
+std::string DebugSession::text() const {
+    std::lock_guard lock(mutex_);
+    return text_;
 }
 
 } // namespace streamfind::sdk

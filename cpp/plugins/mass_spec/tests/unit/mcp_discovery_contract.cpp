@@ -122,7 +122,7 @@ int main() {
                 "new workflow did not receive required metadata defaults");
         const auto updated = call(session, 7, "set_workflow",
                                   {{"database_path", metadata_path.string()},
-                                   {"workflow", {{"schema_version", 1}, {"workflow_id", "workflow"},
+                                   {"workflow", {{"schema_version", 2}, {"workflow_id", "workflow"},
                                                   {"name", "Workflow"}, {"version", 1},
                                                   {"metadata", {{"name", "MCP workflow"}, {"description", "MCP contract test workflow"},
                                                                  {"owner", "mcp"}, {"purpose", "contract test"}}},

@@ -44,6 +44,20 @@ Json descriptor_table(const Project &project) {
     return {{"row_count", 1}, {"columns", std::move(columns)}};
 }
 
+std::string workflow_operation_id(const Json &value) {
+    if (value.is_number_integer()) return std::to_string(value.get<std::int64_t>());
+    if (value.is_string()) {
+        const auto text = value.get<std::string>();
+        std::size_t consumed = 0;
+        try {
+            const auto number = std::stoll(text, &consumed);
+            if (consumed == text.size()) return std::to_string(number);
+        } catch (const std::exception &) {
+        }
+    }
+    throw Error(ErrorCode::InvalidArgument, "Workflow operation id must be an integer");
+}
+
 Json workflow_execution_table(const Json &rows) {
     const std::vector<std::string> names = {
         "workflow_revision", "step_index", "operation", "parameter_hash",
@@ -193,7 +207,7 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = project.get_workflow();
         WorkflowOperation operation;
-        operation.id = request.at("operation_id").get<std::string>();
+        operation.id = detail::workflow_operation_id(request.at("operation_id"));
         operation.operation = request.at("operation").get<std::string>();
         operation.parameters = ParameterValues::from_json(request.value("parameters", Json::object()));
         operation.inputs = request.value("inputs", Json::object());
@@ -282,7 +296,7 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         if (!request.contains("operation_id"))
             throw Error(ErrorCode::InvalidArgument, "Request requires operation_id");
         auto project = Project::open(detail::options_from_request(request, true));
-        return project.resolve_workflow_inputs(request.at("operation_id").get<std::string>());
+        return project.resolve_workflow_inputs(detail::workflow_operation_id(request.at("operation_id")));
     }
 
     case ProjectCommand::run_workflow: {

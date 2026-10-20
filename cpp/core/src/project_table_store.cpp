@@ -154,11 +154,13 @@ struct ProjectTableStore::Impl {
     duckdb_database database{nullptr};
     duckdb_connection connection{nullptr};
     std::vector<std::string> owned_tables;
+    bool owns_connection{true};
 };
 
 namespace detail {
 
 void close_store_connection(ProjectTableStore::Impl &impl) noexcept {
+    if (!impl.owns_connection) return;
     if (impl.connection) duckdb_disconnect(&impl.connection);
     if (impl.database) duckdb_close(&impl.database);
 }
@@ -317,6 +319,15 @@ ProjectTableStore::ProjectTableStore(Project &project, std::vector<std::string> 
 
 }
 
+ProjectTableStore::ProjectTableStore(Project &project,
+                                     std::vector<std::string> owned_tables,
+                                     void *connection) noexcept
+    : project_(&project), impl_(std::make_unique<Impl>()) {
+    impl_->owned_tables = std::move(owned_tables);
+    impl_->connection = static_cast<duckdb_connection>(connection);
+    impl_->owns_connection = false;
+}
+
 ProjectTableStore::~ProjectTableStore() {
     if (impl_) detail::close_store_connection(*impl_);
 }
@@ -324,15 +335,7 @@ ProjectTableStore::~ProjectTableStore() {
 void ProjectTableStore::transaction(Project &project,
                                     const std::vector<std::string> &owned_tables,
                                     const std::function<void(ProjectTableStore &)> &callback) {
-    ProjectTableStore store(project, owned_tables);
-    detail::store_query(*store.impl_, "BEGIN TRANSACTION");
-    try {
-        callback(store);
-        detail::store_query(*store.impl_, "COMMIT");
-    } catch (...) {
-        try { detail::store_query(*store.impl_, "ROLLBACK"); } catch (...) {}
-        throw;
-    }
+    project.table_transaction(owned_tables, callback);
 }
 
 void ProjectTableStore::install_manifest_schema(Project &project,

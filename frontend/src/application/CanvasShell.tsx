@@ -90,6 +90,7 @@ import { ontologyPortTerm, parameterOntologyDetails, portOntologyDetails } from 
 import {
   artifactContractMatches,
   artifactSummary,
+  isJsonArtifact,
   isVisualizationArtifact,
   prettyArtifactPayload,
 } from './results/artifactDisplay';
@@ -121,6 +122,7 @@ export default function CanvasShell({
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const workflowFileInputRef = useRef<HTMLInputElement | null>(null);
   const nextId = useRef(1);
+  const cancelledOperationIdsRef = useRef(new Set<string>());
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const nodesRef = useRef<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -607,7 +609,7 @@ export default function CanvasShell({
               ? operation.position
               : workflowLayout(index);
           return {
-            id: operation.id,
+            id: String(operation.id),
             kind: 'operation' as const,
             title: capability?.label || operation.operation,
             description: capability?.definition || '',
@@ -622,9 +624,9 @@ export default function CanvasShell({
         });
         const loadedEdges = result.workflow.connections.map((connection) => ({
           id: `${connection.source_operation}-${connection.source_port}-${connection.target_operation}-${connection.target_port}`,
-          source: connection.source_operation,
+          source: String(connection.source_operation),
           sourcePort: connection.source_port,
-          target: connection.target_operation,
+          target: String(connection.target_operation),
           targetPort: connection.target_port,
         }));
         nextId.current = nextCanvasNodeNumber(loadedNodes);
@@ -844,11 +846,11 @@ export default function CanvasShell({
     setWorkflowBusy(true);
     try {
       const parsed = JSON.parse(await file.text()) as Partial<WorkflowDefinition>;
-      if (parsed.schema_version !== 1 || !Array.isArray(parsed.operations) || !Array.isArray(parsed.connections)) {
+      if (parsed.schema_version !== 2 || !Array.isArray(parsed.operations) || !Array.isArray(parsed.connections)) {
         throw new Error('The selected file is not a compatible StreamFind workflow schema.');
       }
       const imported: WorkflowDefinition = {
-        schema_version: 1,
+        schema_version: 2,
         workflow_id: parsed.workflow_id,
         name: parsed.name,
         version: workflowRevision,
@@ -1374,7 +1376,7 @@ export default function CanvasShell({
   }, [pickerCapabilityId, selectedNodeId]);
   const addNode = (template: NodeTemplate) => {
     if (!picker) return;
-    const id = `${template.kind}-${nextId.current++}`;
+    const id = String(nextId.current++);
     const source = picker.source;
     const sourceNode = source ? nodeMap.get(source) : undefined;
     const position = sourceNode
@@ -1737,11 +1739,15 @@ export default function CanvasShell({
     const validation = validateInlineTableRows(tableEditor.parameter, parsed.rows);
     setCsvPreview({ rows: parsed.rows, error: validation || undefined });
   };
-  const runEntryOperation = async (node: CanvasNode, capability: BackendCapability) => {
-    if (!client || !node.capabilityId || nodeControlsLocked) return;
-    if (workflowDirty) {
+  const runEntryOperation = async (
+    node: CanvasNode,
+    capability: BackendCapability,
+    saveBeforeRun = true,
+  ): Promise<boolean> => {
+    if (!client || !node.capabilityId || nodeControlsLocked) return false;
+    if (saveBeforeRun && workflowDirty) {
       const saved = await saveCurrentWorkflow();
-      if (!saved) return;
+      if (!saved) return false;
     }
     const dependencies = await client.dependencies();
     const missing = dependencies.filter(
@@ -1749,7 +1755,7 @@ export default function CanvasShell({
     );
     if (missing.length > 0) {
       const names = missing.map((dependency) => `${dependency.label} ${dependency.version}`).join(', ');
-      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`)) return;
+      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`)) return false;
       await client.installDependencies(
         missing.map((dependency) => dependency.id),
         true,
@@ -1763,6 +1769,7 @@ export default function CanvasShell({
         wireParameters(capability, node.parameters || {}),
         node.id,
       );
+      cancelledOperationIdsRef.current.delete(node.id);
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id
@@ -1776,8 +1783,19 @@ export default function CanvasShell({
       setStatus(
         cacheHit ? `${capability.label} reused cached artifacts; execution skipped.` : `${capability.label} completed.`,
       );
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
+      const wasCancelled = cancelledOperationIdsRef.current.delete(node.id);
+      if (wasCancelled) {
+        setNodes((current) =>
+          current.map((item) =>
+            item.id === node.id ? { ...item, executionState: 'idle', executionMessage: 'Operation cancelled.' } : item,
+          ),
+        );
+        setStatus(`${node.title} cancelled.`);
+        return false;
+      }
       const artifacts = await refreshArtifacts(true);
       const published = artifacts.some(
         (artifact) =>
@@ -1794,7 +1812,7 @@ export default function CanvasShell({
           ),
         );
         setStatus(`Operation completed and artifacts were published, but the response reported an error: ${message}`);
-        return;
+        return true;
       }
       setNodes((current) =>
         current.map((item) =>
@@ -1802,12 +1820,48 @@ export default function CanvasShell({
         ),
       );
       setStatus(message);
+      return false;
     }
+  };
+  const runPrerequisiteChain = async (node: CanvasNode) => {
+    if (!client || !node.capabilityId || nodeControlsLocked) return;
+    const ordered: CanvasNode[] = [];
+    const visited = new Set<string>();
+    const visiting = new Set<string>();
+    const visit = (nodeId: string) => {
+      if (visited.has(nodeId) || visiting.has(nodeId)) return;
+      visiting.add(nodeId);
+      edges.filter((edge) => edge.target === nodeId).forEach((edge) => visit(edge.source));
+      visiting.delete(nodeId);
+      visited.add(nodeId);
+      const upstream = nodeMap.get(nodeId);
+      if (upstream && upstream.id !== node.id && upstream.capabilityId) ordered.push(upstream);
+    };
+    visit(node.id);
+    const executionPlan = [...ordered, node];
+    if (workflowDirty) {
+      const saved = await saveCurrentWorkflow();
+      if (!saved) return;
+    }
+    for (const plannedNode of executionPlan) {
+      const capability = nodeCapability(plannedNode);
+      if (!capability) {
+        setStatus(`Cannot run ${node.title}: an upstream operation is unavailable.`);
+        return;
+      }
+      const completed = await runEntryOperation(plannedNode, capability, false);
+      if (!completed) {
+        setStatus(`Run chain stopped at ${plannedNode.title}.`);
+        return;
+      }
+    }
+    setStatus(`${node.title} and its required upstream operations completed.`);
   };
   const stopOperation = async (node: CanvasNode) => {
     if (!client || node.executionState !== 'running') return;
     try {
-      await client.cancelWorkflow(project.session_id);
+      await client.cancelOperation(project.session_id, node.id);
+      cancelledOperationIdsRef.current.add(node.id);
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id ? { ...item, executionMessage: 'Operation cancellation requested.' } : item,
@@ -2241,6 +2295,9 @@ export default function CanvasShell({
             >
               <div className="sf-canvas-node-header">
                 <div className="sf-node-header-actions">
+                  <span className="sf-node-number" aria-label={`Node ${node.id}`} title={`Node ${node.id}`}>
+                    {node.id}
+                  </span>
                   <button
                     type="button"
                     className="sf-node-info"
@@ -2254,6 +2311,20 @@ export default function CanvasShell({
                     }}
                   >
                     <i className="fa-solid fa-circle-info" />
+                  </button>
+                  <button
+                    type="button"
+                    className="sf-node-info sf-node-run-chain"
+                    aria-label={`Run prerequisites and ${node.title}`}
+                    title="Run required upstream operations and this operation"
+                    disabled={!capability || nodeControlsLocked}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void runPrerequisiteChain(node);
+                    }}
+                  >
+                    <i className="fa-solid fa-list-check" />
                   </button>
                   <button
                     type="button"
@@ -2274,7 +2345,7 @@ export default function CanvasShell({
                     className="sf-node-info sf-node-stop"
                     aria-label={`Stop ${node.title}`}
                     title="Stop operation"
-                    disabled={workflowExecutionActive || runningNodeId !== node.id}
+                    disabled={workflowExecutionActive || node.executionState !== 'running'}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -2411,7 +2482,7 @@ export default function CanvasShell({
                               semanticType: artifact.contract_id,
                               representation: artifact.representation,
                             });
-                            return compatibleViewers.length || isVisualizationArtifact(artifact) ? (
+                            return compatibleViewers.length || isJsonArtifact(artifact) ? (
                               <>
                                 {compatibleViewers.map((viewer) => (
                                   <button
@@ -2425,7 +2496,7 @@ export default function CanvasShell({
                                     {viewer.label}
                                   </button>
                                 ))}
-                                {isVisualizationArtifact(artifact) ? (
+                                {isJsonArtifact(artifact) ? (
                                   <button
                                     type="button"
                                     onClick={(event) => {

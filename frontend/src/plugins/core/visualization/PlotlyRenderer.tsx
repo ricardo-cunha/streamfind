@@ -22,6 +22,42 @@ export type PlotlyRuntime = {
   resize?: (element: HTMLElement) => void | Promise<unknown>;
 };
 
+type PlotlyLayout = Record<string, unknown>;
+
+function readThemeColor(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+function objectValue(value: unknown): PlotlyLayout {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as PlotlyLayout) : {};
+}
+
+/** Apply the application Plotly contract while preserving viewer-specific settings. */
+function applyPlotlyTheme(layout: PlotlyLayout): PlotlyLayout {
+  const text = readThemeColor('--sf-text', '#061314');
+  const grid = readThemeColor('--sf-border', 'rgba(10, 48, 51, 0.14)');
+  const background = readThemeColor('--sf-surface-raised', '#ffffff');
+  const axis = {
+    showgrid: true,
+    gridcolor: grid,
+    linecolor: text,
+    tickcolor: text,
+    tickfont: { color: text },
+    titlefont: { color: text },
+    zerolinecolor: grid,
+  };
+  return {
+    ...layout,
+    paper_bgcolor: layout.paper_bgcolor ?? background,
+    plot_bgcolor: layout.plot_bgcolor ?? background,
+    font: { color: text, ...objectValue(layout.font) },
+    hoverlabel: { bgcolor: background, font: { color: text }, ...objectValue(layout.hoverlabel) },
+    xaxis: { ...axis, ...objectValue(layout.xaxis) },
+    yaxis: { ...axis, ...objectValue(layout.yaxis) },
+  };
+}
+
 export type PlotlyRendererProps = {
   spec: VisualizationSpec;
   className?: string;
@@ -107,7 +143,11 @@ export function PlotlyRenderer({
     // React supplies a new data/layout object after an interaction. Without a
     // stable uirevision, Plotly.react resets the axes to the autorange, which
     // is particularly noticeable for component EICs.
-    const layout = { ...spec.payload.layout, autosize: true, uirevision: spec.visualization_id };
+    const layout = {
+      ...applyPlotlyTheme(spec.payload.layout ?? {}),
+      autosize: true,
+      uirevision: spec.visualization_id,
+    };
     // Plotly.react is efficient for updates, but it is unreliable as the
     // first operation on a newly mounted/hidden modal. Create the graph once
     // with newPlot, then use react for subsequent payload updates.

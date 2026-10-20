@@ -2,8 +2,8 @@
 
 #include <cstddef>
 #include <optional>
-#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -11,8 +11,12 @@
 #include "streamfind/sdk/plugin_project_access.hpp"
 #include "readers/reader.hpp"
 
+namespace streamfind::sdk { class DebugSession; }
+
 namespace streamfind::mass_spec::nta::utils
 {
+  void set_debug_session(::streamfind::sdk::DebugSession *session);
+  void write_debug_log(std::string_view value);
   struct NTA_FEATURE_ROW
   {
     std::string analysis;
@@ -104,9 +108,6 @@ namespace streamfind::mass_spec::nta::utils
     bool component_is_core = false;
     bool component_bridge_flag = false;
   };
-  extern std::ofstream debug_log;
-  void init_debug_log(const std::string &, const std::string & = {}, bool append = false);
-  void close_debug_log();
   float mean(const std::vector<float> &);
   float standard_deviation(const std::vector<float> &, float);
   float quantile(std::vector<float>, float);
@@ -119,6 +120,7 @@ namespace streamfind::mass_spec::nta::utils
   std::vector<int> cluster_by_threshold_float(const std::vector<float> &, const std::vector<float> &);
   std::vector<float> calculate_baseline(const std::vector<float> &, int);
   std::vector<float> smooth_intensity_savitzky_golay(const std::vector<float> &, int, int);
+  std::vector<float> smooth_intensity_adaptive(const std::vector<float> &, int, int);
   void calculate_derivatives(const std::vector<float> &, std::vector<float> &, std::vector<float> &);
   void fit_gaussian(const std::vector<float> &, const std::vector<float> &, float &, float &, float &, float &);
   float gaussian_function_with_baseline(float, float, float, float, float);
@@ -1428,17 +1430,15 @@ namespace streamfind::mass_spec::nta
 #define DEBUG_LOG(value)                                          \
   do                                                              \
   {                                                               \
-    if (::streamfind::mass_spec::nta::utils::debug_log.is_open()) \
-      ::streamfind::mass_spec::nta::utils::debug_log << value;    \
+    std::ostringstream streamfind_debug_stream;                   \
+    streamfind_debug_stream << value;                             \
+    ::streamfind::mass_spec::nta::utils::write_debug_log(         \
+        streamfind_debug_stream.str());                          \
   } while (false)
 #define DEBUG_OUT(value)                                          \
   do                                                              \
   {                                                               \
-    if (::streamfind::mass_spec::nta::utils::debug_log.is_open()) \
-    {                                                             \
-      ::streamfind::mass_spec::nta::utils::debug_log << value;    \
-      ::streamfind::mass_spec::nta::utils::debug_log.flush();     \
-    }                                                             \
+    DEBUG_LOG(value);                                             \
     std::cout << value;                                           \
   } while (0)
 

@@ -44,7 +44,7 @@ describe('artifact display model', () => {
     expect(artifactSummary(visualization)).toBe('JSON\n1 legend traces · 3 total points · trace length 3');
   });
 
-  it('summarizes statistics result artifacts instead of exposing their raw JSON', () => {
+  it('summarizes JSON artifacts without exposing their raw payload', () => {
     const summary: ArtifactRecord = {
       ...artifact,
       contract_id: 'sfstat:foldChangeDiagnostics',
@@ -56,8 +56,17 @@ describe('artifact display model', () => {
         significant_variables: 27,
       }),
     };
-    expect(artifactSummary(summary)).toBe(
-      'JSON\n3 group A samples · 4 group B samples · 11,192 variables tested · 27 significant',
-    );
+    expect(artifactSummary(summary)).toBe('JSON\nObject · 4 fields');
+  });
+
+  it('summarizes debug JSON generically without rendering log content', () => {
+    const debug: ArtifactRecord = {
+      ...artifact,
+      contract_id: 'sfmass:findFeaturesDebugResult',
+      representation: 'json',
+      payload: JSON.stringify({ analysis: 'sample', enabled: true, log_path: 'debug.txt', log_text: 'long log' }),
+    };
+    expect(artifactSummary(debug)).toBe('JSON\nObject · 4 fields');
+    expect(artifactSummary(debug)).not.toContain('long log');
   });
 });

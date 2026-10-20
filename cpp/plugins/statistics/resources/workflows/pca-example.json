@@ -8,15 +8,56 @@
     "owner": "StreamFind statistics demos"
   },
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
     "workflow_id": "statistics-pca-example",
     "name": "Statistics PCA example",
     "version": 1,
-    "metadata": { "name": "Statistics PCA example", "description": "Import a wide table and run PCA.", "domain": "statistics" },
+    "metadata": {
+      "name": "Statistics PCA example",
+      "description": "Import a wide table and run PCA.",
+      "domain": "statistics"
+    },
     "operations": [
-      { "id": "read-table", "operation": "streamfind.read_csv", "parameters": { "csv_input_path": "statistics-example.csv" }, "inputs": {}, "position": { "x": 120, "y": 180 } },
-      { "id": "pca", "operation": "statistics.pca", "parameters": { "layout": "wide", "sample_id_column": "sample_id", "variable_columns": ["feature_a", "feature_b"], "group_column": "group", "preprocessing": "center", "n_components": 2 }, "inputs": {}, "position": { "x": 420, "y": 180 } }
+      {
+        "id": 1,
+        "operation": "streamfind.read_csv",
+        "parameters": {
+          "csv_input_path": "statistics-example.csv"
+        },
+        "inputs": {},
+        "position": {
+          "x": 120,
+          "y": 180
+        }
+      },
+      {
+        "id": 2,
+        "operation": "statistics.pca",
+        "parameters": {
+          "layout": "wide",
+          "sample_id_column": "sample_id",
+          "variable_columns": [
+            "feature_a",
+            "feature_b"
+          ],
+          "group_column": "group",
+          "preprocessing": "center",
+          "n_components": 2
+        },
+        "inputs": {},
+        "position": {
+          "x": 420,
+          "y": 180
+        }
+      }
     ],
-    "connections": [ { "source_operation": "read-table", "source_port": "anyTable", "target_operation": "pca", "target_port": "tableInput" } ]
+    "connections": [
+      {
+        "source_operation": 1,
+        "source_port": "anyTable",
+        "target_operation": 2,
+        "target_port": "tableInput"
+      }
+    ]
   }
 }

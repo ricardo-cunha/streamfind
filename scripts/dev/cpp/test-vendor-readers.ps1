@@ -56,24 +56,24 @@ try {
         domain = 'mass_spec'
     } | Out-Null
     $workflow = @{
-        schema_version = 1
+        schema_version = 2
         operations = @(
             @{
-                id = 'read-1'
+                id = 1
                 operation = 'mass_spec.read_mass_spec_files'
                 parameters = @{ source_paths = @($InputPath) }
                 inputs = @{}
                 position = @{}
             },
             @{
-                id = 'headers-1'
+                id = 2
                 operation = 'mass_spec.get_spectra_headers'
                 parameters = @{ analysis_names = @(); indices = @(0) }
                 inputs = @{}
                 position = @{}
             },
             @{
-                id = 'spectra-1'
+                id = 3
                 operation = 'mass_spec.get_raw_spectra'
                 parameters = @{ analysis_names = @(); indices = @(0); polarity = $requestedPolarity }
                 inputs = @{}
@@ -82,27 +82,27 @@ try {
         )
         connections = @(
             @{
-                source_operation = 'read-1'
+                source_operation = 1
                 source_port = 'analysesTable'
-                target_operation = 'headers-1'
+                target_operation = 2
                 target_port = 'analysesTable'
             },
             @{
-                source_operation = 'read-1'
+                source_operation = 1
                 source_port = 'spectraHeadersTable'
-                target_operation = 'headers-1'
+                target_operation = 2
                 target_port = 'spectraHeadersTable'
             },
             @{
-                source_operation = 'read-1'
+                source_operation = 1
                 source_port = 'analysesTable'
-                target_operation = 'spectra-1'
+                target_operation = 3
                 target_port = 'analysesTable'
             },
             @{
-                source_operation = 'headers-1'
+                source_operation = 2
                 source_port = 'spectraHeadersTable'
-                target_operation = 'spectra-1'
+                target_operation = 3
                 target_port = 'spectraHeadersTable'
             }
         )

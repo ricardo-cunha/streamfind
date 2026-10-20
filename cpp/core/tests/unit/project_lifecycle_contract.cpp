@@ -48,7 +48,7 @@ int run() {
 
     const auto added = streamfind::api::run(
         streamfind::api::ProjectCommand::add_operation,
-        {{"database_path", path.string()}, {"operation_id", "consumer-1"},
+        {{"database_path", path.string()}, {"operation_id", 1},
          {"operation", "test.consumer"}}, operations);
     if (!added.at("updated") || added.at("workflow").at("operations").size() != 1) {
         std::cerr << "incremental operation insertion failed\n";
@@ -56,7 +56,7 @@ int run() {
     }
     streamfind::Workflow workflow;
     workflow.name = "operation graph lifecycle";
-    workflow.operations.push_back({"tail-1", "test.tail", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()});
+    workflow.operations.push_back({"2", "test.tail", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()});
     project.set_workflow(workflow, operations);
     const auto result = project.run_operation_graph(operations);
 
@@ -72,7 +72,7 @@ int run() {
         std::cerr << "unchanged operation did not reuse its published artifact\n";
         return 1;
     }
-    workflow.operations.at(0).id = "tail-concurrent";
+    workflow.operations.at(0).id = "3";
     project.set_workflow(workflow, operations);
     streamfind::Json concurrent_first;
     streamfind::Json concurrent_second;
@@ -134,7 +134,7 @@ int run() {
     project.clear_workflow_history();
 
     project.validate();
-    project.execute_sql("DELETE FROM ARTIFACT_CACHE_OUTPUT WHERE artifact_id IN (SELECT artifact_id FROM ARTIFACT_INVENTORY WHERE producer_instance = 'tail-concurrent')");
+    project.execute_sql("DELETE FROM ARTIFACT_CACHE_OUTPUT WHERE artifact_id IN (SELECT artifact_id FROM ARTIFACT_INVENTORY WHERE producer_instance = '3')");
     const auto stale_cache_result = project.run_operation_graph(operations);
     if (executions != 4 || stale_cache_result.at("operations").at(0).value("cache_hit", false)) {
         std::cerr << "stale cache output was incorrectly reused\n";
@@ -174,7 +174,7 @@ int run() {
                 "test.result", {{"status", "incomplete"}}, "test.incomplete", instance, project.get_workflow().version);
             return streamfind::Json{{"emitted_results", {{"test.result", {{"artifact_id", artifact_id}}}}}};
         }));
-    workflow.operations = {{"incomplete-1", "test.incomplete", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()}};
+    workflow.operations = {{"4", "test.incomplete", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()}};
     project.set_workflow(workflow, operations);
     const auto incomplete_first = project.run_operation_graph(operations);
     const auto incomplete_second = project.run_operation_graph(operations);

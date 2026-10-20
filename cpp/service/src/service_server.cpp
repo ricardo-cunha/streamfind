@@ -1025,6 +1025,18 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 events_.publish(Json{{"type", "workflow.cancellation_requested"}, {"project", session_id},
                                                      {"payload", Json{{"message", "Workflow cancellation requested."}}}});
                 detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}});
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/cancel") && path.find("/operations/") != std::string::npos) {
+                const auto prefix = std::string("/projects/");
+                const auto marker = std::string("/operations/");
+                const auto suffix = std::string("/cancel");
+                const auto marker_position = path.find(marker, prefix.size());
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), marker_position - prefix.size()));
+                const auto operation_instance = detail::percent_decode(path.substr(marker_position + marker.size(), path.size() - marker_position - marker.size() - suffix.size()));
+                const auto state = projects_.cancel_operation(session_id, operation_instance);
+                events_.publish(Json{{"type", "operation.cancellation_requested"}, {"project", session_id},
+                                     {"operation_id", operation_instance},
+                                     {"payload", Json{{"message", "Operation cancellation requested."}}}});
+                detail::send_http(socket, 200, Json{{"session_id", session_id}, {"operation_id", operation_instance}, {"state", state}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.find("/operations/") != std::string::npos) {
                 const auto prefix = std::string("/projects/");
                 const auto marker = std::string("/operations/");

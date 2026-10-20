@@ -258,6 +258,15 @@ export class StreamFindApiClient {
     return result.result;
   }
 
+  async cancelOperation(sessionId: string, operationInstance: string): Promise<{ state: string }> {
+    const response = await fetch(
+      `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationInstance)}/cancel`,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+    );
+    if (!response.ok) throw new Error(`Operation cancellation request failed (${response.status})`);
+    return response.json() as Promise<{ state: string }>;
+  }
+
   async clearWorkflowHistory(sessionId: string): Promise<WorkflowDefinitionResponse> {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/workflow/history/clear`, {
       method: 'POST',

@@ -577,7 +577,8 @@ sfms:findFeatures
         sfcore:debugSpecIdxParameter ;
     sf:hasInputPort sfms:analysesTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:findFeaturesDebugResult .
 
 
 sfms:loadFeaturesMs1
@@ -714,9 +715,12 @@ sfms:groupFeatures
         sfms:rtDeviationParameter,
         sfms:ppmParameter,
         sfms:minSamplesParameter,
-        sfms:binSizeParameter ;
+        sfms:binSizeParameter,
+        sfms:debugRtParameter,
+        sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:groupFeaturesDebugResult .
 
 
 sfms:fillFeatures
@@ -737,10 +741,12 @@ sfms:fillFeatures
         sfms:minNumberTracesParameter,
         sfms:rtApexDeviationParameter,
         sfms:minSignalToNoiseRatioParameter,
-        sfms:minGaussianFitParameter ;
+        sfms:minGaussianFitParameter,
+        sfms:debugFeatureGroupParameter ;
     sf:hasInputPort sfms:analysesTable, sfms:featuresTable ;
     sf:optionalInputPort sfms:spectraHeadersTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:fillFeaturesDebugResult .
 
 
 sfms:createComponents
@@ -757,7 +763,8 @@ sfms:createComponents
         sfms:debugRtParameter,
         sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:createComponentsDebugResult .
 
 
 sfms:annotateComponents
@@ -767,7 +774,7 @@ sfms:annotateComponents
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Annotate components" ;
     skos:definition "Annotate feature components from every analysis with isotope, adduct, and neutral-loss relationships, and calculate isotope-derived carbon plus formula-derived fluorination and halogenation descriptors." ;
-    sf:guidance "The operation processes every analysis in the connected featuresTable. isotope_elements controls isotope-envelope annotation only. formula_elements independently controls the Open Babel formula allow-list and defaults to C,H,N,O,P,S,F,Cl,Br,I; C and H are required, while B, Si, Se, and As are opt-in. Candidate formulas are filtered for valid composition and plausible DBE, then ranked using mass error, agreement with the isotope-derived carbon estimate, penalties for uncommon optional elements, and diagnostic isotope support when observed. From a valid estimated formula it records X/C and H/X ratios and formula-mass percentages for F, Cl, Br, and I, plus fluorination and halogenation scores. These are prioritisation descriptors, not confirmed identities." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable. isotope_elements controls isotope-envelope annotation only; D is an opt-in stable-label transition and can be enabled with an entry such as D:1-22. formula_elements independently controls the formula allow-list and defaults to C,H,N,O,P,S,F,Cl,Br,I; C and H are required, while B, Si, Se, As, and D are opt-in. formula_constraints accepts elemental counts such as D:22 or ranges such as D:0-22 and automatically enables constrained elements for formula generation. Deuterium uses the exact D-H mass shift and unit stable-label abundance rather than natural-isotope abundance statistics. When no 13C-derived carbon count is available, formulas can still be estimated for features with isotope evidence or explicit formula constraints using a bounded mass-only carbon range. Observed isotope elements are enabled and prioritized in formula ranking. Candidate formulas are filtered for valid composition and plausible DBE, then ranked using mass error, agreement with the isotope-derived carbon estimate when available, penalties for uncommon optional elements, and diagnostic isotope support when observed. From a valid estimated formula it records X/C and H/X ratios and formula-mass percentages for F, Cl, Br, and I, plus fluorination and halogenation scores. These are prioritisation descriptors, not confirmed identities." ;
     sf:hasParameter
         sfms:maxIsotopesParameter,
         sfms:maxChargeParameter,
@@ -775,11 +782,13 @@ sfms:annotateComponents
         sfms:ppmParameter,
         sfms:isotopeElementsParameter,
         sfms:formulaElementsParameter,
+        sfms:formulaConstraintsParameter,
         sfms:annotationModificationsParameter,
         sfms:debugComponentParameter,
         sfcore:debugAnalysisParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:annotateComponentsDebugResult .
 
 
 sfms:suspectScreening

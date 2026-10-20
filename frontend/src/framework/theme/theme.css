@@ -22,6 +22,9 @@
   --sf-shadow: 0 18px 42px rgba(6, 38, 39, 0.12);
   --sf-modal-shadow: 0 18px 50px color-mix(in srgb, var(--sf-accent) 25%, transparent);
   --sf-radius: 14px;
+  --sf-node-control-bg: var(--sf-surface-raised);
+  --sf-node-control-text: var(--sf-text);
+  --sf-node-control-border: var(--sf-border);
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
@@ -44,6 +47,9 @@
   --sf-warning: #f2c14e;
   --sf-error: #f87171;
   --sf-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+  --sf-node-control-bg: var(--sf-surface);
+  --sf-node-control-text: var(--sf-text);
+  --sf-node-control-border: color-mix(in srgb, var(--sf-border) 150%, transparent);
 }
 * {
   box-sizing: border-box;
@@ -2260,8 +2266,9 @@ h2 {
   min-height: 58px;
   padding: 8px 10px;
   border-radius: calc(var(--sf-radius) - 1px) calc(var(--sf-radius) - 1px) 0 0;
-  background: var(--sf-domain-base);
-  color: #fff;
+  /* Keep the header and body as one uniform domain-coloured node surface. */
+  background: transparent;
+  color: var(--sf-text);
 }
 .sf-canvas-node-header i {
   font-size: 0.82rem;
@@ -2296,6 +2303,7 @@ h2 {
 .sf-node-header-actions {
   position: absolute;
   top: -27px;
+  left: 5px;
   right: 5px;
   display: flex;
   align-items: center;
@@ -2303,6 +2311,21 @@ h2 {
   gap: 2px;
   min-height: 22px;
   flex: 0 0 auto;
+}
+.sf-canvas-node-header .sf-node-number {
+  position: absolute;
+  left: -5px;
+  top: 0;
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  color: var(--sf-domain-base);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 .sf-canvas-node-header span {
   font-size: 0.62rem;
@@ -2369,6 +2392,31 @@ h2 {
   flex: 1 1 70px;
   padding: 5px 6px;
   font-size: 0.7rem;
+}
+.sf-canvas-node input:not([type='checkbox']),
+.sf-canvas-node select,
+.sf-canvas-node textarea,
+.sf-canvas-node .sf-button {
+  border: 0;
+  background: var(--sf-node-control-bg);
+  color: var(--sf-node-control-text);
+}
+.sf-canvas-node input:not([type='checkbox'])::placeholder {
+  color: var(--sf-text-muted);
+}
+.sf-canvas-node select option {
+  background: var(--sf-node-control-bg);
+  color: var(--sf-node-control-text);
+}
+.sf-canvas-node input:not([type='checkbox']):focus,
+.sf-canvas-node select:focus,
+.sf-canvas-node textarea:focus,
+.sf-canvas-node .sf-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sf-accent) 55%, transparent);
+  outline-offset: -1px;
+}
+.sf-canvas-node input[type='checkbox'] {
+  accent-color: var(--sf-accent);
 }
 .sf-canvas-scalar-path-row {
   display: flex;
@@ -2582,8 +2630,8 @@ h2 {
   z-index: 3;
   display: flex;
   flex-direction: column;
-  width: min(30%, 460px);
-  min-width: 280px;
+  width: min(42%, 720px);
+  min-width: 360px;
   height: min(20%, 220px);
   min-height: 120px;
   overflow: hidden;
@@ -3199,6 +3247,9 @@ h2 {
   min-width: 0;
   flex-direction: column;
 }
+.sf-artifact-viewer > .sf-viewer-error-boundary {
+  height: 100%;
+}
 .sf-viewer-error-boundary > .sf-artifact-viewer-toolbar {
   flex: 0 0 auto;
 }
@@ -3234,6 +3285,84 @@ h2 {
   width: 95vw;
   height: 95vh;
   max-height: 95vh;
+}
+.sf-artifact-viewer-content-only {
+  position: relative;
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--sf-surface-raised);
+}
+.sf-artifact-viewer-content-only > .sf-artifact-viewer-close {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sf-text-secondary);
+  cursor: pointer;
+}
+.sf-artifact-viewer-content-only > .sf-viewer-error-boundary,
+.sf-artifact-viewer-content-only > .sf-viewer-error-boundary > * {
+  min-height: 0;
+}
+.sf-resizable-splitter {
+  position: relative;
+  width: 6px;
+  min-width: 6px;
+  height: 100%;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sf-resizable-splitter::before {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  background: var(--sf-border);
+  content: '';
+  transform: translateX(-50%);
+}
+.sf-resizable-splitter::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 14px;
+  height: 26px;
+  border: 1px solid var(--sf-border);
+  border-radius: 4px;
+  background: var(--sf-surface-raised);
+  color: var(--sf-text-secondary);
+  content: '⋮';
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+.sf-resizable-splitter:hover::before,
+.sf-resizable-splitter:active::before {
+  background: var(--sf-accent);
+}
+.sf-resizable-splitter:hover::after,
+.sf-resizable-splitter:active::after {
+  border-color: var(--sf-accent);
+  color: var(--sf-accent);
+}
+/* Plotly injects the modebar after rendering, so keep its controls aligned
+   with the application theme from one shared rule. */
+.js-plotly-plot .modebar,
+.js-plotly-plot .modebar-group,
+.js-plotly-plot .modebar-btn {
+  background: transparent !important;
+}
+.js-plotly-plot .modebar-btn {
+  color: var(--sf-text-secondary) !important;
+}
+.js-plotly-plot .modebar-btn:hover,
+.js-plotly-plot .modebar-btn.active {
+  background: var(--sf-surface-hover) !important;
+  color: var(--sf-text) !important;
+}
+.js-plotly-plot .modebar-btn path {
+  fill: currentColor !important;
 }
 .sf-visualization-preview,
 .sf-visualization-preview > [role='img'] {

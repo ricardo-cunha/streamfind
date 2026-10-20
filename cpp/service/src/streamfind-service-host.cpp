@@ -27,7 +27,7 @@ BOOL WINAPI console_handler(DWORD event) {
 std::string service_path() {
     char path[MAX_PATH]{};
     const auto length = GetModuleFileNameA(nullptr, path, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) throw std::runtime_error("unable to resolve StreamFind installation path");
+    if (length == 0 || length >= MAX_PATH) throw std::runtime_error("unable to resolve streamfind installation path");
     const auto package_root = std::filesystem::path(path).parent_path();
     return (package_root / "bin" / "streamfind_service.exe").string();
 }
@@ -36,7 +36,7 @@ void configure_child_vendor_runtime() {
     char module_path[MAX_PATH]{};
     const auto length = GetModuleFileNameA(nullptr, module_path, MAX_PATH);
     if (length == 0 || length >= MAX_PATH)
-        throw std::runtime_error("unable to resolve StreamFind package path");
+        throw std::runtime_error("unable to resolve streamfind package path");
 
     const auto executable_directory = std::filesystem::path(module_path).parent_path();
     const auto package_root = std::filesystem::is_directory(executable_directory / "core")
@@ -47,14 +47,14 @@ void configure_child_vendor_runtime() {
     const auto mingw_directory = vendor_root / "mingw";
     if (!std::filesystem::is_directory(duckdb_directory) ||
         !std::filesystem::is_directory(mingw_directory))
-        throw std::runtime_error("StreamFind vendor runtime directories are missing");
+        throw std::runtime_error("streamfind vendor runtime directories are missing");
 
     const char *existing_path = std::getenv("PATH");
     std::string path = duckdb_directory.string() + ";" + mingw_directory.string();
     if (existing_path != nullptr && *existing_path != '\0')
         path += ";" + std::string(existing_path);
     if (_putenv_s("PATH", path.c_str()) != 0)
-        throw std::runtime_error("unable to configure StreamFind vendor runtime path");
+        throw std::runtime_error("unable to configure streamfind vendor runtime path");
 }
 
 bool running() { return child.hProcess != nullptr && WaitForSingleObject(child.hProcess, 0) == WAIT_TIMEOUT; }
@@ -108,13 +108,13 @@ void start_child(std::uint16_t port) {
                         std::filesystem::path(executable).parent_path().string().c_str(), &startup, &child))
         throw std::runtime_error("unable to start streamfind_service.exe");
     child_job = CreateJobObjectA(nullptr, nullptr);
-    if (!child_job) { close_child(); throw std::runtime_error("unable to create StreamFind child process job"); }
+    if (!child_job) { close_child(); throw std::runtime_error("unable to create streamfind child process job"); }
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     if (!SetInformationJobObject(child_job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) ||
         !AssignProcessToJobObject(child_job, child.hProcess)) {
         close_child();
-        throw std::runtime_error("unable to attach StreamFind backend to launcher job");
+        throw std::runtime_error("unable to attach streamfind backend to launcher job");
     }
 }
 
@@ -143,16 +143,16 @@ int main() {
             if (streamfind::service::host_detail::backend_reachable(port)) break;
             if (!streamfind::service::host_detail::running()) throw std::runtime_error("streamfind_service.exe exited during startup");
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            if (attempt == 99) throw std::runtime_error("StreamFind backend did not become ready");
+            if (attempt == 99) throw std::runtime_error("streamfind backend did not become ready");
         }
         const auto url = std::string("http://127.0.0.1:") + std::to_string(port) + "/";
-        std::cout << "streamfind is running\n"
-                  << "  app:     " << url << "\n"
-                  << "  backend: http://127.0.0.1:" << port << "\n"
-                  << "Close this terminal to stop streamfind.\n" << std::flush;
+        std::cout << "\nstreamfind is ready.\n"
+                  << "Open the application: " << url << "\n"
+                  << "Keep this window open while you work. Closing it stops streamfind.\n" << std::flush;
         ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         while (streamfind::service::host_detail::running()) std::this_thread::sleep_for(std::chrono::milliseconds(500));
         streamfind::service::host_detail::close_child();
+        std::cout << "\nstreamfind has stopped. You may close this window.\n" << std::flush;
     } catch (const std::exception &error) {
         MessageBoxA(nullptr, error.what(), "streamfind startup failed", MB_OK | MB_ICONERROR);
         streamfind::service::host_detail::stop_child();

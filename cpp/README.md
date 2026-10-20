@@ -240,7 +240,7 @@ native platforms.
 
 ## Current state
 
-The C++ backend is the authoritative native implementation. The current workspace version is `0.5.0`.
+The C++ backend is the authoritative native implementation. The current workspace version is `0.6.0`.
 
 The normal C++ runtime package is intentionally lean. It contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, and runtime vendors. It does **not** contain `sdk/`.
 
@@ -336,13 +336,13 @@ cd ..
 The Windows runtime release builds the frontend and native package, runs CTest, extracts the archive, checks the runtime payload, validates the recursive PE dependency closure, and starts the packaged MCP server:
 
 ```powershell
-scripts\\release\\cpp\\release-cpp.ps1 -Version 0.5.0
+scripts\\release\\cpp\\release-cpp.ps1 -Version 0.6.0
 ```
 
 The Linux runtime release performs the equivalent extracted-package checks, including recursive ELF dependency validation and packaged MCP startup:
 
 ```bash
-bash scripts/release/cpp/release-cpp-linux.sh 0.5.0
+bash scripts/release/cpp/release-cpp-linux.sh 0.6.0
 ```
 
 Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
@@ -374,7 +374,7 @@ The first-party out-of-tree consumer check is:
 For a distributable developer kit, use:
 
 ```powershell
-scripts\\release\\cpp\\package-plugin-devkit.ps1 -Version 0.5.0
+scripts\\release\\cpp\\package-plugin-devkit.ps1 -Version 0.6.0
 ```
 
 The developer-kit command configures, builds, installs, packages, and validates an out-of-tree C++ consumer. Frontend plugins use the generated TypeScript contract and do not require the C++ SDK headers.

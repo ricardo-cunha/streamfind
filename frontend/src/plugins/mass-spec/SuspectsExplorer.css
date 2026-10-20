@@ -475,51 +475,6 @@
   color: var(--sf-text-secondary);
 }
 
-.sf-suspects-explorer-splitter {
-  position: relative;
-  width: 6px;
-  min-width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.sf-suspects-explorer-splitter::before {
-  position: absolute;
-  inset: 0 auto 0 50%;
-  width: 1px;
-  background: var(--sf-border);
-  content: '';
-  transform: translateX(-50%);
-}
-
-.sf-suspects-explorer-splitter::after {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: grid;
-  width: 14px;
-  height: 26px;
-  border: 1px solid var(--sf-border);
-  border-radius: 4px;
-  background: var(--sf-surface-raised);
-  color: var(--sf-text-secondary);
-  content: '⋮';
-  place-items: center;
-  transform: translate(-50%, -50%);
-}
-
-.sf-suspects-explorer-splitter:hover::before,
-.sf-suspects-explorer-splitter:active::before {
-  background: var(--sf-accent);
-}
-
-.sf-suspects-explorer-splitter:hover::after,
-.sf-suspects-explorer-splitter:active::after {
-  border-color: var(--sf-accent);
-  color: var(--sf-accent);
-}
-
 .sf-suspects-explorer-filters-splitter {
   grid-column: 2;
 }

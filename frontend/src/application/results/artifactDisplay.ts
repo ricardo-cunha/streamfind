@@ -36,34 +36,10 @@ export function artifactSummary(artifact: ArtifactRecord): string {
     const traceLength = minimum === maximum ? `${minimum}` : `${minimum}–${maximum}`;
     return `JSON\n${lengths.length} legend traces · ${totalPoints} total points · trace length ${traceLength}`;
   }
-  const contract = localArtifactContract(artifact.contract_id);
-  const statisticsSummary = summarizeStatisticsResult(contract, artifact.payload);
-  if (statisticsSummary) return `JSON\n${statisticsSummary}`;
-  let payload = artifact.payload;
-  if (typeof payload === 'string') {
-    try {
-      payload = JSON.parse(payload) as JsonValue;
-    } catch {
-      // Keep non-JSON scalar strings unchanged.
-    }
-  }
-  const bounded = Array.isArray(payload)
-    ? payload.length > 8
-      ? [...payload.slice(0, 8), `… ${payload.length - 8} more items`]
-      : payload
-    : payload && typeof payload === 'object'
-      ? Object.fromEntries(Object.entries(payload).slice(0, 8))
-      : payload;
-  const rendered = JSON.stringify(bounded, null, 2) ?? String(bounded);
-  const preview = rendered.length > 420 ? `${rendered.slice(0, 417)}…` : rendered;
-  return `JSON\n${preview}`;
+  return `JSON\n${summarizeJsonPayload(artifact.payload)}`;
 }
 
-function localArtifactContract(value: string): string {
-  return value.split('#').at(-1)?.split(':').at(-1) ?? value;
-}
-
-function parseObject(payload: ArtifactRecord['payload']): Record<string, unknown> | null {
+function parseJsonPayload(payload: ArtifactRecord['payload']): JsonValue | null {
   let value: unknown = payload;
   if (typeof value === 'string') {
     try {
@@ -72,45 +48,26 @@ function parseObject(payload: ArtifactRecord['payload']): Record<string, unknown
       return null;
     }
   }
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function summaryValue(payload: Record<string, unknown>, key: string): string | null {
-  const value = payload[key];
-  if (value === undefined || value === null || value === '') return null;
-  return typeof value === 'number' ? value.toLocaleString('en-US') : String(value);
-}
-
-function summarizeStatisticsResult(contract: string, payload: ArtifactRecord['payload']): string | null {
-  const values = parseObject(payload);
-  if (!values) return null;
-  if (contract === 'foldChangeDiagnostics') {
-    const parts = [
-      summaryValue(values, 'samples_group_a') && `${summaryValue(values, 'samples_group_a')} group A samples`,
-      summaryValue(values, 'samples_group_b') && `${summaryValue(values, 'samples_group_b')} group B samples`,
-      summaryValue(values, 'variables_tested') && `${summaryValue(values, 'variables_tested')} variables tested`,
-      summaryValue(values, 'significant_variables') && `${summaryValue(values, 'significant_variables')} significant`,
-    ].filter((part): part is string => Boolean(part));
-    return parts.length ? parts.join(' · ') : 'Fold-change analysis summary';
-  }
-  if (contract === 'pcaDiagnostics') {
-    const parts = [
-      summaryValue(values, 'samples') && `${summaryValue(values, 'samples')} samples`,
-      summaryValue(values, 'variables') && `${summaryValue(values, 'variables')} variables`,
-      summaryValue(values, 'components') && `${summaryValue(values, 'components')} components`,
-    ].filter((part): part is string => Boolean(part));
-    return parts.length ? `PCA diagnostics · ${parts.join(' · ')}` : 'PCA diagnostics';
-  }
-  if (contract === 'plsDiagnostics') {
-    const parts = [
-      summaryValue(values, 'samples') && `${summaryValue(values, 'samples')} samples`,
-      summaryValue(values, 'predictors') && `${summaryValue(values, 'predictors')} predictors`,
-      summaryValue(values, 'responses') && `${summaryValue(values, 'responses')} responses`,
-      summaryValue(values, 'components') && `${summaryValue(values, 'components')} components`,
-    ].filter((part): part is string => Boolean(part));
-    return parts.length ? `PLS diagnostics · ${parts.join(' · ')}` : 'PLS diagnostics';
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    Array.isArray(value) ||
+    (typeof value === 'object' && value !== null)
+  ) {
+    return value as JsonValue;
   }
   return null;
+}
+
+function summarizeJsonPayload(payload: ArtifactRecord['payload']): string {
+  const value = parseJsonPayload(payload);
+  if (value === null) return 'Text value';
+  if (Array.isArray(value)) return `Array · ${value.length.toLocaleString('en-US')} items`;
+  if (typeof value === 'object') return `Object · ${Object.keys(value).length.toLocaleString('en-US')} fields`;
+  if (typeof value === 'string') return `String · ${value.length.toLocaleString('en-US')} characters`;
+  return `${typeof value} value`;
 }
 
 export function prettyArtifactPayload(payload: ArtifactRecord['payload']): string {
@@ -132,4 +89,8 @@ export function artifactContractMatches(artifactContract: string, portContract?:
 export function isVisualizationArtifact(artifact: ArtifactRecord): boolean {
   const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
   return contract === 'visualizationSpecResult';
+}
+
+export function isJsonArtifact(artifact: ArtifactRecord): boolean {
+  return artifact.representation === 'json';
 }

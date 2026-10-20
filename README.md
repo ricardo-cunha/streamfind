@@ -44,7 +44,7 @@ mass-spec plugin.
 | R package | Separate R interface | Existing R and Shiny workflows |
 | Python package | No public package | Use the C++ CLI or MCP interface |
 
-The current native package version is `0.5.0`. See [Releases](docs/releases.md)
+The current native package version is `0.6.0`. See [Releases](docs/releases.md)
 for archives, checksums, package contents, and developer kits.
 
 ## How it is used
