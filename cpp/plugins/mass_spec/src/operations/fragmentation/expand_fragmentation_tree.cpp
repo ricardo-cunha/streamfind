@@ -68,15 +68,34 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     }
 
     std::vector<Json> roots;
+    std::unordered_map<std::string, std::string> parent_by_id;
     for (const auto &source : source_rows)
     {
+        const auto source_id = detail::scalar_string(source, "fragment_id");
+        const auto source_parent = detail::scalar_string(source, "parent_id");
+        if (!source_id.empty() && !source_parent.empty()) parent_by_id[source_id] = source_parent;
         if (detail::scalar_string(source, "parent_id").empty()) roots.push_back(source);
     }
     if (roots.empty()) throw std::invalid_argument("fragmentationTreeTable has no MOL-derived main compound row without parent_id.");
-    if (roots.size() != 1)
-        throw std::invalid_argument(
-            "mass_spec.expand_fragmentation_tree requires exactly one MOL-derived root row; found " +
-            std::to_string(roots.size()) + ". Run one compound per fragmentation tree.");
+
+    // A MOL can contain disconnected components. The MetFrag fragmenter keeps
+    // those components as separate roots so it can process them safely, but
+    // they still belong to one suspect target and therefore one expansion
+    // context. Expand each root independently while retaining the shared
+    // candidate budget and preventing fragments from one component from being
+    // attached to another.
+    const auto belongs_to_root = [&parent_by_id](const Json &source, const std::string &root_id) {
+        auto current = detail::scalar_string(source, "fragment_id");
+        std::unordered_set<std::string> visited;
+        while (!current.empty() && visited.insert(current).second)
+        {
+            const auto parent = parent_by_id.find(current);
+            if (parent == parent_by_id.end()) return false;
+            if (parent->second == root_id) return true;
+            current = parent->second;
+        }
+        return false;
+    };
 
     std::size_t generated = 0;
     std::size_t skipped = 0;
@@ -104,6 +123,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
             const auto source_parent = detail::scalar_string(source, "parent_id");
             const auto fragment_smiles = detail::scalar_string(source, "SMILES");
             if (source_id.empty() || source_id == root_id || source_parent.empty() || fragment_smiles.empty() ||
+                !belongs_to_root(source, root_id) ||
                 !observed_fragments.insert(fragment_smiles).second)
                 continue;
             fragment_units.push_back({source_id, fragment_smiles});

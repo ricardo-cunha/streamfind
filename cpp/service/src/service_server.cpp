@@ -46,6 +46,7 @@ struct IsotopePatternFormula {
     std::string natural_formula;
     double fixed_mass_delta = 0.0;
     std::vector<std::string> fixed_labels;
+    int fixed_deuterium_count = 0;
 };
 
 std::string isotope_formula_without_charge(const std::string &formula) {
@@ -122,6 +123,8 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
             add_natural_element(symbol, count);
             result.fixed_mass_delta += static_cast<double>(count) *
                 (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+            if (symbol == "H" && mass_number == 2)
+                result.fixed_deuterium_count += count;
             for (int repeat = 0; repeat < count; ++repeat)
                 result.fixed_labels.push_back(std::to_string(mass_number) + symbol);
             index = cursor;
@@ -141,6 +144,8 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
             add_natural_element("H", count);
             result.fixed_mass_delta += static_cast<double>(count) *
                 (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+            if (mass_number == 2)
+                result.fixed_deuterium_count += count;
             for (int repeat = 0; repeat < count; ++repeat)
                 result.fixed_labels.push_back(std::to_string(mass_number) + "H");
             continue;
@@ -812,6 +817,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 Json masses = Json::array();
                 Json probabilities = Json::array();
                 Json labels = Json::array();
+                struct ExpectedPeak {
+                    double mass = 0.0;
+                    double probability = 0.0;
+                    std::string label;
+                };
+                std::vector<ExpectedPeak> expected_peaks;
                 std::vector<double> isotope_masses;
                 std::vector<double> isotope_probabilities;
                 int *isotope_numbers = nullptr;
@@ -822,35 +833,64 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     &isotope_numbers, &atom_counts, &conf_size, false);
                 std::unique_ptr<int[]> isotope_numbers_owner(isotope_numbers);
                 std::unique_ptr<int[]> atom_counts_owner(atom_counts);
-                for (std::size_t index = 0; index < envelope.confs_no() && masses.size() < max_peaks; ++index) {
-                    if (envelope.prob(index) < 1e-5) continue;
-                    masses.push_back(envelope.mass(index) + parsed_formula.fixed_mass_delta + ion_offset);
-                    probabilities.push_back(envelope.prob(index));
-                    std::vector<std::string> heavy_isotopes = parsed_formula.fixed_labels;
-                    const auto *configuration = envelope.conf(index);
-                    std::size_t isotope_offset = 0;
-                    for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
-                        for (int isotope = 0; isotope < isotope_numbers[dimension]; ++isotope) {
-                            const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
-                            if (isotope == 0 || count <= 0) continue;
-                            const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
-                            const int table_index = detail::nearest_isotope_table_index(mass);
-                            const auto label = table_index >= 0
-                                ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) +
-                                      IsoSpec::elem_table_symbol[table_index]
-                                : element_symbols[dimension];
-                            for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
+                constexpr int max_deuterium_loss_states = 8;
+                constexpr double deuterium_loss_mass_delta = 1.00627674589;
+                const int deuterium_loss_count = std::min(parsed_formula.fixed_deuterium_count,
+                                                           max_deuterium_loss_states);
+                for (int deuterium_loss = 0; deuterium_loss <= deuterium_loss_count; ++deuterium_loss) {
+                    const double state_weight = std::pow(0.35, deuterium_loss);
+                    for (std::size_t index = 0; index < envelope.confs_no(); ++index) {
+                        if (envelope.prob(index) < 1e-5) continue;
+                        std::vector<std::string> heavy_isotopes;
+                        if (deuterium_loss == 0)
+                            heavy_isotopes = parsed_formula.fixed_labels;
+                        else
+                            heavy_isotopes.push_back("D-loss-" + std::to_string(deuterium_loss));
+                        const auto *configuration = envelope.conf(index);
+                        std::size_t isotope_offset = 0;
+                        for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
+                            for (int isotope = 0; isotope < isotope_numbers[dimension]; ++isotope) {
+                                const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
+                                if (isotope == 0 || count <= 0) continue;
+                                const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
+                                const int table_index = detail::nearest_isotope_table_index(mass);
+                                const auto label = table_index >= 0
+                                    ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) +
+                                          IsoSpec::elem_table_symbol[table_index]
+                                    : element_symbols[dimension];
+                                for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
+                            }
+                            isotope_offset += static_cast<std::size_t>(isotope_numbers[dimension]);
                         }
-                        isotope_offset += static_cast<std::size_t>(isotope_numbers[dimension]);
+                        const auto label = heavy_isotopes.empty() ? "M" : [&heavy_isotopes]() {
+                            std::string combined;
+                            for (const auto &isotope : heavy_isotopes) {
+                                if (!combined.empty()) combined += "-";
+                                combined += isotope;
+                            }
+                            return combined;
+                        }();
+                        expected_peaks.push_back({
+                            envelope.mass(index) + parsed_formula.fixed_mass_delta -
+                                deuterium_loss * deuterium_loss_mass_delta + ion_offset,
+                            envelope.prob(index) * state_weight,
+                            label});
                     }
-                    labels.push_back(heavy_isotopes.empty() ? "M" : [&heavy_isotopes]() {
-                        std::string combined;
-                        for (const auto &label : heavy_isotopes) {
-                            if (!combined.empty()) combined += "-";
-                            combined += label;
-                        }
-                        return combined;
-                    }());
+                }
+                std::sort(expected_peaks.begin(), expected_peaks.end(),
+                          [](const ExpectedPeak &lhs, const ExpectedPeak &rhs) {
+                              return lhs.probability > rhs.probability;
+                          });
+                if (expected_peaks.size() > max_peaks)
+                    expected_peaks.resize(max_peaks);
+                std::sort(expected_peaks.begin(), expected_peaks.end(),
+                          [](const ExpectedPeak &lhs, const ExpectedPeak &rhs) {
+                              return lhs.mass < rhs.mass;
+                          });
+                for (const auto &peak : expected_peaks) {
+                    masses.push_back(peak.mass);
+                    probabilities.push_back(peak.probability);
+                    labels.push_back(peak.label);
                 }
                 detail::send_http(socket, 200, Json{{"formula", formula}, {"mz", masses}, {"probability", probabilities}, {"labels", labels}});
             }

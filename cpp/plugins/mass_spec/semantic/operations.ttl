@@ -799,7 +799,7 @@ sfms:suspectScreening
     skos:prefLabel "Suspect screening" ;
     skos:definition "Match detected features against suspect targets by structure-derived or supplied accurate mass, with optional retention-time, isotope, and MS2 evidence, and persist candidate assignments in a suspectsTable." ;
     sf:category "nta-identification" ;
-    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and reference MS2 peaks are optional. Cat. 1 requires accurate mass, matching reference MS2 from suspectTargetsTable, and matching RT; Cat. 2 requires accurate mass and matching reference MS2 without matching RT; Cat. 3 requires accurate mass with matching RT when reference MS2 is unavailable or does not match; Cat. 4 is an accurate-mass-only assignment. Isotope matching is informational only and does not control candidate retention or identification level. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
+    sf:guidance "Provide suspect targets through the suspect_targets parameter; do not connect suspectTargetsTable. Each target may provide a name and chemical identity such as SMILES, InChI, formula, mass, or m/z. Retention time and reference MS2 peaks are optional. Cat. 1 requires accurate mass, matching reference MS2 from suspectTargetsTable, and matching RT; Cat. 2 requires accurate mass and matching reference MS2 without matching RT; Cat. 3 requires accurate mass with matching RT when reference MS2 is unavailable or does not match; Cat. 4 is an accurate-mass-only assignment. Isotope matching is informational only and does not control candidate retention or identification level. For formulas containing D or [2H], MS1 matching includes bounded partial D-to-H isotopologues below the dominant labelled ion, consistent with annotate_components selecting the most intense member as [M+H]+ or [M-H]-. Run after load_features_ms2 only when MS2 evidence is desired. Set min_shared_fragments and min_cosine_similarity to require MS2 evidence; isotope_ppm controls MS1 isotope-pattern matching. An empty analysis_names array processes every analysis." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:suspectTargetsParameter,
@@ -928,7 +928,7 @@ sfms:metfragScreening
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Suspect screening with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features using a selectable candidate database, then rank resulting candidates into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Select LocalCSV (the default) to screen suspect_targets, PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets are supplied directly or through suspectTargetsTable, they take precedence and the operation automatically uses LocalCSV; otherwise LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
+    sf:guidance "Requires Java 21 and MetFragCL. Provide user-defined candidates through the suspect_targets parameter; those rows take precedence and automatically use LocalCSV. Select PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets is empty, LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -952,7 +952,6 @@ sfms:metfragScreening
         sfms:filteredParameter,
         sfms:debugParameter ;
     sf:hasInputPort sfms:featuresTable ;
-    sf:optionalInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:suspectsTable, sfcore:operationSuccessSignal .
 
 sfms:findInternalStandardsMetfrag
@@ -962,7 +961,7 @@ sfms:findInternalStandardsMetfrag
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards with MetFrag" ;
     skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and user-supplied internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
-    skos:guidance "Connect a Mass spectrometry suspect targets table containing the user-defined internal standards, normally deuterated compounds. The operation always uses that connected table as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure and reported in the internal-standard result. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    skos:guidance "Provide user-defined internal-standard candidates through the suspect_targets parameter, normally including deuterated compounds. The operation always uses those rows as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure; D or [2H] formulas also include bounded partial D-to-H isotopologues below the dominant labelled ion, matching the annotate_components base-ion convention, and the result is reported in the internal-standard table. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
     sf:hasParameter
         sfms:ppmParameter,
         sfms:secParameter,
@@ -981,8 +980,9 @@ sfms:findInternalStandardsMetfrag
         sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
         sfms:filteredParameter,
+        sfms:suspectTargetsParameter,
         sfms:debugParameter ;
-    sf:hasInputPort sfms:featuresTable, sfms:suspectTargetsTable ;
+    sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:internalStandardsTable, sfcore:operationSuccessSignal .
 
 sfms:fragmentSuspectTargets

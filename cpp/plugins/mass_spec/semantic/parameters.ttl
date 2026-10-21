@@ -1421,12 +1421,12 @@ sfms:preProcessingCandidateFilterParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag pre-processing filters" ;
-    skos:definition "MetFrag candidate filters applied before scoring." ;
+    skos:definition "MetFrag candidate filters applied before scoring. An empty array is normalized to the operation defaults because MetFrag does not accept an empty pre-processing filter property." ;
     sf:type "array" ;
     sf:required false ;
-    sf:default "[\"UnconnectedCompoundFilter\"]" ;
+    sf:default "[\"UnconnectedCompoundFilter\", \"IsotopeFilter\"]" ;
     sf:items sfcore:stringItemParameter ;
-    sf:example "[\"UnconnectedCompoundFilter\"]" .
+    sf:example "[\"UnconnectedCompoundFilter\", \"IsotopeFilter\"]" .
 
 sfms:postProcessingCandidateFilterParameter
     a sf:Parameter ;
