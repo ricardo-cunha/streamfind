@@ -320,6 +320,9 @@ button:active {
   background: transparent;
   backdrop-filter: none;
 }
+.sf-main:not(.sf-main-workspace) > .sf-topbar {
+  background: var(--sf-bg);
+}
 .sf-breadcrumb,
 .sf-topbar-actions {
   display: flex;
