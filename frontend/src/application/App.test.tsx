@@ -213,7 +213,7 @@ describe('application shell', () => {
     });
 
     expect(window.location.hash).toBe('#/project/path-test-a/workflow');
-    expect(screen.getByText('Workflow terminal')).toBeInTheDocument();
+    expect(screen.getByRole('log', { name: 'Canvas activity log' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect from path-test' })).not.toBeInTheDocument();
 
     cleanup();
@@ -229,7 +229,7 @@ describe('application shell', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText('Workflow terminal')).toBeInTheDocument();
+    expect(screen.getByRole('log', { name: 'Canvas activity log' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect from path-test' })).not.toBeInTheDocument();
   });
 

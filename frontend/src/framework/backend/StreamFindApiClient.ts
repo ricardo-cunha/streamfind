@@ -4,6 +4,7 @@ import type {
   StreamFindEvent,
   ProjectSession,
   WorkflowStateResponse,
+  RuntimeWorker,
   WorkflowDefinition,
   WorkflowDefinitionResponse,
   WorkflowEventHistoryResponse,
@@ -258,13 +259,21 @@ export class StreamFindApiClient {
     return result.result;
   }
 
-  async cancelOperation(sessionId: string, operationInstance: string): Promise<{ state: string }> {
+  async cancelOperation(sessionId: string, operationInstance: string): Promise<{ state: string; worker?: RuntimeWorker | null }> {
     const response = await fetch(
       `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationInstance)}/cancel`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
     );
     if (!response.ok) throw new Error(`Operation cancellation request failed (${response.status})`);
     return response.json() as Promise<{ state: string }>;
+  }
+
+  async operationState(sessionId: string, operationInstance: string): Promise<{ state: string; worker?: RuntimeWorker | null }> {
+    const response = await fetch(
+      `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationInstance)}/state`,
+    );
+    if (!response.ok) throw new Error(`Operation state request failed (${response.status})`);
+    return response.json() as Promise<{ state: string; worker?: RuntimeWorker | null }>;
   }
 
   async clearWorkflowHistory(sessionId: string): Promise<WorkflowDefinitionResponse> {

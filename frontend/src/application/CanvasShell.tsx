@@ -101,6 +101,7 @@ import type {
   ServiceCapabilities,
   WorkflowDefinition,
   WorkflowState,
+  RuntimeWorker,
 } from '../framework/backend/protocol';
 
 export default function CanvasShell({
@@ -188,6 +189,9 @@ export default function CanvasShell({
   const [metadataEditorError, setMetadataEditorError] = useState<string | null>(null);
   const [gridVisible, setGridVisible] = useState(false);
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
+  const [activeWorker, setActiveWorker] = useState<RuntimeWorker | null>(null);
+  const activeWorkerRef = useRef<RuntimeWorker | null>(null);
+  const [cancellingNodeId, setCancellingNodeId] = useState<string | null>(null);
   const [, setWorkflowProgress] = useState({ completed: 0, total: 0, current_step: 0 });
   const workflowExecutionIdRef = useRef<string | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -196,6 +200,7 @@ export default function CanvasShell({
   const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
+  const [workflowLoadStep, setWorkflowLoadStep] = useState(surface === 'workflow' && client ? 0 : 3);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
   const lastObservedWorkflowStateRef = useRef<WorkflowState | null>(null);
@@ -218,6 +223,7 @@ export default function CanvasShell({
     surface === 'workflow' ? 'Drag an output connector to a compatible input connector.' : 'Workflow canvas',
   );
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
+  const [logCopied, setLogCopied] = useState(false);
   const logSequenceRef = useRef(0);
   const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactRecord[]>([]);
   const [artifactViewer, setArtifactViewer] = useState<ArtifactRecord | null>(null);
@@ -272,6 +278,21 @@ export default function CanvasShell({
   const resetActivityLog = useCallback(() => {
     logSequenceRef.current = 0;
     setActivityLog([]);
+  }, []);
+  const copyActivityLog = useCallback(async () => {
+    if (!navigator.clipboard) return;
+    const text = activityLog.map((entry) => `${entry.timestamp} ${entry.message}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setLogCopied(true);
+      window.setTimeout(() => setLogCopied(false), 1600);
+    } catch {
+      setLogCopied(false);
+    }
+  }, [activityLog]);
+  const updateActiveWorker = useCallback((worker: RuntimeWorker | null) => {
+    activeWorkerRef.current = worker;
+    setActiveWorker(worker);
   }, []);
   useEffect(() => {
     return subscribeAppNotifications((notification) => {
@@ -448,6 +469,34 @@ export default function CanvasShell({
         payload && typeof payload === 'object' && !Array.isArray(payload) && 'level' in payload
           ? String(payload.level)
           : undefined;
+      const workerDetail = (() => {
+        const payloadWorker =
+          payload && typeof payload === 'object' && !Array.isArray(payload) && 'worker' in payload
+            ? payload.worker
+            : null;
+        const worker =
+          payloadWorker && typeof payloadWorker === 'object' && !Array.isArray(payloadWorker)
+            ? (payloadWorker as RuntimeWorker)
+            : activeWorkerRef.current;
+        if (!worker) return '';
+        if (payloadWorker && typeof payloadWorker === 'object' && !Array.isArray(payloadWorker))
+          updateActiveWorker(worker);
+        const id = 'id' in worker ? String(worker.id) : 'unknown';
+        const pid = 'process_id' in worker && worker.process_id ? String(worker.process_id) : '—';
+        const state = 'state' in worker ? String(worker.state) : 'unknown';
+        const job = 'job_id' in worker && worker.job_id ? ` · Job ${String(worker.job_id)}` : '';
+        const group = 'process_group_id' in worker && worker.process_group_id
+          ? ` · Group ${String(worker.process_group_id)}`
+          : '';
+        return ` · Worker ${id} · PID ${pid}${group}${job} · ${state}`;
+      })();
+      if (payload && typeof payload === 'object' && !Array.isArray(payload) && 'worker' in payload) {
+        const worker = payload.worker;
+        if (worker && typeof worker === 'object' && !Array.isArray(worker) &&
+            'state' in worker && ['completed', 'failed', 'cancelled'].includes(String(worker.state))) {
+          updateActiveWorker(null);
+        }
+      }
       const level: CanvasLogLine['level'] =
         payloadLevel === 'error' || event.type.endsWith('.failed')
           ? 'error'
@@ -476,13 +525,11 @@ export default function CanvasShell({
         resetActivityLog();
         setWorkflowState('queued');
       }
-      if (event.type !== 'workflow.completed') {
-        appendLog(
-          detail ? `${event.type}${operation}: ${detail}` : `${event.type}${operation}`,
-          level,
-          event.timestamp_ms,
-        );
-      }
+      appendLog(
+        detail ? `${event.type}${operation}: ${detail}${workerDetail}` : `${event.type}${operation}${workerDetail}`,
+        level,
+        event.timestamp_ms,
+      );
       if (
         event.type === 'workflow.completed' ||
         event.type === 'workflow.failed' ||
@@ -510,7 +557,7 @@ export default function CanvasShell({
         void refreshArtifacts(true);
       }
     },
-    [appendLog, project.session_id, refreshArtifacts, resetActivityLog],
+    [appendLog, project.session_id, refreshArtifacts, resetActivityLog, updateActiveWorker],
   );
 
   useEffect(() => {
@@ -543,6 +590,7 @@ export default function CanvasShell({
           if (active) {
             workflowExecutionIdRef.current = result.execution_id ?? null;
             setWorkflowState(result.state);
+            updateActiveWorker(result.worker ?? null);
             if (result.progress) setWorkflowProgress(result.progress);
             if (result.state === 'completed' || result.state === 'failed' || result.state === 'cancelled') {
               void refreshArtifacts(true);
@@ -556,7 +604,7 @@ export default function CanvasShell({
       active = false;
       window.clearInterval(timer);
     };
-  }, [appendLog, client, project.session_id, refreshArtifacts, surface]);
+  }, [appendLog, client, project.session_id, refreshArtifacts, surface, updateActiveWorker]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client || !workflowLoaded || typeof client.workflowEvents !== 'function')
@@ -568,14 +616,17 @@ export default function CanvasShell({
         if (!active) return;
         workflowExecutionIdRef.current = state.execution_id ?? null;
         setWorkflowState(state.state);
+        updateActiveWorker(state.worker ?? null);
         if (state.progress) setWorkflowProgress(state.progress);
         resetActivityLog();
-        if (!['queued', 'running', 'cancelling'].includes(state.state)) {
-          return;
-        }
-        const result = await client.workflowEvents(project.session_id, 0, 500);
+        const result = await client.workflowEvents(project.session_id, 0, 20000);
         if (!active) return;
-        for (const event of result.events) {
+        const latestWorkflowStart = result.events.reduce(
+          (latest, event, index) => (event.type === 'workflow.started' ? index : latest),
+          -1,
+        );
+        const events = latestWorkflowStart >= 0 ? result.events.slice(latestWorkflowStart) : result.events;
+        for (const event of events) {
           if (!workflowExecutionIdRef.current || event.execution_id === workflowExecutionIdRef.current)
             applyWorkflowEvent(event);
         }
@@ -584,21 +635,27 @@ export default function CanvasShell({
     return () => {
       active = false;
     };
-  }, [appendLog, applyWorkflowEvent, client, project.session_id, resetActivityLog, surface, workflowLoaded]);
+  }, [appendLog, applyWorkflowEvent, client, project.session_id, resetActivityLog, surface, updateActiveWorker, workflowLoaded]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
     let active = true;
+    setWorkflowLoaded(false);
+    setWorkflowLoadStep(0);
     client
       .workflowDefinition(project.session_id)
-      .then((result) => {
+      .then(async (result) => {
         if (!active) return;
+        setWorkflowLoadStep(1);
         initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
         if (result.workflow.metadata) setWorkflowMetadata(result.workflow.metadata);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
           setStatus(`Saved workflow is invalid: ${result.diagnostics.map((item) => item.message).join('; ')}`);
+          await refreshArtifacts(true);
+          if (!active) return;
+          setWorkflowLoadStep(3);
           setWorkflowLoaded(true);
           return;
         }
@@ -632,6 +689,7 @@ export default function CanvasShell({
         nextId.current = nextCanvasNodeNumber(loadedNodes);
         setNodes(loadedNodes);
         setEdges(loadedEdges);
+        setWorkflowLoadStep(2);
         const minimumX = Math.min(0, ...loadedNodes.map((node) => node.x));
         const maximumX = Math.max(NODE_WIDTH, ...loadedNodes.map((node) => node.x + NODE_WIDTH));
         const minimumY = Math.min(0, ...loadedNodes.map((node) => node.y));
@@ -640,8 +698,13 @@ export default function CanvasShell({
           width: Math.max(current.width, maximumX - minimumX + 800),
           height: Math.max(current.height, maximumY - minimumY + 600),
         }));
+        // Output-port availability is derived from the artifact snapshot. Keep the
+        // loading overlay visible until that snapshot has arrived so the canvas does
+        // not briefly render with every output looking unpublished.
+        await refreshArtifacts(true);
+        if (!active) return;
+        setWorkflowLoadStep(3);
         setWorkflowLoaded(true);
-        setStatus('Workflow loaded from the project.');
       })
       .catch((error) => {
         if (active) {
@@ -1761,6 +1824,7 @@ export default function CanvasShell({
         true,
       );
     }
+    setCancellingNodeId(null);
     setNodes((current) => current.map((item) => (item.id === node.id ? { ...item, executionState: 'running' } : item)));
     try {
       const result = await client.runOperation(
@@ -1770,6 +1834,7 @@ export default function CanvasShell({
         node.id,
       );
       cancelledOperationIdsRef.current.delete(node.id);
+      setCancellingNodeId(null);
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id
@@ -1787,6 +1852,7 @@ export default function CanvasShell({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Operation failed.';
       const wasCancelled = cancelledOperationIdsRef.current.delete(node.id);
+      setCancellingNodeId(null);
       if (wasCancelled) {
         setNodes((current) =>
           current.map((item) =>
@@ -1859,9 +1925,10 @@ export default function CanvasShell({
   };
   const stopOperation = async (node: CanvasNode) => {
     if (!client || node.executionState !== 'running') return;
+    cancelledOperationIdsRef.current.add(node.id);
+    setCancellingNodeId(node.id);
     try {
       await client.cancelOperation(project.session_id, node.id);
-      cancelledOperationIdsRef.current.add(node.id);
       setNodes((current) =>
         current.map((item) =>
           item.id === node.id ? { ...item, executionMessage: 'Operation cancellation requested.' } : item,
@@ -1869,10 +1936,36 @@ export default function CanvasShell({
       );
       setStatus('Operation cancellation requested.');
     } catch (error) {
+      cancelledOperationIdsRef.current.delete(node.id);
+      setCancellingNodeId(null);
       setStatus(error instanceof Error ? error.message : 'Operation cancellation failed.');
     }
   };
   const workflowExecutionActive = ['queued', 'running', 'cancelling'].includes(workflowState);
+  const directOperationActive = !workflowExecutionActive && activeWorker?.state === 'running' &&
+    activeWorker.operation_id.length > 0;
+  const stopActiveExecution = async () => {
+    if (!client || workflowBusy) return;
+    if (directOperationActive && activeWorker) {
+      const node = nodes.find((item) => item.id === activeWorker.operation_id);
+      if (node) {
+        await stopOperation(node);
+        return;
+      }
+      try {
+        cancelledOperationIdsRef.current.add(activeWorker.operation_id);
+        setCancellingNodeId(activeWorker.operation_id);
+        await client.cancelOperation(project.session_id, activeWorker.operation_id);
+      } catch (error) {
+        cancelledOperationIdsRef.current.delete(activeWorker.operation_id);
+        setCancellingNodeId(null);
+        setStatus(error instanceof Error ? error.message : 'Operation cancellation failed.');
+      }
+      return;
+    }
+    await workflowAction('cancel');
+  };
+  const cancellationActive = workflowState === 'cancelling' || cancellingNodeId !== null;
   const runningNodeId = nodes.find((node) => node.executionState === 'running')?.id ?? null;
   const nodeExecutionActive = runningNodeId !== null;
   const nodeControlsLocked = workflowBusy || workflowExecutionActive || nodeExecutionActive;
@@ -2130,9 +2223,9 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
-              onClick={() => void workflowAction('cancel')}
-              disabled={!workflowExecutionActive || workflowBusy}
-              title="Cancel workflow"
+              onClick={() => void stopActiveExecution()}
+              disabled={(!workflowExecutionActive && !directOperationActive) || workflowBusy}
+              title={directOperationActive ? 'Cancel operation' : 'Cancel workflow'}
             >
               <i className="fa-solid fa-stop" />
             </button>
@@ -2146,7 +2239,25 @@ export default function CanvasShell({
             label={
               <>
                 <strong>Loading workflow</strong>
-                <span>Restoring nodes and connections…</span>
+                <div className="sf-canvas-workflow-loading-steps">
+                  {[
+                    'Workflow definition loaded',
+                    'Nodes and connections restored',
+                    'Artifact snapshot refreshed',
+                  ].map((step, index) => {
+                    const completed = workflowLoadStep > index;
+                    const current = workflowLoadStep === index;
+                    return (
+                      <Fragment key={step}>
+                        <span className={`${completed ? 'completed' : ''}${current ? ' current' : ''}`}>
+                          <i className={`fa-solid ${completed ? 'fa-check' : current ? 'fa-spinner fa-spin' : 'fa-circle'}`} aria-hidden="true" />
+                          {step}{current ? '…' : ''}
+                        </span>
+                        {index < 2 ? <br /> : null}
+                      </Fragment>
+                    );
+                  })}
+                </div>
               </>
             }
           />
@@ -2176,6 +2287,14 @@ export default function CanvasShell({
           />
         </div>
       ) : null}
+      {surface === 'workflow' && cancellationActive ? (
+        <div className="sf-canvas-workflow-cancelling" role="status" aria-live="polite">
+          <LoadingLogo
+            compact
+            label={workflowState === 'cancelling' ? 'Cancelling workflow…' : 'Cancelling operation…'}
+          />
+        </div>
+      ) : null}
       {surface === 'workflow' && workflowLoaded && nodes.length === 0 ? (
         <div className="sf-empty-workflow-prompt" onMouseDown={(event) => event.stopPropagation()}>
           <button type="button" onClick={openStandalonePicker} aria-label="Add operation">
@@ -2191,13 +2310,34 @@ export default function CanvasShell({
         aria-label="Canvas activity log"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="sf-canvas-status-heading">
-          <strong>{surface === 'workflow' ? 'Workflow terminal' : 'Explorer terminal'}</strong>
-        </div>
-        <div className="sf-canvas-status-current">
-          <span>State: {workflowState}</span>
-          <span>{status}</span>
-        </div>
+        {workflowLoaded ? (
+          <div className="sf-canvas-status-actions">
+            <button
+              type="button"
+              className="sf-icon-button sf-canvas-status-copy"
+              aria-label={logCopied ? 'Log copied' : 'Copy activity log'}
+              title={logCopied ? 'Log copied' : 'Copy activity log'}
+              onClick={() => void copyActivityLog()}
+            >
+              <i className={`fa-solid ${logCopied ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
+        {surface !== 'workflow' ? (
+          <>
+            <div className="sf-canvas-status-heading">
+              <strong>Explorer terminal</strong>
+            </div>
+            <div className="sf-canvas-status-current">
+              {activeWorker ? (
+                <span>
+                  Worker {activeWorker.id} · PID {activeWorker.process_id ?? '—'} · {activeWorker.state}
+                </span>
+              ) : null}
+              <span>{status}</span>
+            </div>
+          </>
+        ) : null}
         <div className="sf-canvas-status-feed">
           {activityLog.map((entry) => (
             <div className={`sf-canvas-status-line ${entry.level}`} key={entry.id}>

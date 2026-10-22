@@ -53,11 +53,24 @@ export type WorkflowProgress = {
   current_step: number;
 };
 
+export type RuntimeWorker = {
+  id: string;
+  kind: 'operation' | 'workflow' | string;
+  operation_id: string;
+  operation: string;
+  process_id: number | null;
+  process_group_id: number | null;
+  job_id: string | null;
+  state: 'starting' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | string;
+  cancellation_mode: 'process' | string;
+};
+
 export type WorkflowStateResponse = {
   session_id: string;
   state: WorkflowState;
   execution_id?: string;
   progress?: WorkflowProgress;
+  worker?: RuntimeWorker | null;
 };
 
 export type WorkflowValidationResponse = WorkflowStateResponse & { valid: boolean };
