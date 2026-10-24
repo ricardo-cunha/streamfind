@@ -859,7 +859,7 @@ using Json = nlohmann::json;
             utils::detail::load_internal_standards(access, data, parameters);
         }
         auto debug = sdk::DebugSession::open(
-            access.database_path(), "mass_spec.group_features", access.operation_instance(),
+            "", "mass_spec.group_features", access.operation_instance(),
             sdk::DebugOptions{debug_analysis, 0.0, -1, debug_rt > 0.0f, false});
         const auto debug_text = ::streamfind::mass_spec::nta::alignment::group_features_impl(
             data, method, rt_deviation, ppm, min_samples, bin_size, debug_rt > 0.0f, debug_rt);

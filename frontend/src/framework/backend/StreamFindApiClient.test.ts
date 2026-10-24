@@ -95,7 +95,7 @@ describe('StreamFindApiClient capability discovery', () => {
   it('queries bounded artifact data through the generic query endpoint', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       response({
-        artifact_id: 'features-1',
+        result_id: 'features-1',
         columns: [{ name: 'rt', type: 'DOUBLE' }],
         rows: [{ rt: '12.5' }],
         offset: 0,
@@ -107,8 +107,8 @@ describe('StreamFindApiClient capability discovery', () => {
       }),
     );
 
-    const result = await new StreamFindApiClient('http://service').artifactQuery('session/1', {
-      artifact_id: 'features-1',
+    const result = await new StreamFindApiClient('http://service').resultQuery('session/1', {
+      result_id: 'features-1',
       mode: 'sample',
       columns: ['rt', 'mz'],
       x_column: 'rt',
@@ -116,11 +116,11 @@ describe('StreamFindApiClient capability discovery', () => {
       limit: 50000,
     });
 
-    expect(fetchMock).toHaveBeenCalledWith('http://service/projects/session%2F1/artifacts/query', {
+    expect(fetchMock).toHaveBeenCalledWith('http://service/projects/session%2F1/results/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        artifact_id: 'features-1',
+        result_id: 'features-1',
         mode: 'sample',
         columns: ['rt', 'mz'],
         x_column: 'rt',

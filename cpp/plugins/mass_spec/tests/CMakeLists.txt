@@ -6,6 +6,9 @@ add_compile_definitions(
 add_executable(streamfind_mass_spec_mcp_discovery_contract
     unit/mcp_discovery_contract.cpp)
 target_link_libraries(streamfind_mass_spec_mcp_discovery_contract PRIVATE streamfind::cpp_core)
+target_compile_definitions(streamfind_mass_spec_mcp_discovery_contract PRIVATE
+    STREAMFIND_TEST_SERVICE_EXECUTABLE="$<TARGET_FILE:streamfind_service>")
+add_dependencies(streamfind_mass_spec_mcp_discovery_contract streamfind_service)
 add_test(NAME streamfind_mass_spec_mcp_discovery_contract
     COMMAND streamfind_mass_spec_mcp_discovery_contract)
 set_tests_properties(streamfind_mass_spec_mcp_discovery_contract PROPERTIES

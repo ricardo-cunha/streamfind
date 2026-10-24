@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-type ViewerErrorBoundaryProps = { children: ReactNode; artifactId: string };
+type ViewerErrorBoundaryProps = { children: ReactNode; resultId: string };
 type ViewerErrorBoundaryState = { error: Error | null };
 
 export class ViewerErrorBoundary extends Component<ViewerErrorBoundaryProps, ViewerErrorBoundaryState> {
@@ -11,7 +11,7 @@ export class ViewerErrorBoundary extends Component<ViewerErrorBoundaryProps, Vie
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error(`Artifact viewer failed: ${this.props.artifactId}`, error, info.componentStack);
+    console.error(`Result viewer failed: ${this.props.resultId}`, error, info.componentStack);
   }
 
   render(): ReactNode {

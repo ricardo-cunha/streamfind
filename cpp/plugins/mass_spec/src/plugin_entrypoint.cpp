@@ -162,7 +162,7 @@ streamfind_plugin_status describe_dependencies(streamfind_plugin_buffer *result_
          {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.find_internal_standards_metfrag", "mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/java"},
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_java().has_value()}},
-        {{"id", "mass_spec.metfrag_fragmenter"}, {"label", "MetFrag Fragmenter"}, {"version", "0.1.0"}, {"kind", "jar"},
+        {{"id", "mass_spec.metfrag_fragmenter"}, {"label", "MetFrag Fragmenter"}, {"version", "0.2.0"}, {"kind", "jar"},
          {"required_by", Json::array({"mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/metfrag/streamfind-metfrag-fragmenter.jar"},
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_metfrag_fragmenter_jar().has_value()}},
@@ -224,7 +224,7 @@ streamfind_plugin_get_descriptor(
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "mass_spec";
-    descriptor->plugin_version = "0.6.0";
+    descriptor->plugin_version = "0.7.0";
     descriptor->register_plugin = &streamfind::mass_spec::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::mass_spec::dynamic_detail::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;

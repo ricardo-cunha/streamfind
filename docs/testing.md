@@ -40,22 +40,22 @@ specific to the tested file family and acquisition mode.
 
 ## Release validation
 
-The native 0.6.0 release is validated on both supported package platforms.
-From the repository root, use the platform release scripts so that the
-frontend, native runtime, CTest suite, package contents, dependency closure,
+The native {{ streamfind_version }} release is intended to be validated on both supported package
+platforms. From the repository root, use the platform release scripts so that
+the frontend, native runtime, CTest suite, package contents, dependency closure,
 and packaged MCP interface are checked together:
 
 ```powershell
-scripts\release\cpp\release-cpp.ps1 -Version 0.6.0
+scripts\release\cpp\release-cpp.ps1
 ```
 
 On Linux, run:
 
 ```sh
-scripts/release/cpp/release-cpp-linux.sh 0.6.0
+scripts/release/cpp/release-cpp-linux.sh
 ```
 
-The release validation must report 24/24 CTest tests passing and successful
-packaged MCP smoke validation. The resulting archives and
+The release validation must report the complete CTest suite passing and
+successful packaged MCP smoke validation. The resulting archives and
 `sha256sums.txt` are written to `tmp/release-output/` and should be checked
 before publishing them.

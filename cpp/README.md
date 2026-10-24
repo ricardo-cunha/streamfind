@@ -33,14 +33,18 @@ The current package manifests are:
 | `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty domain; no executable capabilities yet |
 
 For a development-tree runtime, place `streamfind.json` beside
-`streamfind_mcp.exe` and configure explicit plugin roots and IDs:
+`streamfind-mcp.exe` and configure explicit plugin roots and IDs:
 
 ```json
 {
+  "server": {"port": 8787},
   "plugin_roots": ["C:/path/to/plugins"],
   "enabled_plugins": ["mass_spec", "raman"]
 }
 ```
+
+The `server.port` value is used by the service, app host, and CLI when no
+explicit port is supplied. A command-line port override takes precedence.
 
 The host loads the core catalogue first, validates each selected package and
 ABI descriptor, imports the package catalogue, and exposes only capabilities
@@ -124,7 +128,7 @@ create, describe, validate
 get_metadata, set_metadata
 get_project_domains
 get_workflow, set_workflow, validate_workflow, run_workflow
-add_operation, connect_operations, get_artifact_inventory
+add_operation, connect_operations, get_result_inventory
 copy
 get_audit_trail
 close
@@ -147,7 +151,7 @@ the execution order and input artifacts; validate the graph before running it.
 
 Errors use the stable `ErrorCode` enum, including invalid arguments, missing or
 existing projects, schema/database failures, workflow validation, method
-execution, closed projects, and cancellation.
+execution, and closed projects.
 
 ## Persistence Contract
 
@@ -240,22 +244,24 @@ native platforms.
 
 ## Current state
 
-The C++ backend is the authoritative native implementation. The current workspace version is `0.6.0`.
+The C++ backend is the authoritative native implementation. The current
+workspace version is the value in the repository [`VERSION`](../VERSION) file.
 
 The normal C++ runtime package is intentionally lean. It contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, and runtime vendors. It does **not** contain `sdk/`.
 
 The `cpp/sdk/` tree remains an internal framework layer used to define the plugin ABI, host access services, catalogue projection, package validation, and built-in plugin integration. An optional developer kit can install that framework for external plugin development; it is separate from the runtime release.
 
-Runtime vendor files are centralized under:
+Runtime libraries are centralized beside the executables under `bin/`:
 
 ```text
-core/vendors/
-├── duckdb/
-├── mingw/
-└── openbabel/
+bin/
+├── duckdb.dll / libduckdb.so
+├── openbabel_streamfind.dll / libopenbabel_streamfind.so
+├── Arrow compression runtimes
+└── platform runtime libraries
 ```
 
-Do not copy vendor DLLs beside individual plugins or into `bin/`. The packaged launcher and host configure package-relative native library search paths.
+Do not copy vendor libraries beside individual plugins. The packaged launcher and host configure the single package-relative `bin/` runtime path.
 
 The shipped plugin domains are:
 
@@ -287,7 +293,9 @@ The build scripts use one MSYS2 installation for the complete native toolchain. 
 - `tar` and `sha256sum` for release validation.
 - Node.js and npm for frontend packaging.
 - Python in `.venv` for dependency and MCP validation.
-- PowerShell 7 (`pwsh`) only for the full NTA development workflow.
+- PowerShell 7 (`pwsh`) is additionally required by the shared full NTA
+  development workflow runner; it is not required for the native Linux build,
+  CTest suite, or release packaging.
 
 Do not use the system Python for repository scripts. Use `.venv/bin/python` on Linux or `.venv\\Scripts\\python.exe` on Windows.
 
@@ -336,13 +344,13 @@ cd ..
 The Windows runtime release builds the frontend and native package, runs CTest, extracts the archive, checks the runtime payload, validates the recursive PE dependency closure, and starts the packaged MCP server:
 
 ```powershell
-scripts\\release\\cpp\\release-cpp.ps1 -Version 0.6.0
+scripts\\release\\cpp\\release-cpp.ps1
 ```
 
 The Linux runtime release performs the equivalent extracted-package checks, including recursive ELF dependency validation and packaged MCP startup:
 
 ```bash
-bash scripts/release/cpp/release-cpp-linux.sh 0.6.0
+bash scripts/release/cpp/release-cpp-linux.sh
 ```
 
 Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
@@ -374,7 +382,7 @@ The first-party out-of-tree consumer check is:
 For a distributable developer kit, use:
 
 ```powershell
-scripts\\release\\cpp\\package-plugin-devkit.ps1 -Version 0.6.0
+scripts\\release\\cpp\\package-plugin-devkit.ps1
 ```
 
 The developer-kit command configures, builds, installs, packages, and validates an out-of-tree C++ consumer. Frontend plugins use the generated TypeScript contract and do not require the C++ SDK headers.
@@ -385,27 +393,35 @@ After extracting a runtime archive, keep its directory layout intact. The import
 
 ```text
 streamfind-core-cpp-<version>-<platform>/
-├── streamfind(.exe)          # browser-facing launcher
-├── bin/                      # MCP, service, CLI, and launcher binaries
+├── bin/                      # CLI, app, MCP, service, worker, and config
+│   └── data/openbabel/       # Open Babel runtime data
 ├── core/
 │   ├── catalogue.duckdb
-│   ├── ontology/
-│   └── vendors/
+│   └── ontology/
 └── plugins/                  # plugin.json, catalogue.duckdb, shared libraries
 ```
 
-For the local browser application, run the root launcher:
+For the local browser application, run the app launcher from `bin/`:
 
 ```powershell
-.\\streamfind.exe
+.\\bin\\streamfind-app.exe
 ```
 
-For MCP or service integration, use the executable under `bin/` and communicate through newline-delimited JSON-RPC over standard input/output. Start with `initialize`, then discover operations with `tools/list`. Runtime plugin loading is allowlisted through the package configuration; merely placing a plugin under `plugins/` does not enable it.
+For terminal service management, use the public CLI under `bin/`:
 
-For a development-tree host, place `streamfind.json` beside `streamfind_mcp.exe`:
+```powershell
+.\\bin\\streamfind.exe service start
+.\\bin\\streamfind.exe service status
+.\\bin\\streamfind.exe service stop
+```
+
+For MCP integration, use the executable under `bin/` and communicate through newline-delimited JSON-RPC over standard input/output. Start with `initialize`, then discover operations with `tools/list`. Runtime plugin loading is allowlisted through the package configuration; merely placing a plugin under `plugins/` does not enable it.
+
+For a development-tree host, place `streamfind.json` beside `streamfind-mcp.exe`:
 
 ```json
 {
+  "server": {"port": 8787},
   "plugin_roots": ["C:/path/to/plugins"],
   "enabled_plugins": ["mass_spec", "raman"]
 }

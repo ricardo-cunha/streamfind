@@ -1,8 +1,10 @@
 #include "streamfind/sdk/plugin_data_service.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cctype>
+#include <chrono>
 #include <iostream>
 #include <limits>
 
@@ -10,6 +12,8 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include "streamfind/data_proxy_protocol.hpp"
 
 namespace streamfind::sdk::detail {
 
@@ -103,6 +107,25 @@ bool allowed_column(const PluginDataServiceContext &context, const std::string &
     return found != scopes.end() && found->second.find(column) != found->second.end();
 }
 
+Json proxy_call(PluginDataServiceContext &context, const std::string &method, Json payload) {
+    if (!context.data_proxy_request)
+        throw std::invalid_argument("service data proxy is not configured");
+    static std::atomic_uint64_t sequence{0};
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    payload["method"] = method;
+    const auto response_json = context.data_proxy_request(data_proxy::request(
+        "plugin-data-" + std::to_string(timestamp) + "-" +
+            std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)),
+        context.data_proxy_session_id, context.data_proxy_run_id, {},
+        context.operation_instance, {}, std::move(payload)));
+    const auto response = data_proxy::Envelope::from_json(response_json);
+    if (!response.error_code.empty())
+        throw std::runtime_error(response.error_code + ": " + response.error_message);
+    if (!response.payload.is_object())
+        throw std::runtime_error("data-proxy plugin response payload is not an object");
+    return response.payload;
+}
+
 }  // namespace streamfind::sdk::detail
 
 namespace streamfind::sdk {
@@ -125,13 +148,13 @@ streamfind_plugin_status plugin_has_table(
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     }
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) {
+    if (!context->data_proxy_request) {
         return STREAMFIND_PLUGIN_ERROR;
     }
     try {
         const std::string table(table_name, table_name_size);
         if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-        *exists = context->tables->has_table(table) ? 1 : 0;
+        *exists = detail::proxy_call(*context, "has_table", Json{{"table", table}}).value("exists", false) ? 1 : 0;
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::exception &error) {
         detail::report_data_service_error(*context,
@@ -148,11 +171,10 @@ streamfind_plugin_status plugin_clear_table(
     if (execution_context == nullptr || table_name == nullptr || table_name_size == 0)
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
     try {
         const std::string table(table_name, table_name_size);
         if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-        context->tables->execute("DELETE FROM " + detail::quoted_identifier(table_name, table_name_size));
+        detail::proxy_call(*context, "execute", Json{{"sql", "DELETE FROM " + detail::quoted_identifier(table_name, table_name_size)}});
         return STREAMFIND_PLUGIN_OK;
     } catch (...) {
             detail::report_data_service_error(*context, "unknown plugin data-service failure");
@@ -171,34 +193,54 @@ streamfind_plugin_status plugin_read_batch(
     streamfind_plugin_consume_batch_fn consume,
     void *consumer_context,
     void *) {
-    if (execution_context == nullptr || table_name == nullptr || table_name_size == 0 ||
-        requested_columns == nullptr || column_count == 0 || consume == nullptr)
-        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    if (execution_context == nullptr) return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    if (table_name == nullptr || table_name_size == 0 || requested_columns == nullptr ||
+        column_count == 0 || consume == nullptr) {
+        detail::report_data_service_error(*context, "read_batch received an invalid host request");
+        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    }
+    if (!context->data_proxy_request) return STREAMFIND_PLUGIN_ERROR;
     try {
         const std::string table(table_name, table_name_size);
+        const auto invalid_request = [&](std::string message) {
+            detail::report_data_service_error(*context, std::move(message));
+            return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+        };
         if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-        std::string sql = "SELECT ";
+        Json requested_names = Json::array();
         for (uint32_t index = 0; index < column_count; ++index) {
             const auto &column = requested_columns[index];
-            if (column.data != nullptr || column.row_count != 0 || column.validity_bitmap != nullptr)
-                return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
             if (column.name == nullptr || column.name_size == 0)
-                return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+                return invalid_request("read_batch request column has no name");
             const std::string name(column.name, column.name_size);
             // Strip table alias prefix for the allowed_column check.
             std::string bare_name = name;
             if (const auto dot = bare_name.find('.'); dot != std::string::npos)
                 bare_name = bare_name.substr(dot + 1);
             if (!detail::allowed_column(*context, table, bare_name, false)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-            if (index != 0) sql += ", ";
-            sql += detail::quoted_identifier(bare_name.data(), static_cast<uint32_t>(bare_name.size()));
+            requested_names.push_back(bare_name);
         }
-        sql += " FROM " + detail::quoted_identifier(table_name, table_name_size);
-        if (limit != std::numeric_limits<uint64_t>::max()) sql += " LIMIT " + std::to_string(limit);
-        sql += " OFFSET " + std::to_string(offset);
-        const auto rows = context->tables->query(sql);
+        Json rows;
+        {
+            rows = Json::array();
+            const auto batch_limit = std::min<std::uint64_t>(
+                limit == std::numeric_limits<std::uint64_t>::max() ? 16384 : limit, 16384);
+            std::uint64_t proxy_offset = offset;
+            while (rows.size() < batch_limit || limit == std::numeric_limits<std::uint64_t>::max()) {
+                const auto encoded = detail::proxy_call(*context, "read_batch_binary",
+                    Json{{"table", table}, {"columns", requested_names},
+                         {"offset", proxy_offset}, {"limit", batch_limit}});
+                const auto bytes = data_proxy::base64_decode(encoded.value("data", std::string{}));
+                const auto batch = data_proxy::arrow_ipc_decode_rows(bytes);
+                if (!batch.is_array() || batch.empty()) break;
+                for (const auto &row : batch) rows.push_back(row);
+                proxy_offset += batch.size();
+                if (batch.size() < batch_limit || limit != std::numeric_limits<std::uint64_t>::max()) break;
+            }
+            if (limit != std::numeric_limits<std::uint64_t>::max() && rows.size() > limit)
+                rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(limit), rows.end());
+        }
         constexpr std::size_t batch_size = 4096;
         for (std::size_t begin = 0; begin < rows.size(); begin += batch_size) {
             if (context->cancelled != nullptr && context->cancelled->load())
@@ -213,6 +255,14 @@ streamfind_plugin_status plugin_read_batch(
             std::vector<streamfind_plugin_batch_column> columns(column_count);
             for (uint32_t column_index = 0; column_index < column_count; ++column_index) {
                 const auto &request = requested_columns[column_index];
+                // A read descriptor is metadata supplied by the plugin.  The
+                // proxy owns the authoritative schema, so an omitted/unknown
+                // type must not turn a valid remote read into an argument
+                // failure; represent it as UTF-8 text at the boundary.
+                auto request_type = request.type;
+                if (request_type < STREAMFIND_PLUGIN_COLUMN_UTF8 ||
+                    request_type > STREAMFIND_PLUGIN_COLUMN_BINARY)
+                    request_type = STREAMFIND_PLUGIN_COLUMN_UTF8;
                 strings[column_index].resize(count);
                 integers[column_index].resize(count);
                 doubles[column_index].resize(count);
@@ -220,9 +270,15 @@ streamfind_plugin_status plugin_read_batch(
                 for (std::size_t row = 0; row < count; ++row) {
                     const auto &value = rows[begin + row].at(std::string(request.name, request.name_size));
                     if (value.is_null()) continue;
-                    validity[column_index][row / 8] |= static_cast<uint8_t>(1u << (row % 8));
                     text[column_index][row] = value.is_string() ? value.get<std::string>() : value.dump();
-                    switch (request.type) {
+                    const auto numeric_type = request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ||
+                                              request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64;
+                    if (numeric_type && (text[column_index][row].empty() ||
+                                         text[column_index][row] == "null" ||
+                                         text[column_index][row] == "NULL"))
+                        continue;
+                    validity[column_index][row / 8] |= static_cast<uint8_t>(1u << (row % 8));
+                    switch (request_type) {
                     case STREAMFIND_PLUGIN_COLUMN_UTF8:
                     case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
                     case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
@@ -235,10 +291,22 @@ streamfind_plugin_status plugin_read_batch(
                                                        static_cast<uint32_t>(text[column_index][row].size())};
                         break;
                     case STREAMFIND_PLUGIN_COLUMN_INT64:
-                        integers[column_index][row] = std::stoll(text[column_index][row]);
+                        try {
+                            integers[column_index][row] = std::stoll(text[column_index][row]);
+                        } catch (const std::exception &) {
+                            throw std::invalid_argument("invalid integer in " + table + "." +
+                                                        std::string(request.name, request.name_size) +
+                                                        ": " + text[column_index][row]);
+                        }
                         break;
                     case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
-                        doubles[column_index][row] = std::stod(text[column_index][row]);
+                        try {
+                            doubles[column_index][row] = std::stod(text[column_index][row]);
+                        } catch (const std::exception &) {
+                            throw std::invalid_argument("invalid real in " + table + "." +
+                                                        std::string(request.name, request.name_size) +
+                                                        ": " + text[column_index][row]);
+                        }
                         break;
                     case STREAMFIND_PLUGIN_COLUMN_BOOL:
                         if (text[column_index][row] != "true" && text[column_index][row] != "false" &&
@@ -246,25 +314,26 @@ streamfind_plugin_status plugin_read_batch(
                             return STREAMFIND_PLUGIN_SCHEMA_ERROR;
                         booleans[column_index][row] = text[column_index][row] == "true" || text[column_index][row] == "1";
                         break;
-                    default: return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+                    default: break;
                     }
                 }
                 auto &output = columns[column_index];
                 output = request;
-                output.data = (request.type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
-                               request.type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
-                               request.type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
-                               request.type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? static_cast<const void *>(strings[column_index].data())
-                           : request.type == STREAMFIND_PLUGIN_COLUMN_INT64 ? static_cast<const void *>(integers[column_index].data())
-                           : request.type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? static_cast<const void *>(doubles[column_index].data())
+                output.type = request_type;
+                output.data = (request_type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
+                               request_type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
+                               request_type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
+                               request_type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? static_cast<const void *>(strings[column_index].data())
+                           : request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ? static_cast<const void *>(integers[column_index].data())
+                           : request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? static_cast<const void *>(doubles[column_index].data())
                            : static_cast<const void *>(booleans[column_index].data());
                 output.row_count = count;
-                output.element_size = (request.type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
-                                       request.type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
-                                       request.type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
-                                       request.type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? sizeof(streamfind_plugin_string_view)
-                                     : request.type == STREAMFIND_PLUGIN_COLUMN_INT64 ? sizeof(int64_t)
-                                     : request.type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? sizeof(double)
+                output.element_size = (request_type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
+                                       request_type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
+                                       request_type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
+                                       request_type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? sizeof(streamfind_plugin_string_view)
+                                     : request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ? sizeof(int64_t)
+                                     : request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? sizeof(double)
                                      : sizeof(uint8_t);
                 output.validity_bitmap = validity[column_index].data();
             }
@@ -272,12 +341,14 @@ streamfind_plugin_status plugin_read_batch(
             if (status != STREAMFIND_PLUGIN_OK) return status;
         }
         return STREAMFIND_PLUGIN_OK;
-    } catch (const std::invalid_argument &) {
-        return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+    } catch (const std::exception &error) {
+        detail::report_data_service_error(*context,
+                                          std::string("plugin read_batch failure: ") + error.what());
+        return STREAMFIND_PLUGIN_ERROR;
     } catch (...) {
-            detail::report_data_service_error(*context, "unknown plugin data-service failure");
-            return STREAMFIND_PLUGIN_ERROR;
-        }
+        detail::report_data_service_error(*context, "unknown plugin data-service failure");
+        return STREAMFIND_PLUGIN_ERROR;
+    }
 }
 
 streamfind_plugin_status plugin_count_rows(
@@ -289,14 +360,12 @@ streamfind_plugin_status plugin_count_rows(
     if (execution_context == nullptr || table_name == nullptr || table_name_size == 0 || row_count == nullptr)
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    if (!context->data_proxy_request) return STREAMFIND_PLUGIN_ERROR;
     try {
         const std::string table(table_name, table_name_size);
         if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-        const auto value = context->tables->scalar(
-            "SELECT COUNT(*) FROM " + detail::quoted_identifier(table_name, table_name_size));
-        if (!value) return STREAMFIND_PLUGIN_ERROR;
-        *row_count = std::stoull(*value);
+        *row_count = detail::proxy_call(*context, "count_rows", Json{{"table", table}})
+            .value("row_count", std::uint64_t{0});
         return STREAMFIND_PLUGIN_OK;
     } catch (...) {
         detail::report_data_service_error(*context, "unknown plugin row-count failure");
@@ -317,9 +386,6 @@ streamfind_plugin_status plugin_append_batch(
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     }
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) {
-        return STREAMFIND_PLUGIN_ERROR;
-    }
     try {
         const std::string table(table_name, table_name_size);
         if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
@@ -348,8 +414,17 @@ streamfind_plugin_status plugin_append_batch(
                     detail::column_value(columns[column_index], row);
             }
         }
-        context->tables->append(
-            std::string(table_name, table_name_size), names, rows);
+        {
+            Json serialized_rows = Json::array();
+            for (const auto &row : rows) {
+                Json serialized_row = Json::array();
+                for (const auto &value : row)
+                    serialized_row.push_back(value ? Json(*value) : Json(nullptr));
+                serialized_rows.push_back(std::move(serialized_row));
+            }
+            detail::proxy_call(*context, "append_rows",
+                               Json{{"table", table}, {"columns", names}, {"rows", serialized_rows}});
+        }
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::exception &error) {
         detail::report_data_service_error(*context,
@@ -412,7 +487,7 @@ streamfind_plugin_status plugin_update_batch(
         affected_row_count == nullptr || table_name_size == 0 || key_column_size == 0 || column_count < 2 || row_count == 0)
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    if (!context->data_proxy_request) return STREAMFIND_PLUGIN_NOT_ALLOWED;
     try {
         const std::string table_name_text(table_name, table_name_size);
         if (!detail::allowed_table(*context, table_name_text)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
@@ -445,8 +520,10 @@ streamfind_plugin_status plugin_update_batch(
         for (std::size_t row = 0; row < keys.size(); ++row)
             predicate += (row == 0 ? "" : ",") + detail::sql_literal(keys[row]);
         predicate += ")";
-        const auto count = context->tables->scalar("SELECT COUNT(*) FROM " + table + " WHERE " + predicate);
-        *affected_row_count = count ? std::stoull(*count) : 0;
+        const auto count_sql = "SELECT COUNT(*) AS affected_row_count FROM " + table + " WHERE " + predicate;
+        const auto count = detail::proxy_call(*context, "query", Json{{"sql", count_sql}});
+        *affected_row_count = count.value("rows", Json::array()).empty()
+            ? 0 : std::stoull(count.at("rows").front().value("affected_row_count", std::string{"0"}));
         std::string sql = "UPDATE " + table + " SET ";
         bool first = true;
         for (uint32_t index = 0; index < column_count; ++index) {
@@ -461,7 +538,7 @@ streamfind_plugin_status plugin_update_batch(
             sql += " ELSE " + column + " END";
         }
         sql += " WHERE " + predicate;
-        context->tables->execute(sql);
+        detail::proxy_call(*context, "execute", Json{{"sql", sql}});
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
@@ -480,7 +557,7 @@ streamfind_plugin_status plugin_update_composite_batch(
         affected_row_count == nullptr || table_name_size == 0 || key_column_count == 0 || column_count == 0 || row_count == 0)
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    if (!context->data_proxy_request) return STREAMFIND_PLUGIN_NOT_ALLOWED;
     try {
         const std::string table_name_text(table_name, table_name_size);
         if (!detail::allowed_table(*context, table_name_text)) {
@@ -526,8 +603,10 @@ streamfind_plugin_status plugin_update_composite_batch(
         std::string where;
         for (std::size_t row = 0; row < predicates.size(); ++row)
             where += (row == 0 ? "" : " OR ") + predicates[row];
-        const auto count = context->tables->scalar("SELECT COUNT(*) FROM " + table + " WHERE " + where);
-        *affected_row_count = count ? std::stoull(*count) : 0;
+        const auto count_sql = "SELECT COUNT(*) AS affected_row_count FROM " + table + " WHERE " + where;
+        const auto count = detail::proxy_call(*context, "query", Json{{"sql", count_sql}});
+        *affected_row_count = count.value("rows", Json::array()).empty()
+            ? 0 : std::stoull(count.at("rows").front().value("affected_row_count", std::string{"0"}));
 
         std::string sql = "UPDATE " + table + " SET ";
         for (uint32_t column = 0; column < column_count; ++column) {
@@ -539,7 +618,8 @@ streamfind_plugin_status plugin_update_composite_batch(
                        detail::sql_literal(detail::column_value(columns[column], row));
             sql += " ELSE " + name + " END";
         }
-        context->tables->execute(sql + " WHERE " + where);
+        const auto update_sql = sql + " WHERE " + where;
+        detail::proxy_call(*context, "execute", Json{{"sql", update_sql}});
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
@@ -558,7 +638,7 @@ streamfind_plugin_status plugin_delete_batch(
         affected_row_count == nullptr || table_name_size == 0 || key_column_size == 0 || row_count == 0)
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     auto *context = detail::context_from(execution_context);
-    if (context->tables == nullptr) return STREAMFIND_PLUGIN_ERROR;
+    if (!context->data_proxy_request) return STREAMFIND_PLUGIN_NOT_ALLOWED;
     try {
         const std::string table_name_text(table_name, table_name_size);
         if (!detail::allowed_table(*context, table_name_text) ||
@@ -579,9 +659,11 @@ streamfind_plugin_status plugin_delete_batch(
         }
         predicate += ")";
         const auto table = detail::quoted_identifier(table_name, table_name_size);
-        const auto count = context->tables->scalar("SELECT COUNT(*) FROM " + table + " WHERE " + predicate);
-        *affected_row_count = count ? std::stoull(*count) : 0;
-        context->tables->execute("DELETE FROM " + table + " WHERE " + predicate);
+        const auto count_sql = "SELECT COUNT(*) AS affected_row_count FROM " + table + " WHERE " + predicate;
+        const auto count = detail::proxy_call(*context, "query", Json{{"sql", count_sql}});
+        *affected_row_count = count.value("rows", Json::array()).empty()
+            ? 0 : std::stoull(count.at("rows").front().value("affected_row_count", std::string{"0"}));
+        detail::proxy_call(*context, "execute", Json{{"sql", "DELETE FROM " + table + " WHERE " + predicate}});
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::invalid_argument &) {
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;

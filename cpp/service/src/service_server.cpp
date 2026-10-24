@@ -598,12 +598,19 @@ void EventBroker::run() {
 }
 
 ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
-    const std::filesystem::path &application_root)
-    : port_(port), application_root_(application_root), runtime_root_(configuration_path.parent_path()), projects_(operations_) {
+    const std::filesystem::path &application_root, Json service_identity, std::string service_token)
+    : port_(port), application_root_(application_root), runtime_root_(configuration_path.parent_path()),
+      service_identity_(std::move(service_identity)), service_token_(std::move(service_token)),
+      projects_(operations_, configuration_path, port) {
     projects_.set_operation_log_callback([this](const std::string &session_id, std::string_view operation_id, std::string_view message) {
         Json event{{"type", "operation.log"}, {"project", session_id},
                    {"payload", Json{{"level", "info"}, {"message", std::string(message)}}}};
         if (!operation_id.empty()) event["operation_id"] = std::string(operation_id);
+        if (!operation_id.empty()) {
+            const auto runtime = projects_.operation_snapshot(session_id, std::string(operation_id));
+            if (runtime.value("worker", Json(nullptr)).is_object())
+                event["payload"]["worker"] = runtime.at("worker");
+        }
         events_.publish(event);
     });
     projects_.set_operation_event_callback([this](const std::string &session_id, std::string_view operation_id, std::string_view type, const Json &payload) {
@@ -759,7 +766,17 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             else if (method == "GET" && std::filesystem::exists(application_root_) &&
                      (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
                 detail::send_file(socket, application_root_, path);
-            else if (method == "GET" && path == "/session") detail::send_http(socket, 200, SessionDto{});
+            else if (method == "GET" && path == "/session") {
+                Json session = SessionDto{};
+                if (!service_identity_.empty()) session["service_instance"] = service_identity_;
+                detail::send_http(socket, 200, session);
+            }
+            else if (method == "POST" && path == "/service/stop") {
+                if (service_token_.empty() || detail::header_value(headers, "X-StreamFind-Token") != service_token_)
+                    throw std::invalid_argument("service authentication failed");
+                detail::send_http(socket, 202, Json{{"state", "stopping"}});
+                stop();
+            }
             else if (method == "POST" && path == "/chemistry/structure-svg") {
                 const auto input = Json::parse(body);
                 const auto optional_string = [&input](const char *key) {
@@ -981,27 +998,44 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.workflow_definition(session_id));
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/audit")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/audit");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.audit_trail(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/metadata")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/metadata");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.set_metadata(session_id, Json::parse(body)));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/copy")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/copy");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                const auto request = Json::parse(body);
+                detail::send_http(socket, 200, projects_.copy_project(
+                    session_id, request.at("destination_database_path").get<std::string>()));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/history/clear")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/history/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.clear_workflow_history(session_id));
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/cache/clear")) {
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/cache/clear")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts/cache/clear");
+                const auto suffix = std::string("/results/cache/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.clear_artifact_cache(session_id));
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/clear")) {
+                detail::send_http(socket, 200, projects_.clear_result_cache(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/clear")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts/clear");
+                const auto suffix = std::string("/results/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.clear_all_artifacts(session_id));
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/node/clear")) {
+                detail::send_http(socket, 200, projects_.clear_all_results(session_id));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/node/clear")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts/node/clear");
+                const auto suffix = std::string("/results/node/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto request = Json::parse(body);
-                detail::send_http(socket, 200, projects_.clear_node_artifacts(session_id, request.value("producer_instance", std::string{})));
+                detail::send_http(socket, 200, projects_.clear_node_results(session_id, request.value("producer_instance", std::string{})));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
@@ -1012,6 +1046,14 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/workflow/state");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.workflow_snapshot(session_id));
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.find("/operations/") != std::string::npos && path.ends_with("/state")) {
+                const auto prefix = std::string("/projects/");
+                const auto marker = std::string("/operations/");
+                const auto suffix = std::string("/state");
+                const auto marker_position = path.find(marker, prefix.size());
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), marker_position - prefix.size()));
+                const auto operation_instance = detail::percent_decode(path.substr(marker_position + marker.size(), path.size() - marker_position - marker.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.operation_snapshot(session_id, operation_instance));
             } else if (method == "GET" && route.rfind("/projects/", 0) == 0 && route.ends_with("/workflow/events")) {
                             const auto prefix = std::string("/projects/");
                             const auto suffix = std::string("/workflow/events");
@@ -1021,26 +1063,50 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 try { if (!query_value("after").empty()) after = std::stoull(query_value("after")); } catch (...) { throw std::invalid_argument("invalid event history cursor"); }
                 try { if (!query_value("limit").empty()) limit = std::stoull(query_value("limit")); } catch (...) { throw std::invalid_argument("invalid event history limit"); }
                 detail::send_http(socket, 200, events_.history(session_id, after, limit));
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/query")) {
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/query")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts/query");
+                const auto suffix = std::string("/results/query");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.artifact_query(session_id, Json::parse(body)));
-            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/data")) {
+                detail::send_http(socket, 200, projects_.result_query(session_id, Json::parse(body)));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/data")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts/data");
+                const auto suffix = std::string("/results/data");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.artifact_data(session_id, Json::parse(body)));
-            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts")) {
+                detail::send_http(socket, 200, projects_.result_data(session_id, Json::parse(body)));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/inputs")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts");
+                const auto suffix = std::string("/workflow/inputs");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, Json{{"artifacts", projects_.artifact_inventory(session_id)}});
-            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/artifacts/current")) {
+                const auto request = Json::parse(body);
+                detail::send_http(socket, 200,
+                                  projects_.resolve_workflow_inputs(session_id,
+                                                                    request.value("operation_id", std::string{})));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/cache/lookup")) {
                 const auto prefix = std::string("/projects/");
-                const auto suffix = std::string("/artifacts/current");
+                const auto suffix = std::string("/results/cache/lookup");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, Json{{"artifacts", projects_.current_artifact_inventory(session_id)}});
+                detail::send_http(socket, 200, projects_.result_cache_lookup(session_id, Json::parse(body)));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/data-proxy")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/data-proxy");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                const auto envelope = data_proxy::Envelope::from_json(Json::parse(body));
+                try {
+                    detail::send_http(socket, 200, projects_.data_proxy(session_id, envelope));
+                } catch (const std::exception &error) {
+                    detail::send_http(socket, 200,
+                                      data_proxy::failure(envelope, "service.data_proxy", error.what()).to_json());
+                }
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/results");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, Json{{"results", projects_.result_inventory(session_id)}});
+            } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/current")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/results/current");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, Json{{"results", projects_.current_result_inventory(session_id)}});
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/validate")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/validate");
@@ -1053,7 +1119,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/run");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                const auto state = projects_.start_workflow(session_id);
+                const auto request = Json::parse(body.empty() ? "{}" : body);
+                const auto state = projects_.start_workflow(
+                    session_id, request.value("execution_mode", std::string{"detailed"}));
                 events_.publish(Json{{"type", "workflow.started"}, {"project", session_id},
                                      {"payload", Json{{"message", "Workflow execution started."}}}});
                 detail::send_http(socket, 202, Json{{"session_id", session_id}, {"state", state}});
@@ -1064,7 +1132,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto state = projects_.cancel_workflow(session_id);
                 events_.publish(Json{{"type", "workflow.cancellation_requested"}, {"project", session_id},
                                                      {"payload", Json{{"message", "Workflow cancellation requested."}}}});
-                detail::send_http(socket, 200, Json{{"session_id", session_id}, {"state", state}});
+                auto response = projects_.workflow_snapshot(session_id);
+                response["state"] = state;
+                detail::send_http(socket, 200, response);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/cancel") && path.find("/operations/") != std::string::npos) {
                 const auto prefix = std::string("/projects/");
                 const auto marker = std::string("/operations/");
@@ -1076,7 +1146,9 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 events_.publish(Json{{"type", "operation.cancellation_requested"}, {"project", session_id},
                                      {"operation_id", operation_instance},
                                      {"payload", Json{{"message", "Operation cancellation requested."}}}});
-                detail::send_http(socket, 200, Json{{"session_id", session_id}, {"operation_id", operation_instance}, {"state", state}});
+                auto response = projects_.operation_snapshot(session_id, operation_instance);
+                response["state"] = state;
+                detail::send_http(socket, 200, response);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.find("/operations/") != std::string::npos) {
                 const auto prefix = std::string("/projects/");
                 const auto marker = std::string("/operations/");
@@ -1091,9 +1163,10 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     ? request.at("parameters")
                     : request;
                 const auto operation_instance = request.value("operation_instance", operation_id);
+                const auto inputs = request.value("inputs", Json(nullptr));
                 Json result;
                 try {
-                    result = projects_.run_operation(session_id, operation_id, parameters, operation_instance);
+                    result = projects_.run_operation(session_id, operation_id, parameters, operation_instance, inputs);
                 } catch (const std::exception &error) {
                     events_.publish(Json{{"type", "operation.failed"}, {"project", session_id},
                                          {"operation_id", operation_id},
@@ -1128,7 +1201,10 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 response["initialization"] = project_initialization_json(project.domains);
                 events_.publish(Json{{"type", event_type}, {"project", response}});
                 detail::send_http(socket, 201, response);
-            } else detail::send_http(socket, 404, Json{{"error", "endpoint not found"}});
+            } else if (method == "GET" && path == "/")
+                detail::send_http(socket, 404, Json{{"error", "application assets not found"},
+                                                     {"hint", "Run streamfind-app from a packaged distribution, or start the frontend development server."}});
+            else detail::send_http(socket, 404, Json{{"error", "endpoint not found"}});
         }
     } catch (const std::exception &error) { try { detail::send_http(socket, 400, Json{{"error", error.what()}}); } catch (...) {} }
     detail::close_socket(socket);

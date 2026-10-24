@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ArtifactRecord } from '../../framework/backend/StreamFindApiClient';
+import type { ResultRecord } from '../../framework/backend/StreamFindApiClient';
 import {
   artifactContractMatches,
   artifactSummary,
@@ -7,8 +7,8 @@ import {
   prettyArtifactPayload,
 } from './artifactDisplay';
 
-const artifact: ArtifactRecord = {
-  artifact_id: 'artifact-1',
+const artifact: ResultRecord = {
+  result_id: 'artifact-1',
   contract_id: 'sf:table',
   representation: 'table',
   columns: [{ name: 'mz', type: 'double' }],
@@ -35,7 +35,7 @@ describe('artifact display model', () => {
   });
 
   it('summarizes visualization artifacts without exposing the full plot payload', () => {
-    const visualization: ArtifactRecord = {
+    const visualization: ResultRecord = {
       ...artifact,
       contract_id: 'sf:visualizationSpecResult',
       representation: 'json',
@@ -45,7 +45,7 @@ describe('artifact display model', () => {
   });
 
   it('summarizes JSON artifacts without exposing their raw payload', () => {
-    const summary: ArtifactRecord = {
+    const summary: ResultRecord = {
       ...artifact,
       contract_id: 'sfstat:foldChangeDiagnostics',
       representation: 'json',
@@ -60,7 +60,7 @@ describe('artifact display model', () => {
   });
 
   it('summarizes debug JSON generically without rendering log content', () => {
-    const debug: ArtifactRecord = {
+    const debug: ResultRecord = {
       ...artifact,
       contract_id: 'sfmass:findFeaturesDebugResult',
       representation: 'json',

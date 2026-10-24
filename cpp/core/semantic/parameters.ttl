@@ -240,16 +240,16 @@ sfcore:outputPortParameter
     sf:default "" ;
     sf:example "sfms:analysesTable" .
 
-sfcore:artifactIdParameter
+sfcore:resultIdParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Artifact identifier" ;
-    skos:definition "Exact immutable artifact identifier returned by the artifact inventory." ;
+    skos:prefLabel "Result identifier" ;
+    skos:definition "Exact immutable result identifier returned by the result inventory." ;
     sf:type "string" ;
     sf:required false ;
     sf:default "" ;
-    sf:example "artifact-0001" .
+    sf:example "result-0001" .
 
 sfcore:operationInstanceParameter
     a sf:Parameter ;
@@ -273,23 +273,23 @@ sfcore:includeDataParameter
     sf:default "false" ;
     sf:example false .
 
-sfcore:artifactLimitParameter
+sfcore:resultLimitParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Artifact row limit" ;
-    skos:definition "Maximum number of table rows returned when artifact data is requested." ;
+    skos:prefLabel "Result row limit" ;
+    skos:definition "Maximum number of table rows returned when result data is requested." ;
     sf:type "integer" ;
     sf:required false ;
     sf:default "1000" ;
     sf:example 1000 .
 
-sfcore:artifactOffsetParameter
+sfcore:resultOffsetParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Artifact row offset" ;
-    skos:definition "Number of table rows to skip when artifact data is requested." ;
+    skos:prefLabel "Result row offset" ;
+    skos:definition "Number of table rows to skip when result data is requested." ;
     sf:type "integer" ;
     sf:required false ;
     sf:default "0" ;

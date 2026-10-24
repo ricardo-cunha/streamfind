@@ -230,6 +230,10 @@
       "parameters": {
         "base_quantile": 0.1,
         "baseline_window": 300,
+        "smoothing_enabled": false,
+        "smoothing_window": 7,
+        "smoothing_sharp_window": 3,
+        "smoothing_strength": 1.0,
         "debug_analysis": "",
         "debug_mz": 0,
         "debug_spec_idx": -1,

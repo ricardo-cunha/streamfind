@@ -726,7 +726,7 @@ namespace streamfind::mass_spec::base
 
         Json source_ids = Json::array();
         for (const auto &[_, input] : parameters.value("_inputs", Json::object()).items())
-            if (input.is_object() && input.contains("artifact_id")) source_ids.push_back(input.at("artifact_id"));
+            if (input.is_object() && input.contains("result_id")) source_ids.push_back(input.at("result_id"));
         if (source_ids.empty()) source_ids.push_back("spectraHeadersTable");
         return {
             {"schema", "streamfind.visualization/v1"},
@@ -736,7 +736,7 @@ namespace streamfind::mass_spec::base
             {"data_mode", "inline"},
             {"renderer", {{"engine", "plotly"}, {"renderer_id", "core.plotly"}, {"spec_version", "1"}}},
             {"payload", {{"data", traces}, {"layout", {{"title", title}, {"xaxis", {{"title", x_label}}}, {"yaxis", {{"title", y_label}}}, {"hovermode", "x unified"}}}, {"config", {{"responsive", true}, {"displaylogo", false}}}}},
-            {"provenance", {{"source_artifact_ids", source_ids}, {"producer_operation_id", "mass_spec.plot_spectra_tic"}, {"producer_node_id", parameters.value("_operation_instance", std::string("mass_spec.plot_spectra_tic"))}}},
+            {"provenance", {{"source_result_ids", source_ids}, {"producer_operation_id", "mass_spec.plot_spectra_tic"}, {"producer_node_id", parameters.value("_operation_instance", std::string("mass_spec.plot_spectra_tic"))}}},
             {"fallback", {{"description", "TIC visualization unavailable for the selected analyses."}}}
         };
     }

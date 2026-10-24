@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import type { ArtifactQueryFilter, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
@@ -165,11 +165,11 @@ type ModalEvidenceTab = 'ms1' | 'ms2';
 function EvidencePlots({
   row,
   client,
-  artifactId,
+  resultId,
 }: {
   row: Row;
   client: StreamFindApiClient;
-  artifactId: string;
+  resultId: string;
 }): ReactNode {
   const [tab, setTab] = useState<ModalEvidenceTab>('ms1');
   const [isotope, setIsotope] = useState<{ mz: number[]; probability: number[]; labels: string[] } | null>(null);
@@ -203,7 +203,7 @@ function EvidencePlots({
     };
   }, [client, formula, polarity]);
 
-  const spec = evidenceSpec(row, tab, isotope, artifactId);
+  const spec = evidenceSpec(row, tab, isotope, resultId);
   return (
     <section className="sf-suspects-explorer-evidence-panel">
       <nav className="sf-suspects-explorer-evidence-tabs" role="tablist" aria-label="Spectral evidence">
@@ -237,14 +237,14 @@ function SuspectScatter({
   onSelect,
   onClearSelection,
   onRelayout,
-  artifactId,
+  resultId,
 }: {
   points: ScatterPoint[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
   onClearSelection: () => void;
   onRelayout: (event: Record<string, unknown>) => void;
-  artifactId: string;
+  resultId: string;
 }): ReactNode {
   const userViewportGesture = useRef(false);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
@@ -263,7 +263,7 @@ function SuspectScatter({
   const markerLineWidth = selectedKey ? keys.map((key) => (key === selectedKey ? 2 : 0.5)) : 0.5;
   const spec: VisualizationSpec = {
     schema: 'streamfind.visualization/v1',
-    visualization_id: `suspects-scatter-${artifactId}`,
+    visualization_id: `suspects-scatter-${resultId}`,
     semantic_type: 'sfms:suspectFeatureScatter',
     title: 'Suspect feature map',
     data_mode: 'inline',
@@ -294,7 +294,7 @@ function SuspectScatter({
         },
       ],
       layout: {
-        uirevision: `suspects-scatter-${artifactId}`,
+        uirevision: `suspects-scatter-${resultId}`,
         autosize: true,
         margin: { l: 55, r: 20, t: 20, b: 50 },
         xaxis: {
@@ -325,7 +325,7 @@ function SuspectScatter({
       config: { displaylogo: false, responsive: true },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.suspects_explorer',
       producer_node_id: 'suspects-explorer',
     },
@@ -376,7 +376,7 @@ function evidenceSpec(
   row: Row,
   tab: EvidenceTab,
   isotope: { mz: number[]; probability: number[]; labels: string[] } | null,
-  artifactId: string,
+  resultId: string,
 ): VisualizationSpec | null {
   const theme = {
     background: cssThemeValue('--sf-surface-raised'),
@@ -474,7 +474,7 @@ function evidenceSpec(
   }, 0);
   return {
     schema: 'streamfind.visualization/v1',
-    visualization_id: `suspect-evidence-${tab}-${artifactId}-${text(row, 'feature')}`,
+    visualization_id: `suspect-evidence-${tab}-${resultId}-${text(row, 'feature')}`,
     semantic_type: `sfms:suspect-${tab}`,
     title: tab.toUpperCase(),
     data_mode: 'inline',
@@ -526,7 +526,7 @@ function evidenceSpec(
       config: { displaylogo: false, responsive: true, displayModeBar: true },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.suspects_explorer',
       producer_node_id: 'suspects-explorer',
     },
@@ -628,23 +628,23 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         active = false;
       };
     }
-    const suspectsArtifactId = context.artifact.artifact_id;
+    const suspectsArtifactId = context.artifact.result_id;
     const load = async () => {
       skipInitialOverviewQuery.current = true;
       const baseRequest = {
-        artifact_id: suspectsArtifactId,
+        result_id: suspectsArtifactId,
         columns: overviewColumns,
         filters: overviewColumns?.includes('filtered')
           ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
           : undefined,
       } as const;
-      let suspectData = await client.artifactQuery(context.sessionId, {
+      let suspectData = await client.resultQuery(context.sessionId, {
         ...baseRequest,
         mode: 'page',
         limit: 1000,
       });
       if (suspectData.total_rows > suspectData.returned_rows) {
-        suspectData = await client.artifactQuery(context.sessionId, {
+        suspectData = await client.resultQuery(context.sessionId, {
           ...baseRequest,
           mode: 'sample',
           sampling_strategy: 'grid',
@@ -691,8 +691,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     let active = true;
     const timer = window.setTimeout(() => {
       void client
-        .artifactQuery(context.sessionId, {
-          artifact_id: context.artifact!.artifact_id,
+        .resultQuery(context.sessionId, {
+          result_id: context.artifact!.result_id,
           mode: 'sample',
           columns: overviewColumns,
           sampling_strategy: 'grid',
@@ -850,8 +850,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     }
     setSelectedFeatureDetail(null);
     void client
-      .artifactQuery(context.sessionId, {
-        artifact_id: context.artifact.artifact_id,
+      .resultQuery(context.sessionId, {
+        result_id: context.artifact.result_id,
         mode: 'detail',
         row_keys: [rowKey],
         limit: 1,
@@ -876,8 +876,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     setSelectedSuspectLoading(canLoadDetail);
     if (!canLoadDetail || !client || !context.artifact || !rowKey) return;
     try {
-      const detail = await client.artifactQuery(context.sessionId, {
-        artifact_id: context.artifact.artifact_id,
+      const detail = await client.resultQuery(context.sessionId, {
+        result_id: context.artifact.result_id,
         mode: 'detail',
         row_keys: [rowKey],
         limit: 1,
@@ -1108,7 +1108,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         />
         <main className="sf-suspects-explorer-scatter-panel" aria-label="Feature scatter plot">
           <SuspectScatter
-            artifactId={context.artifact?.artifact_id ?? context.artifactId}
+            resultId={context.artifact?.result_id ?? context.resultId}
             points={plotPoints}
             selectedKey={selectedKey}
             onSelect={setSelectedKey}
@@ -1164,7 +1164,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                     selectedFeatureDetail,
                     'eic',
                     null,
-                    context.artifact?.artifact_id ?? context.artifactId,
+                    context.artifact?.result_id ?? context.resultId,
                   );
                   return spec ? (
                     <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
@@ -1254,7 +1254,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                       <EvidencePlots
                         row={selectedSuspect}
                         client={client}
-                        artifactId={context.artifact?.artifact_id ?? context.artifactId}
+                        resultId={context.artifact?.result_id ?? context.resultId}
                       />
                     </>
                   )}
@@ -1273,8 +1273,8 @@ function buildSuspectQueryFilters(
   booleanFilters: Record<string, boolean>,
   textFilters: Record<string, string>,
   isotopeOnly: boolean,
-): ArtifactQueryFilter[] {
-  const filters: ArtifactQueryFilter[] = [];
+): ResultQueryFilter[] {
+  const filters: ResultQueryFilter[] = [];
   Object.entries(numericFilters).forEach(([key, value]) => {
     if (!value || (value.min === '' && value.max === '')) return;
     if (value.min !== '' && value.max !== '')

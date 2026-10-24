@@ -75,7 +75,7 @@ public:
         int workflow_revision) const;
     /** @brief Record immutable lineage from resolved input artifacts to an output artifact. */
     void append_artifact_lineage(
-        const std::string &artifact_id,
+        const std::string &result_id,
         const std::vector<std::tuple<std::string, std::string, std::string>> &inputs) const;
 
 private:

@@ -34,7 +34,7 @@ create -> describe -> get_domain/get_metadata
       -> get_operations -> get_operation
       -> add_operation -> connect_operations
       -> validate_workflow -> run_workflow
-      -> get_artifact_inventory
+      -> get_result_registry
         -> close
 ```
 

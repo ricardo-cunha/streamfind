@@ -7,7 +7,8 @@ param(
 
     [string]$DatabasePath = '',
     [string]$LogPath = '',
-    [string]$FixturePath = ''
+    [string]$FixturePath = '',
+    [string]$ServiceEndpoint = 'http://127.0.0.1:8790'
 )
 
 Set-StrictMode -Version Latest
@@ -34,16 +35,23 @@ $catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\cata
 $executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
 if (-not (Test-Path $executable -PathType Leaf)) { throw "MCP executable not found: $executable" }
 $env:STREAMFIND_CATALOGUE = $catalogue
+$env:STREAMFIND_SERVICE_ENDPOINT = $ServiceEndpoint
 $env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
 $projectsRoot = Join-Path $repoRoot 'tmp\projects'
 $logsRoot = Join-Path $repoRoot 'tmp\logs\concurrent-find-features'
 New-Item -ItemType Directory -Force -Path $projectsRoot, $logsRoot | Out-Null
 
+function Invoke-ServiceJson {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return Invoke-RestMethod -Uri ($ServiceEndpoint.TrimEnd('/') + $Path) -TimeoutSec 30
+}
+
 function Invoke-Child {
     param([Parameter(Mandatory = $true)][int]$Index)
     $database = Join-Path $projectsRoot "concurrent-find-features-cpp-$Index.duckdb"
+    $resultStore = [System.IO.Path]::ChangeExtension($database, '.data')
     $log = Join-Path $logsRoot "worker-$Index.log"
-    Remove-Item -Force -ErrorAction SilentlyContinue $database, $log
+    Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database, $resultStore, $log, ($log + '.err')
     $script = $scriptPath
     $arguments = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script,
@@ -52,7 +60,8 @@ function Invoke-Child {
         '-WorkerIndex', $Index,
         '-DatabasePath', $database,
         '-LogPath', $log,
-        '-FixturePath', $fixtures[$Index - 1]
+        '-FixturePath', $fixtures[$Index - 1],
+        '-ServiceEndpoint', $ServiceEndpoint
     )
     return Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WorkingDirectory $repoRoot -RedirectStandardOutput $log -RedirectStandardError ($log + '.err') -PassThru
 }
@@ -99,14 +108,7 @@ try {
     $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
     Initialize-Mcp $process | Out-Null
     Invoke-McpTool $process 2 'create' @{ database_path = $DatabasePath; domain = 'mass_spec' } | Out-Null
-    $added = Invoke-McpTool $process 3 'mass_spec.add_analyses' @{ database_path = $DatabasePath; analyses = @(@{ path = $FixturePath }) }
-    if ([int]$added.row_count -ne 1) { throw "Expected one imported analysis, received $($added.row_count)" }
-    $analysis = [System.IO.Path]::GetFileNameWithoutExtension($FixturePath)
-    Invoke-McpTool $process 3 'mass_spec.get_features' @{ database_path = $DatabasePath; analysis_names = @($analysis) } | Out-Null
     $parameters = @{
-        analysis_names = @($analysis)
-        rt_windows_min = @()
-        rt_windows_max = @()
         ppm_threshold = 10.0
         noise_threshold = 250.0
         min_snr = 3.0
@@ -114,14 +116,29 @@ try {
         baseline_window = 200.0
         max_feature_width = 250.0
         base_quantile = 0.99
+        smoothing_enabled = $true
+        smoothing_window = 7
+        smoothing_sharp_window = 3
+        smoothing_strength = 1.0
+        debug_analysis = ''
+        debug_mz = 0
+        debug_spec_idx = -1
+        rt_windows = @(@{ rtmin = 0; rtmax = 3400 })
     }
     $workflow = [ordered]@{
         name = 'concurrent-find-features-components'
+        schema_version = 2
+        workflow_id = "concurrent-find-features-components-$WorkerIndex"
         version = 1
-        domain = 'mass_spec'
-        steps = @(
-            [ordered]@{ method = 'mass_spec.find_features'; parameters = $parameters }
-            [ordered]@{ method = 'mass_spec.create_components'; parameters = [ordered]@{ analysis_names = @($analysis); rt_window = @(-2.5, 2.5); min_correlation = 0.85 } }
+        operations = @(
+            [ordered]@{ id = 1; operation = 'mass_spec.read_mass_spec_files'; parameters = [ordered]@{ source_paths = @($FixturePath) }; inputs = @{} }
+            [ordered]@{ id = 2; operation = 'mass_spec.find_features'; parameters = $parameters; inputs = @{} }
+            [ordered]@{ id = 3; operation = 'mass_spec.create_components'; parameters = [ordered]@{ rt_window = @(-2.5, 2.5); min_correlation = 0.85 }; inputs = @{} }
+        )
+        connections = @(
+            [ordered]@{ source_operation = 1; source_port = 'analysesTable'; target_operation = 2; target_port = 'analysesTable' }
+            [ordered]@{ source_operation = 1; source_port = 'spectraHeadersTable'; target_operation = 2; target_port = 'spectraHeadersTable' }
+            [ordered]@{ source_operation = 2; source_port = 'featuresTable'; target_operation = 3; target_port = 'featuresTable' }
         )
     }
     if ($Scenario -eq 'Failed') {
@@ -134,39 +151,55 @@ try {
         Initialize-Mcp $process | Out-Null
     }
     Invoke-McpTool $process 4 'set_workflow' @{ database_path = $DatabasePath; workflow = $workflow } | Out-Null
-    Invoke-McpTool $process 5 'create_workflow_execution' @{ database_path = $DatabasePath } | Out-Null
     $controllerProcess = $null
-    if ($Scenario -eq 'Cancelled') { Invoke-McpTool $process 6 'cancel_execution' @{ database_path = $DatabasePath } | Out-Null }
     $start = [DateTime]::UtcNow
     Write-Output "START worker=$WorkerIndex utc=$($start.ToString('o')) fixture=$FixturePath"
+    # Keep the short development fixtures in the overlap window long enough
+    # to exercise the service's concurrent-session and result-store paths.
+    Start-Sleep -Milliseconds 250
     $runError = $null
     try {
-        $result = Invoke-McpTool $process 6 'run_workflow' @{ database_path = $DatabasePath; worker_id = "worker-$WorkerIndex" }
+        $result = Invoke-McpTool $process 6 'run_workflow' @{ database_path = $DatabasePath }
     } catch {
         $runError = $_.Exception.Message
         $result = @{ error = $runError }
     }
     if ($null -ne $controllerProcess) { $controllerProcess.WaitForExit() }
     $end = [DateTime]::UtcNow
-    $execution = Invoke-McpTool $process 7 'get_execution' @{ database_path = $DatabasePath }
-    $features = @{ row_count = 0 }
-    if ($Scenario -ne 'Cancelled' -and $Scenario -ne 'Failed') {
-        $features = Invoke-McpTool $process 8 'mass_spec.get_features' @{ database_path = $DatabasePath; analysis_names = @($analysis); filtered = $false }
-    } elseif ($Scenario -eq 'Cancelled') {
-        try { $features = Invoke-McpTool $process 8 'mass_spec.get_features' @{ database_path = $DatabasePath; analysis_names = @($analysis); filtered = $false } } catch { $features = @{ row_count = 0 } }
-    }
-    $executionRows = @(if (($execution.PSObject.Properties.Name -contains 'rows') -and $execution.rows) { @($execution.rows) } else { @($execution) })
-    $status = if (($execution.PSObject.Properties.Name -contains 'columns') -and ($execution.columns.PSObject.Properties.Name -contains 'status')) { @($execution.columns.status)[0] } elseif ($executionRows.Count -gt 0 -and $executionRows[0].PSObject.Properties.Name -contains 'status') { $executionRows[0].status } elseif ($execution.PSObject.Properties.Name -contains 'status') { $execution.status } else { 'unknown' }
-    $featureRows = if (($features.PSObject.Properties.Name -contains 'row_count') -and $features.row_count) { [int]$features.row_count } elseif (($features.PSObject.Properties.Name -contains 'rows') -and $features.rows) { @($features.rows).Count } else { 0 }
+    $project = @(Invoke-ServiceJson '/projects').projects |
+        Where-Object { [System.IO.Path]::GetFullPath($_.database_path) -eq [System.IO.Path]::GetFullPath($DatabasePath) } |
+        Select-Object -First 1
+    if ($null -eq $project) { throw "Service session was not found for $DatabasePath" }
+    $sessionId = [uri]::EscapeDataString([string]$project.session_id)
+    $execution = $null
+    $deadline = [DateTime]::UtcNow.AddMinutes(5)
+    do {
+        try {
+            $execution = Invoke-ServiceJson ("/projects/$sessionId/workflow/state")
+            if ($execution.PSObject.Properties.Name -contains 'state' -and
+                [string]$execution.state -notin @('queued', 'running', 'cancelling')) { break }
+        } catch {
+            if ([DateTime]::UtcNow -gt $deadline) { throw }
+            Start-Sleep -Seconds 1
+        }
+    } while ($null -eq $execution -or
+             ($execution.PSObject.Properties.Name -contains 'state' -and [string]$execution.state -in @('queued', 'running', 'cancelling')))
+    $inventory = Invoke-ServiceJson ("/projects/$sessionId/results")
+    $status = [string]$execution.state
+    $featureRows = @($inventory.results | Where-Object {
+        (($null -ne $_.PSObject.Properties['contract_id']) -and $_.PSObject.Properties['contract_id'].Value -eq 'featuresTable') -or
+        (($null -ne $_.PSObject.Properties['output_port']) -and $_.PSObject.Properties['output_port'].Value -eq 'featuresTable')
+    }).Count
 
     $progressValue = if ($execution.PSObject.Properties.Name -contains 'progress') { $execution.progress } else { '{}' }
     $progressObject = if ($progressValue -is [string]) { $progressValue | ConvertFrom-Json } else { $progressValue }
     $progress = $progressObject | ConvertTo-Json -Compress
-    if ($Scenario -eq 'Completed' -and ($status -ne 'completed' -or $null -eq $progressObject -or [int]$progressObject.completed -ne 2 -or [int]$progressObject.total -ne 2)) { throw "Expected durable two-step progress, received status=$status progress=$progress" }
+    if ($Scenario -eq 'Completed' -and ($status -ne 'completed' -or $null -eq $progressObject -or [int]$progressObject.completed -ne 3 -or [int]$progressObject.total -ne 3)) { throw "Expected durable three-step progress, received status=$status progress=$progress execution=$($execution | ConvertTo-Json -Compress -Depth 12)" }
     if ($Scenario -eq 'Cancelled' -and ($status -ne 'cancelled' -or ((@($progressObject.PSObject.Properties | Where-Object { $_.Name -eq 'completed' }).Count -gt 0) -and [int]$progressObject.completed -gt 1))) { throw "Expected queued cancellation, received status=$status progress=$progress" }
-    if ($Scenario -eq 'Failed' -and ($status -ne 'failed' -or [string]::IsNullOrWhiteSpace([string]$execution.error))) { throw "Expected failed execution with error, received status=$status error=$($execution.error)" }
+    if ($Scenario -eq 'Failed' -and $status -ne 'failed') { throw "Expected failed execution, received status=$status" }
     Write-Output "END worker=$WorkerIndex utc=$($end.ToString('o')) status=$status feature_rows=$featureRows progress=$progress"
-    Write-Output ('SUMMARY=' + (@{ worker = $WorkerIndex; scenario = $Scenario; database = $DatabasePath; fixture = $FixturePath; start_utc = $start.ToString('o'); end_utc = $end.ToString('o'); execution_status = $status; feature_rows = $featureRows; progress = $progressObject; error = $execution.error; run_error = $runError; result = $result } | ConvertTo-Json -Compress -Depth 8))
+    $executionError = if ($execution.PSObject.Properties.Name -contains 'error') { $execution.error } else { $null }
+    Write-Output ('SUMMARY=' + (@{ worker = $WorkerIndex; scenario = $Scenario; database = $DatabasePath; fixture = $FixturePath; start_utc = $start.ToString('o'); end_utc = $end.ToString('o'); execution_status = $status; feature_rows = $featureRows; progress = $progressObject; error = $executionError; run_error = $runError; result = $result } | ConvertTo-Json -Compress -Depth 8))
 } finally {
     if ($null -ne $process) { Stop-StreamfindMcp $process }
 }

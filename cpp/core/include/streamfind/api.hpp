@@ -30,9 +30,9 @@ enum class ProjectCommand {
     close,
     add_operation,
     connect_operations,
-    get_artifact_inventory,
-    get_current_artifact_inventory,
-    request_artifact,
+    get_result_inventory,
+    get_current_result_inventory,
+    request_result,
     resolve_operation_inputs,
 };
 

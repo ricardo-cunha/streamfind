@@ -92,7 +92,7 @@ export class FrontendPluginRegistry {
         this.registerVisualizationRenderer(pluginId, rendererId, renderer),
       notify: notifyApp,
       artifactSummary: (artifact) => ({
-        id: artifact.artifact_id,
+        id: artifact.result_id,
         contract: artifact.contract_id,
         representation: artifact.representation,
       }),

@@ -26,11 +26,11 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
 function Assert-CppDistributionPayload([string]$PackageRoot) {
     Assert-DistributionPayload $PackageRoot
     $required = @(
-        'streamfind.exe',
-        'bin/streamfind_service.exe',
-        'bin/streamfind_mcp.exe',
-        'bin/streamfind_mcp_launcher.exe',
-        'bin/streamfind_cli.exe',
+        'bin/streamfind.exe',
+        'bin/streamfind-app.exe',
+        'bin/streamfind-service.exe',
+        'bin/streamfind-worker.exe',
+        'bin/streamfind-mcp.exe',
         'bin/streamfind.json',
         'plugins/mass_spec/plugin.json',
         'plugins/mass_spec/catalogue.duckdb',
@@ -44,18 +44,31 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         'plugins/sensors/streamfind_sensors.dll',
         'core/catalogue.duckdb',
         'core/ontology/operations.ttl',
-        'core/vendors/openbabel/openbabel_streamfind.dll',
-        'core/vendors/duckdb/duckdb.dll',
-        'core/vendors/mingw/libgcc_s_seh-1.dll',
-        'core/vendors/mingw/libstdc++-6.dll',
-        'core/vendors/mingw/libwinpthread-1.dll',
-        'core/vendors/openbabel/data/logp.txt',
+        'bin/openbabel_streamfind.dll',
+        'bin/duckdb.dll',
+        'bin/libgcc_s_seh-1.dll',
+        'bin/libstdc++-6.dll',
+        'bin/libwinpthread-1.dll',
+        'bin/data/openbabel/logp.txt',
         'app/index.html'
     )
     foreach ($relative in $required) {
         if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
             throw "C++ distribution payload is missing $relative"
         }
+    }
+
+    $legacyVendorRoot = Join-Path $PackageRoot 'core/vendors'
+    if (Test-Path $legacyVendorRoot) {
+        throw "C++ distribution contains the removed legacy runtime directory: $legacyVendorRoot"
+    }
+    $nativeOutsideBin = Get-ChildItem -Recurse -File $PackageRoot |
+        Where-Object {
+            $_.Extension -match '(?i)^\.(dll|so|dylib)$' -and
+            $_.FullName.Substring($PackageRoot.Length).TrimStart('\','/') -notmatch '^(bin[\\/]|plugins[\\/][^\\/]+[\\/])'
+        }
+    if ($nativeOutsideBin) {
+        throw "C++ distribution contains native runtime files outside bin or plugin packages: $($nativeOutsideBin.FullName -join ', ')"
     }
 
     $pluginRoot = Join-Path $PackageRoot 'plugins'

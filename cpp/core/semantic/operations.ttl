@@ -37,7 +37,7 @@ sfcore:writeJson
     skos:prefLabel "Write JSON" ;
     skos:definition "Write any connected JSON artifact to a formatted UTF-8 JSON file without changing the artifact." ;
     sf:category "data-export" ;
-    sf:guidance "Connect a JSON result, choose a writable JSON path, and run the operation. The artifact payload is written with readable indentation." ;
+    sf:guidance "Connect a JSON result, choose a writable JSON path, and run the operation. The result payload is written with readable indentation." ;
     sf:hasInputPort sfcore:anyJson ;
     sf:hasParameter sfcore:jsonPathParameter ;
     sf:hasOutputPort sfcore:operationSuccessSignal .

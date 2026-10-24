@@ -12,10 +12,15 @@ runtime, MCP interface, and extensible domain plugins.
 ## Start here
 
 - [Download the current native packages](releases.md).
+- [Launch and develop the browser application](web-app.md).
 - [Develop backend and frontend plugins](plugin-development.md).
 - [Use the C++ MCP server](quickstart/cpp-mcp.md).
 - [Check supported interfaces and limitations](status.md).
 - [Use the R interface](components/bindings-r.md).
+
+For an overview of the system boundaries and data flow, see the
+[architecture](architecture.md) page. For reproducible native validation, see
+the [testing guide](testing.md).
 
 ## Typical workflow
 
@@ -25,7 +30,7 @@ runtime, MCP interface, and extensible domain plugins.
 3. Discover operations and configure their parameters.
 4. Connect compatible typed ports into a workflow.
 5. Validate and run the workflow.
-6. Inspect tables, visualizations, artifacts, and execution history.
+6. Inspect tables, visualizations, results, and execution history.
 
 !!! note "Version {{ streamfind_version }}"
     The native C++ package version is **{{ streamfind_version }}**. Packages
@@ -61,7 +66,7 @@ The C++ MCP server exposes the catalogue-backed interface.
 4. Use domain Operations with explicit `database_path`.
 5. Add operation nodes with their parameters to the persisted workflow.
 6. Connect typed output ports to downstream input ports.
-7. Validate the graph, run it, and inspect the resulting artifacts.
+7. Validate the graph, run it, and inspect the resulting published results.
 
 Operations are the units of execution. A workflow is a persisted graph of
 operation nodes and typed connections. See the [C++ MCP quickstart](quickstart/cpp-mcp.md)
@@ -77,5 +82,5 @@ and MCP server.
 The [architecture](architecture.md) page explains the relationship between
 the catalogue, native APIs, and MCP. The current React application uses the C++
 backend through its public service boundary; it does not access project DuckDB
-files directly. See [Web app](web-app.md) for the packaged Windows launch path
-and development setup.
+files directly. See [Web app](web-app.md) for packaged Windows and Linux launch
+instructions and development setup.

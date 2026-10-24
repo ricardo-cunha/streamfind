@@ -1,10 +1,13 @@
 # How streamfind works
 
-streamfind is a DuckDB-backed analytical runtime. The native C++ core owns
-projects, persistence, validation, and execution. Domain plugins provide
-catalogued operations through the SDK. The semantic catalogue describes the
-operations, parameters, typed ports, results, and usage guidance exposed to
-applications and AI agents.
+streamfind uses DuckDB for project metadata and a service-managed Result
+Runtime for execution data. The native service owns project sessions,
+persistence, validation, workflow scheduling, result publication, and the
+public HTTP/WebSocket boundary. Short-lived workers execute one operation at
+a time through the service data proxy. Domain plugins provide catalogued
+operations through the SDK. The semantic catalogue describes the operations,
+parameters, typed ports, results, and usage guidance exposed to applications
+and AI agents.
 
 ```text
                  Shared semantic catalogue
@@ -12,8 +15,12 @@ applications and AI agents.
                          │
           ┌────────────────────────────┐
           ▼                            ▼
-   C++ core + plugins             C++ public API / MCP
+   Service control plane          MCP over stdio
           │                            │
+    ┌─────┴─────┐                      │
+    ▼           ▼                      │
+ Workers   Result Runtime              │
+    └─────┬─────┘                      │
           └──────────────┬─────────────┘
                          ▼
                     React web app
@@ -33,45 +40,9 @@ connections[]  = output port -> input port
 ```
 
 The runtime validates the graph, resolves dependencies from typed connections,
-executes each operation, and persists execution records and artifacts. Every
-required input must be connected explicitly.
-
-## Operation cancellation
-
-Cancellation is an operation-level runtime contract, not only a visual action
-on a workflow node. The browser sends the operation instance identifier to the
-service. The service owns a cancellation token for that operation and passes
-the token through the SDK access object used by the plugin.
-
-Long-running operations must check the token at bounded intervals and stop at a
-safe boundary. This applies to analysis and sample loops, table processing,
-statistics, file and network work, nested workflows, and parallel workers. A
-plugin should use the SDK cancellation checkpoint rather than maintaining a
-separate cancellation flag.
-
-Operations that delegate work need an explicit interruption mechanism as well:
-
-- DuckDB work should use an interruptible connection or query boundary.
-- External programs must run in an owned process group or Windows Job Object;
-  cancellation must terminate the complete child process tree and wait for it
-  to exit.
-- Parallel workers must share the operation token and be joined before the
-  operation is reported as cancelled.
-
-The observable state transition is:
-
-```text
-running -> cancelling -> cancelled
-running -> completed
-running -> failed
-```
-
-The service should scope cancellation by operation instance, make repeated
-stop requests idempotent, and report `cancelled` only after workers and child
-processes have stopped. Partial output must not be published as a successful
-artifact. The cancellation contract should be covered by native tests for
-cooperative loops, nested/parallel work, DuckDB interruption, external
-process termination, repeated cancellation, and normal failure handling.
+executes each operation, and publishes immutable typed results. Every required
+input must be connected explicitly. Intermediate data can be streamed between
+workers or spilled to the project result store according to the run mode.
 
 ## Project usage model
 
@@ -82,7 +53,7 @@ A typical application or agent follows this sequence:
 3. add operation nodes and persist their parameters;
 4. connect compatible output and input ports;
 5. validate the operation graph;
-6. run the graph and inspect its artifacts and results.
+6. run the graph and inspect its results and execution history.
 
 The C++ MCP server is the application boundary and current runtime contract.
 
@@ -96,18 +67,22 @@ browser. The [Web app](web-app.md) page documents the platform paths.
 The C++ backend is divided into a generic host core, an SDK boundary, and domain
 plugins:
 
-- **Core** owns project handles, DuckDB connections, transactions, table
-  lifecycle, workflow execution, validation, caching, and audit state.
+- **Service** owns project sessions, DuckDB metadata connections and
+  transactions, workflow scheduling, validation, result publication, caching,
+  and audit state.
 - **SDK** defines the versioned generic plugin ABI, host callbacks, manifest
   validation, and semantic catalogue integration.
-- **Plugins** own domain schemas, native readers, processing algorithms, and
-  catalogue-declared Operations and operation graphs.
+- **Workers and plugins** own domain schemas, native readers, processing
+  algorithms, and catalogue-declared Operations. They receive typed inputs and
+  deliver typed output batches through the SDK; they do not receive project or
+  DuckDB handles.
 
 Plugins are loaded from allowlisted packages. They receive an opaque,
 transaction-scoped host access context rather than `Project` or DuckDB handles,
-and they use generic table/schema/batch callbacks supplied by the core. This
-keeps persistence policy and transaction control in the host while allowing
-domain capabilities to be deployed selectively.
+and they use the service data proxy plus generic table/schema/batch callbacks.
+Arrow IPC is used for bounded tabular transport. This keeps persistence
+policy, result validation, and transaction control in the service while
+allowing domain capabilities to be deployed selectively.
 
 ## Data and runtime assets
 

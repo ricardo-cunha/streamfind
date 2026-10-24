@@ -30,7 +30,7 @@
 
 namespace streamfind
 {
-    constexpr int PROJECT_SCHEMA_VERSION = 2;
+    constexpr int PROJECT_SCHEMA_VERSION = 3;
     namespace detail
     {
 
@@ -358,12 +358,31 @@ namespace streamfind
             if (has_table(connection, "PROJECT") && !has_column(connection, "PROJECT", "schema_version"))
                 throw Error(ErrorCode::SchemaMismatch, "PROJECT schema version is missing");
             const auto version = has_table(connection, "PROJECT") ? project_schema_version(connection) : std::nullopt;
-            if (version && *version != PROJECT_SCHEMA_VERSION)
+            if (version && *version != PROJECT_SCHEMA_VERSION && *version != 2)
                 throw Error(ErrorCode::SchemaMismatch,
                             "unsupported PROJECT schema version: " + std::to_string(*version));
             query(connection,
                   "CREATE TABLE IF NOT EXISTS PROJECT (metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT " + std::to_string(PROJECT_SCHEMA_VERSION) + ", framework_version VARCHAR NOT NULL DEFAULT '" STREAMFIND_FRAMEWORK_VERSION "')",
                   "create PROJECT table");
+
+            if (version && *version == 2) {
+                if (has_table(connection, "RESULT_REGISTRY") && has_column(connection, "RESULT_REGISTRY", "artifact_id") &&
+                    !has_column(connection, "RESULT_REGISTRY", "result_id"))
+                    query(connection, "ALTER TABLE RESULT_REGISTRY RENAME COLUMN artifact_id TO result_id", "rename result registry identifier");
+                if (has_table(connection, "RESULT_LINEAGE")) {
+                    if (has_column(connection, "RESULT_LINEAGE", "artifact_id") &&
+                        !has_column(connection, "RESULT_LINEAGE", "result_id"))
+                        query(connection, "ALTER TABLE RESULT_LINEAGE RENAME COLUMN artifact_id TO result_id", "rename result lineage identifier");
+                    if (has_column(connection, "RESULT_LINEAGE", "source_artifact_id") &&
+                        !has_column(connection, "RESULT_LINEAGE", "source_result_id"))
+                        query(connection, "ALTER TABLE RESULT_LINEAGE RENAME COLUMN source_artifact_id TO source_result_id", "rename result lineage source identifier");
+                }
+                if (has_table(connection, "RESULT_CACHE_OUTPUT") && has_column(connection, "RESULT_CACHE_OUTPUT", "artifact_id") &&
+                    !has_column(connection, "RESULT_CACHE_OUTPUT", "result_id"))
+                    query(connection, "ALTER TABLE RESULT_CACHE_OUTPUT RENAME COLUMN artifact_id TO result_id", "rename cached result identifier");
+                query(connection, "UPDATE PROJECT SET schema_version = " + std::to_string(PROJECT_SCHEMA_VERSION),
+                      "update project schema version");
+            }
 
 
             query(connection,
@@ -379,20 +398,20 @@ namespace streamfind
                   "CREATE TABLE IF NOT EXISTS WORKFLOW_EXECUTION_STEP (workflow_revision INTEGER NOT NULL, step_index INTEGER NOT NULL PRIMARY KEY, operation VARCHAR NOT NULL, parameters JSON NOT NULL DEFAULT '{}', parameter_hash VARCHAR NOT NULL, cache_key VARCHAR NOT NULL, status VARCHAR NOT NULL, progress JSON NOT NULL DEFAULT '{}', result_reference VARCHAR, error_code VARCHAR, error_message VARCHAR, started_at TIMESTAMP, completed_at TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
                   "create WORKFLOW_EXECUTION table");
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS ARTIFACT_INVENTORY (artifact_id VARCHAR PRIMARY KEY, contract_id VARCHAR NOT NULL, representation VARCHAR NOT NULL, physical_table VARCHAR, payload JSON, producer_operation VARCHAR NOT NULL, producer_instance VARCHAR NOT NULL, workflow_revision INTEGER NOT NULL, status VARCHAR NOT NULL DEFAULT 'published', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-                  "create ARTIFACT_INVENTORY table");
+                  "CREATE TABLE IF NOT EXISTS RESULT_REGISTRY (result_id VARCHAR PRIMARY KEY, contract_id VARCHAR NOT NULL, representation VARCHAR NOT NULL, physical_table VARCHAR, payload JSON, producer_operation VARCHAR NOT NULL, producer_instance VARCHAR NOT NULL, workflow_revision INTEGER NOT NULL, status VARCHAR NOT NULL DEFAULT 'published', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+                  "create RESULT_REGISTRY table");
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS ARTIFACT_LINEAGE (artifact_id VARCHAR NOT NULL, source_artifact_id VARCHAR NOT NULL, source_port_id VARCHAR, target_port_id VARCHAR, PRIMARY KEY (artifact_id, source_artifact_id, source_port_id, target_port_id))",
-                  "create ARTIFACT_LINEAGE table");
+                  "CREATE TABLE IF NOT EXISTS RESULT_LINEAGE (result_id VARCHAR NOT NULL, source_result_id VARCHAR NOT NULL, source_port_id VARCHAR, target_port_id VARCHAR, PRIMARY KEY (result_id, source_result_id, source_port_id, target_port_id))",
+                  "create RESULT_LINEAGE table");
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS ARTIFACT_CACHE (fingerprint VARCHAR PRIMARY KEY, operation_id VARCHAR NOT NULL, status VARCHAR NOT NULL DEFAULT 'complete', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TIMESTAMP)",
-                  "create ARTIFACT_CACHE table");
+                  "CREATE TABLE IF NOT EXISTS RESULT_CACHE (fingerprint VARCHAR PRIMARY KEY, operation_id VARCHAR NOT NULL, status VARCHAR NOT NULL DEFAULT 'complete', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TIMESTAMP)",
+                  "create RESULT_CACHE table");
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS ARTIFACT_CACHE_OUTPUT (fingerprint VARCHAR NOT NULL, output_port_id VARCHAR NOT NULL, ordinal INTEGER NOT NULL, artifact_id VARCHAR NOT NULL, PRIMARY KEY (fingerprint, output_port_id, ordinal))",
-                  "create ARTIFACT_CACHE_OUTPUT table");
+                  "CREATE TABLE IF NOT EXISTS RESULT_CACHE_OUTPUT (fingerprint VARCHAR NOT NULL, output_port_id VARCHAR NOT NULL, ordinal INTEGER NOT NULL, result_id VARCHAR NOT NULL, PRIMARY KEY (fingerprint, output_port_id, ordinal))",
+                  "create RESULT_CACHE_OUTPUT table");
             query(connection,
-                  "CREATE INDEX IF NOT EXISTS idx_artifact_cache_output_artifact ON ARTIFACT_CACHE_OUTPUT (artifact_id)",
-                  "index ARTIFACT_CACHE_OUTPUT artifact");
+                  "CREATE INDEX IF NOT EXISTS idx_result_cache_output_result ON RESULT_CACHE_OUTPUT (result_id)",
+                  "index RESULT_CACHE_OUTPUT result");
         }
 
         std::string now_string()
@@ -735,6 +754,8 @@ namespace streamfind
             if (physical_table.empty())
                 throw Error(ErrorCode::WorkflowValidation,
                             "Dynamic table input has no physical DuckDB table: " + port.id);
+            if (physical_table.rfind("result:", 0) == 0)
+                return;
             const auto runtime = inspect_dynamic_table_contract(project, physical_table);
             if (!port.schema.is_object() || !port.schema.contains("properties"))
                 return;
@@ -1097,6 +1118,232 @@ namespace streamfind
         return {value.is_null() ? Json::object() : value};
     }
 
+    class ProjectOperationOutputSink final : public OperationOutputSink
+    {
+    public:
+        explicit ProjectOperationOutputSink(Project &project) : project_(project) {}
+
+        Json begin(const Json &descriptor) override {
+            if (descriptor.value("kind", "") != "table")
+                throw Error(ErrorCode::MethodExecution,
+                            "direct operation output sink only supports table outputs");
+            const auto contract_id = descriptor.value("contract_id", std::string{});
+            const auto producer_operation = descriptor.value("producer_operation", std::string{});
+            const auto producer_instance = descriptor.value("producer_instance", std::string{});
+            if (contract_id.empty() || producer_operation.empty() || producer_instance.empty())
+                throw Error(ErrorCode::InvalidArgument, "table output descriptor is incomplete");
+            std::pair<std::string, std::string> allocation;
+            ProjectTableStore::transaction(project_, {}, [&](ProjectTableStore &tables) {
+                allocation = tables.allocate_table_artifact(
+                    contract_id, producer_operation, producer_instance,
+                    descriptor.value("workflow_revision", 0),
+                    descriptor.value("schema", Json::array()));
+            });
+            const auto handle = "direct-table:" + allocation.second;
+            outputs_.emplace(handle, Output{allocation.first, allocation.second,
+                                             descriptor.value("schema", Json::array()),
+                                             descriptor.value("provenance", Json::object())});
+            return Json{{"output_handle", handle}, {"result_id", allocation.first},
+                        {"physical_table", allocation.second}};
+        }
+
+        void write(const std::string &output_handle, std::uint64_t,
+                   const std::vector<unsigned char> &batch) override {
+            const auto found = outputs_.find(output_handle);
+            if (found == outputs_.end())
+                throw Error(ErrorCode::InvalidArgument, "unknown direct table output handle");
+            const auto text = std::string(batch.begin(), batch.end());
+            std::vector<std::vector<std::optional<std::string>>> rows;
+            std::size_t begin = 0;
+            while (begin < text.size()) {
+                const auto end = text.find('\n', begin);
+                const auto line = text.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+                if (!line.empty()) {
+                    const auto row = Json::parse(line);
+                    if (!row.is_object()) throw Error(ErrorCode::InvalidArgument, "table output row must be an object");
+                    std::vector<std::optional<std::string>> values;
+                    for (const auto &column : found->second.schema) {
+                        const auto name = column.value("name", std::string{});
+                        const auto value = row.find(name);
+                        if (value == row.end() || value->is_null()) values.emplace_back(std::nullopt);
+                        else values.emplace_back(value->is_string() ? value->get<std::string>() : value->dump());
+                    }
+                    rows.push_back(std::move(values));
+                }
+                if (end == std::string::npos) break;
+                begin = end + 1;
+            }
+            if (rows.empty()) return;
+            std::vector<std::string> columns;
+            for (const auto &column : found->second.schema)
+                columns.push_back(column.value("name", std::string{}));
+            ProjectTableStore::transaction(project_, {}, [&](ProjectTableStore &tables) {
+                tables.append(found->second.physical_table, columns, rows);
+            });
+        }
+
+        void write_rows(const std::string &output_handle, std::uint64_t,
+                        const Json &input_rows) override {
+            const auto found = outputs_.find(output_handle);
+            if (found == outputs_.end())
+                throw Error(ErrorCode::InvalidArgument, "unknown direct table output handle");
+            if (!input_rows.is_array())
+                throw Error(ErrorCode::InvalidArgument, "table output rows must be an array");
+            std::vector<std::vector<std::optional<std::string>>> rows;
+            for (const auto &row : input_rows) {
+                if (!row.is_object())
+                    throw Error(ErrorCode::InvalidArgument, "table output row must be an object");
+                std::vector<std::optional<std::string>> values;
+                for (const auto &column : found->second.schema) {
+                    const auto name = column.value("name", std::string{});
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) values.emplace_back(std::nullopt);
+                    else values.emplace_back(value->is_string() ? value->get<std::string>() : value->dump());
+                }
+                rows.push_back(std::move(values));
+            }
+            if (rows.empty()) return;
+            std::vector<std::string> columns;
+            for (const auto &column : found->second.schema)
+                columns.push_back(column.value("name", std::string{}));
+            ProjectTableStore::transaction(project_, {}, [&](ProjectTableStore &tables) {
+                tables.append(found->second.physical_table, columns, rows);
+            });
+        }
+
+        Json finish(const std::string &output_handle, const Json &metadata) override {
+            const auto found = outputs_.find(output_handle);
+            if (found == outputs_.end())
+                throw Error(ErrorCode::InvalidArgument, "unknown direct table output handle");
+            const auto provenance = metadata.value("provenance", found->second.provenance);
+            const auto lineage = provenance.value("lineage_inputs", Json::array());
+            if (lineage.is_array()) {
+                std::vector<std::tuple<std::string, std::string, std::string>> inputs;
+                for (const auto &item : lineage) {
+                    if (!item.is_object()) continue;
+                    inputs.emplace_back(item.value("result_id", item.value("result_id", "")),
+                                       item.value("source_port", ""), item.value("target_port", ""));
+                }
+                ProjectTableStore::transaction(project_, {}, [&](ProjectTableStore &tables) {
+                    tables.append_artifact_lineage(found->second.result_id, inputs);
+                });
+            }
+            const auto result = Json{{"result_id", found->second.result_id},
+                                     {"physical_table", found->second.physical_table},
+                                     {"representation", "table"}, {"state", "published"}};
+            outputs_.erase(found);
+            return result;
+        }
+
+        void abort(const std::string &output_handle, const std::string &) override {
+            outputs_.erase(output_handle);
+        }
+
+    private:
+        struct Output {
+            std::string result_id;
+            std::string physical_table;
+            Json schema;
+            Json provenance;
+        };
+        Project &project_;
+        std::unordered_map<std::string, Output> outputs_;
+    };
+
+    class ProjectOperationExecutionContext final : public OperationExecutionContext
+    {
+    public:
+        ProjectOperationExecutionContext(Project &project, std::string instance)
+            : project_(project), instance_(std::move(instance)), direct_outputs_(project) {}
+
+        std::string operation_instance() const override { return instance_; }
+        int workflow_revision() const override { return project_.get_workflow().version; }
+        Json query(std::string_view sql) override {
+            const auto proxy = project_.data_proxy_request();
+            if (project_.operation_output_sink() && proxy) {
+                const auto response = data_proxy::Envelope::from_json(proxy(
+                    data_proxy::request("query-" + std::to_string(query_sequence_.fetch_add(1)),
+                                        {}, {}, {}, instance_, {},
+                                        Json{{"method", "query"}, {"sql", std::string(sql)}})));
+                if (!response.error_code.empty())
+                    throw Error(ErrorCode::DatabaseError, response.error_code + ": " + response.error_message);
+                if (!response.payload.is_object())
+                    throw Error(ErrorCode::DatabaseError, "data-proxy query response payload is not an object");
+                return response.payload.value("rows", Json::array());
+            }
+            return project_.query_json(std::string(sql));
+        }
+        void execute(std::string_view sql) override {
+            const auto proxy = project_.data_proxy_request();
+            if (project_.operation_output_sink() && proxy) {
+                const auto response = data_proxy::Envelope::from_json(proxy(
+                    data_proxy::request("execute-" + std::to_string(query_sequence_.fetch_add(1)),
+                                        {}, {}, {}, instance_, {},
+                                        Json{{"method", "execute"}, {"sql", std::string(sql)}})));
+                if (!response.error_code.empty())
+                    throw Error(ErrorCode::DatabaseError, response.error_code + ": " + response.error_message);
+                return;
+            }
+            project_.execute_sql(std::string(sql));
+        }
+        void prepare_table_domain(std::string_view domain, std::string_view module_id) override {
+            ProjectTableStore::install_manifest_schema(project_, std::string(domain), std::string(module_id));
+        }
+        void log(std::string_view message) override { project_.log_operation(std::string(message)); }
+
+        Json resolve_inputs(const Json &provided_inputs) override {
+            if (provided_inputs.is_object() && !provided_inputs.empty()) return provided_inputs;
+            return project_.resolve_workflow_inputs(instance_);
+        }
+
+        Json request_data(const data_proxy::Envelope &request) override {
+            const auto callback = project_.data_proxy_request();
+            if (!callback)
+                throw Error(ErrorCode::MethodExecution, "data proxy is not configured");
+            return data_proxy::Envelope::from_json(callback(request)).to_json();
+        }
+
+        Json lookup_result_cache(const std::string &) override { return Json::array(); }
+        bool has_output_sink() const override { return static_cast<bool>(project_.operation_output_sink()); }
+        std::string computation_key() const override { return project_.operation_computation_key(); }
+
+        Json publish_result(const std::string &contract_id, const Json &descriptor,
+                            const Json &) override {
+            const auto payload = descriptor.value("payload", Json::object());
+            const auto result_id = project_.publish_result_artifact(
+                contract_id, payload, descriptor.value("producer_operation", ""),
+                instance_, workflow_revision());
+            return Json{{"result_id", result_id}, {"contract_id", contract_id},
+                        {"representation", descriptor.value("representation", "json")}};
+        }
+
+        OperationOutputSink &outputs() override {
+            if (const auto sink = project_.operation_output_sink()) {
+                sink_ = sink;
+                return *sink_;
+            }
+            return direct_outputs_;
+        }
+
+        void report_progress(double fraction, std::string_view message) override {
+            const auto percent = static_cast<int>(std::clamp(fraction, 0.0, 1.0) * 100.0);
+            project_.log_operation("[" + std::to_string(percent) + "%] " + std::string(message));
+        }
+
+        void report_event(std::string_view event, const Json &payload) override {
+            project_.log_operation(std::string(event) + ": " + payload.dump());
+        }
+
+        bool cancellation_requested() const override { return project_.cancellation_requested(); }
+
+    private:
+        Project &project_;
+        std::string instance_;
+        std::shared_ptr<OperationOutputSink> sink_;
+        ProjectOperationOutputSink direct_outputs_;
+        inline static std::atomic_uint64_t query_sequence_{0};
+    };
+
     class ProjectMethodExecutionContext final : public sdk::MethodExecutionContext
     {
     public:
@@ -1336,15 +1583,31 @@ namespace streamfind
             }
             const auto resolved = resolve_parameters(parameter_values);
             if (validator_) validator_(resolved);
-            const auto result = executor_(project, resolved, operation_instance, inputs);
-            const auto inventory = project.get_artifact_inventory();
+            ProjectOperationExecutionContext context(project, operation_instance);
+            const auto result = executor_(context, resolved, operation_instance, inputs);
+            const auto inventory = project.get_result_inventory();
             const auto artifact_text = [](const Json &artifact, const char *key) {
                 const auto value = artifact.find(key);
                 return value != artifact.end() && value->is_string() ? value->get<std::string>() : std::string{};
             };
+            const auto emitted_reference = [&](const std::string &port_id,
+                                               const std::string &contract_id) -> const Json * {
+                if (!result.is_object() || !result.contains("emitted_results") ||
+                    !result.at("emitted_results").is_object())
+                    return nullptr;
+                const auto &emitted = result.at("emitted_results");
+                if (emitted.contains(port_id) && emitted.at(port_id).is_object())
+                    return &emitted.at(port_id);
+                if (emitted.contains(contract_id) && emitted.at(contract_id).is_object())
+                    return &emitted.at(contract_id);
+                return nullptr;
+            };
             for (const auto &port : definition_.output_ports) {
                 const bool is_table = port.data_kind == "duckdb_table";
                 if (port.semantic_contract.empty()) continue;
+                const auto *emitted = emitted_reference(port.id, port.semantic_contract);
+                const bool has_runtime_result = emitted != nullptr &&
+                    (emitted->contains("result_id") || emitted->contains("payload_ref"));
                 const bool already_published = std::any_of(inventory.begin(), inventory.end(), [&](const Json &artifact) {
                     return artifact_text(artifact, "producer_instance") == operation_instance &&
                            artifact_text(artifact, "contract_id") == port.semantic_contract &&
@@ -1352,12 +1615,13 @@ namespace streamfind
                            artifact_text(artifact, "status") == "published";
                 });
                 if (is_table) {
-                    if (!already_published)
+                    if (!already_published && !has_runtime_result)
                         throw Error(ErrorCode::MethodExecution,
                                     "operation did not publish table output " + port.semantic_contract);
                     continue;
                 }
                 if (port.optional) continue;
+                if (has_runtime_result) continue;
                 if (already_published) continue;
                 Json payload = port.semantic_contract == "operationSuccessSignal" ? Json(true) : result;
                 if (result.is_object()) {
@@ -1374,6 +1638,85 @@ namespace streamfind
         } catch (const std::exception &error) {
             throw Error(ErrorCode::MethodExecution,
                         definition_.id + ": " + error.what());
+        }
+    }
+
+    Json Operation::run_context(OperationExecutionContext &context, const Json &value,
+                                const std::string &operation_instance,
+                                const Json &inputs) const
+    {
+        if (!executor_)
+            throw Error(ErrorCode::MethodExecution, "Operation has no workflow implementation: " + definition_.id);
+        try {
+            Json parameter_values = value;
+            if (inputs.is_object()) {
+                for (auto it = inputs.begin(); it != inputs.end(); ++it) {
+                    if (it.key().rfind("parameter:", 0) == 0)
+                        parameter_values[it.key().substr(std::string("parameter:").size())] = it.value();
+                }
+            }
+            const auto resolved = resolve_parameters(parameter_values);
+            if (validator_) validator_(resolved);
+            auto result = executor_(context, resolved, operation_instance, inputs);
+
+            const auto emitted_reference = [&](const std::string &port_id,
+                                               const std::string &contract_id) -> const Json * {
+                if (!result.is_object() || !result.contains("emitted_results") ||
+                    !result.at("emitted_results").is_object()) return nullptr;
+                const auto &emitted = result.at("emitted_results");
+                if (emitted.contains(port_id) && emitted.at(port_id).is_object()) return &emitted.at(port_id);
+                if (emitted.contains(contract_id) && emitted.at(contract_id).is_object()) return &emitted.at(contract_id);
+                return nullptr;
+            };
+            for (const auto &port : definition_.output_ports) {
+                if (port.semantic_contract.empty() || port.optional) continue;
+                const auto *emitted = emitted_reference(port.id, port.semantic_contract);
+                if (port.data_kind == "duckdb_table") {
+                    if (emitted == nullptr ||
+                        (!emitted->contains("result_id") && !emitted->contains("payload_ref")))
+                        throw Error(ErrorCode::MethodExecution,
+                                    "operation did not publish table output " + port.semantic_contract);
+                    continue;
+                }
+                if (emitted != nullptr) continue;
+                Json payload = port.semantic_contract == "operationSuccessSignal" ? Json(true) : result;
+                if (result.is_object()) {
+                    if (result.contains(port.id)) payload = result.at(port.id);
+                    else if (result.contains(port.semantic_contract)) payload = result.at(port.semantic_contract);
+                }
+                const Json allocation = context.outputs().begin(Json{
+                    {"contract_id", port.semantic_contract}, {"kind", "json"},
+                    {"format", "json"}, {"media_type", "application/json"},
+                    {"producer_operation", definition_.id},
+                    {"producer_instance", operation_instance},
+                    {"workflow_revision", context.workflow_revision()}});
+                const auto handle = allocation.value("output_handle", std::string{});
+                if (handle.empty()) throw Error(ErrorCode::MethodExecution,
+                                                "runtime did not allocate JSON output " + port.semantic_contract);
+                try {
+                    const auto text = payload.dump();
+                    context.outputs().write(handle, 0,
+                                            std::vector<unsigned char>(text.begin(), text.end()));
+                    const auto reference = context.outputs().finish(handle, Json{
+                        {"contract_id", port.semantic_contract}, {"kind", "json"},
+                        {"media_type", "application/json"},
+                        {"producer_operation", definition_.id},
+                        {"producer_instance", operation_instance},
+                        {"workflow_revision", context.workflow_revision()}});
+                    if (!result.is_object()) result = Json::object();
+                    if (!result.contains("emitted_results") || !result.at("emitted_results").is_object())
+                        result["emitted_results"] = Json::object();
+                    result["emitted_results"][port.id] = reference;
+                } catch (...) {
+                    context.outputs().abort(handle, "operation JSON output failed");
+                    throw;
+                }
+            }
+            return result;
+        } catch (const Error &) {
+            throw;
+        } catch (const std::exception &error) {
+            throw Error(ErrorCode::MethodExecution, definition_.id + ": " + error.what());
         }
     }
 
@@ -1642,6 +1985,11 @@ namespace streamfind
         bool closed{false};
         Project::OperationLogCallback operation_log_callback;
         Project::OperationEventCallback operation_event_callback;
+        Project::DataProxyRequest data_proxy_request;
+        std::shared_ptr<OperationOutputSink> operation_output_sink;
+        std::string operation_computation_key;
+        ResultCacheLookup result_cache_lookup;
+        WorkflowInputResolver workflow_input_resolver;
         std::string active_operation_id;
         std::atomic_bool *cancellation_flag{nullptr};
     };
@@ -1911,7 +2259,7 @@ namespace streamfind
         prepared(connection.get(), "INSERT OR REPLACE INTO WORKFLOW_REVISION (revision, workflow) VALUES (?, ?)", "save operation workflow revision", [&](Statement statement)
                  { duckdb_bind_int32(statement, 1, workflow_value.version); bind_text(statement, 2, json_text(workflow_value.to_json())); }, [](duckdb_result &) {});
         for (const auto &operation_id : changed_operations)
-            query(connection.get(), "UPDATE ARTIFACT_INVENTORY SET status = 'stale' WHERE producer_instance = " + detail::sql_quote(operation_id),
+            query(connection.get(), "UPDATE RESULT_REGISTRY SET status = 'stale' WHERE producer_instance = " + detail::sql_quote(operation_id),
                   "invalidate changed operation artifacts");
         audit(connection.get(), "update", "workflow", workflow_value.to_json());
         impl_->workflow = workflow_value;
@@ -1920,8 +2268,8 @@ namespace streamfind
     void Project::clear_workflow_history()
     {
         const auto current = get_workflow();
-        const auto inventory = get_artifact_inventory();
-        const auto lineage_rows = query_json("SELECT artifact_id, source_artifact_id FROM ARTIFACT_LINEAGE");
+        const auto inventory = get_result_inventory();
+        const auto lineage_rows = query_json("SELECT result_id, source_result_id FROM RESULT_LINEAGE");
 
         std::unordered_set<std::string> current_instances;
         for (const auto &operation : current.operations)
@@ -1949,13 +2297,13 @@ namespace streamfind
         std::unordered_map<std::string, Json> retained;
         std::unordered_map<std::string, std::vector<std::string>> sources_by_artifact;
         for (const auto &lineage : lineage_rows)
-            sources_by_artifact[text_of(lineage, "artifact_id")].push_back(text_of(lineage, "source_artifact_id"));
+            sources_by_artifact[text_of(lineage, "result_id")].push_back(text_of(lineage, "source_result_id"));
         for (const auto &artifact : inventory)
         {
             if (text_of(artifact, "status") != "published" ||
                 !current_instances.contains(text_of(artifact, "producer_instance")))
                 continue;
-            const auto artifact_id = text_of(artifact, "artifact_id");
+            const auto result_id = text_of(artifact, "result_id");
             const auto key = key_of(artifact);
             const auto previous = retained.find(key);
             if (previous == retained.end() ||
@@ -1964,7 +2312,7 @@ namespace streamfind
                  text_of(artifact, "created_at") > text_of(previous->second, "created_at")))
             {
                 retained[key] = artifact;
-                retained_by_output[key] = artifact_id;
+                retained_by_output[key] = result_id;
             }
         }
         bool pruned;
@@ -1994,17 +2342,17 @@ namespace streamfind
         const auto physical_artifact_tables = query_json(
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema = 'main' AND substr(upper(table_name), 1, 9) = 'ARTIFACT_' "
-            "AND table_name NOT IN ('ARTIFACT_CACHE', 'ARTIFACT_CACHE_OUTPUT', "
-            "'ARTIFACT_INVENTORY', 'ARTIFACT_LINEAGE')");
+            "AND table_name NOT IN ('RESULT_CACHE', 'RESULT_CACHE_OUTPUT', "
+            "'RESULT_REGISTRY', 'RESULT_LINEAGE')");
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
 
         for (const auto &artifact : inventory)
         {
-            const auto artifact_id = text_of(artifact, "artifact_id");
+            const auto result_id = text_of(artifact, "result_id");
             const auto key = key_of(artifact);
-            if (retained_by_output.contains(key) && retained_by_output.at(key) == artifact_id)
+            if (retained_by_output.contains(key) && retained_by_output.at(key) == result_id)
                 continue;
             const auto table = text_of(artifact, "physical_table");
             if (!table.empty())
@@ -2014,10 +2362,10 @@ namespace streamfind
                 quoted += "\"";
                 query(connection.get(), "DROP TABLE IF EXISTS " + quoted, "clear workflow artifact table");
             }
-            query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE WHERE artifact_id = " + detail::sql_quote(artifact_id) +
-                                      " OR source_artifact_id = " + detail::sql_quote(artifact_id),
+            query(connection.get(), "DELETE FROM RESULT_LINEAGE WHERE result_id = " + detail::sql_quote(result_id) +
+                                      " OR source_result_id = " + detail::sql_quote(result_id),
                   "clear removed workflow lineage");
-            query(connection.get(), "DELETE FROM ARTIFACT_INVENTORY WHERE artifact_id = " + detail::sql_quote(artifact_id),
+            query(connection.get(), "DELETE FROM RESULT_REGISTRY WHERE result_id = " + detail::sql_quote(result_id),
                   "clear removed workflow artifact");
         }
         // A previous cleanup could have removed an inventory row without
@@ -2042,29 +2390,29 @@ namespace streamfind
             query(connection.get(), "DROP TABLE IF EXISTS " + quoted, "clear orphaned workflow artifact table");
         }
         query(connection.get(), "DELETE FROM WORKFLOW_REVISION WHERE revision <> " + std::to_string(current.version), "clear workflow revisions");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT", "clear artifact cache outputs");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
-        query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE AS lineage WHERE NOT EXISTS (SELECT 1 FROM ARTIFACT_INVENTORY AS artifact WHERE artifact.artifact_id = lineage.artifact_id) OR NOT EXISTS (SELECT 1 FROM ARTIFACT_INVENTORY AS source WHERE source.artifact_id = lineage.source_artifact_id)", "clear orphaned workflow lineage");
+        query(connection.get(), "DELETE FROM RESULT_CACHE_OUTPUT", "clear result cache outputs");
+        query(connection.get(), "DELETE FROM RESULT_CACHE", "clear result cache entries");
+        query(connection.get(), "DELETE FROM RESULT_LINEAGE AS lineage WHERE NOT EXISTS (SELECT 1 FROM RESULT_REGISTRY AS result WHERE result.result_id = lineage.result_id) OR NOT EXISTS (SELECT 1 FROM RESULT_REGISTRY AS source WHERE source.result_id = lineage.source_result_id)", "clear orphaned workflow lineage");
         audit(connection.get(), "update", "workflow", current.to_json());
     }
 
-    void Project::clear_artifact_cache()
+    void Project::clear_result_cache()
     {
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT", "clear artifact cache outputs");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
+        query(connection.get(), "DELETE FROM RESULT_CACHE_OUTPUT", "clear result cache outputs");
+        query(connection.get(), "DELETE FROM RESULT_CACHE", "clear result cache entries");
     }
 
-    void Project::clear_all_artifacts()
+    void Project::clear_all_results()
     {
-        const auto inventory = get_artifact_inventory();
+        const auto inventory = get_result_inventory();
         const auto physical_artifact_tables = query_json(
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema = 'main' AND substr(upper(table_name), 1, 9) = 'ARTIFACT_' "
-            "AND table_name NOT IN ('ARTIFACT_CACHE', 'ARTIFACT_CACHE_OUTPUT', "
-            "'ARTIFACT_INVENTORY', 'ARTIFACT_LINEAGE')");
+            "AND table_name NOT IN ('RESULT_CACHE', 'RESULT_CACHE_OUTPUT', "
+            "'RESULT_REGISTRY', 'RESULT_LINEAGE')");
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
         Connection connection(*impl_);
@@ -2088,17 +2436,17 @@ namespace streamfind
                 : std::string{};
             if (!table.empty() && detail::is_generated_artifact_table(table)) drop_table(table);
         }
-        query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE", "clear artifact lineage");
-        query(connection.get(), "DELETE FROM ARTIFACT_INVENTORY", "clear artifact inventory");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT", "clear artifact cache outputs");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "clear artifact cache entries");
+        query(connection.get(), "DELETE FROM RESULT_LINEAGE", "clear result lineage");
+        query(connection.get(), "DELETE FROM RESULT_REGISTRY", "clear result registry");
+        query(connection.get(), "DELETE FROM RESULT_CACHE_OUTPUT", "clear result cache outputs");
+        query(connection.get(), "DELETE FROM RESULT_CACHE", "clear result cache entries");
     }
 
-    void Project::clear_artifacts_for_producer_instance(const std::string &producer_instance)
+    void Project::clear_results_for_producer_instance(const std::string &producer_instance)
     {
         if (producer_instance.empty()) throw std::invalid_argument("producer instance is required");
-        const auto inventory = get_artifact_inventory();
-        std::vector<std::string> artifact_ids;
+        const auto inventory = get_result_inventory();
+        std::vector<std::string> result_ids;
         std::vector<std::string> physical_tables;
         for (const auto &artifact : inventory) {
             const auto text = [&artifact](const char *key) {
@@ -2107,12 +2455,12 @@ namespace streamfind
                     ? value->get<std::string>() : std::string{};
             };
             if (text("producer_instance") != producer_instance) continue;
-            const auto artifact_id = text("artifact_id");
-            if (!artifact_id.empty()) artifact_ids.push_back(artifact_id);
+            const auto result_id = text("result_id");
+            if (!result_id.empty()) result_ids.push_back(result_id);
             const auto table = text("physical_table");
             if (!table.empty() && detail::is_generated_artifact_table(table)) physical_tables.push_back(table);
         }
-        if (artifact_ids.empty()) return;
+        if (result_ids.empty()) return;
 
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
@@ -2126,14 +2474,14 @@ namespace streamfind
         for (const auto &table : physical_tables) drop_table(table);
 
         std::string ids;
-        for (const auto &artifact_id : artifact_ids) {
+        for (const auto &result_id : result_ids) {
             if (!ids.empty()) ids += ",";
-            ids += detail::sql_quote(artifact_id);
+            ids += detail::sql_quote(result_id);
         }
-        query(connection.get(), "DELETE FROM ARTIFACT_LINEAGE WHERE artifact_id IN (" + ids + ") OR source_artifact_id IN (" + ids + ")", "clear operation artifact lineage");
-        query(connection.get(), "DELETE FROM ARTIFACT_INVENTORY WHERE artifact_id IN (" + ids + ")", "clear operation artifacts");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE_OUTPUT WHERE artifact_id IN (" + ids + ")", "clear operation artifact cache outputs");
-        query(connection.get(), "DELETE FROM ARTIFACT_CACHE", "invalidate artifact cache entries");
+        query(connection.get(), "DELETE FROM RESULT_LINEAGE WHERE result_id IN (" + ids + ") OR source_result_id IN (" + ids + ")", "clear operation result lineage");
+        query(connection.get(), "DELETE FROM RESULT_REGISTRY WHERE result_id IN (" + ids + ")", "clear operation results");
+        query(connection.get(), "DELETE FROM RESULT_CACHE_OUTPUT WHERE result_id IN (" + ids + ")", "clear operation result cache outputs");
+        query(connection.get(), "DELETE FROM RESULT_CACHE", "invalidate result cache entries");
     }
 
     std::vector<std::string> Project::list_tables() const
@@ -2380,14 +2728,14 @@ namespace streamfind
         return rows.front();
     }
 
-    Json Project::get_artifact_inventory() const
+    Json Project::get_result_inventory() const
     {
-        return query_json("SELECT artifact_id, contract_id, representation, physical_table, payload, producer_operation, producer_instance, workflow_revision, status, created_at FROM ARTIFACT_INVENTORY ORDER BY created_at, artifact_id");
+        return query_json("SELECT result_id, contract_id, representation, physical_table, payload, producer_operation, producer_instance, workflow_revision, status, created_at FROM RESULT_REGISTRY ORDER BY created_at, result_id");
     }
 
-    Json Project::get_current_artifact_inventory() const
+    Json Project::get_current_result_inventory() const
     {
-        auto artifacts = query_json("SELECT artifact_id, contract_id, representation, physical_table, payload, producer_operation, producer_instance, workflow_revision, status, created_at FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY producer_instance, contract_id ORDER BY workflow_revision DESC, created_at DESC, artifact_id DESC) AS artifact_rank FROM ARTIFACT_INVENTORY WHERE status = 'published') AS current_artifacts WHERE artifact_rank = 1 ORDER BY producer_instance, contract_id");
+        auto artifacts = query_json("SELECT result_id, contract_id, representation, physical_table, payload, producer_operation, producer_instance, workflow_revision, status, created_at FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY producer_instance, contract_id ORDER BY workflow_revision DESC, created_at DESC, result_id DESC) AS artifact_rank FROM RESULT_REGISTRY WHERE status = 'published') AS current_artifacts WHERE artifact_rank = 1 ORDER BY producer_instance, contract_id");
         for (auto &artifact : artifacts) {
             if (artifact.value("representation", std::string{}) != "table") continue;
             const auto table_value = artifact.find("physical_table");
@@ -2421,12 +2769,12 @@ namespace streamfind
                 output += character == '\'' ? "''" : std::string(1, character);
             return output + "'";
         };
-        const auto artifact_id = "artifact_" + fingerprint::hash(contract_id + producer_instance + std::to_string(workflow_revision) +
+        const auto result_id = "artifact_" + fingerprint::hash(contract_id + producer_instance + std::to_string(workflow_revision) +
                                                                   fingerprint::canonical_json(payload));
-        execute_sql("INSERT OR REPLACE INTO ARTIFACT_INVENTORY (artifact_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision, status) VALUES (" +
-                    quote(artifact_id) + ", " + quote(contract_id) + ", 'json', " + quote(payload.dump()) + "::JSON, " +
+        execute_sql("INSERT OR REPLACE INTO RESULT_REGISTRY (result_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision, status) VALUES (" +
+                    quote(result_id) + ", " + quote(contract_id) + ", 'json', " + quote(payload.dump()) + "::JSON, " +
                     quote(producer_operation) + ", " + quote(producer_instance) + ", " + std::to_string(workflow_revision) + ", 'published')");
-        return artifact_id;
+        return result_id;
     }
 
     Json Project::resolve_workflow_inputs(const std::string &operation_id) const
@@ -2440,26 +2788,37 @@ namespace streamfind
         if (operation_id.empty())
             throw Error(ErrorCode::InvalidArgument, "operation_id is required");
         const auto workflow = get_workflow();
-        const auto inventory = get_artifact_inventory();
+        const auto inventory = get_result_inventory();
         Json resolved = Json::object();
         for (const auto &connection : workflow.connections) {
             if (connection.target_operation != operation_id) continue;
             const Json *selected = nullptr;
             const auto current_source = current_artifacts.value(connection.source_operation, Json::object());
-            const auto current_artifact_id = current_source.value(connection.source_port, "");
-            if (!current_artifact_id.empty()) {
+            const auto current_reference = current_source.value(connection.source_port, Json{});
+            const auto current_result_id = current_reference.is_string()
+                ? current_reference.get<std::string>()
+                : current_reference.is_object() ? current_reference.value("result_id", std::string{}) : std::string{};
+            Json external_reference;
+            const bool has_external_reference = current_reference.is_object() &&
+                !current_reference.value("result_id", std::string{}).empty();
+            if (has_external_reference)
+                external_reference = current_reference;
+            if (!current_result_id.empty()) {
                 for (const auto &artifact : inventory)
-                    if (artifact.value("artifact_id", "") == current_artifact_id &&
+                    if (artifact.value("result_id", "") == current_result_id &&
                         artifact.value("status", "") == "published") {
                         selected = &artifact;
                         break;
                     }
             }
+            if (selected == nullptr && has_external_reference)
+                selected = &external_reference;
             int selected_revision = -1;
             std::string selected_created_at;
-            std::string selected_artifact_id;
+            std::string selected_result_id;
+            if (!has_external_reference) {
             for (const auto &artifact : inventory) {
-                if (!current_artifact_id.empty() && selected != nullptr)
+                if (!current_result_id.empty() && selected != nullptr)
                     break;
                 const auto contract = artifact.value("contract_id", "");
                 const bool port_matches = contract == connection.source_port ||
@@ -2480,19 +2839,20 @@ namespace streamfind
                     if (revision > workflow.version)
                         continue;
                     const auto created_at = artifact.value("created_at", "");
-                    const auto artifact_id = artifact.value("artifact_id", "");
+                    const auto result_id = artifact.value("result_id", "");
                     const bool older_revision = revision < selected_revision;
                     const bool same_revision_older = revision == selected_revision &&
                         selected != nullptr &&
                         (created_at < selected_created_at ||
-                         (created_at == selected_created_at && artifact_id <= selected_artifact_id));
+                         (created_at == selected_created_at && result_id <= selected_result_id));
                     if (older_revision || same_revision_older)
                         continue;
                     selected = &artifact;
                     selected_revision = revision;
                     selected_created_at = created_at;
-                    selected_artifact_id = artifact_id;
+                    selected_result_id = result_id;
                 }
+            }
             }
             if (selected == nullptr)
                 throw Error(ErrorCode::WorkflowValidation,
@@ -2524,12 +2884,16 @@ namespace streamfind
         return resolved;
     }
 
-    Json Project::run_operation_graph(const OperationRegistry &registry)
+    Json Project::run_operation_graph(const OperationRegistry &registry,
+                                      OperationRunner runner)
     {
         std::lock_guard execution_lock(impl_->workflow_execution_mutex);
-        detail::WorkflowFileLock process_lock(impl_->options.database_path);
-        if (!process_lock.healthy())
-            throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
+        std::optional<detail::WorkflowFileLock> process_lock;
+        if (!runner) {
+            process_lock.emplace(impl_->options.database_path);
+            if (!process_lock->healthy())
+                throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
+        }
         const auto workflow = get_workflow();
         workflow.validate(registry);
         const std::string launch_snapshot = workflow.to_json().dump();
@@ -2557,7 +2921,7 @@ namespace streamfind
         for (std::size_t index = 0; index < ready.size(); ++index) {
             if (cancellation_requested())
                 throw Error(ErrorCode::Cancelled, "Workflow cancellation requested");
-            if (!process_lock.healthy())
+            if (process_lock && !process_lock->healthy())
                 throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
             const auto &operation_id = ready[index];
             const auto &operation = *by_id.at(operation_id);
@@ -2573,7 +2937,27 @@ namespace streamfind
             if (!executor)
                 throw Error(ErrorCode::WorkflowValidation,
                             "Unknown workflow operation: " + operation.operation);
-            const auto inputs = resolve_workflow_inputs(operation_id, current_artifacts);
+            auto inputs = [&]() {
+                WorkflowInputResolver resolver;
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    resolver = impl_->workflow_input_resolver;
+                }
+                return resolver ? resolver(operation_id, current_artifacts)
+                                : resolve_workflow_inputs(operation_id, current_artifacts);
+            }();
+            // The graph's current run is authoritative.  This is essential for
+            // transient pipeline results, which are deliberately not in the
+            // published result registry.
+            for (const auto &connection : workflow.connections) {
+                if (connection.target_operation != operation_id) continue;
+                if (connection.target_port.rfind("parameter:", 0) == 0 &&
+                    inputs.contains(connection.target_port)) continue;
+                const auto source = current_artifacts.find(connection.source_operation);
+                if (source == current_artifacts.end() || !source->is_object()) continue;
+                const auto output = source->find(connection.source_port);
+                if (output != source->end()) inputs[connection.target_port] = *output;
+            }
             for (const auto &port : executor->definition().input_ports)
                 if (inputs.contains(port.id))
                     detail::validate_runtime_table_input(*this, port, inputs.at(port.id));
@@ -2586,20 +2970,29 @@ namespace streamfind
             const auto parameter_hash = fingerprint::hash(fingerprint::canonical_json(resolved_parameters));
             const auto cache_key = fingerprint::operation(operation.operation, operation.id, executor->definition().version,
                                                           resolved_parameters, inputs);
-            const auto cached_artifacts = query_json(
-                "SELECT cached.output_port_id, cached.artifact_id, CAST(inventory.payload AS VARCHAR) AS payload "
-                "FROM ARTIFACT_CACHE_OUTPUT AS cached "
-                "JOIN ARTIFACT_CACHE AS cache ON cache.fingerprint = cached.fingerprint "
-                "JOIN ARTIFACT_INVENTORY AS inventory ON inventory.artifact_id = cached.artifact_id "
+            const auto cached_artifacts = [&]() {
+                ResultCacheLookup cache_lookup;
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    cache_lookup = impl_->result_cache_lookup;
+                }
+                if (cache_lookup)
+                    return cache_lookup(cache_key);
+                return query_json(
+                "SELECT cached.output_port_id, cached.result_id, CAST(inventory.payload AS VARCHAR) AS payload "
+                "FROM RESULT_CACHE_OUTPUT AS cached "
+                "JOIN RESULT_CACHE AS cache ON cache.fingerprint = cached.fingerprint "
+                "JOIN RESULT_REGISTRY AS inventory ON inventory.result_id = cached.result_id "
                 "WHERE cached.fingerprint = " + detail::sql_quote(cache_key) +
                 " AND cache.status = 'complete' AND inventory.status = 'published' "
-                " AND NOT EXISTS (SELECT 1 FROM ARTIFACT_INVENTORY AS newer "
+                " AND NOT EXISTS (SELECT 1 FROM RESULT_REGISTRY AS newer "
                 "WHERE newer.producer_instance = inventory.producer_instance "
                 "AND newer.contract_id = inventory.contract_id AND newer.status = 'published' "
                 "AND (CAST(newer.workflow_revision AS INTEGER) > CAST(inventory.workflow_revision AS INTEGER) "
                 "OR (CAST(newer.workflow_revision AS INTEGER) = CAST(inventory.workflow_revision AS INTEGER) "
                 "AND newer.created_at > inventory.created_at))) "
                 "ORDER BY cached.output_port_id, cached.ordinal");
+            }();
             {
                 std::lock_guard lock(impl_->mutex);
                 ensure_active(*impl_);
@@ -2627,16 +3020,29 @@ namespace streamfind
             if (complete_cached_outputs) {
                 Json cached_result = {{"emitted_results", Json::object()}};
                 for (const auto &artifact : cached_artifacts) {
-                    Json reference = {{"artifact_id", artifact.value("artifact_id", "")}};
+                    Json reference = artifact.contains("result_id")
+                        ? Json{{"result_id", artifact.value("result_id", "")},
+                               {"payload_ref", artifact.value("payload_ref", "")}}
+                        : Json{{"result_id", artifact.value("result_id", "")}};
+                    if (artifact.value("representation", "") == "table")
+                        reference["physical_table"] = "result:" + artifact.value("result_id", "");
+                    reference["contract_id"] = artifact.value("contract_id", artifact.value("output_port_id", ""));
+                    reference["representation"] = artifact.value("representation", "");
                     const auto payload_value = artifact.find("payload");
                     const auto payload = payload_value != artifact.end() && payload_value->is_string()
                         ? payload_value->get<std::string>() : std::string{};
                     if (!payload.empty() && payload != "null")
-                        reference["payload"] = parse_json(payload, "cached artifact payload");
+                        reference["payload"] = parse_json(payload, "cached result payload");
                     cached_result["emitted_results"][artifact.value("output_port_id", "")] = std::move(reference);
                 }
-                execute_sql("UPDATE ARTIFACT_CACHE SET last_used_at = CURRENT_TIMESTAMP WHERE fingerprint = " +
-                            detail::sql_quote(cache_key));
+                bool service_cache = false;
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    service_cache = static_cast<bool>(impl_->result_cache_lookup);
+                }
+                if (!service_cache)
+                    execute_sql("UPDATE RESULT_CACHE SET last_used_at = CURRENT_TIMESTAMP WHERE fingerprint = " +
+                                detail::sql_quote(cache_key));
                 {
                     std::lock_guard lock(impl_->mutex);
                     ensure_active(*impl_);
@@ -2656,16 +3062,26 @@ namespace streamfind
                 executions.push_back({{"operation_id", operation.id},
                                       {"operation", operation.operation},
                                       {"inputs", inputs}, {"result", cached_result}, {"cache_hit", true}});
-                for (const auto &artifact : cached_artifacts)
-                    current_artifacts[operation.id][artifact.value("output_port_id", "")] =
-                        artifact.value("artifact_id", "");
+                for (const auto &artifact : cached_artifacts) {
+                    const auto output_port = artifact.value("output_port_id", artifact.value("contract_id", ""));
+                    current_artifacts[operation.id][output_port] = artifact.contains("result_id")
+                        ? Json{{"result_id", artifact.value("result_id", "")},
+                               {"payload_ref", artifact.value("payload_ref", "")},
+                               {"physical_table", artifact.value("representation", "") == "table"
+                                    ? "result:" + artifact.value("result_id", "") : ""},
+                               {"contract_id", artifact.value("contract_id", output_port)},
+                               {"representation", artifact.value("representation", "")}}
+                        : Json(artifact.value("result_id", ""));
+                }
                 for (const auto &target : outgoing[operation_id])
                     if (--indegree[target] == 0) ready.push_back(target);
                 continue;
             }
-            const auto result = executor->run_workflow(
-                *this, effective_parameters, operation.id, inputs);
-            if (!process_lock.healthy())
+            const auto result = runner
+                ? runner(operation.operation, effective_parameters, operation.id, inputs, cache_key,
+                         outgoing[operation_id].empty())
+                : executor->run_workflow(*this, effective_parameters, operation.id, inputs);
+            if (process_lock && !process_lock->healthy())
                 throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
             if (result.contains("emitted_results") && result.at("emitted_results").is_object()) {
                 bool complete_outputs = true;
@@ -2681,21 +3097,26 @@ namespace streamfind
                     }
                     if (!present) { complete_outputs = false; break; }
                 }
-                if (complete_outputs)
-                    execute_sql("INSERT OR REPLACE INTO ARTIFACT_CACHE (fingerprint, operation_id, status, last_used_at) VALUES (" +
+                bool service_cache = false;
+                {
+                    std::lock_guard lock(impl_->mutex);
+                    service_cache = static_cast<bool>(impl_->result_cache_lookup);
+                }
+                if (complete_outputs && !service_cache)
+                    execute_sql("INSERT OR REPLACE INTO RESULT_CACHE (fingerprint, operation_id, status, last_used_at) VALUES (" +
                                 detail::sql_quote(cache_key) + ", " + detail::sql_quote(operation.operation) +
                                 ", 'complete', CURRENT_TIMESTAMP)");
-                else {
-                    execute_sql("DELETE FROM ARTIFACT_CACHE_OUTPUT WHERE fingerprint = " + detail::sql_quote(cache_key));
-                    execute_sql("DELETE FROM ARTIFACT_CACHE WHERE fingerprint = " + detail::sql_quote(cache_key));
+                else if (!service_cache) {
+                    execute_sql("DELETE FROM RESULT_CACHE_OUTPUT WHERE fingerprint = " + detail::sql_quote(cache_key));
+                    execute_sql("DELETE FROM RESULT_CACHE WHERE fingerprint = " + detail::sql_quote(cache_key));
                 }
                 int ordinal = 0;
                 for (const auto &[output_port, artifact] : result.at("emitted_results").items()) {
-                    const auto artifact_id = artifact.value("artifact_id", std::string{});
-                    if (!complete_outputs || artifact_id.empty()) continue;
-                    execute_sql("INSERT OR REPLACE INTO ARTIFACT_CACHE_OUTPUT (fingerprint, output_port_id, ordinal, artifact_id) VALUES (" +
+                    const auto result_id = artifact.value("result_id", std::string{});
+                    if (!complete_outputs || result_id.empty() || service_cache) continue;
+                    execute_sql("INSERT OR REPLACE INTO RESULT_CACHE_OUTPUT (fingerprint, output_port_id, ordinal, result_id) VALUES (" +
                                 detail::sql_quote(cache_key) + ", " + detail::sql_quote(output_port) + ", " +
-                                std::to_string(ordinal++) + ", " + detail::sql_quote(artifact_id) + ")");
+                                std::to_string(ordinal++) + ", " + detail::sql_quote(result_id) + ")");
                 }
             }
             {
@@ -2719,7 +3140,7 @@ namespace streamfind
             }
             if (result.contains("emitted_results") && result.at("emitted_results").is_object())
                 for (const auto &[output_port, artifact] : result.at("emitted_results").items())
-                    current_artifacts[operation.id][output_port] = artifact.value("artifact_id", "");
+                    current_artifacts[operation.id][output_port] = artifact;
             for (const auto &target : outgoing[operation_id])
                 if (--indegree[target] == 0) ready.push_back(target);
             } catch (const std::exception &error) {
@@ -2749,13 +3170,14 @@ namespace streamfind
         return {{"status", "completed"}, {"operations", executions}};
     }
 
-    Json Project::run_worker(const std::string &worker_id, const OperationRegistry &registry)
+    Json Project::run_worker(const std::string &worker_id, const OperationRegistry &registry,
+                             OperationRunner runner)
     {
         WorkflowExecutionManager manager(*this);
         manager.scheduler_tick(worker_id);
         try
         {
-            run_operation_graph(registry);
+            run_operation_graph(registry, std::move(runner));
             manager.release_worker(worker_id, ExecutionState::completed);
         }
         catch (const std::exception &error)
@@ -2791,10 +3213,13 @@ namespace streamfind
             std::optional<detail::WorkflowFileLock> process_lock;
             try
             {
-                process_lock.emplace(impl_->options.database_path);
-                if (!process_lock->healthy())
+                if (impl_->options.database_path != ":memory:")
+                    process_lock.emplace(impl_->options.database_path);
+                if (process_lock && !process_lock->healthy())
                     throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
-                auto inputs = resolve_workflow_inputs(instance);
+                auto inputs = (impl_->options.database_path == ":memory:" && provided_inputs.is_object())
+                    ? provided_inputs
+                    : resolve_workflow_inputs(instance);
                 if (!provided_inputs.is_null() && provided_inputs.is_object())
                     for (auto it = provided_inputs.begin(); it != provided_inputs.end(); ++it)
                         inputs[it.key()] = it.value();
@@ -2809,18 +3234,19 @@ namespace streamfind
                 const auto resolved_parameters = operation->resolve_parameters(effective_parameters);
                 const auto cache_key = fingerprint::operation(operation_id, instance, operation->definition().version,
                                                                resolved_parameters, inputs);
+                const bool service_owned_cache = static_cast<bool>(impl_->result_cache_lookup);
                 const auto text_value = [](const Json &value, const char *key) {
                     const auto item = value.find(key);
                     return item != value.end() && item->is_string() ? item->get<std::string>() : std::string{};
                 };
-                const auto cached = query_json(
-                    "SELECT output_port_id, inventory.artifact_id, CAST(inventory.payload AS VARCHAR) AS payload "
-                    "FROM ARTIFACT_CACHE_OUTPUT AS cached "
-                    "JOIN ARTIFACT_CACHE AS cache ON cache.fingerprint = cached.fingerprint "
-                    "JOIN ARTIFACT_INVENTORY AS inventory ON inventory.artifact_id = cached.artifact_id "
+                const auto cached = service_owned_cache ? Json::array() : query_json(
+                    "SELECT output_port_id, inventory.result_id, CAST(inventory.payload AS VARCHAR) AS payload "
+                    "FROM RESULT_CACHE_OUTPUT AS cached "
+                    "JOIN RESULT_CACHE AS cache ON cache.fingerprint = cached.fingerprint "
+                    "JOIN RESULT_REGISTRY AS inventory ON inventory.result_id = cached.result_id "
                     "WHERE cached.fingerprint = " + detail::sql_quote(cache_key) +
                     " AND cache.status = 'complete' AND inventory.status = 'published' "
-                    " AND NOT EXISTS (SELECT 1 FROM ARTIFACT_INVENTORY AS newer "
+                    " AND NOT EXISTS (SELECT 1 FROM RESULT_REGISTRY AS newer "
                     "WHERE newer.producer_instance = inventory.producer_instance "
                     "AND newer.contract_id = inventory.contract_id AND newer.status = 'published' "
                     "AND (CAST(newer.workflow_revision AS INTEGER) > CAST(inventory.workflow_revision AS INTEGER) "
@@ -2839,19 +3265,21 @@ namespace streamfind
                 if (complete) {
                     Json reused = Json::object();
                     for (const auto &item : cached) {
-                        Json reference = {{"artifact_id", text_value(item, "artifact_id")}};
+                        Json reference = {{"result_id", text_value(item, "result_id")}};
                         const auto payload = text_value(item, "payload");
-                        if (!payload.empty() && payload != "null") reference["payload"] = parse_json(payload, "cached artifact payload");
+                        if (!payload.empty() && payload != "null") reference["payload"] = parse_json(payload, "cached result payload");
                         reused[text_value(item, "output_port_id")] = std::move(reference);
                     }
-                    execute_sql("UPDATE ARTIFACT_CACHE SET last_used_at = CURRENT_TIMESTAMP WHERE fingerprint = " + detail::sql_quote(cache_key));
+                    execute_sql("UPDATE RESULT_CACHE SET last_used_at = CURRENT_TIMESTAMP WHERE fingerprint = " + detail::sql_quote(cache_key));
                     log_operation("operation.cache_reused (" + operation_id + "): Reused cached artifacts; operation execution skipped.");
                     return Json{{"emitted_results", reused}, {"cache_hit", true}};
                 }
                 const auto result = operation->run_workflow(*this, effective_parameters, instance, inputs);
-                if (!process_lock->healthy())
+                if (process_lock && !process_lock->healthy())
                     throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
-                const auto inventory = get_artifact_inventory();
+                if (service_owned_cache)
+                    return result;
+                const auto inventory = get_result_inventory();
                 Json published = Json::object();
                 bool complete_outputs = true;
                 for (const auto &port : operation->definition().output_ports) {
@@ -2861,7 +3289,7 @@ namespace streamfind
                         if (text_value(*candidate, "producer_instance") != instance ||
                             text_value(*candidate, "contract_id") != port.semantic_contract ||
                             text_value(*candidate, "status") != "published" ||
-                            text_value(*candidate, "artifact_id").empty())
+                            text_value(*candidate, "result_id").empty())
                             continue;
                         if (artifact == inventory.end()) {
                             artifact = candidate;
@@ -2875,25 +3303,25 @@ namespace streamfind
                             (candidate_revision == selected_revision &&
                              (candidate_created > selected_created ||
                               (candidate_created == selected_created &&
-                               text_value(*candidate, "artifact_id") > text_value(*artifact, "artifact_id")))))
+                               text_value(*candidate, "result_id") > text_value(*artifact, "result_id")))))
                             artifact = candidate;
                     }
                     if (artifact == inventory.end()) { complete_outputs = false; break; }
-                    published[port.id] = text_value(*artifact, "artifact_id");
+                    published[port.id] = text_value(*artifact, "result_id");
                 }
                 if (complete_outputs)
-                    execute_sql("INSERT OR REPLACE INTO ARTIFACT_CACHE (fingerprint, operation_id, status, last_used_at) VALUES (" +
+                    execute_sql("INSERT OR REPLACE INTO RESULT_CACHE (fingerprint, operation_id, status, last_used_at) VALUES (" +
                                 detail::sql_quote(cache_key) + ", " + detail::sql_quote(operation_id) + ", 'complete', CURRENT_TIMESTAMP)");
                 else {
-                    execute_sql("DELETE FROM ARTIFACT_CACHE_OUTPUT WHERE fingerprint = " + detail::sql_quote(cache_key));
-                    execute_sql("DELETE FROM ARTIFACT_CACHE WHERE fingerprint = " + detail::sql_quote(cache_key));
+                    execute_sql("DELETE FROM RESULT_CACHE_OUTPUT WHERE fingerprint = " + detail::sql_quote(cache_key));
+                    execute_sql("DELETE FROM RESULT_CACHE WHERE fingerprint = " + detail::sql_quote(cache_key));
                 }
                 int ordinal = 0;
                 if (complete_outputs)
-                    for (const auto &[output_port, artifact_id] : published.items())
-                        execute_sql("INSERT OR REPLACE INTO ARTIFACT_CACHE_OUTPUT (fingerprint, output_port_id, ordinal, artifact_id) VALUES (" +
+                    for (const auto &[output_port, result_id] : published.items())
+                        execute_sql("INSERT OR REPLACE INTO RESULT_CACHE_OUTPUT (fingerprint, output_port_id, ordinal, result_id) VALUES (" +
                                     detail::sql_quote(cache_key) + ", " + detail::sql_quote(output_port) + ", " +
-                                    std::to_string(ordinal++) + ", " + detail::sql_quote(artifact_id.get<std::string>()) + ")");
+                                    std::to_string(ordinal++) + ", " + detail::sql_quote(result_id.get<std::string>()) + ")");
                 return result;
             }
             catch (const Error &error)
@@ -2917,11 +3345,13 @@ namespace streamfind
                 inputs = resolve_workflow_inputs(instance);
         }
         std::lock_guard execution_lock(impl_->workflow_execution_mutex);
-        detail::WorkflowFileLock process_lock(impl_->options.database_path);
-        if (!process_lock.healthy())
+        std::optional<detail::WorkflowFileLock> process_lock;
+        if (impl_->options.database_path != ":memory:")
+            process_lock.emplace(impl_->options.database_path);
+        if (process_lock && !process_lock->healthy())
             throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
         const Json result = operation->run_workflow(*this, parameters, instance, inputs);
-        if (!process_lock.healthy())
+        if (process_lock && !process_lock->healthy())
             throw Error(ErrorCode::MethodExecution, "Workflow execution lock was lost");
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
@@ -2940,6 +3370,54 @@ namespace streamfind
     {
         std::lock_guard lock(impl_->mutex);
         impl_->operation_event_callback = std::move(callback);
+    }
+
+    void Project::set_data_proxy_request(DataProxyRequest callback)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->data_proxy_request = std::move(callback);
+    }
+
+    Project::DataProxyRequest Project::data_proxy_request() const
+    {
+        std::lock_guard lock(impl_->mutex);
+        return impl_->data_proxy_request;
+    }
+
+    void Project::set_operation_output_sink(std::shared_ptr<OperationOutputSink> sink)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->operation_output_sink = std::move(sink);
+    }
+
+    std::shared_ptr<OperationOutputSink> Project::operation_output_sink() const
+    {
+        std::lock_guard lock(impl_->mutex);
+        return impl_->operation_output_sink;
+    }
+
+    void Project::set_operation_computation_key(std::string key)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->operation_computation_key = std::move(key);
+    }
+
+    std::string Project::operation_computation_key() const
+    {
+        std::lock_guard lock(impl_->mutex);
+        return impl_->operation_computation_key;
+    }
+
+    void Project::set_result_cache_lookup(ResultCacheLookup callback)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->result_cache_lookup = std::move(callback);
+    }
+
+    void Project::set_workflow_input_resolver(WorkflowInputResolver callback)
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->workflow_input_resolver = std::move(callback);
     }
 
     void Project::set_cancellation_flag(std::atomic_bool *flag) noexcept

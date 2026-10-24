@@ -841,6 +841,34 @@ namespace streamfind::mass_spec::nta::utils::detail
                 }
             };
             Json targets = parameters.value("suspect_targets", Json::array());
+            // Parameter connections are materialized by the service as a
+            // columnar table value. MetFrag's suspect-target contract is a
+            // row array, so normalize that representation at the operation
+            // boundary before iterating target rows.
+            if (targets.is_object() && targets.contains("columns") && targets.at("columns").is_array())
+            {
+                Json rows = Json::array();
+                const auto &columns = targets.at("columns");
+                std::size_t row_count = 0;
+                for (const auto &column : columns)
+                {
+                    if (column.is_object() && column.contains("values") && column.at("values").is_array())
+                        row_count = std::max(row_count, column.at("values").size());
+                }
+                for (std::size_t index = 0; index < row_count; ++index)
+                    rows.push_back(Json::object());
+                for (const auto &column : columns)
+                {
+                    if (!column.is_object() || !column.contains("name") || !column.at("name").is_string() ||
+                        !column.contains("values") || !column.at("values").is_array())
+                        continue;
+                    const auto name = column.at("name").get<std::string>();
+                    const auto &values = column.at("values");
+                    for (std::size_t index = 0; index < values.size(); ++index)
+                        rows[index][name] = values.at(index);
+                }
+                targets = std::move(rows);
+            }
             const auto inputs = parameters.value("_inputs", Json::object());
             const auto input_it = allow_table_input ? inputs.find("suspectTargetsTable") : inputs.end();
             if (input_it != inputs.end())

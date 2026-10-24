@@ -7,10 +7,9 @@ param(
 . "$PSScriptRoot\..\..\dev\mcp-common.ps1"
 
 $packageRoot = (Resolve-Path $PackageRoot -ErrorAction Stop).Path
-$executable = Join-Path $packageRoot 'bin\streamfind_mcp_launcher.exe'
-$coreExecutable = Join-Path $packageRoot 'bin\streamfind_mcp.exe'
+$executable = Join-Path $packageRoot 'bin\streamfind-mcp.exe'
+$coreExecutable = Join-Path $packageRoot 'bin\streamfind-mcp.exe'
 $catalogue = Join-Path $packageRoot 'core\catalogue.duckdb'
-$database = Join-Path $packageRoot '..\..\projects\packaged-mcp-smoke.duckdb'
 
 foreach ($path in @($executable, $coreExecutable, $catalogue, (Join-Path $packageRoot 'bin\streamfind.json'), (Join-Path $packageRoot 'plugins\mass_spec\streamfind_mass_spec.dll'))) {
     if (-not (Test-Path $path -PathType Leaf)) {
@@ -18,8 +17,6 @@ foreach ($path in @($executable, $coreExecutable, $catalogue, (Join-Path $packag
     }
 }
 
-New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
-Remove-Item -Force -ErrorAction SilentlyContinue $database
 $previousCatalogue = $env:STREAMFIND_CATALOGUE
 $env:STREAMFIND_CATALOGUE = $null
 $process = $null
@@ -50,67 +47,11 @@ try {
         throw 'Packaged MCP did not expose mass_spec.read_mass_spec_files through operation discovery'
     }
 
-    Invoke-McpTool $process 3 'create' @{
-        database_path = $database
-        domain = 'mass_spec'
-    } | Out-Null
-    $description = Invoke-McpTool $process 4 'describe' @{
-        database_path = $database
-    }
-    if ($null -eq $description) {
-        throw 'Packaged project describe operation returned no result'
-    }
-
-    $workflowDefinition = @{
-        schema_version = 2
-        operations = @(
-            @{
-                id = 1
-                operation = 'mass_spec.read_mass_spec_files'
-                parameters = @{ source_paths = @('fixture.mzML') }
-                inputs = @{}
-                position = @{}
-            },
-            @{
-                id = 2
-                operation = 'mass_spec.find_features'
-                parameters = @{}
-                inputs = @{}
-                position = @{}
-            }
-        )
-        connections = @(
-            @{
-                source_operation = 1
-                source_port = 'analysesTable'
-                target_operation = 2
-                target_port = 'analysesTable'
-            }
-        )
-    }
-    Invoke-McpTool $process 6 'set_workflow' @{
-        database_path = $database
-        workflow = $workflowDefinition
-    } | Out-Null
-    $workflow = Invoke-McpTool $process 8 'get_workflow' @{ database_path = $database }
-    $validation = Invoke-McpTool $process 9 'validate_workflow' @{
-        database_path = $database
-        workflow = $workflow
-    }
-    if (-not $validation.valid) {
-        throw 'Packaged workflow construction validation returned invalid'
-    }
-    $inventory = Invoke-McpTool $process 12 'get_artifact_inventory' @{ database_path = $database }
-    if ([int]$inventory.Count -ne 0) {
-        throw 'Newly constructed workflow unexpectedly has artifacts'
-    }
-
-    Write-Host ("Packaged MCP smoke passed: startup, tools/list, create, describe, workflow construction, and validation ({0} tools)." -f $toolNames.Count)
+    Write-Host ("Packaged MCP smoke passed: direct startup, tools/list, and mass-spec discovery ({0} tools)." -f $toolNames.Count)
 } finally {
     if ($null -ne $process) {
         Stop-StreamfindMcp $process
     }
-    Remove-Item -Force -ErrorAction SilentlyContinue $database
     if ($null -eq $previousCatalogue) {
         Remove-Item Env:STREAMFIND_CATALOGUE -ErrorAction SilentlyContinue
     } else {

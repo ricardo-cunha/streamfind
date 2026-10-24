@@ -1,7 +1,7 @@
 <# Build and package the authoritative C++ backend release. #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')][string]$Version,
+    [ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')][string]$Version,
     [switch]$SkipTests,
     [string]$Plugins = 'ALL',
     [ValidateSet('Debug', 'Release')][string]$Config = 'Release'
@@ -13,6 +13,7 @@ param(
 $root = $Script:REPO_ROOT
 $versionFile = Join-Path $root 'VERSION'
 $canonicalVersion = (Get-Content -Raw $versionFile).Trim()
+if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $canonicalVersion }
 if ($canonicalVersion -ne $Version) {
     throw "Release version $Version does not match canonical version $canonicalVersion in $versionFile"
 }
@@ -38,6 +39,7 @@ Write-ReleaseLog "Building C++ backend ($Config)..."
     "-DCMAKE_C_COMPILER=$($toolchain.CCompiler)" `
     "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)" "-DCMAKE_BUILD_TYPE=$Config" `
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)" `
+    "-DCMAKE_PREFIX_PATH=$($toolchain.Root)\ucrt64" `
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
     -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF `
     -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF `

@@ -292,7 +292,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     if (!java) throw std::runtime_error("Java 21 was not found. Install the runtime.java dependency first.");
     const auto jar = tools::resolve_metfrag_fragmenter_jar();
     if (!jar)
-        throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency from the public v0.1.0 release.");
+        throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency from the public v0.2.0 release.");
 
     const auto physical_table = table_input->at("physical_table").get<std::string>();
     const auto targets = access.read(physical_table, {"name", "SMILES"}, "name");

@@ -738,7 +738,7 @@ function ProjectCard({
                   Workflow failed
                 </span>
               ) : null}
-              {summary.artifactCount !== undefined ? <span>Artifacts: {summary.artifactCount} published</span> : null}
+              {summary.artifactCount !== undefined ? <span>Results: {summary.artifactCount} published</span> : null}
             </>
           ) : (
             <span>Loading workflow summary…</span>
@@ -926,7 +926,7 @@ function ProjectPreview({
       .catch(() => undefined);
     const artifactTimer = window.setTimeout(() => {
       void client
-        .artifacts(project.session_id)
+        .results(project.session_id)
         .then((artifacts) => {
           if (active) setArtifactCount(artifacts.filter((artifact) => artifact.status === 'published').length);
         })
@@ -970,7 +970,7 @@ function ProjectPreview({
                 {workflow?.operations.length ?? 0} operations · Revision {workflow?.version ?? 0}
               </span>
               <span>State: {displayState}</span>
-              <span>Artifacts: {artifactCount} published</span>
+              <span>Results: {artifactCount} published</span>
               <span>{formatDatabaseSize(project.database_size_bytes)}</span>
               {displayState === 'failed' ? (
                 <span
@@ -1214,7 +1214,7 @@ function ProjectHub({
       void Promise.all(
         projects.map(async (project) => {
           try {
-            const artifacts = await client.artifacts(project.session_id);
+            const artifacts = await client.results(project.session_id);
             return [
               project.session_id,
               artifacts.filter((artifact) => artifact.status === 'published').length,

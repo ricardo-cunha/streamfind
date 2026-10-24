@@ -5,7 +5,7 @@ type ViewerShellProps = {
   subtitle?: string;
   variant?: 'json' | 'wide' | 'visualization';
   onClose: () => void;
-  /** Render a viewer without the standard artifact title row. */
+  /** Render a viewer without the standard result title row. */
   showHeader?: boolean;
   children: ReactNode;
 };
@@ -34,13 +34,13 @@ export function ViewerShell({ title, subtitle, variant = 'json', onClose, showHe
               <h2>{title}</h2>
               {subtitle ? <small>{subtitle}</small> : null}
             </div>
-            <button type="button" className="sf-icon-button" aria-label="Close artifact viewer" onClick={onClose}>
+            <button type="button" className="sf-icon-button" aria-label="Close result viewer" onClick={onClose}>
               <i className="fa-solid fa-xmark" />
             </button>
           </header>
         ) : null}
         {!showHeader ? (
-          <button type="button" className="sf-artifact-viewer-close sf-icon-button" aria-label="Close artifact viewer" onClick={onClose}>
+          <button type="button" className="sf-artifact-viewer-close sf-icon-button" aria-label="Close result viewer" onClick={onClose}>
             <i className="fa-solid fa-xmark" />
           </button>
         ) : null}

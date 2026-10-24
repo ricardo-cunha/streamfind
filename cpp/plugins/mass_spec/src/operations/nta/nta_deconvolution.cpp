@@ -1100,6 +1100,10 @@ namespace streamfind::mass_spec::nta::deconvolution
       float baselineWindow,
       float maxWidth,
       const std::string &analysis_name,
+      bool smoothingEnabled,
+      int smoothingWindow,
+      int smoothingSharpWindow,
+      float smoothingStrength,
       float debugMZ,
       sdk::DebugSession *debug_session)
   {
@@ -1255,8 +1259,15 @@ namespace streamfind::mass_spec::nta::deconvolution
       // seven-point noise suppression, switches to a three-point window at
       // cluster edges, and preserves sharp local maxima instead of spreading
       // them across the surrounding scans.
-      auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity_adaptive(cluster_intensity, 7, 3);
-      // auto smoothed_intensity = ::streamfind::mass_spec::nta::utils::smooth_intensity(cluster_intensity, 4);
+      auto smoothed_intensity = cluster_intensity;
+      if (smoothingEnabled)
+      {
+        const auto fully_smoothed = ::streamfind::mass_spec::nta::utils::smooth_intensity_adaptive(
+            cluster_intensity, smoothingWindow, smoothingSharpWindow);
+        for (size_t i = 0; i < smoothed_intensity.size(); ++i)
+          smoothed_intensity[i] = cluster_intensity[i] * (1.0f - smoothingStrength) +
+                                  fully_smoothed[i] * smoothingStrength;
+      }
 
       if (cluster_matches_debug_mz && debug_session != nullptr) {
         std::ostringstream detail;
@@ -2211,6 +2222,10 @@ namespace streamfind::mass_spec::nta::deconvolution
       const float &baselineWindow,
       const float &maxWidth,
       const float &baseQuantile,
+      const bool smoothingEnabled,
+      const int smoothingWindow,
+      const int smoothingSharpWindow,
+      const float smoothingStrength,
       const std::string &debugAnalysis,
       const float &debugMZ,
       const int &debugSpecIdx,
@@ -2389,6 +2404,7 @@ namespace streamfind::mass_spec::nta::deconvolution
             +1, "[M+H]+", -1.007276f, // positive: subtract proton
             minTraces, minSNR, baselineWindow, maxWidth,
             analysis_names[a],
+            smoothingEnabled, smoothingWindow, smoothingSharpWindow, smoothingStrength,
             current_debugMZ,
             &debug);
       }
@@ -2416,6 +2432,7 @@ namespace streamfind::mass_spec::nta::deconvolution
             -1, "[M-H]-", 1.007276f, // negative: add proton
             minTraces, minSNR, baselineWindow, maxWidth,
             analysis_names[a],
+            smoothingEnabled, smoothingWindow, smoothingSharpWindow, smoothingStrength,
             current_debugMZ,
             &debug);
       }
@@ -2529,14 +2546,23 @@ namespace streamfind::mass_spec::nta::deconvolution
         ? parameters.at("debug_analysis").get<std::string>() : std::string{};
     const auto debug_mz = parameters.value("debug_mz", 0.0f);
     const auto debug_spec_idx = parameters.value("debug_spec_idx", -1);
+    const bool smoothing_enabled = parameters.value("smoothing_enabled", true);
+    const int smoothing_window = parameters.value("smoothing_window", 7);
+    const int smoothing_sharp_window = parameters.value("smoothing_sharp_window", 3);
+    const float smoothing_strength = parameters.value("smoothing_strength", 1.0f);
+    if (smoothing_window < 1 || smoothing_sharp_window < 1 || smoothing_sharp_window > smoothing_window)
+      throw std::invalid_argument("smoothing windows must be positive and smoothing_sharp_window must not exceed smoothing_window");
+    if (smoothing_strength < 0.0f || smoothing_strength > 1.0f)
+      throw std::invalid_argument("smoothing_strength must be between 0 and 1");
     auto debug = sdk::DebugSession::open(
-        access.database_path(), "mass_spec.find_features", access.operation_instance(),
+        "", "mass_spec.find_features", access.operation_instance(),
         sdk::DebugOptions{debug_analysis, debug_mz, debug_spec_idx});
     utils::set_debug_session(&debug);
     try {
       find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
                     parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
                     parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
+                    smoothing_enabled, smoothing_window, smoothing_sharp_window, smoothing_strength,
                     debug_analysis, debug_mz, debug_spec_idx, debug);
     } catch (...) {
       utils::set_debug_session(nullptr);

@@ -70,6 +70,7 @@ $configureArgs = @(
     "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)",
     "-DCMAKE_BUILD_TYPE=$Config",
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)",
+    "-DCMAKE_PREFIX_PATH=$($toolchain.Root)\ucrt64",
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')",
     '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
     '-DSTREAMFIND_BUILD_TESTS=ON',

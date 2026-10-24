@@ -31,8 +31,8 @@ export type FileSystemEntry = {
   isDirectory: boolean;
   size?: number;
 };
-export type ArtifactRecord = {
-  artifact_id: string;
+export type ResultRecord = {
+  result_id: string;
   contract_id: string;
   representation: 'json' | 'table' | string;
   physical_table?: string | null;
@@ -45,23 +45,23 @@ export type ArtifactRecord = {
   status: string;
   created_at?: string;
 };
-export type ArtifactDataRequest = {
-  artifact_id: string;
+export type ResultDataRequest = {
+  result_id: string;
   offset?: number;
   limit?: number;
   search?: string;
   sort_column?: string;
   descending?: boolean;
 };
-export type ArtifactDataResponse = {
-  artifact_id: string;
+export type ResultDataResponse = {
+  result_id: string;
   columns: Array<{ name: string; type: string }>;
   rows: Array<Record<string, string | null>>;
   offset: number;
   limit: number;
   total_rows: number;
 };
-export type ArtifactQueryFilter = {
+export type ResultQueryFilter = {
   column: string;
   operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in' | 'is_null' | 'is_not_null';
   value?: JsonValue;
@@ -69,11 +69,11 @@ export type ArtifactQueryFilter = {
   min?: JsonValue;
   max?: JsonValue;
 };
-export type ArtifactQueryRequest = {
-  artifact_id: string;
+export type ResultQueryRequest = {
+  result_id: string;
   mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   columns?: string[];
-  filters?: ArtifactQueryFilter[];
+  filters?: ResultQueryFilter[];
   offset?: number;
   limit?: number;
   search?: string;
@@ -91,11 +91,20 @@ export type ArtifactQueryRequest = {
   trace_columns?: string[];
   max_points_per_trace?: number;
 };
-export type ArtifactQueryResponse = ArtifactDataResponse & {
+export type ResultQueryResponse = ResultDataResponse & {
   returned_rows: number;
   mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   has_more: boolean;
 };
+
+function normalizeResultRecord(value: ResultRecord): ResultRecord {
+  const candidate = value as ResultRecord & { columns?: unknown };
+  return {
+    ...candidate,
+    result_id: candidate.result_id || candidate.physical_table || '',
+    columns: Array.isArray(candidate.columns) ? candidate.columns : [],
+  };
+}
 export type StructureSvgRequest = {
   smiles?: string | null;
   inchi?: string | null;
@@ -285,21 +294,21 @@ export class StreamFindApiClient {
     return result;
   }
 
-  async clearArtifactCache(sessionId: string): Promise<WorkflowDefinitionResponse> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/cache/clear`, {
+  async clearResultCache(sessionId: string): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/cache/clear`, {
       method: 'POST',
     });
     const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
-    if (!response.ok) throw new Error(result.error || `Artifact cache clear request failed (${response.status})`);
+    if (!response.ok) throw new Error(result.error || `Result cache clear request failed (${response.status})`);
     return result;
   }
 
-  async clearAllArtifacts(sessionId: string): Promise<WorkflowDefinitionResponse> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/clear`, {
+  async clearAllResults(sessionId: string): Promise<WorkflowDefinitionResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/clear`, {
       method: 'POST',
     });
     const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
-    if (!response.ok) throw new Error(result.error || `Artifact clear request failed (${response.status})`);
+    if (!response.ok) throw new Error(result.error || `Result clear request failed (${response.status})`);
     return result;
   }
 
@@ -317,22 +326,22 @@ export class StreamFindApiClient {
     return response.json() as Promise<WorkflowEventHistoryResponse>;
   }
 
-  async artifacts(sessionId: string): Promise<ArtifactRecord[]> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts`);
-    if (!response.ok) throw new Error(`Artifact inventory request failed (${response.status})`);
-    const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
-    return result.artifacts || [];
+  async results(sessionId: string): Promise<ResultRecord[]> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results`);
+    if (!response.ok) throw new Error(`Result inventory request failed (${response.status})`);
+    const result = (await response.json()) as { results?: ResultRecord[] };
+    return (result.results || []).map(normalizeResultRecord);
   }
 
-  async currentArtifacts(sessionId: string): Promise<ArtifactRecord[]> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/current`);
-    if (!response.ok) throw new Error(`Current artifact inventory request failed (${response.status})`);
-    const result = (await response.json()) as { artifacts?: ArtifactRecord[] };
-    return result.artifacts || [];
+  async currentResults(sessionId: string): Promise<ResultRecord[]> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/current`);
+    if (!response.ok) throw new Error(`Current result inventory request failed (${response.status})`);
+    const result = (await response.json()) as { results?: ResultRecord[] };
+    return (result.results || []).map(normalizeResultRecord);
   }
 
-  async clearNodeArtifacts(sessionId: string, producerInstance: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/node/clear`, {
+  async clearNodeResults(sessionId: string, producerInstance: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/node/clear`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ producer_instance: producerInstance }),
@@ -340,28 +349,28 @@ export class StreamFindApiClient {
     if (!response.ok) {
       const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
       const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
-      throw new Error(`Node artifact cleanup failed (${response.status})${detail}`);
+      throw new Error(`Node result cleanup failed (${response.status})${detail}`);
     }
   }
 
-  async artifactData(sessionId: string, request: ArtifactDataRequest): Promise<ArtifactDataResponse> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/data`, {
+  async resultData(sessionId: string, request: ResultDataRequest): Promise<ResultDataResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     });
-    if (!response.ok) throw new Error(`Artifact data request failed (${response.status})`);
-    return (await response.json()) as ArtifactDataResponse;
+    if (!response.ok) throw new Error(`Result data request failed (${response.status})`);
+    return (await response.json()) as ResultDataResponse;
   }
 
-  async artifactQuery(sessionId: string, request: ArtifactQueryRequest): Promise<ArtifactQueryResponse> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/artifacts/query`, {
+  async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     });
-    if (!response.ok) throw new Error(`Artifact query request failed (${response.status})`);
-    return (await response.json()) as ArtifactQueryResponse;
+    if (!response.ok) throw new Error(`Result query request failed (${response.status})`);
+    return (await response.json()) as ResultQueryResponse;
   }
 
   async structureSvg(request: StructureSvgRequest): Promise<string> {

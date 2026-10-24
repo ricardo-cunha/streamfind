@@ -43,6 +43,6 @@ describe('ViewerShell', () => {
 
     expect(screen.queryByRole('heading', { name: 'Debug' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog')).toHaveClass('sf-artifact-viewer-content-only');
-    expect(screen.getByRole('button', { name: 'Close artifact viewer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close result viewer' })).toBeInTheDocument();
   });
 });

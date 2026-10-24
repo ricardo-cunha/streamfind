@@ -291,7 +291,7 @@ function ms2Spec(
       config: { displaylogo: false, responsive: true, displayModeBar: true },
     },
     provenance: {
-      source_artifact_ids: [sourceArtifactId],
+      source_result_ids: [sourceArtifactId],
       producer_operation_id: 'frontend.suspect-targets-viewer',
       producer_node_id: 'suspect-targets-viewer',
     },
@@ -364,7 +364,7 @@ function isotopeSpec(
       config: { displaylogo: false, responsive: true, displayModeBar: true },
     },
     provenance: {
-      source_artifact_ids: [sourceArtifactId],
+      source_result_ids: [sourceArtifactId],
       producer_operation_id: 'frontend.suspect-targets-viewer',
       producer_node_id: 'suspect-targets-viewer',
     },
@@ -590,8 +590,8 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
       };
     }
     void client
-      .artifactQuery(context.sessionId, {
-        artifact_id: context.artifact.artifact_id,
+      .resultQuery(context.sessionId, {
+        result_id: context.artifact.result_id,
         mode: 'page',
         columns: overviewColumns,
         offset: 0,
@@ -626,8 +626,8 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
       if (active) setPageLoading(true);
     });
     void client
-      .artifactQuery(context.sessionId, {
-        artifact_id: context.artifact.artifact_id,
+      .resultQuery(context.sessionId, {
+        result_id: context.artifact.result_id,
         mode: 'page',
         columns: overviewColumns,
         offset: page * pageSize,
@@ -655,8 +655,8 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
       if (!client || !context.artifact || !row.row_key || !detailColumns?.length) return;
       setSelectedLoading(true);
       void client
-        .artifactQuery(context.sessionId, {
-          artifact_id: context.artifact.artifact_id,
+        .resultQuery(context.sessionId, {
+          result_id: context.artifact.result_id,
           mode: 'detail',
           columns: detailColumns,
           row_keys: [row.row_key],
@@ -820,7 +820,7 @@ export function SuspectTargetsViewer({ context }: ViewerComponentProps): ReactNo
                       row={selected}
                       client={client}
                       darkMode={darkMode}
-                      sourceArtifactId={context.artifact?.artifact_id ?? ''}
+                      sourceArtifactId={context.artifact?.result_id ?? ''}
                       cache={structureCache}
                       onRendered={rememberStructure}
                     />

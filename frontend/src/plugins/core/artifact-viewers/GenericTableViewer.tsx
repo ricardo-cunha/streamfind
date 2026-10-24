@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ViewerComponentProps } from '../../../framework/viewers/viewerTypes';
-import type { ArtifactDataResponse } from '../../../framework/backend/StreamFindApiClient';
+import type { ResultDataResponse } from '../../../framework/backend/StreamFindApiClient';
 import { VirtualArtifactTable } from './VirtualArtifactTable';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
@@ -8,8 +8,8 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 export function GenericTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<ArtifactDataResponse | null>(null);
-  const [pages, setPages] = useState<Record<number, ArtifactDataResponse>>({});
+  const [data, setData] = useState<ResultDataResponse | null>(null);
+  const [pages, setPages] = useState<Record<number, ResultDataResponse>>({});
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState(250);
   const [sort, setSort] = useState('');
@@ -21,7 +21,7 @@ export function GenericTableViewer({ context }: ViewerComponentProps) {
   const requestPage = useCallback(
     (offset: number, activate: boolean) => {
       if (!artifact || artifact.representation !== 'table' || !client) return;
-      const query = `${artifact.artifact_id}|${pageSize}|${search}|${sort}|${descending}`;
+      const query = `${artifact.result_id}|${pageSize}|${search}|${sort}|${descending}`;
       if (offset !== 0 && queryRef.current !== query) return;
       if (offset === 0 && queryRef.current !== query) {
         queryRef.current = query;
@@ -33,8 +33,8 @@ export function GenericTableViewer({ context }: ViewerComponentProps) {
       requests.current.add(offset);
       setLoading(true);
       void client
-        .artifactData(context.sessionId, {
-          artifact_id: artifact.artifact_id,
+        .resultData(context.sessionId, {
+          result_id: artifact.result_id,
           limit: pageSize,
           offset,
           search,
@@ -60,8 +60,8 @@ export function GenericTableViewer({ context }: ViewerComponentProps) {
     requestPage(0, true);
   }, [requestPage]);
 
-  if (!artifact || !client) return <div role="alert">Table artifact data is unavailable.</div>;
-  const columns = data?.columns ?? artifact.columns ?? [];
+  if (!artifact || !client) return <div role="alert">Table result data is unavailable.</div>;
+  const columns = data?.columns ?? (Array.isArray(artifact.columns) ? artifact.columns : []);
   const offset = data?.offset ?? 0;
   const totalRows = data?.total_rows ?? 0;
 

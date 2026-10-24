@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import type { ArtifactRecord } from '../../framework/backend/StreamFindApiClient';
+import type { ResultRecord } from '../../framework/backend/StreamFindApiClient';
 import { localArtifactContract } from '../../framework/artifacts/artifactContracts';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
@@ -45,7 +45,7 @@ function requiredPlotTables(resultContract: string): string[] {
   return [...STATISTICS_TABLE_CONTRACTS];
 }
 
-function isStatisticsArtifact(artifact: ArtifactRecord): boolean {
+function isStatisticsArtifact(artifact: ResultRecord): boolean {
   return (STATISTICS_ARTIFACT_CONTRACTS as readonly string[]).includes(localArtifactContract(artifact.contract_id));
 }
 
@@ -62,7 +62,7 @@ function plotTheme(): StatisticsPlotTheme {
   };
 }
 
-function payloadObject(artifact: ArtifactRecord | undefined): Record<string, unknown> {
+function payloadObject(artifact: ResultRecord | undefined): Record<string, unknown> {
   if (!artifact) return {};
   if (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload))
     return artifact.payload as Record<string, unknown>;
@@ -86,7 +86,7 @@ function selectionForRow(row: StatisticsRow): string | null {
 export function StatisticsDashboard({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [siblings, setSiblings] = useState<ArtifactRecord[]>([]);
+  const [siblings, setSiblings] = useState<ResultRecord[]>([]);
   const [rowsByContract, setRowsByContract] = useState<StatisticsRows>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +96,7 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   const [controlsWidth, setControlsWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const artifactId = artifact?.artifact_id ?? '';
+  const resultId = artifact?.result_id ?? '';
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((revision) => revision + 1));
@@ -114,18 +114,18 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
     setLoading(true);
     setError(null);
     void client
-      .currentArtifacts(context.sessionId)
+      .currentResults(context.sessionId)
       .then((current) => {
         const matching = current.filter(
           (candidate) => isStatisticsArtifact(candidate) && candidate.producer_instance === artifact.producer_instance,
         );
-        if (!matching.some((candidate) => candidate.artifact_id === artifact.artifact_id)) matching.unshift(artifact);
+        if (!matching.some((candidate) => candidate.result_id === artifact.result_id)) matching.unshift(artifact);
         const requiredTables = new Set(requiredPlotTables(localArtifactContract(artifact.contract_id)));
         return Promise.all(
           matching.filter((candidate) => requiredTables.has(localArtifactContract(candidate.contract_id))).map(async (candidate) => {
             const contract = localArtifactContract(candidate.contract_id);
-            const result = await client.artifactQuery(context.sessionId, {
-              artifact_id: candidate.artifact_id,
+            const result = await client.resultQuery(context.sessionId, {
+              result_id: candidate.result_id,
               mode: 'page',
               columns: STATISTICS_PLOT_COLUMNS[contract],
               offset: 0,
@@ -157,8 +157,8 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   }, [artifact, client, context.sessionId]);
 
   const panels = useMemo(
-    () => buildStatisticsPanels(rowsByContract, artifactId, plotTheme(), selectedId),
-    [rowsByContract, artifactId, selectedId, themeRevision],
+    () => buildStatisticsPanels(rowsByContract, resultId, plotTheme(), selectedId),
+    [rowsByContract, resultId, selectedId, themeRevision],
   );
   useEffect(() => {
     if (!panels.some((panel) => panel.id === activePanelId)) setActivePanelId(panels[0]?.id ?? '');
@@ -249,7 +249,7 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
             <pre>{JSON.stringify(summary, null, 2)}</pre>
           </details>
           {diagnosticArtifacts.map((candidate) => (
-            <details className="sf-statistics-json" key={candidate.artifact_id}>
+            <details className="sf-statistics-json" key={candidate.result_id}>
               <summary>{localArtifactContract(candidate.contract_id)} diagnostics</summary>
               <pre>{JSON.stringify(payloadObject(candidate), null, 2) || '{}'}</pre>
             </details>

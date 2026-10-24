@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   StreamFindApiClient,
-  type ArtifactRecord,
+  type ResultRecord,
   type ProjectSession,
 } from '../framework/backend/StreamFindApiClient';
 import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
@@ -205,8 +205,8 @@ export default function CanvasShell({
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
   const lastObservedWorkflowStateRef = useRef<WorkflowState | null>(null);
   const artifactsLoadedRef = useRef(false);
-  const currentArtifactsRef = useRef<ArtifactRecord[]>([]);
-  const artifactsRefreshInFlightRef = useRef<Promise<ArtifactRecord[]> | null>(null);
+  const currentResultsRef = useRef<ResultRecord[]>([]);
+  const artifactsRefreshInFlightRef = useRef<Promise<ResultRecord[]> | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [documentationFocus, setDocumentationFocus] = useState<DocumentationFocus | null>(null);
@@ -225,8 +225,8 @@ export default function CanvasShell({
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
   const [logCopied, setLogCopied] = useState(false);
   const logSequenceRef = useRef(0);
-  const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactRecord[]>([]);
-  const [artifactViewer, setArtifactViewer] = useState<ArtifactRecord | null>(null);
+  const [currentResults, setCurrentArtifacts] = useState<ResultRecord[]>([]);
+  const [artifactViewer, setArtifactViewer] = useState<ResultRecord | null>(null);
   const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'default'>('default');
   const [artifactViewerId, setArtifactViewerId] = useState<string | null>(null);
   const [hoveredOutputAnchor, setHoveredOutputAnchor] = useState<string | null>(null);
@@ -236,12 +236,12 @@ export default function CanvasShell({
     nodesRef.current = nodes;
   }, [nodes]);
 
-  const openArtifactViewer = (artifact: ArtifactRecord, mode: 'table' | 'default', viewerId: string | null = null) => {
+  const openArtifactViewer = (artifact: ResultRecord, mode: 'table' | 'default', viewerId: string | null = null) => {
     setArtifactViewer(artifact);
     setArtifactViewerMode(mode);
     setArtifactViewerId(viewerId);
   };
-  const openDefaultArtifactViewer = (artifact: ArtifactRecord) => {
+  const openDefaultArtifactViewer = (artifact: ResultRecord) => {
     const defaultViewer = compatibleArtifactViewers({
       semanticType: artifact.contract_id,
       representation: artifact.representation,
@@ -317,14 +317,14 @@ export default function CanvasShell({
   );
   const refreshArtifacts = useCallback(
     (force = false) => {
-      if (!client || typeof client.currentArtifacts !== 'function') return Promise.resolve<ArtifactRecord[]>([]);
-      if (!force && artifactsLoadedRef.current) return Promise.resolve(currentArtifactsRef.current);
+      if (!client || typeof client.currentResults !== 'function') return Promise.resolve<ResultRecord[]>([]);
+      if (!force && artifactsLoadedRef.current) return Promise.resolve(currentResultsRef.current);
       if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
       const request = client
-        .currentArtifacts(project.session_id)
+        .currentResults(project.session_id)
         .then((artifacts) => {
           setCurrentArtifacts(artifacts);
-          currentArtifactsRef.current = artifacts;
+          currentResultsRef.current = artifacts;
           artifactsLoadedRef.current = true;
           return artifacts;
         })
@@ -849,13 +849,13 @@ export default function CanvasShell({
     }
   };
 
-  const clearArtifactCache = async () => {
+  const clearResultCache = async () => {
     if (!client || workflowBusy) return;
     setWorkflowBusy(true);
     try {
-      await client.clearArtifactCache(project.session_id);
+      await client.clearResultCache(project.session_id);
       historyRef.current = { past: [], current: historyRef.current.current, future: [] };
-      setStatus('Cached data and cache history were cleared; published artifacts were retained.');
+      setStatus('Cached data and cache history were cleared; published results were retained.');
       await refreshArtifacts(true);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Cached data could not be cleared.');
@@ -864,15 +864,15 @@ export default function CanvasShell({
     }
   };
 
-  const clearAllArtifacts = async () => {
+  const clearAllResults = async () => {
     if (!client || workflowBusy) return;
     setWorkflowBusy(true);
     try {
-      await client.clearAllArtifacts(project.session_id);
-      setStatus('All artifacts and cache entries were cleared; the workflow definition was retained.');
+      await client.clearAllResults(project.session_id);
+      setStatus('All results and cache entries were cleared; the workflow definition was retained.');
       await refreshArtifacts(true);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Artifacts could not be cleared.');
+      setStatus(error instanceof Error ? error.message : 'Results could not be cleared.');
     } finally {
       setWorkflowBusy(false);
     }
@@ -1388,17 +1388,17 @@ export default function CanvasShell({
     if (!client || nodeControlsLocked) return;
     setArtifactCleanupNode(node);
   };
-  const clearNodeArtifacts = async (node: CanvasNode) => {
+  const clearNodeResults = async (node: CanvasNode) => {
     if (!client || nodeControlsLocked) return;
     setArtifactCleanupNode(null);
     setArtifactCleanupBusy(true);
     setWorkflowBusy(true);
     try {
-      await client.clearNodeArtifacts(project.session_id, node.id);
+      await client.clearNodeResults(project.session_id, node.id);
       await refreshArtifacts(true);
       setStatus(`Deleted published output data for ${node.title}.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Node artifact cleanup failed.');
+      setStatus(error instanceof Error ? error.message : 'Node result cleanup failed.');
     } finally {
       setArtifactCleanupBusy(false);
       setWorkflowBusy(false);
@@ -1846,7 +1846,7 @@ export default function CanvasShell({
       const cacheHit =
         result !== null && typeof result === 'object' && !Array.isArray(result) && result.cache_hit === true;
       setStatus(
-        cacheHit ? `${capability.label} reused cached artifacts; execution skipped.` : `${capability.label} completed.`,
+        cacheHit ? `${capability.label} reused cached results; execution skipped.` : `${capability.label} completed.`,
       );
       return true;
     } catch (error) {
@@ -1877,7 +1877,7 @@ export default function CanvasShell({
               : item,
           ),
         );
-        setStatus(`Operation completed and artifacts were published, but the response reported an error: ${message}`);
+        setStatus(`Operation completed and results were published, but the response reported an error: ${message}`);
         return true;
       }
       setNodes((current) =>
@@ -2165,7 +2165,7 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
-              onClick={() => void clearArtifactCache()}
+              onClick={() => void clearResultCache()}
               disabled={nodeControlsLocked}
               title="Clear cached data and cache history"
               aria-label="Clear cached data and cache history"
@@ -2175,10 +2175,10 @@ export default function CanvasShell({
             <button
               type="button"
               className="sf-canvas-control"
-              onClick={() => void clearAllArtifacts()}
+              onClick={() => void clearAllResults()}
               disabled={nodeControlsLocked}
-              title="Clear all artifacts"
-              aria-label="Clear all artifacts"
+              title="Clear all results"
+              aria-label="Clear all results"
             >
               <i className="fa-solid fa-trash-can" />
             </button>
@@ -2281,7 +2281,7 @@ export default function CanvasShell({
             label={
               <>
                 <strong>Cleaning published output</strong>
-                <span>Updating the project artifacts…</span>
+                <span>Updating the project results…</span>
               </>
             }
           />
@@ -2415,7 +2415,7 @@ export default function CanvasShell({
             : undefined;
           const domainClass = (capability?.domain || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const outputArtifact = (port: NodePort) =>
-            currentArtifacts
+            currentResults
               .filter(
                 (artifact) =>
                   artifact.status === 'published' &&
@@ -2589,7 +2589,7 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) openDefaultArtifactViewer(artifact as ArtifactRecord);
+                          if (artifact) openDefaultArtifactViewer(artifact as ResultRecord);
                         }}
                         onClick={(event) => {
                           if (event.detail !== 2) return;
@@ -2597,7 +2597,7 @@ export default function CanvasShell({
                           pendingConnectionRef.current = null;
                           setConnection(null);
                           const artifact = outputArtifact(port);
-                          if (artifact) openDefaultArtifactViewer(artifact as ArtifactRecord);
+                          if (artifact) openDefaultArtifactViewer(artifact as ResultRecord);
                         }}
                       >
                         <i className={typeIcon(visualPortTypeKey(port))} aria-hidden="true" />
@@ -2613,11 +2613,11 @@ export default function CanvasShell({
                         >
                           <strong>{port.label}</strong>
                           <span className="sf-output-artifact-id">
-                            <b>Artifact ID:</b> <code>{(outputArtifact(port) as ArtifactRecord).artifact_id}</code>
+                            <b>Result ID:</b> <code>{(outputArtifact(port) as ResultRecord).result_id}</code>
                           </span>
-                          <span>{artifactSummary(outputArtifact(port) as ArtifactRecord)}</span>
+                          <span>{artifactSummary(outputArtifact(port) as ResultRecord)}</span>
                           {(() => {
-                            const artifact = outputArtifact(port) as ArtifactRecord;
+                            const artifact = outputArtifact(port) as ResultRecord;
                             const compatibleViewers = compatibleArtifactViewers({
                               semanticType: artifact.contract_id,
                               representation: artifact.representation,
@@ -3061,7 +3061,7 @@ export default function CanvasShell({
               <div>
                 <h2 id="sf-clear-artifacts-title">Delete published output data?</h2>
                 <small>
-                  This removes all published artifacts created by <strong>{artifactCleanupNode.title}</strong> while
+                  This removes all published results created by <strong>{artifactCleanupNode.title}</strong> while
                   keeping the workflow node and its parameters.
                 </small>
               </div>
@@ -3081,7 +3081,7 @@ export default function CanvasShell({
               <button
                 type="button"
                 className="sf-button primary"
-                onClick={() => void clearNodeArtifacts(artifactCleanupNode)}
+                onClick={() => void clearNodeResults(artifactCleanupNode)}
               >
                 Delete published data
               </button>

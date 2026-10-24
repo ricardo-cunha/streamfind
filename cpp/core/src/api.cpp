@@ -5,10 +5,13 @@
 
 #include "streamfind/api.hpp"
 #include "streamfind/project_table_store.hpp"
+#include "streamfind/service/worker_supervisor.hpp"
+#include "streamfind/service_runtime_client.hpp"
 
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
@@ -112,9 +115,9 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "close") return ProjectCommand::close;
     if (name == "add_operation") return ProjectCommand::add_operation;
     if (name == "connect_operations") return ProjectCommand::connect_operations;
-    if (name == "get_artifact_inventory") return ProjectCommand::get_artifact_inventory;
-    if (name == "get_current_artifact_inventory") return ProjectCommand::get_current_artifact_inventory;
-    if (name == "request_artifact") return ProjectCommand::request_artifact;
+    if (name == "get_result_inventory") return ProjectCommand::get_result_inventory;
+    if (name == "get_current_result_inventory") return ProjectCommand::get_current_result_inventory;
+    if (name == "request_result") return ProjectCommand::request_result;
     if (name == "resolve_operation_inputs") return ProjectCommand::resolve_operation_inputs;
 
     throw Error(ErrorCode::InvalidArgument, "Unknown Project command: " + std::string(name));
@@ -131,24 +134,23 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
     case ProjectCommand::describe:
         return detail::descriptor_table(Project::open(detail::options_from_request(request, true)));
     case ProjectCommand::get_workflow: {
-        auto project = Project::open(detail::options_from_request(request, true));
-        return detail::workflow_table(project.get_workflow());
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        return service::get_workflow(attachment);
     }
     case ProjectCommand::validate_workflow: {
-        auto project = Project::open(detail::options_from_request(request, true));
-        const auto workflow = request.contains("workflow")
-            ? Workflow::from_json(request.at("workflow"))
-            : project.get_workflow();
-        workflow.validate(registry);
-        return {{"valid", true}, {"info", "Workflow validation finished successfully."}};
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        const auto workflow = request.contains("workflow") ? request.at("workflow") : Json(nullptr);
+        return service::validate_workflow(attachment, workflow);
     }
     case ProjectCommand::validate: {
         auto project = Project::open(detail::options_from_request(request, true));
         project.validate();
         return {{"valid", true}, {"info", "Project validation finished successfully."}};
     }
-    case ProjectCommand::get_project_domains:
-        return Project::open(detail::options_from_request(request, true)).get_domains();
+    case ProjectCommand::get_project_domains: {
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        return service::get_project(attachment).value("domains", Json::array());
+    }
 
     case ProjectCommand::copy: {
         if (!request.contains("destination_database_path")) {
@@ -162,11 +164,8 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
     }
     case ProjectCommand::set_workflow: {
         if (!request.contains("workflow")) throw Error(ErrorCode::InvalidArgument, "Request requires workflow");
-        auto project = Project::open(detail::options_from_request(request));
-        auto workflow = Workflow::from_json(request.at("workflow"));
-        workflow.validate(registry);
-        project.set_workflow(std::move(workflow), registry);
-        return detail::workflow_table(project.get_workflow());
+        const auto attachment = service::attach_project(detail::options_from_request(request).database_path);
+        return service::save_workflow(attachment, request.at("workflow"));
     }
     case ProjectCommand::get_workflow_execution:
         return detail::workflow_execution_table(Project::open(detail::options_from_request(request, true)).get_workflow_execution());
@@ -234,21 +233,24 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         project.set_workflow(std::move(workflow));
         return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
     }
-    case ProjectCommand::get_artifact_inventory: {
-        auto inventory = Project::open(detail::options_from_request(request, true)).get_artifact_inventory();
+    case ProjectCommand::get_result_inventory: {
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        auto inventory = service::get_results(attachment);
         for (auto &artifact : inventory) artifact.erase("payload");
         return inventory;
     }
-    case ProjectCommand::get_current_artifact_inventory: {
-        auto inventory = Project::open(detail::options_from_request(request, true)).get_current_artifact_inventory();
+    case ProjectCommand::get_current_result_inventory: {
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        auto inventory = service::get_current_results(attachment);
         for (auto &artifact : inventory) artifact.erase("payload");
         return inventory;
     }
-    case ProjectCommand::request_artifact: {
-        auto project = Project::open(detail::options_from_request(request, true));
+    case ProjectCommand::request_result: {
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        const auto inventory = service::get_results(attachment);
         Json result = Json::array();
-        for (const auto &artifact : project.get_artifact_inventory()) {
-            if (request.contains("artifact_id") && artifact.value("artifact_id", "") != request.at("artifact_id").get<std::string>()) continue;
+        for (const auto &artifact : inventory) {
+            if (request.contains("result_id") && artifact.value("result_id", "") != request.at("result_id").get<std::string>()) continue;
             if (request.contains("operation") && artifact.value("producer_operation", "") != request.at("operation").get<std::string>()) continue;
             if (request.contains("operation_instance") && artifact.value("producer_instance", "") != request.at("operation_instance").get<std::string>()) continue;
             if (request.contains("output_port") && artifact.value("contract_id", "") != request.at("output_port").get<std::string>()) continue;
@@ -261,53 +263,55 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         if (!request.value("include_data", false)) return result;
         if (result.size() != 1)
             throw Error(ErrorCode::InvalidArgument,
-                        "include_data requires exactly one artifact selector; provide artifact_id, operation_instance, or output_port");
+                        "include_data requires exactly one artifact selector; provide result_id, operation_instance, or output_port");
         auto artifact = result.front();
-        const auto full_inventory = project.get_artifact_inventory();
-        const auto full_artifact = std::find_if(full_inventory.begin(), full_inventory.end(), [&](const auto &candidate) {
-            return candidate.value("artifact_id", "") == artifact.value("artifact_id", "");
-        });
-        if (full_artifact == full_inventory.end())
-            throw Error(ErrorCode::DatabaseError, "Selected artifact disappeared before data retrieval");
-        artifact = *full_artifact;
-        if (artifact.value("representation", "") == "json") {
-            const auto payload = artifact.value("payload", Json(nullptr));
+        if (artifact.value("representation", "") == "table") {
+            const auto data = service::get_result_data(
+                attachment, Json{{"result_id", artifact.value("result_id", "")},
+                                 {"mode", "page"},
+                                 {"limit", std::clamp(request.value("limit", 1000), 1, 10000)},
+                                 {"offset", std::max(request.value("offset", 0), 0)}});
+            Json rows = Json::array();
+            const auto columns = data.value("columns", Json::array());
+            for (const auto &row : data.value("rows", Json::array())) {
+                Json object = Json::object();
+                for (std::size_t index = 0; index < columns.size() && index < row.size(); ++index)
+                    object[columns.at(index).value("name", std::to_string(index))] = row.at(index);
+                rows.push_back(std::move(object));
+            }
+            artifact["data"] = std::move(rows);
+            artifact["row_count"] = data.value("total_rows", 0);
+            artifact["limit"] = data.value("limit", request.value("limit", 1000));
+            artifact["offset"] = data.value("offset", request.value("offset", 0));
+        } else if (artifact.contains("payload") && !artifact.at("payload").is_null()) {
+            const auto &payload = artifact.at("payload");
             if (payload.is_string()) {
-                try { artifact["data"] = Json::parse(payload.get<std::string>()); }
-                catch (...) { artifact["data"] = payload; }
-            } else artifact["data"] = payload;
-        } else if (artifact.value("representation", "") == "table") {
-            const auto table = artifact.value("physical_table", "");
-            if (table.empty()) throw Error(ErrorCode::DatabaseError, "Table artifact has no physical table");
-            if (!std::all_of(table.begin(), table.end(), [](unsigned char c) {
-                    return std::isalnum(c) || c == '_';
-                })) throw Error(ErrorCode::InvalidArgument, "Invalid physical table identifier");
-            const auto limit = std::clamp(request.value("limit", 1000), 1, 10000);
-            const auto offset = std::max(request.value("offset", 0), 0);
-            artifact["data"] = project.query_json("SELECT * FROM \"" + table + "\" LIMIT " +
-                                                   std::to_string(limit) + " OFFSET " + std::to_string(offset));
-            artifact["row_count"] = project.query_json("SELECT COUNT(*) AS count FROM \"" + table + "\"").at(0).value("count", "0");
-            artifact["limit"] = limit;
-            artifact["offset"] = offset;
+                const auto parsed = Json::parse(payload.get<std::string>(), nullptr, false);
+                artifact["data"] = parsed.is_discarded() ? Json(payload.get<std::string>()) : parsed;
+            } else {
+                artifact["data"] = payload;
+            }
         }
+        artifact.erase("payload");
         return Json::array({std::move(artifact)});
     }
     case ProjectCommand::resolve_operation_inputs: {
         if (!request.contains("operation_id"))
             throw Error(ErrorCode::InvalidArgument, "Request requires operation_id");
-        auto project = Project::open(detail::options_from_request(request, true));
-        return project.resolve_workflow_inputs(detail::workflow_operation_id(request.at("operation_id")));
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        return service::resolve_workflow_inputs(attachment, detail::workflow_operation_id(request.at("operation_id")));
     }
 
     case ProjectCommand::run_workflow: {
-        auto project = Project::open(detail::options_from_request(request));
-        const Json result = request.contains("worker_id")
-            ? project.run_worker(request.at("worker_id").get<std::string>(), registry)
-            : project.run_operation_graph(registry);
-        return {{"result", result}, {"workflow", detail::workflow_table(project.get_workflow())}};
+        const auto database_path = detail::options_from_request(request).database_path;
+        const auto attachment = service::attach_project(database_path);
+        const auto workflow = service::get_workflow(attachment);
+        return {{"result", service::start_workflow(attachment)}, {"workflow", workflow}};
     }
-    case ProjectCommand::get_metadata:
-        return detail::metadata_table(Project::open(detail::options_from_request(request, true)).get_metadata());
+    case ProjectCommand::get_metadata: {
+        const auto attachment = service::attach_project(detail::options_from_request(request, true).database_path);
+        return detail::metadata_table(service::get_project(attachment).value("metadata", Json::object()));
+    }
     case ProjectCommand::set_metadata: {
         if (!request.contains("metadata")) throw Error(ErrorCode::InvalidArgument, "Request requires metadata");
         auto project = Project::open(detail::options_from_request(request));

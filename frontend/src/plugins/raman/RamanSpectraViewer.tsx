@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ArtifactDataResponse } from '../../framework/backend/StreamFindApiClient';
+import type { ResultDataResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -51,7 +51,7 @@ function getPlotTheme(): PlotTheme {
 function makeSpec(
   rows: RamanRow[],
   colorGrouping: string[],
-  artifactId: string,
+  resultId: string,
   theme: PlotTheme,
   viewportRange: [number, number] | null,
 ): VisualizationSpec {
@@ -140,7 +140,7 @@ function makeSpec(
       config: { responsive: true, displaylogo: false },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.raman.spectra_table_viewer',
       producer_node_id: 'frontend.raman.spectra_table_viewer',
     },
@@ -151,14 +151,14 @@ function makeSpec(
 export function RamanSpectraViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<ArtifactDataResponse | null>(null);
+  const [data, setData] = useState<ResultDataResponse | null>(null);
   const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
   const [viewportRange, setViewportRange] = useState<[number, number] | null>(null);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const artifactId = artifact?.artifact_id ?? '';
+  const resultId = artifact?.result_id ?? '';
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -172,8 +172,8 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
     setLoading(true);
     setError(null);
     const loadRows = async () => {
-      const response = await client.artifactQuery(context.sessionId, {
-        artifact_id: artifact.artifact_id,
+      const response = await client.resultQuery(context.sessionId, {
+        result_id: artifact.result_id,
         mode: 'visualization',
         columns: [
           'analysis_id',
@@ -239,11 +239,11 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
   const rows = data?.rows ?? [];
   const theme = useMemo(() => getPlotTheme(), [themeRevision]);
   const spec = useMemo(
-    () => (rows.length ? makeSpec(rows, grouping, artifactId, theme, viewportRange) : null),
-    [artifactId, grouping, rows, theme, viewportRange],
+    () => (rows.length ? makeSpec(rows, grouping, resultId, theme, viewportRange) : null),
+    [resultId, grouping, rows, theme, viewportRange],
   );
 
-  if (!artifact || !client) return <div role="alert">Raman spectra artifact data is unavailable.</div>;
+  if (!artifact || !client) return <div role="alert">Raman spectra result data is unavailable.</div>;
   if (loading && !data) return <LoadingLogo label="Loading Raman spectra rows…" />;
   if (error)
     return (

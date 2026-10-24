@@ -115,10 +115,9 @@ namespace streamfind::core::vendors::openbabel
 
     const std::vector<std::wstring> candidates = {
         env_data,
-        dll_dir + L"\\data",
-        module_dir + L"\\core\\vendors\\openbabel\\data",
-        module_parent + L"\\core\\vendors\\openbabel\\data",
-        module_grandparent + L"\\core\\vendors\\openbabel\\data"};
+        module_dir + L"\\data\\openbabel",
+        module_parent + L"\\bin\\data\\openbabel",
+        module_grandparent + L"\\bin\\data\\openbabel"};
 
     for (const auto &candidate : candidates)
     {
@@ -187,10 +186,9 @@ namespace streamfind::core::vendors::openbabel
     const std::wstring module_parent = parent_directory(module_dir);
     const std::wstring module_grandparent = parent_directory(module_parent);
     const std::vector<std::wstring> dll_candidates = {
-        module_dir + L"\\core\\vendors\\openbabel\\openbabel_streamfind.dll",
-        module_parent + L"\\core\\vendors\\openbabel\\openbabel_streamfind.dll",
-        module_grandparent + L"\\core\\vendors\\openbabel\\openbabel_streamfind.dll",
-        module_dir + L"\\openbabel_streamfind.dll"};
+        module_dir + L"\\openbabel_streamfind.dll",
+        module_parent + L"\\bin\\openbabel_streamfind.dll",
+        module_grandparent + L"\\bin\\openbabel_streamfind.dll"};
 
     std::wstring loaded_path;
     for (const auto &dll_path : dll_candidates)

@@ -41,8 +41,8 @@ void validate_visualization_spec(const std::string &payload) {
         (!spec.contains("data_bindings") || !spec.at("data_bindings").is_array() || spec.at("data_bindings").empty()))
         throw std::invalid_argument("artifact visualization specification requires data bindings");
     const auto &provenance = spec.value("provenance", Json::object());
-    if (!provenance.is_object() || !provenance.contains("source_artifact_ids") ||
-        !provenance.at("source_artifact_ids").is_array() || provenance.at("source_artifact_ids").empty() ||
+    if (!provenance.is_object() || !provenance.contains("source_result_ids") ||
+        !provenance.at("source_result_ids").is_array() || provenance.at("source_result_ids").empty() ||
         provenance.value("producer_operation_id", "").empty() || provenance.value("producer_node_id", "").empty())
         throw std::invalid_argument("visualization specification requires complete provenance");
     const auto &fallback = spec.value("fallback", Json::object());
@@ -550,7 +550,7 @@ std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
     static std::atomic_uint64_t sequence{0};
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto token = std::to_string(stamp) + "_" + std::to_string(sequence.fetch_add(1));
-    const std::string artifact_id = "artifact_" + token;
+    const std::string result_id = "artifact_" + token;
     const std::string physical_table = "ARTIFACT_" + token;
     std::vector<std::string> definitions;
     for (const auto &column : columns) {
@@ -577,11 +577,11 @@ std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
         return output + "'";
     };
     detail::store_query(*impl_,
-        "INSERT INTO ARTIFACT_INVENTORY (artifact_id, contract_id, representation, physical_table, producer_operation, producer_instance, workflow_revision) VALUES (" +
-        quote(artifact_id) + ", " + quote(contract_id) + ", 'table', " +
+        "INSERT INTO RESULT_REGISTRY (result_id, contract_id, representation, physical_table, producer_operation, producer_instance, workflow_revision) VALUES (" +
+        quote(result_id) + ", " + quote(contract_id) + ", 'table', " +
         quote(physical_table) + ", " + quote(producer_operation) + ", " +
         quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
-    return {artifact_id, physical_table};
+    return {result_id, physical_table};
 }
 
 std::string ProjectTableStore::publish_result_artifact(
@@ -596,7 +596,7 @@ std::string ProjectTableStore::publish_result_artifact(
     if (contract_id == "visualizationSpecResult") detail::validate_visualization_spec(payload);
     static std::atomic_uint64_t sequence{0};
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto artifact_id = "artifact_" + std::to_string(stamp) + "_" +
+    const auto result_id = "artifact_" + std::to_string(stamp) + "_" +
         std::to_string(sequence.fetch_add(1));
     const auto quote = [](const std::string &value) {
         std::string output = "'";
@@ -605,17 +605,17 @@ std::string ProjectTableStore::publish_result_artifact(
         return output + "'";
     };
     detail::store_query(*impl_,
-        "INSERT INTO ARTIFACT_INVENTORY (artifact_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision) VALUES (" +
-        quote(artifact_id) + ", " + quote(contract_id) + ", 'json', " +
+        "INSERT INTO RESULT_REGISTRY (result_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision) VALUES (" +
+        quote(result_id) + ", " + quote(contract_id) + ", 'json', " +
         quote(payload) + "::JSON, " + quote(producer_operation) + ", " +
         quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
-    return artifact_id;
+    return result_id;
 }
 
 void ProjectTableStore::append_artifact_lineage(
-    const std::string &artifact_id,
+    const std::string &result_id,
     const std::vector<std::tuple<std::string, std::string, std::string>> &inputs) const {
-    if (!impl_ || artifact_id.empty())
+    if (!impl_ || result_id.empty())
         throw Error(ErrorCode::InvalidArgument, "invalid artifact lineage");
     const auto quote = [](const std::string &value) {
         std::string output = "'";
@@ -627,8 +627,8 @@ void ProjectTableStore::append_artifact_lineage(
         if (source_artifact.empty() || source_port.empty() || target_port.empty())
             throw Error(ErrorCode::InvalidArgument, "artifact lineage requires source and port ids");
         detail::store_query(*impl_,
-            "INSERT INTO ARTIFACT_LINEAGE (artifact_id, source_artifact_id, source_port_id, target_port_id) VALUES (" +
-            quote(artifact_id) + ", " + quote(source_artifact) + ", " +
+            "INSERT INTO RESULT_LINEAGE (result_id, source_result_id, source_port_id, target_port_id) VALUES (" +
+            quote(result_id) + ", " + quote(source_artifact) + ", " +
             quote(source_port) + ", " + quote(target_port) + ")");
     }
 }

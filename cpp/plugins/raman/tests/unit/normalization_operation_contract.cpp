@@ -16,9 +16,6 @@ class MemoryProjectAccess final : public sdk::PluginProjectAccess {
   public:
     std::map<std::string, Json> tables;
     std::map<std::string, Json> emitted;
-    std::filesystem::path path = "raman-normalization-contract.duckdb";
-
-    const std::filesystem::path &database_path() const noexcept override { return path; }
     std::string_view operation_instance() const noexcept override { return "normalize-test"; }
     bool is_cancelled() const noexcept override { return false; }
     Json query(const std::string &) override { throw std::runtime_error("query not expected"); }

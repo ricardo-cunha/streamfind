@@ -1,13 +1,13 @@
 # Releases
 
-## 0.6.0 release
+## {{ streamfind_version }} release
 
-Version **0.6.0** includes the browser viewer improvements, mass-spectrometry
-debugging and annotation work, workflow node improvements, and the unified
-operation cancellation design documented in
-[Operation cancellation](architecture.md#operation-cancellation).
+Version **{{ streamfind_version }}** is the next native runtime release. It includes the service-owned
+Result Runtime, supervised worker execution, improved operation cancellation and runtime transparency,
+deuterium-aware mass-spectrometry processing, feature-network exploration, and
+the browser viewer and workflow improvements developed after 0.6.0.
 
-Version 0.6.0 provides native runtime packages for Windows x64 and Linux
+Version {{ streamfind_version }} provides native runtime packages for Windows x64 and Linux
 x86_64. The packages include the built browser application, native service,
 MCP server, semantic catalogues, and built-in domain plugins.
 
@@ -22,7 +22,7 @@ The native C++ project version is **{{ streamfind_version }}**.
 
 ## Available packages
 
-The 0.6.0 runtime distribution contains:
+The {{ streamfind_version }} runtime distribution contains:
 
 - Windows x86_64 ZIP;
 - Linux x86_64 TGZ;
@@ -34,19 +34,19 @@ not guaranteed across versions.
 
 | Package | Archive | Platform | SHA-256 |
 | --- | --- | --- | --- |
-| C++ core | `streamfind-core-cpp-0.6.0-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
-| C++ core | `streamfind-core-cpp-0.6.0-Linux-x86_64.tgz` | Linux x86_64 | See `sha256sums.txt` |
+| C++ core | `streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64.zip` | Windows x64 | See `sha256sums.txt` |
+| C++ core | `streamfind-core-cpp-{{ streamfind_version }}-Linux-x86_64.tgz` | Linux x86_64 | See `sha256sums.txt` |
 
 The complete checksum list is distributed as `sha256sums.txt` alongside the
 archives.
 
 ### Validation
 
-Both release packages were built from the same `0.6.0` source revision and
-passed the release checks:
+The {{ streamfind_version }} release packages must be built from the same source revision and
+pass the release checks:
 
-- 24/24 CTest tests on Windows x64;
-- 24/24 CTest tests on Linux x86_64;
+- the complete CTest suite on Windows x64;
+- the complete CTest suite on Linux x86_64;
 - native dependency-closure validation on each platform;
 - packaged MCP smoke validation exposing 40 tools on each platform.
 
@@ -60,14 +60,22 @@ checksums are maintained with the GitHub Release.
 
 The runtime archives contain:
 
-- the `streamfind_mcp.exe` or `streamfind_mcp` MCP server and C++ runtime libraries;
+- the `bin/streamfind.exe` / `bin/streamfind` CLI and `bin/streamfind-app.exe` /
+  `bin/streamfind-app` browser launcher;
+- the `streamfind-mcp.exe` or `streamfind-mcp` MCP server and C++ runtime libraries;
 - `core/catalogue.duckdb` and packaged plugin catalogues;
 - the native runtime dependencies assembled by CPack.
 
-Both archives contain the built web app under `app/` and a `streamfind` launcher
-at the package root. Running the launcher starts the local C++ service and opens
+Both archives contain the built web app under `app/` and all executable launchers
+under `bin/`. Running the app launcher starts the local C++ service and opens
 the app in the default browser. See the [Web app](web-app.md) page for
 platform-specific instructions.
+
+The service is the shared control plane for the browser application, MCP, and
+CLI. It owns the project session and DuckDB metadata access, supervises
+operation workers, and publishes validated results in the project `.data`
+sidecar. Closing the browser does not stop the service; use `bin/streamfind
+service status` or `bin/streamfind service stop` to inspect or stop it.
 
 ### Developer kit
 
@@ -77,13 +85,13 @@ C++ plugin. It is not required for normal use of the runtime package.
 
 ## Legal and attribution files
 
-Native archives should be distributed together with the project notice and
-the C++ vendor attribution payload:
+Native archives include the project notice and the C++ vendor attribution
+payload:
 
 ```text
 NOTICE.md
 LICENSE.md
-C++: vendor licence texts from `cpp/vendor/`
+licenses/: vendor licence texts from `cpp/vendor/`
 
 ```
 
@@ -104,15 +112,15 @@ see the [C++ MCP quickstart](quickstart/cpp-mcp.md).
 Example C++ package layout:
 
 ```text
-streamfind-core-cpp-0.6.0-Windows-x86_64/
+streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64/
 ├── app/
 │   ├── index.html
 │   └── assets/
-├── streamfind.exe
 ├── bin/
-│   ├── streamfind_cli.exe
-│   ├── streamfind_mcp.exe
-│   └── streamfind_service.exe
+│   ├── streamfind.exe
+│   ├── streamfind-app.exe
+│   ├── streamfind-mcp.exe
+│   └── streamfind-service.exe
 ├── core/
 │   └── catalogue.duckdb
 └── plugins/
@@ -131,3 +139,8 @@ not provide:
 
 Optional tools such as Java and MetFrag remain explicit user-installed
 components. The release packages do not download them at runtime.
+
+## Previous release
+
+Version **0.6.0** was the first native Windows x64 and Linux x86_64 package
+release. Its packages remain available from the GitHub Release history.

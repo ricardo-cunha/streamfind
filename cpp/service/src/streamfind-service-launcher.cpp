@@ -1,107 +1,85 @@
 #ifndef _WIN32
-#include <arpa/inet.h>
-#include <csignal>
-#include <cstdint>
 #include <cstdlib>
-#include <cstring>
+#include "streamfind/service_configuration.hpp"
 #include <filesystem>
 #include <iostream>
-#include <netinet/in.h>
 #include <stdexcept>
 #include <string>
-#include <sys/socket.h>
-#include <sys/types.h>
+#include <vector>
 #include <sys/wait.h>
 #include <unistd.h>
 
 namespace streamfind::service::launcher_detail {
-pid_t child_pid = -1;
 
-void stop_child(int) {
-    if (child_pid > 0) {
-        kill(child_pid, SIGTERM);
-        waitpid(child_pid, nullptr, 0);
-    }
-    std::_Exit(0);
+std::filesystem::path package_root(const char *executable) {
+    auto root = std::filesystem::absolute(executable).parent_path();
+    if (root.filename() == "bin") root = root.parent_path();
+    return root;
 }
 
-std::uint16_t choose_port() {
-    const auto probe = socket(AF_INET, SOCK_STREAM, 0);
-    if (probe < 0) throw std::runtime_error("unable to allocate a local port");
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = 0;
-    if (bind(probe, reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0) {
-        close(probe);
-        throw std::runtime_error("unable to choose a local port");
-    }
-    socklen_t length = sizeof(address);
-    if (getsockname(probe, reinterpret_cast<sockaddr *>(&address), &length) < 0) {
-        close(probe);
-        throw std::runtime_error("unable to read the chosen local port");
-    }
-    close(probe);
-    return ntohs(address.sin_port);
+std::filesystem::path cli_path(const char *executable) {
+    const auto cli = package_root(executable) / "bin" / "streamfind";
+    if (!std::filesystem::exists(cli)) throw std::runtime_error("streamfind CLI is missing");
+    return cli;
 }
 
-bool backend_reachable(std::uint16_t port) {
-    const auto socket_handle = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_handle < 0) return false;
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = htons(port);
-    const auto result = connect(socket_handle, reinterpret_cast<sockaddr *>(&address), sizeof(address));
-    close(socket_handle);
-    return result == 0;
+int run_service_command(int argc, char **argv) {
+    const auto cli = cli_path(argv[0]);
+    const auto child = fork();
+    if (child < 0) throw std::runtime_error("unable to start streamfind CLI");
+    if (child == 0) {
+        std::vector<char *> arguments;
+        arguments.reserve(static_cast<std::size_t>(argc) + 1);
+        arguments.push_back(const_cast<char *>(cli.c_str()));
+        for (int index = 1; index < argc; ++index) arguments.push_back(argv[index]);
+        arguments.push_back(nullptr);
+        execv(cli.c_str(), arguments.data());
+        _exit(127);
+    }
+    int status = 1;
+    waitpid(child, &status, 0);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
-void open_browser(const std::string &url) {
-    const auto browser_pid = fork();
-    if (browser_pid == 0) {
-        execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char *>(nullptr));
-        std::_Exit(127);
+void start_service(const char *executable) {
+    const auto cli = cli_path(executable);
+    const auto child = fork();
+    if (child < 0) throw std::runtime_error("unable to start streamfind service command");
+    if (child == 0) {
+        execl(cli.c_str(), cli.c_str(), "service", "start", static_cast<char *>(nullptr));
+        _exit(127);
     }
+    int status = 1;
+    waitpid(child, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        throw std::runtime_error("streamfind service did not become ready");
 }
+
+std::uint16_t service_port(const char *executable) {
+    return streamfind::load_service_configuration(package_root(executable) / "bin" / "streamfind.json").port;
 }
+
+}  // namespace streamfind::service::launcher_detail
 
 int main(int argc, char **argv) {
-    using namespace streamfind::service::launcher_detail;
     try {
-        if (argc < 1) throw std::runtime_error("unable to resolve launcher path");
-        const auto package_root = std::filesystem::absolute(argv[0]).parent_path();
-        const auto service = package_root / "bin" / "streamfind_service";
-        if (!std::filesystem::exists(service)) throw std::runtime_error("bin/streamfind_service is missing");
-        const auto port = choose_port();
-        std::signal(SIGINT, stop_child);
-        std::signal(SIGTERM, stop_child);
-        child_pid = fork();
-        if (child_pid < 0) throw std::runtime_error("unable to start streamfind_service");
-        if (child_pid == 0) {
-            const auto port_text = std::to_string(port);
-            execl(service.c_str(), service.c_str(), port_text.c_str(), static_cast<char *>(nullptr));
-            std::_Exit(127);
-        }
-        for (int attempt = 0; attempt < 100; ++attempt) {
-            if (backend_reachable(port)) break;
-            if (waitpid(child_pid, nullptr, WNOHANG) == child_pid)
-                throw std::runtime_error("streamfind_service exited during startup");
-            usleep(100000);
-            if (attempt == 99) throw std::runtime_error("streamfind_service did not become ready");
-        }
-        const auto url = std::string("http://127.0.0.1:") + std::to_string(port) + "/";
+        if (argc > 1 && std::string(argv[1]) == "service")
+            return streamfind::service::launcher_detail::run_service_command(argc, argv);
+        streamfind::service::launcher_detail::start_service(argv[0]);
+        const auto url = "http://127.0.0.1:" + std::to_string(streamfind::service::launcher_detail::service_port(argv[0])) + "/";
         std::cout << "\nStreamFind is ready.\n"
+                  << "The background service remains running when this window or browser closes.\n"
                   << "Open the application: " << url << "\n"
-                  << "Keep this window open while you work. Closing it stops StreamFind.\n" << std::flush;
-        open_browser(url);
-        waitpid(child_pid, nullptr, 0);
-        child_pid = -1;
-        std::cout << "\nStreamFind has stopped. You may close this window.\n" << std::flush;
+                  << "Stop the service explicitly with: streamfind service stop --instance <id>\n"
+                  << std::flush;
+        const auto browser = fork();
+        if (browser == 0) {
+            execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char *>(nullptr));
+            _exit(127);
+        }
         return 0;
     } catch (const std::exception &error) {
-        if (child_pid > 0) kill(child_pid, SIGTERM);
-        std::cerr << "streamfind: " << error.what() << '\n';
+        std::cerr << "streamfind-app: " << error.what() << '\n';
         return 1;
     }
 }

@@ -15,7 +15,7 @@ function(streamfind_configure_cpp_library target export_name)
     )
     if(UNIX AND NOT APPLE)
         set_target_properties(${target} PROPERTIES
-            INSTALL_RPATH "$ORIGIN/../../core/vendors/openbabel")
+            INSTALL_RPATH "$ORIGIN/../../bin")
     endif()
     target_compile_features(${target} PUBLIC cxx_std_20)
 

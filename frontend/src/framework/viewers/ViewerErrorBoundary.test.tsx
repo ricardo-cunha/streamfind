@@ -17,7 +17,7 @@ describe('ViewerErrorBoundary', () => {
     }
 
     render(
-      <ViewerErrorBoundary artifactId="artifact-1">
+      <ViewerErrorBoundary resultId="result-1">
         <BrokenViewer />
       </ViewerErrorBoundary>,
     );

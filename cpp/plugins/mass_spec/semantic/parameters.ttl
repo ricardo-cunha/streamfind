@@ -1573,6 +1573,54 @@ sfms:minPeakWidthParameter
     sf:default 0.0 ;
     sf:example 5.0 .
 
+sfms:smoothingEnabledParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Enable peak-detection smoothing" ;
+    skos:definition "Apply the adaptive intensity smoother before chromatographic peak detection. When false, raw intensities are used and eic_smoothed is an exact copy of eic_intensity." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default true ;
+    sf:example true .
+
+sfms:smoothingWindowParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Main smoothing window (data points)" ;
+    skos:definition "Length of the main adaptive smoothing window in sampled EIC data points used during find_features peak detection. The default is 7; larger values suppress more noise but can merge, flatten, or remove nearby weak peaks. This is a point count, not a retention-time duration in seconds." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 7 ;
+    sf:example 7 .
+
+sfms:smoothingSharpWindowParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sharp-peak smoothing window (data points)" ;
+    skos:definition "Reduced adaptive smoothing window in sampled EIC data points for sharp peaks and cluster edges. The default is 3 and it must be positive and no larger than the main smoothing window. This is a point count, not a retention-time duration in seconds." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 3 ;
+    sf:example 3 .
+
+sfms:smoothingStrengthParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak-detection smoothing strength" ;
+    skos:definition "Blend between raw and fully smoothed intensities during find_features peak detection: 0 uses raw data and 1 uses the configured adaptive smoother." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 1.0 ;
+    sf:example 0.5 .
+
 sfms:analysisNamesParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

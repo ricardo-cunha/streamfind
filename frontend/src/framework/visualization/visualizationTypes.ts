@@ -31,7 +31,7 @@ export type VisualizationSpec = {
   };
   payload: PlotlyPayload;
   provenance: {
-    source_artifact_ids: string[];
+    source_result_ids: string[];
     producer_operation_id: string;
     producer_node_id: string;
   };
@@ -61,9 +61,9 @@ export function isVisualizationSpec(value: unknown): value is VisualizationSpec 
   const provenance = candidate.provenance;
   if (
     !provenance ||
-    !Array.isArray(provenance.source_artifact_ids) ||
-    provenance.source_artifact_ids.length === 0 ||
-    !provenance.source_artifact_ids.every((id) => typeof id === 'string') ||
+    !Array.isArray(provenance.source_result_ids) ||
+    provenance.source_result_ids.length === 0 ||
+    !provenance.source_result_ids.every((id) => typeof id === 'string') ||
     typeof provenance.producer_operation_id !== 'string' ||
     typeof provenance.producer_node_id !== 'string'
   ) {
@@ -75,7 +75,7 @@ export function isVisualizationSpec(value: unknown): value is VisualizationSpec 
 export function parseVisualizationSpec(payload: unknown): VisualizationSpec {
   const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
   if (!isVisualizationSpec(parsed)) {
-    throw new Error('Artifact payload is not a valid StreamFind visualization specification');
+    throw new Error('Result payload is not a valid StreamFind visualization specification');
   }
   return parsed;
 }

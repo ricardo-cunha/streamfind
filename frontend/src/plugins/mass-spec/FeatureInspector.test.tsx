@@ -1,14 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ArtifactRecord, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import type { ResultRecord, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
 import { buildFeatureNetwork, FeatureInspector } from './FeatureInspector';
 
 import type { ViewerContext } from '../../framework/viewers/viewerTypes';
 import type { FrontendPluginApi } from '../../framework/plugins/pluginTypes';
 import { visualizationRegistry } from '../../framework/visualization/VisualizationRegistry';
 
-const artifact: ArtifactRecord = {
-  artifact_id: 'features-1',
+const artifact: ResultRecord = {
+  result_id: 'features-1',
   contract_id: 'sfms:featuresTable',
   representation: 'table',
   producer_operation: 'mass_spec.find_features',
@@ -457,8 +457,8 @@ describe('FeatureInspector', () => {
         <circle onClick={() => onPointClick?.({ pointNumber: 0, customdata: 'incorrect-transported-key' })} />
       </svg>
     ));
-    const artifactQuery = vi.fn().mockResolvedValue({
-      artifact_id: artifact.artifact_id,
+    const resultQuery = vi.fn().mockResolvedValue({
+      result_id: artifact.result_id,
       columns: [],
       rows: [
         {
@@ -476,11 +476,11 @@ describe('FeatureInspector', () => {
       limit: 250,
       total_rows: 2,
     });
-    const api = { artifactQuery } as unknown as StreamFindApiClient;
+    const api = { resultQuery } as unknown as StreamFindApiClient;
     const pluginApi = { client: api } as FrontendPluginApi;
     const context: ViewerContext = {
       sessionId: 'session-1',
-      artifactId: artifact.artifact_id,
+      resultId: artifact.result_id,
       semanticType: artifact.contract_id,
       artifact,
       pluginApi,
@@ -498,8 +498,8 @@ describe('FeatureInspector', () => {
   it('renders resizers for both the filter and details panes', async () => {
     if (!visualizationRegistry.has('core.plotly'))
       visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
-    const artifactQuery = vi.fn().mockResolvedValue({
-      artifact_id: artifact.artifact_id,
+    const resultQuery = vi.fn().mockResolvedValue({
+      result_id: artifact.result_id,
       columns: [],
       rows: [{ feature_id: 'F1', analysis: 'sample-a', mz: '275.2', rt: '12.5' }],
       offset: 0,
@@ -510,10 +510,10 @@ describe('FeatureInspector', () => {
       <FeatureInspector
         context={{
           sessionId: 'session-1',
-          artifactId: artifact.artifact_id,
+          resultId: artifact.result_id,
           semanticType: artifact.contract_id,
           artifact,
-          pluginApi: { client: { artifactQuery } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
+          pluginApi: { client: { resultQuery } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
         }}
       />,
     );
@@ -526,8 +526,8 @@ describe('FeatureInspector', () => {
   it('loads a bounded feature sample and filters empty component values in component mode', async () => {
     if (!visualizationRegistry.has('core.plotly'))
       visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
-    const artifactQuery = vi.fn().mockResolvedValue({
-      artifact_id: artifact.artifact_id,
+    const resultQuery = vi.fn().mockResolvedValue({
+      result_id: artifact.result_id,
       columns: [],
       rows: [
         { feature_id: 'F1', analysis: 'sample-a', feature_component: '', mz: '275.2', rt: '12.5' },
@@ -537,14 +537,14 @@ describe('FeatureInspector', () => {
       limit: 50000,
       total_rows: 2,
     });
-    const api = { artifactQuery } as unknown as StreamFindApiClient;
+    const api = { resultQuery } as unknown as StreamFindApiClient;
     const pluginApi = { client: api } as FrontendPluginApi;
 
     render(
       <FeatureInspector
         context={{
           sessionId: 'session-1',
-          artifactId: artifact.artifact_id,
+          resultId: artifact.result_id,
           semanticType: artifact.contract_id,
           artifact,
           pluginApi,
@@ -555,7 +555,7 @@ describe('FeatureInspector', () => {
     await waitFor(() => expect(screen.getByText('Features 2 / 2')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText('Select by'), { target: { value: 'feature_component' } });
     expect(screen.getByText('Features 1 / 2')).toBeInTheDocument();
-    expect(artifactQuery).toHaveBeenCalledWith(
+    expect(resultQuery).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ mode: 'sample', x_column: 'rt', y_column: 'mz', limit: 50000 }),
     );
@@ -564,8 +564,8 @@ describe('FeatureInspector', () => {
   it('matches the regex against every persisted feature-table cell', async () => {
     if (!visualizationRegistry.has('core.plotly'))
       visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
-    const artifactQuery = vi.fn().mockResolvedValue({
-      artifact_id: artifact.artifact_id,
+    const resultQuery = vi.fn().mockResolvedValue({
+      result_id: artifact.result_id,
       columns: [],
       rows: [
         { feature_id: 'F1', analysis: 'sample-a', replicate: 'sample', blank: 'blank', mz: '100', rt: '10' },
@@ -579,10 +579,10 @@ describe('FeatureInspector', () => {
       <FeatureInspector
         context={{
           sessionId: 'session-1',
-          artifactId: artifact.artifact_id,
+          resultId: artifact.result_id,
           semanticType: artifact.contract_id,
           artifact,
-          pluginApi: { client: { artifactQuery } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
+          pluginApi: { client: { resultQuery } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
         }}
       />,
     );
@@ -590,15 +590,15 @@ describe('FeatureInspector', () => {
     fireEvent.change(screen.getByPlaceholderText('Filter features (regex)'), { target: { value: 'blank' } });
     expect(screen.getByText('Features 2 / 2')).toBeInTheDocument();
     await waitFor(() =>
-      expect(artifactQuery).toHaveBeenLastCalledWith('session-1', expect.objectContaining({ search: 'blank' })),
+      expect(resultQuery).toHaveBeenLastCalledWith('session-1', expect.objectContaining({ search: 'blank' })),
     );
   });
 
   it('excludes flagged features while the filtered checkbox is enabled', async () => {
     if (!visualizationRegistry.has('core.plotly'))
       visualizationRegistry.register('core.plotly', () => <svg role="img" aria-label="Feature scatter plot" />);
-    const artifactQuery = vi.fn().mockResolvedValue({
-      artifact_id: artifact.artifact_id,
+    const resultQuery = vi.fn().mockResolvedValue({
+      result_id: artifact.result_id,
       columns: [],
       rows: [
         { feature_id: 'F1', analysis: 'sample-a', filtered: 'false', mz: '100', rt: '10' },
@@ -612,10 +612,10 @@ describe('FeatureInspector', () => {
       <FeatureInspector
         context={{
           sessionId: 'session-1',
-          artifactId: artifact.artifact_id,
+          resultId: artifact.result_id,
           semanticType: artifact.contract_id,
           artifact,
-          pluginApi: { client: { artifactQuery } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
+          pluginApi: { client: { resultQuery } as unknown as StreamFindApiClient } as unknown as FrontendPluginApi,
         }}
       />,
     );

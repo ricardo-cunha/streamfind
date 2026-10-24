@@ -9,7 +9,7 @@ const payload = {
   data_mode: 'inline' as const,
   renderer: { engine: 'plotly' as const, renderer_id: 'core.plotly' as const, spec_version: '1' as const },
   payload: { data: [{ type: 'scatter', x: [1], y: [2] }] },
-  provenance: { source_artifact_ids: ['spectra-1'], producer_operation_id: 'plot', producer_node_id: 'node-1' },
+  provenance: { source_result_ids: ['spectra-1'], producer_operation_id: 'plot', producer_node_id: 'node-1' },
   fallback: { description: 'TIC unavailable.' },
 };
 
@@ -17,7 +17,7 @@ describe('VisualizationDataResolver', () => {
   it('resolves only JSON visualization result artifacts', () => {
     expect(
       visualizationSpecFromArtifact({
-        artifact_id: 'vis-1',
+        result_id: 'vis-1',
         contract_id: 'visualizationSpecResult',
         representation: 'json',
         payload,
@@ -32,7 +32,7 @@ describe('VisualizationDataResolver', () => {
   it('rejects non-visualization artifacts', () => {
     expect(() =>
       visualizationSpecFromArtifact({
-        artifact_id: 'table-1',
+        result_id: 'table-1',
         contract_id: 'ticTable',
         representation: 'table',
         producer_operation: 'get_spectra_tic',

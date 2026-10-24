@@ -560,9 +560,9 @@ sfms:findFeatures
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find features" ;
-    skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, and emits the feature table." ;
+    skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, applies configurable adaptive smoothing, and emits the feature table. Smoothing defaults to enabled with a seven-point main window, a three-point sharp-peak window, and full strength." ;
     sf:category "nta-feature-detection" ;
-    sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range." ;
+    sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range. Smoothing is enabled by default: smoothingWindow=7 and smoothingSharpWindow=3 are window lengths in sampled data points, not seconds, and smoothingStrength=1 uses the configured smoother fully. Disable smoothing or set strength to 0 when weak peaks must be preserved; this copies raw EIC intensities into eic_smoothed but may retain more noise. Larger windows suppress more noise but can merge or flatten nearby peaks." ;
     sf:hasParameter
         sfms:rtWindowsParameter,
         sfms:ppmThresholdParameter,
@@ -572,6 +572,10 @@ sfms:findFeatures
         sfms:baselineWindowParameter,
         sfms:maxFeatureWidthParameter,
         sfms:baseQuantileParameter,
+        sfms:smoothingEnabledParameter,
+        sfms:smoothingWindowParameter,
+        sfms:smoothingSharpWindowParameter,
+        sfms:smoothingStrengthParameter,
         sfcore:debugAnalysisParameter,
         sfcore:debugMzParameter,
         sfcore:debugSpecIdxParameter ;
@@ -993,7 +997,7 @@ sfms:fragmentSuspectTargets
     skos:prefLabel "Generate suspect fragmentation trees" ;
     skos:definition "Generate a structural top-down fragmentation tree for every SMILES in the connected suspectTargetsTable using the standalone MetFrag Fragmenter CLI, preserving MetFrag-generated parent links and exposed structure metadata." ;
     sf:category "structure-fragmentation" ;
-    sf:guidance "Connect suspectTargetsTable. Rows without SMILES are skipped. Requires Java 21 and the streamfind MetFrag Fragmenter JAR. Install dependency mass_spec.metfrag_fragmenter to download the pinned public v0.1.0 release into <streamfind-home>/tools/metfrag/streamfind-metfrag-fragmenter.jar, or set STREAMFIND_METFRAG_FRAGMENTER_JAR to a local JAR path. Parent links describe the generator's top-down traversal, not experimentally observed MS/MS transitions. Neutral-loss structures are limited to matches exposed by MetFrag." ;
+    sf:guidance "Connect suspectTargetsTable. Rows without SMILES are skipped. Requires Java 21 and the streamfind MetFrag Fragmenter JAR. Install dependency mass_spec.metfrag_fragmenter to download the pinned public v0.2.0 release into <streamfind-home>/tools/metfrag/streamfind-metfrag-fragmenter.jar, or set STREAMFIND_METFRAG_FRAGMENTER_JAR to a local JAR path. Parent links describe the generator's top-down traversal, not experimentally observed MS/MS transitions. Neutral-loss structures are limited to matches exposed by MetFrag." ;
     sf:hasParameter sfms:fragmentationDepthParameter ;
     sf:hasInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .

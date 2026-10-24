@@ -2662,7 +2662,7 @@ h2 {
   z-index: 3;
   display: flex;
   flex-direction: column;
-  width: min(42%, 720px);
+  width: min(20%, 360px);
   min-width: 360px;
   height: min(20%, 220px);
   min-height: 120px;
