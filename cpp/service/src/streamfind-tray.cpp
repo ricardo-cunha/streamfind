@@ -290,9 +290,19 @@ private:
     }
 
     void show_menu() {
-        // The local discovery record is authoritative for the Start/Stop choice.
-        // It is filesystem/process inspection only, so it cannot block on HTTP.
-        services_ = discovered_service_snapshot();
+        // Use the live service snapshot collected by the refresh worker.  The
+        // discovery record identifies the process, but does not contain the
+        // projects attached to that service.  Replacing the live snapshot
+        // here made the tray report zero attached projects while the app had a
+        // project open.
+        {
+            std::lock_guard lock(refresh_mutex_);
+            if (refresh_ready_) {
+                services_ = std::move(refreshed_services_);
+                refreshed_services_ = streamfind::data_proxy::Json::array();
+                refresh_ready_ = false;
+            }
+        }
         POINT point{};
         GetCursorPos(&point);
         SetForegroundWindow(window_);

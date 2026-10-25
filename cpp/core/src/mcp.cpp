@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <thread>
 #include <utility>
 
 namespace streamfind::mcp {
@@ -360,9 +361,30 @@ Json Session::handle(const Json &request) {
                         }
                     }
                 }
-                const auto result = service::run_operation(attachment, operation_id,
-                                                           operation_arguments, effective_instance, inputs);
-                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(result)}};
+                // Do not hold the MCP stdio request loop open for the worker.
+                // Long operations otherwise make MCP clients report timeout
+                // 32001 even though the service continues and publishes the
+                // result.  The service remains the owner of execution and
+                // publication; this thread only waits for its HTTP request to
+                // complete while subsequent MCP status calls remain usable.
+                std::thread([attachment, operation_id, operation_arguments,
+                             effective_instance, inputs]() mutable {
+                    try {
+                        (void)service::run_operation(attachment, operation_id,
+                                                     operation_arguments,
+                                                     effective_instance, inputs);
+                    } catch (...) {
+                        // The service emits the failure event and exposes it
+                        // through the runtime snapshot.  There is no pending
+                        // MCP request to which a late exception can be sent.
+                    }
+                }).detach();
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(
+                    Json{{"accepted", true}, {"state", "queued"},
+                         {"session_id", attachment.session_id},
+                         {"operation_id", operation_id},
+                         {"operation_instance", effective_instance},
+                         {"message", "Operation accepted; poll get_workflow_execution or get_execution for runtime state, then inspect get_result_inventory."}})}};
             }
             Json result = Json::array();
             std::set<std::string> values;
