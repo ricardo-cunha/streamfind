@@ -75,7 +75,7 @@ streamfind_plugin_get_descriptor(uint32_t requested_abi_major, uint32_t requeste
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
     descriptor->plugin_id = "statistics";
-    descriptor->plugin_version = "0.7.0";
+    descriptor->plugin_version = "0.7.1";
     descriptor->register_plugin = &streamfind::statistics::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::statistics::dynamic_detail::shutdown_plugin;
     return STREAMFIND_PLUGIN_OK;
