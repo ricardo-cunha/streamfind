@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include "streamfind/service_configuration.hpp"
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -124,8 +125,14 @@ std::string request(const Endpoint &endpoint, const std::string &method,
         if (separator == std::string::npos) throw std::runtime_error("invalid service response");
         const auto status_end = response.find(' ');
         const auto status = status_end == std::string::npos ? 0 : std::stoi(response.substr(status_end + 1, 3));
-        if (status < 200 || status >= 300)
+        if (status < 200 || status >= 300) {
+            const auto body = response.substr(separator + 4);
+            const auto error = Json::parse(body, nullptr, false);
+            if (error.is_object() && error.contains("error") && error.at("error").is_string())
+                throw std::runtime_error("service returned HTTP " + std::to_string(status) + ": " +
+                                         error.at("error").get<std::string>());
             throw std::runtime_error("service returned HTTP " + std::to_string(status));
+        }
         return response.substr(separator + 4);
     } catch (...) {
         close_socket(static_cast<std::intptr_t>(socket_handle));
@@ -139,7 +146,13 @@ Json status_for(const std::filesystem::path &path) {
     result.erase("token");
     result["record_path"] = path.string();
     try {
-        const auto session = Json::parse(request(parse_endpoint(record.endpoint), "GET", "/session"));
+        const auto session = Json::parse(request(parse_endpoint(record.endpoint), "GET", "/session",
+                                                 {"X-StreamFind-Token: " + record.token}));
+        const auto serving_instance = session.value("service_instance", Json::object())
+                                          .value("service_instance_id", std::string{});
+        if (!serving_instance.empty() && serving_instance != record.service_instance_id)
+            throw std::runtime_error("endpoint is serving service instance " + serving_instance +
+                                     ", not " + record.service_instance_id);
         result["health"] = "healthy";
         result["session"] = session;
     } catch (const std::exception &error) {
@@ -364,14 +377,23 @@ int main(int argc, char **argv) {
         if (command == "stop") {
             const auto paths = streamfind::service::ServiceDiscovery::record_paths();
             if (instance.empty()) {
-                if (paths.empty()) throw std::runtime_error("no streamfind service is running");
-                if (paths.size() > 1)
+                std::vector<streamfind::Json> healthy;
+                for (const auto &value : values)
+                    if (value.value("health", "") == "healthy") healthy.push_back(value);
+                if (healthy.empty()) throw std::runtime_error("no healthy streamfind service is running");
+                if (healthy.size() > 1)
                     throw std::runtime_error("multiple streamfind services are running; use --instance <id>");
-                instance = streamfind::service::ServiceDiscovery::read(paths.front()).service_instance_id;
+                instance = healthy.front().value("service_instance_id", "");
             }
             for (const auto &path : paths) {
                 const auto record = streamfind::service::ServiceDiscovery::read(path);
                 if (record.service_instance_id != instance) continue;
+                const auto matching = std::find_if(values.begin(), values.end(), [&](const auto &value) {
+                    return value.value("service_instance_id", "") == instance &&
+                           value.value("health", "") == "healthy";
+                });
+                if (matching == values.end())
+                    throw std::runtime_error("service instance is not healthy or its discovery token is stale");
                 const auto response = streamfind::service_cli::detail::request(
                     streamfind::service_cli::detail::parse_endpoint(record.endpoint), "POST", "/service/stop",
                     {"X-StreamFind-Token: " + record.token});
