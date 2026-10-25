@@ -12,7 +12,7 @@ packages are listed on [Releases](../releases.md).
 
 The C++ package includes:
 
-- `streamfind_mcp` / `streamfind_mcp.exe`;
+- `streamfind-mcp` / `streamfind-mcp.exe`;
 - the C++ libraries and public headers;
 - DuckDB and other native runtime dependencies;
 - `core/catalogue.duckdb` and packaged plugin catalogues.
@@ -21,10 +21,12 @@ The catalogue is required by the MCP server and must remain with the package.
 
 ## Extension model
 
-The C++ host owns project persistence, DuckDB connections, transactions, schema
-lifecycle, operation-graph execution, validation, cache, and audit state. The
-SDK defines the generic versioned plugin ABI and host callbacks. Domain plugins
-own their catalogues, schemas, native readers, algorithms, and Operations.
+The service owns project persistence, DuckDB metadata connections,
+transactions, schema lifecycle, operation-graph execution, validation, the
+Result Runtime, cache, and audit state. Workers use the service data proxy and
+never open the project DuckDB. The SDK defines the generic versioned plugin ABI
+and typed input/output callbacks. Domain plugins own their catalogues, schemas,
+native readers, algorithms, and Operations.
 
 Dynamic plugins receive an opaque transaction-scoped host access context. They do
 not receive `streamfind::Project` or DuckDB handles, and they do not create
@@ -33,8 +35,10 @@ and the matching developer kit when building an out-of-tree plugin.
 
 ## Project API
 
-`streamfind::Project` owns one DuckDB-backed project selected by
-`ProjectOptions`:
+`streamfind::Project` identifies one DuckDB-backed project selected by
+`ProjectOptions`. The service owns the project session and metadata connection;
+clients and workers use the public service/API boundary rather than opening
+the file independently:
 
 ```cpp
 streamfind::ProjectOptions options{
@@ -51,13 +55,13 @@ get_metadata, set_metadata
 get_domain
 get_workflow, set_workflow, validate_workflow, run_workflow
 get_operations, get_operation, add_operation, connect_operations
-get_artifact_inventory, get_current_artifact_inventory, request_artifact
+get_result_registry, get_current_result_registry, request_result
 get_audit_trail
 copy, close
 ```
 
 Domains are assigned when a project is created. The project API exposes project
-metadata, workflows, artifacts, audit information, and domain operations.
+metadata, workflows, published results, audit information, and domain operations.
 
 ## MCP
 

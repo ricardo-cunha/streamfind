@@ -189,7 +189,7 @@ sfcore:runWorkflow
     skos:prefLabel "Run the project workflow" ;
     skos:definition "Execute the persisted workflow for a project in order, using each operation's domain/module implementation and cached results where valid." ;
     sf:category "workflow-execution" ;
-    sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Inspect get_artifact_inventory and structured results after execution." ;
+    sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Inspect get_result_inventory and structured results after execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -279,10 +279,10 @@ sfcore:connectOperations
         sfcore:targetPortParameter ;
     sf:mutatesProject true .
 
-sfcore:getArtifactInventory
+sfcore:getResultInventory
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
-    sf:commandId "get_artifact_inventory" ;
+    sf:commandId "get_result_inventory" ;
     skos:prefLabel "Read the artifact inventory" ;
     skos:definition "Return immutable table and structured-result artifacts published by workflow operations." ;
     sf:category "workflow-observation" ;
@@ -291,35 +291,35 @@ sfcore:getArtifactInventory
     sf:hasParameter sfcore:databasePathParameter ;
     sf:mutatesProject false .
 
-sfcore:getCurrentArtifactInventory
+sfcore:getCurrentResultInventory
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
-    sf:commandId "get_current_artifact_inventory" ;
+    sf:commandId "get_current_result_inventory" ;
     skos:prefLabel "Read current workflow artifacts" ;
     skos:definition "Return the newest published artifact for each workflow producer and output contract." ;
     sf:category "workflow-observation" ;
-    sf:guidance "Use this for current connected outputs. Use get_artifact_inventory when historical artifact browsing is required." ;
+    sf:guidance "Use this for current connected outputs. Use get_result_inventory when historical result browsing is required." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter sfcore:databasePathParameter ;
     sf:mutatesProject false .
 
-sfcore:requestArtifact
+sfcore:requestResult
     a sf:ApiCommand ;
     skos:inScheme sfcore:scheme ;
-    sf:commandId "request_artifact" ;
+    sf:commandId "request_result" ;
     skos:prefLabel "Request an operation output artifact" ;
     skos:definition "Find a published artifact by operation output contract or artifact identifier for AI and application consumers." ;
     sf:category "workflow-observation" ;
-    sf:guidance "Call without include_data to discover matching published outputs. Then select exactly one with artifact_id, operation_instance plus output_port, or another unique filter and set include_data true. JSON artifacts return their payload; table artifacts return bounded rows using limit and offset." ;
+    sf:guidance "Call without include_data to discover matching published outputs. Then select exactly one with result_id, operation_instance plus output_port, or another unique filter and set include_data true. JSON artifacts return their payload; table artifacts return bounded rows using limit and offset." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
         sfcore:outputPortParameter,
-        sfcore:artifactIdParameter,
+        sfcore:resultIdParameter,
         sfcore:operationInstanceParameter,
         sfcore:includeDataParameter,
-        sfcore:artifactLimitParameter,
-        sfcore:artifactOffsetParameter ;
+        sfcore:resultLimitParameter,
+        sfcore:resultOffsetParameter ;
     sf:mutatesProject false .
 
 sfcore:resolveOperationInputs

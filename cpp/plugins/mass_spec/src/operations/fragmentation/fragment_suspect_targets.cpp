@@ -5,16 +5,19 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <signal.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -31,7 +34,12 @@ struct ProcessResult
     int exit_code = -1;
     std::string output;
     std::string error;
+    bool timed_out = false;
+    bool cancelled = false;
 };
+
+using StopPredicate = std::function<bool()>;
+constexpr auto kProcessTimeout = std::chrono::seconds(120);
 
 class TemporaryDirectory
 {
@@ -97,7 +105,8 @@ std::wstring quote_windows_argument(const std::wstring &value)
 
 ProcessResult run_cli(const std::string &java, const std::string &jar,
                       const std::string &smiles, int depth,
-                      const fs::path &stdout_path, const fs::path &stderr_path)
+                      const fs::path &stdout_path, const fs::path &stderr_path,
+                      const StopPredicate &stop_requested)
 {
     std::vector<std::wstring> arguments = {
         narrow_to_wide(java), L"-jar", narrow_to_wide(jar), L"--smiles", narrow_to_wide(smiles),
@@ -132,12 +141,39 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
     CloseHandle(error);
     if (!created) throw std::runtime_error("Could not start Java for MetFrag Fragmenter (Windows error " +
                                             std::to_string(GetLastError()) + ").");
-    WaitForSingleObject(process.hProcess, INFINITE);
+    ProcessResult result;
+    const auto deadline = std::chrono::steady_clock::now() + kProcessTimeout;
+    bool terminated = false;
+    while (true)
+    {
+        const DWORD wait_result = WaitForSingleObject(process.hProcess, 100);
+        if (wait_result == WAIT_OBJECT_0) break;
+        if (wait_result == WAIT_FAILED)
+        {
+            TerminateProcess(process.hProcess, 1);
+            terminated = true;
+            break;
+        }
+        if (stop_requested && stop_requested())
+        {
+            TerminateProcess(process.hProcess, 1);
+            result.cancelled = true;
+            terminated = true;
+            break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            TerminateProcess(process.hProcess, 1);
+            result.timed_out = true;
+            terminated = true;
+            break;
+        }
+    }
+    if (terminated) WaitForSingleObject(process.hProcess, INFINITE);
     DWORD exit_code = 1;
     GetExitCodeProcess(process.hProcess, &exit_code);
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
-    ProcessResult result;
     result.exit_code = static_cast<int>(exit_code);
     std::ifstream out(stdout_path, std::ios::binary);
     std::ifstream err(stderr_path, std::ios::binary);
@@ -148,7 +184,8 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
 #else
 ProcessResult run_cli(const std::string &java, const std::string &jar,
                       const std::string &smiles, int depth,
-                      const fs::path &stdout_path, const fs::path &stderr_path)
+                      const fs::path &stdout_path, const fs::path &stderr_path,
+                      const StopPredicate &stop_requested)
 {
     std::vector<std::string> arguments = {java, "-jar", jar, "--smiles", smiles, "--depth", std::to_string(depth)};
     std::vector<char *> argv;
@@ -175,9 +212,37 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
     close(error);
     if (spawned != 0) throw std::runtime_error("Could not start Java for MetFrag Fragmenter (error " +
                                                 std::to_string(spawned) + ").");
-    int status = 0;
-    if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not wait for MetFrag Fragmenter process.");
     ProcessResult result;
+    const auto deadline = std::chrono::steady_clock::now() + kProcessTimeout;
+    int status = 0;
+    bool finished = false;
+    while (!finished)
+    {
+        const pid_t waited = waitpid(process, &status, WNOHANG);
+        if (waited == process)
+        {
+            finished = true;
+            break;
+        }
+        if (waited < 0) throw std::runtime_error("Could not wait for MetFrag Fragmenter process.");
+        if (stop_requested && stop_requested())
+        {
+            kill(process, SIGTERM);
+            result.cancelled = true;
+            if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not wait for cancelled MetFrag Fragmenter process.");
+            finished = true;
+            break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            kill(process, SIGTERM);
+            result.timed_out = true;
+            if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not wait for timed-out MetFrag Fragmenter process.");
+            finished = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     std::ifstream out(stdout_path, std::ios::binary);
     std::ifstream err(stderr_path, std::ios::binary);
@@ -192,6 +257,21 @@ std::string json_scalar_text(const Json &value)
     if (value.is_null()) return {};
     if (value.is_string()) return value.get<std::string>();
     return value.dump();
+}
+
+std::vector<std::string> split_connected_smiles(const std::string &smiles)
+{
+    std::vector<std::string> components;
+    std::size_t start = 0;
+    while (start <= smiles.size())
+    {
+        const auto separator = smiles.find('.', start);
+        const auto component = smiles.substr(start, separator == std::string::npos ? std::string::npos : separator - start);
+        if (!component.empty()) components.push_back(component);
+        if (separator == std::string::npos) break;
+        start = separator + 1;
+    }
+    return components;
 }
 
 } // namespace streamfind::mass_spec::fragmentation::detail
@@ -212,7 +292,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     if (!java) throw std::runtime_error("Java 21 was not found. Install the runtime.java dependency first.");
     const auto jar = tools::resolve_metfrag_fragmenter_jar();
     if (!jar)
-        throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency from the public v0.1.0 release.");
+        throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency from the public v0.2.0 release.");
 
     const auto physical_table = table_input->at("physical_table").get<std::string>();
     const auto targets = access.read(physical_table, {"name", "SMILES"}, "name");
@@ -228,6 +308,9 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     Json errors = Json::array();
     std::size_t skipped = 0;
     std::size_t fragmented = 0;
+    std::size_t fragmented_components = 0;
+    std::size_t total_components = 0;
+    std::size_t failed_components = 0;
     for (const auto &target : targets)
     {
         const auto smiles_value = target.find("SMILES");
@@ -236,39 +319,69 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         if (smiles.empty()) { ++skipped; continue; }
         const auto name_value = target.find("name");
         const std::string name = name_value == target.end() || name_value->is_null() ? std::string{} : name_value->get<std::string>();
-        streamfind::mass_spec::fragmentation::detail::TemporaryDirectory temp;
-        const auto process = streamfind::mass_spec::fragmentation::detail::run_cli(
-            *java, *jar, smiles, depth, temp.path() / "stdout.json", temp.path() / "stderr.log");
-        Json document = Json::parse(process.output, nullptr, false);
-        if (process.exit_code != 0 || document.is_discarded() || !document.is_object() || !document.contains("fragments") || !document.at("fragments").is_array())
+        const auto components = streamfind::mass_spec::fragmentation::detail::split_connected_smiles(smiles);
+        if (components.empty()) { ++skipped; continue; }
+        total_components += components.size();
+        bool target_fragmented = true;
+        for (std::size_t component_index = 0; component_index < components.size(); ++component_index)
         {
-            errors.push_back({{"name", name},
-                {"exit_code", process.exit_code}, {"message", process.error},
-                {"stdout", process.output}});
-            continue;
+            if (access.is_cancelled()) throw std::runtime_error("Operation cancelled");
+            streamfind::mass_spec::fragmentation::detail::TemporaryDirectory temp;
+            const auto process = streamfind::mass_spec::fragmentation::detail::run_cli(
+                *java, *jar, components[component_index], depth,
+                temp.path() / "stdout.json", temp.path() / "stderr.log",
+                [&access]() { return access.is_cancelled(); });
+            Json document = Json::parse(process.output, nullptr, false);
+            if (process.cancelled) throw std::runtime_error("Operation cancelled");
+            if (process.exit_code != 0 || process.timed_out || document.is_discarded() || !document.is_object() ||
+                !document.contains("fragments") || !document.at("fragments").is_array())
+            {
+                target_fragmented = false;
+                ++failed_components;
+                errors.push_back({{"name", name}, {"component_index", component_index},
+                    {"input_smiles", components[component_index]}, {"exit_code", process.exit_code},
+                    {"timed_out", process.timed_out}, {"message", process.timed_out ? "MetFrag Fragmenter timed out." : process.error},
+                    {"stdout", process.output}});
+                continue;
+            }
+            ++fragmented_components;
+            for (const auto &fragment : document.at("fragments"))
+            {
+                const auto atom_indices = fragment.value("atom_indices", Json::array());
+                const auto broken_bond_indices = fragment.value("broken_bond_indices", Json::array());
+                const auto neutral_losses = fragment.value("neutral_losses", Json::array());
+                const std::string raw_id = fragment.contains("id") ? streamfind::mass_spec::fragmentation::detail::json_scalar_text(fragment.at("id")) : std::string{};
+                const std::string raw_parent_id = fragment.contains("parent_id") ? streamfind::mass_spec::fragmentation::detail::json_scalar_text(fragment.at("parent_id")) : std::string{};
+                Json fragment_data = fragment;
+                fragment_data["source_smiles"] = components[component_index];
+                fragment_data["source_fragment_id"] = raw_id;
+                fragment_data["source_parent_id"] = raw_parent_id;
+                fragment_data["component_index"] = component_index;
+                fragment_data["input_smiles"] = smiles;
+                fragment_data["explicit_deuterium"] = smiles.find("[2H]") != std::string::npos;
+                const std::string fragment_id = std::to_string(component_index) + ":" + raw_id;
+                const Json parent_id = raw_parent_id.empty() ? Json(nullptr) : Json(std::to_string(component_index) + ":" + raw_parent_id);
+                const int fragment_depth = fragment.value("depth", 0);
+                rows.push_back({
+                    {"name", name}, {"fragment_id", fragment_id}, {"parent_id", parent_id},
+                    {"SMILES", fragment_depth == 0 ? components[component_index] : fragment.value("smiles", std::string{})},
+                    {"formula", fragment.value("formula", std::string{})}, {"mass", fragment.value("exact_mass", 0.0)},
+                    {"depth", fragment_depth}, {"atom_indices", atom_indices},
+                    {"broken_bond_indices", broken_bond_indices}, {"neutral_losses", neutral_losses},
+                    {"fragment_data", fragment_data}});
+            }
+            access.report_progress(
+                static_cast<double>(component_index + 1) / static_cast<double>(components.size()),
+                "Fragmented " + name + " component " + std::to_string(component_index + 1) + "/" + std::to_string(components.size()) + ".");
         }
-        ++fragmented;
-        for (const auto &fragment : document.at("fragments"))
-        {
-            const auto atom_indices = fragment.value("atom_indices", Json::array());
-            const auto broken_bond_indices = fragment.value("broken_bond_indices", Json::array());
-            const auto neutral_losses = fragment.value("neutral_losses", Json::array());
-            rows.push_back({
-                {"name", name},
-                {"fragment_id", fragment.contains("id") ? streamfind::mass_spec::fragmentation::detail::json_scalar_text(fragment.at("id")) : std::string{}},
-                {"parent_id", fragment.contains("parent_id") ? Json(streamfind::mass_spec::fragmentation::detail::json_scalar_text(fragment.at("parent_id"))) : Json(nullptr)},
-                {"SMILES", fragment.value("smiles", std::string{})},
-                {"formula", fragment.value("formula", std::string{})},
-                {"mass", fragment.value("exact_mass", 0.0)},
-                {"depth", fragment.value("depth", 0)},
-                {"atom_indices", atom_indices}, {"broken_bond_indices", broken_bond_indices},
-                {"neutral_losses", neutral_losses}, {"fragment_data", fragment}});
-        }
+        if (target_fragmented) ++fragmented;
     }
     access.emit_table_rows("fragmentationTreeTable", columns, types, rows);
     return {{"status", errors.empty() ? "finished" : "partial"},
             {"target_rows", targets.size()}, {"fragmented_targets", fragmented},
             {"skipped_without_smiles", skipped}, {"failed_targets", errors.size()},
+            {"total_components", total_components}, {"fragmented_components", fragmented_components},
+            {"failed_components", failed_components},
             {"fragment_rows", rows.size()}, {"depth", depth}, {"fragmentation_method", "MetFrag top-down per-depth traversal"},
             {"artifact", "fragmentationTreeTable"}, {"errors", errors}};
 }

@@ -45,7 +45,7 @@ std::filesystem::path executable_path(int argc, char **argv) {
 #endif
     if (argc > 0 && argv != nullptr && argv[0] != nullptr)
         return std::filesystem::absolute(std::filesystem::path(argv[0]));
-    return std::filesystem::current_path() / "streamfind_mcp";
+    return std::filesystem::current_path() / "streamfind-mcp";
 }
 
 namespace host_callbacks {
@@ -212,9 +212,11 @@ int main(int argc, char **argv) {
     streamfind::MethodRegistry registry;
     streamfind::OperationRegistry operations;
     std::unique_ptr<streamfind::mcp::detail::DynamicPluginRuntime> dynamic_plugins;
+    std::filesystem::path executable;
+    std::filesystem::path configuration_path;
     try {
-        const auto executable = streamfind::mcp::detail::executable_path(argc, argv);
-        const auto configuration_path = executable.parent_path() / "streamfind.json";
+        executable = streamfind::mcp::detail::executable_path(argc, argv);
+        configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");
         dynamic_plugins = std::make_unique<streamfind::mcp::detail::DynamicPluginRuntime>();
@@ -226,7 +228,14 @@ int main(int argc, char **argv) {
     streamfind::mcp::Session session(
         operations,
         [&dynamic_plugins] { return dynamic_plugins->dependencies(); },
-        [&dynamic_plugins](const streamfind::Json &request) { return dynamic_plugins->install_dependencies(request); });
+        [&dynamic_plugins](const streamfind::Json &request) { return dynamic_plugins->install_dependencies(request); },
+        executable.parent_path() /
+#ifdef _WIN32
+            "streamfind-worker.exe",
+#else
+            "streamfind-worker",
+#endif
+        configuration_path);
     while (std::getline(std::cin, line)) {
             try {
                 const auto request = streamfind::Json::parse(line);

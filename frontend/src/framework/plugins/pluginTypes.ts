@@ -1,4 +1,4 @@
-import type { ArtifactRecord, StreamFindApiClient } from '../backend/StreamFindApiClient';
+import type { ResultRecord, StreamFindApiClient } from '../backend/StreamFindApiClient';
 import type { AppNotification, NotificationKind } from '../notifications/notificationBus';
 import type { ViewerRegistration, ViewerRegistry } from '../viewers/viewerTypes';
 import type { VisualizationRenderer, VisualizationRegistry } from '../visualization/VisualizationRegistry';
@@ -28,7 +28,7 @@ export type FrontendPluginApi = {
   registerViewer(viewer: ViewerRegistration): void;
   registerVisualizationRenderer(rendererId: string, renderer: VisualizationRenderer): void;
   notify(input: { kind: NotificationKind; message: string }): AppNotification;
-  artifactSummary(artifact: ArtifactRecord): { id: string; contract: string; representation: string };
+  artifactSummary(artifact: ResultRecord): { id: string; contract: string; representation: string };
 };
 
 export type FrontendPlugin = {

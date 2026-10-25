@@ -5,7 +5,7 @@ import { ViewerRegistry, type ViewerContext } from './viewerTypes';
 
 const context: ViewerContext = {
   sessionId: 'session-a',
-  artifactId: 'artifact-a',
+  resultId: 'result-a',
   semanticType: 'sfvis:visualizationSpecResult',
 };
 
@@ -18,12 +18,12 @@ describe('viewer registry', () => {
       id: 'test.viewer',
       label: 'Test viewer',
       accepts: ['visualizationSpecResult'],
-      component: ({ context: viewerContext }) => <div>Viewing {viewerContext.artifactId}</div>,
+      component: ({ context: viewerContext }) => <div>Viewing {viewerContext.resultId}</div>,
     });
 
     render(<ViewerResolver registry={registry} context={context} />);
 
-    expect(screen.getByText('Viewing artifact-a')).toBeInTheDocument();
+    expect(screen.getByText('Viewing result-a')).toBeInTheDocument();
   });
 
   it('renders the fallback when no viewer accepts the artifact', () => {
@@ -46,13 +46,13 @@ describe('viewer registry', () => {
       id: 'feature.viewer',
       label: 'Feature viewer',
       accepts: ['featuresTable'],
-      component: ({ context: viewerContext }) => <div>Feature {viewerContext.artifactId}</div>,
+      component: ({ context: viewerContext }) => <div>Feature {viewerContext.resultId}</div>,
     });
     registry.register({
       id: 'alternate.viewer',
       label: 'Alternate viewer',
       accepts: ['featuresTable'],
-      component: ({ context: viewerContext }) => <div>Alternate {viewerContext.artifactId}</div>,
+      component: ({ context: viewerContext }) => <div>Alternate {viewerContext.resultId}</div>,
     });
 
     expect(registry.compatible('sf:featuresTable').map((viewer) => viewer.id)).toEqual([
@@ -66,6 +66,6 @@ describe('viewer registry', () => {
         context={{ ...context, semanticType: 'featuresTable' }}
       />,
     );
-    expect(screen.getByText('Feature artifact-a')).toBeInTheDocument();
+    expect(screen.getByText('Feature result-a')).toBeInTheDocument();
   });
 });

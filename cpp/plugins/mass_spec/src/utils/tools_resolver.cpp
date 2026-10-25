@@ -30,7 +30,7 @@ constexpr const char* kJdkUrlTemplate =
 constexpr const char* kMetFragUrl =
     "https://github.com/ipb-halle/MetFragRelaunched/releases/download/v2.6.11/MetFragCommandLine-2.6.11.jar";
 constexpr const char* kMetFragFragmenterUrl =
-    "https://github.com/ricardo-cunha/streamfind-metfrag-tools/releases/download/v0.1.0/streamfind-metfrag-fragmenter-0.1.0.jar";
+    "https://github.com/ricardo-cunha/streamfind-metfrag-tools/releases/download/v0.2.0/streamfind-metfrag-fragmenter-0.2.0.jar";
 
 #ifdef _WIN32
 std::wstring widen(const std::string& value) { return {value.begin(), value.end()}; }
@@ -128,7 +128,7 @@ std::string install_metfrag_fragmenter() {
     if (auto jar = resolve_metfrag_fragmenter_jar()) return *jar;
     const auto metfrag_root = fs::path(tools_dir()) / "metfrag";
     const auto staging = fs::path(tools_dir()) / ".metfrag-fragmenter-installing";
-    const auto staged_jar = staging / "streamfind-metfrag-fragmenter-0.1.0.jar";
+    const auto staged_jar = staging / "streamfind-metfrag-fragmenter-0.2.0.jar";
     std::error_code error;
     fs::remove_all(staging, error);
     error.clear();
@@ -137,7 +137,7 @@ std::string install_metfrag_fragmenter() {
     if (run_process("curl", {"--fail", "--location", "--silent", "--show-error", "--retry", "3",
                               "--output", staged_jar.generic_string(), kMetFragFragmenterUrl}) != 0) {
         fs::remove_all(staging, error);
-        throw std::runtime_error("MetFrag Fragmenter download failed from the public v0.1.0 release; check network access or install the JAR manually under " +
+        throw std::runtime_error("MetFrag Fragmenter download failed from the public v0.2.0 release; check network access or install the JAR manually under " +
                                  (metfrag_root / "streamfind-metfrag-fragmenter.jar").string());
     }
     const auto size = fs::file_size(staged_jar, error);

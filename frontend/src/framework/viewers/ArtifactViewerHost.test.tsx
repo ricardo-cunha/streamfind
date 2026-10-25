@@ -1,12 +1,12 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ArtifactRecord } from '../backend/StreamFindApiClient';
+import type { ResultRecord } from '../backend/StreamFindApiClient';
 import { ArtifactViewerHost } from './ArtifactViewerHost';
 
 afterEach(() => cleanup());
 
-const artifact: ArtifactRecord = {
-  artifact_id: 'artifact-1',
+const artifact: ResultRecord = {
+  result_id: 'artifact-1',
   contract_id: 'sf:result',
   representation: 'json',
   producer_operation: 'sf:run',

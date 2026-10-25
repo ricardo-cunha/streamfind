@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
 import { artifactContractMatches } from '../artifacts/artifactContracts';
-import type { ArtifactRecord } from '../backend/StreamFindApiClient';
+import type { ResultRecord } from '../backend/StreamFindApiClient';
 import type { FrontendPluginApi } from '../plugins/pluginTypes';
 
 export type ViewerContext = {
   sessionId: string;
   nodeId?: string;
   portId?: string;
-  artifactId: string;
+  resultId: string;
   semanticType: string;
-  artifact?: ArtifactRecord;
+  artifact?: ResultRecord;
   pluginApi?: FrontendPluginApi;
 };
 

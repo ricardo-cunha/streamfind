@@ -726,7 +726,7 @@ namespace streamfind::mass_spec::base
 
         Json source_ids = Json::array();
         for (const auto &[_, input] : parameters.value("_inputs", Json::object()).items())
-            if (input.is_object() && input.contains("artifact_id")) source_ids.push_back(input.at("artifact_id"));
+            if (input.is_object() && input.contains("result_id")) source_ids.push_back(input.at("result_id"));
         if (source_ids.empty()) source_ids.push_back("spectraHeadersTable");
         return {
             {"schema", "streamfind.visualization/v1"},
@@ -736,7 +736,7 @@ namespace streamfind::mass_spec::base
             {"data_mode", "inline"},
             {"renderer", {{"engine", "plotly"}, {"renderer_id", "core.plotly"}, {"spec_version", "1"}}},
             {"payload", {{"data", traces}, {"layout", {{"title", title}, {"xaxis", {{"title", x_label}}}, {"yaxis", {{"title", y_label}}}, {"hovermode", "x unified"}}}, {"config", {{"responsive", true}, {"displaylogo", false}}}}},
-            {"provenance", {{"source_artifact_ids", source_ids}, {"producer_operation_id", "mass_spec.plot_spectra_tic"}, {"producer_node_id", parameters.value("_operation_instance", std::string("mass_spec.plot_spectra_tic"))}}},
+            {"provenance", {{"source_result_ids", source_ids}, {"producer_operation_id", "mass_spec.plot_spectra_tic"}, {"producer_node_id", parameters.value("_operation_instance", std::string("mass_spec.plot_spectra_tic"))}}},
             {"fallback", {{"description", "TIC visualization unavailable for the selected analyses."}}}
         };
     }
@@ -746,8 +746,6 @@ namespace streamfind::mass_spec::base
         const auto &effective_parameters = parameters;
         const auto analyses = selected_analysis_rows(access, effective_parameters);
         const auto targets = base::utils::normalize_targets(effective_parameters);
-        const auto requested_targets = effective_parameters.value("targets", Json::array());
-        const bool has_requested_targets = requested_targets.is_array() && !requested_targets.empty();
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();
         const bool eic_logging = parameters.value("_eic_logging", false);
@@ -778,20 +776,6 @@ namespace streamfind::mass_spec::base
                     "EIC: reading analysis " + std::to_string(analysis_number + 1) + "/" +
                         std::to_string(analyses.size()) + " (" + analysis + ").");
 
-            Json cached_eic_headers = Json::array();
-            if (eic_logging)
-            {
-                access.read_batches(
-                    base::utils::input_table(parameters, "spectraHeadersTable"),
-                    {"analysis", "index", "level", "polarity", "lowmz", "highmz", "rt"},
-                    "analysis",
-                    [&](const Json &batch) {
-                        for (const auto &header : batch)
-                            if (header.value("analysis", std::string{}) == analysis)
-                                cached_eic_headers.push_back(header);
-                    });
-            }
-
             ::mass_spec::reader::MASS_SPEC_FILE file(row.at("file_path").get<std::string>());
             file.select_analysis(analysis_index(row));
             std::vector<int> selected_indices;
@@ -800,25 +784,29 @@ namespace streamfind::mass_spec::base
             const auto requested_levels = parameters.value("levels", Json::array());
             if (eic_logging && !indexed)
             {
-                for (const auto &header : cached_eic_headers)
+                // The source file is authoritative for spectrum headers and
+                // is already open for decoding.  Do not rescan the published
+                // spectraHeadersTable through the data proxy for every
+                // analysis; that turns a targeted EIC request into a full
+                // result-store scan before any spectra are decoded.
+                const auto source_headers = file.get_spectra_headers();
+                for (std::size_t header_index = 0; header_index < source_headers.index.size(); ++header_index)
                 {
-                    if (header.value("analysis", std::string{}) != analysis)
-                        continue;
-                    const auto level = header.value("level", 0);
+                    const auto level = source_headers.level[header_index];
                     if (!requested_levels.empty() &&
                         std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end())
                         continue;
                     bool possible = false;
                     for (const auto *target : active_targets)
-                        if (base::utils::target_may_match_spectrum(*target, analysis, header.value("polarity", 0), level,
-                                                                    header.value("rt", 0.0f), header.value("lowmz", 0.0f),
-                                                                    header.value("highmz", 0.0f)))
+                        if (base::utils::target_may_match_spectrum(*target, analysis, source_headers.polarity[header_index], level,
+                                                                    source_headers.rt[header_index], source_headers.lowmz[header_index],
+                                                                    source_headers.highmz[header_index]))
                         {
                             possible = true;
                             break;
                         }
                     if (possible)
-                        selected_indices.push_back(header.value("index", 0));
+                        selected_indices.push_back(source_headers.index[header_index]);
                 }
             }
             if (eic_logging && selected_indices.empty())
@@ -870,7 +858,12 @@ namespace streamfind::mass_spec::base
                             for (const auto *target : active_targets)
                                 if (base::utils::target_matches(*target, analysis, headers.polarity[source], headers.level[source], headers.rt[source], mz))
                                 {
-                                    if (has_requested_targets) point["name"] = target->id;
+                                    // Target rows may arrive as a normalized
+                                    // table value from the service.  The
+                                    // matched target is therefore the source
+                                    // of truth for the trace name, regardless
+                                    // of the original parameter encoding.
+                                    point["name"] = target->id;
                                     result.push_back(point);
                                 }
                     }

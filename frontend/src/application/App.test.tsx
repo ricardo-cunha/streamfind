@@ -193,7 +193,8 @@ describe('application shell', () => {
     await showWorkspace();
 
     expect(screen.getByText('path-test')).toBeInTheDocument();
-    expect(screen.getByText('size: 0.00 Mb')).toBeInTheDocument();
+    expect(screen.getByText('DuckDB: 0.0 KB')).toBeInTheDocument();
+    expect(screen.getByText('Results store: 0.0 KB')).toBeInTheDocument();
     expect(screen.queryByText(/Workflow (queued|running|failed)/)).not.toBeInTheDocument();
     expect(screen.queryByText('Loading workflow summary…')).not.toBeInTheDocument();
   });
@@ -213,7 +214,7 @@ describe('application shell', () => {
     });
 
     expect(window.location.hash).toBe('#/project/path-test-a/workflow');
-    expect(screen.getByText('Workflow terminal')).toBeInTheDocument();
+    expect(screen.getByRole('log', { name: 'Canvas activity log' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect from path-test' })).not.toBeInTheDocument();
 
     cleanup();
@@ -229,7 +230,7 @@ describe('application shell', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText('Workflow terminal')).toBeInTheDocument();
+    expect(screen.getByRole('log', { name: 'Canvas activity log' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect from path-test' })).not.toBeInTheDocument();
   });
 

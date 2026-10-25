@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { ArtifactRecord } from '../../../framework/backend/StreamFindApiClient';
+import type { ResultRecord } from '../../../framework/backend/StreamFindApiClient';
 import { VisualizationRenderer } from '../../../framework/visualization/VisualizationRenderer';
 import { visualizationSpecFromArtifact } from '../../../framework/visualization/VisualizationDataResolver';
 import type { VisualizationSpec } from '../../../framework/visualization/visualizationTypes';
@@ -15,7 +15,7 @@ export function VisualizationSpecViewer({ context }: ViewerComponentProps): Reac
 
   const spec = context.artifact ? parseSpec(context.artifact) : undefined;
   const themedSpec = useMemo(() => (spec ? themeTicSpec(spec, darkMode) : undefined), [darkMode, spec]);
-  if (!context.artifact) return <div role="alert">Visualization artifact data is unavailable.</div>;
+  if (!context.artifact) return <div role="alert">Visualization result data is unavailable.</div>;
   if (!spec) {
     return <pre className="sf-artifact-viewer-json">{prettyPayload(context.artifact.payload)}</pre>;
   }
@@ -106,7 +106,7 @@ function getPlotTheme(darkMode: boolean): { text: string; grid: string; backgrou
   };
 }
 
-function parseSpec(artifact: ArtifactRecord) {
+function parseSpec(artifact: ResultRecord) {
   try {
     return visualizationSpecFromArtifact(artifact);
   } catch {
@@ -114,7 +114,7 @@ function parseSpec(artifact: ArtifactRecord) {
   }
 }
 
-function prettyPayload(payload: ArtifactRecord['payload']): string {
+function prettyPayload(payload: ResultRecord['payload']): string {
   if (typeof payload !== 'string') return JSON.stringify(payload ?? null, null, 2);
   try {
     return JSON.stringify(JSON.parse(payload), null, 2);

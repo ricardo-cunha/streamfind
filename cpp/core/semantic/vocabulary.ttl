@@ -405,6 +405,13 @@ sf:extensions
     skos:prefLabel "has column" ;
     skos:definition "Associates a table with one of its columns." .
 
+sf:navigationColumn
+    a rdf:Property ;
+    rdfs:domain sf:Table ;
+    rdfs:range sf:Column ;
+    skos:prefLabel "navigation column" ;
+    skos:definition "Identifies a table column that the runtime should index for efficient row selection, lookup, or visualization navigation." .
+
 sf:columnName
     a rdf:Property ;
     rdfs:domain sf:Column ;

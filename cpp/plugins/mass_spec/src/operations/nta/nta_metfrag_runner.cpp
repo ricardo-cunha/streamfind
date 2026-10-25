@@ -192,9 +192,26 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     return oss.str();
   }
 
-  std::string default_metfrag_run_dir()
+  std::string safe_component(const std::string &value, const std::string &fallback)
   {
-    return (fs::path(".") / "log" / "metfrag" / ("run_" + make_run_timestamp())).string();
+    std::string output;
+    for (const unsigned char c : value)
+      output += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
+    return output.empty() ? fallback : output;
+  }
+
+  std::string default_metfrag_run_dir(const MetFragParams &params)
+  {
+    fs::path root = fs::path(".") / "log" / "metfrag";
+    if (!params.project_database_path.empty()) {
+      root = fs::path(params.project_database_path);
+      root.replace_extension(".data");
+      root /= "log";
+      root /= "metfrag";
+      root /= safe_component(params.operation_id, "mass_spec.metfrag");
+      root /= "node-" + safe_component(params.operation_instance, "direct");
+    }
+    return (root / ("run_" + make_run_timestamp())).string();
   }
 
   std::string default_empty_peak_list_path(const std::string &run_dir)
@@ -1171,8 +1188,12 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       throw std::invalid_argument("MetFrag score_types must not be empty.");
     if (out.score_types.size() != out.score_weights.size())
       throw std::invalid_argument("MetFrag score_types and score_weights must have the same length.");
+    // MetFrag cannot accept an empty pre-processing filter property. Older
+    // project revisions can nevertheless contain an explicit [] value, which
+    // overrides the parameter default during JSON deserialization. Treat that
+    // value as the operation default so those projects remain runnable.
     if (out.pre_processing_candidate_filter.empty())
-      throw std::invalid_argument("MetFrag pre_processing_candidate_filter must not be empty.");
+      out.pre_processing_candidate_filter = {"UnconnectedCompoundFilter", "IsotopeFilter"};
     if (out.candidate_writer.empty())
       throw std::invalid_argument("MetFrag candidate_writer must not be empty.");
     for (const auto &writer : out.candidate_writer)
@@ -1223,7 +1244,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
   std::string resolve_run_dir(const MetFragParams &params)
   {
-    return params.run_dir.empty() ? default_metfrag_run_dir() : params.run_dir;
+    return params.run_dir.empty() ? default_metfrag_run_dir(params) : params.run_dir;
   }
 
   void metfrag_screening_impl(
@@ -1432,7 +1453,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           if (has_ms2) defer_cleanup(ms2_path);
           defer_cleanup(params_path);
           for (const auto &csv_path : csv_paths) defer_cleanup(csv_path);
-          if (result.status == 0) defer_cleanup(log_path);
           return result;
         }
 
@@ -1594,7 +1614,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         }
         if (has_ms2) defer_cleanup(ms2_path);
         defer_cleanup(params_path);
-        if (result.status == 0) defer_cleanup(log_path);
         result.candidate_count = result.suspects.size();
         return result;
       };
@@ -1692,7 +1711,8 @@ using Json = nlohmann::json;
             score_weights.push_back(v.get<double>());
         std::vector<std::string> pre_processing_candidate_filter;
         for (const auto &v : parameters.value("pre_processing_candidate_filter",
-                                              Json::array({Json("UnconnectedCompoundFilter")})))
+                                              Json::array({Json("UnconnectedCompoundFilter"),
+                                                           Json("IsotopeFilter")})))
             pre_processing_candidate_filter.push_back(v.get<std::string>());
         std::vector<std::string> post_processing_candidate_filter;
         for (const auto &v : parameters.value("post_processing_candidate_filter", Json::array({Json("InChIKeyFilter")})))
@@ -1724,19 +1744,10 @@ using Json = nlohmann::json;
         if (score_types.size() != score_weights.size())
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
 
-        // Targets supplied directly or through suspectTargetsTable are the
-        // complete LocalCSV candidate source. Internal standards deliberately
-        // require the connected suspectTargetsTable: deuterated standards are
-        // user-defined targets, never a public/database candidate search.
-        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, true);
-        const auto inputs = parameters.value("_inputs", Json::object());
-        const bool has_connected_targets = inputs.is_object() &&
-            inputs.contains("suspectTargetsTable") &&
-            inputs.at("suspectTargetsTable").is_object() &&
-            !inputs.at("suspectTargetsTable").value("physical_table", std::string{}).empty();
-        if (output_internal_standards && !has_connected_targets)
-            throw Error(ErrorCode::InvalidArgument,
-                        "find_internal_standards_metfrag requires a connected suspectTargetsTable.");
+        // Both MetFrag operations receive candidates through the
+        // suspect_targets parameter. They intentionally do not consume a
+        // connected suspectTargetsTable input.
+        const auto suspect_targets = utils::detail::parse_suspect_targets(access, parameters, false);
         if (output_internal_standards && suspect_targets.empty())
             throw Error(ErrorCode::InvalidArgument,
                         "find_internal_standards_metfrag requires at least one suspect target row.");
@@ -1838,6 +1849,12 @@ using Json = nlohmann::json;
         p.number_threads = number_threads;
         p.use_smiles = use_smiles;
         p.filtered = filtered;
+        if (const auto *project_database_path = std::getenv("STREAMFIND_PROJECT_DATABASE_PATH"))
+          p.project_database_path = project_database_path;
+        p.operation_id = output_internal_standards
+            ? "mass_spec.find_internal_standards_metfrag"
+            : "mass_spec.metfrag_screening";
+        p.operation_instance = std::string(access.operation_instance());
         p.run_dir = ::streamfind::mass_spec::nta::metfrag_runner::resolve_run_dir(p);
         p.suspect_targets = std::move(normalized_targets);
         std::filesystem::create_directories(p.run_dir);

@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <cstdint>
-#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -29,7 +28,6 @@ public:
 
     virtual ~PluginProjectAccess() = default;
 
-    virtual const std::filesystem::path &database_path() const noexcept = 0;
     virtual std::string_view operation_instance() const noexcept = 0;
     virtual bool is_cancelled() const noexcept = 0;
 

@@ -90,7 +90,7 @@ All transient artifacts — scratch files, custom build trees, test outputs, tem
 projects created during tests, logs, and any other disposable asset — belong in
 the repository-local `tmp/` folder at the
 checkout root (`<repo-root>/tmp/`). `tmp/` is gitignored
-(`.gitignore` → `/tmp/`), removed by `scripts\build\clean-build-temp.cmd`, and
+(`.gitignore` → `/tmp/`), removed by `scripts\clean\clean-repo-temp.cmd`, and
 disposable by design: treat it as managed scratch, never as a place for
 anything that must be committed.
 
@@ -126,12 +126,57 @@ anything that must be committed.
 - Custom build trees created outside the canonical build presets go to
   `tmp/build/`.
 - Housekeeping before committing on `dev_refactoring`:
-  `scripts\build\clean-build-temp.cmd` removes build/test artifacts and disposable
-  `tmp/projects/`, `tmp/scratch/`, plus the legacy
-  `cpp/build/`, `log/`, `cache/` dirs). It **preserves**
-  `tmp/logs/` by default so diagnostics survive a routine clean. Run
-  `scripts\build\clean-build-temp.cmd --all` only to wipe legacy temporary
-  scripts/logs; tracked scripts under `scripts/` are never removed.
+  `scripts\clean\clean-repo-temp.cmd` removes generated build/test output,
+  all contents of `tmp/`, legacy `build/`, `log/`, and `cache/` directories,
+  and repository-owned Python caches and bytecode. It recreates only the empty
+  `tmp/` anchor. It never removes tracked source or scripts, `.venv`,
+  `node_modules`, or vendored source. Run it from any working directory before
+  regenerating builds and packages.
+
+### Native build, packaged-build, and release separation
+
+Keep the three native distribution stages separate:
+
+- `tmp/build/` contains disposable CMake/Ninja build trees and intermediate
+  packaging files. It is never a user-facing distribution and must not be
+  copied manually into a release.
+- `tmp/packaged_build/` is the disposable, unpacked Windows package used for
+  manual application, service, tray, MCP, and result-store testing. Create or
+  refresh it on demand with:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\build\cpp\package-cpp.ps1
+  ```
+
+  For frontend-only changes, refresh the existing package without rebuilding
+  native code with:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\build\cpp\update-packaged-frontend.ps1
+  ```
+
+
+  The script rebuilds `frontend/dist` and replaces only the package `app/`
+  directory. If the package does not exist yet, create it with
+  `package-cpp.ps1` first. The full package script also rebuilds the frontend
+  automatically, so a clean package always contains the current UI.
+
+  Use `-SkipTests` only when a test run has already been completed for the
+  same build, and use `-CleanBuild` when changing toolchains or diagnosing a
+  stale package. This directory is not archived, committed, tagged, or used
+  as a GitHub release asset.
+- `tmp/release-output/` contains versioned ZIP/TGZ archives and checksums
+  produced only by the release scripts. A release build must use the
+  canonical `VERSION`, run its required tests and package validation, and be
+  published through the guarded release workflow described below.
+
+The packaged build must be generated from the current frontend and native
+sources in one run. Do not patch files inside `tmp/packaged_build/`; fix the
+owning source or packaging rule and regenerate it. When validating the app,
+run the executable from `tmp/packaged_build/bin/` so package-relative service,
+plugin, catalogue, frontend, and runtime resolution is exercised. Keep
+project databases and result-store sidecars used for testing under
+`tmp/projects/` unless the test explicitly targets a user-provided project.
 
 ## GitHub Releases
 

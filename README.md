@@ -15,6 +15,7 @@ mass-spec plugin.
 
 - [Read the user documentation](https://streamfind.odea-project.org/).
 - [Download the native packages](docs/releases.md).
+- [Launch the browser application](docs/web-app.md).
 - [Use the C++ MCP server](docs/quickstart/cpp-mcp.md).
 - [Build and develop the C++ backend](cpp/README.md).
 - [Run the development frontend](frontend/README.md).
@@ -23,7 +24,7 @@ mass-spec plugin.
 
 ## What you can do
 
-- Create portable projects with metadata, workflows, artifacts, and execution
+- Create portable projects with metadata, workflows, results, and execution
   history.
 - Discover operations and their typed inputs, outputs, parameters, constraints,
   and results from the shared semantic catalogue.
@@ -44,14 +45,17 @@ mass-spec plugin.
 | R package | Separate R interface | Existing R and Shiny workflows |
 | Python package | No public package | Use the C++ CLI or MCP interface |
 
-The current native package version is `0.6.0`. See [Releases](docs/releases.md)
-for archives, checksums, package contents, and developer kits.
+The current native package version is defined in [`VERSION`](VERSION). See
+[Releases](docs/releases.md) for archives, checksums, package contents, and
+developer kits.
 
 ## How it is used
 
-The native runtime owns project files, DuckDB transactions, workflow
-validation and execution, schemas, artifacts, and audit information. Domain
-plugins provide readers, algorithms, schemas, and catalogue entries.
+The native service owns project sessions, DuckDB metadata transactions,
+workflow validation and execution, result publication, schemas, and audit
+information. Short-lived workers execute operations through the service data
+proxy; they do not open the project DuckDB. Domain plugins provide readers,
+algorithms, schemas, and catalogue entries.
 Applications can use the browser UI, the C++ API, the CLI, or MCP depending on
 the integration.
 
@@ -98,11 +102,11 @@ A typical client:
 3. calls `create`, then `describe`, `get_domain`, or `get_metadata`;
 4. invokes domain Operations with `database_path`;
 5. builds a persisted operation graph with operation nodes and typed connections;
-6. validates and runs the graph, then inspects its artifacts.
+6. validates and runs the graph, then inspects its published results.
 
 Operations are discovered through `tools/list` and operation metadata. A
 multi-step workflow is a persisted graph with typed connections, validation,
-execution, and inspectable artifacts. See the [C++ MCP quickstart](docs/quickstart/cpp-mcp.md)
+execution, and inspectable results. See the [C++ MCP quickstart](docs/quickstart/cpp-mcp.md)
 for request examples.
 
 ## Shared semantic catalogue

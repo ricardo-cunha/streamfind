@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { ArtifactDataResponse } from '../../../framework/backend/StreamFindApiClient';
+import type { ResultDataResponse } from '../../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../../framework/ui/LoadingLogo';
 
 export function VirtualArtifactTable({
@@ -9,8 +9,8 @@ export function VirtualArtifactTable({
   pageOffset,
   loading,
 }: {
-  columns: ArtifactDataResponse['columns'];
-  pages: Record<number, ArtifactDataResponse>;
+  columns: ResultDataResponse['columns'];
+  pages: Record<number, ResultDataResponse>;
   pageOffset: number;
   loading: boolean;
 }) {
@@ -63,7 +63,7 @@ export function VirtualArtifactTable({
       ref={scrollRef}
       className="sf-artifact-virtual-scroll"
       role="table"
-      aria-label="Artifact table"
+      aria-label="Result table"
       aria-rowcount={page?.total_rows ?? undefined}
       tabIndex={0}
     >

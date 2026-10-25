@@ -19,9 +19,10 @@ Machine-independent helpers for building and testing the C++ backend
 | Build C++ release archive | `scripts/release/cpp/release-cpp.cmd -Version <version>` |
 | Run extracted packaged MCP smoke | `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <extracted-package>` |
 | Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version>` |
-| Clean build/test artifacts | `scripts\build\clean-build-temp.cmd` |
+| Clean generated output, `tmp/`, and Python caches | `scripts\clean\clean-repo-temp.cmd` |
 
-Every `.cmd` is a thin wrapper over its `.ps1`; use either form.
+Build `.cmd` files are thin wrappers over their `.ps1` counterparts; the
+standalone cleanup command is `scripts/clean/clean-repo-temp.cmd`.
 
 ## Native toolchain contract
 
@@ -163,13 +164,18 @@ install method.
   C++ backend archive. It does not run development-stage data or NTA scripts.
 - `scripts/release/cpp/release-cpp-linux.sh <version>` — builds, tests, and
   packages the C++ Linux backend.
-- The Windows C++ archive is self-contained at launch: run `streamfind.exe`
-  from the package root. It starts `bin\\streamfind_service.exe` with the same
+- The Windows C++ archive is self-contained at launch: run `bin\\streamfind-app.exe`
+  from the package root. It asks `bin\\streamfind.exe` to start or reuse
+  `bin\\streamfind-server.exe` with the same
   package-relative runtime paths. Advanced MCP clients can use
-  `bin\\streamfind_mcp_launcher.exe` or `bin\\streamfind_mcp.exe`. Do not
-  prepend the package's `core\\vendors\\mingw` or `core\\vendors\\duckdb`
-  directories to `PATH`; the launchers supply those paths to their child
-  processes.
+  `bin\\streamfind-mcp.exe`. Do not
+  prepend any vendor subdirectory to `PATH`; all native runtime libraries are
+  kept once in the package's `bin/` directory and the launchers supply that
+  path to their child processes.
+- The public terminal command is `bin\\streamfind.exe` in the package. Use
+  `bin\\streamfind.exe service start`, `service list`, `service status`, and
+  `service stop` (or `service stop --instance <id>` when multiple services are
+  running) to manage the independent background service.
 - Validate an extracted Windows archive with
   `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <package-root>`.
 - `scripts/release/publish-release.ps1` — validates the versioned archives and checksums in
@@ -181,5 +187,7 @@ install method.
 - On a plain terminal, the scripts set repository-local Windows `TMP`/`TEMP`
   paths before invoking MinGW, CMake, or Ninja (the scripts assume a normal user
   environment).
-- Build artifacts are gitignored; `scripts/build/clean-build-temp.cmd` removes
-  them while preserving tracked scripts and `tmp/logs/`.
+- Build artifacts are gitignored; `scripts/clean/clean-repo-temp.cmd` removes
+  generated output, all disposable `tmp/` contents, and repository-owned
+  Python caches while preserving tracked source, scripts, `.venv`,
+  `node_modules`, and vendored source.

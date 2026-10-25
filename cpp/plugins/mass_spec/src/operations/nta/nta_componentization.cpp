@@ -609,7 +609,7 @@ using Json = nlohmann::json;
             ? parameters.at("debug_analysis").get<std::string>() : std::string{};
         const auto debug_rt = parameters.value("debug_rt", 0.0f);
         auto debug = sdk::DebugSession::open(
-            access.database_path(), "mass_spec.create_components", access.operation_instance(),
+            "", "mass_spec.create_components", access.operation_instance(),
             sdk::DebugOptions{debug_analysis, 0.0, -1, debug_rt > 0.0f, false});
         utils::set_debug_session(&debug);
         try {

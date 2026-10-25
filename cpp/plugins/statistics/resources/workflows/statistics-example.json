@@ -1,0 +1,119 @@
+{
+  "metadata": {
+    "id": "statistics-example",
+    "name": "Statistics example",
+    "description": "Import the bundled example CSV and run PCA, PLS, and two-group fold-change analysis from the same input table.",
+    "domain": "statistics",
+    "use_case": "Explore, model, and compare multivariate data",
+    "owner": "StreamFind statistics demos"
+  },
+  "workflow": {
+    "schema_version": 2,
+    "workflow_id": "statistics-example",
+    "name": "Statistics example",
+    "version": 1,
+    "metadata": {
+      "name": "Statistics example",
+      "description": "Import one wide table and inspect PCA, PLS, and fold-change results.",
+      "domain": "statistics"
+    },
+    "operations": [
+      {
+        "id": 1,
+        "operation": "streamfind.read_csv",
+        "parameters": {
+          "csv_input_path": "statistics-example.csv"
+        },
+        "inputs": {},
+        "position": {
+          "x": 120,
+          "y": 360
+        }
+      },
+      {
+        "id": 2,
+        "operation": "statistics.pca",
+        "parameters": {
+          "layout": "wide",
+          "sample_id_column": "sample_id",
+          "variable_columns": [
+            "feature_a",
+            "feature_b"
+          ],
+          "group_column": "group",
+          "preprocessing": "center",
+          "n_components": 2
+        },
+        "inputs": {},
+        "position": {
+          "x": 460,
+          "y": 120
+        }
+      },
+      {
+        "id": 3,
+        "operation": "statistics.pls",
+        "parameters": {
+          "layout": "wide",
+          "sample_id_column": "sample_id",
+          "variable_columns": [
+            "feature_a",
+            "feature_b"
+          ],
+          "response_mode": "regression",
+          "response_columns": [
+            "response"
+          ],
+          "preprocessing": "center",
+          "n_components": 1
+        },
+        "inputs": {},
+        "position": {
+          "x": 460,
+          "y": 360
+        }
+      },
+      {
+        "id": 4,
+        "operation": "statistics.fold_change",
+        "parameters": {
+          "layout": "wide",
+          "sample_id_column": "sample_id",
+          "variable_columns": [
+            "feature_a",
+            "feature_b"
+          ],
+          "group_column": "group",
+          "group_a": "control",
+          "group_b": "treated",
+          "pseudocount": 1.0
+        },
+        "inputs": {},
+        "position": {
+          "x": 460,
+          "y": 600
+        }
+      }
+    ],
+    "connections": [
+      {
+        "source_operation": 1,
+        "source_port": "anyTable",
+        "target_operation": 2,
+        "target_port": "tableInput"
+      },
+      {
+        "source_operation": 1,
+        "source_port": "anyTable",
+        "target_operation": 3,
+        "target_port": "tableInput"
+      },
+      {
+        "source_operation": 1,
+        "source_port": "anyTable",
+        "target_operation": 4,
+        "target_port": "tableInput"
+      }
+    ]
+  }
+}

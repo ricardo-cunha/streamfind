@@ -43,7 +43,9 @@ private:
 class ServiceServer {
 public:
     ServiceServer(std::uint16_t port, const std::filesystem::path &configuration_path,
-        const std::filesystem::path &application_root = {});
+        const std::filesystem::path &application_root = {},
+        Json service_identity = Json::object(),
+        std::string service_token = {});
     ServiceServer(const ServiceServer &) = delete;
     ServiceServer &operator=(const ServiceServer &) = delete;
     ~ServiceServer();
@@ -58,6 +60,8 @@ private:
     std::uint16_t port_;
     std::filesystem::path application_root_;
     std::filesystem::path runtime_root_;
+    Json service_identity_;
+    std::string service_token_;
     std::atomic<bool> stopping_{false};
     std::intptr_t listener_{-1};
     MethodRegistry methods_;

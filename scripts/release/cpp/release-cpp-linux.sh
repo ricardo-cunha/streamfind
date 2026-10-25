@@ -2,7 +2,16 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.sh"
 require_tool cmake; require_tool ninja; require_tool tar; require_tool sha256sum
-VERSION="${1:?usage: release-cpp-linux.sh VERSION}"
+VERSION="${1:-$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")}"
+if [[ -z "$VERSION" ]]; then
+    echo "VERSION is empty" >&2
+    exit 2
+fi
+canonical_version="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
+if [[ "$VERSION" != "$canonical_version" ]]; then
+    echo "release version $VERSION does not match canonical version $canonical_version in $REPO_ROOT/VERSION" >&2
+    exit 2
+fi
 PLUGINS="${STREAMFIND_PLUGINS:-ALL}"
 OUT="${STREAMFIND_RELEASE_DIR:-$REPO_ROOT/tmp/release-output}"
 BUILD="$REPO_ROOT/tmp/build/release-cpp-linux"
@@ -41,6 +50,16 @@ if grep -Eq '(^|/)sdk/' "$listing"; then
     echo "runtime archive must not contain an sdk directory" >&2
     exit 1
 fi
+if grep -Eq '(^|/)core/vendors(/|$)' "$listing"; then
+    echo "runtime archive must not contain the removed core/vendors directory" >&2
+    exit 1
+fi
+native_outside_bin=$(grep -E '\.(so|dylib)$' "$listing" | grep -Ev '(^|/)(bin|plugins/[^/]+)/' || true)
+if [[ -n "$native_outside_bin" ]]; then
+    echo "runtime archive contains native libraries outside bin or plugin packages:" >&2
+    printf '%s\n' "$native_outside_bin" >&2
+    exit 1
+fi
 grep -Eq '(^|/)core/catalogue\.duckdb$' "$listing"
 while IFS= read -r manifest_path; do
     domain="$(dirname "$manifest_path" | xargs basename)"
@@ -59,5 +78,12 @@ while IFS= read -r manifest_path; do
 done <<< "$plugin_manifests"
 rm -f "$listing"
 rm -rf "$runtime_root"
-(cd "$OUT" && find . -maxdepth 1 -type f \( -name 'streamfind-*.tgz' -o -name 'streamfind-*.tar.gz' \) -printf '%f\n' | sort | xargs -r sha256sum > sha256sums.txt)
+(cd "$OUT" && {
+    release_files=()
+    for candidate in streamfind-*.zip streamfind-*.tgz streamfind-*.tar.gz; do
+        [[ -f "$candidate" ]] && release_files+=("$candidate")
+    done
+    ((${#release_files[@]} > 0))
+    printf '%s\n' "${release_files[@]}" | sort | xargs -r sha256sum > sha256sums.txt
+})
 echo "C++ Linux release: $archive"

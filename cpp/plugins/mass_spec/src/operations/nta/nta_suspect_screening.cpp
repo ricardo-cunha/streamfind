@@ -63,6 +63,7 @@ namespace streamfind::mass_spec::nta
       std::string natural_formula;
       double fixed_mass_delta = 0.0;
       bool has_fixed_isotopes = false;
+      int fixed_deuterium_count = 0;
     };
 
     int isotope_table_index(const std::string &symbol, int mass_number)
@@ -129,6 +130,8 @@ namespace streamfind::mass_spec::nta
 
           result.fixed_mass_delta += static_cast<double>(count) *
               (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+          if (symbol == "H" && mass_number == 2)
+            result.fixed_deuterium_count += count;
           result.has_fixed_isotopes = true;
           i = cursor;
           continue;
@@ -155,6 +158,8 @@ namespace streamfind::mass_spec::nta
             normalized += std::to_string(count);
           result.fixed_mass_delta += static_cast<double>(count) *
               (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
+          if (mass_number == 2)
+            result.fixed_deuterium_count += count;
           result.has_fixed_isotopes = true;
           continue;
         }
@@ -198,14 +203,66 @@ namespace streamfind::mass_spec::nta
 
         constexpr std::size_t max_isotope_peaks = 12;
         constexpr double minimum_probability = 1e-5;
-        std::vector<double> theoretical_mz;
-        std::vector<double> theoretical_probability;
-        for (size_t i = 0; i < envelope.confs_no() && theoretical_mz.size() < max_isotope_peaks; ++i)
+        struct THEORETICAL_PEAK
+        {
+          double mz = 0.0;
+          double probability = 0.0;
+        };
+        std::vector<THEORETICAL_PEAK> theoretical_peaks;
+        const auto append_envelope = [&](const IsoSpec::FixedEnvelope &candidate_envelope,
+                                         double fixed_mass_delta,
+                                         double state_weight)
+        {
+          std::size_t appended = 0;
+          for (size_t i = 0; i < candidate_envelope.confs_no() && appended < max_isotope_peaks; ++i)
+          {
+            if (candidate_envelope.prob(i) < minimum_probability)
+              continue;
+            theoretical_peaks.push_back({candidate_envelope.mass(i) + fixed_mass_delta,
+                                         candidate_envelope.prob(i) * state_weight});
+            ++appended;
+          }
+        };
+        for (size_t i = 0; i < envelope.confs_no() && theoretical_peaks.size() < max_isotope_peaks; ++i)
         {
           if (envelope.prob(i) < minimum_probability)
             continue;
-          theoretical_mz.push_back(envelope.mass(i) + parsed_formula.fixed_mass_delta);
-          theoretical_probability.push_back(envelope.prob(i));
+          theoretical_peaks.push_back({envelope.mass(i) + parsed_formula.fixed_mass_delta,
+                                       envelope.prob(i)});
+        }
+        // A labelled target can also be observed as partially exchanged or
+        // partially labelled isotopologues.  Annotate-components rebases a
+        // validated D-containing chain at its most intense member; screening
+        // must therefore score the same lower-mass D->H states instead of
+        // treating the fully labelled formula as the only possible ion.
+        if (parsed_formula.fixed_deuterium_count > 0)
+        {
+          constexpr int max_deuterium_loss_states = 8;
+          constexpr double deuterium_loss_mass_delta = 1.00627674589;
+          for (int loss = 1; loss <= std::min(parsed_formula.fixed_deuterium_count,
+                                               max_deuterium_loss_states); ++loss)
+          {
+            append_envelope(envelope,
+                            parsed_formula.fixed_mass_delta - loss * deuterium_loss_mass_delta,
+                            std::pow(0.35, loss));
+          }
+        }
+        std::sort(theoretical_peaks.begin(), theoretical_peaks.end(),
+                  [](const THEORETICAL_PEAK &lhs, const THEORETICAL_PEAK &rhs) {
+                    return lhs.mz < rhs.mz;
+                  });
+        std::vector<double> theoretical_mz;
+        std::vector<double> theoretical_probability;
+        for (const auto &peak : theoretical_peaks)
+        {
+          if (!theoretical_mz.empty() &&
+              std::abs(peak.mz - theoretical_mz.back()) <= ppm_tol(peak.mz, ppm))
+          {
+            theoretical_probability.back() = std::max(theoretical_probability.back(), peak.probability);
+            continue;
+          }
+          theoretical_mz.push_back(peak.mz);
+          theoretical_probability.push_back(peak.probability);
         }
         IsotopeMatch result;
         result.theoretical_peaks = static_cast<int>(theoretical_mz.size());
@@ -222,9 +279,11 @@ namespace streamfind::mass_spec::nta
         const double observed_anchor = feature_index < features.mz.size()
             ? static_cast<double>(features.mz[feature_index])
             : std::numeric_limits<double>::quiet_NaN();
-        if (std::isfinite(observed_anchor) && observed_anchor > 0.0 && !theoretical_mz.empty())
+        const double theoretical_anchor = envelope.mass(0) + parsed_formula.fixed_mass_delta;
+        if (std::isfinite(observed_anchor) && observed_anchor > 0.0 &&
+            std::isfinite(theoretical_anchor))
         {
-          const double shift = observed_anchor - theoretical_mz.front();
+          const double shift = observed_anchor - theoretical_anchor;
           for (double &mz : theoretical_mz)
             mz += shift;
         }

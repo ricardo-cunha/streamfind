@@ -124,7 +124,7 @@ namespace streamfind::obabel_detail
 
       const std::vector<std::wstring> candidates = {
           env_data,
-          module_dir + L"\\data"};
+          module_dir + L"\\data\\openbabel"};
 
       for (const auto &candidate : candidates)
       {

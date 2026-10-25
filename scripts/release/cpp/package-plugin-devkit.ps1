@@ -1,7 +1,7 @@
 <# Build the optional StreamFind backend/frontend plugin developer kit. #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')][string]$Version,
+    [ValidatePattern('^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$')][string]$Version,
     [switch]$SkipTests,
     [ValidateSet('Debug', 'Release')][string]$Config = 'Release'
 )
@@ -12,6 +12,7 @@ param(
 $root = $Script:REPO_ROOT
 $versionFile = Join-Path $root 'VERSION'
 $canonicalVersion = (Get-Content -Raw $versionFile).Trim()
+if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $canonicalVersion }
 if ($canonicalVersion -ne $Version) {
     throw "Release version $Version does not match the canonical version $canonicalVersion"
 }

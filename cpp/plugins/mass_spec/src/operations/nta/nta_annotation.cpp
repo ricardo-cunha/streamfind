@@ -3327,7 +3327,7 @@ using Json = nlohmann::json;
         const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
             ? parameters.at("debug_analysis").get<std::string>() : std::string{};
         auto debug = sdk::DebugSession::open(
-            access.database_path(), "mass_spec.annotate_components", access.operation_instance(),
+        "", "mass_spec.annotate_components", access.operation_instance(),
             sdk::DebugOptions{debug_analysis, 0.0, -1, !debug_component.empty() && !debug_analysis.empty(), false});
         utils::set_debug_session(&debug);
         try {

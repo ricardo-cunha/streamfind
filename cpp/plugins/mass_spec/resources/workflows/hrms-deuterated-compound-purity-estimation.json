@@ -154,7 +154,7 @@
       "source_operation": 16,
       "source_port": "suspectTargetsTable",
       "target_operation": 17,
-      "target_port": "suspectTargetsTable"
+      "target_port": "parameter:suspect_targets"
     },
     {
       "source_operation": 1,
@@ -189,7 +189,7 @@
   ],
   "metadata": {
     "name": "HRMS Deuterated Compound Purity Estimation",
-    "description": "Deuterium-aware HRMS purity workflow extracted from the ACC1_27803 project, including isotope-chain annotation, blank subtraction, MS1/MS2 loading, and target matching.",
+    "description": "Example deuterium-aware HRMS purity workflow, including isotope-chain annotation, blank subtraction, MS1/MS2 loading, and target matching.",
     "methods": [
       "Blank and replicate naming",
       "Feature detection and componentization",
@@ -214,8 +214,8 @@
       "operation": "mass_spec.read_mass_spec_files",
       "parameters": {
         "source_paths": [
-          "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27803_1_blank_P1-A-1_1_2022_12982.d",
-          "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27803_1_P1-A-3_1_2022_12984.d"
+          "example_data/mass_spec/hrms_deuterated/blank.d",
+          "example_data/mass_spec/hrms_deuterated/sample.d"
         ]
       },
       "position": {
@@ -260,8 +260,12 @@
       "parameters": {
         "base_quantile": 0.1,
         "baseline_window": 300,
-        "debug_analysis": "ACC1_27803_1_P1-A-3_1_2022_12984",
-        "debug_mz": 671.48,
+        "smoothing_enabled": false,
+        "smoothing_window": 7,
+        "smoothing_sharp_window": 3,
+        "smoothing_strength": 1.0,
+        "debug_analysis": "",
+        "debug_mz": 0,
         "debug_spec_idx": -1,
         "max_feature_width": 200,
         "min_snr": 2,
@@ -308,8 +312,8 @@
           "+NH4",
           "+K"
         ],
-        "debug_analysis": "ACC1_27803_1_P1-A-3_1_2022_12984",
-        "debug_component": "FC2_RT740_POS",
+        "debug_analysis": "",
+        "debug_component": "",
         "formula_elements": [
           "C",
           "H",
@@ -413,7 +417,7 @@
       "inputs": {},
       "operation": "mass_spec.read_csv_targets",
       "parameters": {
-        "targets_csv_path": "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27803_1.csv"
+        "targets_csv_path": "example_data/mass_spec/hrms_deuterated/targets.csv"
       },
       "position": {
         "x": 1083.1552466837832,
@@ -426,7 +430,7 @@
       "operation": "mass_spec.get_features",
       "parameters": {
         "analysis_names": [
-          "ACC1_27803_1_P1-A-3_1_2022_12984"
+          ""
         ],
         "filtered": false,
         "ppm": 20,
@@ -467,7 +471,7 @@
       "operation": "mass_spec.read_mol_suspect_target",
       "parameters": {
         "compound_name": "Compound",
-        "mol_file_path": "E:\\example_files\\ms_merck\\More Data OLED Routine for Ricardo\\ACC1_27803_1.mol"
+        "mol_file_path": "example_data/mass_spec/hrms_deuterated/compound.mol"
       },
       "position": {
         "x": 2386.7857163617105,
@@ -564,7 +568,7 @@
       "operation": "mass_spec.get_raw_spectra_eic",
       "parameters": {
         "analysis_names": [
-          "ACC1_27803_1_P1-A-3_1_2022_12984"
+          ""
         ],
         "charge": 1,
         "polarity": 0,
@@ -583,7 +587,7 @@
       "operation": "mass_spec.get_features",
       "parameters": {
         "analysis_names": [
-          "ACC1_27803_1_P1-A-3_1_2022_12984"
+          ""
         ],
         "filtered": true,
         "ppm": 20,

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import type { ArtifactQueryFilter, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
@@ -65,6 +65,10 @@ const suspectOverviewColumns = [
 function text(row: Row, key: string): string {
   const value = row[key];
   return value === null || value === undefined ? '' : String(value);
+}
+
+function rawValue(row: Row, key: string): unknown {
+  return (row as Record<string, unknown>)[key];
 }
 
 function number(row: Row, key: string): number | null {
@@ -142,10 +146,22 @@ function IdentificationOverview({
   );
 }
 
-function decodeFloatArray(encoded: string, size: string): number[] {
-  if (!encoded) return [];
+function decodeFloatArray(encoded: unknown, size: unknown): number[] {
+  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
+  if (encoded === null || encoded === undefined) return [];
+  const text = String(encoded).trim();
+  if (!text) return [];
+  if (text.startsWith('[')) {
+    try {
+      const values = JSON.parse(text);
+      return Array.isArray(values) ? values.map(Number).filter(Number.isFinite) : [];
+    } catch {
+      return [];
+    }
+  }
   try {
-    const binary = atob(encoded);
+    const normalized = text.replaceAll('-', '+').replaceAll('_', '/');
+    const binary = atob(normalized);
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const expected = Number(size || 0);
     const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
@@ -161,18 +177,30 @@ function decodeFloatArray(encoded: string, size: string): number[] {
 
 type EvidenceTab = 'eic' | 'ms1' | 'ms2';
 type ModalEvidenceTab = 'ms1' | 'ms2';
+type RenderedTrace = { x: number[]; y: number[] };
+
+function traceFromResponse(response: { traces?: Array<Record<string, unknown>> }, xKey: string, yKey: string): RenderedTrace | null {
+  const row = response.traces?.[0];
+  if (!row) return null;
+  const x = Array.isArray(row[xKey]) ? row[xKey].map(Number).filter(Number.isFinite) : [];
+  const y = Array.isArray(row[yKey]) ? row[yKey].map(Number).filter(Number.isFinite) : [];
+  return x.length && y.length ? { x, y } : null;
+}
 
 function EvidencePlots({
   row,
   client,
-  artifactId,
+  sessionId,
+  resultId,
 }: {
   row: Row;
   client: StreamFindApiClient;
-  artifactId: string;
+  sessionId: string;
+  resultId: string;
 }): ReactNode {
   const [tab, setTab] = useState<ModalEvidenceTab>('ms1');
   const [isotope, setIsotope] = useState<{ mz: number[]; probability: number[]; labels: string[] } | null>(null);
+  const [experimentalTrace, setExperimentalTrace] = useState<RenderedTrace | null>(null);
   const formula = text(row, 'formula');
   const polarity = number(row, 'polarity');
 
@@ -203,7 +231,31 @@ function EvidencePlots({
     };
   }, [client, formula, polarity]);
 
-  const spec = evidenceSpec(row, tab, isotope, artifactId);
+  useEffect(() => {
+    let active = true;
+    const rowKey = text(row, 'row_key');
+    if (!client || !rowKey) {
+      setExperimentalTrace(null);
+      return () => {
+        active = false;
+      };
+    }
+    const xKey = tab === 'ms1' ? 'ms1_mz' : 'ms2_mz';
+    const yKey = tab === 'ms1' ? 'ms1_intensity' : 'ms2_intensity';
+    void client
+      .resultTrace(sessionId, { result_id: resultId, trace_type: tab, row_keys: [rowKey], limit: 1 })
+      .then((response) => {
+        if (active) setExperimentalTrace(traceFromResponse(response, xKey, yKey));
+      })
+      .catch(() => {
+        if (active) setExperimentalTrace(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, resultId, row, sessionId, tab]);
+
+  const spec = evidenceSpec(row, tab, isotope, resultId, experimentalTrace);
   return (
     <section className="sf-suspects-explorer-evidence-panel">
       <nav className="sf-suspects-explorer-evidence-tabs" role="tablist" aria-label="Spectral evidence">
@@ -237,14 +289,14 @@ function SuspectScatter({
   onSelect,
   onClearSelection,
   onRelayout,
-  artifactId,
+  resultId,
 }: {
   points: ScatterPoint[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
   onClearSelection: () => void;
   onRelayout: (event: Record<string, unknown>) => void;
-  artifactId: string;
+  resultId: string;
 }): ReactNode {
   const userViewportGesture = useRef(false);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
@@ -263,7 +315,7 @@ function SuspectScatter({
   const markerLineWidth = selectedKey ? keys.map((key) => (key === selectedKey ? 2 : 0.5)) : 0.5;
   const spec: VisualizationSpec = {
     schema: 'streamfind.visualization/v1',
-    visualization_id: `suspects-scatter-${artifactId}`,
+    visualization_id: `suspects-scatter-${resultId}`,
     semantic_type: 'sfms:suspectFeatureScatter',
     title: 'Suspect feature map',
     data_mode: 'inline',
@@ -294,7 +346,7 @@ function SuspectScatter({
         },
       ],
       layout: {
-        uirevision: `suspects-scatter-${artifactId}`,
+        uirevision: `suspects-scatter-${resultId}`,
         autosize: true,
         margin: { l: 55, r: 20, t: 20, b: 50 },
         xaxis: {
@@ -325,7 +377,7 @@ function SuspectScatter({
       config: { displaylogo: false, responsive: true },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.suspects_explorer',
       producer_node_id: 'suspects-explorer',
     },
@@ -376,7 +428,8 @@ function evidenceSpec(
   row: Row,
   tab: EvidenceTab,
   isotope: { mz: number[]; probability: number[]; labels: string[] } | null,
-  artifactId: string,
+  resultId: string,
+  experimentalTrace: RenderedTrace | null = null,
 ): VisualizationSpec | null {
   const theme = {
     background: cssThemeValue('--sf-surface-raised'),
@@ -390,8 +443,8 @@ function evidenceSpec(
   let xTitle = 'm/z';
   let yTitle = 'Intensity';
   if (tab === 'eic') {
-    const x = decodeFloatArray(text(row, 'eic_rt'), text(row, 'eic_size'));
-    const y = decodeFloatArray(text(row, 'eic_intensity'), text(row, 'eic_size'));
+    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'eic_rt'), rawValue(row, 'eic_size'));
+    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'eic_intensity'), rawValue(row, 'eic_size'));
     if (!x.length || !y.length) return null;
     xTitle = 'Retention time (s)';
     data = [
@@ -406,8 +459,8 @@ function evidenceSpec(
       },
     ];
   } else if (tab === 'ms1') {
-    const x = decodeFloatArray(text(row, 'ms1_mz'), text(row, 'ms1_size'));
-    const y = decodeFloatArray(text(row, 'ms1_intensity'), text(row, 'ms1_size'));
+    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms1_mz'), rawValue(row, 'ms1_size'));
+    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms1_intensity'), rawValue(row, 'ms1_size'));
     if (!x.length || !y.length) return null;
     data = [
       {
@@ -434,10 +487,10 @@ function evidenceSpec(
     }
     yTitle = 'Intensity (experimental + / isotope −)';
   } else {
-    const experimentalMz = decodeFloatArray(text(row, 'ms2_mz'), text(row, 'ms2_size'));
-    const experimentalIntensity = decodeFloatArray(text(row, 'ms2_intensity'), text(row, 'ms2_size'));
-    const databaseMz = decodeFloatArray(text(row, 'db_ms2_mz'), text(row, 'db_ms2_size'));
-    const databaseIntensity = decodeFloatArray(text(row, 'db_ms2_intensity'), text(row, 'db_ms2_size'));
+    const experimentalMz = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms2_mz'), rawValue(row, 'ms2_size'));
+    const experimentalIntensity = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms2_intensity'), rawValue(row, 'ms2_size'));
+    const databaseMz = decodeFloatArray(rawValue(row, 'db_ms2_mz'), rawValue(row, 'db_ms2_size'));
+    const databaseIntensity = decodeFloatArray(rawValue(row, 'db_ms2_intensity'), rawValue(row, 'db_ms2_size'));
     const experimentalCount = Math.min(experimentalMz.length, experimentalIntensity.length);
     const databaseCount = Math.min(databaseMz.length, databaseIntensity.length);
     if (!experimentalCount && !databaseCount) return null;
@@ -474,7 +527,7 @@ function evidenceSpec(
   }, 0);
   return {
     schema: 'streamfind.visualization/v1',
-    visualization_id: `suspect-evidence-${tab}-${artifactId}-${text(row, 'feature')}`,
+    visualization_id: `suspect-evidence-${tab}-${resultId}-${text(row, 'feature')}`,
     semantic_type: `sfms:suspect-${tab}`,
     title: tab.toUpperCase(),
     data_mode: 'inline',
@@ -526,7 +579,7 @@ function evidenceSpec(
       config: { displaylogo: false, responsive: true, displayModeBar: true },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.suspects_explorer',
       producer_node_id: 'suspects-explorer',
     },
@@ -540,6 +593,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [totalSuspects, setTotalSuspects] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedFeatureDetail, setSelectedFeatureDetail] = useState<Row | null>(null);
+  const [selectedFeatureTrace, setSelectedFeatureTrace] = useState<RenderedTrace | null>(null);
   const featureDetailCache = useRef(new Map<string, Row>());
   const [selectedSuspect, setSelectedSuspect] = useState<Row | null>(null);
   const [selectedSuspectLoading, setSelectedSuspectLoading] = useState(false);
@@ -628,33 +682,28 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         active = false;
       };
     }
-    const suspectsArtifactId = context.artifact.artifact_id;
+    const suspectsArtifactId = context.artifact.result_id;
     const load = async () => {
       skipInitialOverviewQuery.current = true;
       const baseRequest = {
-        artifact_id: suspectsArtifactId,
+        result_id: suspectsArtifactId,
         columns: overviewColumns,
         filters: overviewColumns?.includes('filtered')
           ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
           : undefined,
       } as const;
-      let suspectData = await client.artifactQuery(context.sessionId, {
+      // Load the scatter overview once. A page-then-sample sequence caused
+      // large suspect tables to be decoded twice before the explorer appeared.
+      const suspectData = await client.resultQuery(context.sessionId, {
         ...baseRequest,
-        mode: 'page',
-        limit: 1000,
+        mode: 'sample',
+        sampling_strategy: 'grid',
+        x_bins: 384,
+        y_bins: 384,
+        x_column: 'exp_mass',
+        y_column: 'exp_rt',
+        limit: 20000,
       });
-      if (suspectData.total_rows > suspectData.returned_rows) {
-        suspectData = await client.artifactQuery(context.sessionId, {
-          ...baseRequest,
-          mode: 'sample',
-          sampling_strategy: 'grid',
-          x_bins: 512,
-          y_bins: 512,
-          x_column: 'exp_mass',
-          y_column: 'exp_rt',
-          limit: 50000,
-        });
-      }
       if (!active) return;
       setSuspects(suspectData.rows.filter((row) => row && typeof row === 'object'));
       setTotalSuspects(suspectData.total_rows);
@@ -691,8 +740,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     let active = true;
     const timer = window.setTimeout(() => {
       void client
-        .artifactQuery(context.sessionId, {
-          artifact_id: context.artifact!.artifact_id,
+        .resultQuery(context.sessionId, {
+          result_id: context.artifact!.result_id,
           mode: 'sample',
           columns: overviewColumns,
           sampling_strategy: 'grid',
@@ -833,9 +882,33 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   const selectedFeature = plotPoints.find((point) => featureKey(point.row) === selectedKey)?.row ?? null;
 
+  const detailColumns = useMemo(() => {
+    const available = new Set((context.artifact?.columns ?? []).map((column) => column.name));
+    return [
+      'row_key',
+      'feature',
+      'analysis',
+      'replicate',
+      'eic_size',
+      'eic_rt',
+      'eic_intensity',
+      'ms1_size',
+      'ms1_mz',
+      'ms1_intensity',
+      'ms2_size',
+      'ms2_mz',
+      'ms2_intensity',
+      'db_ms2_size',
+      'db_ms2_mz',
+      'db_ms2_intensity',
+      'formula',
+      'polarity',
+    ].filter((column) => available.has(column));
+  }, [context.artifact]);
+
   useEffect(() => {
     let active = true;
-    const rowKey = selectedFeature?.row_key;
+    const rowKey = selectedFeature ? text(selectedFeature, 'row_key') : '';
     if (!selectedFeature || !rowKey || !client || !context.artifact) {
       return () => {
         active = false;
@@ -850,9 +923,10 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     }
     setSelectedFeatureDetail(null);
     void client
-      .artifactQuery(context.sessionId, {
-        artifact_id: context.artifact.artifact_id,
+      .resultQuery(context.sessionId, {
+        result_id: context.artifact.result_id,
         mode: 'detail',
+        columns: detailColumns,
         row_keys: [rowKey],
         limit: 1,
       })
@@ -867,17 +941,44 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
     return () => {
       active = false;
     };
-  }, [client, context.artifact, context.sessionId, selectedFeature]);
+  }, [client, context.artifact, context.sessionId, detailColumns, selectedFeature]);
+
+  useEffect(() => {
+    let active = true;
+    const rowKey = selectedFeatureDetail ? text(selectedFeatureDetail, 'row_key') : '';
+    if (!client || !context.artifact || !rowKey) {
+      setSelectedFeatureTrace(null);
+      return () => {
+        active = false;
+      };
+    }
+    void client
+      .resultTrace(context.sessionId, {
+        result_id: context.artifact.result_id,
+        trace_type: 'eic',
+        row_keys: [rowKey],
+        limit: 1,
+      })
+      .then((response) => {
+        if (active) setSelectedFeatureTrace(traceFromResponse(response, 'eic_rt', 'eic_intensity'));
+      })
+      .catch(() => {
+        if (active) setSelectedFeatureTrace(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, context.artifact, context.sessionId, selectedFeatureDetail]);
 
   const openSuspectDetail = async (row: Row) => {
     setSelectedSuspect(row);
-    const rowKey = row.row_key;
+    const rowKey = text(row, 'row_key');
     const canLoadDetail = Boolean(rowKey && client && context.artifact);
     setSelectedSuspectLoading(canLoadDetail);
     if (!canLoadDetail || !client || !context.artifact || !rowKey) return;
     try {
-      const detail = await client.artifactQuery(context.sessionId, {
-        artifact_id: context.artifact.artifact_id,
+      const detail = await client.resultQuery(context.sessionId, {
+        result_id: context.artifact.result_id,
         mode: 'detail',
         row_keys: [rowKey],
         limit: 1,
@@ -1108,7 +1209,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         />
         <main className="sf-suspects-explorer-scatter-panel" aria-label="Feature scatter plot">
           <SuspectScatter
-            artifactId={context.artifact?.artifact_id ?? context.artifactId}
+            resultId={context.artifact?.result_id ?? context.resultId}
             points={plotPoints}
             selectedKey={selectedKey}
             onSelect={setSelectedKey}
@@ -1164,7 +1265,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                     selectedFeatureDetail,
                     'eic',
                     null,
-                    context.artifact?.artifact_id ?? context.artifactId,
+                    context.artifact?.result_id ?? context.resultId,
+                    selectedFeatureTrace,
                   );
                   return spec ? (
                     <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
@@ -1254,7 +1356,8 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
                       <EvidencePlots
                         row={selectedSuspect}
                         client={client}
-                        artifactId={context.artifact?.artifact_id ?? context.artifactId}
+                        sessionId={context.sessionId}
+                        resultId={context.artifact?.result_id ?? context.resultId}
                       />
                     </>
                   )}
@@ -1273,8 +1376,8 @@ function buildSuspectQueryFilters(
   booleanFilters: Record<string, boolean>,
   textFilters: Record<string, string>,
   isotopeOnly: boolean,
-): ArtifactQueryFilter[] {
-  const filters: ArtifactQueryFilter[] = [];
+): ResultQueryFilter[] {
+  const filters: ResultQueryFilter[] = [];
   Object.entries(numericFilters).forEach(([key, value]) => {
     if (!value || (value.min === '' && value.max === '')) return;
     if (value.min !== '' && value.max !== '')

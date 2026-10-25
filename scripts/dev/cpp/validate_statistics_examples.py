@@ -12,34 +12,37 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_DIR = ROOT / "cpp" / "plugins" / "statistics" / "resources" / "workflows"
 CSV_PATH = WORKFLOW_DIR / "statistics-example.csv"
 EXPECTED = {
-    "pca-example.json": "statistics.pca",
-    "pls-example.json": "statistics.pls",
-    "fold-change-example.json": "statistics.fold_change",
+    "statistics-example.json": {
+        "statistics.pca",
+        "statistics.pls",
+        "statistics.fold_change",
+    },
 }
 
 
 def load_workflows() -> list[tuple[str, dict]]:
     loaded = []
-    for file_name, operation_id in EXPECTED.items():
+    for file_name, expected_operations in EXPECTED.items():
         path = WORKFLOW_DIR / file_name
         payload = json.loads(path.read_text(encoding="utf-8"))
         workflow = payload["workflow"]
         operations = {entry["id"]: entry for entry in workflow["operations"]}
         import_nodes = [entry for entry in operations.values() if entry["operation"] == "streamfind.read_csv"]
-        analysis_nodes = [entry for entry in operations.values() if entry["operation"] == operation_id]
-        if len(import_nodes) != 1 or len(analysis_nodes) != 1:
-            raise ValueError(f"{file_name} must contain one CSV import and one {operation_id} operation")
-        connection = {
-            "source_operation": import_nodes[0]["id"],
-            "source_port": "anyTable",
-            "target_operation": analysis_nodes[0]["id"],
-            "target_port": "tableInput",
-        }
-        if connection not in workflow["connections"]:
-            raise ValueError(f"{file_name} does not connect read_csv to tableInput")
+        analysis_nodes = [entry for entry in operations.values() if entry["operation"] in expected_operations]
+        if len(import_nodes) != 1 or {entry["operation"] for entry in analysis_nodes} != expected_operations:
+            raise ValueError(f"{file_name} must contain one CSV import and all three statistics operations")
+        for analysis_node in analysis_nodes:
+            connection = {
+                "source_operation": import_nodes[0]["id"],
+                "source_port": "anyTable",
+                "target_operation": analysis_node["id"],
+                "target_port": "tableInput",
+            }
+            if connection not in workflow["connections"]:
+                raise ValueError(f"{file_name} does not connect read_csv to {analysis_node['operation']}")
         if Path(import_nodes[0]["parameters"]["csv_input_path"]).name != CSV_PATH.name:
             raise ValueError(f"{file_name} does not reference the bundled statistics example CSV")
-        loaded.append((operation_id, analysis_nodes[0]["parameters"]))
+        loaded.extend((entry["operation"], entry["parameters"]) for entry in analysis_nodes)
     return loaded
 
 

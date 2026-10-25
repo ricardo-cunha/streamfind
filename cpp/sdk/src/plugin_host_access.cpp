@@ -136,10 +136,6 @@ PluginHostAccess::PluginHostAccess(
     }
 }
 
-const std::filesystem::path &PluginHostAccess::database_path() const noexcept {
-    return static_cast<const PluginDataServiceContext *>(execution_context_)->database_path;
-}
-
 std::string_view PluginHostAccess::operation_instance() const noexcept {
     return static_cast<const PluginDataServiceContext *>(execution_context_)->operation_instance;
 }

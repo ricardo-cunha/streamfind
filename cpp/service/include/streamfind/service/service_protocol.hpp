@@ -10,7 +10,7 @@
 
 namespace streamfind::service {
 
-inline constexpr const char *kServiceName = "streamfind_service";
+inline constexpr const char *kServiceName = "streamfind-server";
 inline constexpr const char *kProtocolVersion = "1.0";
 
 struct SessionDto {
@@ -26,6 +26,7 @@ struct ProjectSessionDto {
     std::uintmax_t database_size_bytes{0};
     std::vector<std::string> domains;
     Json metadata{Json::object()};
+    Json result_store{Json::object()};
 };
 
 inline void to_json(Json &json, const SessionDto &value) {
@@ -36,7 +37,8 @@ inline void to_json(Json &json, const SessionDto &value) {
 inline void to_json(Json &json, const ProjectSessionDto &value) {
     json = Json{{"session_id", value.session_id}, {"database_path", value.database_path},
                 {"database_size_bytes", value.database_size_bytes},
-                {"domains", value.domains}, {"metadata", value.metadata}};
+                {"domains", value.domains}, {"metadata", value.metadata},
+                {"result_store", value.result_store}};
 }
 
 inline Json capability_operations_json(const std::string &domain,
@@ -121,7 +123,7 @@ inline Json capabilities_json() {
                 {"operations", projected_entries},
                 {"methods", methods},
                 {"domains", std::vector<std::string>(domains.begin(), domains.end())},
-                {"endpoints", Json::array({ "/session", "/capabilities", "/capabilities/index", "/capabilities/domains/<domain>/modules", "/capabilities/operations?domain=...&module=...", "/capabilities/operations/<canonical_id>", "/workflow-demos", "/chemistry/structure-svg", "/chemistry/isotope-pattern", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/cancel", "/events" })}};
+                                              {"endpoints", Json::array({ "/session", "/service/stop", "/capabilities", "/capabilities/index", "/capabilities/domains/<domain>/modules", "/capabilities/operations?domain=...&module=...", "/capabilities/operations/<canonical_id>", "/workflow-demos", "/chemistry/structure-svg", "/chemistry/isotope-pattern", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/cancel", "/projects/<session_id>/results/cache/lookup", "/projects/<session_id>/results/trace", "/events" })}};
 }
 
 inline Json project_initialization_json(const std::vector<std::string> &domains) {

@@ -21,28 +21,29 @@ Operation make_table_operation(const std::string &operation_id,
     definition.domain = domain;
     definition.output_ports.push_back({"table", contract, "one", "duckdb_table", {"duckdb-table"}, false});
     return Operation(std::move(definition),
-                     [contract](Project &project, const Json &, const std::string &instance,
+                     [contract](OperationExecutionContext &context, const Json &, const std::string &instance,
                                 const Json &inputs) {
-                         std::string source_artifact;
+                         std::string source_result;
                          if (!inputs.empty())
-                             source_artifact = inputs.begin().value().value("artifact_id", "");
-                         std::string artifact_id;
-                         std::string physical_table;
-                         const auto workflow_revision = project.get_workflow().version;
-                         ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
-                             const auto allocation = tables.allocate_table_artifact(
-                                 contract, instance == "1" ? "domain_a.make_table" : "domain_b.make_table",
-                                 instance, workflow_revision,
-                                 Json::array({{{"name", "value"}, {"type", "string"}}}));
-                             artifact_id = allocation.first;
-                             physical_table = allocation.second;
-                             tables.append(physical_table, {"value"},
-                                           {{{instance == "1" ? "domain-a" : "domain-b"}}});
-                             if (!source_artifact.empty())
-                                 tables.append_artifact_lineage(
-                                     artifact_id, {{source_artifact, "table", "input"}});
-                         });
-                         return Json{{"artifact_id", artifact_id}, {"physical_table", physical_table}};
+                             source_result = inputs.begin().value().value("result_id",
+                                 inputs.begin().value().value("result_id", ""));
+                         const auto producer = instance == "1" ? "domain_a.make_table" : "domain_b.make_table";
+                         const Json descriptor = {{"contract_id", contract}, {"kind", "table"},
+                             {"format", "json-lines"}, {"producer_operation", producer},
+                             {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
+                             {"schema", Json::array({{{"name", "value"}, {"type", "string"}}})}};
+                         const auto allocation = context.outputs().begin(descriptor);
+                         const auto handle = allocation.value("output_handle", "");
+                         if (handle.empty()) throw std::runtime_error("table output lease was not created");
+                         context.outputs().write_rows(handle, 0,
+                             Json::array({{{"value", instance == "1" ? "domain-a" : "domain-b"}}}));
+                         Json lineage = Json::array();
+                         if (!source_result.empty())
+                             lineage.push_back({{"result_id", source_result}, {"source_port", "table"},
+                                                {"target_port", "input"}});
+                         const auto published = context.outputs().finish(handle,
+                             {{"provenance", {{"lineage_inputs", lineage}}}});
+                         return Json{{"emitted_results", {{"table", published}}}};
                      });
 }
 
@@ -63,31 +64,24 @@ void run() {
         second_definition.domain = "domain_b";
         second_definition.input_ports.push_back({"input", "anyTable", "one", "duckdb_table", {"duckdb-table"}, false});
         second_definition.output_ports.push_back({"table", "anyTable", "one", "duckdb_table", {"duckdb-table"}, false});
-        second_definition.parameters.definitions.push_back(
-            {"targets", "Connected table rows", TypeDescriptor{ParameterType::array,
-             std::make_shared<TypeDescriptor>(TypeDescriptor{ParameterType::object})}, nullptr, false});
         registry.register_operation(Operation(
             std::move(second_definition),
-            [](Project &project, const Json &parameters, const std::string &instance, const Json &inputs) {
-                if (!parameters.contains("targets") || !parameters.at("targets").is_array() ||
-                    parameters.at("targets").size() != 1 ||
-                    parameters.at("targets").at(0).value("value", "") != "domain-a")
-                    throw std::runtime_error("table parameter binding did not resolve table rows");
-                const auto source_artifact = inputs.at("input").at("artifact_id").get<std::string>();
-                std::string artifact_id;
-                std::string physical_table;
-                const auto workflow_revision = project.get_workflow().version;
-                ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
-                    const auto allocation = tables.allocate_table_artifact(
-                        "anyTable", "domain_b.make_table", instance, workflow_revision,
-                        Json::array({{{"name", "value"}, {"type", "string"}}}));
-                    artifact_id = allocation.first;
-                    physical_table = allocation.second;
-                    tables.append(physical_table, {"value"}, {{{std::string("domain-b")}}});
-                    tables.append_artifact_lineage(
-                        artifact_id, {{source_artifact, "table", "input"}});
-                });
-                return Json{{"artifact_id", artifact_id}, {"physical_table", physical_table}};
+            [](OperationExecutionContext &context, const Json &, const std::string &instance, const Json &inputs) {
+                const auto source_result = inputs.at("input").value("result_id",
+                    inputs.at("input").value("result_id", ""));
+                const Json descriptor = {{"contract_id", "anyTable"}, {"kind", "table"},
+                    {"format", "json-lines"}, {"producer_operation", "domain_b.make_table"},
+                    {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
+                    {"schema", Json::array({{{"name", "value"}, {"type", "string"}}})}};
+                const auto allocation = context.outputs().begin(descriptor);
+                const auto handle = allocation.value("output_handle", "");
+                context.outputs().write_rows(handle, 0,
+                    Json::array({{{"value", "domain-b"}}}));
+                Json lineage = Json::array({{{"result_id", source_result},
+                    {"source_port", "table"}, {"target_port", "input"}}});
+                const auto published = context.outputs().finish(
+                    handle, Json{{"provenance", Json{{"lineage_inputs", lineage}}}});
+                return Json{{"emitted_results", {{"table", published}}}};
             }));
 
         Workflow workflow;
@@ -96,22 +90,21 @@ void run() {
         workflow.version = 7;
         workflow.operations = {
             {"1", "domain_a.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()},
-            {"2", "domain_b.make_table", ParameterValues{Json{{"targets", Json::array()}}}, Json::object(), Json::object()}};
+            {"2", "domain_b.make_table", ParameterValues{Json::object()}, Json::object(), Json::object()}};
         workflow.connections.push_back({"1", "table", "2", "input"});
-        workflow.connections.push_back({"1", "table", "2", "parameter:targets"});
 
         project.set_workflow(workflow, registry);
         const auto stored = project.get_workflow();
-        if (stored.operations.size() != 2 || stored.connections.size() != 2 ||
-            registry.find(stored.operations.at(0).operation)->definition().domain ==
-                registry.find(stored.operations.at(1).operation)->definition().domain)
-            throw std::runtime_error("mixed-domain workflow was not persisted without domain rejection");
+        if (stored.operations.size() != 2 || stored.connections.size() != 1)
+            throw std::runtime_error("mixed-domain workflow persistence mismatch: operations=" +
+                                     std::to_string(stored.operations.size()) + ", connections=" +
+                                     std::to_string(stored.connections.size()));
 
         const auto result = project.run_operation_graph(registry);
         if (result.value("status", "") != "completed" || result.at("operations").size() != 2)
             throw std::runtime_error("mixed-domain operation graph did not execute");
 
-        const auto inventory = project.get_artifact_inventory();
+        const auto inventory = project.get_result_inventory();
         if (inventory.size() != 2)
             throw std::runtime_error("expected two table artifacts");
         const auto source = std::find_if(inventory.begin(), inventory.end(), [](const auto &artifact) {
@@ -126,16 +119,16 @@ void run() {
             consumer->value("contract_id", "") != "anyTable" ||
             source->value("workflow_revision", "") != "7" ||
             consumer->value("workflow_revision", "") != "7" ||
-            source->value("artifact_id", "") == consumer->value("artifact_id", "") ||
+            source->value("result_id", "") == consumer->value("result_id", "") ||
             source->value("physical_table", "") == consumer->value("physical_table", ""))
             throw std::runtime_error("table artifacts do not have distinct explicit identity");
 
         const auto resolved = project.resolve_workflow_inputs("2");
-        if (resolved.at("input").value("artifact_id", "") != source->value("artifact_id", ""))
+        if (resolved.at("input").value("result_id", "") != source->value("result_id", ""))
             throw std::runtime_error("explicit artifact binding did not select the source instance");
         const auto lineage = project.query_json(
-            "SELECT source_artifact_id, source_port_id, target_port_id FROM ARTIFACT_LINEAGE");
-        if (lineage.size() != 1 || lineage.at(0).value("source_artifact_id", "") != source->value("artifact_id", "") ||
+            "SELECT source_result_id, source_port_id, target_port_id FROM RESULT_LINEAGE");
+        if (lineage.size() != 1 || lineage.at(0).value("source_result_id", "") != source->value("result_id", "") ||
             lineage.at(0).value("source_port_id", "") != "table" ||
             lineage.at(0).value("target_port_id", "") != "input")
             throw std::runtime_error("artifact lineage binding was not recorded");

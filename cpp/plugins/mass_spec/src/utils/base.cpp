@@ -103,7 +103,34 @@ static double row_real_or_any(const nlohmann::json &row, const char *primary,
 std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
 {
     std::vector<TargetRange> result;
-    const auto sources = parameters.value("targets", nlohmann::json::array());
+    auto sources = parameters.value("targets", nlohmann::json::array());
+    // Table-typed workflow parameters arrive from the service in the public
+    // columnar form.  The mass-spec matching code consumes target rows, so
+    // normalize that boundary once here instead of making every caller know
+    // about the transport representation.
+    if (sources.is_object() && sources.value("columns", nlohmann::json::array()).is_array())
+    {
+        const auto columns = sources.at("columns");
+        std::size_t row_count = 0;
+        for (const auto &column : columns)
+        {
+            const auto values = column.value("values", nlohmann::json::array());
+            if (!values.is_array()) throw std::invalid_argument("Target table column values must be arrays");
+            row_count = std::max(row_count, values.size());
+        }
+        sources = nlohmann::json::array();
+        for (std::size_t row_index = 0; row_index < row_count; ++row_index)
+        {
+            nlohmann::json row = nlohmann::json::object();
+            for (const auto &column : columns)
+            {
+                const auto values = column.value("values", nlohmann::json::array());
+                if (row_index < values.size()) row[column.value("name", "")] = values[row_index];
+            }
+            sources.push_back(std::move(row));
+        }
+    }
+    if (!sources.is_array()) throw std::invalid_argument("targets must be an array or a table value");
     for (std::size_t index = 0; index < sources.size(); ++index)
     {
         const auto &source = sources[index];
@@ -235,7 +262,13 @@ static double row_real_or(const nlohmann::json &row, const char *column, double 
     const auto it = row.find(column);
     if (it == row.end() || it->is_null()) return fallback;
     if (it->is_number()) return it->get<double>();
-    if (it->is_string()) return it->get<std::string>().empty() ? fallback : std::stod(it->get<std::string>());
+    if (it->is_string())
+    {
+        const auto value = it->get<std::string>();
+        if (value.empty()) return fallback;
+        try { return std::stod(value); }
+        catch (const std::exception &) { return fallback; }
+    }
     return fallback;
 }
 

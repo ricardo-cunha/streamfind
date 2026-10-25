@@ -76,10 +76,9 @@ int main()
         if (!reader || reader->definition().output_ports.empty())
             throw std::runtime_error("CSV reader does not expose an AnyTable output");
         const auto read_result = reader->run_workflow(project, {{"csv_input_path", csv_path.string()}}, "csv-reader", {});
-        const auto read_table = project.query_json("SELECT physical_table FROM ARTIFACT_INVENTORY WHERE artifact_id = '" +
-                                                   read_result.at("artifact_id").get<std::string>() + "'");
-        if (read_table.empty() || project.query_json("SELECT COUNT(*) AS count FROM \"" +
-            read_table.at(0).at("physical_table").get<std::string>() + "\"").at(0).at("count") != "1")
+        const auto read_reference = read_result.at("emitted_results").at("anyTable");
+        if (project.query_json("SELECT COUNT(*) AS count FROM \"" +
+            read_reference.at("physical_table").get<std::string>() + "\"").at(0).at("count") != "1")
             throw std::runtime_error("CSV reader did not import the data rows");
         std::filesystem::remove(csv_path, error);
 
@@ -127,22 +126,20 @@ int main()
             row_binding->definition().input_ports.at(0).semantic_contract != "anyTable")
             throw std::runtime_error("generic table binding operations are not registered correctly");
         const auto row_result = row_binding->run_workflow(project, {}, "row-binding", {
-            {"leftTable", {{"artifact_id", left_rows_artifact}, {"physical_table", "LEFT_ROWS"}}},
-            {"rightTable", {{"artifact_id", right_rows_artifact}, {"physical_table", "RIGHT_ROWS"}}}
+            {"leftTable", {{"result_id", left_rows_artifact}, {"physical_table", "LEFT_ROWS"}}},
+            {"rightTable", {{"result_id", right_rows_artifact}, {"physical_table", "RIGHT_ROWS"}}}
         });
-        const auto row_table = project.query_json("SELECT physical_table FROM ARTIFACT_INVENTORY WHERE artifact_id = '" +
-                                                  row_result.at("artifact_id").get<std::string>() + "'");
-        if (row_table.empty() || project.query_json("SELECT COUNT(*) AS count FROM \"" +
-            row_table.at(0).at("physical_table").get<std::string>() + "\"").at(0).at("count") != "4")
+        const auto row_reference = row_result.at("emitted_results").at("anyTable");
+        if (project.query_json("SELECT COUNT(*) AS count FROM \"" +
+            row_reference.at("physical_table").get<std::string>() + "\"").at(0).at("count") != "4")
             throw std::runtime_error("row binding did not append all input rows");
         const auto column_result = column_binding->run_workflow(project, {{"row_key_columns", {"id"}}}, "column-binding", {
-            {"leftTable", {{"artifact_id", left_artifact}, {"physical_table", "LEFT_TABLE"}}},
-            {"rightTable", {{"artifact_id", right_artifact}, {"physical_table", "RIGHT_TABLE"}}}
+            {"leftTable", {{"result_id", left_artifact}, {"physical_table", "LEFT_TABLE"}}},
+            {"rightTable", {{"result_id", right_artifact}, {"physical_table", "RIGHT_TABLE"}}}
         });
-        const auto column_table = project.query_json("SELECT physical_table FROM ARTIFACT_INVENTORY WHERE artifact_id = '" +
-                                                     column_result.at("artifact_id").get<std::string>() + "'");
-        if (column_table.empty() || project.query_json("SELECT COUNT(*) AS count FROM \"" +
-            column_table.at(0).at("physical_table").get<std::string>() + "\"").at(0).at("count") != "2")
+        const auto column_reference = column_result.at("emitted_results").at("anyTable");
+        if (project.query_json("SELECT COUNT(*) AS count FROM \"" +
+            column_reference.at("physical_table").get<std::string>() + "\"").at(0).at("count") != "2")
             throw std::runtime_error("column binding did not align the input rows");
         return 0;
     }

@@ -15,7 +15,10 @@ namespace detail {
 void report_error(const char *message, uint32_t size, void *user_data) {
     if (user_data == nullptr) return;
     auto *diagnostics = static_cast<std::string *>(user_data);
-    diagnostics->assign(message == nullptr ? "plugin reported an unknown error" : std::string(message, size));
+    const auto detail = message == nullptr ? std::string{"plugin reported an unknown error"}
+                                           : std::string(message, size);
+    if (diagnostics->empty()) diagnostics->assign(detail);
+    else if (diagnostics->find(detail) == std::string::npos) *diagnostics += " | " + detail;
 }
 void *allocate(uint64_t size, uint64_t, void *) { return std::malloc(static_cast<std::size_t>(size)); }
 void deallocate(void *pointer, uint64_t, uint64_t, void *) { std::free(pointer); }

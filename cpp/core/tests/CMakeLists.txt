@@ -12,6 +12,25 @@ target_link_libraries(streamfind_fingerprint_contract PRIVATE streamfind::cpp_co
 add_test(NAME streamfind_fingerprint_contract COMMAND streamfind_fingerprint_contract)
 set_tests_properties(streamfind_fingerprint_contract PROPERTIES LABELS "framework")
 
+add_executable(streamfind_data_proxy_protocol_contract unit/data_proxy_protocol_contract.cpp)
+target_link_libraries(streamfind_data_proxy_protocol_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_data_proxy_protocol_contract COMMAND streamfind_data_proxy_protocol_contract)
+set_tests_properties(streamfind_data_proxy_protocol_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_operation_output_contract unit/operation_output_contract.cpp)
+target_link_libraries(streamfind_operation_output_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_operation_output_contract COMMAND streamfind_operation_output_contract)
+set_tests_properties(streamfind_operation_output_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_result_store_arrow_contract
+    unit/result_store_arrow_contract.cpp
+    ../../service/src/result_store.cpp)
+target_link_libraries(streamfind_result_store_arrow_contract PRIVATE streamfind::cpp_core)
+target_include_directories(streamfind_result_store_arrow_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../service/include)
+add_test(NAME streamfind_result_store_arrow_contract COMMAND streamfind_result_store_arrow_contract)
+set_tests_properties(streamfind_result_store_arrow_contract PROPERTIES LABELS "framework")
+
 add_executable(streamfind_plugin_abi_contract unit/plugin_abi_contract.cpp)
 target_link_libraries(streamfind_plugin_abi_contract PRIVATE streamfind::cpp_sdk)
 add_test(NAME streamfind_plugin_abi_contract COMMAND streamfind_plugin_abi_contract)

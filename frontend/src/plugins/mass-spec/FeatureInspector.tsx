@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -8,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import * as d3 from 'd3';
-import type { ArtifactQueryFilter } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 
@@ -209,10 +210,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         active = false;
       };
     }
-    const artifactId = context.artifact.artifact_id;
+    const resultId = context.artifact.result_id;
     const loadRows = async () => {
-      const firstPage = await api.artifactQuery(context.sessionId, {
-        artifact_id: artifactId,
+      const firstPage = await api.resultQuery(context.sessionId, {
+        result_id: resultId,
         mode: 'sample',
         columns: overviewColumns,
         filters: overviewColumns?.includes('filtered') && !showFiltered
@@ -267,8 +268,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     let active = true;
     const timer = window.setTimeout(() => {
       void context
-        .pluginApi!.client.artifactQuery(context.sessionId, {
-          artifact_id: context.artifact!.artifact_id,
+        .pluginApi!.client.resultQuery(context.sessionId, {
+          result_id: context.artifact!.result_id,
           mode: viewport ? 'visualization' : 'sample',
           columns: overviewColumns,
           x_column: 'rt',
@@ -393,15 +394,26 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     const api = context.pluginApi?.client;
     const artifact = context.artifact;
     const representative = sampledSelectedRows[0];
+    // EIC/MS tabs load their signal columns separately. Do not also issue the
+    // detail and network queries here: on Arrow-backed results those queries
+    // are independent sequential scans of the same large payload.
+    if (
+      activeTab !== 'details' &&
+      activeTab !== 'network'
+    ) {
+      return () => {
+        active = false;
+      };
+    }
     if (!api || !artifact || !selectedKey || !representative) {
       return () => {
         active = false;
       };
     }
     const querySelection = async () => {
-      const loadSelection = async (selectionFilters: ArtifactQueryFilter[], columns = detailColumns) => {
-        const overview = await api.artifactQuery(context.sessionId, {
-          artifact_id: artifact.artifact_id,
+      const loadSelection = async (selectionFilters: ResultQueryFilter[], columns = detailColumns) => {
+        const overview = await api.resultQuery(context.sessionId, {
+          result_id: artifact.result_id,
           mode: 'page',
           columns,
           filters: selectionFilters,
@@ -409,14 +421,14 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         });
         return overview.rows;
       };
-      const loadNetworkSelection = async (selectionFilters: ArtifactQueryFilter[]) => {
+      const loadNetworkSelection = async (selectionFilters: ResultQueryFilter[]) => {
         const pageSize = 1000;
         const rows: FeatureRow[] = [];
         let offset = 0;
         let totalRows = 0;
         do {
-          const response = await api.artifactQuery(context.sessionId, {
-            artifact_id: artifact.artifact_id,
+          const response = await api.resultQuery(context.sessionId, {
+            result_id: artifact.result_id,
             mode: 'page',
             columns: networkColumns,
             filters: selectionFilters,
@@ -430,14 +442,17 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         } while (offset < totalRows);
         return rows;
       };
-      const evidenceRows = await loadSelection(buildSelectionQueryFilters(selectBy, representative));
+      const evidenceRows = activeTab === 'details'
+        ? await loadSelection(buildSelectionQueryFilters(selectBy, representative))
+        : [representative];
       const networkRepresentative = evidenceRows[0] ?? representative;
+      if (activeTab === 'details') return { evidenceRows, expandedNetworkRows: [] };
       let expandedNetworkRows: FeatureRow[];
       if (selectBy === 'feature_group' || selectBy === 'feature_group_component') {
         // Isotope/adduct/loss rows deliberately retain their own feature_group.
         // Expand the selected group anchors through their analysis-local
         // components so those child groups remain visible in the same network.
-        const groupFilters: ArtifactQueryFilter[] = [
+        const groupFilters: ResultQueryFilter[] = [
           { column: 'feature_group', operator: 'eq', value: String(networkRepresentative.feature_group ?? '') },
         ];
         const groupRows = await loadNetworkSelection(groupFilters);
@@ -513,6 +528,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     detailColumns,
     overviewColumns,
     networkColumns,
+    activeTab,
     sampledSelectedRows,
     selectBy,
     selectedKey,
@@ -558,23 +574,21 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         // back to the clicked feature only.
         const memberRows = await Promise.all(
           selectedNetworkRows.map(async (row) => {
-            const response = await api.artifactQuery(context.sessionId, {
-              artifact_id: artifact.artifact_id,
-              mode: 'page',
-              columns: signalColumns,
+            const response = await api.resultTrace(context.sessionId, {
+              result_id: artifact.result_id,
+              trace_type: activeTab,
               filters: buildSelectionQueryFilters('feature', row),
               limit: 1,
             });
-            return response.rows;
+            return response.traces as FeatureRow[];
           }),
         );
         loadedRows = memberRows.flat();
         totalRows = loadedRows.length;
       } else {
-        const overview = await api.artifactQuery(context.sessionId, {
-          artifact_id: artifact.artifact_id,
-          mode: directRowKey || networkRowKeys.length ? 'detail' : 'page',
-          columns: signalColumns,
+        const overview = await api.resultTrace(context.sessionId, {
+          result_id: artifact.result_id,
+          trace_type: activeTab,
           ...(directRowKey || networkRowKeys.length
             ? { row_keys: directRowKey ? [directRowKey] : networkRowKeys }
             : { filters: buildSelectionQueryFilters(selectBy, representative) }),
@@ -583,10 +597,12 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           // still exposes the full selection for navigation. The page response
           // already contains the encoded arrays, so do not immediately fetch
           // the same rows again through a detail query.
-          limit: loadAllSignalRows ? 2000 : 250,
+          // Keep the first render lightweight for components with many
+          // features. The full trace set remains available on demand.
+          limit: loadAllSignalRows ? 2000 : 64,
         });
-        loadedRows = overview.rows;
-        totalRows = overview.total_rows;
+        loadedRows = overview.traces as FeatureRow[];
+        totalRows = overview.returned_rows;
       }
       const loaded = { rows: loadedRows, totalRows };
       signalCache.current.set(cacheKey, loaded);
@@ -639,7 +655,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       </div>
     );
   if (loadError) return <div role="alert">{loadError}</div>;
-  if (!rows.length) return <div role="status">No feature data is available in this artifact.</div>;
+  if (!rows.length) return <div role="status">No feature data is available in this result.</div>;
 
   return (
     <div
@@ -778,7 +794,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           <small>retention time × m/z</small>
         </header>
         <FeaturePlot
-          artifactId={context.artifact?.artifact_id ?? context.artifactId}
+          resultId={context.artifact?.result_id ?? context.resultId}
           points={points}
           selectBy={selectBy}
           selectedKey={selectedKey}
@@ -846,7 +862,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             <FeatureSignalPlot
               kind={activeTab}
               rows={selectedSignalRows}
-              artifactId={context.artifact?.artifact_id ?? context.artifactId}
+              resultId={context.artifact?.result_id ?? context.resultId}
               darkMode={darkMode}
               groupBy={groupBy}
               selectBy={selectBy}
@@ -867,7 +883,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
 }
 
 export function FeaturePlot({
-  artifactId,
+  resultId,
   points,
   selectBy,
   selectedKey,
@@ -877,7 +893,7 @@ export function FeaturePlot({
   onClearSelection,
   onRelayout,
 }: {
-  artifactId: string;
+  resultId: string;
   points: FeaturePlotPoint[];
   selectBy: SelectionMode;
   selectedKey: string | null;
@@ -890,8 +906,8 @@ export function FeaturePlot({
   const userViewportGesture = useRef(false);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const spec = useMemo(
-    () => featureScatterSpec(artifactId, points, selectBy, selectedKey, selectedNetworkRows, darkMode),
-    [artifactId, darkMode, points, selectBy, selectedKey, selectedNetworkRows],
+    () => featureScatterSpec(resultId, points, selectBy, selectedKey, selectedNetworkRows, darkMode),
+    [resultId, darkMode, points, selectBy, selectedKey, selectedNetworkRows],
   );
   return (
     <div
@@ -942,7 +958,7 @@ export function FeaturePlot({
 }
 
 function featureScatterSpec(
-  artifactId: string,
+  resultId: string,
   points: FeaturePlotPoint[],
   selectBy: SelectionMode,
   selectedKey: string | null,
@@ -968,7 +984,7 @@ function featureScatterSpec(
   const markerLineWidth = selectedKey ? selectedKeys.map((key) => (isSelected(key) ? 2 : 0.5)) : 0.5;
   return {
     schema: 'streamfind.visualization/v1',
-    visualization_id: `feature-scatter-${artifactId}`,
+    visualization_id: `feature-scatter-${resultId}`,
     semantic_type: 'sfms:featureScatter',
     title: 'NTA feature map',
     data_mode: 'inline',
@@ -999,7 +1015,7 @@ function featureScatterSpec(
         },
       ],
       layout: {
-        uirevision: `feature-scatter-${artifactId}`,
+        uirevision: `feature-scatter-${resultId}`,
         margin: { l: 50, r: 30, t: 30, b: 50 },
         xaxis: {
           title: { text: 'Retention time (s)' },
@@ -1029,7 +1045,7 @@ function featureScatterSpec(
       config: { displaylogo: false, responsive: true },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.feature_inspector',
       producer_node_id: 'feature-inspector',
     },
@@ -1617,17 +1633,17 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
   );
 }
 
-function FeatureSignalPlot({
+const FeatureSignalPlot = memo(function FeatureSignalPlot({
   kind,
   rows,
-  artifactId,
+  resultId,
   darkMode,
   groupBy,
   selectBy,
 }: {
   kind: QueryKind;
   rows: FeatureRow[];
-  artifactId: string;
+  resultId: string;
   darkMode: boolean;
   groupBy: string;
   selectBy: SelectionMode;
@@ -1692,7 +1708,7 @@ function FeatureSignalPlot({
     );
   const spec: VisualizationSpec = {
     schema: 'streamfind.visualization/v1',
-    visualization_id: `${kind}-${artifactId}`,
+    visualization_id: `${kind}-${resultId}`,
     semantic_type: `sfms:${kind}`,
     title: kind.toUpperCase(),
     data_mode: 'inline',
@@ -1753,14 +1769,14 @@ function FeatureSignalPlot({
       config: { displaylogo: false, responsive: true },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.feature_encoded_arrays',
       producer_node_id: 'feature-inspector',
     },
     fallback: { description: `The ${kind.toUpperCase()} renderer is unavailable.` },
   };
   return <VisualizationRenderer spec={spec} className="sf-feature-query-plot" />;
-}
+});
 
 function buildSignalHoverTemplate(row: FeatureRow, label: string, kind: QueryKind): string {
   const fields: Array<[string, string | null | undefined]> = [
@@ -1791,21 +1807,59 @@ function escapeHoverText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-function decodeFloatArray(encoded: string | null | undefined, size: string | null | undefined): number[] {
+function decodeFloatArray(encoded: unknown, size: unknown): number[] {
   if (!encoded) return [];
+  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
+  const text = String(encoded).trim();
+  const cacheKey = `${text}\u0000${size ?? ''}`;
+  const cached = signalArrayCache.get(cacheKey);
+  if (cached) return cached;
+  // Result-store Arrow decoding preserves JSON/list values for non-binary
+  // columns.  Accept those values as well as the historical base64 blob
+  // representation used by older feature tables.
+  if (text.startsWith('[')) {
+    try {
+      const values = JSON.parse(text);
+      if (Array.isArray(values)) {
+        const decoded = values.map(Number).filter(Number.isFinite);
+        rememberSignalArray(cacheKey, decoded);
+        return decoded;
+      }
+    } catch {
+      return [];
+    }
+  }
   try {
-    const binary = atob(encoded);
+    const binary = atob(text.replaceAll('-', '+').replaceAll('_', '/'));
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const expected = Number(size ?? 0);
     const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
     if (bytes.byteLength % precision !== 0) return [];
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return Array.from({ length: bytes.byteLength / precision }, (_, index) =>
+    const decoded = Array.from({ length: bytes.byteLength / precision }, (_, index) =>
       precision === 8 ? view.getFloat64(index * precision, true) : view.getFloat32(index * precision, true),
     );
+    rememberSignalArray(cacheKey, decoded);
+    return decoded;
   } catch {
     return [];
   }
+}
+
+const signalArrayCache = new Map<string, number[]>();
+let signalArrayCacheBytes = 0;
+function rememberSignalArray(key: string, values: number[]): void {
+  if (signalArrayCache.has(key)) return;
+  const estimatedBytes = values.length * Float64Array.BYTES_PER_ELEMENT;
+  if (estimatedBytes > 8 * 1024 * 1024) return;
+  while (signalArrayCacheBytes + estimatedBytes > 32 * 1024 * 1024 && signalArrayCache.size) {
+    const oldest = signalArrayCache.keys().next().value;
+    if (oldest === undefined) break;
+    signalArrayCacheBytes -= (signalArrayCache.get(oldest)?.length ?? 0) * Float64Array.BYTES_PER_ELEMENT;
+    signalArrayCache.delete(oldest);
+  }
+  signalArrayCache.set(key, values);
+  signalArrayCacheBytes += estimatedBytes;
 }
 
 function withAlpha(hex: string, alpha: number): string {
@@ -1898,8 +1952,8 @@ function buildFeatureQueryFilters(
   textFilters: Record<string, TextFilter>,
   defaults: Record<string, NumericFilter>,
   showFiltered: boolean,
-): ArtifactQueryFilter[] {
-  const filters: ArtifactQueryFilter[] = [];
+): ResultQueryFilter[] {
+  const filters: ResultQueryFilter[] = [];
   columns.numeric.forEach((column) => {
     const value = numericFilters[column.name];
     const initial = defaults[column.name];
@@ -1922,8 +1976,8 @@ function buildFeatureQueryFilters(
   return filters;
 }
 
-function buildSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ArtifactQueryFilter[] {
-  const filters: ArtifactQueryFilter[] = [];
+function buildSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ResultQueryFilter[] {
+  const filters: ResultQueryFilter[] = [];
   const add = (column: string, value: unknown) => {
     if (value !== undefined && value !== null && String(value) !== '')
       filters.push({ column, operator: 'eq', value: String(value) });
@@ -1942,7 +1996,7 @@ function buildSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): A
   return filters;
 }
 
-function buildNetworkSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ArtifactQueryFilter[] {
+function buildNetworkSelectionQueryFilters(selectBy: SelectionMode, row: FeatureRow): ResultQueryFilter[] {
   if (selectBy !== 'feature' && selectBy !== 'feature_network') return buildSelectionQueryFilters(selectBy, row);
   const analysis = String(row.analysis ?? '').trim();
   // Fetch the selected analysis first. The network builder then narrows this

@@ -146,10 +146,10 @@ void register_module(const DomainModuleBinding &module,
                 const auto result_schema = entry.value("result", Json::object()).value("schema", Json::object());
                 const auto executor = binding.executor;
                 auto shaped_executor = [executor, result_schema](
-                    Project &project, const Json &parameters,
+                    OperationExecutionContext &context, const Json &parameters,
                     const std::string &operation_instance, const Json &inputs) {
                     return shape_table_result(
-                        executor(project, parameters, operation_instance, inputs), result_schema);
+                        executor(context, parameters, operation_instance, inputs), result_schema);
                 };
                 operation_registry.register_operation(
                     Operation(operation_definition(entry), std::move(shaped_executor), binding.validator));

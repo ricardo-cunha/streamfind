@@ -181,6 +181,7 @@ function Initialize-MinGWUcrt64 {
     if (-not (Test-Path (Join-Path $mingwBin 'g++.exe'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-gcc' }
     if (-not $cmakePath) { $missingPackages += 'mingw-w64-ucrt-x86_64-cmake' }
     if (-not (Test-Path $ninjaPath)) { $missingPackages += 'mingw-w64-ucrt-x86_64-ninja' }
+    if (-not (Test-Path (Join-Path $msysRoot 'ucrt64\include\arrow\api.h'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-arrow' }
     $missingPackages = @($missingPackages | Select-Object -Unique)
     if ($missingPackages.Count -gt 0) {
         $pacman = Join-Path $msysBin 'pacman.exe'

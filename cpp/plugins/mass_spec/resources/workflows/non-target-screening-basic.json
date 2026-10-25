@@ -94,7 +94,7 @@
       "source_operation": 13,
       "source_port": "suspectTargetsTable",
       "target_operation": 12,
-      "target_port": "suspectTargetsTable"
+      "target_port": "parameter:suspect_targets"
     },
     {
       "source_operation": 12,
@@ -221,24 +221,24 @@
       "operation": "mass_spec.read_mass_spec_files",
       "parameters": {
         "source_paths": [
-          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r001.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r002.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_neg_blank-r003.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r001.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r002.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\01_tof_ww_is_pos_blank-r003.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r001.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r002.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_neg_influent-r003.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r001.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r002.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\02_tof_ww_is_pos_influent-r003.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r001.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r002.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_neg_o3sw_effluent-r003.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r001.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r002.mzML",
-          "C:\\example_data\\mass_spec\\wastewater\\03_tof_ww_is_pos_o3sw_effluent-r003.mzML"
+          "example_data/mass_spec/wastewater/blank_negative_01.mzML",
+          "example_data/mass_spec/wastewater/blank_negative_02.mzML",
+          "example_data/mass_spec/wastewater/blank_negative_03.mzML",
+          "example_data/mass_spec/wastewater/blank_positive_01.mzML",
+          "example_data/mass_spec/wastewater/blank_positive_02.mzML",
+          "example_data/mass_spec/wastewater/blank_positive_03.mzML",
+          "example_data/mass_spec/wastewater/influent_negative_01.mzML",
+          "example_data/mass_spec/wastewater/influent_negative_02.mzML",
+          "example_data/mass_spec/wastewater/influent_negative_03.mzML",
+          "example_data/mass_spec/wastewater/influent_positive_01.mzML",
+          "example_data/mass_spec/wastewater/influent_positive_02.mzML",
+          "example_data/mass_spec/wastewater/influent_positive_03.mzML",
+          "example_data/mass_spec/wastewater/effluent_negative_01.mzML",
+          "example_data/mass_spec/wastewater/effluent_negative_02.mzML",
+          "example_data/mass_spec/wastewater/effluent_negative_03.mzML",
+          "example_data/mass_spec/wastewater/effluent_positive_01.mzML",
+          "example_data/mass_spec/wastewater/effluent_positive_02.mzML",
+          "example_data/mass_spec/wastewater/effluent_positive_03.mzML"
         ]
       },
       "position": {
@@ -315,6 +315,10 @@
       "parameters": {
         "base_quantile": 0.99,
         "baseline_window": 200,
+        "smoothing_enabled": true,
+        "smoothing_window": 7,
+        "smoothing_sharp_window": 3,
+        "smoothing_strength": 1.0,
         "debug_analysis": "",
         "debug_mz": 0,
         "debug_spec_idx": -1,
@@ -533,7 +537,7 @@
       "inputs": {},
       "operation": "mass_spec.read_csv_suspect_targets",
       "parameters": {
-        "suspect_targets_csv_path": "C:\\example_data\\mass_spec\\wastewater\\internal_standards.csv"
+        "suspect_targets_csv_path": "example_data/mass_spec/wastewater/internal_standards.csv"
       },
       "position": {
         "x": 2242.9130239420024,
@@ -647,7 +651,7 @@
       "inputs": {},
       "operation": "mass_spec.read_csv_suspect_targets",
       "parameters": {
-        "suspect_targets_csv_path": "C:\\example_data\\mass_spec\\wastewater\\suspects.csv"
+        "suspect_targets_csv_path": "example_data/mass_spec/wastewater/suspects.csv"
       },
       "position": {
         "x": 4475.393704994414,

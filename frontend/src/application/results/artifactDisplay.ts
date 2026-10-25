@@ -1,14 +1,14 @@
-import type { ArtifactRecord } from '../../framework/backend/StreamFindApiClient';
+import type { ResultRecord } from '../../framework/backend/StreamFindApiClient';
 import type { JsonValue } from '../../framework/backend/protocol';
 
-export function artifactSummary(artifact: ArtifactRecord): string {
+export function artifactSummary(artifact: ResultRecord): string {
   if (artifact.representation === 'table') {
-    const columns = artifact.columns || [];
+    const columns = Array.isArray(artifact.columns) ? artifact.columns : [];
     const names = columns
       .slice(0, 6)
       .map((column) => column.name)
       .join(', ');
-    return `${artifact.physical_table || 'DuckDB table'}\n${columns.length} columns · ${artifact.row_count ?? 0} rows\n${names}${columns.length > 6 ? ', …' : ''}`;
+    return `${artifact.physical_table || 'Result table'}\n${columns.length} columns · ${artifact.row_count ?? 0} rows\n${names}${columns.length > 6 ? ', …' : ''}`;
   }
   if (isVisualizationArtifact(artifact)) {
     let visualization: unknown = artifact.payload;
@@ -39,7 +39,7 @@ export function artifactSummary(artifact: ArtifactRecord): string {
   return `JSON\n${summarizeJsonPayload(artifact.payload)}`;
 }
 
-function parseJsonPayload(payload: ArtifactRecord['payload']): JsonValue | null {
+function parseJsonPayload(payload: ResultRecord['payload']): JsonValue | null {
   let value: unknown = payload;
   if (typeof value === 'string') {
     try {
@@ -61,7 +61,7 @@ function parseJsonPayload(payload: ArtifactRecord['payload']): JsonValue | null 
   return null;
 }
 
-function summarizeJsonPayload(payload: ArtifactRecord['payload']): string {
+function summarizeJsonPayload(payload: ResultRecord['payload']): string {
   const value = parseJsonPayload(payload);
   if (value === null) return 'Text value';
   if (Array.isArray(value)) return `Array · ${value.length.toLocaleString('en-US')} items`;
@@ -70,7 +70,7 @@ function summarizeJsonPayload(payload: ArtifactRecord['payload']): string {
   return `${typeof value} value`;
 }
 
-export function prettyArtifactPayload(payload: ArtifactRecord['payload']): string {
+export function prettyArtifactPayload(payload: ResultRecord['payload']): string {
   if (typeof payload !== 'string') return JSON.stringify(payload ?? null, null, 2);
   try {
     return JSON.stringify(JSON.parse(payload) as JsonValue, null, 2);
@@ -86,11 +86,11 @@ export function artifactContractMatches(artifactContract: string, portContract?:
   return local(artifactContract) === local(portContract);
 }
 
-export function isVisualizationArtifact(artifact: ArtifactRecord): boolean {
+export function isVisualizationArtifact(artifact: ResultRecord): boolean {
   const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
   return contract === 'visualizationSpecResult';
 }
 
-export function isJsonArtifact(artifact: ArtifactRecord): boolean {
+export function isJsonArtifact(artifact: ResultRecord): boolean {
   return artifact.representation === 'json';
 }

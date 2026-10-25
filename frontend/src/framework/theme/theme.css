@@ -320,6 +320,9 @@ button:active {
   background: transparent;
   backdrop-filter: none;
 }
+.sf-main:not(.sf-main-workspace) > .sf-topbar {
+  background: var(--sf-bg);
+}
 .sf-breadcrumb,
 .sf-topbar-actions {
   display: flex;
@@ -403,25 +406,27 @@ button:active {
   text-underline-offset: 2px;
 }
 .sf-ontology-wiki-layer {
-  position: absolute;
-  inset: 46px 0 0;
+  position: fixed;
+  inset: 0;
   z-index: 12;
   display: grid;
   place-items: center;
-  padding: 5px;
-  background: color-mix(in srgb, var(--sf-bg) 92%, transparent);
+  padding: 24px;
+  background: color-mix(in srgb, var(--sf-overlay) 52%, transparent);
 }
 .sf-ontology-wiki {
-  width: 95%;
-  height: 95%;
+  width: 95vw;
+  height: 95vh;
+  max-width: 95vw;
+  max-height: 95vh;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
-  background: var(--sf-surface);
-  box-shadow: var(--sf-shadow);
+  background: var(--sf-surface-raised);
+  box-shadow: var(--sf-modal-shadow);
 }
 .sf-ontology-wiki-header {
   display: flex;
@@ -429,7 +434,6 @@ button:active {
   justify-content: space-between;
   gap: 10px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--sf-border);
 }
 .sf-ontology-wiki-header h1,
 .sf-ontology-wiki-entry h2 {
@@ -474,6 +478,7 @@ button:active {
   overflow: auto;
   padding: 10px;
   border-right: 1px solid var(--sf-border);
+  background: var(--sf-surface-raised);
 }
 .sf-ontology-wiki-index input {
   width: 100%;
@@ -599,6 +604,8 @@ button:active {
   .sf-ontology-wiki {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
   }
   .sf-ontology-wiki-body {
     grid-template-columns: 1fr;
@@ -1809,7 +1816,7 @@ h2 {
   min-width: 0;
   width: 100%;
   max-height: none;
-  padding-bottom: 42px;
+  padding-bottom: 58px;
   box-sizing: border-box;
   overflow: visible;
   text-align: center;
@@ -1898,6 +1905,20 @@ h2 {
   line-height: 1.35;
   justify-items: center;
   text-align: center;
+}
+.sf-workflow-sizes {
+  display: grid;
+  gap: 4px;
+  min-height: 34px;
+  width: 100%;
+  justify-items: center;
+}
+.sf-project-hub .sf-project-row .sf-workflow-sizes .sf-workflow-size {
+  color: var(--sf-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 .sf-project-hub .sf-project-row .sf-workflow-summary span {
   color: var(--sf-text-secondary);
@@ -2397,6 +2418,31 @@ h2 {
 .sf-canvas-node select,
 .sf-canvas-node textarea,
 .sf-canvas-node .sf-button {
+  box-sizing: border-box;
+}
+.sf-canvas-parameter > input:not([type='checkbox']),
+.sf-canvas-parameter > select,
+.sf-canvas-parameter > textarea,
+.sf-canvas-parameter > .sf-canvas-scalar-path-row,
+.sf-canvas-parameter > .sf-json-parameter-actions,
+.sf-canvas-parameter > .sf-canvas-parameter-actions {
+  width: 100%;
+  min-width: 0;
+}
+.sf-canvas-parameter input:not([type='checkbox']),
+.sf-canvas-parameter select,
+.sf-canvas-parameter textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+.sf-canvas-file-entry input,
+.sf-canvas-scalar-path-row input {
+  width: auto;
+}
+.sf-canvas-node input:not([type='checkbox']),
+.sf-canvas-node select,
+.sf-canvas-node textarea,
+.sf-canvas-node .sf-button {
   border: 0;
   background: var(--sf-node-control-bg);
   color: var(--sf-node-control-text);
@@ -2570,6 +2616,11 @@ h2 {
   color: var(--sf-text-muted);
   font-size: 0.74rem;
 }
+.sf-canvas-workflow-loading-steps span {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
 .sf-canvas-workflow-saving {
   position: absolute;
   inset: 0;
@@ -2592,6 +2643,31 @@ h2 {
   font-size: 0.95rem;
 }
 .sf-canvas-workflow-saving span {
+  color: var(--sf-text-muted);
+  font-size: 0.74rem;
+}
+.sf-canvas-workflow-cancelling {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  background: color-mix(in srgb, var(--sf-bg) 78%, transparent);
+  color: var(--sf-text);
+  pointer-events: auto;
+}
+.sf-canvas-workflow-cancelling .sf-loading-logo {
+  min-height: 0;
+  color: var(--sf-text);
+}
+.sf-canvas-workflow-cancelling .sf-loading-logo img {
+  width: 72px;
+  height: 72px;
+  animation: sf-rotate 1.6s linear infinite;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--sf-text) 18%, transparent));
+}
+.sf-canvas-workflow-cancelling .sf-loading-logo > span {
   color: var(--sf-text-muted);
   font-size: 0.74rem;
 }
@@ -2630,7 +2706,7 @@ h2 {
   z-index: 3;
   display: flex;
   flex-direction: column;
-  width: min(42%, 720px);
+  width: min(20%, 360px);
   min-width: 360px;
   height: min(20%, 220px);
   min-height: 120px;
@@ -2645,6 +2721,27 @@ h2 {
   user-select: text;
   font-family: inherit;
   font-size: 0.68rem;
+}
+.sf-canvas-status-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 24px;
+}
+.sf-canvas-status-copy {
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sf-text-muted);
+}
+.sf-canvas-status-copy:hover,
+.sf-canvas-status-copy:focus-visible {
+  border: 0;
+  background: color-mix(in srgb, var(--sf-text) 8%, transparent);
+  color: var(--sf-text);
 }
 .sf-canvas-status-heading {
   display: flex;

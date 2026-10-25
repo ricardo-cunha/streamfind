@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
-import type { ArtifactRecord } from '../backend/StreamFindApiClient';
+import type { ResultRecord } from '../backend/StreamFindApiClient';
 import type { FrontendPluginApi } from '../plugins/pluginTypes';
 import { ViewerResolver } from './ViewerResolver';
 import { ViewerShell } from './ViewerShell';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 
 export type ArtifactViewerHostProps = {
-  artifact: ArtifactRecord;
+  artifact: ResultRecord;
   sessionId: string;
   viewerId?: string;
   mode?: 'table' | 'default';
@@ -32,7 +32,7 @@ export function ArtifactViewerHost({
 }: ArtifactViewerHostProps) {
   const context = {
     sessionId,
-    artifactId: artifact.artifact_id,
+    resultId: artifact.result_id,
     semanticType: artifact.contract_id,
     artifact,
     pluginApi,
@@ -41,12 +41,12 @@ export function ArtifactViewerHost({
   return (
     <ViewerShell
       title={title}
-      subtitle={`${artifact.representation} · ${artifact.artifact_id}`}
+      subtitle={`${artifact.representation} · result ${artifact.result_id}`}
       variant={variant}
       showHeader={showHeader}
       onClose={onClose}
     >
-      <ViewerErrorBoundary artifactId={artifact.artifact_id}>
+      <ViewerErrorBoundary resultId={artifact.result_id}>
         {viewerId || mode === 'table' || artifact.representation === 'table' ? (
           <ViewerResolver viewerId={viewerId} context={context} fallback={fallback} />
         ) : (

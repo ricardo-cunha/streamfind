@@ -1075,7 +1075,7 @@ using Json = nlohmann::json;
         load_parameters.erase("analysis_names");
         auto data = utils::detail::load_analysis_features(access, load_parameters);
         auto debug = sdk::DebugSession::open(
-            access.database_path(), "mass_spec.fill_features", access.operation_instance(),
+            "", "mass_spec.fill_features", access.operation_instance(),
             sdk::DebugOptions{"", 0.0, -1, !debug_feature_group.empty(), false});
         utils::set_debug_session(&debug);
         try {

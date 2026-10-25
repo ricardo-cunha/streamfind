@@ -222,7 +222,7 @@ function makeSpec(parsed: ReturnType<typeof parseLog>, payload: DebugPayload): V
       },
       config: { responsive: true, displaylogo: false },
     },
-    provenance: { source_artifact_ids: ['find-features-debug'], producer_operation_id: 'mass_spec.find_features', producer_node_id: 'mass_spec.find_features' },
+    provenance: { source_result_ids: ['find-features-debug'], producer_operation_id: 'mass_spec.find_features', producer_node_id: 'mass_spec.find_features' },
     fallback: { description: `Feature debug data for ${payload.analysis || 'the selected analysis'} is unavailable.` },
   };
 }

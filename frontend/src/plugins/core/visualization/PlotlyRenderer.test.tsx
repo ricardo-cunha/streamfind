@@ -11,7 +11,7 @@ const spec: VisualizationSpec = {
   data_mode: 'inline',
   renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
   payload: { data: [{ type: 'scatter', x: [1], y: [2] }] },
-  provenance: { source_artifact_ids: ['spectra-1'], producer_operation_id: 'plot', producer_node_id: 'node-1' },
+  provenance: { source_result_ids: ['spectra-1'], producer_operation_id: 'plot', producer_node_id: 'node-1' },
   fallback: { description: 'TIC unavailable.' },
 };
 

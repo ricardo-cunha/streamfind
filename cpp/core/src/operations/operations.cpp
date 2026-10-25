@@ -1,7 +1,7 @@
 #include "streamfind/core_operations.hpp"
 
 #include "streamfind/catalogue_binding.hpp"
-#include "streamfind/project_table_store.hpp"
+#include "streamfind/operation_execution_context.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -25,7 +25,7 @@ void validate_paths(const Json &parameters) {
     }
 }
 
-Json select_paths(Project &, const Json &parameters,
+Json select_paths(OperationExecutionContext &, const Json &parameters,
                   const std::string &operation_instance, const Json &) {
     validate_paths(parameters);
     (void)operation_instance;
@@ -69,7 +69,7 @@ void validate_json_path(const Json &parameters) {
 
 Json runtime_column_definition(const streamfind::RuntimeTableColumn &column);
 
-Json write_table_csv(Project &project, const Json &parameters,
+Json write_table_csv(OperationExecutionContext &context, const Json &parameters,
                      const std::string &operation_instance, const Json &inputs) {
     validate_csv_path(parameters);
     const auto input = inputs.find("anyTable");
@@ -82,12 +82,12 @@ Json write_table_csv(Project &project, const Json &parameters,
     const auto csv_path = parameters.at("csv_path").get<std::string>();
     const auto sql = "COPY (SELECT * FROM " + quote_identifier(physical_table) + ") TO " +
                      quote_sql_string(csv_path) + " (HEADER, DELIMITER ',')";
-    project.query_json(sql);
+    context.query(sql);
     (void)operation_instance;
     return Json{{"status", "finished"}, {"csvPath", csv_path}};
 }
 
-Json write_json(Project &, const Json &parameters,
+Json write_json(OperationExecutionContext &, const Json &parameters,
                 const std::string &operation_instance, const Json &inputs) {
     validate_json_path(parameters);
     const auto input = inputs.find("anyJson");
@@ -113,12 +113,12 @@ Json write_json(Project &, const Json &parameters,
     return Json{{"status", "finished"}, {"jsonPath", parameters.at("json_path")}};
 }
 
-Json read_csv(Project &project, const Json &parameters,
+Json read_csv(OperationExecutionContext &context, const Json &parameters,
               const std::string &instance, const Json &) {
     validate_csv_input_path(parameters);
     const auto csv_path = parameters.at("csv_input_path").get<std::string>();
     const auto source = "read_csv_auto(" + quote_sql_string(csv_path) + ", HEADER = true, AUTO_DETECT = true)";
-    const auto description = project.query_json("DESCRIBE SELECT * FROM " + source);
+    const auto description = context.query("DESCRIBE SELECT * FROM " + source);
     if (description.empty())
         throw std::invalid_argument("CSV input has no columns");
     Json columns = Json::array();
@@ -130,21 +130,28 @@ Json read_csv(Project &project, const Json &parameters,
         columns.push_back(runtime_column_definition(
             streamfind::RuntimeTableColumn{name, type, streamfind::ParameterType::string, true, Json::object()}));
     }
-    Json result;
-    const auto workflow_revision = project.get_workflow().version;
-    ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
-        const auto allocation = tables.allocate_table_artifact("anyTable", "streamfind.read_csv", instance,
-                                                                workflow_revision, columns);
-        std::string target_columns;
-        for (std::size_t index = 0; index < columns.size(); ++index) {
-            if (index != 0) target_columns += ", ";
-            target_columns += quote_identifier(columns.at(index).at("name").get<std::string>());
-        }
-        tables.execute("INSERT INTO " + quote_identifier(allocation.second) + " (" + target_columns + ") SELECT " +
-                       target_columns + " FROM " + source);
-        result = {{"status", "finished"}, {"artifact_id", allocation.first}};
-    });
-    return result;
+    std::string target_columns;
+    for (std::size_t index = 0; index < columns.size(); ++index) {
+        if (index != 0) target_columns += ", ";
+        target_columns += quote_identifier(columns.at(index).at("name").get<std::string>());
+    }
+    const auto rows = context.query("SELECT " + target_columns + " FROM " + source);
+    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"},
+                                 {"format", "arrow-ipc-batches"}, {"schema", columns},
+                                 {"producer_operation", "streamfind.read_csv"},
+                                 {"producer_instance", instance},
+                                 {"workflow_revision", context.workflow_revision()}};
+    const auto allocation = context.outputs().begin(descriptor);
+    const auto handle = allocation.value("output_handle", std::string{});
+    if (handle.empty()) throw std::runtime_error("runtime did not allocate CSV output");
+    try {
+        context.outputs().write_rows(handle, 0, rows);
+        const auto reference = context.outputs().finish(handle);
+        return {{"status", "finished"}, {"emitted_results", {{"anyTable", reference}}}};
+    } catch (...) {
+        context.outputs().abort(handle, "CSV output failed");
+        throw;
+    }
 }
 
 const Json &required_input(const Json &inputs, const char *port) {
@@ -198,7 +205,7 @@ const streamfind::RuntimeTableColumn &find_column(
     return *found;
 }
 
-void require_unique_matching_keys(Project &project, const std::string &left_name,
+void require_unique_matching_keys(OperationExecutionContext &context, const std::string &left_name,
                                   const std::string &right_name,
                                   const std::vector<std::string> &keys) {
     std::string key_list;
@@ -207,21 +214,34 @@ void require_unique_matching_keys(Project &project, const std::string &left_name
         key_list += quote_identifier(keys.at(index));
     }
     for (const auto &table : {left_name, right_name}) {
-        const auto duplicate = project.query_json(
+        const auto duplicate = context.query(
             "SELECT COUNT(*) AS duplicate_groups FROM (SELECT " + key_list + " FROM " +
             quote_identifier(table) + " GROUP BY " + key_list + " HAVING COUNT(*) > 1) duplicates");
         if (!duplicate.empty() && duplicate.at(0).value("duplicate_groups", std::string{"0"}) != "0")
             throw std::invalid_argument("Row key columns must be unique in both tables.");
     }
-    const auto left_only = project.query_json(
+    const auto left_only = context.query(
         "SELECT COUNT(*) AS mismatch FROM (SELECT " + key_list + " FROM " + quote_identifier(left_name) +
         " EXCEPT SELECT " + key_list + " FROM " + quote_identifier(right_name) + ") differences");
-    const auto right_only = project.query_json(
+    const auto right_only = context.query(
         "SELECT COUNT(*) AS mismatch FROM (SELECT " + key_list + " FROM " + quote_identifier(right_name) +
         " EXCEPT SELECT " + key_list + " FROM " + quote_identifier(left_name) + ") differences");
     if ((!left_only.empty() && left_only.at(0).value("mismatch", std::string{"0"}) != "0") ||
         (!right_only.empty() && right_only.at(0).value("mismatch", std::string{"0"}) != "0"))
         throw std::invalid_argument("Row key sets must match exactly between both tables.");
+}
+
+DynamicTableContract inspect_dynamic_table_contract(OperationExecutionContext &context,
+                                                     const std::string &table_name) {
+    const auto description = context.query("DESCRIBE " + quote_identifier(table_name));
+    std::vector<RuntimeTableColumn> columns;
+    for (const auto &column : description) {
+        const auto name = column.value("column_name", std::string{});
+        const auto type = column.value("column_type", std::string{});
+        if (name.empty() || type.empty()) throw std::invalid_argument("table schema is invalid");
+        columns.push_back({name, type, ParameterType::string, true, Json::object()});
+    }
+    return DynamicTableContract("anyTable", table_name, std::move(columns));
 }
 
 Json runtime_column_definition(const streamfind::RuntimeTableColumn &column) {
@@ -237,13 +257,13 @@ Json runtime_column_definition(const streamfind::RuntimeTableColumn &column) {
     return {{"name", column.name}, {"type", semantic_type}};
 }
 
-Json bind_table_rows(Project &project, const Json &, const std::string &instance, const Json &inputs) {
+Json bind_table_rows(OperationExecutionContext &context, const Json &, const std::string &instance, const Json &inputs) {
     const auto &left_input = required_input(inputs, "leftTable");
     const auto &right_input = required_input(inputs, "rightTable");
     const auto left_name = left_input.at("physical_table").get<std::string>();
     const auto right_name = right_input.at("physical_table").get<std::string>();
-    const auto left = inspect_dynamic_table_contract(project, left_name);
-    const auto right = inspect_dynamic_table_contract(project, right_name);
+    const auto left = inspect_dynamic_table_contract(context, left_name);
+    const auto right = inspect_dynamic_table_contract(context, right_name);
     require_matching_schema(left, right);
     Json columns = Json::array();
     for (const auto &column : left.columns()) columns.push_back(runtime_column_definition(column));
@@ -252,30 +272,28 @@ Json bind_table_rows(Project &project, const Json &, const std::string &instance
         if (index != 0) select_columns += ", ";
         select_columns += quote_identifier(left.columns().at(index).name);
     }
-    Json result;
-    const auto workflow_revision = project.get_workflow().version;
-    ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
-        const auto allocation = tables.allocate_table_artifact("anyTable", "streamfind.bind_table_rows", instance,
-                                                                workflow_revision, columns);
-        tables.execute("INSERT INTO " + quote_identifier(allocation.second) + " (" + select_columns + ") SELECT " +
-                       select_columns + " FROM " + quote_identifier(left_name) + " UNION ALL SELECT " +
-                       select_columns + " FROM " + quote_identifier(right_name));
-        tables.append_artifact_lineage(allocation.first, {{left_input.value("artifact_id", ""), "leftTable", "leftTable"},
-                                                          {right_input.value("artifact_id", ""), "rightTable", "rightTable"}});
-        const auto row_count = tables.query("SELECT COUNT(*) AS rows FROM " + quote_identifier(allocation.second));
-        result = {{"status", "finished"}, {"artifact_id", allocation.first},
-                  {"rows", row_count.empty() ? "0" : row_count.at(0).value("rows", std::string{"0"})}};
-    });
-    return result;
+    const auto rows = context.query("SELECT " + select_columns + " FROM " + quote_identifier(left_name) +
+                                   " UNION ALL SELECT " + select_columns + " FROM " + quote_identifier(right_name));
+    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-batches"},
+                                 {"schema", columns}, {"producer_operation", "streamfind.bind_table_rows"},
+                                 {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
+                                 {"provenance", { {"lineage_inputs", {
+                                     {{"result_id", left_input.value("result_id", left_input.value("result_id", "")), "source_port", "leftTable", "target_port", "leftTable"}},
+                                     {{"result_id", right_input.value("result_id", right_input.value("result_id", "")), "source_port", "rightTable", "target_port", "rightTable"}}
+                                 }} }}};
+    const auto allocation = context.outputs().begin(descriptor);
+    const auto handle = allocation.value("output_handle", std::string{});
+    try { context.outputs().write_rows(handle, 0, rows); return {{"status", "finished"}, {"emitted_results", {{"anyTable", context.outputs().finish(handle)}}}}; }
+    catch (...) { context.outputs().abort(handle, "row binding failed"); throw; }
 }
 
-Json bind_table_columns(Project &project, const Json &parameters, const std::string &instance, const Json &inputs) {
+Json bind_table_columns(OperationExecutionContext &context, const Json &parameters, const std::string &instance, const Json &inputs) {
     const auto &left_input = required_input(inputs, "leftTable");
     const auto &right_input = required_input(inputs, "rightTable");
     const auto left_name = left_input.at("physical_table").get<std::string>();
     const auto right_name = right_input.at("physical_table").get<std::string>();
-    const auto left = inspect_dynamic_table_contract(project, left_name);
-    const auto right = inspect_dynamic_table_contract(project, right_name);
+    const auto left = inspect_dynamic_table_contract(context, left_name);
+    const auto right = inspect_dynamic_table_contract(context, right_name);
     const auto keys = row_keys(parameters);
     for (const auto &key : keys) {
         const auto &left_column = find_column(left, key);
@@ -283,7 +301,7 @@ Json bind_table_columns(Project &project, const Json &parameters, const std::str
         if (upper_copy(left_column.duckdb_type) != upper_copy(right_column.duckdb_type))
             throw std::invalid_argument("Row key columns must have matching DuckDB types: " + key);
     }
-    require_unique_matching_keys(project, left_name, right_name, keys);
+    require_unique_matching_keys(context, left_name, right_name, keys);
     std::set<std::string> left_names;
     for (const auto &column : left.columns()) left_names.insert(column.name);
     Json columns = Json::array();
@@ -310,19 +328,20 @@ Json bind_table_columns(Project &project, const Json &parameters, const std::str
         left_select += "l." + quote_identifier(column.name);
     }
     if (right_select.empty()) throw std::invalid_argument("The right table has no non-key columns to bind.");
-    Json result;
-    const auto workflow_revision = project.get_workflow().version;
-    ProjectTableStore::transaction(project, {}, [&](ProjectTableStore &tables) {
-        const auto allocation = tables.allocate_table_artifact("anyTable", "streamfind.bind_table_columns", instance,
-                                                                workflow_revision, columns);
-        tables.execute("INSERT INTO " + quote_identifier(allocation.second) + " SELECT " + left_select + ", " +
-                       right_select + " FROM " + quote_identifier(left_name) + " l INNER JOIN " +
-                       quote_identifier(right_name) + " r ON " + join);
-        tables.append_artifact_lineage(allocation.first, {{left_input.value("artifact_id", ""), "leftTable", "leftTable"},
-                                                          {right_input.value("artifact_id", ""), "rightTable", "rightTable"}});
-        result = {{"status", "finished"}, {"artifact_id", allocation.first}};
-    });
-    return result;
+    const auto rows = context.query("SELECT " + left_select + ", " + right_select +
+                                   " FROM " + quote_identifier(left_name) + " l INNER JOIN " +
+                                   quote_identifier(right_name) + " r ON " + join);
+    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-batches"},
+                                 {"schema", columns}, {"producer_operation", "streamfind.bind_table_columns"},
+                                 {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
+                                 {"provenance", { {"lineage_inputs", {
+                                     {{"result_id", left_input.value("result_id", left_input.value("result_id", "")), "source_port", "leftTable", "target_port", "leftTable"}},
+                                     {{"result_id", right_input.value("result_id", right_input.value("result_id", "")), "source_port", "rightTable", "target_port", "rightTable"}}
+                                 }} }}};
+    const auto allocation = context.outputs().begin(descriptor);
+    const auto handle = allocation.value("output_handle", std::string{});
+    try { context.outputs().write_rows(handle, 0, rows); return {{"status", "finished"}, {"emitted_results", {{"anyTable", context.outputs().finish(handle)}}}}; }
+    catch (...) { context.outputs().abort(handle, "column binding failed"); throw; }
 }
 
 }  // namespace detail

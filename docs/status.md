@@ -46,7 +46,7 @@ The native C++ server uses JSON-RPC over standard input/output.
 - `add_operation` persists operation nodes and their JSON parameters.
 - `connect_operations` persists typed output-to-input connections.
 - `validate_workflow` checks the complete graph before execution.
-- `run_workflow` executes the graph and publishes artifacts.
+- `run_workflow` executes the graph and publishes immutable results.
 
 The [C++ MCP quickstart](quickstart/cpp-mcp.md) provides the current request
 flow.

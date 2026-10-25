@@ -30,7 +30,7 @@ def main() -> int:
     parser.add_argument("package_root", type=Path)
     args = parser.parse_args()
     root = args.package_root.resolve()
-    executable = root / "bin" / "streamfind_mcp"
+    executable = root / "bin" / "streamfind-mcp"
     if not executable.is_file():
         raise SystemExit(f"missing packaged MCP executable: {executable}")
     env = os.environ.copy()

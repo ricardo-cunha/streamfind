@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ArtifactRecord, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
+import type { ResultRecord, StreamFindApiClient } from '../../framework/backend/StreamFindApiClient';
 import { FrontendPluginRegistry } from '../../framework/plugins/FrontendPluginRegistry';
 import { ViewerRegistry } from '../../framework/viewers/viewerTypes';
 import { coreFrontendPlugin } from '../core';
@@ -14,9 +14,9 @@ import {
 import { statisticsFrontendPlugin } from './index';
 import { StatisticsDashboard } from './StatisticsDashboard';
 
-function artifact(contract: string, artifactId = 'artifact-1'): ArtifactRecord {
+function artifact(contract: string, resultId = 'artifact-1'): ResultRecord {
   return {
-    artifact_id: artifactId,
+    result_id: resultId,
     contract_id: contract,
     representation: contract.endsWith('Table') ? 'table' : 'json',
     producer_operation: 'statistics.pca',
@@ -28,16 +28,16 @@ function artifact(contract: string, artifactId = 'artifact-1'): ArtifactRecord {
 }
 
 function viewerContext(
-  selected: ArtifactRecord,
-  currentArtifacts: ReturnType<typeof vi.fn>,
-  artifactQuery: ReturnType<typeof vi.fn>,
+  selected: ResultRecord,
+  currentResults: ReturnType<typeof vi.fn>,
+  resultQuery: ReturnType<typeof vi.fn>,
 ) {
   return {
     sessionId: 'session-1',
-    artifactId: selected.artifact_id,
+    resultId: selected.result_id,
     semanticType: selected.contract_id,
     artifact: selected,
-    pluginApi: { client: { currentArtifacts, artifactQuery } as unknown as StreamFindApiClient },
+    pluginApi: { client: { currentResults, resultQuery } as unknown as StreamFindApiClient },
   } as never;
 }
 
@@ -101,9 +101,9 @@ describe('statistics frontend plugin', () => {
   it('does not render a second table inside the plot viewer', async () => {
     const summaryArtifact = artifact('foldChangeDiagnostics', 'summary-1');
     const tableArtifact = artifact('foldChangeTable', 'table-1');
-    const currentArtifacts = vi.fn().mockResolvedValue([summaryArtifact, tableArtifact]);
-    const artifactQuery = vi.fn().mockResolvedValue({
-      artifact_id: tableArtifact.artifact_id,
+    const currentResults = vi.fn().mockResolvedValue([summaryArtifact, tableArtifact]);
+    const resultQuery = vi.fn().mockResolvedValue({
+      result_id: tableArtifact.result_id,
       columns: [{ name: 'variable_id', type: 'VARCHAR' }],
       rows: [{ variable_id: 'v1', log2_fold_change: '1', p_value: '0.01', significant: 'true' }],
       offset: 0,
@@ -113,7 +113,7 @@ describe('statistics frontend plugin', () => {
       mode: 'page',
       has_more: false,
     });
-    render(<StatisticsDashboard context={viewerContext(summaryArtifact, currentArtifacts, artifactQuery)} />);
+    render(<StatisticsDashboard context={viewerContext(summaryArtifact, currentResults, resultQuery)} />);
 
     expect(await screen.findByRole('region', { name: 'Statistics plot' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Fold-change volcano plot' })).toBeInTheDocument();
@@ -122,18 +122,18 @@ describe('statistics frontend plugin', () => {
 
   it('shows an actionable error when artifact loading fails', async () => {
     const selected = artifact('pcaDiagnostics');
-    const currentArtifacts = vi.fn().mockRejectedValue(new Error('service unavailable'));
-    const artifactQuery = vi.fn();
-    render(<StatisticsDashboard context={viewerContext(selected, currentArtifacts, artifactQuery)} />);
+    const currentResults = vi.fn().mockRejectedValue(new Error('service unavailable'));
+    const resultQuery = vi.fn();
+    render(<StatisticsDashboard context={viewerContext(selected, currentResults, resultQuery)} />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('service unavailable');
   });
 
   it('renders an empty-result message when only diagnostics are available', async () => {
     const selected = { ...artifact('pcaDiagnostics'), payload: { method: 'pca' } };
-    const currentArtifacts = vi.fn().mockResolvedValue([selected]);
-    const artifactQuery = vi.fn();
-    render(<StatisticsDashboard context={viewerContext(selected, currentArtifacts, artifactQuery)} />);
+    const currentResults = vi.fn().mockResolvedValue([selected]);
+    const resultQuery = vi.fn();
+    render(<StatisticsDashboard context={viewerContext(selected, currentResults, resultQuery)} />);
 
     expect(await screen.findByText('No plot-ready statistics results are available.')).toBeInTheDocument();
   });

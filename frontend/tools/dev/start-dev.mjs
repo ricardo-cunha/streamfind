@@ -8,6 +8,7 @@ const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const worktreeRoot = resolve(frontendRoot, '..');
 const buildRoot = resolve(worktreeRoot, 'tmp', 'build', 'mingw-ucrt64');
 const serviceExecutable = resolve(buildRoot, 'streamfind_service.exe');
+const workerExecutable = resolve(buildRoot, 'streamfind-worker.exe');
 const serviceUrl = process.env.STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790';
 const servicePort = new URL(serviceUrl).port || '8790';
 const children = [];
@@ -32,7 +33,11 @@ function startService() {
   if (!existsSync(serviceExecutable)) {
     throw new Error(`Native service was not found. Build streamfind_service in: ${buildRoot}`);
   }
+  if (!existsSync(workerExecutable)) {
+    throw new Error(`Native worker was not found. Build streamfind_worker (packaged as streamfind-worker) in: ${buildRoot}`);
+  }
   log(`Using native service binary: ${serviceExecutable}`);
+  log(`Using matching operation worker: ${workerExecutable}`);
   const pathEntries = [
     buildRoot,
     resolve(buildRoot, 'sdk'),

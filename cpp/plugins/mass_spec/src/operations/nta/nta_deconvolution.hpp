@@ -186,6 +186,10 @@ namespace streamfind::mass_spec::nta
         float baselineWindow,
         float maxWidth,
         const std::string &analysis_name,
+        bool smoothingEnabled,
+        int smoothingWindow,
+        int smoothingSharpWindow,
+        float smoothingStrength,
         float debugMZ = 0.0f,
         sdk::DebugSession *debug = nullptr);
 
@@ -224,6 +228,10 @@ namespace streamfind::mass_spec::nta
         const float &baselineWindow,
         const float &maxWidth,
         const float &baseQuantile,
+        bool smoothingEnabled,
+        int smoothingWindow,
+        int smoothingSharpWindow,
+        float smoothingStrength,
         const std::string &debugAnalysis,
         const float &debugMZ,
         const int &debugSpecIdx,

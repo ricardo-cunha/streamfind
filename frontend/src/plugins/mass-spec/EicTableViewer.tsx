@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ArtifactDataResponse } from '../../framework/backend/StreamFindApiClient';
+import type { ResultDataResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -30,7 +30,7 @@ function number(row: EicRow, column: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function makeSpec(rows: EicRow[], colorGrouping: string[], artifactId: string, theme: PlotTheme): VisualizationSpec {
+function makeSpec(rows: EicRow[], colorGrouping: string[], resultId: string, theme: PlotTheme): VisualizationSpec {
   const groups = new Map<string, { rows: EicRow[]; colorKey: string; label: string }>();
   for (const row of rows) {
     const traceKey = [text(row, 'analysis'), text(row, 'name')].map((value) => value || '(empty)').join(' · ');
@@ -95,7 +95,7 @@ function makeSpec(rows: EicRow[], colorGrouping: string[], artifactId: string, t
       config: { responsive: true, displaylogo: false },
     },
     provenance: {
-      source_artifact_ids: [artifactId],
+      source_result_ids: [resultId],
       producer_operation_id: 'frontend.mass_spec.eic_table_viewer',
       producer_node_id: 'frontend.mass_spec.eic_table_viewer',
     },
@@ -106,12 +106,12 @@ function makeSpec(rows: EicRow[], colorGrouping: string[], artifactId: string, t
 export function EicTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<ArtifactDataResponse | null>(null);
+  const [data, setData] = useState<ResultDataResponse | null>(null);
   const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
-  const artifactId = artifact?.artifact_id ?? '';
+  const resultId = artifact?.result_id ?? '';
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -126,11 +126,14 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
     setError(null);
     const loadAllRows = async () => {
       const columns = ['analysis', 'replicate', 'name', 'polarity', 'level', 'rt', 'intensity'];
-      const response = await client.artifactQuery(context.sessionId, {
-        artifact_id: artifact.artifact_id,
+      const response = await client.resultQuery(context.sessionId, {
+        result_id: artifact.result_id,
         mode: 'eic',
         columns,
-        limit: 250000,
+        // The service downsamples each trace to this point budget. Keeping a
+        // bounded response prevents a large EIC result from blocking the
+        // viewer while preserving the full result for table access.
+        limit: 65536,
         eic_max_points: 512,
       });
       if (!cancelled) setData({ ...response, offset: 0, limit: response.rows.length });
@@ -150,11 +153,11 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
   const rows = data?.rows ?? [];
   const theme = useMemo(() => getPlotTheme(), [themeRevision]);
   const spec = useMemo(
-    () => (rows.length ? makeSpec(rows, grouping, artifactId, theme) : null),
-    [artifactId, grouping, rows, theme],
+    () => (rows.length ? makeSpec(rows, grouping, resultId, theme) : null),
+    [resultId, grouping, rows, theme],
   );
 
-  if (!artifact || !client) return <div role="alert">EIC artifact data is unavailable.</div>;
+  if (!artifact || !client) return <div role="alert">EIC result data is unavailable.</div>;
   if (loading) return <LoadingLogo label="Loading EIC rows…" />;
   if (error)
     return (

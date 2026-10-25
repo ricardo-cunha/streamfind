@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -9,7 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "streamfind/project_table_store.hpp"
+#include "streamfind/operation_output.hpp"
+#include "streamfind/project.hpp"
 #include "streamfind/plugin_abi.h"
 #include "streamfind/export.hpp"
 
@@ -21,13 +21,17 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
         uint32_t, uint64_t, void *)>;
     using ResultEmitter = std::function<streamfind_plugin_status(
         void *, const char *, uint32_t, const char *, uint64_t, void *)>;
-    ProjectTableStore *tables{nullptr};
-    std::filesystem::path database_path;
     std::string operation_instance;
     std::atomic_bool *cancelled{nullptr};
     std::function<bool()> cancellation_requested;
     std::function<void(double, std::string_view)> progress;
     std::function<void(std::string_view)> report_error;
+    std::string data_proxy_session_id;
+    std::string data_proxy_run_id;
+    // The service-owned proxy is the only execution boundary for table and
+    // typed-result access.
+    Project::DataProxyRequest data_proxy_request;
+    OperationOutputSink *output_sink{nullptr};
     std::vector<std::string> allowed_tables;
     std::unordered_map<std::string, std::unordered_set<std::string>> readable_columns;
     std::unordered_map<std::string, std::unordered_set<std::string>> writable_columns;

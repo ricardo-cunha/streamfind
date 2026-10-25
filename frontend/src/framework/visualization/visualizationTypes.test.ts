@@ -11,7 +11,7 @@ const spec = {
   renderer: { engine: 'plotly' as const, renderer_id: 'core.plotly' as const, spec_version: '1' as const },
   payload: { data: [{ type: 'scatter', x: [1, 2], y: [3, 4] }] },
   provenance: {
-    source_artifact_ids: ['spectra-1'],
+    source_result_ids: ['spectra-1'],
     producer_operation_id: 'mass_spec.plot_spectra_tic',
     producer_node_id: 'tic-1',
   },
