@@ -16,7 +16,13 @@ struct STREAMFIND_CORE_API ServiceProjectAttachment {
     std::string session_id;
 };
 
-/** Attach a project to an already running local StreamFind service. */
+/** A sanitized view of one locally discovered service and its live health. */
+STREAMFIND_CORE_API data_proxy::Json list_services();
+
+/** Stop one service, or the unique healthy service when instance_id is empty. */
+STREAMFIND_CORE_API data_proxy::Json stop_service(const std::string &instance_id = {});
+
+/** Attach a project to an already running local streamfind service. */
 STREAMFIND_CORE_API ServiceProjectAttachment attach_project(
     const std::filesystem::path &database_path);
 

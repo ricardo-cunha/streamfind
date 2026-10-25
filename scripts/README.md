@@ -19,9 +19,10 @@ Machine-independent helpers for building and testing the C++ backend
 | Build C++ release archive | `scripts/release/cpp/release-cpp.cmd -Version <version>` |
 | Run extracted packaged MCP smoke | `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <extracted-package>` |
 | Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version>` |
-| Clean build/test artifacts | `scripts\build\clean-build-temp.cmd` |
+| Clean generated output, `tmp/`, and Python caches | `scripts\clean\clean-repo-temp.cmd` |
 
-Every `.cmd` is a thin wrapper over its `.ps1`; use either form.
+Build `.cmd` files are thin wrappers over their `.ps1` counterparts; the
+standalone cleanup command is `scripts/clean/clean-repo-temp.cmd`.
 
 ## Native toolchain contract
 
@@ -165,7 +166,7 @@ install method.
   packages the C++ Linux backend.
 - The Windows C++ archive is self-contained at launch: run `bin\\streamfind-app.exe`
   from the package root. It asks `bin\\streamfind.exe` to start or reuse
-  `bin\\streamfind-service.exe` with the same
+  `bin\\streamfind-server.exe` with the same
   package-relative runtime paths. Advanced MCP clients can use
   `bin\\streamfind-mcp.exe`. Do not
   prepend any vendor subdirectory to `PATH`; all native runtime libraries are
@@ -186,5 +187,7 @@ install method.
 - On a plain terminal, the scripts set repository-local Windows `TMP`/`TEMP`
   paths before invoking MinGW, CMake, or Ninja (the scripts assume a normal user
   environment).
-- Build artifacts are gitignored; `scripts/build/clean-build-temp.cmd` removes
-  them while preserving tracked scripts and `tmp/logs/`.
+- Build artifacts are gitignored; `scripts/clean/clean-repo-temp.cmd` removes
+  generated output, all disposable `tmp/` contents, and repository-owned
+  Python caches while preserving tracked source, scripts, `.venv`,
+  `node_modules`, and vendored source.

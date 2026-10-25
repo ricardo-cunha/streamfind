@@ -769,7 +769,17 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             else if (method == "GET" && path == "/session") {
                 Json session = SessionDto{};
                 if (!service_identity_.empty()) session["service_instance"] = service_identity_;
+                session["projects"] = projects_.list();
                 detail::send_http(socket, 200, session);
+            }
+            else if (method == "GET" && path == "/events") {
+                Json activity = Json::array();
+                for (const auto &project : projects_.list()) {
+                    const Json project_json = project;
+                    const auto session_id = project_json.value("session_id", std::string{});
+                    if (!session_id.empty()) activity.push_back(events_.history(session_id, 0, 200));
+                }
+                detail::send_http(socket, 200, Json{{"service_instance", service_identity_}, {"activity", activity}});
             }
             else if (method == "POST" && path == "/service/stop") {
                 if (service_token_.empty() || detail::header_value(headers, "X-StreamFind-Token") != service_token_)
@@ -1068,6 +1078,11 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto suffix = std::string("/results/query");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.result_query(session_id, Json::parse(body)));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/trace")) {
+                const auto prefix = std::string("/projects/");
+                const auto suffix = std::string("/results/trace");
+                const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
+                detail::send_http(socket, 200, projects_.result_trace(session_id, Json::parse(body)));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/data")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/results/data");

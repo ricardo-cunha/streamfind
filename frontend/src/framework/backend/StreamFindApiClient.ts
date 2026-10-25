@@ -33,6 +33,7 @@ export type FileSystemEntry = {
 };
 export type ResultRecord = {
   result_id: string;
+  result_name?: string;
   contract_id: string;
   representation: 'json' | 'table' | string;
   physical_table?: string | null;
@@ -61,6 +62,47 @@ export type ResultDataResponse = {
   limit: number;
   total_rows: number;
 };
+
+function normalizeCell(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeResultData(value: unknown): ResultDataResponse {
+  const candidate = (value && typeof value === 'object' ? value : {}) as Partial<ResultDataResponse> & {
+    data?: Partial<ResultDataResponse>;
+    rows?: unknown;
+  };
+  const nested = candidate.data && typeof candidate.data === 'object' ? candidate.data : candidate;
+  const rawRows = Array.isArray(nested.rows) ? nested.rows : [];
+  const rows = rawRows.map((row) => {
+    if (Array.isArray(row)) {
+      const columns = Array.isArray(nested.columns) ? nested.columns : [];
+      return Object.fromEntries(columns.map((column, index) => [column.name, normalizeCell(row[index])])) as Record<string, string | null>;
+    }
+    if (!row || typeof row !== 'object') return {};
+    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<string, string | null>;
+  });
+  const columns = Array.isArray(nested.columns)
+    ? nested.columns.filter((column): column is { name: string; type: string } =>
+        Boolean(column && typeof column === 'object' && typeof column.name === 'string'),
+      ).map((column) => ({ name: column.name, type: typeof column.type === 'string' ? column.type : 'VARCHAR' }))
+    : [];
+  return {
+    result_id: typeof nested.result_id === 'string' ? nested.result_id : '',
+    columns,
+    rows,
+    offset: typeof nested.offset === 'number' ? nested.offset : 0,
+    limit: typeof nested.limit === 'number' ? nested.limit : rows.length,
+    total_rows: typeof nested.total_rows === 'number' ? nested.total_rows : rows.length,
+  };
+}
 export type ResultQueryFilter = {
   column: string;
   operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'in' | 'is_null' | 'is_not_null';
@@ -96,6 +138,40 @@ export type ResultQueryResponse = ResultDataResponse & {
   mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
   has_more: boolean;
 };
+export type ResultTraceRequest = {
+  result_id: string;
+  trace_type: 'eic' | 'ms1' | 'ms2';
+  filters?: ResultQueryFilter[];
+  row_keys?: string[];
+  limit?: number;
+};
+export type ResultTraceResponse = {
+  result_id: string;
+  trace_type: 'eic' | 'ms1' | 'ms2';
+  traces: Array<Record<string, unknown>>;
+  returned_rows: number;
+};
+
+// Result payloads are immutable once published. Sharing in-flight and recent
+// queries prevents tab switches and repeated viewer mounts from transferring
+// and normalizing the same rows again. The bounded cache is keyed by project
+// session and the complete query, so filters and viewports remain isolated.
+const resultQueryCache = new Map<string, Promise<ResultQueryResponse>>();
+const RESULT_QUERY_CACHE_LIMIT = 128;
+
+function resultQueryCacheKey(sessionId: string, request: ResultQueryRequest): string {
+  return `${sessionId}\n${JSON.stringify(request)}`;
+}
+
+function rememberResultQuery(key: string, request: Promise<ResultQueryResponse>): Promise<ResultQueryResponse> {
+  resultQueryCache.set(key, request);
+  while (resultQueryCache.size > RESULT_QUERY_CACHE_LIMIT) {
+    const oldest = resultQueryCache.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    resultQueryCache.delete(oldest);
+  }
+  return request;
+}
 
 function normalizeResultRecord(value: ResultRecord): ResultRecord {
   const candidate = value as ResultRecord & { columns?: unknown };
@@ -360,17 +436,44 @@ export class StreamFindApiClient {
       body: JSON.stringify(request),
     });
     if (!response.ok) throw new Error(`Result data request failed (${response.status})`);
-    return (await response.json()) as ResultDataResponse;
+    return normalizeResultData(await response.json());
   }
 
   async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse> {
-    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/query`, {
+    const key = resultQueryCacheKey(sessionId, request);
+    const cached = resultQueryCache.get(key);
+    if (cached) return cached;
+    const pending = (async () => {
+      const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!response.ok) throw new Error(`Result query request failed (${response.status})`);
+      const raw = (await response.json()) as Partial<ResultQueryResponse>;
+      const result = normalizeResultData(raw);
+      return {
+        ...result,
+        returned_rows: typeof raw.returned_rows === 'number' ? raw.returned_rows : result.rows.length,
+        mode: raw.mode ?? 'page',
+        has_more: Boolean(raw.has_more),
+      };
+    })();
+    const remembered = rememberResultQuery(key, pending);
+    void remembered.catch(() => {
+      if (resultQueryCache.get(key) === remembered) resultQueryCache.delete(key);
+    });
+    return remembered;
+  }
+
+  async resultTrace(sessionId: string, request: ResultTraceRequest): Promise<ResultTraceResponse> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/trace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     });
-    if (!response.ok) throw new Error(`Result query request failed (${response.status})`);
-    return (await response.json()) as ResultQueryResponse;
+    if (!response.ok) throw new Error(`Result trace request failed (${response.status})`);
+    return (await response.json()) as ResultTraceResponse;
   }
 
   async structureSvg(request: StructureSvgRequest): Promise<string> {

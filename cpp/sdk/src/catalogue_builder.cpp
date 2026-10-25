@@ -307,6 +307,16 @@ Json result_schema(const Graph &graph, const std::string &resource) {
     const auto declared_type = value(graph, resource, std::string(sf) + "type");
     const auto table_contract_name = value(graph, resource, std::string(sf) + "tableContractName");
     Json result = {{"type", declared_type.empty() && !table_contract_name.empty() ? "table" : declared_type}};
+    if (!table_contract_name.empty()) {
+        Json navigation_columns = Json::array();
+        for (const auto &column : values(graph, resource, std::string(sf) + "navigationColumn")) {
+            const auto name = value(graph, column, std::string(sf) + "columnName").empty()
+                ? value(graph, column, std::string(sf) + "propertyName")
+                : value(graph, column, std::string(sf) + "columnName");
+            if (!name.empty()) navigation_columns.push_back(name);
+        }
+        if (!navigation_columns.empty()) result["navigation_columns"] = std::move(navigation_columns);
+    }
     const auto label = value(graph, resource, std::string(skos) + "prefLabel"); if (!label.empty()) result["title"] = label;
     const auto definition = value(graph, resource, std::string(skos) + "definition"); if (!definition.empty()) result["description"] = definition;
     const auto item = value(graph, resource, std::string(sf) + "items"); if (!item.empty()) result["items"] = result_schema(graph, item);
@@ -480,7 +490,14 @@ Json project(const Graph &graph, const std::string &domain) {
                 columns.push_back(std::move(projected));
             }
         }
-        output["tables"].push_back({{"resource_id", local(subject)}, {"table_contract_name", table_contract_name}, {"domain", table_domain}, {"module_id", module_id(graph, subject, "table", table_domain, table_contract_name)}, {"columns", columns}});
+        Json navigation_columns = Json::array();
+        for (const auto &column : values(graph, subject, std::string(sf) + "navigationColumn")) {
+            const auto name = value(graph, column, std::string(sf) + "columnName").empty()
+                ? value(graph, column, std::string(sf) + "propertyName")
+                : value(graph, column, std::string(sf) + "columnName");
+            if (!name.empty()) navigation_columns.push_back(name);
+        }
+        output["tables"].push_back({{"resource_id", local(subject)}, {"table_contract_name", table_contract_name}, {"domain", table_domain}, {"module_id", module_id(graph, subject, "table", table_domain, table_contract_name)}, {"columns", columns}, {"navigation_columns", navigation_columns}});
     }
     std::sort(output["entries"].begin(), output["entries"].end(), [](const Json &a, const Json &b) { return a["canonical_id"] < b["canonical_id"]; });
     std::sort(output["tables"].begin(), output["tables"].end(), [](const Json &a, const Json &b) { return a["table_contract_name"] < b["table_contract_name"]; });
@@ -496,7 +513,7 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
     if (duckdb_open(request.output_database.string().c_str(), &database) != DuckDBSuccess || duckdb_connect(database, &connection) != DuckDBSuccess) throw std::runtime_error("cannot open catalogue database");
     const auto exec = [&](const std::string &sql) { if (duckdb_query(connection, sql.c_str(), &result) != DuckDBSuccess) { const std::string error = duckdb_result_error(&result); duckdb_destroy_result(&result); throw std::runtime_error(error); } duckdb_destroy_result(&result); };
     exec("CREATE TABLE catalogue_entries (canonical_id VARCHAR PRIMARY KEY, kind VARCHAR, domain VARCHAR, label VARCHAR, definition VARCHAR, category VARCHAR, invocation_model VARCHAR, requires_connection BOOLEAN, guidance VARCHAR, next_operations JSON, interface_guidance VARCHAR, executable BOOLEAN, exposed BOOLEAN, mcp_name VARCHAR, input_schema JSON, parameters JSON, result_schema JSON, reads_tables JSON, writes_tables JSON, single_occurrence BOOLEAN, mutates_project BOOLEAN, module_id VARCHAR, conditional_reads JSON, result_id VARCHAR, project_entry BOOLEAN, input_ports JSON, output_ports JSON)");
-    exec("CREATE TABLE catalogue_tables (table_contract_name VARCHAR PRIMARY KEY, domain VARCHAR, module_id VARCHAR, resource_id VARCHAR, columns JSON)");
+    exec("CREATE TABLE catalogue_tables (table_contract_name VARCHAR PRIMARY KEY, domain VARCHAR, module_id VARCHAR, resource_id VARCHAR, columns JSON, navigation_columns JSON)");
     exec("CREATE TABLE catalogue_metadata (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
     for (const auto &entry : catalogue["entries"]) {
         const auto &iface = entry["interface"]; const auto &effects = entry["effects"];
@@ -518,7 +535,8 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
             sql_quote(table["domain"]) + "," +
             sql_quote(table["module_id"]) + "," +
             sql_quote(table["resource_id"]) + "," +
-            sql_quote(table["columns"].dump()) + ")";
+            sql_quote(table["columns"].dump()) + "," +
+            sql_quote(table.value("navigation_columns", Json::array()).dump()) + ")";
         exec(sql);
     }
     exec("INSERT INTO catalogue_metadata VALUES ('schema_version','2'),('catalogue_kind'," + sql_quote(request.catalogue_kind) + "),('domain_id'," + sql_quote(request.resources.domain_id) + "),('generator_version','native-cpp-sdk')");

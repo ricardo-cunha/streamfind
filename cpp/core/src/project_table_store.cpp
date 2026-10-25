@@ -17,9 +17,9 @@ namespace streamfind {
 namespace detail {
 
 void validate_visualization_spec(const std::string &payload) {
-    constexpr std::size_t max_payload_bytes = 1U * 1024U * 1024U;
+    constexpr std::size_t max_payload_bytes = 16U * 1024U * 1024U;
     if (payload.size() > max_payload_bytes)
-        throw std::invalid_argument("visualization specification exceeds the 1 MiB payload limit");
+        throw std::invalid_argument("visualization specification exceeds the 16 MiB payload limit");
     const auto spec = Json::parse(payload, nullptr, false);
     if (spec.is_discarded() || !spec.is_object())
         throw std::invalid_argument("visualization specification must be a JSON object");

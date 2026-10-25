@@ -56,5 +56,8 @@ STREAMFIND_CORE_API std::vector<unsigned char> base64_decode(std::string_view va
 STREAMFIND_CORE_API std::vector<unsigned char> arrow_ipc_encode_rows(const Json &rows);
 /** Decode an Arrow IPC row batch produced by arrow_ipc_encode_rows. */
 STREAMFIND_CORE_API Json arrow_ipc_decode_rows(const std::vector<unsigned char> &bytes);
+/** Decode only selected Arrow columns while preserving the row count. */
+STREAMFIND_CORE_API Json arrow_ipc_decode_rows(const std::vector<unsigned char> &bytes,
+                                               const std::vector<std::string> &columns);
 
 }  // namespace streamfind::data_proxy

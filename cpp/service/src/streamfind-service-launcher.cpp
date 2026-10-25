@@ -53,6 +53,19 @@ void start_service(const char *executable) {
     waitpid(child, &status, 0);
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
         throw std::runtime_error("streamfind service did not become ready");
+    const auto configuration = streamfind::load_service_configuration(package_root(executable) / "bin" / "streamfind.json");
+    if (configuration.tray_enabled && configuration.tray_start_with_app) {
+        auto tray = package_root(executable) / "bin" / "streamfind-tray";
+        if (!std::filesystem::exists(tray)) tray = package_root(executable) / "streamfind-tray";
+        if (std::filesystem::exists(tray)) {
+            const auto child = fork();
+            if (child == 0) {
+                setsid();
+                execl(tray.c_str(), tray.c_str(), static_cast<char *>(nullptr));
+                _exit(127);
+            }
+        }
+    }
 }
 
 std::uint16_t service_port(const char *executable) {
@@ -67,7 +80,7 @@ int main(int argc, char **argv) {
             return streamfind::service::launcher_detail::run_service_command(argc, argv);
         streamfind::service::launcher_detail::start_service(argv[0]);
         const auto url = "http://127.0.0.1:" + std::to_string(streamfind::service::launcher_detail::service_port(argv[0])) + "/";
-        std::cout << "\nStreamFind is ready.\n"
+        std::cout << "\nstreamfind is ready.\n"
                   << "The background service remains running when this window or browser closes.\n"
                   << "Open the application: " << url << "\n"
                   << "Stop the service explicitly with: streamfind service stop --instance <id>\n"

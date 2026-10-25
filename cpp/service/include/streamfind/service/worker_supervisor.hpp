@@ -34,6 +34,7 @@ struct WorkerRequest {
     std::string operation_id;
     std::string operation;
     std::string operation_instance;
+    std::filesystem::path project_database_path;
     std::string computation_key;
     Json workflow = Json::object();
     Json parameters = Json::object();

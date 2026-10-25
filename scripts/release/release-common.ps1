@@ -28,9 +28,10 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
     $required = @(
         'bin/streamfind.exe',
         'bin/streamfind-app.exe',
-        'bin/streamfind-service.exe',
+        'bin/streamfind-server.exe',
         'bin/streamfind-worker.exe',
         'bin/streamfind-mcp.exe',
+        'bin/streamfind-tray.exe',
         'bin/streamfind.json',
         'plugins/mass_spec/plugin.json',
         'plugins/mass_spec/catalogue.duckdb',

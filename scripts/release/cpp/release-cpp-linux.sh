@@ -78,9 +78,12 @@ while IFS= read -r manifest_path; do
 done <<< "$plugin_manifests"
 rm -f "$listing"
 rm -rf "$runtime_root"
-(cd "$OUT" && find . -maxdepth 1 -type f \(
-    -name 'streamfind-*.zip' -o
-    -name 'streamfind-*.tgz' -o
-    -name 'streamfind-*.tar.gz'
-  \) -printf '%f\n' | sort | xargs -r sha256sum > sha256sums.txt)
+(cd "$OUT" && {
+    release_files=()
+    for candidate in streamfind-*.zip streamfind-*.tgz streamfind-*.tar.gz; do
+        [[ -f "$candidate" ]] && release_files+=("$candidate")
+    done
+    ((${#release_files[@]} > 0))
+    printf '%s\n' "${release_files[@]}" | sort | xargs -r sha256sum > sha256sums.txt
+})
 echo "C++ Linux release: $archive"

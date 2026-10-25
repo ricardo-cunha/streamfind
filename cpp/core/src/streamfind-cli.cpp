@@ -1,4 +1,5 @@
 #include "streamfind/service/service_discovery.hpp"
+#include "streamfind/service_runtime_client.hpp"
 
 #include <cstdlib>
 #include "streamfind/service_configuration.hpp"
@@ -16,6 +17,7 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
+#include <shellapi.h>
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -167,15 +169,56 @@ std::filesystem::path package_root(const char *executable) {
 std::filesystem::path service_executable(const char *executable) {
     auto root = package_root(executable);
 #ifdef _WIN32
-    const auto packaged = root / "bin" / "streamfind-service.exe";
-    const auto development = root / "streamfind-service.exe";
+    const auto packaged = root / "bin" / "streamfind-server.exe";
+    const auto development = root / "streamfind-server.exe";
 #else
-    const auto packaged = root / "bin" / "streamfind-service";
-    const auto development = root / "streamfind-service";
+    const auto packaged = root / "bin" / "streamfind-server";
+    const auto development = root / "streamfind-server";
 #endif
     if (std::filesystem::exists(packaged)) return packaged;
     if (std::filesystem::exists(development)) return development;
-    throw std::runtime_error("streamfind-service executable is missing");
+    throw std::runtime_error("streamfind-server executable is missing");
+}
+
+std::filesystem::path tray_executable(const char *executable) {
+    const auto root = package_root(executable);
+#ifdef _WIN32
+    const auto packaged = root / "bin" / "streamfind-tray.exe";
+    const auto development = root / "streamfind-tray.exe";
+#else
+    const auto packaged = root / "bin" / "streamfind-tray";
+    const auto development = root / "streamfind-tray";
+#endif
+    if (std::filesystem::exists(packaged)) return packaged;
+    if (std::filesystem::exists(development)) return development;
+    throw std::runtime_error("streamfind-tray executable is missing");
+}
+
+void start_tray_process(const char *executable) {
+    const auto tray = tray_executable(executable);
+#ifdef _WIN32
+    const auto result = ShellExecuteA(nullptr, "open", tray.string().c_str(), nullptr,
+                                      tray.parent_path().string().c_str(), SW_SHOWNORMAL);
+    if (reinterpret_cast<std::intptr_t>(result) <= 32)
+        throw std::runtime_error("unable to start streamfind-tray");
+#else
+    const auto child = fork();
+    if (child < 0) throw std::runtime_error("unable to start streamfind-tray");
+    if (child == 0) {
+        setsid();
+        execl(tray.c_str(), tray.c_str(), static_cast<char *>(nullptr));
+        _exit(127);
+    }
+#endif
+}
+
+bool tray_starts_with_service(const char *executable) {
+    const auto root = package_root(executable);
+    const auto packaged = root / "bin" / "streamfind.json";
+    const auto development = root / "streamfind.json";
+    const auto configuration = std::filesystem::exists(packaged) ? packaged : development;
+    const auto settings = streamfind::load_service_configuration(configuration);
+    return settings.tray_enabled && settings.tray_start_with_service;
 }
 
 std::uint16_t configured_service_port(const char *executable) {
@@ -204,12 +247,12 @@ void start_service_process(const char *executable, std::uint16_t port) {
     if (!CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE,
                         CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | DETACHED_PROCESS,
                         nullptr, service.parent_path().string().c_str(), &startup, &process))
-        throw std::runtime_error("unable to start streamfind-service");
+        throw std::runtime_error("unable to start streamfind-server");
     CloseHandle(process.hProcess);
     CloseHandle(process.hThread);
 #else
     const auto child = fork();
-    if (child < 0) throw std::runtime_error("unable to start streamfind-service");
+    if (child < 0) throw std::runtime_error("unable to start streamfind-server");
     if (child == 0) {
         setsid();
         const auto port_text = std::to_string(port);
@@ -228,7 +271,7 @@ std::vector<Json> wait_for_service(const char *executable, std::uint16_t port) {
         } catch (...) { }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    throw std::runtime_error("streamfind-service did not become ready");
+    throw std::runtime_error("streamfind-server did not become ready");
 }
 
 void print_services(const std::vector<Json> &values, bool json) {
@@ -239,11 +282,11 @@ void print_services(const std::vector<Json> &values, bool json) {
         return;
     }
     if (values.empty()) {
-        std::cout << "StreamFind service: not running\n";
+        std::cout << "streamfind service: not running\n";
         return;
     }
     for (const auto &value : values) {
-        std::cout << "StreamFind service: " << value.value("health", "unknown") << '\n'
+        std::cout << "streamfind service: " << value.value("health", "unknown") << '\n'
                   << "  Instance: " << value.value("service_instance_id", "unknown") << '\n'
                   << "  PID: " << value.value("process_id", std::uint64_t{0}) << '\n'
                   << "  Endpoint: " << value.value("endpoint", "unknown") << '\n'
@@ -268,7 +311,9 @@ int main(int argc, char **argv) {
         if (argc < 3 || std::string(argv[1]) != "service") {
             std::cout << "Usage: streamfind service start [--port <port>] [--json]\n"
                          "       streamfind service list|status [--json]\n"
-                         "       streamfind service stop [--instance <id>]\n";
+                         "       streamfind service stop [--instance <id>]\n"
+                         "       streamfind service restart [--instance <id>]\n"
+                         "       streamfind service tray\n";
             return finish(argc < 2 ? 0 : 2);
         }
         const std::string command = argv[2];
@@ -293,12 +338,16 @@ int main(int argc, char **argv) {
                         "http://127.0.0.1:" + std::to_string(port))
                         throw std::runtime_error("a streamfind service is already running on another endpoint");
                     streamfind::service_cli::detail::print_services(values, json);
+                    if (streamfind::service_cli::detail::tray_starts_with_service(argv[0]))
+                        streamfind::service_cli::detail::start_tray_process(argv[0]);
                     return finish(0);
                 }
             }
             streamfind::service_cli::detail::start_service_process(argv[0], port);
             const auto ready = streamfind::service_cli::detail::wait_for_service(argv[0], port);
             streamfind::service_cli::detail::print_services(ready, json);
+            if (streamfind::service_cli::detail::tray_starts_with_service(argv[0]))
+                streamfind::service_cli::detail::start_tray_process(argv[0]);
             return finish(0);
         }
         if (command == "list" || command == "status") {
@@ -330,6 +379,27 @@ int main(int argc, char **argv) {
                 return finish(0);
             }
             throw std::runtime_error("service instance not found");
+        }
+        if (command == "restart") {
+            if (instance.empty()) {
+                if (values.size() != 1) throw std::runtime_error(values.empty()
+                    ? "no streamfind service is running"
+                    : "multiple streamfind services are running; use --instance <id>");
+                instance = values.front().value("service_instance_id", "");
+            }
+            streamfind::service::stop_service(instance);
+            for (int attempt = 0; attempt < 50 && !streamfind::service::ServiceDiscovery::record_paths().empty(); ++attempt)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            streamfind::service_cli::detail::start_service_process(argv[0], port);
+            const auto ready = streamfind::service_cli::detail::wait_for_service(argv[0], port);
+            streamfind::service_cli::detail::print_services(ready, json);
+            return finish(0);
+        }
+        if (command == "tray") {
+            if (!instance.empty()) throw std::runtime_error("service tray does not accept --instance");
+            streamfind::service_cli::detail::start_tray_process(argv[0]);
+            std::cout << "streamfind tray manager started.\n";
+            return finish(0);
         }
         throw std::runtime_error("unknown service command: " + command);
     } catch (const std::exception &error) {

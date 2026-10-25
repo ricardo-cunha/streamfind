@@ -84,7 +84,7 @@ The checked-in development launcher currently expects the Windows native
 service at:
 
 ```text
-../tmp/build/mingw-ucrt64/streamfind-service.exe
+../tmp/build/mingw-ucrt64/streamfind-server.exe
 ```
 
 Build that executable from the repository root when necessary:
@@ -98,7 +98,7 @@ currently resolves the Windows UCRT64 executable. Start the Linux service
 manually from the Linux build tree instead:
 
 ```text
-../tmp/build/linux-gcc/streamfind-service
+../tmp/build/linux-gcc/streamfind-server
 ```
 
 Build it from the repository root when necessary:

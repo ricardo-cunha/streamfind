@@ -57,6 +57,7 @@ public:
     Json result_inventory(const std::string &session_id) const;
     Json current_result_inventory(const std::string &session_id) const;
     Json result_query(const std::string &session_id, const Json &request) const;
+    Json result_trace(const std::string &session_id, const Json &request) const;
     Json result_data(const std::string &session_id, const Json &request) const;
     Json data_proxy(const std::string &session_id, const data_proxy::Envelope &request) const;
     Json result_cache_lookup(const std::string &session_id, const Json &request) const;
@@ -94,6 +95,18 @@ private:
     std::uint16_t service_port_{0};
     mutable std::unordered_map<std::string, ResultLease> data_proxy_leases_;
     mutable std::unordered_map<std::string, TransientResult> transient_results_;
+    // Feature maps and their EIC/MS traces are read repeatedly by the
+    // explorer. Keep a bounded, session-scoped copy after the first map scan
+    // so selecting a point does not rescan the Arrow payload.
+    mutable std::unordered_map<std::string, Json> feature_result_cache_;
+    // Row-key offsets are prepared while the service reads a sampled/detail
+    // result. Subsequent app and MCP detail requests can jump directly to the
+    // Arrow frame containing the requested rows instead of rescanning the
+    // complete immutable result file.
+    mutable std::unordered_map<std::string, std::unordered_map<std::string, std::uintmax_t>> result_row_key_cache_;
+    using NavigationIndex = std::unordered_map<std::string, std::unordered_map<std::string, std::vector<std::uintmax_t>>>;
+    mutable std::unordered_map<std::string, NavigationIndex> result_navigation_index_cache_;
+    mutable std::unordered_map<std::string, Json> decoded_trace_cache_;
     std::function<void(const std::string &, std::string_view, std::string_view)> operation_log_callback_;
     std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> operation_event_callback_;
 };

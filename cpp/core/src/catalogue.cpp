@@ -134,7 +134,7 @@ public:
 
     Json tables(const std::string &domain, const std::string &module_id) const {
         duckdb_result result{};
-        const std::string sql = "SELECT table_contract_name, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
+        const std::string sql = "SELECT table_contract_name, module_id, resource_id, CAST(columns AS VARCHAR), CAST(navigation_columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
                                 domain + "' AND module_id = '" + module_id + "' ORDER BY table_contract_name";
         if (duckdb_query(connection_, sql.c_str(), &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
@@ -146,14 +146,15 @@ public:
             output.push_back(Json{{"table_contract_name", text(result, 0, row)},
                                   {"module_id", text(result, 1, row)},
                                   {"resource_id", text(result, 2, row)},
-                                  {"columns", value(result, 3, row)}});
+                                  {"columns", value(result, 3, row)},
+                                  {"navigation_columns", value(result, 4, row)}});
         duckdb_destroy_result(&result);
         return output;
     }
 
     Json document() const {
         duckdb_result result{};
-        const char *sql = "SELECT table_contract_name, domain, module_id, resource_id, CAST(columns AS VARCHAR) FROM catalogue_tables ORDER BY table_contract_name";
+        const char *sql = "SELECT table_contract_name, domain, module_id, resource_id, CAST(columns AS VARCHAR), CAST(navigation_columns AS VARCHAR) FROM catalogue_tables ORDER BY table_contract_name";
         if (duckdb_query(connection_, sql, &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
             duckdb_destroy_result(&result);
@@ -163,7 +164,7 @@ public:
         for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
             table_list.push_back(Json{{"table_contract_name", text(result, 0, row)}, {"domain", text(result, 1, row)},
                                       {"module_id", text(result, 2, row)}, {"resource_id", text(result, 3, row)},
-                                      {"columns", value(result, 4, row)}});
+                                      {"columns", value(result, 4, row)}, {"navigation_columns", value(result, 5, row)}});
         duckdb_destroy_result(&result);
         return Json{{"version", 2}, {"entries", entries()}, {"tables", std::move(table_list)}};
     }

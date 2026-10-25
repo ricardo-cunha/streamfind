@@ -1816,7 +1816,7 @@ h2 {
   min-width: 0;
   width: 100%;
   max-height: none;
-  padding-bottom: 42px;
+  padding-bottom: 58px;
   box-sizing: border-box;
   overflow: visible;
   text-align: center;
@@ -1905,6 +1905,20 @@ h2 {
   line-height: 1.35;
   justify-items: center;
   text-align: center;
+}
+.sf-workflow-sizes {
+  display: grid;
+  gap: 4px;
+  min-height: 34px;
+  width: 100%;
+  justify-items: center;
+}
+.sf-project-hub .sf-project-row .sf-workflow-sizes .sf-workflow-size {
+  color: var(--sf-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 .sf-project-hub .sf-project-row .sf-workflow-summary span {
   color: var(--sf-text-secondary);
@@ -2404,6 +2418,31 @@ h2 {
 .sf-canvas-node select,
 .sf-canvas-node textarea,
 .sf-canvas-node .sf-button {
+  box-sizing: border-box;
+}
+.sf-canvas-parameter > input:not([type='checkbox']),
+.sf-canvas-parameter > select,
+.sf-canvas-parameter > textarea,
+.sf-canvas-parameter > .sf-canvas-scalar-path-row,
+.sf-canvas-parameter > .sf-json-parameter-actions,
+.sf-canvas-parameter > .sf-canvas-parameter-actions {
+  width: 100%;
+  min-width: 0;
+}
+.sf-canvas-parameter input:not([type='checkbox']),
+.sf-canvas-parameter select,
+.sf-canvas-parameter textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+.sf-canvas-file-entry input,
+.sf-canvas-scalar-path-row input {
+  width: auto;
+}
+.sf-canvas-node input:not([type='checkbox']),
+.sf-canvas-node select,
+.sf-canvas-node textarea,
+.sf-canvas-node .sf-button {
   border: 0;
   background: var(--sf-node-control-bg);
   color: var(--sf-node-control-text);
@@ -2577,6 +2616,11 @@ h2 {
   color: var(--sf-text-muted);
   font-size: 0.74rem;
 }
+.sf-canvas-workflow-loading-steps span {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
 .sf-canvas-workflow-saving {
   position: absolute;
   inset: 0;
@@ -2681,6 +2725,7 @@ h2 {
 .sf-canvas-status-actions {
   display: flex;
   justify-content: flex-start;
+  gap: 4px;
   min-height: 24px;
 }
 .sf-canvas-status-copy {

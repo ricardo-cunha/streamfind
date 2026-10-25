@@ -3,6 +3,7 @@
 #include <array>
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -36,10 +37,12 @@ DataProxyOutputSink::DataProxyOutputSink(Request request,
                                          std::string run_id,
                                          std::string operation_id,
                                          std::string operation_instance,
-                                         bool persist_outputs)
+                                         bool persist_outputs,
+                                         Json navigation_columns_by_contract)
     : request_(std::move(request)), session_id_(std::move(session_id)),
       run_id_(std::move(run_id)), operation_id_(std::move(operation_id)),
-      operation_instance_(std::move(operation_instance)), persist_outputs_(persist_outputs) {
+      operation_instance_(std::move(operation_instance)), persist_outputs_(persist_outputs),
+      navigation_columns_by_contract_(std::move(navigation_columns_by_contract)) {
     if (!request_) throw std::invalid_argument("data-proxy output sink requires a request callback");
 }
 
@@ -49,6 +52,25 @@ std::string DataProxyOutputSink::next_request_id() {
     std::ostringstream output;
     output << "output-request-" << std::hex << now << '-' << sequence.fetch_add(1, std::memory_order_relaxed);
     return output.str();
+}
+
+std::string DataProxyOutputSink::create_result_id(const Json &descriptor) const {
+    const auto slug = [](std::string value, const std::string &fallback) {
+        std::string result;
+        result.reserve(value.size());
+        for (const auto character : value) {
+            if (std::isalnum(static_cast<unsigned char>(character))) result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+            else if (result.empty() || result.back() != '-') result.push_back('-');
+        }
+        while (!result.empty() && result.back() == '-') result.pop_back();
+        if (result.empty()) result = fallback;
+        if (result.size() > 48) result.resize(48);
+        return result;
+    };
+    const auto operation = slug(operation_id_, "operation");
+    const auto node = slug(operation_instance_, "unknown-node");
+    const auto contract = slug(descriptor.value("contract_id", descriptor.value("output_port", std::string{"output"})), "output");
+    return "result-" + operation + "-node-" + node + "-" + contract + "-" + next_request_id().substr(std::string("output-request-").size());
 }
 
 Json DataProxyOutputSink::request(const std::string &method,
@@ -69,18 +91,26 @@ Json DataProxyOutputSink::request(const std::string &method,
 Json DataProxyOutputSink::begin(const Json &descriptor) {
     if (!descriptor.is_object()) throw std::invalid_argument("output descriptor must be an object");
     auto payload = descriptor;
-    if (!payload.contains("result_id")) payload["result_id"] = next_request_id();
+    if (!payload.contains("result_id")) payload["result_id"] = create_result_id(payload);
     if (!payload.contains("run_id")) payload["run_id"] = run_id_;
     if (!payload.contains("format")) payload["format"] = "binary";
     payload["storage"] = persist_outputs_ ? "published" : "transient";
+    const auto contract_id = payload.value("contract_id", std::string{});
+    if (!payload.contains("navigation_columns") && navigation_columns_by_contract_.contains(contract_id))
+        payload["navigation_columns"] = navigation_columns_by_contract_.at(contract_id);
     const auto kind = payload.value("kind", std::string{});
     const auto format = payload.value("format", std::string{"binary"});
     const auto schema = payload.value("schema", Json::array());
+    const auto navigation_columns = payload.value("navigation_columns", Json::array());
+    const auto output_port = payload.value("output_port", std::string{});
+    const auto result_name = payload.value("result_name", operation_id_ + " / node " + operation_instance_);
+    payload["result_name"] = result_name;
     const auto response = request("allocate_result", {}, std::move(payload));
     const auto lease_id = response.value("lease_id", std::string{});
     const auto result_id = response.value("result_id", std::string{});
     if (lease_id.empty() || result_id.empty()) throw std::runtime_error("data-proxy did not return an output lease");
-    Lease lease{lease_id, result_id, kind, format, 0, 0, 0, schema};
+    Lease lease{lease_id, result_id, kind, format, 0, 0, 0, schema, navigation_columns,
+                contract_id, output_port, result_name};
     leases_.emplace(lease_id, std::move(lease));
     return {{"output_handle", lease_id}, {"result_id", result_id}, {"delivery", "service"}};
 }
@@ -202,6 +232,15 @@ Json DataProxyOutputSink::finish(const std::string &output_handle, const Json &m
     }
     if (!publish_metadata.contains("schema") && !iterator->second.schema.empty())
         publish_metadata["schema"] = iterator->second.schema;
+    if (!publish_metadata.contains("navigation_columns") && !iterator->second.navigation_columns.empty())
+        publish_metadata["navigation_columns"] = iterator->second.navigation_columns;
+    if (!publish_metadata.contains("producer_operation")) publish_metadata["producer_operation"] = operation_id_;
+    if (!publish_metadata.contains("producer_instance")) publish_metadata["producer_instance"] = operation_instance_;
+    if (!publish_metadata.contains("contract_id") && !iterator->second.contract_id.empty())
+        publish_metadata["contract_id"] = iterator->second.contract_id;
+    if (!publish_metadata.contains("output_port") && !iterator->second.output_port.empty())
+        publish_metadata["output_port"] = iterator->second.output_port;
+    if (!publish_metadata.contains("result_name")) publish_metadata["result_name"] = iterator->second.result_name;
     if (!publish_metadata.contains("row_count")) publish_metadata["row_count"] = iterator->second.row_count;
     const auto result = request("publish_result", iterator->second.lease_id,
                                {{"metadata", publish_metadata}, {"lease_id", iterator->second.lease_id}});

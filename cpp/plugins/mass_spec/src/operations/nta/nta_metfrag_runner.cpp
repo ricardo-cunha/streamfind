@@ -192,9 +192,26 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     return oss.str();
   }
 
-  std::string default_metfrag_run_dir()
+  std::string safe_component(const std::string &value, const std::string &fallback)
   {
-    return (fs::path(".") / "log" / "metfrag" / ("run_" + make_run_timestamp())).string();
+    std::string output;
+    for (const unsigned char c : value)
+      output += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
+    return output.empty() ? fallback : output;
+  }
+
+  std::string default_metfrag_run_dir(const MetFragParams &params)
+  {
+    fs::path root = fs::path(".") / "log" / "metfrag";
+    if (!params.project_database_path.empty()) {
+      root = fs::path(params.project_database_path);
+      root.replace_extension(".data");
+      root /= "log";
+      root /= "metfrag";
+      root /= safe_component(params.operation_id, "mass_spec.metfrag");
+      root /= "node-" + safe_component(params.operation_instance, "direct");
+    }
+    return (root / ("run_" + make_run_timestamp())).string();
   }
 
   std::string default_empty_peak_list_path(const std::string &run_dir)
@@ -1227,7 +1244,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
   std::string resolve_run_dir(const MetFragParams &params)
   {
-    return params.run_dir.empty() ? default_metfrag_run_dir() : params.run_dir;
+    return params.run_dir.empty() ? default_metfrag_run_dir(params) : params.run_dir;
   }
 
   void metfrag_screening_impl(
@@ -1436,7 +1453,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           if (has_ms2) defer_cleanup(ms2_path);
           defer_cleanup(params_path);
           for (const auto &csv_path : csv_paths) defer_cleanup(csv_path);
-          if (result.status == 0) defer_cleanup(log_path);
           return result;
         }
 
@@ -1598,7 +1614,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         }
         if (has_ms2) defer_cleanup(ms2_path);
         defer_cleanup(params_path);
-        if (result.status == 0) defer_cleanup(log_path);
         result.candidate_count = result.suspects.size();
         return result;
       };
@@ -1834,6 +1849,12 @@ using Json = nlohmann::json;
         p.number_threads = number_threads;
         p.use_smiles = use_smiles;
         p.filtered = filtered;
+        if (const auto *project_database_path = std::getenv("STREAMFIND_PROJECT_DATABASE_PATH"))
+          p.project_database_path = project_database_path;
+        p.operation_id = output_internal_standards
+            ? "mass_spec.find_internal_standards_metfrag"
+            : "mass_spec.metfrag_screening";
+        p.operation_instance = std::string(access.operation_instance());
         p.run_dir = ::streamfind::mass_spec::nta::metfrag_runner::resolve_run_dir(p);
         p.suspect_targets = std::move(normalized_targets);
         std::filesystem::create_directories(p.run_dir);

@@ -73,7 +73,20 @@ export function isVisualizationSpec(value: unknown): value is VisualizationSpec 
 }
 
 export function parseVisualizationSpec(payload: unknown): VisualizationSpec {
-  const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  let parsed: unknown = payload;
+  // Result-store JSON is normally delivered as an object.  Older published
+  // results and nested result envelopes may contain one or more JSON strings;
+  // unwrap those without making each viewer know the transport details.
+  for (let depth = 0; depth < 3 && typeof parsed === 'string'; depth += 1) {
+    parsed = JSON.parse(parsed);
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const envelope = parsed as { payload?: unknown; value?: unknown; data?: unknown };
+    if (!isVisualizationSpec(parsed) && envelope.payload !== undefined) parsed = envelope.payload;
+    if (!isVisualizationSpec(parsed) && envelope.value !== undefined) parsed = envelope.value;
+    if (!isVisualizationSpec(parsed) && envelope.data && typeof envelope.data === 'object') parsed = envelope.data;
+  }
+  if (typeof parsed === 'string') parsed = JSON.parse(parsed);
   if (!isVisualizationSpec(parsed)) {
     throw new Error('Result payload is not a valid StreamFind visualization specification');
   }

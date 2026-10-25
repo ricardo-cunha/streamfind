@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -393,6 +394,17 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     const api = context.pluginApi?.client;
     const artifact = context.artifact;
     const representative = sampledSelectedRows[0];
+    // EIC/MS tabs load their signal columns separately. Do not also issue the
+    // detail and network queries here: on Arrow-backed results those queries
+    // are independent sequential scans of the same large payload.
+    if (
+      activeTab !== 'details' &&
+      activeTab !== 'network'
+    ) {
+      return () => {
+        active = false;
+      };
+    }
     if (!api || !artifact || !selectedKey || !representative) {
       return () => {
         active = false;
@@ -430,8 +442,11 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         } while (offset < totalRows);
         return rows;
       };
-      const evidenceRows = await loadSelection(buildSelectionQueryFilters(selectBy, representative));
+      const evidenceRows = activeTab === 'details'
+        ? await loadSelection(buildSelectionQueryFilters(selectBy, representative))
+        : [representative];
       const networkRepresentative = evidenceRows[0] ?? representative;
+      if (activeTab === 'details') return { evidenceRows, expandedNetworkRows: [] };
       let expandedNetworkRows: FeatureRow[];
       if (selectBy === 'feature_group' || selectBy === 'feature_group_component') {
         // Isotope/adduct/loss rows deliberately retain their own feature_group.
@@ -513,6 +528,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     detailColumns,
     overviewColumns,
     networkColumns,
+    activeTab,
     sampledSelectedRows,
     selectBy,
     selectedKey,
@@ -558,23 +574,21 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         // back to the clicked feature only.
         const memberRows = await Promise.all(
           selectedNetworkRows.map(async (row) => {
-            const response = await api.resultQuery(context.sessionId, {
+            const response = await api.resultTrace(context.sessionId, {
               result_id: artifact.result_id,
-              mode: 'page',
-              columns: signalColumns,
+              trace_type: activeTab,
               filters: buildSelectionQueryFilters('feature', row),
               limit: 1,
             });
-            return response.rows;
+            return response.traces as FeatureRow[];
           }),
         );
         loadedRows = memberRows.flat();
         totalRows = loadedRows.length;
       } else {
-        const overview = await api.resultQuery(context.sessionId, {
+        const overview = await api.resultTrace(context.sessionId, {
           result_id: artifact.result_id,
-          mode: directRowKey || networkRowKeys.length ? 'detail' : 'page',
-          columns: signalColumns,
+          trace_type: activeTab,
           ...(directRowKey || networkRowKeys.length
             ? { row_keys: directRowKey ? [directRowKey] : networkRowKeys }
             : { filters: buildSelectionQueryFilters(selectBy, representative) }),
@@ -583,10 +597,12 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           // still exposes the full selection for navigation. The page response
           // already contains the encoded arrays, so do not immediately fetch
           // the same rows again through a detail query.
-          limit: loadAllSignalRows ? 2000 : 250,
+          // Keep the first render lightweight for components with many
+          // features. The full trace set remains available on demand.
+          limit: loadAllSignalRows ? 2000 : 64,
         });
-        loadedRows = overview.rows;
-        totalRows = overview.total_rows;
+        loadedRows = overview.traces as FeatureRow[];
+        totalRows = overview.returned_rows;
       }
       const loaded = { rows: loadedRows, totalRows };
       signalCache.current.set(cacheKey, loaded);
@@ -1617,7 +1633,7 @@ function D3FeatureNetwork({ model, darkMode }: { model: FeatureNetworkModel; dar
   );
 }
 
-function FeatureSignalPlot({
+const FeatureSignalPlot = memo(function FeatureSignalPlot({
   kind,
   rows,
   resultId,
@@ -1760,7 +1776,7 @@ function FeatureSignalPlot({
     fallback: { description: `The ${kind.toUpperCase()} renderer is unavailable.` },
   };
   return <VisualizationRenderer spec={spec} className="sf-feature-query-plot" />;
-}
+});
 
 function buildSignalHoverTemplate(row: FeatureRow, label: string, kind: QueryKind): string {
   const fields: Array<[string, string | null | undefined]> = [
@@ -1791,21 +1807,59 @@ function escapeHoverText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-function decodeFloatArray(encoded: string | null | undefined, size: string | null | undefined): number[] {
+function decodeFloatArray(encoded: unknown, size: unknown): number[] {
   if (!encoded) return [];
+  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
+  const text = String(encoded).trim();
+  const cacheKey = `${text}\u0000${size ?? ''}`;
+  const cached = signalArrayCache.get(cacheKey);
+  if (cached) return cached;
+  // Result-store Arrow decoding preserves JSON/list values for non-binary
+  // columns.  Accept those values as well as the historical base64 blob
+  // representation used by older feature tables.
+  if (text.startsWith('[')) {
+    try {
+      const values = JSON.parse(text);
+      if (Array.isArray(values)) {
+        const decoded = values.map(Number).filter(Number.isFinite);
+        rememberSignalArray(cacheKey, decoded);
+        return decoded;
+      }
+    } catch {
+      return [];
+    }
+  }
   try {
-    const binary = atob(encoded);
+    const binary = atob(text.replaceAll('-', '+').replaceAll('_', '/'));
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const expected = Number(size ?? 0);
     const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
     if (bytes.byteLength % precision !== 0) return [];
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return Array.from({ length: bytes.byteLength / precision }, (_, index) =>
+    const decoded = Array.from({ length: bytes.byteLength / precision }, (_, index) =>
       precision === 8 ? view.getFloat64(index * precision, true) : view.getFloat32(index * precision, true),
     );
+    rememberSignalArray(cacheKey, decoded);
+    return decoded;
   } catch {
     return [];
   }
+}
+
+const signalArrayCache = new Map<string, number[]>();
+let signalArrayCacheBytes = 0;
+function rememberSignalArray(key: string, values: number[]): void {
+  if (signalArrayCache.has(key)) return;
+  const estimatedBytes = values.length * Float64Array.BYTES_PER_ELEMENT;
+  if (estimatedBytes > 8 * 1024 * 1024) return;
+  while (signalArrayCacheBytes + estimatedBytes > 32 * 1024 * 1024 && signalArrayCache.size) {
+    const oldest = signalArrayCache.keys().next().value;
+    if (oldest === undefined) break;
+    signalArrayCacheBytes -= (signalArrayCache.get(oldest)?.length ?? 0) * Float64Array.BYTES_PER_ELEMENT;
+    signalArrayCache.delete(oldest);
+  }
+  signalArrayCache.set(key, values);
+  signalArrayCacheBytes += estimatedBytes;
 }
 
 function withAlpha(hex: string, alpha: number): string {

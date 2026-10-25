@@ -1,6 +1,8 @@
 #include "streamfind/service/service_discovery.hpp"
 
 #include <chrono>
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -51,10 +53,41 @@ bool process_alive(std::uint64_t process_id) {
 #endif
 }
 
+bool process_matches(std::uint64_t process_id, const std::filesystem::path &expected) {
+    if (process_id == 0 || expected.empty()) return false;
+#ifdef _WIN32
+    const auto handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                    static_cast<DWORD>(process_id));
+    if (handle == nullptr) return false;
+    char path[MAX_PATH]{};
+    DWORD length = MAX_PATH;
+    const auto read = QueryFullProcessImageNameA(handle, 0, path, &length) != 0;
+    CloseHandle(handle);
+    if (!read) return false;
+    auto actual = std::filesystem::path(std::string(path, length));
+    std::error_code error;
+    actual = std::filesystem::weakly_canonical(actual, error);
+    auto wanted = std::filesystem::weakly_canonical(expected, error);
+    auto actual_text = actual.string();
+    auto wanted_text = wanted.string();
+    std::transform(actual_text.begin(), actual_text.end(), actual_text.begin(),
+                   [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    std::transform(wanted_text.begin(), wanted_text.end(), wanted_text.begin(),
+                   [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    return actual_text == wanted_text;
+#else
+    std::error_code error;
+    const auto actual = std::filesystem::weakly_canonical(
+        std::filesystem::read_symlink("/proc/" + std::to_string(process_id) + "/exe", error), error);
+    const auto wanted = std::filesystem::weakly_canonical(expected, error);
+    return !error && actual == wanted;
+#endif
+}
+
 }  // namespace detail
 
 Json ServiceDiscoveryRecord::to_json() const {
-    return Json{{"service", "streamfind-service"},
+    return Json{{"service", "streamfind-server"},
                 {"service_instance_id", service_instance_id},
                 {"endpoint", endpoint},
                 {"protocol_version", protocol_version},
@@ -93,7 +126,7 @@ std::vector<std::filesystem::path> ServiceDiscovery::record_paths() {
             std::ifstream input(entry.path(), std::ios::binary);
             Json value;
             input >> value;
-            if (value.value("service", "") != "streamfind-service") {
+            if (value.value("service", "") != "streamfind-server") {
                 std::filesystem::remove(entry.path(), error);
                 error.clear();
                 continue;
@@ -101,16 +134,17 @@ std::vector<std::filesystem::path> ServiceDiscovery::record_paths() {
             const auto record = read(entry.path());
             const auto executable = std::filesystem::path(value.value("executable", ""));
 #ifdef _WIN32
-            constexpr const char *expected_name = "streamfind-service.exe";
+            constexpr const char *expected_name = "streamfind-server.exe";
 #else
-            constexpr const char *expected_name = "streamfind-service";
+            constexpr const char *expected_name = "streamfind-server";
 #endif
             if (executable.empty() || executable.filename() != expected_name) {
                 std::filesystem::remove(entry.path(), error);
                 error.clear();
                 continue;
             }
-            if (!detail::process_alive(record.process_id)) {
+            if (!detail::process_alive(record.process_id) ||
+                !detail::process_matches(record.process_id, record.executable)) {
                 std::filesystem::remove(entry.path(), error);
                 error.clear();
                 continue;

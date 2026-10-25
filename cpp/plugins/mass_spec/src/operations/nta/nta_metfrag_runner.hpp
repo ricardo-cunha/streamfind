@@ -47,6 +47,9 @@ namespace streamfind::mass_spec::nta
       bool        filtered       = false;///< Include filtered features when true.
       std::string java_path      = "java";///< Path to Java executable (used in JAR mode only).
       std::string run_dir;               ///< Directory for temp files and logs; created if absent.
+      std::string project_database_path; ///< Project path used to locate the project-owned data directory.
+      std::string operation_id;          ///< Operation identifier used in the traceable log path.
+      std::string operation_instance;    ///< Workflow node/operation instance used in the traceable log path.
       std::vector<std::pair<std::string, std::string>> extra_params; ///< Additional MetFrag parameters (override-last).
       std::vector<SuspectQuery> suspect_targets; ///< Original candidates, including RT and reference metadata.
     };

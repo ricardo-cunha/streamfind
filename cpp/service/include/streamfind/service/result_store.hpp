@@ -23,6 +23,7 @@ struct ResultStoreInspection {
     std::size_t published_count{0};
     std::size_t invalid_count{0};
     std::size_t staging_run_count{0};
+    std::uintmax_t size_bytes{0};
 
     Json to_json() const;
 };
@@ -61,14 +62,19 @@ public:
     const std::filesystem::path &database_path() const noexcept { return database_path_; }
     const std::filesystem::path &root() const noexcept { return root_; }
 
-    ResultStoreInspection inspect() const;
-    ResultStoreInspection initialize();
+    ResultStoreInspection inspect(bool verify_payloads = true) const;
+    ResultStoreInspection initialize(bool verify_payloads = false);
+    /** Remove only empty run/staging directories left by completed leases. */
+    void cleanup_empty_runs() const;
     /** Return integrity-validated published result descriptors. */
     Json published_results() const;
     /** Return one checksum-validated reusable result, or null on a miss. */
     Json find_cached_result(const std::string &computation_key) const;
     /** Return all checksum-validated results for a computation key. */
     Json find_cached_results(const std::string &computation_key) const;
+
+    /** Remove published payload directories after their registry entries are cleared. */
+    void remove_published_results(const std::vector<std::string> &result_ids) const;
 
     /** Return a format-neutral descriptor without exposing the payload path. */
     Json describe_result(const std::string &result_id) const;
@@ -84,7 +90,8 @@ public:
                           std::uintmax_t limit) const;
     Json read_arrow_ipc_batch(const std::string &result_id,
                               std::uintmax_t offset,
-                              std::uintmax_t limit) const;
+                              std::uintmax_t limit,
+                              const std::vector<std::string> &columns = {}) const;
 
     /** Append one bounded chunk to an unpublished result lease. */
     void append_staging_chunk(const ResultLease &lease,

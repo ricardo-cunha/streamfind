@@ -10,7 +10,7 @@
 
 namespace streamfind::service {
 
-inline constexpr const char *kServiceName = "streamfind-service";
+inline constexpr const char *kServiceName = "streamfind-server";
 inline constexpr const char *kProtocolVersion = "1.0";
 
 struct SessionDto {
@@ -123,7 +123,7 @@ inline Json capabilities_json() {
                 {"operations", projected_entries},
                 {"methods", methods},
                 {"domains", std::vector<std::string>(domains.begin(), domains.end())},
-                {"endpoints", Json::array({ "/session", "/service/stop", "/capabilities", "/capabilities/index", "/capabilities/domains/<domain>/modules", "/capabilities/operations?domain=...&module=...", "/capabilities/operations/<canonical_id>", "/workflow-demos", "/chemistry/structure-svg", "/chemistry/isotope-pattern", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/cancel", "/projects/<session_id>/results/cache/lookup", "/events" })}};
+                                              {"endpoints", Json::array({ "/session", "/service/stop", "/capabilities", "/capabilities/index", "/capabilities/domains/<domain>/modules", "/capabilities/operations?domain=...&module=...", "/capabilities/operations/<canonical_id>", "/workflow-demos", "/chemistry/structure-svg", "/chemistry/isotope-pattern", "/projects", "/projects/<session_id>", "/projects/<session_id>/workflow", "/projects/<session_id>/workflow/validate", "/projects/<session_id>/workflow/run", "/projects/<session_id>/workflow/cancel", "/projects/<session_id>/results/cache/lookup", "/projects/<session_id>/results/trace", "/events" })}};
 }
 
 inline Json project_initialization_json(const std::vector<std::string> &domains) {

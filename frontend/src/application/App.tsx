@@ -10,6 +10,7 @@ import type {
   CapabilityParameter,
   JsonSchema,
   ServiceCapabilities,
+  ServiceSession,
   TableColumnContract,
   TableContract,
   WorkflowState,
@@ -622,10 +623,12 @@ function BootstrapGate({
   children,
   client,
   onState,
+  onSession,
 }: {
   children: ReactNode;
   client: StreamFindApiClient;
   onState: (state: ServiceState) => void;
+  onSession: (session: ServiceSession) => void;
 }) {
   const [state, setState] = useState<'loading' | 'exiting' | 'ready' | 'failed'>('loading');
   const [retryKey, setRetryKey] = useState(0);
@@ -641,6 +644,7 @@ function BootstrapGate({
     };
     void client
       .connect(onState)
+      .then((session) => onSession(session))
       .then(() => finish('exiting'))
       .catch(() => finish('failed'));
     return () => {
@@ -688,8 +692,9 @@ function projectFileName(project: ProjectSession): string {
 }
 function formatDatabaseSize(bytes: number): string {
   const megabytes = bytes / (1024 * 1024);
-  if (megabytes >= 1000) return `size: ${(megabytes / 1024).toFixed(2)} Gb`;
-  return `size: ${megabytes.toFixed(2)} Mb`;
+  if (megabytes >= 1000) return `${(megabytes / 1024).toFixed(2)} GB`;
+  if (megabytes >= 1) return `${megabytes.toFixed(2)} MB`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
 }
 function ProjectCard({
   project,
@@ -744,7 +749,12 @@ function ProjectCard({
             <span>Loading workflow summary…</span>
           )}
         </div>
-        <span className="sf-workflow-size">{formatDatabaseSize(project.database_size_bytes)}</span>
+        <div className="sf-workflow-sizes">
+          <span className="sf-workflow-size">DuckDB: {formatDatabaseSize(project.database_size_bytes)}</span>
+          <span className="sf-workflow-size">
+            Results store: {formatDatabaseSize(project.result_store?.size_bytes || 0)}
+          </span>
+        </div>
         <span className="sf-project-path">
           <code>{project.database_path}</code>{' '}
           <button
@@ -1613,19 +1623,13 @@ function BackendStatusPane({
   state,
   onClose,
   endpoint,
+  serviceInstance,
 }: {
   state: ServiceState;
   onClose: () => void;
   endpoint: string;
+  serviceInstance?: ServiceSession['service_instance'];
 }) {
-  const details =
-    state === 'ready'
-      ? 'The app and backend services are available.'
-      : state === 'reconnecting'
-        ? 'The app is running, but the backend connection is being restored automatically.'
-        : state === 'failed'
-          ? 'The app is running, but the backend service could not be reached.'
-          : 'The app is running while the backend connection is being established.';
   return (
     <div
       className="sf-side-pane-backdrop sf-backend-backdrop"
@@ -1633,11 +1637,10 @@ function BackendStatusPane({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <aside className="sf-side-pane sf-backend-pane" aria-label="Application and backend health">
+      <aside className="sf-side-pane sf-backend-pane" aria-label="streamfind service health">
         <div className="sf-backend-heading">
           <div>
             <h2>System health</h2>
-            <p className="sf-health-intro">This status checks the app server and its backend connection.</p>
           </div>
           <button className="sf-icon-button sf-close-button" onClick={onClose} aria-label="Close backend details">
             <i className="fa-solid fa-xmark" />
@@ -1647,16 +1650,15 @@ function BackendStatusPane({
           <span className={`sf-connection-dot ${state}`} />
           <strong>{state === 'ready' ? 'healthy' : state}</strong>
         </div>
-        <p>{details}</p>
         <dl>
           <div>
-            <dt>App server</dt>
+            <dt>App client</dt>
             <dd>
               <span className="sf-health-check">running</span>
             </dd>
           </div>
           <div>
-            <dt>Backend server</dt>
+            <dt>streamfind service</dt>
             <dd>
               <span className={`sf-health-check ${state}`}>{state === 'ready' ? 'connected' : state}</span>
             </dd>
@@ -1666,19 +1668,27 @@ function BackendStatusPane({
             <dd>{endpoint.replace(/^https?:\/\//, '')}</dd>
           </div>
           <div>
-            <dt>Protocol</dt>
-            <dd>HTTP + WebSocket</dd>
+            <dt>Instance</dt>
+            <dd>{serviceInstance?.service_instance_id || 'unavailable'}</dd>
           </div>
           <div>
-            <dt>Role</dt>
-            <dd>Project and workspace API</dd>
+            <dt>PID</dt>
+            <dd>{serviceInstance?.process_id ?? 'unavailable'}</dd>
           </div>
         </dl>
       </aside>
     </div>
   );
 }
-function AppShell({ client, serviceState }: { client: StreamFindApiClient; serviceState: ServiceState }) {
+function AppShell({
+  client,
+  serviceState,
+  serviceSession,
+}: {
+  client: StreamFindApiClient;
+  serviceState: ServiceState;
+  serviceSession: ServiceSession | null;
+}) {
   const [routeState, setRouteState] = useState<ParsedRoute>(routeFromHash);
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [palette, setPalette] = useState<Palette>(
@@ -1893,7 +1903,7 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
               className="sf-backend-button"
               onClick={() => setBackendOpen(true)}
               aria-label={`System health: ${serviceState}`}
-              title="System health: app and backend"
+              title="System health: streamfind service"
             >
               <span className={`sf-connection-dot ${serviceState}`} />
               <i className="fa-solid fa-heart-pulse" />
@@ -1967,7 +1977,12 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
         />
       ) : null}
       {backendOpen ? (
-        <BackendStatusPane state={serviceState} onClose={() => setBackendOpen(false)} endpoint={client.endpoint()} />
+        <BackendStatusPane
+          state={serviceState}
+          onClose={() => setBackendOpen(false)}
+          endpoint={client.endpoint()}
+          serviceInstance={serviceSession?.service_instance}
+        />
       ) : null}
       <NotificationToasts />
     </div>
@@ -1976,9 +1991,10 @@ function AppShell({ client, serviceState }: { client: StreamFindApiClient; servi
 export default function App() {
   const [client] = useState(() => new StreamFindApiClient());
   const [serviceState, setServiceState] = useState<ServiceState>('disconnected');
+  const [serviceSession, setServiceSession] = useState<ServiceSession | null>(null);
   return (
-    <BootstrapGate client={client} onState={setServiceState}>
-      <AppShell client={client} serviceState={serviceState} />
+    <BootstrapGate client={client} onState={setServiceState} onSession={setServiceSession}>
+      <AppShell client={client} serviceState={serviceState} serviceSession={serviceSession} />
     </BootstrapGate>
   );
 }

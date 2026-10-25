@@ -25,6 +25,12 @@ export type ServiceSession = {
   protocol_version: string;
   state: string;
   backend_version: string;
+  service_instance?: {
+    service_instance_id?: string;
+    process_id?: number | null;
+    endpoint?: string;
+    state?: string;
+  };
 };
 
 export type ProjectSession = {
@@ -33,6 +39,11 @@ export type ProjectSession = {
   database_size_bytes: number;
   domains: string[];
   metadata: Record<string, JsonValue>;
+  result_store?: {
+    status?: string;
+    published_count?: number;
+    size_bytes?: number;
+  };
   initialization?: ProjectInitialization;
 };
 
@@ -186,6 +197,8 @@ export type TableContract = {
   domain?: string;
   description?: string;
   columns: TableColumnContract[];
+  /** Columns that the runtime may index for navigation and row selection. */
+  navigation_columns?: string[];
 };
 
 export type CapabilityParameter = {

@@ -200,7 +200,6 @@ export default function CanvasShell({
   const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
-  const [workflowLoadStep, setWorkflowLoadStep] = useState(surface === 'workflow' && client ? 0 : 3);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
   const lastObservedWorkflowStateRef = useRef<WorkflowState | null>(null);
@@ -225,6 +224,7 @@ export default function CanvasShell({
   const [activityLog, setActivityLog] = useState<CanvasLogLine[]>([]);
   const [logCopied, setLogCopied] = useState(false);
   const logSequenceRef = useRef(0);
+  const activityLogFeedRef = useRef<HTMLDivElement | null>(null);
   const [currentResults, setCurrentArtifacts] = useState<ResultRecord[]>([]);
   const [artifactViewer, setArtifactViewer] = useState<ResultRecord | null>(null);
   const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'default'>('default');
@@ -290,6 +290,11 @@ export default function CanvasShell({
       setLogCopied(false);
     }
   }, [activityLog]);
+  const jumpToLatestActivity = useCallback(() => {
+    const feed = activityLogFeedRef.current;
+    if (!feed) return;
+    feed.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
   const updateActiveWorker = useCallback((worker: RuntimeWorker | null) => {
     activeWorkerRef.current = worker;
     setActiveWorker(worker);
@@ -516,7 +521,11 @@ export default function CanvasShell({
                 : undefined;
         if (executionState) {
           setNodes((current) =>
-            current.map((node) => (node.id === event.operation_id ? { ...node, executionState } : node)),
+            current.map((node) =>
+              node.id === event.operation_id || node.capabilityId === event.operation_id
+                ? { ...node, executionState }
+                : node,
+            ),
           );
         }
       }
@@ -554,6 +563,13 @@ export default function CanvasShell({
               : node,
           ),
         );
+        void refreshArtifacts(true);
+      }
+      if (event.type === 'operation.completed' || event.type === 'operation.failed') {
+        // Direct operation calls from MCP or the CLI publish results without
+        // producing a workflow terminal event. Refresh immediately so the
+        // canvas exposes the new result ports and hover metadata as soon as
+        // the service announces completion.
         void refreshArtifacts(true);
       }
     },
@@ -641,21 +657,22 @@ export default function CanvasShell({
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
     let active = true;
     setWorkflowLoaded(false);
-    setWorkflowLoadStep(0);
+    // The workflow definition and the published-result snapshot are
+    // independent reads. Start them together so large result stores do not
+    // delay the canvas after the definition has already arrived.
+    const artifactRefresh = refreshArtifacts(true);
     client
       .workflowDefinition(project.session_id)
       .then(async (result) => {
         if (!active) return;
-        setWorkflowLoadStep(1);
         initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
         if (result.workflow.metadata) setWorkflowMetadata(result.workflow.metadata);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
           setStatus(`Saved workflow is invalid: ${result.diagnostics.map((item) => item.message).join('; ')}`);
-          await refreshArtifacts(true);
+          await artifactRefresh;
           if (!active) return;
-          setWorkflowLoadStep(3);
           setWorkflowLoaded(true);
           return;
         }
@@ -689,7 +706,6 @@ export default function CanvasShell({
         nextId.current = nextCanvasNodeNumber(loadedNodes);
         setNodes(loadedNodes);
         setEdges(loadedEdges);
-        setWorkflowLoadStep(2);
         const minimumX = Math.min(0, ...loadedNodes.map((node) => node.x));
         const maximumX = Math.max(NODE_WIDTH, ...loadedNodes.map((node) => node.x + NODE_WIDTH));
         const minimumY = Math.min(0, ...loadedNodes.map((node) => node.y));
@@ -701,9 +717,8 @@ export default function CanvasShell({
         // Output-port availability is derived from the artifact snapshot. Keep the
         // loading overlay visible until that snapshot has arrived so the canvas does
         // not briefly render with every output looking unpublished.
-        await refreshArtifacts(true);
+        await artifactRefresh;
         if (!active) return;
-        setWorkflowLoadStep(3);
         setWorkflowLoaded(true);
       })
       .catch((error) => {
@@ -2239,25 +2254,6 @@ export default function CanvasShell({
             label={
               <>
                 <strong>Loading workflow</strong>
-                <div className="sf-canvas-workflow-loading-steps">
-                  {[
-                    'Workflow definition loaded',
-                    'Nodes and connections restored',
-                    'Artifact snapshot refreshed',
-                  ].map((step, index) => {
-                    const completed = workflowLoadStep > index;
-                    const current = workflowLoadStep === index;
-                    return (
-                      <Fragment key={step}>
-                        <span className={`${completed ? 'completed' : ''}${current ? ' current' : ''}`}>
-                          <i className={`fa-solid ${completed ? 'fa-check' : current ? 'fa-spinner fa-spin' : 'fa-circle'}`} aria-hidden="true" />
-                          {step}{current ? '…' : ''}
-                        </span>
-                        {index < 2 ? <br /> : null}
-                      </Fragment>
-                    );
-                  })}
-                </div>
               </>
             }
           />
@@ -2321,6 +2317,15 @@ export default function CanvasShell({
             >
               <i className={`fa-solid ${logCopied ? 'fa-check' : 'fa-copy'}`} aria-hidden="true" />
             </button>
+            <button
+              type="button"
+              className="sf-icon-button sf-canvas-status-copy"
+              aria-label="Jump to latest activity"
+              title="Jump to latest activity"
+              onClick={jumpToLatestActivity}
+            >
+              <i className="fa-solid fa-arrow-down" aria-hidden="true" />
+            </button>
           </div>
         ) : null}
         {surface !== 'workflow' ? (
@@ -2338,7 +2343,7 @@ export default function CanvasShell({
             </div>
           </>
         ) : null}
-        <div className="sf-canvas-status-feed">
+        <div ref={activityLogFeedRef} className="sf-canvas-status-feed">
           {activityLog.map((entry) => (
             <div className={`sf-canvas-status-line ${entry.level}`} key={entry.id}>
               <time>{entry.timestamp}</time>
@@ -2612,6 +2617,11 @@ export default function CanvasShell({
                           onMouseLeave={hideOutputRendererMenu}
                         >
                           <strong>{port.label}</strong>
+                          {(outputArtifact(port) as ResultRecord).result_name ? (
+                            <span className="sf-output-artifact-id">
+                              <b>Result:</b> {(outputArtifact(port) as ResultRecord).result_name}
+                            </span>
+                          ) : null}
                           <span className="sf-output-artifact-id">
                             <b>Result ID:</b> <code>{(outputArtifact(port) as ResultRecord).result_id}</code>
                           </span>

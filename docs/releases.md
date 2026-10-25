@@ -120,7 +120,7 @@ streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64/
 │   ├── streamfind.exe
 │   ├── streamfind-app.exe
 │   ├── streamfind-mcp.exe
-│   └── streamfind-service.exe
+│   └── streamfind-server.exe
 ├── core/
 │   └── catalogue.duckdb
 └── plugins/

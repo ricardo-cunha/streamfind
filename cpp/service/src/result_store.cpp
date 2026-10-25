@@ -10,11 +10,105 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
+#include <deque>
 
 namespace streamfind::service {
 
 namespace detail {
+
+struct ArrowFrameIndexEntry {
+    std::uintmax_t file_offset{0};
+    std::uintmax_t row_offset{0};
+    std::uintmax_t row_count{0};
+};
+
+std::mutex arrow_index_mutex;
+std::unordered_map<std::string, std::vector<ArrowFrameIndexEntry>> arrow_frame_indexes;
+
+// Visualization tabs commonly request the same Arrow frame more than once.
+// Cache decoded frames so EIC/MS/Raman/statistics views share the parse work.
+std::mutex arrow_frame_cache_mutex;
+std::unordered_map<std::string, Json> arrow_frame_rows_cache;
+std::deque<std::string> arrow_frame_cache_order;
+std::size_t arrow_frame_cache_bytes = 0;
+constexpr std::size_t arrow_frame_cache_limit = 64 * 1024 * 1024;
+
+std::string arrow_frame_cache_key(const std::filesystem::path &payload_path,
+                                  std::uintmax_t file_offset) {
+    return payload_path.lexically_normal().string() + "\n" + std::to_string(file_offset);
+}
+
+bool cached_arrow_frame(const std::filesystem::path &payload_path,
+                        std::uintmax_t file_offset,
+                        Json &rows) {
+    const auto key = arrow_frame_cache_key(payload_path, file_offset);
+    std::lock_guard lock(arrow_frame_cache_mutex);
+    const auto found = arrow_frame_rows_cache.find(key);
+    if (found == arrow_frame_rows_cache.end()) return false;
+    rows = found->second;
+    return true;
+}
+
+void cache_arrow_frame(const std::filesystem::path &payload_path,
+                       std::uintmax_t file_offset,
+                       const Json &rows) {
+    const auto key = arrow_frame_cache_key(payload_path, file_offset);
+    const auto bytes = rows.dump().size();
+    if (bytes > arrow_frame_cache_limit) return;
+    std::lock_guard lock(arrow_frame_cache_mutex);
+    if (arrow_frame_rows_cache.contains(key)) return;
+    while (arrow_frame_cache_bytes + bytes > arrow_frame_cache_limit && !arrow_frame_cache_order.empty()) {
+        const auto oldest = arrow_frame_cache_order.front();
+        arrow_frame_cache_order.pop_front();
+        const auto found = arrow_frame_rows_cache.find(oldest);
+        if (found != arrow_frame_rows_cache.end()) {
+            arrow_frame_cache_bytes -= found->second.dump().size();
+            arrow_frame_rows_cache.erase(found);
+        }
+    }
+    arrow_frame_cache_order.push_back(key);
+    arrow_frame_rows_cache.emplace(key, rows);
+    arrow_frame_cache_bytes += bytes;
+}
+
+const std::vector<ArrowFrameIndexEntry> &arrow_frame_index(const std::filesystem::path &payload_path) {
+    const auto key = payload_path.lexically_normal().string();
+    std::lock_guard lock(arrow_index_mutex);
+    const auto cached = arrow_frame_indexes.find(key);
+    if (cached != arrow_frame_indexes.end()) return cached->second;
+
+    std::ifstream input(payload_path, std::ios::binary);
+    if (!input) throw std::runtime_error("cannot read Arrow IPC result payload");
+    std::vector<ArrowFrameIndexEntry> index;
+    std::uintmax_t row_offset = 0;
+    while (input.peek() != std::char_traits<char>::eof()) {
+        const auto file_offset = static_cast<std::uintmax_t>(input.tellg());
+        std::uint64_t size = 0;
+        input.read(reinterpret_cast<char *>(&size), sizeof(size));
+        if (!input) throw std::runtime_error("Arrow IPC result contains an incomplete frame");
+        if (size == 0 || size > 64 * 1024 * 1024)
+            throw std::runtime_error("Arrow IPC result frame size is invalid");
+        std::vector<unsigned char> bytes(static_cast<std::size_t>(size));
+        input.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        if (!input) throw std::runtime_error("Arrow IPC result contains an incomplete batch");
+        const auto rows = data_proxy::arrow_ipc_decode_rows(bytes);
+        index.push_back({file_offset, row_offset, rows.size()});
+        row_offset += rows.size();
+    }
+    return arrow_frame_indexes.emplace(key, std::move(index)).first->second;
+}
+
+void clear_arrow_frame_indexes() {
+    std::lock_guard lock(arrow_index_mutex);
+    arrow_frame_indexes.clear();
+    std::lock_guard frame_lock(arrow_frame_cache_mutex);
+    arrow_frame_rows_cache.clear();
+    arrow_frame_cache_order.clear();
+    arrow_frame_cache_bytes = 0;
+}
 
 std::string payload_digest(const std::filesystem::path &path, std::uintmax_t &size) {
     std::ifstream input(path, std::ios::binary);
@@ -144,7 +238,8 @@ Json ResultStoreInspection::to_json() const {
                 {"root", root.string()},
                 {"published_count", published_count},
                 {"invalid_count", invalid_count},
-                {"staging_run_count", staging_run_count}};
+                {"staging_run_count", staging_run_count},
+                {"size_bytes", size_bytes}};
     if (!store_id.empty()) result["store_id"] = store_id;
     if (!error.empty()) result["error"] = error;
     return result;
@@ -200,7 +295,7 @@ Json ResultStore::read_json_file(const std::filesystem::path &path) {
     return value;
 }
 
-ResultStoreInspection ResultStore::inspect() const {
+ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
     ResultStoreInspection result;
     result.root = root_;
     const auto manifest = root_ / "store.json";
@@ -210,6 +305,11 @@ ResultStoreInspection ResultStore::inspect() const {
         return result;
     }
     try {
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(root_, error)) {
+            if (error) break;
+            if (entry.is_regular_file(error) && !error) result.size_bytes += entry.file_size(error);
+            if (error) break;
+        }
         const auto value = read_json_file(manifest);
         if (value.value("layout_version", std::string{}) != kLayoutVersion ||
             value.value("database_filename", std::string{}) != database_path_.filename().string() ||
@@ -231,12 +331,16 @@ ResultStoreInspection ResultStore::inspect() const {
                     const auto payload_path = root_ / std::filesystem::path(payload_value);
                     const auto relative = std::filesystem::relative(payload_path, root_, error);
                     const bool outside_root = error || relative.empty() || relative.begin()->string() == "..";
-                    std::uintmax_t payload_size = 0;
-                    const auto digest = outside_root ? std::string{} : detail::payload_digest(payload_path, payload_size);
-                    if (manifest.value("state", std::string{}) != "published" || outside_root ||
-                        !std::filesystem::is_regular_file(payload_path) ||
-                        manifest.value("payload_size", std::uintmax_t{0}) != payload_size ||
-                        manifest.value("payload_digest", std::string{}) != digest) {
+                    const auto payload_exists = !outside_root && std::filesystem::is_regular_file(payload_path);
+                    const auto declared_size = manifest.value("payload_size", std::uintmax_t{0});
+                    std::uintmax_t actual_size = payload_exists ? std::filesystem::file_size(payload_path) : 0;
+                    const auto digest = verify_payloads && payload_exists
+                        ? detail::payload_digest(payload_path, actual_size) : std::string{};
+                    const auto valid = manifest.value("state", std::string{}) == "published" && payload_exists &&
+                        (verify_payloads
+                            ? (declared_size == actual_size && manifest.value("payload_digest", std::string{}) == digest)
+                            : (declared_size == 0 || declared_size == actual_size));
+                    if (!valid) {
                         ++result.invalid_count;
                     } else {
                         ++result.published_count;
@@ -264,8 +368,9 @@ ResultStoreInspection ResultStore::inspect() const {
     }
 }
 
-ResultStoreInspection ResultStore::initialize() {
-    const auto existing = inspect();
+ResultStoreInspection ResultStore::initialize(bool verify_payloads) {
+    cleanup_empty_runs();
+    const auto existing = inspect(verify_payloads);
     if (existing.status == ResultStoreStatus::ready) return existing;
     if (existing.status == ResultStoreStatus::invalid)
         throw std::runtime_error(existing.error);
@@ -279,7 +384,24 @@ ResultStoreInspection ResultStore::initialize() {
                         {"database_filename", database_path_.filename().string()},
                         {"store_id", create_store_id()}};
     write_json_file(root_ / "store.json", manifest);
-    return inspect();
+    return inspect(verify_payloads);
+}
+
+void ResultStore::cleanup_empty_runs() const {
+    const auto runs = root_ / "runs";
+    std::error_code error;
+    if (!std::filesystem::is_directory(runs, error) || error) return;
+    std::vector<std::filesystem::path> directories;
+    for (std::filesystem::recursive_directory_iterator iterator(runs, error), end;
+         iterator != end && !error; iterator.increment(error)) {
+        if (iterator->is_directory(error) && !error) directories.push_back(iterator->path());
+    }
+    std::sort(directories.rbegin(), directories.rend());
+    for (const auto &directory : directories) {
+        error.clear();
+        if (std::filesystem::is_empty(directory, error) && !error)
+            std::filesystem::remove(directory, error);
+    }
 }
 
 Json ResultStore::published_results() const {
@@ -354,6 +476,23 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
     return matches;
 }
 
+void ResultStore::remove_published_results(const std::vector<std::string> &result_ids) const {
+    detail::clear_arrow_frame_indexes();
+    for (const auto &result_id : result_ids) {
+        require_component(result_id, "result_id");
+        const auto directory = root_ / "results" / result_id;
+        std::error_code error;
+        if (!std::filesystem::exists(directory, error)) {
+            if (error) throw std::runtime_error("cannot inspect result payload: " + error.message());
+            continue;
+        }
+        if (!std::filesystem::is_directory(directory, error) || error)
+            throw std::runtime_error("published result path is not a directory: " + result_id);
+        std::filesystem::remove_all(directory, error);
+        if (error) throw std::runtime_error("cannot remove published result payload: " + error.message());
+    }
+}
+
 Json ResultStore::describe_result(const std::string &result_id) const {
     const auto manifest = detail::validated_manifest(root_, result_id);
     Json descriptor = manifest;
@@ -389,7 +528,10 @@ Json ResultStore::read_result_range(const std::string &result_id,
 }
 
 Json ResultStore::read_json_payload(const std::string &result_id) const {
-    constexpr std::uintmax_t max_json_payload = 1024 * 1024;
+    // Visualization specifications can legitimately contain many sampled
+    // traces (for example a TIC across many analyses). Keep JSON bounded, but
+    // do not reject valid canvas payloads just above the table chunk limit.
+    constexpr std::uintmax_t max_json_payload = 16 * 1024 * 1024;
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("format", std::string{}) != "json")
         throw std::invalid_argument("result is not a JSON payload: " + result_id);
@@ -437,7 +579,8 @@ Json ResultStore::read_jsonl_batch(const std::string &result_id,
 
 Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
                                        std::uintmax_t offset,
-                                       std::uintmax_t limit) const {
+                                       std::uintmax_t limit,
+                                       const std::vector<std::string> &columns) const {
     if (limit == 0 || limit > 65536) throw std::invalid_argument("result batch limit is invalid");
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("format", std::string{}) != "arrow-ipc-batches")
@@ -445,9 +588,14 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
     std::ifstream input(payload_path, std::ios::binary);
     if (!input) throw std::runtime_error("cannot read Arrow IPC result payload");
+    const auto &index = detail::arrow_frame_index(payload_path);
     Json rows = Json::array();
-    std::uintmax_t skipped = 0;
-    while (input.peek() != std::char_traits<char>::eof()) {
+    for (const auto &frame : index) {
+        if (frame.row_offset + frame.row_count <= offset) continue;
+        if (frame.row_offset >= offset + limit && !rows.empty()) break;
+        input.clear();
+        input.seekg(static_cast<std::streamoff>(frame.file_offset));
+        if (!input) throw std::runtime_error("cannot seek Arrow IPC result payload");
         std::uint64_t size = 0;
         input.read(reinterpret_cast<char *>(&size), sizeof(size));
         if (!input) throw std::runtime_error("Arrow IPC result contains an incomplete frame");
@@ -456,15 +604,25 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
         std::vector<unsigned char> bytes(static_cast<std::size_t>(size));
         input.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         if (!input) throw std::runtime_error("Arrow IPC result contains an incomplete batch");
-        const auto batch = data_proxy::arrow_ipc_decode_rows(bytes);
-        for (const auto &row : batch) {
-            if (skipped < offset) { ++skipped; continue; }
+        Json batch;
+        if (!columns.empty()) {
+            batch = data_proxy::arrow_ipc_decode_rows(bytes, columns);
+        } else if (!detail::cached_arrow_frame(payload_path, frame.file_offset, batch)) {
+            batch = data_proxy::arrow_ipc_decode_rows(bytes);
+            detail::cache_arrow_frame(payload_path, frame.file_offset, batch);
+        }
+        for (std::size_t row_index = 0; row_index < batch.size(); ++row_index) {
+            const auto &row = batch.at(row_index);
+            const auto absolute_offset = frame.row_offset + row_index;
+            if (absolute_offset < offset) continue;
             if (rows.size() >= limit)
                 return Json{{"rows", rows}, {"offset", offset}, {"limit", limit}, {"has_more", true}};
             rows.push_back(row);
         }
     }
-    return Json{{"rows", rows}, {"offset", offset}, {"limit", limit}, {"has_more", false}};
+    const auto returned = static_cast<std::uintmax_t>(rows.size());
+    return Json{{"rows", rows}, {"offset", offset}, {"limit", limit},
+                {"has_more", offset + returned < (index.empty() ? 0 : index.back().row_offset + index.back().row_count)}};
 }
 
 void ResultStore::append_staging_chunk(const ResultLease &lease,
@@ -542,6 +700,7 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     if (!manifest.contains("computation_key")) manifest["computation_key"] = nullptr;
     if (!manifest.contains("provenance")) manifest["provenance"] = Json::object();
     write_json_file(lease.published_directory / "manifest.json", manifest);
+    cleanup_empty_runs();
     return manifest;
 }
 
@@ -550,6 +709,7 @@ void ResultStore::abort(const ResultLease &lease) const {
     if (std::filesystem::exists(lease.staging_directory, error))
         std::filesystem::remove_all(lease.staging_directory, error);
     if (error) throw std::runtime_error("cannot remove aborted result staging payload: " + error.message());
+    cleanup_empty_runs();
 }
 
 }  // namespace streamfind::service

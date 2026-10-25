@@ -62,7 +62,8 @@ void send_all(std::intptr_t socket, const std::string &value) {
 }
 
 Json request(const Endpoint &endpoint, const std::string &method,
-             const std::string &path, const Json &payload = Json::object()) {
+             const std::string &path, const Json &payload = Json::object(),
+             const std::vector<std::string> &headers = {}) {
 #ifdef _WIN32
     WSADATA winsock{};
     if (WSAStartup(MAKEWORD(2, 2), &winsock) != 0)
@@ -92,8 +93,10 @@ Json request(const Endpoint &endpoint, const std::string &method,
         throw std::runtime_error("service did not respond");
     }
     const auto body = method == "POST" ? payload.dump() : std::string{};
-    std::string message = method + " " + path + " HTTP/1.1\r\nHost: " + endpoint.host +
+    std::string message = method + " " + path + " HTTP/1.1\r\nHost: " + endpoint.host + ":" +
+                          std::to_string(endpoint.port) +
                           "\r\nConnection: close\r\n";
+    for (const auto &header : headers) message += header + "\r\n";
     if (method == "POST")
         message += "Content-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\n";
     message += "\r\n" + body;
@@ -135,6 +138,50 @@ std::string create_session_id() {
 
 }  // namespace detail
 
+Json list_services() {
+    Json services = Json::array();
+    for (const auto &path : ServiceDiscovery::record_paths()) {
+        try {
+            const auto record = ServiceDiscovery::read(path);
+            Json result = record.to_json();
+            result.erase("token");
+            result["record_path"] = path.string();
+            try {
+                const auto session = detail::request(detail::parse_endpoint(record.endpoint), "GET", "/session",
+                                                     Json::object(), {"X-StreamFind-Token: " + record.token});
+                result["health"] = "healthy";
+                result["session"] = session;
+                if (session.contains("projects")) result["projects"] = session.at("projects");
+            } catch (const std::exception &error) {
+                result["health"] = "unreachable";
+                result["diagnostic"] = error.what();
+            }
+            services.push_back(std::move(result));
+        } catch (const std::exception &error) {
+            services.push_back(Json{{"health", "invalid"}, {"record_path", path.string()},
+                                    {"diagnostic", error.what()}});
+        }
+    }
+    return services;
+}
+
+Json stop_service(const std::string &instance_id) {
+    const auto paths = ServiceDiscovery::record_paths();
+    std::filesystem::path selected;
+    for (const auto &path : paths) {
+        const auto record = ServiceDiscovery::read(path);
+        if (instance_id.empty() || record.service_instance_id == instance_id) {
+            if (!selected.empty()) throw std::runtime_error("multiple streamfind services are running; specify an instance ID");
+            selected = path;
+        }
+    }
+    if (selected.empty()) throw std::runtime_error("no streamfind service is running");
+    const auto record = ServiceDiscovery::read(selected);
+    return detail::request(detail::parse_endpoint(record.endpoint), "POST", "/service/stop",
+                           Json{{"instance_id", record.service_instance_id}},
+                           {"X-StreamFind-Token: " + record.token});
+}
+
 ServiceProjectAttachment attach_project(const std::filesystem::path &database_path) {
     std::error_code error;
     const auto canonical = std::filesystem::weakly_canonical(database_path, error).string();
@@ -175,8 +222,8 @@ ServiceProjectAttachment attach_project(const std::filesystem::path &database_pa
         }
     }
     throw std::runtime_error(last_error.empty()
-        ? "no running StreamFind service is available"
-        : "unable to attach project to StreamFind service: " + last_error);
+        ? "no running streamfind service is available"
+        : "unable to attach project to streamfind service: " + last_error);
 }
 
 ServiceProjectAttachment create_project(const std::filesystem::path &database_path,
@@ -209,8 +256,8 @@ ServiceProjectAttachment create_project(const std::filesystem::path &database_pa
         } catch (const std::exception &caught) { last_error = caught.what(); }
     }
     throw std::runtime_error(last_error.empty()
-        ? "no running StreamFind service is available"
-        : "unable to create project in StreamFind service: " + last_error);
+        ? "no running streamfind service is available"
+        : "unable to create project in streamfind service: " + last_error);
 }
 
 data_proxy::Json get_workflow(const ServiceProjectAttachment &attachment) {

@@ -11,9 +11,9 @@ type RamanRow = Record<string, string | null>;
 const GROUP_COLUMNS = ['analysis_id', 'source_frame_index', 'time_seconds', 'axis_kind', 'signal_kind'] as const;
 const DEFAULT_GROUP = ['analysis_id'];
 const INITIAL_MAX_POINTS_PER_TRACE = 1024;
-const INITIAL_MAX_ROWS = 500000;
+const INITIAL_MAX_ROWS = 100000;
 const VIEWPORT_MAX_POINTS_PER_TRACE = 2000;
-const VIEWPORT_MAX_ROWS = 1000000;
+const VIEWPORT_MAX_ROWS = 250000;
 
 function text(row: RamanRow, column: string): string {
   return row[column] ?? '';

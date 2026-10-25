@@ -203,6 +203,7 @@ sfms:featuresTable
     skos:definition "Persisted features (i.e., chromatographic mass spectrometry peaks) detected for non-target analysis." ;
     sf:tableContractName "MASS_SPEC_NTA_FEATURES" ;
     sf:dataKind "duckdb_table" ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:featureColumn, sfms:featureComponentColumn, sfms:rtColumn, sfms:mzColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:replicateNameColumn,
@@ -305,6 +306,7 @@ sfms:suspectsTable
     skos:definition "Persisted suspect-screening assignment rows." ;
     sf:tableContractName "MASS_SPEC_NTA_SUSPECTS" ;
     sf:dataKind "duckdb_table" ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:featureColumn, sfms:featureComponentColumn, sfms:expRtColumn, sfms:expMassColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:replicateNameColumn,
@@ -509,6 +511,7 @@ sfms:eicTable
     skos:definition "Table of extracted ion chromatogram spectra." ;
     sf:tableContractName "MASS_SPEC_EIC" ;
     sf:dataKind "duckdb_table" ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:nameColumn, sfms:rtColumn, sfms:mzColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:replicateNameColumn,
@@ -532,6 +535,7 @@ sfms:ms1Table
     skos:definition "Table of clustered and presence-filtered MS1 spectrum points." ;
     sf:tableContractName "MASS_SPEC_MS1" ;
     sf:dataKind "duckdb_table" ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:nameColumn, sfms:rtColumn, sfms:mzColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:replicateNameColumn,
@@ -555,6 +559,7 @@ sfms:ms2Table
     skos:definition "Table of clustered and presence-filtered MS2 spectrum points." ;
     sf:tableContractName "MASS_SPEC_MS2" ;
     sf:dataKind "duckdb_table" ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:nameColumn, sfms:rtColumn, sfms:mzColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:replicateNameColumn,

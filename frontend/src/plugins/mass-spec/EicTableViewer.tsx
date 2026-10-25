@@ -130,7 +130,10 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
         result_id: artifact.result_id,
         mode: 'eic',
         columns,
-        limit: 250000,
+        // The service downsamples each trace to this point budget. Keeping a
+        // bounded response prevents a large EIC result from blocking the
+        // viewer while preserving the full result for table access.
+        limit: 65536,
         eic_max_points: 512,
       });
       if (!cancelled) setData({ ...response, offset: 0, limit: response.rows.length });

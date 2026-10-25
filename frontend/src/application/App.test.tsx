@@ -193,7 +193,8 @@ describe('application shell', () => {
     await showWorkspace();
 
     expect(screen.getByText('path-test')).toBeInTheDocument();
-    expect(screen.getByText('size: 0.00 Mb')).toBeInTheDocument();
+    expect(screen.getByText('DuckDB: 0.0 KB')).toBeInTheDocument();
+    expect(screen.getByText('Results store: 0.0 KB')).toBeInTheDocument();
     expect(screen.queryByText(/Workflow (queued|running|failed)/)).not.toBeInTheDocument();
     expect(screen.queryByText('Loading workflow summary…')).not.toBeInTheDocument();
   });

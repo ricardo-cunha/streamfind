@@ -19,7 +19,8 @@ public:
                         std::string run_id,
                         std::string operation_id,
                         std::string operation_instance,
-                        bool persist_outputs = true);
+                        bool persist_outputs = true,
+                        Json navigation_columns_by_contract = Json::object());
 
     Json begin(const Json &descriptor) override;
     void write(const std::string &output_handle,
@@ -43,12 +44,17 @@ private:
         std::uint64_t next_sequence{0};
         std::uint64_t row_count{0};
         Json schema{Json::array()};
+        Json navigation_columns{Json::array()};
+        std::string contract_id;
+        std::string output_port;
+        std::string result_name;
     };
 
     Json request(const std::string &method,
                  std::string lease_id,
                  Json payload);
     static std::string next_request_id();
+    std::string create_result_id(const Json &descriptor) const;
 
     Request request_;
     std::string session_id_;
@@ -56,6 +62,7 @@ private:
     std::string operation_id_;
     std::string operation_instance_;
     bool persist_outputs_{true};
+    Json navigation_columns_by_contract_{Json::object()};
     std::unordered_map<std::string, Lease> leases_;
 };
 

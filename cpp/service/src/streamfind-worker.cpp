@@ -7,6 +7,7 @@
 #include <chrono>
 #include <atomic>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -238,21 +239,35 @@ int main(int argc, char **argv) {
         const auto operation_id = request_line.at("operation_id").get<std::string>();
         const auto operation_instance = request_line.value("operation_instance", std::string{});
         const auto run_id = request_line.value("run_id", operation_instance);
+        const auto *operation_definition = operations.find(operation_id);
+        if (operation_definition == nullptr)
+            throw std::runtime_error("operation is not registered: " + operation_id);
+        Json navigation_columns_by_contract = Json::object();
+        for (const auto &port : operation_definition->definition().output_ports) {
+            const auto navigation = port.schema.value("navigation_columns", Json::array());
+            if (navigation.is_array() && !navigation.empty())
+                navigation_columns_by_contract[port.id] = navigation;
+        }
         auto output_sink = std::make_shared<DataProxyOutputSink>(
             [service_port](const data_proxy::Envelope &request) {
                 return detail::request_data_proxy(service_port, request.session_id, request.run_id,
                                                   request.operation_id, request.operation_instance,
                                                   request.lease_id, request.payload);
             }, session_id, run_id, operation_id, operation_instance,
-            request_line.value("persist_outputs", true));
+            request_line.value("persist_outputs", true), std::move(navigation_columns_by_contract));
         const auto workflow_revision = workflow.value("version", 0);
         detail::WorkerExecutionContext context(service_port, session_id, run_id, operation_id,
             operation_instance, workflow_revision, request_line.value("inputs", Json(nullptr)),
             output_sink, request_line.value("computation_key", std::string{}));
         emit_event(Json{{"type", "worker.ready"}});
-        const auto *operation_definition = operations.find(operation_id);
-        if (operation_definition == nullptr)
-            throw std::runtime_error("operation is not registered: " + operation_id);
+        const auto project_database_path = request_line.value("project_database_path", std::string{});
+        if (!project_database_path.empty()) {
+#ifdef _WIN32
+            _putenv_s("STREAMFIND_PROJECT_DATABASE_PATH", project_database_path.c_str());
+#else
+            setenv("STREAMFIND_PROJECT_DATABASE_PATH", project_database_path.c_str(), 1);
+#endif
+        }
         const auto result = operation_definition->run_context(context,
             request_line.value("parameters", Json::object()), operation_instance,
             request_line.value("inputs", Json(nullptr)));

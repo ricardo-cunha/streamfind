@@ -421,10 +421,6 @@ endif()
 
 add_executable(streamfind_mcp
     core/src/streamfind-mcp.cpp)
-if(WIN32)
-    target_sources(streamfind_mcp PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind-mcp.rc")
-endif()
 add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
@@ -439,10 +435,10 @@ foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
 endforeach()
 file(GENERATE
     OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
     DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli
@@ -454,6 +450,9 @@ endif()
 add_dependencies(streamfind_cli streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
+if(WIN32)
+    target_link_libraries(streamfind_cli PRIVATE shell32)
+endif()
 target_include_directories(streamfind_cli PRIVATE service/include)
 set_target_properties(streamfind_cli PROPERTIES OUTPUT_NAME streamfind)
 
@@ -474,7 +473,7 @@ if(WIN32)
     target_link_libraries(streamfind_service PRIVATE ws2_32 comdlg32 shell32 ole32)
 endif()
 set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-set_target_properties(streamfind_service PROPERTIES OUTPUT_NAME streamfind-service)
+set_target_properties(streamfind_service PROPERTIES OUTPUT_NAME streamfind-server)
 
 add_executable(streamfind_worker
     service/src/streamfind-worker.cpp
@@ -491,6 +490,19 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_worker PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 set_target_properties(streamfind_worker PROPERTIES OUTPUT_NAME streamfind-worker)
+
+add_executable(streamfind_tray service/src/streamfind-tray.cpp)
+add_dependencies(streamfind_tray streamfind_aggregate_catalogue streamfind_cpp_sdk
+    streamfind_plugins)
+target_link_libraries(streamfind_tray PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
+if(WIN32)
+    target_sources(streamfind_tray PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind-tray.rc")
+    target_link_libraries(streamfind_tray PRIVATE shell32 user32)
+    set_target_properties(streamfind_tray PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+set_target_properties(streamfind_tray PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
+    OUTPUT_NAME streamfind-tray)
 
 # The service always launches the worker for operation execution.  Make the
 # pair an atomic development/build target so a service cannot be rebuilt while
@@ -520,6 +532,7 @@ streamfind_static_mingw_executable(streamfind_mcp)
 streamfind_static_mingw_executable(streamfind_cli)
 streamfind_static_mingw_executable(streamfind_service)
 streamfind_static_mingw_executable(streamfind_worker)
+streamfind_static_mingw_executable(streamfind_tray)
 
 if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
     set(_streamfind_duckdb_build_dir "${CMAKE_BINARY_DIR}/bin")
@@ -528,7 +541,8 @@ if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
         streamfind_mcp
         streamfind_cli
         streamfind_service
-        streamfind_worker)
+        streamfind_worker
+        streamfind_tray)
         streamfind_stage_arrow_runtime(${_streamfind_host_target})
         add_custom_command(TARGET ${_streamfind_host_target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -577,6 +591,10 @@ if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
                     "$<TARGET_FILE_DIR:streamfind_worker>")
+            add_custom_command(TARGET streamfind_tray POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}"
+                    "$<TARGET_FILE_DIR:streamfind_tray>")
         endforeach()
     endif()
 endif()
@@ -587,6 +605,7 @@ if(MSVC)
         streamfind_cli
         streamfind_service
         streamfind_worker
+        streamfind_tray
         streamfind_mass_spec_plugin
         streamfind_raman_plugin
         streamfind_sensors_plugin)
@@ -606,6 +625,7 @@ install(
 install(TARGETS streamfind_cli RUNTIME DESTINATION bin)
 install(TARGETS streamfind_service RUNTIME DESTINATION bin)
 install(TARGETS streamfind_worker RUNTIME DESTINATION bin)
+install(TARGETS streamfind_tray RUNTIME DESTINATION bin)
 if(WIN32)
     install(TARGETS streamfind_service_host
         RUNTIME DESTINATION bin)

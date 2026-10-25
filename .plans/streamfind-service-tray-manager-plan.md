@@ -2,7 +2,11 @@
 
 ## Status
 
-Planning only. No implementation is included in this plan. The plan assumes the
+Implementation in progress. The shared service status client, configuration,
+Windows tray executable, CLI launch command, package installation, and service
+host startup integration are implemented. Linux currently builds a headless
+status fallback because the supported WSL image has no StatusNotifier/AppIndicator
+development runtime. The plan assumes the
 service remains a long-lived local process shared by the browser application,
 MCP, and the `streamfind` terminal command.
 
@@ -191,7 +195,7 @@ Use the existing package-relative `streamfind.json` configuration. Add a
   "tray": {
     "enabled": true,
     "start_with_app": true,
-    "start_with_service": false,
+    "start_with_service": true,
     "status_interval_ms": 2000,
     "notifications": true
   }

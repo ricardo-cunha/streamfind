@@ -1,6 +1,7 @@
 #include "streamfind/data_proxy_protocol.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -186,12 +187,20 @@ std::vector<unsigned char> arrow_ipc_encode_rows(const Json &rows) {
 }
 
 Json arrow_ipc_decode_rows(const std::vector<unsigned char> &bytes) {
+    return arrow_ipc_decode_rows(bytes, {});
+}
+
+Json arrow_ipc_decode_rows(const std::vector<unsigned char> &bytes,
+                           const std::vector<std::string> &columns) {
     auto buffer = std::make_shared<arrow::Buffer>(bytes.data(), bytes.size());
     auto reader = std::make_shared<arrow::io::BufferReader>(buffer);
     auto stream_result = arrow::ipc::RecordBatchStreamReader::Open(reader);
     if (!stream_result.ok()) throw std::runtime_error(stream_result.status().ToString());
     const auto stream = *stream_result;
     Json rows = Json::array();
+    const auto include_column = [&columns](const std::string &name) {
+        return columns.empty() || std::find(columns.begin(), columns.end(), name) != columns.end();
+    };
     while (true) {
         auto batch_result = stream->Next();
         if (!batch_result.ok()) throw std::runtime_error(batch_result.status().ToString());
@@ -205,6 +214,7 @@ Json arrow_ipc_decode_rows(const std::vector<unsigned char> &bytes) {
             throw std::runtime_error("inconsistent Arrow IPC row batch sizes");
         for (int column = 0; column < batch->num_columns(); ++column) {
             const auto &field = batch->schema()->field(column);
+            if (!include_column(field->name())) continue;
             const auto values = batch->column(column);
             for (int64_t index = 0; index < values->length(); ++index) {
                 if (values->IsNull(index)) {
