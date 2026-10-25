@@ -519,7 +519,8 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
         const auto metadata = active_worker->second->metadata();
         const bool workflow_active = effective_state == "queued" || effective_state == "running" ||
                                      effective_state == "cancelling" || workflow_cancellations_.contains(session_id);
-        if (!workflow_active) {
+        const bool operation_active = operation_cancellations_.contains(session_id);
+        if (!workflow_active && !operation_active) {
             return Json{{"session_id", session_id}, {"state", "idle"},
                         {"progress", progress_snapshot},
                         {"execution", Json::array()}, {"worker", metadata.to_json()}};
