@@ -1,280 +1,256 @@
-# streamfind build & test scripts
+# Developing streamfind with `sfdev`
 
-Machine-independent helpers for building and testing the C++ backend
-(`cpp/`). All transient artifacts land under the repository-local `tmp/` folder
-(see AGENTS.md "Repository Scratch, Build, and Log Locations"): build trees in
-`tmp/build/`, release packages in `tmp/release-output/`, and logs in `tmp/logs/`.
+`sfdev` is the supported command-line entry point for developing, building,
+testing, packaging, and preparing releases of streamfind. It gives people and
+automation the same commands, tool checks, build locations, and logs across
+Windows and Linux. Start here instead of memorizing individual build scripts.
 
-## Quick start
+Run commands from the repository root unless a command says otherwise. The
+canonical version is in [`VERSION`](../VERSION), and the development rules and
+temporary-file policy are in [`AGENTS.md`](../AGENTS.md).
 
-| Task | Command |
-| --- | --- |
-| Build the C++ backend | `powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1` |
-| C++ backend + run CTest | `powershell -ExecutionPolicy Bypass -File scripts\build\cpp\build-cpp.ps1 -Tests` |
-| Run C++ CTest only | `scripts\build\cpp\test-cpp.cmd` |
-| Run C++ built-MCP data test | `scripts\dev\cpp\test-data.ps1` |
-| Run C++ built-MCP NTA test | `scripts\dev\cpp\test-nta.ps1` |
-| Run C++ vendor reader parser test | `scripts\dev\cpp\test-vendor-readers.ps1 -Vendor Shimadzu` |
-| Run data-backed NTA pipeline | Add `-RunPipeline` to `scripts\dev\cpp\test-nta.ps1` |
-| Build C++ release archive | `scripts/release/cpp/release-cpp.cmd -Version <version>` |
-| Run extracted packaged MCP smoke | `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <extracted-package>` |
-| Publish prepared release assets | `scripts/release/publish-release.ps1 -Version <version>` |
-| Clean generated output, `tmp/`, and Python caches | `scripts\clean\clean-repo-temp.cmd` |
+## 1. Install and start `sfdev`
 
-Build `.cmd` files are thin wrappers over their `.ps1` counterparts; the
-standalone cleanup command is `scripts/clean/clean-repo-temp.cmd`.
-
-## Native toolchain contract
-
-The native stack is deliberately fixed to **CMake + Ninja + GCC-family C/C++**.
-Do not mix compilers or reuse a build directory after changing toolchains.
-
-| Host | Required tools | Resolution policy |
-| --- | --- | --- |
-| Windows | MinGW-w64 UCRT64 GCC/G++, CMake, Ninja | Standard MSYS2 root `C:\msys64`; override with `STREAMFIND_MINGW_ROOT` |
-| Linux | GCC/G++, CMake, Ninja, tar, sha256sum | Standard `/usr/bin` installation; override through `PATH`, `CC`, `CXX`, and `NINJA` |
-
-The Windows scripts prepend `ucrt64\bin` and `usr\bin` to the process `PATH`,
-set `MSYSTEM=UCRT64`, validate the compiler paths, and isolate temporary files
-under `tmp\scratch`. This is required even when `g++.exe` itself is discoverable:
-its `cc1plus.exe` subprocess needs the UCRT64 runtime directories as well.
-
-Use the host presets for direct CMake work:
-
-```powershell
-# Windows PowerShell
-cmake --preset mingw-ucrt64 -S cpp
-cmake --build --preset mingw-ucrt64
-
-# Select a subset of plugins when developing:
-cmake --preset mingw-ucrt64 -S cpp -DSTREAMFIND_ENABLED_PLUGINS="mass_spec;raman"
-```
-
-```bash
-# Linux
-cmake --preset linux-gcc -S cpp
-cmake --build tmp/build/linux-gcc --preset linux-gcc
-```
-
-The canonical scripts perform the same setup and are preferred for releases:
-
-```powershell
-scripts/build/cpp/build-cpp.ps1 -Tests -Plugins ALL
-scripts/release/cpp/release-cpp.ps1 -Version <version> -Plugins ALL
-```
-
-```bash
-STREAMFIND_PLUGINS=ALL scripts/release/cpp/release-cpp-linux.sh <version>
-```
-
-`STREAMFIND_ENABLED_PLUGINS` is a semicolon-separated CMake list. The wrapper
-scripts accept comma-separated values on Windows (`-Plugins mass_spec,raman`)
-and the Linux release lane accepts the same CMake list through
-`STREAMFIND_PLUGINS`. `ALL` is the release default. Plugin discovery remains
-directory-based, but every enabled plugin must define
-`streamfind_<domain>_plugin`; its manifest, semantic catalogue, ABI validation,
-and runtime dependencies are staged by that plugin's CMake target.
-
-Never share `tmp/build/mingw-ucrt64` with another compiler configuration or a release
-build directory. Delete the tree or use a new named preset when changing the compiler.
-
-### Semantic catalogue Java
-
-Semantic catalogue generation validates Turtle contracts with the vendored
-Apache Jena runtime. It always resolves Java from
-`%USERPROFILE%\.streamfind\tools\java\jdk-*\bin\java.exe` on Windows or
-`~/.streamfind/tools/java/jdk-*/bin/java` on POSIX. System Java, `JAVA_HOME`,
-and `PATH` are deliberately ignored. Run `sfdev setup --components java`
-to provision a SHA-256-verified Temurin JDK 21 before building. Catalogue
-generation uses the installed JDK without downloading tools.
-
-`STREAMFIND_HOME` can override the `.streamfind` root for CI and disposable
-test environments. The normal packaged runtime does not need Java; this
-provisioning applies only to development and release-time catalogue generation.
-
-The official C++ suite is the authoritative framework, plugin, mass-spectrometry
-interface, and lightweight NTA coverage registered by CMake. Raw reader, parity,
-and data-backed NTA checks are development-stage checks under `scripts/dev/cpp/`;
-they launch the C++ built MCP executable and are not C++ test source targets.
-They are not part of the C++ gate.
-
-## External example data
-
-Large mass-spectrometry and Raman example datasets are maintained in the
-auxiliary `streamfind.data` repository next to this checkout:
-
-```text
-<parent-directory>/streamfind.data
-```
-
-For example, when the repositories are under `C:/Users/cunha/Documents/GitHub`:
-
-```text
-C:/Users/cunha/Documents/GitHub/streamfind
-C:/Users/cunha/Documents/GitHub/streamfind.data
-```
-
-The development PowerShell scripts detect the sibling repository's `data/`
-directory automatically. Clone the auxiliary repository from:
-
-```text
-https://git.uni-due.de/odea-project/streamfind/streamfind.data
-```
-
-To use a different data directory, set:
-
-```text
-STREAMFIND_EXAMPLE_DATA_ROOT=<path-to-streamfind.data/data>
-```
-
-Only small backend-neutral fixtures remain under `cpp/core/tests/fixtures/`; large
-example datasets are not release contents.
-
-## Toolchain detection (recommended standards)
-
-`scripts/build/build-common.ps1` resolves the toolchain with no hardcoded machine
-paths, using the standard mechanisms:
-
-- **Visual Studio / MSVC** — located via `vswhere.exe` (the official Visual
-  Studio Installer query tool), selecting the latest installation with the
-  VC++ x64 tools component; `vcvarsall.bat` is then derived from that install.
-  Override with `$env:VSINSTALLDIR`.
-- **cmake** — `$env:CMAKE` override, else `PATH` (`Get-Command`).
-- **ctest** — resolved as the sibling of the resolved `cmake` (same
-  installation), else `PATH`.
-- **ninja** — `$env:NINJA` override, else `PATH`, else Visual Studio's bundled
-  Ninja (`Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe`).
-
-Failures are explicit with a helpful message pointing at the missing tool or
-install method.
-
-## What each script does
-
-- `scripts/build/cpp/build-cpp.ps1` — required Windows C++ entry point; initializes
-  the MinGW-w64 UCRT64 environment, configures with Ninja into `tmp/build/mingw-ucrt64`
-  (`STREAMFIND_BUILD_TESTS=ON`, `STREAMFIND_BUILD_SHARED=OFF`), builds, and
-  optionally runs CTest. Flags: `-Clean`, `-Tests`, `-Target <name>`,
-  `-Config <Debug|Release>`.
-- `scripts/build/cpp/test-cpp.ps1` — runs `ctest --test-dir tmp/build/mingw-ucrt64
-  --output-on-failure` for the official framework, mass-spec interface, and
-  lightweight NTA interface suite. Data-backed parsing and NTA checks use the
-  dedicated scripts in `scripts/dev/`.
-- `scripts/build/cpp/build-cpp-linux.sh` — configures and builds the C++ backend with Ninja on Linux; set `STREAMFIND_RUN_TESTS=1` to run CTest.
-- `scripts/release/cpp/release-cpp.ps1` — builds, tests, packages, and hashes the
-  C++ backend archive. It does not run development-stage data or NTA scripts.
-- `scripts/release/cpp/release-cpp-linux.sh <version>` — builds, tests, and
-  packages the C++ Linux backend.
-- The Windows C++ archive is self-contained at launch: run `bin\\streamfind-app.exe`
-  from the package root. It asks `bin\\streamfind.exe` to start or reuse
-  `bin\\streamfind-server.exe` with the same
-  package-relative runtime paths. Advanced MCP clients can use
-  `bin\\streamfind-mcp.exe`. Do not
-  prepend any vendor subdirectory to `PATH`; all native runtime libraries are
-  kept once in the package's `bin/` directory and the launchers supply that
-  path to their child processes.
-- The public terminal command is `bin\\streamfind.exe` in the package. Use
-  `bin\\streamfind.exe service start`, `service list`, `service status`, and
-  `service stop` (or `service stop --instance <id>` when multiple services are
-  running) to manage the independent background service.
-- Validate an extracted Windows archive with
-  `scripts/release/cpp/test-packaged-mcp.ps1 -PackageRoot <package-root>`.
-- `scripts/release/publish-release.ps1` — validates the versioned archives and checksums in
-  `tmp/release-output/`, then creates a GitHub Release. Pass `-Replace` only
-  when intentionally replacing assets in an existing release.
-
-## Notes
-
-- On a plain terminal, the scripts set repository-local Windows `TMP`/`TEMP`
-  paths before invoking MinGW, CMake, or Ninja (the scripts assume a normal user
-  environment).
-- Build artifacts are gitignored; `scripts/clean/clean-repo-temp.cmd` removes
-  generated output, all disposable `tmp/` contents, and repository-owned
-  Python caches while preserving tracked source, scripts, `.venv`,
-  `node_modules`, and vendored source.
-## Developer CLI
-
-`sfdev` requires PowerShell 7 or later (`pwsh`). On Windows, install it with:
+`sfdev` requires **PowerShell 7 or later** (`pwsh`) on both Windows and Linux.
+Windows PowerShell 5.1 cannot run it. On Windows, install PowerShell 7 with:
 
 ```powershell
 winget install --id Microsoft.PowerShell --exact --source winget
 ```
 
-Open a new terminal and run `pwsh --version` to confirm the installation.
-In VS Code, run **Terminal: Select Default Profile**, choose **PowerShell**,
-and open a new integrated terminal.
+Then open a new terminal and check `pwsh --version`. In VS Code, choose
+**Terminal: Select Default Profile**, select the PowerShell 7 profile, and
+open a new integrated terminal. The terminal must actually be running PowerShell
+7; installing it does not change already-open Windows PowerShell 5.1 sessions.
 
-Run the following commands from the repository root.
-CMake discovers all bundled plugins.
+From a PowerShell 7 terminal at the repository root, the direct invocation is:
 
 ```powershell
-pwsh -NoProfile -File scripts/sfdev.ps1 env show --json
-pwsh -NoProfile -File scripts/sfdev.ps1 doctor
-pwsh -NoProfile -File scripts/sfdev.ps1 configure --dry-run
-pwsh -NoProfile -File scripts/sfdev.ps1 configure
-pwsh -NoProfile -File scripts/sfdev.ps1 build backend --target streamfind_statistics_unit
-pwsh -NoProfile -File scripts/sfdev.ps1 test backend --filter '^streamfind_statistics_unit$'
+pwsh -NoProfile -File scripts/sfdev.ps1 help
 ```
 
-The dry run prints the working directory, executable, arguments, and process
-environment used for each command. Use `sfdev.ps1 help` for the implemented
-commands. The existing setup, application launch, packaging, and release
-commands below continue to own their respective workflows.
-
-To use the short command from any directory in a development shell:
+To open a development shell where the short `sfdev` command is available for
+this checkout:
 
 ```powershell
-.\scripts\sfdev.ps1 env shell
+pwsh -NoProfile -File scripts/sfdev.ps1 env shell
+sfdev help
+```
+
+Type `exit` to leave that shell. `env shell` does not install a global command
+or change the machine's PATH. On Linux or WSL, use the same script from a
+PowerShell 7 session, with the repository checked out in the Linux filesystem
+for native Linux builds. The direct `pwsh -File` form works when you do not
+want to enter the development shell.
+
+## 2. Understand the environment before working
+
+Use `doctor` to see whether the tools for a task are available, and `env show`
+to inspect the checkout, selected build directory, and resolved tool paths:
+
+```powershell
+sfdev env show
+sfdev doctor
+sfdev doctor --workflow native
+sfdev doctor --workflow frontend
+sfdev doctor --workflow scripts
+```
+
+Add `--json` to supported inspection commands when another tool needs
+machine-readable output. `doctor` exits unsuccessfully when a required tool is
+missing. `sfdev help <command>` shows the options and prerequisites for a
+specific command, for example `sfdev help test backend`.
+
+Install missing prerequisites through the setup command rather than guessing
+which machine-specific path or package is needed:
+
+```powershell
+sfdev setup --components native,java,frontend,python
+sfdev setup --components python
+sfdev setup --components browser
+```
+
+`native` includes the managed Java needed for semantic-catalogue generation.
+Frontend setup uses a compatible Node.js and npm from `PATH` when both are
+available. If either is missing or incompatible, it installs the pinned
+Node.js/npm bundle under
+`%USERPROFILE%\.streamfind\tools\node` on Windows or
+`~/.streamfind/tools/node` on Linux, then installs project packages under
+`frontend/node_modules`. The managed Node.js version is pinned in
+`scripts/build/node-version.txt`; update its official archive hashes in
+`scripts/build/setup-node.ps1` when changing that pin. `STREAMFIND_HOME` can
+override the managed tools root. Browser setup is only needed for browser
+smoke checks; Playwright browsers are stored in `tools/playwright` under the
+same managed tools root. On Ubuntu/Debian, native setup uses the system
+package manager and needs an APT source that provides `libarrow-dev`; package
+installation uses `sudo`.
+
+Python scripts always run with the repository `.venv`. `sfdev setup
+--components python` uses an installed Python 3.11–3.14 that supports `venv`
+when available. Otherwise it installs the pinned Python 3.11 runtime under
+`%USERPROFILE%\.streamfind\tools\python` on Windows or
+`~/.streamfind/tools/python` on Linux, then creates `.venv` in the checkout.
+The pin and platform archive checksums are maintained in
+`scripts/build/python-version.txt` and `scripts/build/setup-python.ps1`.
+`STREAMFIND_HOME` also relocates this managed Python. Project Python packages
+remain in `.venv` and are never shared from the user tools directory.
+
+### Supported native toolchains
+
+The Windows C++ build uses **MSYS2 MinGW-w64 UCRT64 GCC/G++, CMake, Ninja, and
+Arrow development packages**. `sfdev` first uses an existing UCRT64 MSYS2
+installation found through `PATH` or at `C:\msys64`; if unavailable, it uses
+`%USERPROFILE%\.streamfind\tools\msys2`.
+`STREAMFIND_MSYS2_ROOT` selects an explicit root, and `STREAMFIND_HOME` changes
+the managed tools root. Run `sfdev setup --components native` to install
+MSYS2 and the required UCRT64 packages when missing. The installer version is
+pinned in `scripts/build/msys2-version.txt`; package selection is defined in
+`scripts/build/setup-msys2.ps1`. Setup persists the selected root for the
+current Windows user so VS Code can use it; restart VS Code after initial
+setup. Do not use MSVC or Visual Studio build tools for the streamfind C++ core
+or bundled plugins.
+
+Linux builds use GCC/G++, CMake, and Ninja. WSL Ubuntu is supported: run
+PowerShell 7 inside the WSL environment and keep the checkout/build on the
+Linux filesystem for the Linux toolchain. Each platform has a separate build
+tree, so do not share one build directory across compilers or operating
+systems.
+
+## 3. Common development workflows
+
+### Build the native backend and frontend
+
+Configure once after checkout or after changing toolchains. CMake discovers
+and configures all bundled plugins; there are no plugin build profiles to
+select.
+
+```powershell
+sfdev configure
+sfdev build all
+```
+
+`build all` builds the configured native targets and then the frontend. If you
+only changed one area, use the narrower command:
+
+```powershell
+sfdev build backend
+sfdev build backend --target streamfind_statistics_unit
+sfdev build frontend
+```
+
+Use `--config Release` with `configure` when you specifically need a Release
+build. The default is Debug. `--jobs N` controls native parallel build jobs.
+
+### Run the development app
+
+```powershell
+sfdev run app
+```
+
+This starts Vite and starts or reuses a development service at
+`http://127.0.0.1:8790`. Press Ctrl+C to stop processes started by this
+command. To run only one side:
+
+```powershell
+sfdev run backend
+sfdev run frontend --url http://127.0.0.1:8790
+```
+
+Build the service and worker before starting the backend. The frontend-only
+form connects to an already-ready service; it does not start one.
+
+### Run tests and checks
+
+The native C++ tests registered with CTest are the official native test suite.
+List them before choosing a narrow test, then run the relevant selection:
+
+```powershell
+sfdev test backend --list
+sfdev test backend --filter '^streamfind_statistics_unit$'
+sfdev test backend --label 'mass_spec|core'
+```
+
+`--filter` and `--label` accept CTest regular expressions. Build the selected
+target first when needed. Frontend checks are separate:
+
+```powershell
+sfdev test frontend
+sfdev test frontend --watch
+sfdev check frontend
+```
+
+`check frontend` runs the frontend build, lint, and formatting check in order.
+For a browser smoke check, start the frontend first and provide its URL:
+
+```powershell
+sfdev test browser --url http://127.0.0.1:5173/
+```
+
+Large-data, mass-spectrometry, Raman, parser, and workflow checks are
+development checks, not CTest tests. Keep them under `scripts/dev/` and use
+the development-script runner described below. Large example data comes from
+the sibling `streamfind.data` repository, unless `STREAMFIND_EXAMPLE_DATA_ROOT`
+points to another data directory.
+
+## 4. Development scripts and data checks
+
+List available development scripts before choosing one. Inspect its required
+arguments and resolved interpreter, then run it through `sfdev`:
+
+```powershell
 sfdev script list
 sfdev script info validate_native_dependencies.py
 sfdev script run validate_native_dependencies.py -- --help
-exit
 ```
 
-Script IDs are paths relative to `scripts/dev/`. Arguments after `--`
-go to the selected script. Runs start from the checkout root, use the
-checkout's Python environment for Python scripts, and log to `tmp/logs/`.
-Use `script run PATH --dry-run` to preview a run.
+Script paths are relative to `scripts/dev/`. Put script arguments after the
+separator `--`; `sfdev` arguments such as `--dry-run` go before it. Python
+scripts always use the repository `.venv`, never the system Python. Data-backed
+development scripts may require the sibling `streamfind.data` repository or
+explicit paths; use `script info` and the script's help to confirm them.
 
-On Windows, use `sfdev package --dry-run` to preview the unpacked test
-package workflow. Run `sfdev package` to build and test the full package
-under `tmp/packaged_build/`. If you already have a complete test package,
-`sfdev package --frontend-only` refreshes its frontend assets.
-
-Use `sfdev run app` to start the development service and Vite. Use
-`sfdev run backend` for the service alone, or `sfdev run frontend --url URL`
-to connect Vite to a ready service. The default endpoint is
-`http://127.0.0.1:8790`. Build `streamfind_service`
-and `streamfind_worker` before starting the app.
-The launcher stops the processes it starts when you exit with Ctrl+C.
-
-Additional workflows:
+Use the JSON option where supported for automation. A dry run prints the
+planned working directory, executable, arguments, and relevant environment
+without running the command:
 
 ```powershell
-sfdev setup --components frontend,browser --dry-run
-sfdev setup --components native --dry-run
-sfdev doctor --workflow native
-sfdev test browser --url http://127.0.0.1:5173/
-sfdev clean --scope build --dry-run
-sfdev sdk build --dry-run
-sfdev release prepare --dry-run
-sfdev release verify
-sfdev release publish --dry-run
-sfdev version bump patch --dry-run
+sfdev script run validate_native_dependencies.py --dry-run -- --help
+sfdev test backend --filter '^streamfind_statistics_unit$' --dry-run
 ```
 
-The browser check needs a running frontend. Release preparation requires a
-clean committed checkout and builds the archive for the current host.
-Bundled plugin manifests and native descriptors use the canonical
-`VERSION`. Release verification checks existing local archives against
-their recorded checksums. Publishing requires an existing remote tag.
-Use `--json` on build, test, package, setup, SDK, release, or script run
-commands to get an exit status and log path on stdout. Command output goes
-to stderr in JSON mode.
+Build, test, and script-run logs are written under `tmp/logs/`.
 
-To try an external plugin, first build and extract the developer kit. Then
-run the following from the repository development shell:
+## 5. Package the app for manual testing
+
+The unpacked Windows test distribution is separate from both build trees and
+release archives. Create or refresh it with:
 
 ```powershell
+sfdev package
+```
+
+The full package workflow builds the frontend and native code, runs CTest, and
+stages the package under `tmp/packaged_build/`. Run the app from
+`tmp/packaged_build/bin/` to exercise the packaged service, plugins, catalogue,
+frontend, and runtime paths together.
+
+For a frontend-only update to an existing complete package:
+
+```powershell
+sfdev package --frontend-only
+```
+
+This rebuilds the frontend and replaces the package's `app/` assets without
+rebuilding native code. Do not patch files inside `tmp/packaged_build/`; update
+the source or packaging rule and regenerate the package.
+
+## 6. Create and validate an external plugin
+
+The plugin commands scaffold and validate an external plugin against the
+streamfind plugin developer kit:
+
+```powershell
+sfdev sdk build
 sfdev plugin list
 sfdev plugin new ./tmp/scratch/example-plugin --domain example_ping
 sfdev plugin build ./tmp/scratch/example-plugin --sdk <extracted-kit-path>
@@ -283,11 +259,104 @@ sfdev plugin stage ./tmp/scratch/example-plugin
 sfdev plugin validate ./tmp/scratch/example-plugin --sdk <extracted-kit-path>
 ```
 
-The staged native plugin must be added to the service's configured plugin
-roots and enabled plugin IDs before use. The generated frontend module
-includes a manifest and a table summary viewer. Serve both at an allowed
-origin and add the manifest entry to the frontend's plugin list.
+Replace `<extracted-kit-path>` with the actual extracted kit location. The
+staged native plugin must be added to the service's configured plugin roots
+and enabled plugin IDs before it can be loaded. `sdk build` writes its
+versioned developer-kit package to `tmp/release-output/`.
 
-Native setup requires an initialized MSYS2 UCRT64 installation on Windows.
-On Ubuntu/Debian, configure an APT source that provides `libarrow-dev` and
-refresh the package index before running setup. APT setup uses `sudo`.
+## 7. Prepare a release
+
+Release preparation requires a clean, committed checkout and uses the
+canonical version in `VERSION`. Build each platform's archive on its native
+host: Windows on Windows, Linux on Linux or WSL. The release output folder is
+`tmp/release-output/`.
+
+```powershell
+sfdev version show
+sfdev release prepare
+sfdev release verify
+```
+
+Run the same preparation and verification from Linux/WSL to produce and check
+the Linux archive. `release verify` checks local checksums and smoke-tests the
+archive for the current host. After the version tag has been pushed and the
+release is ready to publish, use `sfdev release publish`; publishing requires
+authenticated GitHub CLI (`gh`) and an existing remote version tag. See
+[`AGENTS.md`](../AGENTS.md) for the guarded release and tag procedure.
+
+The release archives are the distributable outputs. `tmp/packaged_build/` is
+only the unpacked Windows manual-test package and is never a release asset.
+
+## 8. A repeatable workflow for AI agents and automation
+
+Agents should use `sfdev` as the shared interface rather than inventing
+toolchain paths or invoking an unrelated legacy script. This makes actions
+reproducible and lets a human inspect the same plan and logs.
+
+1. Start at the repository root and inspect `sfdev env show` and the relevant
+   `sfdev doctor --workflow ...` result.
+2. Read `sfdev help <command>` before using an unfamiliar command. For a
+   development data script, use `sfdev script list` and `sfdev script info`
+   first to learn its arguments and interpreter.
+3. Preview consequential or destructive commands with `--dry-run`. Review the
+   resolved directory, executable, arguments, and environment before running.
+4. Choose the narrowest command that validates the change: a CMake target,
+   CTest filter/label, frontend check, or one development script.
+5. Keep generated builds, package outputs, test projects, and logs under
+   `tmp/`. Keep large-data checks out of CTest and official native test folders.
+6. Report the command run, whether it completed, and the relevant log path
+   under `tmp/logs/`. Do not report a test or release as successful unless its
+   command completed successfully.
+
+For orchestration, `--json` is available on supported inspection and
+execution commands. It provides structured status and log-path information;
+command output is sent to stderr in JSON mode. Check `sfdev help <command>` for
+the exact options of that command.
+
+## 9. Build, package, release, and cleanup locations
+
+| Location | Purpose |
+| --- | --- |
+| `tmp/build/<platform>/` | Disposable CMake/Ninja build tree (`mingw-ucrt64` or `linux-gcc`) |
+| `tmp/packaged_build/` | Unpacked Windows package for manual app/service/MCP testing |
+| `tmp/release-output/` | Versioned release archives and checksums |
+| `tmp/projects/` | Disposable DuckDB projects and fixtures created for checks |
+| `tmp/logs/` | Build, test, script, and service logs |
+| `tmp/scratch/` | Other disposable development files |
+
+To preview cleanup, then remove only the active platform build tree:
+
+```powershell
+sfdev clean --scope build --dry-run
+sfdev clean --scope build
+```
+
+`sfdev clean --scope all-temp` removes the contents of the whole repository
+`tmp/`, including packages, release archives, test projects, and logs. Preview
+it first and preserve anything needed before running it:
+
+```powershell
+sfdev clean --scope all-temp --dry-run
+```
+
+## 10. Command map
+
+| Command | Use |
+| --- | --- |
+| `sfdev env show` / `env shell` | Inspect the checkout or enter its development shell |
+| `sfdev doctor` / `setup` | Check or install development prerequisites |
+| `sfdev configure` | Configure the native CMake build tree |
+| `sfdev build backend\|frontend\|all` | Build native code, UI, or both |
+| `sfdev test backend\|frontend\|browser` | Run CTest, frontend tests, or a browser smoke check |
+| `sfdev check frontend` | Build, lint, and format-check frontend code |
+| `sfdev run backend\|frontend\|app` | Start development service and/or Vite |
+| `sfdev script list\|info\|run` | Discover and run development-stage scripts |
+| `sfdev package` | Build or refresh the unpacked Windows test package |
+| `sfdev sdk build` / `sfdev plugin ...` | Build a plugin SDK or work on an external plugin |
+| `sfdev version show\|bump` | Inspect or advance the canonical version |
+| `sfdev release prepare\|verify\|publish` | Prepare, verify, or publish versioned release archives |
+| `sfdev clean` | Remove the platform build tree or all temporary output |
+
+Run `sfdev help` for the current command list and `sfdev help <command>` for
+full syntax. The implementation in `scripts/sfdev.ps1` is authoritative when
+this guide and command help differ.

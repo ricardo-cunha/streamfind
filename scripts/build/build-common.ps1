@@ -20,6 +20,7 @@
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'msys2-common.ps1')
 
 # ---- repository root --------------------------------------------------------
 
@@ -157,13 +158,8 @@ function Get-Ninja {
 }
 
 function Initialize-MinGWUcrt64 {
-    $msysRoot = if ($env:STREAMFIND_MSYS2_ROOT) {
-        $env:STREAMFIND_MSYS2_ROOT
-    } elseif ($env:STREAMFIND_MINGW_ROOT) {
-        $env:STREAMFIND_MINGW_ROOT
-    } else {
-        'C:\msys64'
-    }
+    $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
+    $msysRoot = Get-StreamFindMSYS2Root $managedHome
     $mingwBin = Join-Path $msysRoot 'ucrt64\bin'
     $msysBin = Join-Path $msysRoot 'usr\bin'
 
@@ -193,6 +189,7 @@ function Initialize-MinGWUcrt64 {
         }
     }
     $env:MSYSTEM = 'UCRT64'
+    $env:STREAMFIND_MSYS2_ROOT = $msysRoot
     $env:PATH = "$mingwBin;$msysBin;$env:PATH"
     $env:CMAKE = $cmakePath
     $env:NINJA = $ninjaPath

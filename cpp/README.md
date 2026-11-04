@@ -12,7 +12,7 @@ The C++ implementation is split into three layers:
 - `sdk/` defines the public plugin contract, semantic catalogue projection,
   manifest validation, and the versioned C ABI used by runtime-loaded libraries.
 - `plugins/` owns domain catalogues, readers, algorithms, and domain capability
-  bindings. The shipped domains are `mass_spec`, `raman`, and `sensors`.
+  implementations. The shipped domains are `mass_spec`, `raman`, and `sensors`.
 
 Plugins do not receive `Project`, DuckDB handles, STL objects, JSON objects, or
 C++ exceptions across the dynamic boundary. Dynamic execution receives an opaque
@@ -355,9 +355,36 @@ bash scripts/release/cpp/release-cpp-linux.sh
 
 Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
 
-## Plugin development routine
+## Develop bundled plugins
 
-Generate a backend/frontend project scaffold:
+For backend plugins shipped with streamfind, work directly in the repository.
+Each directory under `cpp/plugins/` with a `CMakeLists.txt` is discovered by
+the normal CMake configuration; all bundled plugins are enabled by default.
+No installed SDK is needed:
+
+```powershell
+sfdev configure
+sfdev build backend
+sfdev test backend --list
+```
+
+Frontend plugin work also belongs in this repository, under
+`frontend/src/plugins/`, with shared contracts under
+`frontend/src/framework/plugins/`. Use `sfdev build frontend` and
+`sfdev test frontend` for the corresponding checks. Frontend plugins do not
+use the C++ developer kit.
+
+## Develop an out-of-tree plugin
+
+Use this optional workflow only when a backend plugin is developed outside
+the streamfind repository. Build the platform developer kit with
+`sfdev sdk build`, or configure the SDK install option in a local developer
+build. On Windows, this command also builds the Linux kit when Ubuntu/WSL is
+available. The kit is platform-specific and is not part of the runtime
+release. Frontend-only plugins stay in the repository frontend workspace and
+do not need the C++ kit.
+
+Generate an external backend/frontend project scaffold:
 
 ```powershell
 .venv\\Scripts\\python.exe scripts\\dev\\plugin_generator.py init tmp\\scratch\\my-plugin --kind full --domain example --name my-plugin

@@ -19,7 +19,6 @@ mass-spec plugin.
 - [Use the C++ MCP server](docs/quickstart/cpp-mcp.md).
 - [Build and develop the C++ backend](cpp/README.md).
 - [Run the development frontend](frontend/README.md).
-- [Use the R interface](docs/components/bindings-r.md).
 - [Check the supported platform and interfaces](docs/status.md).
 
 ## What you can do
@@ -31,8 +30,8 @@ mass-spec plugin.
 - Build mass-spectrometry workflows for analyses, spectra, chromatograms,
   feature processing, isotope/adduct/loss annotation, and suspect screening.
 - Run workflows interactively in the browser or programmatically through MCP.
-- Extend the runtime with C++ domain plugins and build compatible frontend
-  viewers or editors.
+- Extend the backend with C++ domain plugins and the browser app with frontend
+  plugins for result viewers, editors, and other UI capabilities.
 
 ## Available interfaces
 
@@ -42,8 +41,6 @@ mass-spec plugin.
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
 | Browser application | Included in native packages | Local project and workflow editing |
 | C++ developer kit | Separate Windows and Linux archives | Out-of-tree C++ plugins |
-| R package | Separate R interface | Existing R and Shiny workflows |
-| Python package | No public package | Use the C++ CLI or MCP interface |
 
 The current native package version is defined in [`VERSION`](VERSION). See
 [Releases](docs/releases.md) for archives, checksums, package contents, and
@@ -62,7 +59,9 @@ the integration.
 The C++ development guide documents the current MSYS2 UCRT64/GCC and Linux GCC
 toolchains, build and test commands, runtime package layout, plugin generator,
 optional developer kit, out-of-tree consumer check, and extracted-package release
-validation routines: [`cpp/README.md`](cpp/README.md).
+validation routines: [`cpp/README.md`](cpp/README.md). The plugin framework has
+two extension surfaces: native C++ backend plugins and TypeScript frontend
+plugins. See [`docs/plugin-development.md`](docs/plugin-development.md).
 
 The native archives include the built web app and a root-level `streamfind`
 launcher. Running it starts the local service and opens the app in the default
@@ -114,22 +113,6 @@ for request examples.
 The semantic catalogue defines operation names, operation parameters,
 nested input schemas, results, units, constraints, and agent-facing guidance.
 The C++ backend implements that public contract.
-
-## R package
-
-The R package provides the existing R and Shiny workflows for mass-spectrometry
-and non-target screening. Install it from GitHub:
-
-```r
-options(timeout = 600)
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("ricardo-cunha/streamfind", subdir = "bindings/r")
-```
-
-See [`docs/components/bindings-r.md`](docs/components/bindings-r.md) for the R
-workflow and Shiny application.
 
 ## Licensing
 

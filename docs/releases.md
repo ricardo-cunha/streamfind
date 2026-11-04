@@ -129,13 +129,10 @@ streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64/
 
 ## Release scope
 
-The native archives provide the current C++ backend and MCP interfaces. They do
-not provide:
-
-- a stable cross-version API or ABI guarantee;
-- a public Python package;
-- automatic installation of optional scientific tools;
-- the separate R package or its Shiny application.
+The native archives provide the current C++ backend, MCP server, browser
+application, and built-in backend plugins. They do not guarantee a stable
+cross-version C++ API or ABI, or automatically install optional scientific
+tools.
 
 Optional tools such as Java and MetFrag remain explicit user-installed
 components. The release packages do not download them at runtime.

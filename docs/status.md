@@ -8,11 +8,11 @@ x64 and Linux x86_64.
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
-| Native C++ runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Native applications and integrations |
-| C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
-| R package | Separate R interface | Existing R and Shiny workflows |
-| Python package | No public package | Use the C++ CLI or MCP interface |
-| React web app | Browser interface using the C++ service | Included in the Windows and Linux native archives |
+| C++ backend runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Project, workflow, and domain processing |
+| MCP server | Included in the C++ packages | Applications and AI agents using the shared operation catalogue |
+| React web app | Browser interface using the C++ service | Interactive project and workflow work |
+| C++ backend plugins | Built-in plugins and an out-of-tree developer kit | Add native operations and domain capabilities |
+| Frontend plugins | TypeScript plugin contracts in the frontend workspace | Add UI capabilities, viewers, and editors |
 
 See [Releases](releases.md) for package downloads and checksums.
 
@@ -59,8 +59,10 @@ The native packages do not promise:
 - identical support for every vendor format on every platform;
 - automatic installation of Java, MetFrag, or other optional scientific tools;
 
-The R package is a separate interface and installation path. It should not be
-installed as a replacement for the native C++ package.
+Backend and frontend plugin contracts evolve with the streamfind runtime. Use a
+matching runtime and developer-kit version; cross-version C++ ABI stability is
+not guaranteed. See [Plugin development](plugin-development.md) for the two
+plugin surfaces.
 
 ## Vendor compatibility and trademarks
 

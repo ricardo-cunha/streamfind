@@ -9,7 +9,7 @@
 
 ## C++ Project Rules
 
-- On Windows, build and package the C++ core and native plugins with the MinGW-w64 UCRT64 GCC stack: CMake, Ninja, `C:/msys64/ucrt64/bin/gcc.exe`, and `C:/msys64/ucrt64/bin/g++.exe`. Do not use MSVC, Visual Studio environment initialization, `cl.exe`, or the MSVC linker for StreamFind core/plugin builds or release distributions. Package matching MinGW runtime DLLs under the runtime vendor tree when required.
+- On Windows, build and package the C++ core and native plugins with the MSYS2 MinGW-w64 UCRT64 GCC stack: GCC/G++, CMake, Ninja, and Arrow development packages. Prefer an existing system MSYS2 installation; if unavailable, provision MSYS2 and its packages under `%USERPROFILE%\.streamfind\tools\msys2` (or `%STREAMFIND_HOME%\tools\msys2`). Resolve the root through `STREAMFIND_MSYS2_ROOT`; do not hard-code a machine-specific MSYS2 path. Do not use MSVC, Visual Studio environment initialization, `cl.exe`, or the MSVC linker for streamfind core/plugin builds or release distributions. Package matching MinGW runtime DLLs under the runtime vendor tree when required.
 - Do not create anonymous namespaces (`namespace {}`) in project C++ code.
 - Use an explicit named internal namespace such as `streamfind::detail` for non-public helpers, or use a file-local `static` function where appropriate.
 - This rule applies to `cpp/` and project-owned C++ code. Do not rewrite third-party or vendored source under `cpp/vendor/`.
@@ -54,10 +54,6 @@ During the active streamfind refactor, the codebase must move toward the target 
 - Do not add feature flags that select old versus new behaviour.
 - Repairing an existing package or build break is allowed only when it preserves current behaviour without adding a new compatibility layer.
 
-### Deferred Boundaries
-
-- Treat `bindings/r` as a preserved, functional package during the current C++/Python implementation work. Do not refactor it, redirect it, or add R migration helpers until those implementations are complete.
-
 ### When Compatibility Is Truly Required
 
 For a released, user-facing transition that genuinely requires compatibility or data migration:
@@ -76,13 +72,30 @@ Use the repository-local `.venv` for every Python script, test, formatter, or pa
 
 - Never run repository Python code with the system interpreter.
 - Use `.venv\Scripts\python.exe` on Windows and `.venv/bin/python` on POSIX.
-- Create `.venv` in the repository root if it does not exist.
+- Create `.venv` in the repository root if it does not exist, using a
+  compatible installed Python or the managed fallback from `.streamfind/tools/python`.
+- Provision the fallback and create `.venv` with `sfdev setup --components python`.
 - Install dependencies only into that environment.
 - Prefer `python -m pip` through the selected interpreter.
 - Verify the selected interpreter before running a script:
   - Windows: `.venv\Scripts\python.exe -c "import sys; print(sys.executable)"`
   - POSIX: `.venv/bin/python -c 'import sys; print(sys.executable)'`
 - Do not use `python`, `python3`, or a system `pip` directly for repository work.
+
+## User-Managed Development Tools
+
+Install development tools that are missing from the machine under the current
+user's `.streamfind/tools` directory. Python is the only additional standalone
+development tool to provision there: prefer a compatible system Python, and
+otherwise install the pinned Python runtime under `.streamfind/tools/python`.
+Use that interpreter only to create the checkout's `.venv`; all repository
+Python scripts and packages stay in `.venv`. On Windows, default to
+`%USERPROFILE%\.streamfind\tools`; on Linux/WSL, default to the Linux user's
+`~/.streamfind/tools`. Respect `STREAMFIND_HOME` when it is set. Prefer a
+compatible system tool already on `PATH`; use the managed copy when the system
+tool is unavailable. Keep repository package dependencies, such as
+`frontend/node_modules`, in their project directory rather than copying them
+into the user tool cache. Report the resolved tool path through `sfdev doctor`.
 
 ## Repository Scratch, Build, and Log Locations (`tmp/`)
 
@@ -98,7 +111,7 @@ anything that must be committed.
   `%TEMP%` / `TMP`, `AppData`, user home, `<tmp>`, `/tmp`, etc.).
 - **Never** drop temp files, scratch, or ad-hoc build outputs in the
   repository root or in source directories (`cpp/`, `rust/`, `semantic/`,
-  `docs/`, `bindings/`, `tests/`, ...). Root-level `log/` and `cache/` are
+  `docs/`, `tests/`, ...). Root-level `log/` and `cache/` are
   legacy locations that are being folded into `tmp/`; do not create new
   content there.
 
@@ -177,6 +190,14 @@ run the executable from `tmp/packaged_build/bin/` so package-relative service,
 plugin, catalogue, frontend, and runtime resolution is exercised. Keep
 project databases and result-store sidecars used for testing under
 `tmp/projects/` unless the test explicitly targets a user-provided project.
+
+## Plan Management
+
+- Keep at most one active Markdown plan directly under `.plans/`.
+- Move completed plans to `.plans/completed/` and superseded, paused, or
+  otherwise inactive plans to `.plans/stale/` before starting another plan.
+- Keep completion notes and provenance in the relevant plan document. Do not
+  create a separate `.plans/provenance/` folder.
 
 ## GitHub Releases
 
@@ -281,51 +302,3 @@ cmake --build tmp\build\mingw-ucrt64 --target streamfind_aggregate_catalogue
 
 The native SDK catalogue generator is the authoritative projection path. Python/Jena
 validation is no longer part of the tracked runtime build layout.
-
-## R Package Native Build
-
-Use this workflow for native C++ and Rcpp work in the StreamFind R package.
-
-### Package Root
-
-The R package root is `<repository-root>/bindings/r`. Run all R package commands with `bindings/r` as the working directory; do not treat the repository root as the R package root.
-
-### Required Validation
-
-After native or R changes, load the package with `devtools::load_all()`:
-
-```powershell
-Rscript -e "devtools::load_all()"
-```
-
-Run that command from `bindings/r`. This is the required package compilation and load check for this workflow. Do not substitute `R CMD check` for this routine unless the user explicitly requests a full CRAN-style check.
-
-### Generated Files
-
-Never manually edit generated or compiled package outputs, including:
-
-- `src/RcppExports.cpp`
-- `R/RcppExports.R`
-- `src/**/*.o`
-- `src/**/*.dll`
-- generated `man/*.Rd` files
-
-Use the project's R tooling to regenerate files when generation is explicitly required. `devtools::load_all()` must be used to compile and load the package; do not patch generated output to make a build pass.
-
-### Native Change Workflow
-
-1. Identify the package-relative native source under `bindings/r/src/`.
-2. Make the smallest source change in the hand-authored C++ or R file.
-3. Run `devtools::load_all()` from `bindings/r`.
-4. Inspect the first compiler or loader error and fix the owning source.
-5. Re-run `devtools::load_all()` until the package loads successfully.
-6. Run the narrowest relevant R tests or development fixture after loading.
-
-Keep the existing R package build authority in `bindings/r/src/Makevars` and `bindings/r/src/Makevars.win` until a later migration phase replaces it with the standalone core build. Do not move native code to `core/` as part of a routine compilation check.
-
-### Failure Rules
-
-- Do not delete or rewrite generated exports to bypass an error.
-- Do not compile from the repository root.
-- Do not introduce a second package root or compatibility copy.
-- Do not claim validation passed unless `devtools::load_all()` completed.

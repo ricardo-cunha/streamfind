@@ -16,7 +16,6 @@ runtime, MCP interface, and extensible domain plugins.
 - [Develop backend and frontend plugins](plugin-development.md).
 - [Use the C++ MCP server](quickstart/cpp-mcp.md).
 - [Check supported interfaces and limitations](status.md).
-- [Use the R interface](components/bindings-r.md).
 
 For an overview of the system boundaries and data flow, see the
 [architecture](architecture.md) page. For reproducible native validation, see
@@ -41,11 +40,13 @@ the [testing guide](testing.md).
 
 | Interface | Provides | Availability |
 | --- | --- | --- |
-| C++ core | Native project API, mass-spectrometry operations, and MCP server | Available as a native package |
-| MCP | JSON-RPC over stdio for applications and AI agents | Available through the native C++ package |
-| R package | Existing R workflows, non-target screening, and Shiny application | Separate R interface |
-| Python package | — | No public package |
+| C++ backend | Project and workflow runtime, semantic catalogue, and domain processing | Included in native packages |
+| MCP | JSON-RPC over stdio for applications and AI agents | Included in native packages |
 | React web app | Browser application served by the packaged C++ service; also available from the Vite development server | Included in the Windows and Linux native archives |
+
+The plugin framework has two extension surfaces: C++ plugins add backend
+operations and domain capabilities; TypeScript frontend plugins add UI
+capabilities such as result viewers and editors. See [Plugin development](plugin-development.md).
 
 ## Supported analytical work
 

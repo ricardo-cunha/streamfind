@@ -36,5 +36,12 @@ test -x "$PYTHON" || { echo "missing repository Python environment: $PYTHON" >&2
 archive="$BUILD/cpack/streamfind-plugin-dev-$VERSION-Linux-$(uname -m).tar.gz"
 test -f "$archive"
 cp -f "$archive" "$OUT/"
-(cd "$OUT" && find . -maxdepth 1 -type f -name 'streamfind-plugin-dev-*' -printf '%f\n' | sort | xargs -r sha256sum > sha256sums.txt)
+(cd "$OUT" && {
+    shopt -s nullglob
+    archives=(streamfind-*-${VERSION}-Windows-*.zip \
+              streamfind-*-${VERSION}-Linux-*.tgz \
+              streamfind-*-${VERSION}-Linux-*.tar.gz)
+    ((${#archives[@]} > 0))
+    sha256sum "${archives[@]}" > sha256sums.txt
+})
 echo "Plugin developer kit: $OUT/$(basename "$archive")"

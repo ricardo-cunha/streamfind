@@ -25,8 +25,10 @@ not automatically installed by the native packages.
 
 ## Interface selection
 
-- Use the C++ package for native C++ applications or the C++ MCP server.
-- Use the R package for R and Shiny workflows.
+- Use the native C++ package for the backend runtime, MCP server, and browser
+  application.
+- Develop domain processing as C++ backend plugins and result viewers or
+  editors as TypeScript frontend plugins.
 
 The native packages do not promise a stable cross-version C++ ABI. Match an
 application or plugin developer kit to the runtime version it targets.

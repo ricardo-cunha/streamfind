@@ -3,7 +3,11 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $frontend = Join-Path $root 'frontend'
 $platform = if ($IsWindows) { 'mingw-ucrt64' } else { 'linux-gcc' }
-$ucrt = if ($env:STREAMFIND_MSYS2_ROOT) { $env:STREAMFIND_MSYS2_ROOT } else { 'C:/msys64' }
+$managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
+. (Join-Path $PSScriptRoot 'build/msys2-common.ps1')
+. (Join-Path $PSScriptRoot 'build/python-common.ps1')
+$ucrt = if ($IsWindows) { Get-StreamFindMSYS2Root $managedHome }
+$msys2ManagedRoot = Join-Path $managedHome 'tools/msys2'
 $bin = if ($IsWindows) { Join-Path $ucrt 'ucrt64/bin' }
 
 function Resolve-Tool([string]$Name) {
@@ -37,17 +41,17 @@ function Show-Help([string]$Topic) {
         'env show' = @('env show [--json]', 'Show the checkout, default build directory, and resolved tool paths.', 'Use --json for machine-readable output.')
         'env shell' = @('env shell [--dry-run]', 'Open PowerShell 7 with a checkout-local sfdev command.', 'Starts in the repository root. Type exit to return to the parent shell.')
         'doctor' = @('doctor [--workflow native|frontend|scripts] [--json]', 'Check tool availability and version commands for a workflow.', 'Without --workflow, checks all listed tools. Returns a nonzero exit code on failure.')
-        'setup' = @('setup --components LIST [--dry-run]', 'Install native, java, frontend, or browser prerequisites.', 'Separate components with commas. Native setup includes managed Java.')
+        'setup' = @('setup --components LIST [--dry-run]', 'Install native, java, frontend, browser, or python prerequisites.', 'Python setup reuses a compatible system interpreter or provisions the pinned Python under .streamfind/tools, then creates the repository .venv.')
         'configure' = @('configure [--config Debug|Release] [--dry-run]', 'Generate a native CMake build tree under the platform build directory.', "Defaults to $platform, Debug, and all plugins. CMake discovers all bundled plugins.", 'Example: sfdev configure --config Release')
         'build backend' = @('build backend [--target NAME] [--jobs N] [--dry-run]', 'Compile an existing native build with CMake.', "Configure first. Defaults to $platform and the default CMake target.", 'Example: sfdev build backend --target streamfind_statistics_unit')
-        'build frontend' = @('build frontend [--dry-run]', 'Run npm run build in frontend/ and write assets to frontend/dist/.', 'Install frontend dependencies first with npm ci in frontend/.')
+        'build frontend' = @('build frontend [--dry-run]', 'Run npm run build in frontend/ and write assets to frontend/dist/.', 'Run sfdev setup --components frontend when Node.js/npm are missing or frontend dependencies are not installed.')
         'build all' = @('build all [--jobs N] [--dry-run]', 'Build the configured native build, then build frontend assets.', "Defaults to $platform. Requires both native configuration and frontend dependencies.")
         'test backend' = @('test backend [--list] [--filter REGEX] [--label REGEX] [--jobs N] [--dry-run]', 'List or run CTest tests in a native build.', "Defaults to $platform. Build the selected tests first. Use --list to inspect tests without running them.", "Example: sfdev test backend --filter '^streamfind_statistics_unit$'")
-        'test frontend' = @('test frontend [--watch] [--dry-run] [-- ARGUMENTS]', 'Run Vitest once, or keep it running with --watch.', 'Requires installed frontend dependencies. Arguments after -- go to Vitest.')
+        'test frontend' = @('test frontend [--watch] [--dry-run] [-- ARGUMENTS]', 'Run Vitest once, or keep it running with --watch.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed.')
         'test browser' = @('test browser --url URL [--dry-run]', 'Run the Playwright smoke check against a running frontend.', 'Install frontend dependencies and Playwright Chromium first.')
         'check frontend' = @('check frontend [--dry-run]', 'Run the frontend build, lint, and formatting check in order.', 'Requires installed frontend dependencies. Stops at the first failed step.')
         'run backend' = @('run backend [--url URL] [--dry-run]', 'Start a development service or use one that is already ready.', "Defaults to $platform and http://127.0.0.1:8790. Build the service and worker first.")
-        'run frontend' = @('run frontend [--url URL] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Defaults to http://127.0.0.1:8790.')
+        'run frontend' = @('run frontend [--url URL] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed. Defaults to http://127.0.0.1:8790.')
         'run app' = @('run app [--url URL] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Press Ctrl+C to stop processes started by this command.')
         'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked Windows test distribution under tmp/packaged_build/.', 'The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
         'clean' = @('clean --scope build|all-temp [--dry-run]', 'Remove the platform build tree or the contents of repository tmp/.', 'Use --dry-run to preview deletions. all-temp includes logs, test projects, packages, and release archives.')
@@ -56,7 +60,7 @@ function Show-Help([string]$Topic) {
         'script run' = @('script run PATH [--dry-run] [-- ARGUMENTS]', 'Run a development script from the checkout root and log to tmp/logs/.', 'Pass the script arguments after --. Python scripts use the repository .venv.', 'Example: sfdev script run validate_native_dependencies.py -- --help')
         'version show' = @('version show', 'Print the canonical streamfind version from VERSION.')
         'version bump' = @('version bump patch|minor|major [--dry-run]', 'Advance the canonical VERSION.', 'Resets lower components and prints the previous and next version.')
-        'sdk build' = @('sdk build [--dry-run]', 'Build and package the plugin developer kit for this host.', 'Uses the platform release script and the canonical VERSION.')
+        'sdk build' = @('sdk build [--dry-run]', 'Build the Windows kit and, when Ubuntu/WSL is available, the Linux kit.', 'Uses the canonical VERSION and runs each platform package validation.')
         'plugin list' = @('plugin list', 'List the bundled native plugin directories.')
         'plugin new' = @('plugin new PATH [--kind backend|frontend|full] [--domain ID] [--dry-run]', 'Create an external plugin project.')
         'plugin build' = @('plugin build PATH --sdk PATH [--dry-run]', 'Configure and compile an external native plugin against an installed developer kit.')
@@ -176,26 +180,56 @@ try {
     $tree = Join-Path $root "tmp/build/$platform"
     $npmName = if ($IsWindows) { 'npm.cmd' } else { 'npm' }
     $pwsh = Join-Path $PSHOME $(if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' })
+    $nodeVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'build/node-version.txt') -Raw).Trim()
+    $managedNodeDir = Join-Path $managedHome "tools/node/v$nodeVersion/$(if ($IsWindows) { 'win-x64' } else { 'linux-x64' })"
+    $managedNodeBin = Join-Path $managedNodeDir 'bin'
+    if ($IsWindows) { $managedNodeBin = $managedNodeDir }
+    $nodeGlobal = Resolve-Tool node
+    $npmGlobal = Resolve-Tool $npmName
+    $nodeGlobalVersion = $null
+    $globalNodeCompatible = $false
+    if ($nodeGlobal -and $npmGlobal) {
+        try {
+            $nodeGlobalVersion = ((& $nodeGlobal --version 2>$null) -join '').Trim()
+            if ($LASTEXITCODE -eq 0 -and $nodeGlobalVersion -match '^v(\d+)\.(\d+)\.(\d+)') {
+                $nodeMajor = [int]$Matches[1]
+                $nodeMinor = [int]$Matches[2]
+                $globalNodeCompatible = ($nodeMajor -eq 22 -and $nodeMinor -ge 12) -or
+                    $nodeMajor -eq 24 -or $nodeMajor -ge 26
+            }
+        } catch { $globalNodeCompatible = $false }
+    }
+    $nodeManaged = Join-Path $managedNodeBin $(if ($IsWindows) { 'node.exe' } else { 'node' })
+    $npmManaged = Join-Path $managedNodeBin $npmName
+    $useManagedNode = !$globalNodeCompatible
+    $selectedNode = if ($useManagedNode -and (Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and (Test-Path -LiteralPath $npmManaged -PathType Leaf)) {
+        $nodeManaged
+    } elseif (!$useManagedNode) { $nodeGlobal } else { $null }
+    $selectedNpm = if ($selectedNode -eq $nodeManaged) { $npmManaged } elseif (!$useManagedNode) { $npmGlobal } else { $null }
     $tools = [ordered]@{
         pwsh = $pwsh
         git = Resolve-Tool git
         cmake = if ($IsWindows) { Join-Path $bin 'cmake.exe' } else { Resolve-Tool cmake }
         ctest = if ($IsWindows) { Join-Path $bin 'ctest.exe' } else { Resolve-Tool ctest }
-        npm = Resolve-Tool $npmName
-        node = Resolve-Tool node
+        npm = $selectedNpm
+        node = $selectedNode
         gcc = if ($IsWindows) { Join-Path $bin 'gcc.exe' } else { Resolve-Tool gcc }
         gxx = if ($IsWindows) { Join-Path $bin 'g++.exe' } else { Resolve-Tool 'g++' }
         ninja = if ($IsWindows) { Join-Path $bin 'ninja.exe' } else { Resolve-Tool ninja }
         python = Join-Path $root $(if ($IsWindows) { '.venv/Scripts/python.exe' } else { '.venv/bin/python' })
     }
+    $basePython = Get-StreamFindBasePython
     $environment = [ordered]@{}
-    $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
     if ($IsWindows) {
         $environment.STREAMFIND_MSYS2_ROOT = $ucrt
         $environment.MSYSTEM = 'UCRT64'
         $environment.PATH = "$bin;$env:PATH"
     } elseif ($IsLinux) {
         $environment.PATH = ($env:PATH.Split(':') | Where-Object { $_ -and $_ -notmatch '^/mnt/[a-z]/' }) -join ':'
+    }
+    if ($tools.node -eq $nodeManaged) {
+        $environment.PATH = if ($IsWindows) { "$managedNodeBin;$($environment.PATH ?? $env:PATH)" }
+            else { "$managedNodeBin`:$($environment.PATH ?? $env:PATH)" }
     }
 
     if ("$command/$subject" -in 'env/show', 'doctor/') {
@@ -214,7 +248,14 @@ try {
                 pwsh { 'current PowerShell installation' }
                 python { 'repository .venv' }
                 { $IsWindows -and $_ -in 'cmake', 'ctest', 'gcc', 'gxx', 'ninja' } {
-                    if ($env:STREAMFIND_MSYS2_ROOT) { 'STREAMFIND_MSYS2_ROOT' } else { 'default MSYS2 UCRT64 location' }
+                    if ($ucrt.StartsWith($msys2ManagedRoot, [StringComparison]::OrdinalIgnoreCase)) { 'managed .streamfind tools' }
+                    elseif ($env:STREAMFIND_MSYS2_ROOT) { 'STREAMFIND_MSYS2_ROOT' }
+                    elseif ($ucrt -ieq 'C:\msys64') { 'system MSYS2 installation' }
+                    else { 'MSYS2 UCRT64 found on PATH' }
+                }
+                { $_ -in 'node', 'npm' } {
+                    if ($entry.Value -and $entry.Value.StartsWith($managedNodeDir, [StringComparison]::OrdinalIgnoreCase)) { 'managed .streamfind tools' }
+                    else { 'PATH' }
                 }
                 default { 'PATH' }
             }
@@ -229,8 +270,15 @@ try {
                 } catch { $diagnostic = $_.Exception.Message }
             } else {
                 $diagnostic = switch ($entry.Key) {
-                    python { 'Create the repository .venv with a supported Python interpreter.' }
-                    { $IsWindows -and $_ -in 'cmake', 'ctest', 'gcc', 'gxx', 'ninja' } { 'Run sfdev setup --components native or set STREAMFIND_MSYS2_ROOT.' }
+                    python {
+                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with Python $($basePython.Version)." }
+                        else { 'Run sfdev setup --components python to install the pinned Python under .streamfind/tools and create the repository .venv.' }
+                    }
+                    { $IsWindows -and $_ -in 'cmake', 'ctest', 'gcc', 'gxx', 'ninja' } { 'Run sfdev setup --components native. Missing MSYS2 and UCRT64 packages are installed under .streamfind/tools.' }
+                    { $_ -in 'node', 'npm' } {
+                        if ($nodeGlobal -and !$globalNodeCompatible) { "PATH Node.js $nodeGlobalVersion is incompatible with the frontend dependencies; setup installs the pinned compatible version under .streamfind/tools." }
+                        else { 'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.' }
+                    }
                     default { "Install $($entry.Key) and make it available on PATH." }
                 }
             }
@@ -388,14 +436,15 @@ try {
     }
     if ($command -eq 'setup') {
         $components = @($options.components -split ',')
-        if (!$options.components -or ($components | Where-Object { $_ -notin 'native', 'java', 'frontend', 'browser' })) {
-            throw 'Choose components from native, java, frontend, browser'
+        if (!$options.components -or ($components | Where-Object { $_ -notin 'native', 'java', 'frontend', 'browser', 'python' })) {
+            throw 'Choose components from native, java, frontend, browser, python'
+        }
+        if ('python' -in $components) {
+            $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-python.ps1'))
         }
         if ('native' -in $components) {
             if ($IsWindows) {
-                $steps += New-Step $root (Join-Path $ucrt 'usr/bin/pacman.exe') @('-S', '--needed',
-                    'mingw-w64-ucrt-x86_64-gcc', 'mingw-w64-ucrt-x86_64-cmake',
-                    'mingw-w64-ucrt-x86_64-ninja', 'mingw-w64-ucrt-x86_64-arrow')
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-msys2.ps1'), '-Root', $ucrt)
             } elseif ($IsLinux) {
                 $steps += New-Step $root (Resolve-Tool sudo) @('apt-get', 'install', '--no-upgrade',
                     'build-essential', 'cmake', 'ninja-build', 'libarrow-dev', 'libabsl-dev', 'libbrotli-dev',
@@ -406,10 +455,18 @@ try {
         if ('native' -in $components -or 'java' -in $components) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-java.ps1'))
         }
+        if (('frontend' -in $components -or 'browser' -in $components) -and !$tools.node) {
+            $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-node.ps1'))
+            $tools.node = $nodeManaged
+            $tools.npm = $npmManaged
+            $environment.PATH = if ($IsWindows) { "$managedNodeBin;$($environment.PATH ?? $env:PATH)" }
+                else { "$managedNodeBin`:$($environment.PATH ?? $env:PATH)" }
+        }
         if ('frontend' -in $components) {
             $steps += New-Step $frontend $tools.npm @('ci', '--engine-strict')
         }
         if ('browser' -in $components) {
+            $environment.PLAYWRIGHT_BROWSERS_PATH = Join-Path $managedHome 'tools/playwright'
             $playwright = Join-Path $frontend 'node_modules/playwright/cli.js'
             if ('frontend' -notin $components -and !$options['dry-run'] -and !(Test-Path -LiteralPath $playwright)) {
                 throw 'Install frontend dependencies first with sfdev setup --components frontend'
@@ -423,6 +480,7 @@ try {
             throw 'Specify an HTTP or HTTPS frontend URL with --url'
         }
         $environment.STREAMFIND_FRONTEND_URL = $endpoint.AbsoluteUri
+        $environment.PLAYWRIGHT_BROWSERS_PATH = Join-Path $managedHome 'tools/playwright'
         $steps += New-Step $frontend $tools.npm @('run', 'browser:smoke')
     }
     if ($command -eq 'run') {
@@ -452,7 +510,32 @@ try {
         }
         $scriptName = if ($command -eq 'sdk') { 'package-plugin-devkit' } else { 'release-cpp' }
         $scriptDirectory = Join-Path $PSScriptRoot 'release/cpp'
-        if ($IsWindows) {
+        if ($command -eq 'sdk' -and $IsWindows) {
+            $windowsSdkScript = Join-Path $scriptDirectory 'package-plugin-devkit.ps1'
+            $steps += New-Step $root $pwsh @('-NoProfile', '-File', $windowsSdkScript, '-Version', $version)
+
+            $wsl = Resolve-Tool 'wsl.exe'
+            if ($wsl) {
+                $wslListing = & $wsl --list --quiet 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $distributionNames = (($wslListing -join "`n").Replace([string][char]0, '') -split '\r?\n' |
+                        ForEach-Object { $_.Trim() } | Where-Object { $_ })
+                    $ubuntu = $distributionNames | Where-Object { $_ -match '^Ubuntu(?:[-_ ].*)?$' } | Select-Object -First 1
+                    if ($ubuntu) {
+                        $linuxSdkScript = Join-Path $scriptDirectory 'package-plugin-devkit-linux.sh'
+                        $linuxScriptPath = & $wsl --distribution $ubuntu --exec wslpath -a $linuxSdkScript
+                        if ($LASTEXITCODE -eq 0 -and $linuxScriptPath) {
+                            $linuxScriptPath = ([string]$linuxScriptPath).Replace([string][char]0, '').Trim()
+                            $steps += New-Step $root $wsl @('--distribution', $ubuntu, '--exec', '/usr/bin/env',
+                                'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                                'STREAMFIND_SKIP_FRONTEND_BUILD=1', '/bin/bash', $linuxScriptPath, $version)
+                        } else {
+                            Write-Warning "Ubuntu WSL distribution '$ubuntu' is installed but could not resolve the Linux SDK build script path; building the Windows SDK only."
+                        }
+                    }
+                }
+            }
+        } elseif ($IsWindows) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File',
                 (Join-Path $scriptDirectory "$scriptName.ps1"), '-Version', $version)
         } elseif ($IsLinux) {

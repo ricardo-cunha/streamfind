@@ -62,7 +62,7 @@ access DuckDB files or plugin internals directly. Both native archives contain
 the built app and a launcher that starts the local service and opens it in a
 browser. The [Web app](web-app.md) page documents the platform paths.
 
-## C++ plugin framework
+## Backend plugin framework
 
 The C++ backend is divided into a generic host core, an SDK boundary, and domain
 plugins:
@@ -83,6 +83,16 @@ and they use the service data proxy plus generic table/schema/batch callbacks.
 Arrow IPC is used for bounded tabular transport. This keeps persistence
 policy, result validation, and transaction control in the service while
 allowing domain capabilities to be deployed selectively.
+
+## Frontend plugin framework
+
+The browser application has a separate TypeScript plugin surface. Frontend
+plugins extend the UI through manifests and registered capabilities such as
+result viewers and editors. They use shared frontend contracts and the service
+API to retrieve data; they do not access DuckDB or backend plugin internals.
+The backend and frontend plugin systems have different runtimes and packaging
+contracts, while sharing the operation catalogue and result schemas. See
+[Plugin development](plugin-development.md) for both extension paths.
 
 ## Data and runtime assets
 
