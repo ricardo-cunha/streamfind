@@ -24,7 +24,7 @@ The plan is evidence-led: reproduce reports against the current source and packa
 
 1. Record the checked-out commit, current version, package layout, Windows/WSL environment, and relevant service configuration. Do not assume the 0.7.1 reports still reproduce on the current branch.
 2. Create a report ledger mapping every `SF-xx` to current code, existing tests, reproduction status, owner boundary, and evidence needed. Include the non-ID issues in `errors.md` and documentation findings.
-3. Define a small reproducible fixture for each infrastructure symptom. Request the reporter's workflow JSON, sanitized log, or sample only where needed; large Bruker data remains in the sibling `streamfind.data` repository or reporter-provided data, not committed fixtures.
+3. Define a small reproducible fixture for each infrastructure symptom. Request the reporter's workflow JSON, sanitized log, or sample only where needed. The example files referenced by the feedback are available under `E:\example_files\ms_merck` and may be used to reproduce applicable MassSpec/Bruker issues. Keep these data external to the repository; do not copy them into committed fixtures. Other large Bruker data may come from the sibling `streamfind.data` repository or reporter-provided files.
 4. Capture service/worker PID, run and operation IDs, memory high-water mark, bytes and rows emitted, result stage/publish timings, HTTP status/latency, MCP request duration, and terminal state. Redact paths or sample names in shared diagnostics where necessary.
 5. Verify whether suspected causes are true before implementing them, especially antivirus/file-lock behavior (SF-49), Windows Job Object inheritance (SF-60), and row-size causes (SF-57).
 
