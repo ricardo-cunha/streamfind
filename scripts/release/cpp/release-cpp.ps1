@@ -77,5 +77,5 @@ if ($LASTEXITCODE -ne 0) { throw "Packaged C++ MCP smoke test failed ($LASTEXITC
 $runtimeArchive = Join-Path $Script:RELEASE_OUTPUT "streamfind-core-cpp-$Version-Windows-x86_64.zip"
 Move-Item $built.FullName $runtimeArchive -Force
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $cpackDir
-Write-ReleaseChecksums
+Write-ReleaseChecksums $Version
 Write-ReleaseLog "C++ runtime archive written to $Script:RELEASE_OUTPUT"

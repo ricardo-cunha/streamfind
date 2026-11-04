@@ -10,7 +10,7 @@ param(
     [string]$Catalogue = ''
 )
 
-. (Join-Path $PSScriptRoot '..\mcp-common.ps1')
+. (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $dataRoot = Get-StreamfindDataRoot $repoRoot

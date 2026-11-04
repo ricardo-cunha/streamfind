@@ -84,9 +84,9 @@ Semantic catalogue generation validates Turtle contracts with the vendored
 Apache Jena runtime. It always resolves Java from
 `%USERPROFILE%\.streamfind\tools\java\jdk-*\bin\java.exe` on Windows or
 `~/.streamfind/tools/java/jdk-*/bin/java` on POSIX. System Java, `JAVA_HOME`,
-and `PATH` are deliberately ignored. If the managed JDK is absent, the
-catalogue tool downloads Temurin JDK 21 from Adoptium, extracts it into the
-same `.streamfind` tool directory, and then uses that executable.
+and `PATH` are deliberately ignored. Run `sfdev setup --components java`
+to provision a SHA-256-verified Temurin JDK 21 before building. Catalogue
+generation uses the installed JDK without downloading tools.
 
 `STREAMFIND_HOME` can override the `.streamfind` root for CI and disposable
 test environments. The normal packaged runtime does not need Java; this
@@ -191,3 +191,103 @@ install method.
   generated output, all disposable `tmp/` contents, and repository-owned
   Python caches while preserving tracked source, scripts, `.venv`,
   `node_modules`, and vendored source.
+## Developer CLI
+
+`sfdev` requires PowerShell 7 or later (`pwsh`). On Windows, install it with:
+
+```powershell
+winget install --id Microsoft.PowerShell --exact --source winget
+```
+
+Open a new terminal and run `pwsh --version` to confirm the installation.
+In VS Code, run **Terminal: Select Default Profile**, choose **PowerShell**,
+and open a new integrated terminal.
+
+Run the following commands from the repository root.
+CMake discovers all bundled plugins.
+
+```powershell
+pwsh -NoProfile -File scripts/sfdev.ps1 env show --json
+pwsh -NoProfile -File scripts/sfdev.ps1 doctor
+pwsh -NoProfile -File scripts/sfdev.ps1 configure --dry-run
+pwsh -NoProfile -File scripts/sfdev.ps1 configure
+pwsh -NoProfile -File scripts/sfdev.ps1 build backend --target streamfind_statistics_unit
+pwsh -NoProfile -File scripts/sfdev.ps1 test backend --filter '^streamfind_statistics_unit$'
+```
+
+The dry run prints the working directory, executable, arguments, and process
+environment used for each command. Use `sfdev.ps1 help` for the implemented
+commands. The existing setup, application launch, packaging, and release
+commands below continue to own their respective workflows.
+
+To use the short command from any directory in a development shell:
+
+```powershell
+.\scripts\sfdev.ps1 env shell
+sfdev script list
+sfdev script info validate_native_dependencies.py
+sfdev script run validate_native_dependencies.py -- --help
+exit
+```
+
+Script IDs are paths relative to `scripts/dev/`. Arguments after `--`
+go to the selected script. Runs start from the checkout root, use the
+checkout's Python environment for Python scripts, and log to `tmp/logs/`.
+Use `script run PATH --dry-run` to preview a run.
+
+On Windows, use `sfdev package --dry-run` to preview the unpacked test
+package workflow. Run `sfdev package` to build and test the full package
+under `tmp/packaged_build/`. If you already have a complete test package,
+`sfdev package --frontend-only` refreshes its frontend assets.
+
+Use `sfdev run app` to start the development service and Vite. Use
+`sfdev run backend` for the service alone, or `sfdev run frontend --url URL`
+to connect Vite to a ready service. The default endpoint is
+`http://127.0.0.1:8790`. Build `streamfind_service`
+and `streamfind_worker` before starting the app.
+The launcher stops the processes it starts when you exit with Ctrl+C.
+
+Additional workflows:
+
+```powershell
+sfdev setup --components frontend,browser --dry-run
+sfdev setup --components native --dry-run
+sfdev doctor --workflow native
+sfdev test browser --url http://127.0.0.1:5173/
+sfdev clean --scope build --dry-run
+sfdev sdk build --dry-run
+sfdev release prepare --dry-run
+sfdev release verify
+sfdev release publish --dry-run
+sfdev version bump patch --dry-run
+```
+
+The browser check needs a running frontend. Release preparation requires a
+clean committed checkout and builds the archive for the current host.
+Bundled plugin manifests and native descriptors use the canonical
+`VERSION`. Release verification checks existing local archives against
+their recorded checksums. Publishing requires an existing remote tag.
+Use `--json` on build, test, package, setup, SDK, release, or script run
+commands to get an exit status and log path on stdout. Command output goes
+to stderr in JSON mode.
+
+To try an external plugin, first build and extract the developer kit. Then
+run the following from the repository development shell:
+
+```powershell
+sfdev plugin list
+sfdev plugin new ./tmp/scratch/example-plugin --domain example_ping
+sfdev plugin build ./tmp/scratch/example-plugin --sdk <extracted-kit-path>
+sfdev plugin test ./tmp/scratch/example-plugin
+sfdev plugin stage ./tmp/scratch/example-plugin
+sfdev plugin validate ./tmp/scratch/example-plugin --sdk <extracted-kit-path>
+```
+
+The staged native plugin must be added to the service's configured plugin
+roots and enabled plugin IDs before use. The generated frontend module
+includes a manifest and a table summary viewer. Serve both at an allowed
+origin and add the manifest entry to the frontend's plugin list.
+
+Native setup requires an initialized MSYS2 UCRT64 installation on Windows.
+On Ubuntu/Debian, configure an APT source that provides `libarrow-dev` and
+refresh the package index before running setup. APT setup uses `sudo`.

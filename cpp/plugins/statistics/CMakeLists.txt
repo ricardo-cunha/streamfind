@@ -18,7 +18,7 @@ if(WIN32)
 endif()
 add_custom_command(TARGET streamfind_statistics_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+        "${STREAMFIND_BUNDLED_MANIFEST}"
         "$<TARGET_FILE_DIR:streamfind_statistics_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
@@ -32,7 +32,7 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/statistics/ontology)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
     DESTINATION plugins/statistics/resources)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
     DESTINATION plugins/statistics)
 install(TARGETS streamfind_statistics_plugin
     RUNTIME DESTINATION plugins/statistics

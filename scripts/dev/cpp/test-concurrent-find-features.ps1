@@ -13,7 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\mcp-common.ps1')
+. (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 
 foreach ($name in @('tmp', 'temp', 'tmpdir')) {
     if (Test-Path "Env:$name") { Remove-Item "Env:$name" }

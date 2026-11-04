@@ -9,7 +9,7 @@ function(streamfind_validate_plugin_build target domain)
         COMMAND $<TARGET_FILE:streamfind_sdk_plugin_validator>
             --source-dir "${CMAKE_CURRENT_SOURCE_DIR}"
             --output-dir "$<TARGET_FILE_DIR:${target}>"
-            --manifest "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+            --manifest "${STREAMFIND_BUNDLED_MANIFEST}"
             --domain "${domain}"
             --library "$<TARGET_FILE_NAME:${target}>"
         VERBATIM)

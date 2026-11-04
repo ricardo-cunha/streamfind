@@ -60,7 +60,7 @@ if(WIN32)
 endif()
 add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+        "${STREAMFIND_BUNDLED_MANIFEST}"
         "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
@@ -105,7 +105,7 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/COPYING"
     DESTINATION licenses RENAME zstd-COPYING.txt)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/mass_spec/ontology)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
     DESTINATION plugins/mass_spec)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
     DESTINATION plugins/mass_spec/resources)

@@ -4,7 +4,7 @@ param(
     [switch]$SkipBuild
 )
 
-. (Join-Path $PSScriptRoot '..\mcp-common.ps1')
+. (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $dataRoot = Get-StreamfindDataRoot $repoRoot
 $dataFile = Join-Path $dataRoot $RelativePath

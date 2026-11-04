@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory = $true)][string]$PackageRoot
 )
 
-. "$PSScriptRoot\..\..\dev\mcp-common.ps1"
+. "$PSScriptRoot\..\..\dev\_lib\mcp-common.ps1"
 
 $packageRoot = (Resolve-Path $PackageRoot -ErrorAction Stop).Path
 $executable = Join-Path $packageRoot 'bin\streamfind-mcp.exe'

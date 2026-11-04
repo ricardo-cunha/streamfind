@@ -63,5 +63,5 @@ if ($LASTEXITCODE -ne 0) { throw "CPack failed ($LASTEXITCODE)" }
 $archive = Get-ChildItem (Join-Path $cpackDir "streamfind-plugin-dev-$Version-Windows-*.zip") | Select-Object -First 1
 if (-not $archive) { throw 'Developer-kit archive was not produced' }
 Copy-Item $archive.FullName (Join-Path $outDir $archive.Name) -Force
-Write-ReleaseChecksums
+Write-ReleaseChecksums $Version
 Write-ReleaseLog "Plugin developer kit written to $outDir"

@@ -80,7 +80,7 @@ rm -f "$listing"
 rm -rf "$runtime_root"
 (cd "$OUT" && {
     release_files=()
-    for candidate in streamfind-*.zip streamfind-*.tgz streamfind-*.tar.gz; do
+    for candidate in streamfind-*-"$VERSION"-*.zip streamfind-*-"$VERSION"-*.tgz streamfind-*-"$VERSION"-*.tar.gz; do
         [[ -f "$candidate" ]] && release_files+=("$candidate")
     done
     ((${#release_files[@]} > 0))

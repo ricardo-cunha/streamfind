@@ -203,7 +203,9 @@ export type IsotopePatternResponse = {
 
 type EventHandler = (event: StreamFindEvent) => void;
 
-const defaultBaseUrl = import.meta.env.DEV ? 'http://127.0.0.1:8790' : window.location.origin;
+const defaultBaseUrl = import.meta.env.DEV
+  ? import.meta.env.VITE_STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790'
+  : window.location.origin;
 
 export class StreamFindApiClient {
   private socket: WebSocket | null = null;

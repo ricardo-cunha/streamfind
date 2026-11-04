@@ -67,7 +67,7 @@ Built-in plugins reuse the CMake targets created by the central vendor layer. Do
 
 On Windows, use one MSYS2 UCRT64 installation for CMake, Ninja, GCC, and G++.
 The UCRT64 build also requires the Apache Arrow development package
-`mingw-w64-ucrt-x86_64-arrow`; the build helper installs it when it is missing.
+`mingw-w64-ucrt-x86_64-arrow`; install it with `sfdev setup --components native`.
 Arrow IPC is used for bounded worker/service row-batch transport and result
 delivery, and the release package stages its required runtime libraries under
 `bin/`. On Linux, install the distribution's Apache Arrow C++

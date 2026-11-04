@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" STREAMFIND_PROJECT_VERSION)
 string(STRIP "${STREAMFIND_PROJECT_VERSION}" STREAMFIND_PROJECT_VERSION)
 if(NOT STREAMFIND_PROJECT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
@@ -40,7 +41,8 @@ if(STREAMFIND_BUILD_TESTS)
 endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/core/cmake/streamfind_dependencies.cmake)
-find_package(Arrow CONFIG REQUIRED)
+# Arrow probes optional package configs before trying its other discovery methods.
+find_package(Arrow CONFIG REQUIRED QUIET)
 if(NOT WIN32)
     # Ubuntu's static Arrow package keeps Abseil's time symbols outside the
     # bundled dependency archive. Link the imported target explicitly so Linux
@@ -415,8 +417,12 @@ if(STREAMFIND_BUILD_TESTS)
     endif()
     add_subdirectory(core/tests)
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
-    add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
-    add_dependencies(streamfind_mass_spec_mcp_discovery_contract streamfind_aggregate_catalogue)
+    if(TARGET streamfind_mass_spec_project_isolation_contract)
+        add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
+    endif()
+    if(TARGET streamfind_mass_spec_mcp_discovery_contract)
+        add_dependencies(streamfind_mass_spec_mcp_discovery_contract streamfind_aggregate_catalogue)
+    endif()
 endif()
 
 add_executable(streamfind_mcp

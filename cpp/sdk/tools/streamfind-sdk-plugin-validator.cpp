@@ -67,7 +67,6 @@ bool require_file(const std::filesystem::path &path, const char *label) {
 int run(const Arguments &arguments) {
     bool valid = true;
     valid &= require_file(arguments.source_dir / "CMakeLists.txt", "CMakeLists.txt");
-    valid &= require_file(arguments.source_dir / "plugin.json", "source plugin.json");
     valid &= require_directory(arguments.source_dir / "semantic", "semantic");
     valid &= require_directory(arguments.source_dir / "src", "src");
     valid &= require_file(arguments.source_dir / "src/plugin_entrypoint.cpp", "src/plugin_entrypoint.cpp");
@@ -112,7 +111,8 @@ int run(const Arguments &arguments) {
 
     const auto output_manifest = load_plugin_manifest(output_manifest_path);
     if (!output_manifest.valid || output_manifest.manifest.plugin_id != manifest.plugin_id ||
-        output_manifest.manifest.domain != manifest.domain) {
+        output_manifest.manifest.domain != manifest.domain ||
+        output_manifest.manifest.version != manifest.version) {
         std::cerr << "plugin validation: staged manifest does not match source manifest\n";
         return 7;
     }

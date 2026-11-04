@@ -445,7 +445,7 @@ void send_file(std::intptr_t socket, const std::filesystem::path &root, const st
     std::ifstream input(file, std::ios::binary);
     const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     const auto extension = file.extension().string();
-    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : extension == ".js" ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".json" ? "application/json; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
+    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : (extension == ".js" || extension == ".mjs") ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".json" ? "application/json; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
     send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: " + std::string(content_type) + "\r\nContent-Length: " + std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
 }
 
