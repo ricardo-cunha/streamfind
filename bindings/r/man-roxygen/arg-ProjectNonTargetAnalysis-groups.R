@@ -1,1 +1,0 @@
-#' @param groups A numeric or character vector with feature group IDs, or a data.frame/data.table with a `feature_group` (or `group`) column; an optional `analysis` column restricts analyses and a `name` column sets custom labels.
