@@ -7,9 +7,9 @@ param(
 . (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $dataRoot = Get-StreamfindDataRoot $repoRoot
-$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
 $executable = Get-BackendMcpExecutable $repoRoot
-$buildRoot = Join-Path $repoRoot 'tmp\build\mingw-ucrt64'
+$buildRoot = Join-Path $repoRoot 'tmp\build\windows\core'
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
 $database = Join-Path $repoRoot 'tmp\projects\pipeline-mass-spec.duckdb'
 $dataStore = [System.IO.Path]::ChangeExtension($database, '.data')

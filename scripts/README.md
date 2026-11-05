@@ -110,11 +110,16 @@ current Windows user so VS Code can use it; restart VS Code after initial
 setup. Do not use MSVC or Visual Studio build tools for the streamfind C++ core
 or bundled plugins.
 
-Linux builds use GCC/G++, CMake, and Ninja. WSL Ubuntu is supported: run
+Linux builds use GCC/G++, CMake, and Ninja. WSL Ubuntu is supported for Linux
+release and developer-kit creation and validation. Run
 PowerShell 7 inside the WSL environment and keep the checkout/build on the
 Linux filesystem for the Linux toolchain. Each platform has a separate build
-tree, so do not share one build directory across compilers or operating
-systems.
+with its own deterministic build tree; do not share one build directory across
+core/developer-kit modes, compilers, or operating systems. The Linux scripts remove Windows-mounted executable paths
+from `PATH` and discard imported Windows CMake/pkg-config hints. The Linux
+CMake preset clears inherited package-search hints. If an existing Linux CMake
+cache contains Windows/MSYS2 package or compiler paths, the managed tree is
+discarded and configured again with native Linux tools.
 
 ## 3. Common development workflows
 
@@ -222,17 +227,22 @@ Build, test, and script-run logs are written under `tmp/logs/`.
 
 ## 5. Package the app for manual testing
 
-The unpacked Windows test distribution is separate from both build trees and
-release archives. Create or refresh it with:
+The unpacked Windows test distribution is separate from the native build trees
+and release archives. Create or refresh it from native Windows PowerShell with:
 
 ```powershell
 sfdev package
 ```
 
-The full package workflow builds the frontend and native code, runs CTest, and
-stages the package under `tmp/packaged_build/`. Run the app from
+The full Windows package workflow builds the frontend and native code, runs
+CTest, and stages the package under `tmp/packaged_build/`. Run the app from
 `tmp/packaged_build/bin/` to exercise the packaged service, plugins, catalogue,
 frontend, and runtime paths together.
+
+Do not run `sfdev package` from WSL. WSL is reserved for Linux release and
+developer-kit builds and their extracted-package checks; those write to the
+Linux build trees and `tmp/release-output/`, and never create or replace
+`tmp/packaged_build/`.
 
 For a frontend-only update to an existing complete package:
 
@@ -317,8 +327,11 @@ the exact options of that command.
 
 | Location | Purpose |
 | --- | --- |
-| `tmp/build/<platform>/` | Disposable CMake/Ninja build tree (`mingw-ucrt64` or `linux-gcc`) |
-| `tmp/packaged_build/` | Unpacked Windows package for manual app/service/MCP testing |
+| `tmp/build/windows/core/` | Windows core build tree |
+| `tmp/build/windows/devkit/` | Windows plugin developer-kit build tree |
+| `tmp/build/linux/core/` | Linux core build tree and Linux release build |
+| `tmp/build/linux/devkit/` | Linux plugin developer-kit build tree |
+| `tmp/packaged_build/` | Native host-machine unpacked package for manual app/service/MCP testing; this Windows workflow creates it on Windows |
 | `tmp/release-output/` | Versioned release archives and checksums |
 | `tmp/projects/` | Disposable DuckDB projects and fixtures created for checks |
 | `tmp/logs/` | Build, test, script, and service logs |

@@ -766,6 +766,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             else if (method == "GET" && std::filesystem::exists(application_root_) &&
                      (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
                 detail::send_file(socket, application_root_, path);
+            else if (method == "GET" && path == "/health") {
+                auto health = projects_.health_snapshot();
+                health["health"] = "healthy";
+                if (!service_identity_.empty()) health["service_instance"] = service_identity_;
+                detail::send_http(socket, 200, health);
+            }
             else if (method == "GET" && path == "/session") {
                 Json session = SessionDto{};
                 if (!service_identity_.empty()) session["service_instance"] = service_identity_;

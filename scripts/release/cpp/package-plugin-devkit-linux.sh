@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.sh"
+sanitize_linux_build_environment
 require_tool cmake; require_tool ninja; require_tool cpack
 VERSION="${1:?usage: package-plugin-devkit.sh VERSION}"
 OUT="${STREAMFIND_RELEASE_DIR:-$REPO_ROOT/tmp/release-output}"
-BUILD="$REPO_ROOT/tmp/build/release-plugin-devkit-linux"
+BUILD="$REPO_ROOT/tmp/build/linux/devkit"
 INSTALL="$BUILD/install"
 FRONTEND="$REPO_ROOT/frontend"
 FRONTEND_DIST="$FRONTEND/dist"

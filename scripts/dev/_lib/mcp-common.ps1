@@ -162,6 +162,6 @@ function Get-BackendMcpExecutable {
         [Parameter(Mandatory = $true)][string]$RepositoryRoot
     )
     $name = if ($isWindowsPlatform) { 'streamfind-mcp.exe' } else { 'streamfind-mcp' }
-    $buildDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64' } else { 'tmp/build/linux-cpp' }
+    $buildDir = if ($isWindowsPlatform) { 'tmp/build/windows/core' } else { 'tmp/build/linux/core' }
     return (Join-Path (Join-Path $RepositoryRoot $buildDir) $name)
 }

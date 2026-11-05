@@ -9,7 +9,7 @@ param(
 . (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $vendorRoot = Get-StreamfindVendorRoot
-$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
 
 if (-not $InputPath) {
     switch ($Vendor) {
@@ -46,7 +46,7 @@ $projectId = "reader-cpp-$($Vendor.ToLowerInvariant())"
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-$env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
+$env:PATH = (Join-Path $repoRoot 'tmp\build\windows\core\tests') + ';' + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 try {

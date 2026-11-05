@@ -8,7 +8,7 @@ param(
 
 . (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
 $paths = @($RawPath, $ProfileMzmlPath, $CentroidMzmlPath)
 foreach ($path in $paths) {
     if (-not (Test-Path $path -PathType Leaf)) { throw "Reader fixture not found: $path" }
@@ -20,7 +20,7 @@ if (-not $SkipBuild) {
 
 $executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
 $env:STREAMFIND_CATALOGUE = $catalogue
-$env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
+$env:PATH = (Join-Path $repoRoot 'tmp\build\windows\core\tests') + ';' + $env:PATH
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 
 function Read-ReaderArtifacts {

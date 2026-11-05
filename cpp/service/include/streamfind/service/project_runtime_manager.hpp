@@ -54,6 +54,7 @@ public:
     Json clear_all_results(const std::string &session_id);
     Json clear_node_results(const std::string &session_id, const std::string &producer_instance);
     Json workflow_snapshot(const std::string &session_id) const;
+    Json health_snapshot() const;
     Json result_inventory(const std::string &session_id) const;
     Json current_result_inventory(const std::string &session_id) const;
     Json result_query(const std::string &session_id, const Json &request) const;

@@ -15,19 +15,19 @@ This starts the native C++ service on `http://127.0.0.1:8790` and the Vite UI on
 The Windows native service executable must already exist at:
 
 ```text
-../tmp/build/mingw-ucrt64/streamfind_service.exe
+../tmp/build/windows/core/streamfind_service.exe
 ```
 
 Build it from the worktree root when needed:
 
 ```text
-cmake --build tmp/build/mingw-ucrt64 --target streamfind_service streamfind_worker -j2
+cmake --build tmp/build/windows/core --target streamfind_service streamfind_worker -j2
 ```
 
 The Windows launcher always uses the canonical development build tree:
 
 ```text
-../tmp/build/mingw-ucrt64/streamfind_service.exe
+../tmp/build/windows/core/streamfind_service.exe
 ```
 
 If a service is already healthy at `STREAMFIND_SERVICE_URL` (default `http://127.0.0.1:8790`), `npm start` reuses it and does not start another executable. It does not rebuild the C++ service automatically. After backend changes, stop the current launcher, rebuild `streamfind_service`, and run `npm start` again. There is no fallback to an older release build tree.

@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $frontend = Join-Path $root 'frontend'
-$platform = if ($IsWindows) { 'mingw-ucrt64' } else { 'linux-gcc' }
+$platform = if ($IsWindows) { 'windows-core' } else { 'linux-core' }
 $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
 . (Join-Path $PSScriptRoot 'build/msys2-common.ps1')
 . (Join-Path $PSScriptRoot 'build/python-common.ps1')
@@ -53,7 +53,7 @@ function Show-Help([string]$Topic) {
         'run backend' = @('run backend [--url URL] [--dry-run]', 'Start a development service or use one that is already ready.', "Defaults to $platform and http://127.0.0.1:8790. Build the service and worker first.")
         'run frontend' = @('run frontend [--url URL] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed. Defaults to http://127.0.0.1:8790.')
         'run app' = @('run app [--url URL] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Press Ctrl+C to stop processes started by this command.')
-        'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked Windows test distribution under tmp/packaged_build/.', 'The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
+        'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked native-Windows test distribution under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
         'clean' = @('clean --scope build|all-temp [--dry-run]', 'Remove the platform build tree or the contents of repository tmp/.', 'Use --dry-run to preview deletions. all-temp includes logs, test projects, packages, and release archives.')
         'script list' = @('script list [--json]', 'List public scripts under scripts/dev/ and show interpreter availability.', 'An available interpreter does not guarantee that the script has its required data or arguments.')
         'script info' = @('script info PATH', 'Show the interpreter, working directory, and invocation for a script.', 'Use a path from script list. Example: sfdev script info validate_native_dependencies.py')
@@ -177,7 +177,8 @@ try {
         if (++$index -ge $args.Count -or $args[$index].StartsWith('--')) { throw "Missing value for --$name" }
         $options[$name] = $args[$index]
     }
-    $tree = Join-Path $root "tmp/build/$platform"
+    $buildPlatform = if ($IsWindows) { 'windows/core' } else { 'linux/core' }
+    $tree = Join-Path $root "tmp/build/$buildPlatform"
     $npmName = if ($IsWindows) { 'npm.cmd' } else { 'npm' }
     $pwsh = Join-Path $PSHOME $(if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' })
     $nodeVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'build/node-version.txt') -Raw).Trim()
@@ -365,15 +366,25 @@ try {
         } elseif (Test-Path -LiteralPath $tempRoot) {
             Get-ChildItem -LiteralPath $tempRoot -Force
         }
+        $links = @()
         foreach ($target in $targets) {
-            if ($target.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Cleanup target is a link: $target" }
-            if ($target.PSIsContainer -and (Get-ChildItem -LiteralPath $target.FullName -Recurse -Force -Attributes ReparsePoint | Select-Object -First 1)) {
-                throw "Cleanup target contains a link: $target"
+            if ($target.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                $links += $target
+            } elseif ($target.PSIsContainer) {
+                $links += @(Get-ChildItem -LiteralPath $target.FullName -Recurse -Force -Attributes ReparsePoint)
             }
             "Remove $($target.FullName)"
         }
+        foreach ($link in $links) { "Remove link entry $($link.FullName)" }
         if (!$options['dry-run']) {
-            foreach ($target in $targets) { Remove-Item -LiteralPath $target.FullName -Recurse -Force }
+            foreach ($link in $links | Sort-Object { $_.FullName.Length } -Descending) {
+                Remove-Item -LiteralPath $link.FullName -Force
+            }
+            foreach ($target in $targets) {
+                if (Test-Path -LiteralPath $target.FullName) {
+                    Remove-Item -LiteralPath $target.FullName -Recurse -Force
+                }
+            }
         }
         exit 0
     }
@@ -601,6 +612,22 @@ try {
         $config = $options.config ?? 'Debug'
         if ($config -cnotin 'Debug', 'Release') { throw 'Use Debug or Release for --config' }
         $cacheFile = Join-Path $tree 'CMakeCache.txt'
+        if (Test-Path -LiteralPath $cacheFile -PathType Leaf) {
+            if ($IsLinux -and !$options['dry-run']) {
+                $cacheText = Get-Content -LiteralPath $cacheFile -Raw
+                $mixedLinuxCache = $cacheText -match '(?im)msys64|(^|[=;])/(ucrt64|mingw64|clang64)(/|$)|(?:^|\n)(?:[^=\r\n]+_DIR|CMAKE_PREFIX_PATH|CMAKE_MODULE_PATH):[^=\r\n]*=[^\r\n]*[a-z]:[\\/]|CMAKE_(C|CXX)_COMPILER:[^=]*=[^\r\n]*\.exe|CMAKE_MAKE_PROGRAM:[^=]*=[^\r\n]*\.exe'
+                if ($mixedLinuxCache) {
+                    $managedBuildRoot = [IO.Path]::GetFullPath((Join-Path $root 'tmp/build'))
+                    $managedBuildPrefix = $managedBuildRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+                    $fullTree = [IO.Path]::GetFullPath($tree)
+                    if (!$fullTree.StartsWith($managedBuildPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                        throw "Refusing to remove a contaminated Linux build tree outside tmp/build: $fullTree"
+                    }
+                    Write-Warning "Removing Linux build tree with Windows/MSYS2 CMake paths: $fullTree"
+                    Remove-Item -LiteralPath $fullTree -Recurse -Force
+                }
+            }
+        }
         if (Test-Path -LiteralPath $cacheFile -PathType Leaf) {
             $cache = ConvertFrom-StringData ((Get-Content -LiteralPath $cacheFile |
                 Where-Object { $_ -match '^(CMAKE_GENERATOR|CMAKE_HOME_DIRECTORY):[^=]+=' } |

@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$buildRoot = Join-Path $repoRoot 'tmp\build\mingw-ucrt64'
+$buildRoot = Join-Path $repoRoot 'tmp\build\windows\core'
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
 $database = 'E:\example_files\ms_merck\ACC1_27166_smoothing_comparison.duckdb'
 $workflowPath = 'E:\example_files\ms_merck\streamfind_workflows\ACC1_27166_find_features_smoothing_comparison.json'

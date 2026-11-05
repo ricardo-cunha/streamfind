@@ -441,10 +441,10 @@ foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
 endforeach()
 file(GENERATE
     OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
     DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli

@@ -31,12 +31,12 @@ foreach ($fixture in $fixtures) {
     if (-not (Test-Path $fixture -PathType Leaf)) { throw "Missing mzML fixture: $fixture" }
 }
 
-$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
 $executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
 if (-not (Test-Path $executable -PathType Leaf)) { throw "MCP executable not found: $executable" }
 $env:STREAMFIND_CATALOGUE = $catalogue
 $env:STREAMFIND_SERVICE_ENDPOINT = $ServiceEndpoint
-$env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
+$env:PATH = (Join-Path $repoRoot 'tmp\build\windows\core\tests') + ';' + $env:PATH
 $projectsRoot = Join-Path $repoRoot 'tmp\projects'
 $logsRoot = Join-Path $repoRoot 'tmp\logs\concurrent-find-features'
 New-Item -ItemType Directory -Force -Path $projectsRoot, $logsRoot | Out-Null

@@ -8,7 +8,7 @@ const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const worktreeRoot = resolve(frontendRoot, '..');
 const windows = process.platform === 'win32';
 const buildRoot = process.env.STREAMFIND_DEV_BUILD_DIR ||
-  resolve(worktreeRoot, 'tmp', 'build', windows ? 'mingw-ucrt64' : 'linux-gcc');
+  resolve(worktreeRoot, 'tmp', 'build', windows ? 'windows' : 'linux', 'core');
 const executableSuffix = windows ? '.exe' : '';
 const serviceExecutable = resolve(buildRoot, `streamfind-server${executableSuffix}`);
 const workerExecutable = resolve(buildRoot, `streamfind-worker${executableSuffix}`);

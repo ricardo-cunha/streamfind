@@ -117,7 +117,7 @@ $executable = if ($Executable) { (Resolve-Path $Executable).Path } else {
 }
 $dynamicRuntime = Test-Path (Join-Path (Split-Path $executable) 'streamfind.json')
 $catalogue = if ($Catalogue) { (Resolve-Path $Catalogue).Path } else {
-    $buildDir = if ($isWindowsPlatform) { 'tmp\build\mingw-ucrt64' } else { 'tmp/build/linux-cpp' }
+    $buildDir = if ($isWindowsPlatform) { 'tmp\build\windows\core' } else { 'tmp/build/linux/core' }
     Join-Path $repoRoot (Join-Path $buildDir 'semantic_catalogue/catalogue.duckdb')
 }
 $database = Join-Path $repoRoot (Join-Path (Join-Path 'tmp' 'projects') 'streamfind-cpp-nta-script.duckdb')
@@ -125,7 +125,7 @@ $projectId = 'nta-cpp'
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-$testDir = if ($isWindowsPlatform) { 'tmp/build/mingw-ucrt64/core/tests' } else { 'tmp/build/linux-cpp/core/tests' }
+$testDir = if ($isWindowsPlatform) { 'tmp/build/windows/core/tests' } else { 'tmp/build/linux/core/tests' }
 $env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue

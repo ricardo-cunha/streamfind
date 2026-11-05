@@ -84,13 +84,13 @@ The checked-in development launcher currently expects the Windows native
 service at:
 
 ```text
-../tmp/build/mingw-ucrt64/streamfind-server.exe
+../tmp/build/windows/core/streamfind-server.exe
 ```
 
 Build that executable from the repository root when necessary:
 
 ```text
-cmake --build tmp/build/mingw-ucrt64 --target streamfind_service -j2
+cmake --build tmp/build/windows/core --target streamfind_service -j2
 ```
 
 On Linux, the checked-in `npm start` launcher is not yet platform-neutral: it
@@ -98,13 +98,13 @@ currently resolves the Windows UCRT64 executable. Start the Linux service
 manually from the Linux build tree instead:
 
 ```text
-../tmp/build/linux-gcc/streamfind-server
+../tmp/build/linux/core/streamfind-server
 ```
 
 Build it from the repository root when necessary:
 
 ```bash
-cmake --build tmp/build/linux-gcc --target streamfind_service --parallel
+cmake --build tmp/build/linux/core --target streamfind_service --parallel
 ```
 
 Then, from `frontend/`, run `npm run dev:ui`. The Vite URL and service URL are

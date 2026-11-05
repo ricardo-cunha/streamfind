@@ -3,6 +3,7 @@
 #include "streamfind/project.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -21,6 +22,9 @@ struct WorkerMetadata {
     std::string job_id;
     std::string state{"starting"};
     std::string cancellation_mode{"process"};
+    std::string last_progress_at;
+    std::string peak_memory_kind;
+    std::uint64_t peak_memory_bytes{0};
 
     Json to_json() const;
 };
@@ -40,6 +44,7 @@ struct WorkerRequest {
     Json parameters = Json::object();
     Json inputs = nullptr;
     bool persist_outputs{true};
+    std::uint64_t memory_limit_mb{0};
 };
 
 struct WorkerResult {
@@ -48,6 +53,7 @@ struct WorkerResult {
     std::string error;
     int exit_code{0};
     bool cancelled{false};
+    bool memory_limit_exceeded{false};
 };
 
 class WorkerProcess {

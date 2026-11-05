@@ -55,13 +55,13 @@ void close_socket(std::intptr_t socket) {
 
 void set_socket_timeouts(std::intptr_t socket) {
 #ifdef _WIN32
-    const DWORD timeout = 500;
+    const DWORD timeout = 2000;
     setsockopt(static_cast<SOCKET>(socket), SOL_SOCKET, SO_SNDTIMEO,
                reinterpret_cast<const char *>(&timeout), sizeof(timeout));
     setsockopt(static_cast<SOCKET>(socket), SOL_SOCKET, SO_RCVTIMEO,
                reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
-    const timeval timeout{0, 500000};
+    const timeval timeout{2, 0};
     setsockopt(static_cast<int>(socket), SOL_SOCKET, SO_SNDTIMEO,
                &timeout, sizeof(timeout));
     setsockopt(static_cast<int>(socket), SOL_SOCKET, SO_RCVTIMEO,
@@ -146,15 +146,23 @@ Json status_for(const std::filesystem::path &path) {
     result.erase("token");
     result["record_path"] = path.string();
     try {
-        const auto session = Json::parse(request(parse_endpoint(record.endpoint), "GET", "/session",
+        const auto session = Json::parse(request(parse_endpoint(record.endpoint), "GET", "/health",
                                                  {"X-StreamFind-Token: " + record.token}));
         const auto serving_instance = session.value("service_instance", Json::object())
                                           .value("service_instance_id", std::string{});
         if (!serving_instance.empty() && serving_instance != record.service_instance_id)
             throw std::runtime_error("endpoint is serving service instance " + serving_instance +
                                      ", not " + record.service_instance_id);
-        result["health"] = "healthy";
-        result["session"] = session;
+        result["health"] = session.value("health", std::string{"healthy"});
+        result["state"] = session.value("state", std::string{"ready"});
+        result["active_workers"] = session.value("active_workers", std::size_t{0});
+        result["active_workflows"] = session.value("active_workflows", std::size_t{0});
+        result["alive"] = session.value("alive", true);
+        result["ready"] = session.value("ready", true);
+        Json attached_projects = Json::array();
+        for (std::size_t index = 0; index < session.value("attached_projects", std::size_t{0}); ++index)
+            attached_projects.push_back(Json::object());
+        result["session"] = Json{{"projects", std::move(attached_projects)}};
     } catch (const std::exception &error) {
         result["health"] = "unreachable";
         result["diagnostic"] = error.what();
@@ -303,7 +311,9 @@ void print_services(const std::vector<Json> &values, bool json) {
                   << "  Instance: " << value.value("service_instance_id", "unknown") << '\n'
                   << "  PID: " << value.value("process_id", std::uint64_t{0}) << '\n'
                   << "  Endpoint: " << value.value("endpoint", "unknown") << '\n'
-                  << "  State: " << value.value("state", "unknown") << '\n';
+                  << "  State: " << value.value("state", "unknown") << '\n'
+                  << "  Active workers: " << value.value("active_workers", std::size_t{0}) << '\n'
+                  << "  Active workflows: " << value.value("active_workflows", std::size_t{0}) << '\n';
     }
 }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.sh"
+sanitize_linux_build_environment
 require_tool cmake; require_tool ninja; require_tool tar; require_tool sha256sum
 VERSION="${1:-$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")}"
 if [[ -z "$VERSION" ]]; then
@@ -14,7 +15,8 @@ if [[ "$VERSION" != "$canonical_version" ]]; then
 fi
 PLUGINS="${STREAMFIND_PLUGINS:-ALL}"
 OUT="${STREAMFIND_RELEASE_DIR:-$REPO_ROOT/tmp/release-output}"
-BUILD="$REPO_ROOT/tmp/build/release-cpp-linux"
+BUILD="$REPO_ROOT/tmp/build/linux/core"
+reset_mixed_linux_build_tree "$BUILD"
 FRONTEND="$REPO_ROOT/frontend"
 FRONTEND_DIST="$FRONTEND/dist"
 mkdir -p "$OUT"

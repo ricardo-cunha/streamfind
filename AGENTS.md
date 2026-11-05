@@ -150,16 +150,22 @@ anything that must be committed.
 
 Keep the three native distribution stages separate:
 
-- `tmp/build/` contains disposable CMake/Ninja build trees and intermediate
-  packaging files. It is never a user-facing distribution and must not be
-  copied manually into a release.
-- `tmp/packaged_build/` is the disposable, unpacked Windows package used for
-  manual application, service, tray, MCP, and result-store testing. Create or
-  refresh it on demand with:
+- `tmp/build/` contains four deterministic CMake/Ninja trees:
+  `windows/core`, `windows/devkit`, `linux/core`, and `linux/devkit`. Core and
+  developer-kit configurations must never share a build tree. Release scripts
+  reuse the matching platform/core or platform/devkit tree and write archives
+  only to `tmp/release-output/`.
+- `tmp/packaged_build/` is the unpacked package for manual testing on the
+  development machine's native OS. On this Windows checkout, create or refresh
+  the Windows package from native Windows PowerShell with:
 
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts\build\cpp\package-cpp.ps1
   ```
+
+  Do not run this package workflow through WSL. WSL is reserved for Linux
+  runtime and developer-kit release builds and their extracted-package tests;
+  those workflows must not create or replace `tmp/packaged_build/`.
 
   For frontend-only changes, refresh the existing package without rebuilding
   native code with:
@@ -297,7 +303,7 @@ unrelated formatting-only rewrite would obscure the intended change.
 After ontology edits, run from the repository root:
 
 ```powershell
-cmake --build tmp\build\mingw-ucrt64 --target streamfind_aggregate_catalogue
+cmake --build tmp\build\windows\core --target streamfind_aggregate_catalogue
 ```
 
 The native SDK catalogue generator is the authoritative projection path. Python/Jena

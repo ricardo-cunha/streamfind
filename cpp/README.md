@@ -38,6 +38,7 @@ For a development-tree runtime, place `streamfind.json` beside
 ```json
 {
   "server": {"port": 8787},
+  "worker": {"memory_limit_mb": 0},
   "plugin_roots": ["C:/path/to/plugins"],
   "enabled_plugins": ["mass_spec", "raman"]
 }
@@ -45,6 +46,36 @@ For a development-tree runtime, place `streamfind.json` beside
 
 The `server.port` value is used by the service, app host, and CLI when no
 explicit port is supplied. A command-line port override takes precedence.
+
+`worker.memory_limit_mb` sets an optional memory budget for each worker process
+tree. `0` (the default) disables the budget. On Windows, streamfind applies the
+limit to the worker Job Object; on Linux, it monitors aggregate resident memory
+of the worker process group and terminates that group when it reaches the limit.
+Linux monitoring is sampled every 100 ms, so a short-lived spike can exceed the
+configured value briefly. A limit breach fails that operation and reports the
+configured budget; the service remains outside the worker process tree. Measure
+the workflow’s peak memory before choosing a limit, since a low value can stop a
+valid large analysis. The default is intentionally unlimited: operating systems
+already manage system memory, while a fixed application cap could reject a
+legitimate large analysis. Under Linux system-wide OOM pressure, workers raise
+their `oom_score_adj` so the kernel is more likely to reclaim a worker before
+the service; this is a preference, not a guarantee or a substitute for cgroup
+limits where strict isolation is required.
+Worker lifecycle metadata reports sampled `peak_memory_bytes` and
+`peak_memory_kind` (`job_commit` on Windows, `process_group_rss` on Linux), which
+can guide the choice of an optional cap using measurements from real runs. It
+also reports `last_progress_at` in UTC after the latest worker progress/log
+event.
+
+`GET /health` is the lightweight service liveness/readiness endpoint. It reports
+`alive`, `ready`, `state` (`ready` or `busy`), active worker/workflow counts, and
+the service instance. The CLI uses it for `service list`; `/session` remains the
+project-session inventory endpoint.
+
+The C++ service client uses a 300-second socket inactivity timeout by default.
+Set `STREAMFIND_SERVICE_REQUEST_TIMEOUT_SECONDS` to an integer from 1 to 86400
+to adjust the limit. A timed-out MCP request returns a clear service-timeout
+error instead of waiting indefinitely; clients can retry status reads.
 
 The host loads the core catalogue first, validates each selected package and
 ABI descriptor, imports the package catalogue, and exposes only capabilities
@@ -307,25 +338,33 @@ Run from the repository root in PowerShell:
 
 ```powershell
 $env:STREAMFIND_MSYS2_ROOT = 'C:\msys64'
-cmake --preset mingw-ucrt64
-cmake --build tmp\\build\\mingw-ucrt64 --parallel 8
-ctest --test-dir tmp\\build\\mingw-ucrt64 --output-on-failure
+cmake --preset windows-core
+cmake --build tmp\\build\\windows\\core --parallel 8
+ctest --test-dir tmp\\build\\windows\\core --output-on-failure
 ```
 
 The preset uses the UCRT64 GCC/G++ compiler and Ninja from the selected MSYS2 root. For a developer-kit configuration:
 
 ```powershell
-cmake --preset mingw-ucrt64-devkit
-cmake --build tmp\\build\\mingw-ucrt64-devkit --parallel 8
-cmake --install tmp\\build\\mingw-ucrt64-devkit --prefix tmp\\build\\mingw-ucrt64-devkit\\install
+cmake --preset windows-devkit
+cmake --build tmp\\build\\windows\\devkit --parallel 8
+cmake --install tmp\\build\\windows\\devkit --prefix tmp\\build\\windows\\devkit\\install
 ```
 
 ### Linux GCC build
 
 ```bash
-cmake --preset linux-gcc
-cmake --build tmp/build/linux-gcc --parallel
-ctest --test-dir tmp/build/linux-gcc --output-on-failure
+cmake --preset linux-core
+cmake --build tmp/build/linux/core --parallel
+ctest --test-dir tmp/build/linux/core --output-on-failure
+```
+
+The Linux developer-kit tree is isolated from the runtime build:
+
+```bash
+cmake --preset linux-devkit
+cmake --build tmp/build/linux/devkit --parallel
+cmake --install tmp/build/linux/devkit --prefix tmp/build/linux/devkit/install
 ```
 
 ### Frontend assets
@@ -394,7 +433,7 @@ Build the generated backend against an installed developer kit:
 
 ```powershell
 cmake -G Ninja -S tmp\\scratch\\my-plugin\\backend -B tmp\\build\\my-plugin `
-  -DCMAKE_PREFIX_PATH="$PWD\\tmp\\build\\mingw-ucrt64-devkit\\install\\sdk\\cmake" `
+  -DCMAKE_PREFIX_PATH="$PWD\\tmp\\build\\windows\\devkit\\install\\sdk\\cmake" `
   -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/ninja.exe `
   -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe
 cmake --build tmp\\build\\my-plugin
@@ -403,7 +442,7 @@ cmake --build tmp\\build\\my-plugin
 The first-party out-of-tree consumer check is:
 
 ```powershell
-.venv\\Scripts\\python.exe scripts\\dev\\test_plugin_consumer.py --source cpp\\sdk\\examples\\minimal_plugin --prefix tmp\\build\\mingw-ucrt64-devkit\\install --build tmp\\build\\plugin-consumer --cmake C:/msys64/ucrt64/bin/cmake.exe --ninja C:/msys64/ucrt64/bin/ninja.exe
+.venv\\Scripts\\python.exe scripts\\dev\\test_plugin_consumer.py --source cpp\\sdk\\examples\\minimal_plugin --prefix tmp\\build\\windows\\devkit\\install --build tmp\\build\\plugin-consumer --cmake C:/msys64/ucrt64/bin/cmake.exe --ninja C:/msys64/ucrt64/bin/ninja.exe
 ```
 
 For a distributable developer kit, use:

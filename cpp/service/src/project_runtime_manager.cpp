@@ -1,5 +1,6 @@
 #include "streamfind/service/project_runtime_manager.hpp"
 #include "streamfind/fingerprint.hpp"
+#include "streamfind/service_configuration.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -19,6 +20,10 @@
 namespace streamfind::service {
 
 namespace detail {
+
+std::uint64_t configured_worker_memory_limit_mb(const std::filesystem::path &configuration_path) {
+    return load_service_configuration(configuration_path).worker_memory_limit_mb;
+}
 
 std::string quoted_identifier(const std::string &value) {
     if (value.empty()) throw std::invalid_argument("data-proxy identifier is empty");
@@ -557,6 +562,20 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
                 {"execution_available", true}};
     snapshot["worker"] = nullptr;
     return snapshot;
+}
+
+Json ProjectRuntimeManager::health_snapshot() const {
+    std::lock_guard lock(mutex_);
+    std::size_t active_workflows = 0;
+    for (const auto &[session_id, state] : workflow_states_) {
+        (void)session_id;
+        if (state == "queued" || state == "running" || state == "cancelling") ++active_workflows;
+    }
+    const auto active_workers = active_workers_.size();
+    return Json{{"alive", true}, {"ready", true},
+                {"state", active_workers > 0 || active_workflows > 0 ? "busy" : "ready"},
+                {"active_workers", active_workers}, {"active_workflows", active_workflows},
+                {"attached_projects", projects_.size()}};
 }
 
 Json ProjectRuntimeManager::operation_snapshot(const std::string &session_id,
@@ -1837,6 +1856,7 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                         "streamfind-worker";
 #endif
                     request.configuration = configuration_path_;
+                    request.memory_limit_mb = detail::configured_worker_memory_limit_mb(configuration_path_);
                     request.service_port = service_port_;
                     request.session_id = session_id;
                     request.run_id = instance;
@@ -2048,6 +2068,7 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
         "streamfind-worker";
 #endif
     request.configuration = configuration_path_;
+    request.memory_limit_mb = detail::configured_worker_memory_limit_mb(configuration_path_);
     request.service_port = service_port_;
     request.session_id = session_id;
     request.run_id = effective_instance;

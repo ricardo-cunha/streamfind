@@ -17,7 +17,7 @@ if ($canonicalVersion -ne $Version) {
     throw "Release version $Version does not match the canonical version $canonicalVersion"
 }
 $toolchain = Initialize-MinGWUcrt64
-$buildDir = Join-Path $root 'tmp\build\mingw-plugin-devkit'
+$buildDir = Join-Path $root 'tmp\build\windows\devkit'
 $installDir = Join-Path $buildDir 'install'
 $outDir = Join-Path $root 'tmp\release-output'
 $frontendDist = Join-Path $root 'frontend\dist'
