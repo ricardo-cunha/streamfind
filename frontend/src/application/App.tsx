@@ -652,7 +652,7 @@ function BootstrapGate({
       if (timer !== undefined) window.clearTimeout(timer);
       client.disconnect();
     };
-  }, [client, onState, retryKey]);
+  }, [client, onSession, onState, retryKey]);
   useEffect(() => {
     if (state !== 'exiting') return undefined;
     const timer = window.setTimeout(() => setState('ready'), 220);

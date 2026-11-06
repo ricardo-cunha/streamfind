@@ -13,7 +13,7 @@ import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
-import { colorFor, stablePlotGroup } from './FeatureInspector';
+import { colorFor, stablePlotGroup } from './featurePlotUtils';
 import { StructureImage } from './SuspectTargetsViewer';
 
 type Row = Record<string, string | null>;
@@ -176,9 +176,12 @@ function EvidencePlots({
 }): ReactNode {
   const [tab, setTab] = useState<ModalEvidenceTab>('ms1');
   const [isotope, setIsotope] = useState<{ mz: number[]; probability: number[]; labels: string[] } | null>(null);
-  const [experimentalTrace, setExperimentalTrace] = useState<RenderedTrace | null>(null);
+  const [traceResult, setTraceResult] = useState<{ key: string; trace: RenderedTrace | null } | null>(null);
   const formula = text(row, 'formula');
   const polarity = number(row, 'polarity');
+  const rowKey = text(row, 'row_key');
+  const traceKey = `${resultId}:${rowKey}:${tab}`;
+  const experimentalTrace = traceResult?.key === traceKey ? traceResult.trace : null;
 
   useEffect(() => {
     let active = true;
@@ -209,27 +212,21 @@ function EvidencePlots({
 
   useEffect(() => {
     let active = true;
-    const rowKey = text(row, 'row_key');
-    if (!client || !rowKey) {
-      setExperimentalTrace(null);
-      return () => {
-        active = false;
-      };
-    }
+    if (!rowKey) return undefined;
     const xKey = tab === 'ms1' ? 'ms1_mz' : 'ms2_mz';
     const yKey = tab === 'ms1' ? 'ms1_intensity' : 'ms2_intensity';
     void client
       .resultTrace(sessionId, { result_id: resultId, trace_type: tab, row_keys: [rowKey], limit: 1 })
       .then((response) => {
-        if (active) setExperimentalTrace(traceFromResponse(response, xKey, yKey));
+        if (active) setTraceResult({ key: traceKey, trace: traceFromResponse(response, xKey, yKey) });
       })
       .catch(() => {
-        if (active) setExperimentalTrace(null);
+        if (active) setTraceResult({ key: traceKey, trace: null });
       });
     return () => {
       active = false;
     };
-  }, [client, resultId, row, sessionId, tab]);
+  }, [client, resultId, row, rowKey, sessionId, tab, traceKey]);
 
   const spec = evidenceSpec(row, tab, isotope, resultId, experimentalTrace);
   return (
@@ -569,7 +566,11 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [totalSuspects, setTotalSuspects] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedFeatureDetail, setSelectedFeatureDetail] = useState<Row | null>(null);
-  const [selectedFeatureTrace, setSelectedFeatureTrace] = useState<RenderedTrace | null>(null);
+  const [featureTraceResult, setFeatureTraceResult] = useState<{
+    resultId: string;
+    rowKey: string;
+    trace: RenderedTrace | null;
+  } | null>(null);
   const featureDetailCache = useRef(new Map<string, Row>());
   const [selectedSuspect, setSelectedSuspect] = useState<Row | null>(null);
   const [selectedSuspectLoading, setSelectedSuspectLoading] = useState(false);
@@ -602,6 +603,13 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [structureCache, setStructureCache] = useState<StructureCache>({});
   const [viewport, setViewport] = useState<PlotViewport | null>(null);
+  const selectedFeatureRowKey = selectedFeatureDetail ? text(selectedFeatureDetail, 'row_key') : '';
+  const selectedFeatureTrace =
+    featureTraceResult &&
+    featureTraceResult.resultId === context.artifact?.result_id &&
+    featureTraceResult.rowKey === selectedFeatureRowKey
+      ? featureTraceResult.trace
+      : null;
   const overviewColumns = useMemo(
     () => selectSuspectOverviewColumns(context.artifact?.columns),
     [context.artifact?.columns],
@@ -921,13 +929,9 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   useEffect(() => {
     let active = true;
-    const rowKey = selectedFeatureDetail ? text(selectedFeatureDetail, 'row_key') : '';
-    if (!client || !context.artifact || !rowKey) {
-      setSelectedFeatureTrace(null);
-      return () => {
-        active = false;
-      };
-    }
+    const rowKey = selectedFeatureRowKey;
+    if (!client || !context.artifact || !rowKey) return undefined;
+    const resultId = context.artifact.result_id;
     void client
       .resultTrace(context.sessionId, {
         result_id: context.artifact.result_id,
@@ -936,15 +940,20 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         limit: 1,
       })
       .then((response) => {
-        if (active) setSelectedFeatureTrace(traceFromResponse(response, 'eic_rt', 'eic_intensity'));
+        if (active)
+          setFeatureTraceResult({
+            resultId,
+            rowKey,
+            trace: traceFromResponse(response, 'eic_rt', 'eic_intensity'),
+          });
       })
       .catch(() => {
-        if (active) setSelectedFeatureTrace(null);
+        if (active) setFeatureTraceResult({ resultId, rowKey, trace: null });
       });
     return () => {
       active = false;
     };
-  }, [client, context.artifact, context.sessionId, selectedFeatureDetail]);
+  }, [client, context.artifact, context.sessionId, selectedFeatureRowKey]);
 
   const openSuspectDetail = async (row: Row) => {
     setSelectedSuspect(row);

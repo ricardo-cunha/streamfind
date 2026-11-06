@@ -15,6 +15,7 @@ import { VisualizationRenderer } from '../../framework/visualization/Visualizati
 
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
+import { colorFor, stablePlotGroup } from './featurePlotUtils';
 
 type FeatureRow = Record<string, string | null>;
 type QueryKind = 'eic' | 'ms1' | 'ms2';
@@ -107,7 +108,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [selectBy, setSelectBy] = useState<SelectionMode>('feature');
   const [showFiltered, setShowFiltered] = useState(false);
   const [numericFilters, setNumericFilters] = useState<Record<string, NumericFilter>>({});
-  const initialNumericFilters = useRef<Record<string, NumericFilter>>({});
+  const [initialNumericFilters, setInitialNumericFilters] = useState<Record<string, NumericFilter>>({});
   const [booleanFilters, setBooleanFilters] = useState<Record<string, boolean>>({});
   const [textFilters, setTextFilters] = useState<Record<string, TextFilter>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -125,7 +126,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const inspectorRef = useRef<HTMLDivElement>(null);
   const initialLoadComplete = useRef(false);
-  const resultHasFeatureRows = useRef(false);
+  const [resultHasFeatureRows, setResultHasFeatureRows] = useState(false);
   const skipInitialFilterRefresh = useRef(true);
   const [filtersWidth, setFiltersWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
@@ -231,7 +232,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       setColumns(firstPage.columns);
       const loadedFilterColumns = getFilterColumns(firstPage.columns, loadedRows);
       const nextNumericFilters = createInitialNumericFilters(loadedFilterColumns.numeric, loadedRows);
-      initialNumericFilters.current = nextNumericFilters;
+      setInitialNumericFilters(nextNumericFilters);
       setNumericFilters(nextNumericFilters);
       setBooleanFilters(Object.fromEntries(loadedFilterColumns.boolean.map((column) => [column.name, false])));
       setTextFilters(Object.fromEntries(loadedFilterColumns.text.map((column) => [column.name, ''])));
@@ -241,7 +242,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     void loadRows()
       .then(({ rows: loadedRows, totalRows: loadedTotalRows }) => {
         if (!active) return;
-        resultHasFeatureRows.current = loadedTotalRows > 0;
+        setResultHasFeatureRows(loadedTotalRows > 0);
         setRows(loadedRows);
         setTotalRows(loadedTotalRows);
         setSelectedKey((current) =>
@@ -259,7 +260,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     return () => {
       active = false;
     };
-  }, [context.artifact, context.pluginApi, context.sessionId, overviewColumns, featureTraceColumns]);
+  }, [context.artifact, context.pluginApi, context.sessionId, overviewColumns, featureTraceColumns, selectBy, showFiltered]);
 
   useEffect(() => {
     if (!initialLoadComplete.current || !context.artifact || !context.pluginApi?.client) return;
@@ -294,7 +295,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             numericFilters,
             booleanFilters,
             textFilters,
-            initialNumericFilters.current,
+            initialNumericFilters,
             showFiltered,
           ).concat(
             viewport
@@ -332,8 +333,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     context.pluginApi,
     context.sessionId,
     numericFilters,
+    initialNumericFilters,
     overviewColumns,
     featureTraceColumns,
+    selectBy,
     search,
     showFiltered,
     textFilters,
@@ -362,7 +365,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       return (
         filterColumns.numeric.every((column) => {
           const value = numericFilters[column.name];
-          const initial = initialNumericFilters.current[column.name];
+          const initial = initialNumericFilters[column.name];
           // The displayed bounds are initialized from the loaded data. They
           // are informational until the user edits them, so they must not
           // hide additional rows when filtered features are enabled.
@@ -382,7 +385,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         })
       );
     });
-  }, [booleanFilters, filterColumns, numericFilters, rows, search, selectBy, showFiltered, textFilters]);
+  }, [booleanFilters, filterColumns, initialNumericFilters, numericFilters, rows, search, selectBy, showFiltered, textFilters]);
   const points = useMemo(() => makePoints(filteredRows, groupBy), [filteredRows, groupBy]);
   const sampledSelectedRows = useMemo(
     () => filteredRows.filter((row) => selectionKey(row, selectBy) === selectedKey),
@@ -427,7 +430,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         const pageSize = 1000;
         const rows: FeatureRow[] = [];
         let offset = 0;
-        let totalRows = 0;
+        let totalRows: number;
         do {
           const response = await api.resultQuery(context.sessionId, {
             result_id: artifact.result_id,
@@ -568,9 +571,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           ? selectedNetworkRows.map((row) => String(row.row_key ?? '')).filter(Boolean)
           : [];
       const directRowKey = selectBy === 'feature' && representative?.row_key ? representative.row_key : undefined;
-      let loadedRows: FeatureRow[] = [];
-      let totalRows = 0;
-      if (selectBy === 'feature_network' && !networkRowKeys.length) {
+      const loaded = selectBy === 'feature_network' && !networkRowKeys.length
+        ? await (async () => {
         // Older feature artifacts do not expose a stable row_key. Query each
         // network member by its analysis/feature identity instead of falling
         // back to the clicked feature only.
@@ -585,9 +587,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             return response.traces as FeatureRow[];
           }),
         );
-        loadedRows = memberRows.flat();
-        totalRows = loadedRows.length;
-      } else {
+        const rows = memberRows.flat();
+        return { rows, totalRows: rows.length };
+      })()
+        : await (async () => {
         const overview = await api.resultTrace(context.sessionId, {
           result_id: artifact.result_id,
           trace_type: activeTab,
@@ -603,10 +606,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           // features. The full trace set remains available on demand.
           limit: loadAllSignalRows ? 2000 : 64,
         });
-        loadedRows = overview.traces as FeatureRow[];
-        totalRows = overview.returned_rows;
-      }
-      const loaded = { rows: loadedRows, totalRows };
+        return { rows: overview.traces as FeatureRow[], totalRows: overview.returned_rows };
+      })();
       signalCache.current.set(cacheKey, loaded);
       return loaded;
     };
@@ -657,7 +658,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       </div>
     );
   if (loadError) return <div role="alert">{loadError}</div>;
-  if (!rows.length && !resultHasFeatureRows.current)
+  if (!rows.length && !resultHasFeatureRows)
     return <div role="status">No feature data is available in this result.</div>;
 
   return (
@@ -1163,7 +1164,6 @@ function networkTagLabel(row: FeatureRow, tagKind: FeatureNetworkModel['nodes'][
     .trim();
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 function connectedFeatureNetworkRows(rows: FeatureRow[], selected: FeatureRow): FeatureRow[] {
   const analysis = String(selected.analysis ?? '');
   const candidates = rows.filter((row) => String(row.analysis ?? '') === analysis);
@@ -1659,20 +1659,20 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
   const plotTheme = getPlotTheme(darkMode);
   const prefix = kind === 'eic' ? 'eic' : kind;
   const labels = rows.map((row) => signalTraceLabel(row, groupBy, selectBy));
-  const categories = Array.from(new Set(labels)).sort();
   const maxLabelLength = labels.reduce((maximum, label) => Math.max(maximum, label.length), 0);
   // A legend describes comparisons between plotted signals, not the number of
   // distinct grouping labels.  Several rows can legitimately share one label
   // (for example when grouping is disabled), so count valid source traces.
-  let plottedTraceCount = 0;
   const legendGroups = new Set<string>();
-  const traces = rows.flatMap((row) => {
+  const signalRows = rows.flatMap((row) => {
     const x = numericArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`]);
     const y = numericArray(row[`${prefix}_intensity`]);
     if (!x.length || !y.length) return [];
-    plottedTraceCount += 1;
     const label = signalTraceLabel(row, groupBy, selectBy);
-    const color = colorFor(label, categories);
+    return [{ row, x, y, label, color: colorFor(label) }];
+  });
+  const plottedTraceCount = signalRows.length;
+  const traces = signalRows.flatMap(({ row, x, y, label, color }) => {
     const showTraceLegend = !legendGroups.has(label);
     legendGroups.add(label);
     const isSpectrum = kind === 'ms1' || kind === 'ms2';
@@ -2018,9 +2018,6 @@ function booleanValue(value: string | null | undefined): boolean | undefined {
 }
 
 function makePoints(rows: FeatureRow[], groupBy: string): FeaturePlotPoint[] {
-  const categories = Array.from(
-    new Set(rows.map((row, index) => String(row[groupBy] ?? row.analysis ?? index))),
-  ).sort();
   return rows.flatMap((row, index) => {
     const mz = numericValue(row, ['mz', 'feature_mz']);
     const rt = numericValue(row, ['rt', 'retention_time']);
@@ -2029,7 +2026,7 @@ function makePoints(rows: FeatureRow[], groupBy: string): FeaturePlotPoint[] {
       {
         row,
         index,
-        color: colorFor(stablePlotGroup(row, groupBy), categories),
+        color: colorFor(stablePlotGroup(row, groupBy)),
         intensity: numericValue(row, ['intensity', 'feature_intensity', 'max_intensity']) ?? 0,
       },
     ];
@@ -2098,40 +2095,6 @@ function arrayMax(values: number[]): number {
   let result = Number.NEGATIVE_INFINITY;
   for (const value of values) if (value > result) result = value;
   return Number.isFinite(result) ? result : 0;
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function stablePlotGroup(row: Record<string, string | null | undefined>, groupBy: string): string {
-  const selected = String(row[groupBy] ?? '').trim();
-  if (groupBy !== 'replicate') return selected || String(row.analysis ?? '').trim() || '(unassigned)';
-  const normalized = selected.toLowerCase();
-  if (normalized === 'plant' || normalized === 'substrate') return normalized;
-  const analysis = String(row.analysis ?? '').trim();
-  const sampleClass = analysis.match(/^(plant|substrate)(?:[_\s]|$)/i)?.[1];
-  return sampleClass?.toLowerCase() ?? (selected || '(unassigned)');
-}
-
-export function colorFor(value: string, _categories: string[] = [value]): string {
-  const palette = [
-    '#0072b2',
-    '#d55e00',
-    '#009e73',
-    '#cc79a7',
-    '#e69f00',
-    '#56b4e9',
-    '#f0e442',
-    '#882255',
-    '#117733',
-    '#332288',
-    '#aa4499',
-    '#44aa99',
-  ];
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return palette[(hash >>> 0) % palette.length];
 }
 
 function signalTraceLabel(row: FeatureRow, groupBy: string, selectBy: SelectionMode): string {

@@ -200,10 +200,13 @@ export default function CanvasShell({
   const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
   const [workflowDefinitionRevision, setWorkflowDefinitionRevision] = useState(1);
-  const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
+  const workflowLoadKey = `${surface}:${project.session_id}:${workflowReloadNonce}`;
+  const [loadedWorkflowKey, setLoadedWorkflowKey] = useState<string | null>(
+    surface !== 'workflow' || !client ? workflowLoadKey : null,
+  );
+  const workflowLoaded = surface !== 'workflow' || !client || loadedWorkflowKey === workflowLoadKey;
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
-  const lastObservedWorkflowStateRef = useRef<WorkflowState | null>(null);
   const artifactsLoadedRef = useRef(false);
   const currentResultsRef = useRef<ResultRecord[]>([]);
   const artifactsRefreshInFlightRef = useRef<Promise<ResultRecord[]> | null>(null);
@@ -685,7 +688,6 @@ export default function CanvasShell({
   useEffect(() => {
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
     let active = true;
-    setWorkflowLoaded(false);
     // The workflow definition and the published-result snapshot are
     // independent reads. Start them together so large result stores do not
     // delay the canvas after the definition has already arrived.
@@ -703,7 +705,7 @@ export default function CanvasShell({
           setStatus(`Saved workflow is invalid: ${result.diagnostics.map((item) => item.message).join('; ')}`);
           await artifactRefresh;
           if (!active) return;
-          setWorkflowLoaded(true);
+          setLoadedWorkflowKey(workflowLoadKey);
           return;
         }
         const loadedNodes = result.workflow.operations.map((operation, index) => {
@@ -749,18 +751,18 @@ export default function CanvasShell({
         // not briefly render with every output looking unpublished.
         await artifactRefresh;
         if (!active) return;
-        setWorkflowLoaded(true);
+        setLoadedWorkflowKey(workflowLoadKey);
       })
       .catch((error) => {
         if (active) {
-          setWorkflowLoaded(true);
+          setLoadedWorkflowKey(workflowLoadKey);
           setStatus(error instanceof Error ? error.message : 'Workflow could not be loaded.');
         }
       });
     return () => {
       active = false;
     };
-  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface, workflowReloadNonce]);
+  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface, workflowLoadKey]);
 
   useLayoutEffect(() => {
     if (!workflowLoaded || !nodes.length || initialViewportFittedRef.current) return undefined;
@@ -840,7 +842,6 @@ export default function CanvasShell({
   const discardWorkflowChanges = () => {
     if (!workflowDirty || workflowBusy) return;
     setStatus('Discarding changes and loading the saved workflow...');
-    setWorkflowLoaded(false);
     setWorkflowReloadNonce((value) => value + 1);
   };
 

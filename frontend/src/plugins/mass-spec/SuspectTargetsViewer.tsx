@@ -8,6 +8,12 @@ import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 
 type SuspectRow = Record<string, string | null>;
 type RenderedStructure = { svg: string; dataUri: string };
+const FRAGMENT_COLUMNS = new Set([
+  'fragments_mz_pos',
+  'fragments_intensity_pos',
+  'fragments_mz_neg',
+  'fragments_intensity_neg',
+]);
 type StructureCache = Record<string, RenderedStructure>;
 
 type StructureRenderTask = {
@@ -465,14 +471,8 @@ function Details({
   cache: StructureCache;
   onRendered: (key: string, structure: RenderedStructure) => void;
 }) {
-  const fragmentColumns = new Set([
-    'fragments_mz_pos',
-    'fragments_intensity_pos',
-    'fragments_mz_neg',
-    'fragments_intensity_neg',
-  ]);
   const fields = useMemo(
-    () => Object.entries(row).filter(([key, item]) => item !== null && item !== '' && !fragmentColumns.has(key)),
+    () => Object.entries(row).filter(([key, item]) => item !== null && item !== '' && !FRAGMENT_COLUMNS.has(key)),
     [row],
   );
   const positiveSpec = ms2Spec(row, 'pos', darkMode, sourceArtifactId);

@@ -14,6 +14,7 @@ const INITIAL_MAX_POINTS_PER_TRACE = 1024;
 const INITIAL_MAX_ROWS = 100000;
 const VIEWPORT_MAX_POINTS_PER_TRACE = 2000;
 const VIEWPORT_MAX_ROWS = 250000;
+const EMPTY_RAMAN_ROWS: RamanRow[] = [];
 
 function text(row: RamanRow, column: string): string {
   return row[column] ?? '';
@@ -151,14 +152,16 @@ function makeSpec(
 export function RamanSpectraViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<ResultDataResponse | null>(null);
+  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
   const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [themeRevision, setThemeRevision] = useState(0);
+  const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
+  const [, setThemeRevision] = useState(0);
   const [viewportRange, setViewportRange] = useState<[number, number] | null>(null);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultId = artifact?.result_id ?? '';
+  const loading = !loadState || loadState.resultId !== resultId;
+  const error = loadState?.resultId === resultId ? loadState.error : undefined;
+  const currentData = data?.resultId === resultId ? data.response : null;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -169,8 +172,6 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
   useEffect(() => {
     if (!artifact || !client) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     const loadRows = async () => {
       const response = await client.resultQuery(context.sessionId, {
         result_id: artifact.result_id,
@@ -203,14 +204,18 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
         limit: viewportRange ? VIEWPORT_MAX_ROWS : INITIAL_MAX_ROWS,
         ...(viewportRange ? { x_min: viewportRange[0], x_max: viewportRange[1] } : {}),
       });
-      if (!cancelled) setData({ ...response, offset: 0, limit: response.rows.length });
+      if (!cancelled) {
+        setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });
+        setLoadState({ resultId: artifact.result_id });
+      }
     };
     void loadRows()
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load Raman spectra rows.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled)
+          setLoadState({
+            resultId: artifact.result_id,
+            error: reason instanceof Error ? reason.message : 'Unable to load Raman spectra rows.',
+          });
       });
     return () => {
       cancelled = true;
@@ -236,15 +241,15 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
     viewportTimer.current = setTimeout(() => setViewportRange([min, max]), 180);
   }, []);
 
-  const rows = data?.rows ?? [];
-  const theme = useMemo(() => getPlotTheme(), [themeRevision]);
+  const rows = currentData?.rows ?? EMPTY_RAMAN_ROWS;
+  const theme = getPlotTheme();
   const spec = useMemo(
     () => (rows.length ? makeSpec(rows, grouping, resultId, theme, viewportRange) : null),
     [resultId, grouping, rows, theme, viewportRange],
   );
 
   if (!artifact || !client) return <div role="alert">Raman spectra result data is unavailable.</div>;
-  if (loading && !data) return <LoadingLogo label="Loading Raman spectra rows…" />;
+  if (loading && !currentData) return <LoadingLogo label="Loading Raman spectra rows…" />;
   if (error)
     return (
       <div className="sf-raman-viewer-state" role="alert">
@@ -277,7 +282,10 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
         ))}
         <span className="sf-raman-viewer-summary">
           {rows.length} displayed rows
-          {data && data.total_rows > rows.length ? ` of ${data.total_rows.toLocaleString()}` : ''} ·{' '}
+          {currentData && currentData.total_rows > rows.length
+            ? ` of ${currentData.total_rows.toLocaleString()}`
+            : ''}{' '}
+          ·{' '}
           {spec.payload.data.length} traces{loading ? ' · loading viewport…' : ''}
         </span>
       </div>

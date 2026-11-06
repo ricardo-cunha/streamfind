@@ -9,6 +9,7 @@ type EicRow = Record<string, string | null>;
 
 const GROUP_COLUMNS = ['analysis', 'name', 'replicate', 'polarity', 'level'] as const;
 const DEFAULT_GROUP = ['analysis', 'name'];
+const EMPTY_EIC_ROWS: EicRow[] = [];
 type PlotTheme = { text: string; grid: string; background: string };
 
 function getPlotTheme(): PlotTheme {
@@ -106,12 +107,14 @@ function makeSpec(rows: EicRow[], colorGrouping: string[], resultId: string, the
 export function EicTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<ResultDataResponse | null>(null);
+  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
   const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [themeRevision, setThemeRevision] = useState(0);
+  const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
+  const [, setThemeRevision] = useState(0);
   const resultId = artifact?.result_id ?? '';
+  const loading = !loadState || loadState.resultId !== resultId;
+  const error = loadState?.resultId === resultId ? loadState.error : undefined;
+  const currentData = data?.resultId === resultId ? data.response : null;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -122,8 +125,6 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
   useEffect(() => {
     if (!artifact || !client) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     const loadAllRows = async () => {
       const columns = ['analysis', 'replicate', 'name', 'polarity', 'level', 'rt', 'intensity'];
       const response = await client.resultQuery(context.sessionId, {
@@ -136,22 +137,26 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
         limit: 65536,
         eic_max_points: 512,
       });
-      if (!cancelled) setData({ ...response, offset: 0, limit: response.rows.length });
+      if (!cancelled) {
+        setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });
+        setLoadState({ resultId: artifact.result_id });
+      }
     };
     void loadAllRows()
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load EIC rows.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled)
+          setLoadState({
+            resultId: artifact.result_id,
+            error: reason instanceof Error ? reason.message : 'Unable to load EIC rows.',
+          });
       });
     return () => {
       cancelled = true;
     };
   }, [artifact, client, context.sessionId]);
 
-  const rows = data?.rows ?? [];
-  const theme = useMemo(() => getPlotTheme(), [themeRevision]);
+  const rows = currentData?.rows ?? EMPTY_EIC_ROWS;
+  const theme = getPlotTheme();
   const spec = useMemo(
     () => (rows.length ? makeSpec(rows, grouping, resultId, theme) : null),
     [resultId, grouping, rows, theme],

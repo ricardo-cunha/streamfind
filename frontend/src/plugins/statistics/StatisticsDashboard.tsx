@@ -88,15 +88,16 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   const client = context.pluginApi?.client;
   const [siblings, setSiblings] = useState<ResultRecord[]>([]);
   const [rowsByContract, setRowsByContract] = useState<StatisticsRows>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activePanelId, setActivePanelId] = useState('');
-  const [themeRevision, setThemeRevision] = useState(0);
+  const [, setThemeRevision] = useState(0);
   const [controlsWidth, setControlsWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const resultId = artifact?.result_id ?? '';
+  const loading = !loadState || loadState.resultId !== resultId;
+  const error = loadState?.resultId === resultId ? loadState.error : undefined;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((revision) => revision + 1));
@@ -105,14 +106,8 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   }, []);
 
   useEffect(() => {
-    if (!artifact || !client) {
-      setLoading(false);
-      setError(!client ? 'Statistics viewer is not connected to the data service.' : null);
-      return;
-    }
+    if (!artifact || !client) return undefined;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     void client
       .currentResults(context.sessionId)
       .then((current) => {
@@ -144,25 +139,25 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
         }
         setSiblings(matching);
         setRowsByContract(rows);
+        setLoadState({ resultId: artifact.result_id });
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load statistics results.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled)
+          setLoadState({
+            resultId: artifact.result_id,
+            error: reason instanceof Error ? reason.message : 'Unable to load statistics results.',
+          });
       });
     return () => {
       cancelled = true;
     };
   }, [artifact, client, context.sessionId]);
 
+  const theme = plotTheme();
   const panels = useMemo(
-    () => buildStatisticsPanels(rowsByContract, resultId, plotTheme(), selectedId),
-    [rowsByContract, resultId, selectedId, themeRevision],
+    () => buildStatisticsPanels(rowsByContract, resultId, theme, selectedId),
+    [rowsByContract, resultId, selectedId, theme],
   );
-  useEffect(() => {
-    if (!panels.some((panel) => panel.id === activePanelId)) setActivePanelId(panels[0]?.id ?? '');
-  }, [activePanelId, panels]);
 
   const activePanel = panels.find((panel) => panel.id === activePanelId) ?? panels[0];
   const selectedDetails = useMemo(() => {
@@ -178,6 +173,8 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   );
   const summary = payloadObject(artifact ?? diagnosticArtifacts[0]);
 
+  if (!artifact || !client)
+    return <div className="sf-statistics-state sf-statistics-error" role="alert">Statistics result data is unavailable.</div>;
   if (loading) return <LoadingLogo label="Loading statistics plot…" />;
   if (error)
     return <div className="sf-statistics-state sf-statistics-error" role="alert">{error}</div>;

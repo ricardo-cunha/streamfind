@@ -21,7 +21,7 @@ export function FindFeaturesDebugViewer({ context }: ViewerComponentProps): Reac
   const [loading, setLoading] = useState(true);
   const [leftPaneWidth, setLeftPaneWidth] = useState(300);
   const payload = useMemo(() => readPayload(context.artifact?.payload), [context.artifact?.payload]);
-  const parsed = useMemo(() => (payload?.log_text ? parseLog(payload.log_text) : null), [payload?.log_text]);
+  const parsed = useMemo(() => (payload?.log_text ? parseLog(payload.log_text) : null), [payload]);
   const spec = useMemo(() => (parsed ? makeSpec(parsed, payload ?? {}) : null), [parsed, payload]);
 
   const resizeLeftPane = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -136,15 +136,6 @@ function pointsFromLog(text: string): Point[] {
     const mz = Number(match[2]);
     const intensity = Number(match[3]);
     if ([rt, mz, intensity].every(Number.isFinite)) points.push({ rt, mz, intensity });
-  }
-  return points;
-}
-
-function pointsForPattern(text: string, expression: RegExp): Point[] {
-  const points: Point[] = [];
-  for (const match of text.matchAll(expression)) {
-    const point = { rt: Number(match[1]), mz: Number(match[2]), intensity: Number(match[3]) };
-    if ([point.rt, point.mz, point.intensity].every(Number.isFinite)) points.push(point);
   }
   return points;
 }
