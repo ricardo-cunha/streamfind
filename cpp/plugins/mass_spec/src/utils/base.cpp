@@ -100,35 +100,25 @@ static bool row_has_value(const nlohmann::json &row, const char *column);
 static double row_real_or_any(const nlohmann::json &row, const char *primary,
                               const char *alternate, double fallback);
 
-std::vector<TargetRange> normalize_targets(const nlohmann::json &parameters)
+std::vector<TargetRange> normalize_targets(sdk::PluginProjectAccess &access, const nlohmann::json &parameters)
 {
     std::vector<TargetRange> result;
     auto sources = parameters.value("targets", nlohmann::json::array());
-    // Table-typed workflow parameters arrive from the service in the public
-    // columnar form.  The mass-spec matching code consumes target rows, so
-    // normalize that boundary once here instead of making every caller know
-    // about the transport representation.
-    if (sources.is_object() && sources.value("columns", nlohmann::json::array()).is_array())
+    if (sources.is_object() && sources.contains("$result_ref"))
     {
-        const auto columns = sources.at("columns");
-        std::size_t row_count = 0;
-        for (const auto &column : columns)
-        {
-            const auto values = column.value("values", nlohmann::json::array());
-            if (!values.is_array()) throw std::invalid_argument("Target table column values must be arrays");
-            row_count = std::max(row_count, values.size());
-        }
-        sources = nlohmann::json::array();
-        for (std::size_t row_index = 0; row_index < row_count; ++row_index)
-        {
-            nlohmann::json row = nlohmann::json::object();
-            for (const auto &column : columns)
-            {
-                const auto values = column.value("values", nlohmann::json::array());
-                if (row_index < values.size()) row[column.value("name", "")] = values[row_index];
-            }
-            sources.push_back(std::move(row));
-        }
+        const auto result_id = sources.at("$result_ref").get<std::string>();
+        if (result_id.empty()) throw std::invalid_argument("targets result reference is empty");
+        auto batch_parameters = parameters;
+        access.read_batches("result:" + result_id,
+            {"name", "analysis", "polarity", "level", "mass", "mass_min", "mass_max",
+             "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"}, "name",
+            [&](const nlohmann::json &batch) {
+                batch_parameters["targets"] = batch;
+                auto parsed = normalize_targets(access, batch_parameters);
+                result.insert(result.end(), std::make_move_iterator(parsed.begin()),
+                              std::make_move_iterator(parsed.end()));
+            });
+        return result;
     }
     if (!sources.is_array()) throw std::invalid_argument("targets must be an array or a table value");
     for (std::size_t index = 0; index < sources.size(); ++index)
@@ -287,10 +277,10 @@ static double row_real_or_any(const nlohmann::json &row, const char *primary,
     return fallback;
 }
 
-nlohmann::json filter_target_rows(const nlohmann::json &rows, const nlohmann::json &parameters,
+nlohmann::json filter_target_rows(sdk::PluginProjectAccess &access, const nlohmann::json &rows, const nlohmann::json &parameters,
                                   const char *mass_column, const char *mz_column, const char *rt_column, const char *polarity_column)
 {
-    const auto targets = normalize_targets(parameters);
+    const auto targets = normalize_targets(access, parameters);
     const auto requested_targets = parameters.value("targets", nlohmann::json::array());
     const bool has_requested_targets = requested_targets.is_array() && !requested_targets.empty();
     nlohmann::json result = nlohmann::json::array();

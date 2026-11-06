@@ -52,6 +52,8 @@ Example requests, one JSON object per line:
 
 Include `database_path` on every applicable request. Operation-specific
 parameters and constraints are returned by `tools/list` and `get_operation`.
+Send the `notifications/initialized` notification after initialization; because
+it is a notification, the server correctly sends no response.
 
 ## Build a workflow
 
@@ -62,13 +64,29 @@ Use a persisted operation graph for every multi-step workflow:
 3. call `add_operation` with a stable node ID and a JSON `parameters` object;
 4. call `connect_operations` for each output-to-input dependency;
 5. call `validate_workflow`;
-6. call `run_workflow`;
-7. call `get_result_registry` to inspect published results.
+6. call `get_workflow` and keep its `definition_revision` when replacing the
+   full graph with `set_workflow`; stale revisions are rejected so app and MCP
+   edits cannot silently overwrite one another;
+7. call `run_workflow`, optionally setting `execution_mode` to `detailed` or
+   `pipeline` (default `detailed`);
+8. poll `get_workflow_execution` until it reports a terminal state, then call
+   `get_result_inventory` and `request_result` to inspect results.
 
 The workflow is stored in the project database, so it can be reopened,
 validated, rerun, and inspected by another client. Use direct operation calls
 for independent queries; use a persisted graph when downstream steps depend on
 upstream results.
+
+Workflow and direct-operation submissions are asynchronous. Once accepted, the
+service owns the run; use the returned run or operation instance identifier
+with `get_workflow_execution` to inspect progress and terminal errors. Both
+execution modes retain completed results: `detailed` publishes each result as
+its node completes, while `pipeline` publishes retained results when the
+workflow finishes.
+
+`list_workflow_demos` reads demos from enabled plugins in the MCP package. Its
+response contains `workflows` and `diagnostics`; inspect diagnostics if an
+expected demo is missing or a package resource cannot be read.
 
 The MCP server uses the same service runtime as the browser application. It
 does not open the project DuckDB itself: the service serializes metadata

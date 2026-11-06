@@ -58,6 +58,17 @@ STREAMFIND_CORE_API data_proxy::Json run_operation(
     const std::string &operation_instance = {},
     const data_proxy::Json &inputs = nullptr);
 
+STREAMFIND_CORE_API data_proxy::Json start_operation(
+    const ServiceProjectAttachment &attachment,
+    const std::string &operation_id,
+    const data_proxy::Json &parameters = data_proxy::Json::object(),
+    const std::string &operation_instance = {},
+    const data_proxy::Json &inputs = nullptr);
+
+STREAMFIND_CORE_API data_proxy::Json operation_snapshot(
+    const ServiceProjectAttachment &attachment,
+    const std::string &operation_instance);
+
 STREAMFIND_CORE_API data_proxy::Json validate_workflow(
     const ServiceProjectAttachment &attachment, const data_proxy::Json &workflow = nullptr);
 

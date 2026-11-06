@@ -838,18 +838,6 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
 {
   namespace streamfind::nta_filter_ms2_detail
   {
-    // Decode a base64+little-endian-float encoded string into a float vector.
-    // Returns empty vector if input is empty.
-    static std::vector<float> decode_ms2(const std::string &encoded)
-    {
-      if (encoded.empty())
-        return {};
-      std::string raw = ::mass_spec::reader::utils::decode_base64(encoded);
-      if (raw.empty())
-        return {};
-      return ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4); // 4 bytes = float32
-    }
-
     // Cluster a flat list of (mz, intensity) pairs from multiple features/analyses.
     // Returns a vector of representative mz values that appear in >= presenceFraction
     // of the input uid count.
@@ -1041,7 +1029,7 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
           if (fts.ms2_size[i] <= 0 || fts.ms2_mz[i].empty())
             continue;
 
-          std::vector<float> mz = decode_ms2(fts.ms2_mz[i]);
+          const auto &mz = fts.ms2_mz[i];
           std::string uid = ana + "_" + fts.feature[i];
           for (float m : mz)
           {
@@ -1069,7 +1057,7 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
             {
               if (fts.ms2_size[i] <= 0 || fts.ms2_mz[i].empty())
                 continue;
-              std::vector<float> mz = decode_ms2(fts.ms2_mz[i]);
+              const auto &mz = fts.ms2_mz[i];
               std::string uid = analysis_names[a] + "_" + fts.feature[i];
               for (float m : mz)
               {
@@ -1105,8 +1093,8 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
         if (fts.ms2_size[i] <= 0 || fts.ms2_mz[i].empty())
           continue;
 
-        std::vector<float> mz = decode_ms2(fts.ms2_mz[i]);
-        std::vector<float> intensity = decode_ms2(fts.ms2_intensity[i]);
+        std::vector<float> mz = fts.ms2_mz[i];
+        std::vector<float> intensity = fts.ms2_intensity[i];
 
         if (mz.empty() || mz.size() != intensity.size())
           continue;
@@ -1131,8 +1119,8 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
         apply_spectrum_filters(mz, intensity, top, minIntensity, relMinIntensity);
 
         // Re-encode and update FEATURES
-        fts.ms2_mz[i] = ::streamfind::mass_spec::nta::utils::encode_floats_base64(mz);
-        fts.ms2_intensity[i] = ::streamfind::mass_spec::nta::utils::encode_floats_base64(intensity);
+        fts.ms2_mz[i] = std::move(mz);
+        fts.ms2_intensity[i] = std::move(intensity);
         fts.ms2_size[i] = static_cast<int>(mz.size());
       }
     }

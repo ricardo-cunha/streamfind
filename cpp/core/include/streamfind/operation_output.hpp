@@ -16,10 +16,9 @@ using Json = nlohmann::json;
 /**
  * Runtime-owned destination for one operation output.
  *
- * Operation code submits typed descriptors and bounded encoded batches. It
- * does not select a file, persistence policy, cache location, or downstream
- * transport. The runtime may forward the batches, spill them, or publish
- * them through the result store.
+ * Operation code submits typed descriptors and batches. It does not select a
+ * file, persistence policy, cache location, or downstream transport. The
+ * runtime grants a scoped destination and publishes the completed result.
  */
 class STREAMFIND_CORE_API OperationOutputSink {
 public:

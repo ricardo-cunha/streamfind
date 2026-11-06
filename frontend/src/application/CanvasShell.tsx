@@ -199,6 +199,7 @@ export default function CanvasShell({
   const [artifactCleanupNode, setArtifactCleanupNode] = useState<CanvasNode | null>(null);
   const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
+  const [workflowDefinitionRevision, setWorkflowDefinitionRevision] = useState(1);
   const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
@@ -387,8 +388,8 @@ export default function CanvasShell({
   ]);
   const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
-    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata),
-    [capabilities, edges, nodes, workflowMetadata, workflowRevision],
+    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata, workflowDefinitionRevision),
+    [capabilities, edges, nodes, workflowDefinitionRevision, workflowMetadata, workflowRevision],
   );
   const currentWorkflowFingerprint = useMemo(() => workflowFingerprint(currentWorkflow), [currentWorkflow]);
 
@@ -534,6 +535,32 @@ export default function CanvasShell({
         resetActivityLog();
         setWorkflowState('queued');
       }
+      if (event.type === 'workflow.definition_changed') {
+        const changedWorkflow =
+          payload && typeof payload === 'object' && !Array.isArray(payload) &&
+          'workflow' in payload && payload.workflow && typeof payload.workflow === 'object' &&
+          !Array.isArray(payload.workflow)
+            ? (payload.workflow as WorkflowDefinition)
+            : null;
+        if (changedWorkflow) {
+          const changedFingerprint = workflowFingerprint(changedWorkflow);
+          const changedMetadata = changedWorkflow.metadata || {};
+          const revision = Number(changedWorkflow.version);
+          const localDefinitionMatches =
+            changedFingerprint === currentWorkflowFingerprint &&
+            JSON.stringify(changedMetadata) === JSON.stringify(workflowMetadata);
+          if (localDefinitionMatches) {
+            setWorkflowRevision(revision);
+            setWorkflowDefinitionRevision(changedWorkflow.definition_revision);
+            setSavedWorkflowFingerprint(changedFingerprint);
+          } else if (workflowDirty || savingWorkflow) {
+            setStatus(`Workflow changed in another client (revision ${revision}); local edits are preserved. Reload the workflow to view the external changes.`);
+          } else {
+            setStatus(`Workflow updated by another client (revision ${revision}); refreshing the canvas.`);
+            setWorkflowReloadNonce((current) => current + 1);
+          }
+        }
+      }
       appendLog(
         detail ? `${event.type}${operation}: ${detail}${workerDetail}` : `${event.type}${operation}${workerDetail}`,
         level,
@@ -573,7 +600,9 @@ export default function CanvasShell({
         void refreshArtifacts(true);
       }
     },
-    [appendLog, project.session_id, refreshArtifacts, resetActivityLog, updateActiveWorker],
+    [appendLog, currentWorkflowFingerprint, project.session_id, refreshArtifacts, resetActivityLog,
+      savingWorkflow, setStatus, setWorkflowReloadNonce, updateActiveWorker,
+      workflowDirty, workflowMetadata],
   );
 
   useEffect(() => {
@@ -667,6 +696,7 @@ export default function CanvasShell({
         if (!active) return;
         initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
+        setWorkflowDefinitionRevision(result.workflow.definition_revision);
         if (result.workflow.metadata) setWorkflowMetadata(result.workflow.metadata);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
@@ -826,6 +856,7 @@ export default function CanvasShell({
       }
       const result = await client.saveWorkflow(project.session_id, workflowToSave);
       setWorkflowRevision(result.workflow.version);
+      setWorkflowDefinitionRevision(result.workflow.definition_revision);
       setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
 
       setStatus(`Workflow saved (revision ${result.workflow.version}).`);
@@ -932,6 +963,7 @@ export default function CanvasShell({
         workflow_id: parsed.workflow_id,
         name: parsed.name,
         version: workflowRevision,
+        definition_revision: workflowDefinitionRevision,
         metadata: parsed.metadata || workflowMetadata,
         operations: parsed.operations,
         connections: parsed.connections,

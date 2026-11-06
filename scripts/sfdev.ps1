@@ -174,7 +174,7 @@ try {
             throw "Unexpected option: $argument"
         }
         if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only') { $options[$name] = $true; continue }
-        if (++$index -ge $args.Count -or $args[$index].StartsWith('--')) { throw "Missing value for --$name" }
+        if (++$index -ge $args.Count -or ([string]$args[$index]).StartsWith('--')) { throw "Missing value for --$name" }
         $options[$name] = $args[$index]
     }
     $buildPlatform = if ($IsWindows) { 'windows/core' } else { 'linux/core' }

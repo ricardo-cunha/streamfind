@@ -399,6 +399,8 @@ public:
     std::string name;
     /// Incremented whenever a Project stores a new workflow definition.
     int version{1};
+    /// Monotonic concurrency token, incremented on every saved definition including layout edits.
+    int definition_revision{1};
     /// Ontology-backed workflow description; additional JSON keys are preserved.
     Json metadata = {{"name", "Untitled workflow"},
                      {"description", "Describe the purpose of this workflow."}};
@@ -582,6 +584,8 @@ public:
                                         const std::string &producer_operation,
                                         const std::string &producer_instance,
                                         int workflow_revision = 0);
+    /** @brief Register a service-published immutable result payload in project metadata. */
+    void register_result_manifest(const Json &manifest);
     /** @brief Resolve graph connections for one operation to published input artifacts. */
     Json resolve_workflow_inputs(const std::string &operation_id) const;
     Json resolve_workflow_inputs(const std::string &operation_id,

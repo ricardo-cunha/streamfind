@@ -137,7 +137,7 @@ Json read_csv(OperationExecutionContext &context, const Json &parameters,
     }
     const auto rows = context.query("SELECT " + target_columns + " FROM " + source);
     const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"},
-                                 {"format", "arrow-ipc-batches"}, {"schema", columns},
+                                 {"format", "arrow-ipc-file"}, {"schema", columns},
                                  {"producer_operation", "streamfind.read_csv"},
                                  {"producer_instance", instance},
                                  {"workflow_revision", context.workflow_revision()}};
@@ -274,7 +274,7 @@ Json bind_table_rows(OperationExecutionContext &context, const Json &, const std
     }
     const auto rows = context.query("SELECT " + select_columns + " FROM " + quote_identifier(left_name) +
                                    " UNION ALL SELECT " + select_columns + " FROM " + quote_identifier(right_name));
-    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-batches"},
+    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-file"},
                                  {"schema", columns}, {"producer_operation", "streamfind.bind_table_rows"},
                                  {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
                                  {"provenance", { {"lineage_inputs", {
@@ -331,7 +331,7 @@ Json bind_table_columns(OperationExecutionContext &context, const Json &paramete
     const auto rows = context.query("SELECT " + left_select + ", " + right_select +
                                    " FROM " + quote_identifier(left_name) + " l INNER JOIN " +
                                    quote_identifier(right_name) + " r ON " + join);
-    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-batches"},
+    const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-file"},
                                  {"schema", columns}, {"producer_operation", "streamfind.bind_table_columns"},
                                  {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
                                  {"provenance", { {"lineage_inputs", {

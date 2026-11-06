@@ -263,26 +263,23 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         if (!request.value("include_data", false)) return result;
         if (result.size() != 1)
             throw Error(ErrorCode::InvalidArgument,
-                        "include_data requires exactly one artifact selector; provide result_id, operation_instance, or output_port");
+                        "include_data requires exactly one result selector; provide result_id, operation_instance, or output_port");
         auto artifact = result.front();
         if (artifact.value("representation", "") == "table") {
-            const auto data = service::get_result_data(
-                attachment, Json{{"result_id", artifact.value("result_id", "")},
-                                 {"mode", "page"},
-                                 {"limit", std::clamp(request.value("limit", 1000), 1, 10000)},
-                                 {"offset", std::max(request.value("offset", 0), 0)}});
-            Json rows = Json::array();
-            const auto columns = data.value("columns", Json::array());
-            for (const auto &row : data.value("rows", Json::array())) {
-                Json object = Json::object();
-                for (std::size_t index = 0; index < columns.size() && index < row.size(); ++index)
-                    object[columns.at(index).value("name", std::to_string(index))] = row.at(index);
-                rows.push_back(std::move(object));
-            }
-            artifact["data"] = std::move(rows);
+            Json query{{"result_id", artifact.value("result_id", "")},
+                       {"mode", "page"},
+                       {"limit", std::clamp(request.value("limit", 1000), 1, 10000)},
+                       {"offset", std::max(request.value("offset", 0), 0)}};
+            if (request.contains("columns")) query["columns"] = request.at("columns");
+            if (request.contains("filters")) query["filters"] = request.at("filters");
+            const auto data = service::get_result_data(attachment, query);
+            artifact["data"] = data.value("rows", Json::array());
+            artifact["columns"] = data.value("columns", Json::array());
             artifact["row_count"] = data.value("total_rows", 0);
             artifact["limit"] = data.value("limit", request.value("limit", 1000));
             artifact["offset"] = data.value("offset", request.value("offset", 0));
+            artifact["returned_rows"] = data.value("returned_rows", artifact["data"].size());
+            artifact["has_more"] = data.value("has_more", false);
         } else if (artifact.contains("payload") && !artifact.at("payload").is_null()) {
             const auto &payload = artifact.at("payload");
             if (payload.is_string()) {

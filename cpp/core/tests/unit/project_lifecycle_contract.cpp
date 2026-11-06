@@ -60,8 +60,13 @@ int run() {
     }
     streamfind::Workflow workflow;
     workflow.name = "operation graph lifecycle";
+    workflow.definition_revision = 7;
     workflow.operations.push_back({"2", "test.tail", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()});
     project.set_workflow(workflow, operations);
+    if (project.get_workflow().definition_revision != 7) {
+        std::cerr << "workflow definition revision was not persisted\n";
+        return 1;
+    }
     const auto result = project.run_operation_graph(operations);
 
     if (result.at("status") != "completed" ||

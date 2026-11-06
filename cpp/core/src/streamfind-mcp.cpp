@@ -193,6 +193,14 @@ public:
         return Json{{"results", result}};
     }
 
+    std::vector<std::filesystem::path> workflow_demo_directories() const {
+        std::vector<std::filesystem::path> directories;
+        directories.reserve(plugins_.size());
+        for (const auto &loaded : plugins_)
+            directories.push_back(loaded->package_root / "resources" / "workflows");
+        return directories;
+    }
+
 private:
     struct LoadedPlugin {
         std::filesystem::path package_root;
@@ -235,7 +243,8 @@ int main(int argc, char **argv) {
 #else
             "streamfind-worker",
 #endif
-        configuration_path);
+        configuration_path,
+        [&dynamic_plugins] { return dynamic_plugins->workflow_demo_directories(); });
     while (std::getline(std::cin, line)) {
             try {
                 const auto request = streamfind::Json::parse(line);

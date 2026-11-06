@@ -48,9 +48,17 @@ namespace streamfind::mass_spec::nta::utils
         std::nth_element(v.begin(), v.begin() + i, v.end());
         return v[i];
     }
-    std::string encode_floats_base64(const std::vector<float> &input, int precision)
+    static std::vector<float> float_array_from_json(const nlohmann::json &value, const char *column)
     {
-        return ::mass_spec::reader::utils::encode_base64(::mass_spec::reader::utils::encode_little_endian_from_float(input, precision));
+        if (!value.is_array()) throw std::invalid_argument(std::string("typed trace column '") + column + "' must be an array");
+        std::vector<float> values;
+        values.reserve(value.size());
+        for (const auto &item : value)
+        {
+            if (!item.is_number()) throw std::invalid_argument(std::string("typed trace column '") + column + "' contains a non-numeric value");
+            values.push_back(item.get<float>());
+        }
+        return values;
     }
     std::vector<size_t> get_sort_indices_float(const std::vector<float> &v)
     {
@@ -377,8 +385,8 @@ namespace streamfind::mass_spec::nta::utils
             "real", "real", "real", "real", "real", "real", "real", "integer",
             "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
             "integer", "real", "integer", "boolean", "string", "boolean", "real", "integer",
-            "string", "string", "string", "string", "string", "integer", "string", "string", "integer", "string", "string", "string",
-            "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
+            "array", "array", "array", "array", "array", "integer", "array", "array", "integer", "array", "array",
+            "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
             "string", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real", "real",
             "real", "integer", "real", "real", "real", "real", "string", "real", "real", "real", "boolean", "boolean", "timestamp"};
         return types;
@@ -580,12 +588,6 @@ namespace streamfind::mass_spec::nta::utils::detail
             return out;
         }
 
-        std::string encode_float_array(const std::vector<float> &values)
-        {
-            return ::mass_spec::reader::utils::encode_base64(
-                ::mass_spec::reader::utils::encode_little_endian_from_float(values, 4));
-        }
-
         // Load every persisted feature for the selected analyses from MASS_SPEC_NTA_FEATURES
         // and bundle them per analysis, alongside the analysis names/paths/headers needed to
         // open the raw data through the reader, and the blank/replicate metadata used by the
@@ -742,17 +744,17 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.filled = b(row, "filled");
                 r.correction = d(row, "correction");
                 r.eic_size = i(row, "eic_size");
-                r.eic_rt = s(row, "eic_rt");
-                r.eic_mz = s(row, "eic_mz");
-                r.eic_intensity = s(row, "eic_intensity");
-                r.eic_baseline = s(row, "eic_baseline");
-                r.eic_smoothed = s(row, "eic_smoothed");
+                r.eic_rt = float_array_from_json(row.at("eic_rt"), "eic_rt");
+                r.eic_mz = float_array_from_json(row.at("eic_mz"), "eic_mz");
+                r.eic_intensity = float_array_from_json(row.at("eic_intensity"), "eic_intensity");
+                r.eic_baseline = float_array_from_json(row.at("eic_baseline"), "eic_baseline");
+                r.eic_smoothed = float_array_from_json(row.at("eic_smoothed"), "eic_smoothed");
                 r.ms1_size = i(row, "ms1_size");
-                r.ms1_mz = s(row, "ms1_mz");
-                r.ms1_intensity = s(row, "ms1_intensity");
+                r.ms1_mz = float_array_from_json(row.at("ms1_mz"), "ms1_mz");
+                r.ms1_intensity = float_array_from_json(row.at("ms1_intensity"), "ms1_intensity");
                 r.ms2_size = i(row, "ms2_size");
-                r.ms2_mz = s(row, "ms2_mz");
-                r.ms2_intensity = s(row, "ms2_intensity");
+                r.ms2_mz = float_array_from_json(row.at("ms2_mz"), "ms2_mz");
+                r.ms2_intensity = float_array_from_json(row.at("ms2_intensity"), "ms2_intensity");
                 r.annotation_category = s(row, "annotation_category");
                 r.annotation_type = s(row, "annotation_type");
                 r.annotation_parent_feature = s(row, "annotation_parent_feature");
@@ -825,49 +827,28 @@ namespace streamfind::mass_spec::nta::utils::detail
         std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters, bool allow_table_input)
         {
             const auto json_array_value = [](const Json &value) {
-                if (!value.is_string())
-                    return value;
-                const std::string encoded = value.get<std::string>();
-                if (encoded.empty())
-                    return Json::array();
-                try
-                {
-                    const Json decoded = Json::parse(encoded);
-                    return decoded.is_array() ? decoded : Json::array();
-                }
-                catch (...)
-                {
-                    return Json::array();
-                }
+                if (value.is_null()) return Json::array();
+                if (!value.is_array())
+                    throw std::invalid_argument("suspect target fragment values must be numeric arrays");
+                return value;
             };
             Json targets = parameters.value("suspect_targets", Json::array());
-            // Parameter connections are materialized by the service as a
-            // columnar table value. MetFrag's suspect-target contract is a
-            // row array, so normalize that representation at the operation
-            // boundary before iterating target rows.
-            if (targets.is_object() && targets.contains("columns") && targets.at("columns").is_array())
+            if (targets.is_object() && targets.contains("$result_ref"))
             {
-                Json rows = Json::array();
-                const auto &columns = targets.at("columns");
-                std::size_t row_count = 0;
-                for (const auto &column : columns)
-                {
-                    if (column.is_object() && column.contains("values") && column.at("values").is_array())
-                        row_count = std::max(row_count, column.at("values").size());
-                }
-                for (std::size_t index = 0; index < row_count; ++index)
-                    rows.push_back(Json::object());
-                for (const auto &column : columns)
-                {
-                    if (!column.is_object() || !column.contains("name") || !column.at("name").is_string() ||
-                        !column.contains("values") || !column.at("values").is_array())
-                        continue;
-                    const auto name = column.at("name").get<std::string>();
-                    const auto &values = column.at("values");
-                    for (std::size_t index = 0; index < values.size(); ++index)
-                        rows[index][name] = values.at(index);
-                }
-                targets = std::move(rows);
+                const auto result_id = targets.at("$result_ref").get<std::string>();
+                if (result_id.empty()) throw Error(ErrorCode::WorkflowValidation,
+                    "suspect_targets result reference is empty");
+                std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> out;
+                const std::vector<std::string> columns = {"name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
+                access.read_batches("result:" + result_id, columns, "name",
+                    [&](const Json &batch) {
+                        auto batch_parameters = parameters;
+                        batch_parameters["suspect_targets"] = batch;
+                        auto parsed = parse_suspect_targets(access, batch_parameters, false);
+                        out.insert(out.end(), std::make_move_iterator(parsed.begin()),
+                                   std::make_move_iterator(parsed.end()));
+                    });
+                return out;
             }
             const auto inputs = parameters.value("_inputs", Json::object());
             const auto input_it = allow_table_input ? inputs.find("suspectTargetsTable") : inputs.end();
@@ -936,16 +917,10 @@ namespace streamfind::mass_spec::nta::utils::detail
                     q.has_xLogP = true;
                     q.xLogP = *xlogp;
                 }
-                // Preserve both modes from the CSV adapter; older callers may provide
-                // the compact `fragments_mz`/`fragments_intensity` positive aliases.
-                const auto positive_mz = json_array_value(t.value("fragments_mz_positive",
-                                                 t.value("fragments_mz_pos", t.value("fragments_mz", Json::array()))));
-                const auto positive_int = json_array_value(t.value("fragments_intensity_positive",
-                                                  t.value("fragments_intensity_pos", t.value("fragments_intensity", Json::array()))));
-                const auto negative_mz = json_array_value(t.value("fragments_mz_negative",
-                                                 t.value("fragments_mz_neg", Json::array())));
-                const auto negative_int = json_array_value(t.value("fragments_intensity_negative",
-                                                  t.value("fragments_intensity_neg", Json::array())));
+                const auto positive_mz = json_array_value(t.value("fragments_mz_pos", Json::array()));
+                const auto positive_int = json_array_value(t.value("fragments_intensity_pos", Json::array()));
+                const auto negative_mz = json_array_value(t.value("fragments_mz_neg", Json::array()));
+                const auto negative_int = json_array_value(t.value("fragments_intensity_neg", Json::array()));
                 for (const auto &v : positive_mz) if (v.is_number()) q.fragments_mz_pos.push_back(v.get<double>());
                 for (const auto &v : positive_int) if (v.is_number()) q.fragments_intensity_pos.push_back(v.get<double>());
                 for (const auto &v : negative_mz) if (v.is_number()) q.fragments_mz_neg.push_back(v.get<double>());
@@ -967,80 +942,13 @@ namespace streamfind::mass_spec::nta::utils::detail
             return r.ms2_size > 0 && !r.ms2_mz.empty() && !r.ms2_intensity.empty();
         }
 
-        // Non-finite doubles are stored as SQL NULL so DuckDB accepts them; loading maps
-        // NULL back to NaN to preserve the R NA "disabled" semantics of the filter steps.
-        // ---------------------------------------------------------------------------
-        // Batched Appender persistence helpers.
-        //
-        // Each row is a vector of optional strings aligned to `*_columns()`. A cell is
-        // SQL NULL when `std::nullopt`, otherwise the already-stringified scalar. The
-        // core `Project::append_rows` reflects the DuckDB column types and appends each
-        // cell with the matching typed duckdb_append_* call, so numbers stay numeric.
-        // The column lists omit `created_at`: it is left to the table DEFAULT so the
-        // persisted `created_at` stays CURRENT_TIMESTAMP exactly as before.
-        // ---------------------------------------------------------------------------
         std::optional<std::string> str_cell(const std::string &v) { return v; }
         std::optional<std::string> inum_cell(int v) { return std::to_string(v); }
-        // Feature numeric values remain present, including non-finite values.
-        std::optional<std::string> fnum_cell(double v) { return std::to_string(v); }
-        // Mirror `dn()` used by suspects/internal standards: non-finite becomes NULL.
         std::optional<std::string> dnum_cell(double v)
         {
             return std::isfinite(v) ? std::optional<std::string>(std::to_string(v)) : std::nullopt;
         }
         std::optional<std::string> bool_cell(bool v) { return v ? "true" : "false"; }
-
-        const std::vector<std::string> &features_columns()
-        {
-            static const std::vector<std::string> cols = {
-                "analysis", "feature", "feature_component", "feature_group", "adduct",
-                "rt", "mz", "mass", "intensity", "noise", "sn", "area", "trace_count",
-                "rtmin", "rtmax", "width", "mzmin", "mzmax", "ppm", "fwhm_rt", "fwhm_mz",
-                "gaussian_A", "gaussian_mu", "gaussian_sigma", "gaussian_r2", "jaggedness", "sharpness", "asymmetry",
-                "modality", "plates", "polarity", "filtered", "filter", "filled", "correction",
-                "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed",
-                "ms1_size", "ms1_mz", "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity",
-                "annotation_category", "annotation_type", "annotation_parent_feature", "annotation_element",
-                "annotation_mass_error_da", "annotation_mass_error_ppm", "annotation_rt_error",
-                "annotation_rel_intensity", "annotation_expected_rel_intensity_min", "annotation_expected_rel_intensity_max", "annotation_score",
-                "annotation_estimated_carbon_count", "annotation_mass_to_carbon", "annotation_mass_defect_to_carbon", "annotation_estimated_formula",
-                "annotation_fluorine_to_carbon", "annotation_hydrogen_to_fluorine", "annotation_fluorine_mass_percent", "annotation_fluorination_score",
-                "annotation_chlorine_to_carbon", "annotation_hydrogen_to_chlorine", "annotation_chlorine_mass_percent",
-                "annotation_bromine_to_carbon", "annotation_hydrogen_to_bromine", "annotation_bromine_mass_percent",
-                "annotation_iodine_to_carbon", "annotation_hydrogen_to_iodine", "annotation_iodine_mass_percent", "annotation_halogenation_score",
-                "component_size", "component_rt_center", "component_rt_spread", "component_density",
-                "component_mean_correlation", "component_best_partner", "component_max_correlation",
-                "component_mean_correlation_to_component", "component_membership_score", "component_is_core", "component_bridge_flag"};
-            return cols;
-        }
-
-        std::vector<std::optional<std::string>> feature_cells(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &r)
-        {
-            return {
-                str_cell(r.analysis), str_cell(r.feature), str_cell(r.feature_component), str_cell(r.feature_group), str_cell(r.adduct),
-                fnum_cell(r.rt), fnum_cell(r.mz), fnum_cell(r.mass), fnum_cell(r.intensity), fnum_cell(r.noise), fnum_cell(r.sn), fnum_cell(r.area),
-                // Preserve the existing trace_count binding used by the table contract.
-                inum_cell(r.eic_size),
-                fnum_cell(r.rtmin), fnum_cell(r.rtmax), fnum_cell(r.width), fnum_cell(r.mzmin), fnum_cell(r.mzmax), fnum_cell(r.ppm),
-                fnum_cell(r.fwhm_rt), fnum_cell(r.fwhm_mz), fnum_cell(r.gaussian_A), fnum_cell(r.gaussian_mu), fnum_cell(r.gaussian_sigma), fnum_cell(r.gaussian_r2),
-                fnum_cell(r.jaggedness), fnum_cell(r.sharpness), fnum_cell(r.asymmetry),
-                inum_cell(r.modality), fnum_cell(r.plates), inum_cell(r.polarity),
-                bool_cell(r.filtered), str_cell(r.filter), bool_cell(r.filled), fnum_cell(r.correction),
-                inum_cell(r.eic_size), str_cell(r.eic_rt), str_cell(r.eic_mz), str_cell(r.eic_intensity), str_cell(r.eic_baseline), str_cell(r.eic_smoothed),
-                inum_cell(r.ms1_size), str_cell(r.ms1_mz), str_cell(r.ms1_intensity), inum_cell(r.ms2_size), str_cell(r.ms2_mz), str_cell(r.ms2_intensity),
-                str_cell(r.annotation_category), str_cell(r.annotation_type), str_cell(r.annotation_parent_feature), str_cell(r.annotation_element),
-                fnum_cell(r.annotation_mass_error_da), fnum_cell(r.annotation_mass_error_ppm), fnum_cell(r.annotation_rt_error),
-                fnum_cell(r.annotation_rel_intensity), fnum_cell(r.annotation_expected_rel_intensity_min), fnum_cell(r.annotation_expected_rel_intensity_max), fnum_cell(r.annotation_score),
-                fnum_cell(r.annotation_estimated_carbon_count), fnum_cell(r.annotation_mass_to_carbon), fnum_cell(r.annotation_mass_defect_to_carbon), str_cell(r.annotation_estimated_formula),
-                fnum_cell(r.annotation_fluorine_to_carbon), fnum_cell(r.annotation_hydrogen_to_fluorine), fnum_cell(r.annotation_fluorine_mass_percent), fnum_cell(r.annotation_fluorination_score),
-                fnum_cell(r.annotation_chlorine_to_carbon), fnum_cell(r.annotation_hydrogen_to_chlorine), fnum_cell(r.annotation_chlorine_mass_percent),
-                fnum_cell(r.annotation_bromine_to_carbon), fnum_cell(r.annotation_hydrogen_to_bromine), fnum_cell(r.annotation_bromine_mass_percent),
-                fnum_cell(r.annotation_iodine_to_carbon), fnum_cell(r.annotation_hydrogen_to_iodine), fnum_cell(r.annotation_iodine_mass_percent), fnum_cell(r.annotation_halogenation_score),
-                inum_cell(r.component_size), fnum_cell(r.component_rt_center), fnum_cell(r.component_rt_spread), fnum_cell(r.component_density),
-                fnum_cell(r.component_mean_correlation), str_cell(r.component_best_partner), fnum_cell(r.component_max_correlation),
-                fnum_cell(r.component_mean_correlation_to_component), fnum_cell(r.component_membership_score),
-                bool_cell(r.component_is_core), bool_cell(r.component_bridge_flag)};
-        }
 
         const std::vector<std::string> &suspects_columns()
         {
@@ -1055,40 +963,21 @@ namespace streamfind::mass_spec::nta::utils::detail
             return cols;
         }
 
-        std::vector<std::optional<std::string>> suspect_cells(const ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW &r)
+        std::vector<std::string> suspects_types()
         {
-            return {
-                str_cell(r.analysis), std::nullopt, str_cell(r.feature), str_cell(r.feature_group), std::nullopt, std::nullopt,
-                inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
-                dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
-                dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
-                str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey),
-                dnum_cell(r.xLogP), inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity),
-                str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
-                std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                std::nullopt, std::nullopt, std::nullopt,
-                inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
-                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match)};
+            std::vector<std::string> types = {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"};
+            const auto &columns = suspects_columns();
+            for (const auto *name : {"db_ms2_mz", "db_ms2_intensity", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_mz", "ms1_intensity", "ms2_mz", "ms2_intensity"})
+            {
+                const auto found = std::find(columns.begin(), columns.end(), name);
+                if (found != columns.end()) types[static_cast<std::size_t>(found - columns.begin())] = "array";
+            }
+            return types;
         }
 
         const std::vector<std::string> &internal_standards_columns()
         {
             return suspects_columns();
-        }
-
-        std::vector<std::optional<std::string>> internal_standard_cells(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
-        {
-            return {
-                str_cell(r.analysis), str_cell(r.replicate), str_cell(r.feature), str_cell(r.feature_group), str_cell(r.feature_component), str_cell(r.adduct),
-                inum_cell(r.candidate_rank), str_cell(r.name), inum_cell(r.polarity),
-                dnum_cell(r.db_mass), dnum_cell(r.exp_mass), dnum_cell(r.error_mass), dnum_cell(r.db_rt), dnum_cell(r.exp_rt), dnum_cell(r.error_rt),
-                dnum_cell(r.intensity), dnum_cell(r.area), inum_cell(r.id_level), dnum_cell(r.score), inum_cell(r.shared_fragments), dnum_cell(r.cosine_similarity),
-                str_cell(r.formula), str_cell(r.SMILES), str_cell(r.InChI), str_cell(r.InChIKey), dnum_cell(r.xLogP),
-                inum_cell(r.db_ms2_size), str_cell(r.db_ms2_mz), str_cell(r.db_ms2_intensity), str_cell(r.db_ms2_formula), str_cell(r.db_ms2_smiles),
-                inum_cell(r.eic_size), str_cell(r.eic_rt), str_cell(r.eic_mz), str_cell(r.eic_intensity), str_cell(r.eic_baseline), str_cell(r.eic_smoothed),
-                inum_cell(r.ms1_size), str_cell(r.ms1_mz), str_cell(r.ms1_intensity),
-                inum_cell(r.exp_ms2_size), str_cell(r.exp_ms2_mz), str_cell(r.exp_ms2_intensity),
-                inum_cell(r.isotope_theoretical_peaks), inum_cell(r.isotope_matched_peaks), dnum_cell(r.isotope_similarity), bool_cell(r.isotope_match)};
         }
 
         void emit_features(streamfind::sdk::PluginProjectAccess &access, ::streamfind::mass_spec::nta::NtaProjectData &data)
@@ -1103,7 +992,7 @@ namespace streamfind::mass_spec::nta::utils::detail
 
         Json suspect_json(const ::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW &r)
         {
-            return Json{{"analysis",r.analysis},{"replicate", ""},{"feature",r.feature},{"feature_group",r.feature_group},{"feature_component", ""},{"adduct", ""},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"eic_size",0},{"eic_rt", ""},{"eic_mz", ""},{"eic_intensity", ""},{"eic_baseline", ""},{"eic_smoothed", ""},{"ms1_size",0},{"ms1_mz", ""},{"ms1_intensity", ""},{"ms2_size",r.exp_ms2_size},{"ms2_mz",r.exp_ms2_mz},{"ms2_intensity",r.exp_ms2_intensity},{"isotope_theoretical_peaks",r.isotope_theoretical_peaks},{"isotope_matched_peaks",r.isotope_matched_peaks},{"isotope_similarity",r.isotope_similarity},{"isotope_match",r.isotope_match}};
+            return Json{{"analysis",r.analysis},{"replicate", ""},{"feature",r.feature},{"feature_group",r.feature_group},{"feature_component", ""},{"adduct", ""},{"candidate_rank",r.candidate_rank},{"name",r.name},{"polarity",r.polarity},{"db_mass",r.db_mass},{"exp_mass",r.exp_mass},{"error_mass",r.error_mass},{"db_rt",r.db_rt},{"exp_rt",r.exp_rt},{"error_rt",r.error_rt},{"intensity",r.intensity},{"area",r.area},{"id_level",r.id_level},{"score",r.score},{"shared_fragments",r.shared_fragments},{"cosine_similarity",r.cosine_similarity},{"formula",r.formula},{"SMILES",r.SMILES},{"InChI",r.InChI},{"InChIKey",r.InChIKey},{"xLogP",r.xLogP},{"db_ms2_size",r.db_ms2_size},{"db_ms2_mz",r.db_ms2_mz},{"db_ms2_intensity",r.db_ms2_intensity},{"db_ms2_formula",r.db_ms2_formula},{"db_ms2_smiles",r.db_ms2_smiles},{"eic_size",0},{"eic_rt", Json::array()},{"eic_mz", Json::array()},{"eic_intensity", Json::array()},{"eic_baseline", Json::array()},{"eic_smoothed", Json::array()},{"ms1_size",0},{"ms1_mz", Json::array()},{"ms1_intensity", Json::array()},{"ms2_size",r.exp_ms2_size},{"ms2_mz",r.exp_ms2_mz},{"ms2_intensity",r.exp_ms2_intensity},{"isotope_theoretical_peaks",r.isotope_theoretical_peaks},{"isotope_matched_peaks",r.isotope_matched_peaks},{"isotope_similarity",r.isotope_similarity},{"isotope_match",r.isotope_match}};
         }
 
         void enrich_suspect_with_feature(Json &suspect, const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &feature)
@@ -1148,7 +1037,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     rows.push_back(std::move(row));
                 }
             }
-            access.emit_table_rows("suspectsTable", suspects_columns(), {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
+            access.emit_table_rows("suspectsTable", suspects_columns(), suspects_types(), rows);
         }
 
         Json internal_standard_json(const ::streamfind::mass_spec::nta::api::NTA_INTERNAL_STANDARD_ROW &r)
@@ -1196,7 +1085,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     rows.push_back(std::move(row));
                 }
             }
-            access.emit_table_rows("internalStandardsTable", internal_standards_columns(), {"string","string","string","string","string","string","integer","string","integer","real","real","real","real","real","real","real","real","integer","real","integer","real","string","string","string","string","real","integer","string","string","string","string","integer","string","string","string","string","string","integer","string","string","integer","string","string","integer","integer","real","boolean"}, rows);
+            access.emit_table_rows("internalStandardsTable", internal_standards_columns(), suspects_types(), rows);
         }
 
         // NULL-tolerant accessors (query_json stringifies all column values).
@@ -1204,6 +1093,12 @@ namespace streamfind::mass_spec::nta::utils::detail
         {
             auto it = row.find(col);
             return (it != row.end() && !it->is_null()) ? it->get<std::string>() : std::string();
+        }
+        static std::vector<float> col_float_array(const Json &row, const char *col)
+        {
+            const auto it = row.find(col);
+            if (it == row.end() || it->is_null()) return {};
+            return float_array_from_json(*it, col);
         }
         static double col_d(const Json &row, const char *col)
         {
@@ -1252,13 +1147,13 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.InChIKey = col_s(row, "InChIKey");
                 r.xLogP = col_d(row, "xLogP");
                 r.db_ms2_size = col_i(row, "db_ms2_size");
-                r.db_ms2_mz = col_s(row, "db_ms2_mz");
-                r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
+                r.db_ms2_mz = col_float_array(row, "db_ms2_mz");
+                r.db_ms2_intensity = col_float_array(row, "db_ms2_intensity");
                 r.db_ms2_formula = col_s(row, "db_ms2_formula");
                 r.db_ms2_smiles = col_s(row, "db_ms2_smiles");
                 r.exp_ms2_size = col_i(row, "ms2_size");
-                r.exp_ms2_mz = col_s(row, "ms2_mz");
-                r.exp_ms2_intensity = col_s(row, "ms2_intensity");
+                r.exp_ms2_mz = col_float_array(row, "ms2_mz");
+                r.exp_ms2_intensity = col_float_array(row, "ms2_intensity");
                 r.isotope_theoretical_peaks = col_i(row, "isotope_theoretical_peaks");
                 r.isotope_matched_peaks = col_i(row, "isotope_matched_peaks");
                 r.isotope_similarity = col_d(row, "isotope_similarity");
@@ -1308,22 +1203,22 @@ namespace streamfind::mass_spec::nta::utils::detail
                 r.InChIKey = col_s(row, "InChIKey");
                 r.xLogP = col_d(row, "xLogP");
                 r.db_ms2_size = col_i(row, "db_ms2_size");
-                r.db_ms2_mz = col_s(row, "db_ms2_mz");
-                r.db_ms2_intensity = col_s(row, "db_ms2_intensity");
+                r.db_ms2_mz = col_float_array(row, "db_ms2_mz");
+                r.db_ms2_intensity = col_float_array(row, "db_ms2_intensity");
                 r.db_ms2_formula = col_s(row, "db_ms2_formula");
                 r.db_ms2_smiles = col_s(row, "db_ms2_smiles");
                 r.eic_size = col_i(row, "eic_size");
-                r.eic_rt = col_s(row, "eic_rt");
-                r.eic_mz = col_s(row, "eic_mz");
-                r.eic_intensity = col_s(row, "eic_intensity");
-                r.eic_baseline = col_s(row, "eic_baseline");
-                r.eic_smoothed = col_s(row, "eic_smoothed");
+                r.eic_rt = col_float_array(row, "eic_rt");
+                r.eic_mz = col_float_array(row, "eic_mz");
+                r.eic_intensity = col_float_array(row, "eic_intensity");
+                r.eic_baseline = col_float_array(row, "eic_baseline");
+                r.eic_smoothed = col_float_array(row, "eic_smoothed");
                 r.ms1_size = col_i(row, "ms1_size");
-                r.ms1_mz = col_s(row, "ms1_mz");
-                r.ms1_intensity = col_s(row, "ms1_intensity");
+                r.ms1_mz = col_float_array(row, "ms1_mz");
+                r.ms1_intensity = col_float_array(row, "ms1_intensity");
                 r.exp_ms2_size = col_i(row, "ms2_size");
-                r.exp_ms2_mz = col_s(row, "ms2_mz");
-                r.exp_ms2_intensity = col_s(row, "ms2_intensity");
+                r.exp_ms2_mz = col_float_array(row, "ms2_mz");
+                r.exp_ms2_intensity = col_float_array(row, "ms2_intensity");
                 r.isotope_theoretical_peaks = col_i(row, "isotope_theoretical_peaks");
                 r.isotope_matched_peaks = col_i(row, "isotope_matched_peaks");
                 r.isotope_similarity = col_d(row, "isotope_similarity");
@@ -1333,10 +1228,26 @@ namespace streamfind::mass_spec::nta::utils::detail
             if (parameters.contains("internal_standards"))
             {
                 const auto &rows = parameters.at("internal_standards");
-                if (!rows.is_array())
-                    throw Error(ErrorCode::WorkflowValidation, "internal_standards must be an array of table rows");
-                for (const auto &row : rows)
-                    append_row(row);
+                if (rows.is_object() && rows.contains("$result_ref")) {
+                    const auto result_id = rows.at("$result_ref").get<std::string>();
+                    if (result_id.empty()) throw Error(ErrorCode::WorkflowValidation,
+                        "internal_standards result reference is empty");
+                    const std::vector<std::string> columns = {
+                        "analysis", "replicate", "feature", "feature_group", "feature_component", "adduct",
+                        "candidate_rank", "name", "polarity", "db_mass", "exp_mass", "error_mass", "db_rt",
+                        "exp_rt", "error_rt", "intensity", "area", "id_level", "score", "shared_fragments",
+                        "cosine_similarity", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "db_ms2_size",
+                        "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles", "eic_size", "eic_rt",
+                        "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz",
+                        "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity", "isotope_theoretical_peaks",
+                        "isotope_matched_peaks", "isotope_similarity", "isotope_match"};
+                    access.read_batches("result:" + result_id, columns, "analysis",
+                        [&](const Json &batch) { for (const auto &row : batch) append_row(row); });
+                } else {
+                    if (!rows.is_array())
+                        throw Error(ErrorCode::WorkflowValidation, "internal_standards must be rows or a table result reference");
+                    for (const auto &row : rows) append_row(row);
+                }
                 return;
             }
             for (const auto &row : access.query("SELECT analysis,replicate,feature,feature_group,feature_component,adduct,candidate_rank,name,polarity,db_mass,exp_mass,error_mass,db_rt,exp_rt,error_rt,intensity,area,id_level,score,shared_fragments,cosine_similarity,formula,SMILES,InChI,InChIKey,xLogP,db_ms2_size,db_ms2_mz,db_ms2_intensity,db_ms2_formula,db_ms2_smiles,eic_size,eic_rt,eic_mz,eic_intensity,eic_baseline,eic_smoothed,ms1_size,ms1_mz,ms1_intensity,ms2_size,ms2_mz,ms2_intensity,isotope_theoretical_peaks,isotope_matched_peaks,isotope_similarity,isotope_match FROM " + input_table(parameters, "internalStandardsTable") + " ORDER BY analysis"))
@@ -1348,10 +1259,30 @@ namespace streamfind::mass_spec::nta::utils::detail
         // formula/mass/SMILES/InChI/InChIKey/xLogP) into model rows. Mirrors the R
         // wrapper's required-column checks (16 mandatory columns, at least one product
         // structure identifier); absent numbers become NaN like R NA values.
-        std::vector<::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> parse_transformation_products(const Json &parameters)
+        std::vector<::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> parse_transformation_products(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
         {
             std::vector<::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> out;
             const auto rows = parameters.value("transformation_products", Json::array());
+            if (rows.is_object() && rows.contains("$result_ref")) {
+                const auto result_id = rows.at("$result_ref").get<std::string>();
+                if (result_id.empty()) throw Error(ErrorCode::InvalidArgument,
+                    "transformation_products result reference is empty");
+                const std::vector<std::string> columns = {
+                    "name", "transformation", "precursor_name", "precursor_formula", "precursor_mass",
+                    "precursor_SMILES", "precursor_InChI", "precursor_InChIKey", "precursor_xLogP",
+                    "main_precursor_name", "main_precursor_formula", "main_precursor_mass",
+                    "main_precursor_SMILES", "main_precursor_InChI", "main_precursor_InChIKey",
+                    "main_precursor_xLogP", "SMILES", "InChI", "InChIKey"};
+                access.read_batches("result:" + result_id, columns, "name",
+                    [&](const Json &batch) {
+                        auto batch_parameters = parameters;
+                        batch_parameters["transformation_products"] = batch;
+                        auto parsed = parse_transformation_products(access, batch_parameters);
+                        out.insert(out.end(), std::make_move_iterator(parsed.begin()),
+                                   std::make_move_iterator(parsed.end()));
+                    });
+                return out;
+            }
             if (!rows.is_array())
                 throw Error(ErrorCode::InvalidArgument, "transformation_products must be an array");
             if (rows.empty())
@@ -1519,8 +1450,8 @@ namespace streamfind::mass_spec::nta::utils::detail
                 s.InChIKey = row.InChIKey;
                 s.xLogP = row.xLogP;
                 s.db_ms2_size = 0;
-                s.db_ms2_mz = "";
-                s.db_ms2_intensity = "";
+                s.db_ms2_mz.clear();
+                s.db_ms2_intensity.clear();
                 s.db_ms2_formula = "";
                 s.db_ms2_smiles = "";
                 s.exp_ms2_size = rep_suspect.exp_ms2_size;

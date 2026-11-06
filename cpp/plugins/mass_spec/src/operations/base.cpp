@@ -745,7 +745,7 @@ namespace streamfind::mass_spec::base
     {
         const auto &effective_parameters = parameters;
         const auto analyses = selected_analysis_rows(access, effective_parameters);
-        const auto targets = base::utils::normalize_targets(effective_parameters);
+        const auto targets = base::utils::normalize_targets(access, effective_parameters);
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();
         const bool eic_logging = parameters.value("_eic_logging", false);
@@ -901,7 +901,7 @@ namespace streamfind::mass_spec::base
         copy["_suppress_raw_table"] = true;
         copy["_eic_logging"] = true;
         const auto analyses = selected_analysis_rows(access, parameters);
-        const auto targets = base::utils::normalize_targets(parameters);
+        const auto targets = base::utils::normalize_targets(access, parameters);
         access.report_progress(0.0, "EIC: preparing " + std::to_string(analyses.size()) +
             " analyses and " + std::to_string(targets.size()) + " targets.");
         const auto result = base::utils::summarize_eic(get_raw_spectra(access, copy));

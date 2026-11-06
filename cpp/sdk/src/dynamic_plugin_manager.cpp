@@ -227,6 +227,7 @@ Json invoke_dynamic(
             }
         }
         context.operation_instance = workflow_instance;
+        context.data_proxy_operation_id = capability_id;
         context.data_proxy_session_id = execution_context.data_proxy_session_id();
         context.data_proxy_run_id = execution_context.data_proxy_run_id();
         context.cancelled = &cancelled;
@@ -241,6 +242,9 @@ Json invoke_dynamic(
         };
         context.data_proxy_request = [&execution_context](const data_proxy::Envelope &request) {
             return execution_context.request_data(request);
+        };
+        context.receive_result_input_handle = [&execution_context] {
+            return execution_context.receive_result_input_handle();
         };
         context.output_sink = operation_output_sink;
         if (manifest) {
@@ -351,8 +355,8 @@ Json invoke_dynamic(
                 if (operation_output_sink) {
                     const auto allocation = operation_output_sink->begin(Json{
                         {"contract_id", contract}, {"kind", "table"},
-                        {"format", "arrow-ipc-batches"}, {"extension", "arrow"},
-                        {"media_type", "application/vnd.apache.arrow.stream"}, {"schema", columns},
+                        {"format", "arrow-ipc-file"}, {"extension", "arrow"},
+                        {"media_type", "application/vnd.apache.arrow.file"}, {"schema", columns},
                         {"producer_operation", capability_id},
                         {"producer_instance", producer_instance},
                         {"workflow_revision", workflow_revision},
@@ -465,6 +469,46 @@ Json invoke_dynamic(
                 }
             }
         };
+        if (request.contains("parameters") && request.at("parameters").is_object()) {
+            std::uint64_t parameter_request_sequence = 0;
+            for (auto &[parameter_name, value] : request["parameters"].items()) {
+                if (!value.is_object() || value.size() != 1 || !value.contains("$result_ref")) continue;
+                const auto result_id = value.at("$result_ref").get<std::string>();
+                if (result_id.empty()) throw Error(ErrorCode::MethodExecution,
+                    "table parameter has an empty result reference: " + parameter_name);
+                const auto call_service = [&](std::string method, Json payload) {
+                    payload["method"] = method;
+                    const auto response_json = context.data_proxy_request(data_proxy::request(
+                        "parameter-result-" + result_id + "-" + method + "-" +
+                            std::to_string(parameter_request_sequence++),
+                        context.data_proxy_session_id, context.data_proxy_run_id,
+                        context.data_proxy_operation_id, producer_instance, {}, std::move(payload)));
+                    const auto envelope = data_proxy::Envelope::from_json(response_json);
+                    if (!envelope.error_code.empty())
+                        throw Error(ErrorCode::MethodExecution,
+                            envelope.error_code + ": " + envelope.error_message);
+                    return envelope.payload;
+                };
+                const auto descriptor = call_service("describe_result", {{"result_id", result_id}});
+                if (descriptor.value("kind", std::string{}) != "table" ||
+                    descriptor.value("format", std::string{}) != "arrow-ipc-file")
+                    throw Error(ErrorCode::MethodExecution,
+                        "table parameter result is not a published Arrow table: " + result_id);
+                const auto schema = descriptor.value("schema", Json::array());
+                if (!schema.is_array())
+                    throw Error(ErrorCode::MethodExecution, "table parameter result has an invalid schema");
+                const auto physical_table = "result:" + result_id;
+                for (const auto &column : schema) {
+                    const auto name = column.value("name", std::string{});
+                    if (name.empty()) throw Error(ErrorCode::MethodExecution,
+                        "table parameter result schema contains an empty column name");
+                    const auto type = column.value("type", std::string{"string"});
+                    context.readable_columns[physical_table].insert(name);
+                    context.column_types[physical_table][name] = detail::dynamic_column_type(type);
+                }
+                context.allowed_tables.push_back(physical_table);
+            }
+        }
         streamfind_plugin_buffer buffer{};
         const auto text = request.dump();
         std::lock_guard log_lock(detail::operation_log_stream_mutex);
@@ -502,8 +546,8 @@ Json invoke_dynamic(
                 const auto manifest = operation_output_sink->finish(
                     handle,
                     Json{{"contract_id", contract}, {"kind", "table"},
-                         {"format", "arrow-ipc-batches"},
-                         {"media_type", "application/vnd.apache.arrow.stream"},
+                         {"format", "arrow-ipc-file"},
+                         {"media_type", "application/vnd.apache.arrow.file"},
                          {"producer_operation", capability_id},
                          {"producer_instance", producer_instance},
                          {"workflow_revision", workflow_revision},
@@ -519,7 +563,7 @@ Json invoke_dynamic(
                     {"result_id", result_id}, {"payload_ref", "result:" + result_id},
                     {"physical_table", "result:" + result_id},
                     {"contract_id", contract}, {"representation", "table"},
-                    {"format", "arrow-ipc-batches"}, {"state", "published"}};
+                    {"format", "arrow-ipc-file"}, {"state", "published"}};
             }
         }
         if (!emitted_results.empty())

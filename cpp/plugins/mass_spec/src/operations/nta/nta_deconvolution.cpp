@@ -2154,25 +2154,19 @@ namespace streamfind::mass_spec::nta::deconvolution
         feature.correction = 1.0f;
 
         feature.eic_size = static_cast<int>(peak_rt.size());
-        std::string rt_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_rt, 4);
-        std::string mz_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_mz, 4);
-        std::string intensity_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_intensity, 4);
-        std::string baseline_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_baseline, 4);
-        std::string smoothed_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_smoothed, 4);
-
-        feature.eic_rt = ::mass_spec::reader::utils::encode_base64(rt_encoded);
-        feature.eic_mz = ::mass_spec::reader::utils::encode_base64(mz_encoded);
-        feature.eic_intensity = ::mass_spec::reader::utils::encode_base64(intensity_encoded);
-        feature.eic_baseline = ::mass_spec::reader::utils::encode_base64(baseline_encoded);
-        feature.eic_smoothed = ::mass_spec::reader::utils::encode_base64(smoothed_encoded);
+        feature.eic_rt = std::move(peak_rt);
+        feature.eic_mz = std::move(peak_mz);
+        feature.eic_intensity = std::move(peak_intensity);
+        feature.eic_baseline = std::move(peak_baseline);
+        feature.eic_smoothed = std::move(peak_smoothed);
 
         // Set MS1 and MS2 as empty for now
         feature.ms1_size = 0;
-        feature.ms1_mz = "";
-        feature.ms1_intensity = "";
+        feature.ms1_mz.clear();
+        feature.ms1_intensity.clear();
         feature.ms2_size = 0;
-        feature.ms2_mz = "";
-        feature.ms2_intensity = "";
+        feature.ms2_mz.clear();
+        feature.ms2_intensity.clear();
 
         if (cluster_matches_debug_mz)
         {
@@ -2535,12 +2529,22 @@ namespace streamfind::mass_spec::nta::deconvolution
     input.buffers.resize(input.names.size());
 
     std::vector<float> mins, maxs;
-    for (const auto &row : parameters.value("rt_windows", Json::array()))
-    {
-      if (!row.is_object() || !row.contains("rtmin") || !row.contains("rtmax"))
-        throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
-      mins.push_back(row.at("rtmin").get<float>());
-      maxs.push_back(row.at("rtmax").get<float>());
+    const auto append_rt_windows = [&](const Json &rows) {
+      for (const auto &row : rows) {
+        if (!row.is_object() || !row.contains("rtmin") || !row.contains("rtmax"))
+          throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
+        mins.push_back(row.at("rtmin").get<float>());
+        maxs.push_back(row.at("rtmax").get<float>());
+      }
+    };
+    const auto rt_windows = parameters.value("rt_windows", Json::array());
+    if (rt_windows.is_object() && rt_windows.contains("$result_ref")) {
+      const auto result_id = rt_windows.at("$result_ref").get<std::string>();
+      if (result_id.empty()) throw std::invalid_argument("rt_windows result reference is empty");
+      access.read_batches("result:" + result_id, {"rtmin", "rtmax"}, "rtmin", append_rt_windows);
+    } else {
+      if (!rt_windows.is_array()) throw std::invalid_argument("rt_windows must be an array or table result reference");
+      append_rt_windows(rt_windows);
     }
     const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
         ? parameters.at("debug_analysis").get<std::string>() : std::string{};

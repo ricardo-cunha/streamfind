@@ -1265,8 +1265,10 @@ function ProjectHub({
         workflow_metadata: workflowMetadata,
       });
       if (selectedDemo && mode === 'create') {
+        const initialDefinition = await client.workflowDefinition(project.session_id);
         const workflow = {
           ...selectedDemo.workflow,
+          definition_revision: initialDefinition.workflow.definition_revision,
           metadata: workflowMetadata as WorkflowDefinition['metadata'],
         };
         const validation = await client.validateWorkflow(project.session_id, workflow);

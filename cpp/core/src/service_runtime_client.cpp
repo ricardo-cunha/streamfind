@@ -400,6 +400,33 @@ data_proxy::Json run_operation(const ServiceProjectAttachment &attachment,
     return response.value("result", response);
 }
 
+data_proxy::Json start_operation(const ServiceProjectAttachment &attachment,
+                                 const std::string &operation_id,
+                                 const data_proxy::Json &parameters,
+                                 const std::string &operation_instance,
+                                 const data_proxy::Json &inputs) {
+    if (attachment.port == 0 || attachment.session_id.empty())
+        throw std::invalid_argument("service project attachment is incomplete");
+    if (operation_id.empty()) throw std::invalid_argument("operation_id is required");
+    const auto endpoint = detail::parse_endpoint(attachment.endpoint);
+    data_proxy::Json payload{{"parameters", parameters.is_object() ? parameters : data_proxy::Json::object()}};
+    if (!operation_instance.empty()) payload["operation_instance"] = operation_instance;
+    if (!inputs.is_null()) payload["inputs"] = inputs;
+    return detail::request(endpoint, "POST",
+                           "/projects/" + attachment.session_id + "/operations/" + operation_id + "/run",
+                           payload);
+}
+
+data_proxy::Json operation_snapshot(const ServiceProjectAttachment &attachment,
+                                    const std::string &operation_instance) {
+    if (attachment.port == 0 || attachment.session_id.empty())
+        throw std::invalid_argument("service project attachment is incomplete");
+    if (operation_instance.empty()) throw std::invalid_argument("operation_instance is required");
+    const auto endpoint = detail::parse_endpoint(attachment.endpoint);
+    return detail::request(endpoint, "GET",
+                           "/projects/" + attachment.session_id + "/operations/" + operation_instance + "/state");
+}
+
 data_proxy::Json validate_workflow(const ServiceProjectAttachment &attachment,
                                    const data_proxy::Json &workflow) {
     if (attachment.port == 0 || attachment.session_id.empty())

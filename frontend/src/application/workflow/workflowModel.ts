@@ -105,6 +105,7 @@ export function canvasWorkflow(
   capabilities: ServiceCapabilities,
   revision: number,
   metadata: Partial<WorkflowDefinition['metadata']> = {},
+  definitionRevision = revision,
 ): WorkflowDefinition {
   const operations: WorkflowOperationDefinition[] = nodes
     .filter((node) => node.capabilityId)
@@ -129,6 +130,7 @@ export function canvasWorkflow(
     workflow_id: 'workflow',
     name: 'Workflow',
     version: revision,
+    definition_revision: definitionRevision,
     metadata: {
       name: 'Untitled workflow',
       description: 'Describe the purpose of this workflow.',

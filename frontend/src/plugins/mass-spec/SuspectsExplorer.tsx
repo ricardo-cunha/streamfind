@@ -146,33 +146,9 @@ function IdentificationOverview({
   );
 }
 
-function decodeFloatArray(encoded: unknown, size: unknown): number[] {
-  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
-  if (encoded === null || encoded === undefined) return [];
-  const text = String(encoded).trim();
-  if (!text) return [];
-  if (text.startsWith('[')) {
-    try {
-      const values = JSON.parse(text);
-      return Array.isArray(values) ? values.map(Number).filter(Number.isFinite) : [];
-    } catch {
-      return [];
-    }
-  }
-  try {
-    const normalized = text.replaceAll('-', '+').replaceAll('_', '/');
-    const binary = atob(normalized);
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const expected = Number(size || 0);
-    const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
-    if (bytes.byteLength % precision !== 0) return [];
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return Array.from({ length: bytes.byteLength / precision }, (_, index) =>
-      precision === 8 ? view.getFloat64(index * precision, true) : view.getFloat32(index * precision, true),
-    );
-  } catch {
-    return [];
-  }
+function decodeFloatArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
 }
 
 type EvidenceTab = 'eic' | 'ms1' | 'ms2';
@@ -276,7 +252,7 @@ function EvidencePlots({
         <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
       ) : (
         <p className="sf-suspects-explorer-empty">
-          No encoded {tab.toUpperCase()} evidence is available for this suspect.
+          No {tab.toUpperCase()} evidence is available for this suspect.
         </p>
       )}
     </section>
@@ -443,8 +419,8 @@ function evidenceSpec(
   let xTitle = 'm/z';
   let yTitle = 'Intensity';
   if (tab === 'eic') {
-    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'eic_rt'), rawValue(row, 'eic_size'));
-    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'eic_intensity'), rawValue(row, 'eic_size'));
+    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'eic_rt'));
+    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'eic_intensity'));
     if (!x.length || !y.length) return null;
     xTitle = 'Retention time (s)';
     data = [
@@ -459,8 +435,8 @@ function evidenceSpec(
       },
     ];
   } else if (tab === 'ms1') {
-    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms1_mz'), rawValue(row, 'ms1_size'));
-    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms1_intensity'), rawValue(row, 'ms1_size'));
+    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms1_mz'));
+    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms1_intensity'));
     if (!x.length || !y.length) return null;
     data = [
       {
@@ -487,10 +463,10 @@ function evidenceSpec(
     }
     yTitle = 'Intensity (experimental + / isotope −)';
   } else {
-    const experimentalMz = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms2_mz'), rawValue(row, 'ms2_size'));
-    const experimentalIntensity = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms2_intensity'), rawValue(row, 'ms2_size'));
-    const databaseMz = decodeFloatArray(rawValue(row, 'db_ms2_mz'), rawValue(row, 'db_ms2_size'));
-    const databaseIntensity = decodeFloatArray(rawValue(row, 'db_ms2_intensity'), rawValue(row, 'db_ms2_size'));
+    const experimentalMz = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms2_mz'));
+    const experimentalIntensity = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms2_intensity'));
+    const databaseMz = decodeFloatArray(rawValue(row, 'db_ms2_mz'));
+    const databaseIntensity = decodeFloatArray(rawValue(row, 'db_ms2_intensity'));
     const experimentalCount = Math.min(experimentalMz.length, experimentalIntensity.length);
     const databaseCount = Math.min(databaseMz.length, databaseIntensity.length);
     if (!experimentalCount && !databaseCount) return null;
@@ -1413,7 +1389,7 @@ function getSuspectFilterColumns(
     const type = (column.type ?? '').toLowerCase();
     const values = rows
       .map((row) => row[column.name])
-      .filter((value): value is string => value !== null && value !== undefined);
+      .filter((value): value is string => typeof value === 'string');
     const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
     const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
     if (/int|decimal|numeric|real|double|float|hugeint/.test(type) || (!type && inferredNumeric)) {

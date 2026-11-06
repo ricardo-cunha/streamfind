@@ -17,9 +17,6 @@ namespace streamfind::mass_spec::nta
 {
   namespace componentization
   {
-    // Helper function to decode base64-encoded EIC data
-    std::vector<float> decode_eic_base64(const std::string &base64_str);
-
     // Helper function to calculate Pearson correlation between two aligned EIC vectors
     float calculate_pearson_correlation(
       const std::vector<float> &x,

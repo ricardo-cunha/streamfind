@@ -86,12 +86,14 @@ void add_value(std::map<std::string, int> &counts, std::string &selected, const 
     if (selected.empty() || count > counts[selected]) selected = value;
 }
 
-std::vector<double> decode(const std::string &encoded)
+std::vector<double> numeric_array(const Json &value)
 {
-    if (encoded.empty()) return {};
-    const auto raw = ::mass_spec::reader::utils::decode_base64(encoded);
-    const auto values = ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
-    return {values.begin(), values.end()};
+    if (!value.is_array()) return {};
+    std::vector<double> values;
+    values.reserve(value.size());
+    for (const auto &entry : value)
+        if (entry.is_number()) values.push_back(entry.get<double>());
+    return values;
 }
 
 std::vector<std::string> fragment_formulas(const std::string &encoded)
@@ -157,8 +159,8 @@ bool better_representative(const Json &candidate, const Json &current)
 void add_spectrum(Compound &compound, const Json &row, const int polarity)
 {
     const auto size = integer(row, "db_ms2_size");
-    const auto mz = decode(text(row, "db_ms2_mz"));
-    const auto intensity = decode(text(row, "db_ms2_intensity"));
+    const auto mz = numeric_array(row.value("db_ms2_mz", Json::array()));
+    const auto intensity = numeric_array(row.value("db_ms2_intensity", Json::array()));
     const auto formulas = fragment_formulas(text(row, "db_ms2_formula"));
     if (size <= 0 || mz.empty() || mz.size() != intensity.size() || formulas.size() != mz.size()) return;
     const auto count = std::min(static_cast<std::size_t>(size), mz.size());

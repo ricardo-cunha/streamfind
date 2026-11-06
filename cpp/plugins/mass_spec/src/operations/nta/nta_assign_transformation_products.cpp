@@ -105,14 +105,11 @@ namespace streamfind::mass_spec::nta::assign_transformation_products
     return tag;
   }
 
-  std::vector<double> decode_encoded(const std::string &encoded)
+  std::vector<double> to_double_array(const std::vector<float> &values)
   {
     std::vector<double> out;
-    if (encoded.empty()) return out;
-    const std::string raw = ::mass_spec::reader::utils::decode_base64(encoded);
-    const auto fv = ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
-    out.reserve(fv.size());
-    for (float f : fv) out.push_back(static_cast<double>(f));
+    out.reserve(values.size());
+    for (const float value : values) out.push_back(static_cast<double>(value));
     return out;
   }
 
@@ -396,13 +393,13 @@ namespace streamfind::mass_spec::nta::assign_transformation_products
                 for (std::size_t pi : it_ps->second)
                 {
                   if (suspects[pi].exp_ms2_size <= 0) continue;
-                  const auto mz1 = decode_encoded(suspects[pi].exp_ms2_mz);
-                  const auto in1 = decode_encoded(suspects[pi].exp_ms2_intensity);
+                  const auto mz1 = to_double_array(suspects[pi].exp_ms2_mz);
+                  const auto in1 = to_double_array(suspects[pi].exp_ms2_intensity);
                   for (std::size_t qi : it_qs->second)
                   {
                     if (suspects[qi].exp_ms2_size <= 0) continue;
-                    const auto mz2 = decode_encoded(suspects[qi].exp_ms2_mz);
-                    const auto in2 = decode_encoded(suspects[qi].exp_ms2_intensity);
+                    const auto mz2 = to_double_array(suspects[qi].exp_ms2_mz);
+                    const auto in2 = to_double_array(suspects[qi].exp_ms2_intensity);
                     const double value = cosine_similarity(mz1, in1, mz2, in2, mzrMS2);
                     if (!std::isnan(value) && (std::isnan(best_cos) || value > best_cos)) best_cos = value;
                   }
@@ -427,13 +424,13 @@ namespace streamfind::mass_spec::nta::assign_transformation_products
                 for (std::size_t pi : it_ps->second)
                 {
                   if (suspects[pi].exp_ms2_size <= 0) continue;
-                  const auto mz1 = decode_encoded(suspects[pi].exp_ms2_mz);
-                  const auto in1 = decode_encoded(suspects[pi].exp_ms2_intensity);
+                  const auto mz1 = to_double_array(suspects[pi].exp_ms2_mz);
+                  const auto in1 = to_double_array(suspects[pi].exp_ms2_intensity);
                   for (std::size_t mi : it_ms->second)
                   {
                     if (suspects[mi].exp_ms2_size <= 0) continue;
-                    const auto mz2 = decode_encoded(suspects[mi].exp_ms2_mz);
-                    const auto in2 = decode_encoded(suspects[mi].exp_ms2_intensity);
+                    const auto mz2 = to_double_array(suspects[mi].exp_ms2_mz);
+                    const auto in2 = to_double_array(suspects[mi].exp_ms2_intensity);
                     const double value = cosine_similarity(mz1, in1, mz2, in2, mzrMS2);
                     if (!std::isnan(value) && (std::isnan(best_cos) || value > best_cos)) best_cos = value;
                   }
@@ -548,7 +545,7 @@ using Json = nlohmann::json;
         // rows back into the suspect buffers, and persist through the suspects path.
         auto data = utils::detail::load_analysis_features(access, parameters);
         utils::detail::load_suspects(access, data, parameters);
-        const auto tp_rows = utils::detail::parse_transformation_products(parameters);
+        const auto tp_rows = utils::detail::parse_transformation_products(access, parameters);
 
         std::vector<::streamfind::mass_spec::nta::api::NTA_SUSPECT_ROW> suspects;
         for (const auto &buffer : data.suspect_buffers())

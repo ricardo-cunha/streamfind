@@ -406,7 +406,8 @@ void PluginHostAccess::emit_table_rows(
         auto &descriptor = columns[column];
         descriptor.name = column_names[column].data();
         descriptor.name_size = static_cast<uint32_t>(column_names[column].size());
-        descriptor.flags = 0;
+        descriptor.flags = column_types[column] == "array"
+            ? STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY : 0;
         descriptor.row_count = rows.size();
         descriptor.validity_bitmap = validity[column].data();
         if (column_types[column] == "integer") {

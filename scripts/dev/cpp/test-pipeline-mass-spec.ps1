@@ -1,17 +1,31 @@
 [CmdletBinding()]
 param(
     [switch]$SkipBuild,
-    [switch]$KeepProject
+    [switch]$KeepProject,
+    [switch]$PackagedBuild,
+    [string]$ProjectName = 'pipeline-mass-spec'
 )
 
 . (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $dataRoot = Get-StreamfindDataRoot $repoRoot
-$catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
-$executable = Get-BackendMcpExecutable $repoRoot
-$buildRoot = Join-Path $repoRoot 'tmp\build\windows\core'
+$catalogue = if ($PackagedBuild) {
+    Join-Path $repoRoot 'tmp\packaged_build\core\catalogue.duckdb'
+} else {
+    Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
+}
+$buildRoot = if ($PackagedBuild) {
+    Join-Path $repoRoot 'tmp\packaged_build\bin'
+} else {
+    Join-Path $repoRoot 'tmp\build\windows\core'
+}
+$executable = if ($PackagedBuild) {
+    Join-Path $buildRoot 'streamfind-mcp.exe'
+} else {
+    Get-BackendMcpExecutable $repoRoot
+}
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
-$database = Join-Path $repoRoot 'tmp\projects\pipeline-mass-spec.duckdb'
+$database = Join-Path $repoRoot "tmp\projects\$ProjectName.duckdb"
 $dataStore = [System.IO.Path]::ChangeExtension($database, '.data')
 $dataFiles = @(
     (Join-Path $dataRoot 'mass_spec\basic_tof\00_tof_s_is_pos_cent-r001.mzML'),
@@ -23,11 +37,15 @@ foreach ($path in $dataFiles) {
 }
 
 if (-not $SkipBuild) {
+    if ($PackagedBuild) { throw 'Packaged-build mode uses the existing package; pass -SkipBuild.' }
     cmake --build $buildRoot --target streamfind_mcp streamfind_service streamfind_worker -j 1
     if ($LASTEXITCODE -ne 0) { throw "Native build failed ($LASTEXITCODE)" }
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
+if ($PackagedBuild -and (Test-Path $database)) {
+    throw "Refusing to replace an existing packaged test project: $database"
+}
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataStore
 $logRoot = Join-Path $repoRoot 'tmp\logs'
@@ -70,6 +88,12 @@ try {
     }
     $workflowBody = $workflow | ConvertTo-Json -Depth 30
     Invoke-RestMethod -Uri "$endpoint/projects/$session/workflow" -Method Post -ContentType 'application/json' -Body $workflowBody | Out-Null
+    if ($KeepProject) {
+        $workflowExport = Join-Path (Split-Path $database -Parent) "$ProjectName.workflow.json"
+        @{ workflow = $workflow } | ConvertTo-Json -Depth 30 |
+            Set-Content -LiteralPath $workflowExport -Encoding utf8
+        Write-Host "Saved editable workflow JSON: $workflowExport"
+    }
     $validationBody = @{ workflow = $workflow } | ConvertTo-Json -Depth 30
     $validation = Invoke-RestMethod -Uri "$endpoint/projects/$session/workflow/validate" -Method Post -ContentType 'application/json' -Body $validationBody
     if (-not $validation.valid) { throw "Workflow validation failed: $($validation | ConvertTo-Json -Depth 20 -Compress)" }
@@ -93,11 +117,147 @@ try {
     $registryUri = "$endpoint/projects/$([uri]::EscapeDataString($session))/results"
     $registry = Invoke-RestMethod -Uri $registryUri -Method Get
     $results = @($registry.results)
+    Write-Host ("Published result inventory: " + (($results | ForEach-Object {
+        "$($_.producer_instance):$($_.contract_id):$($_.result_id):$($_.status)"
+    }) -join '; '))
     $terminal = @($results | Where-Object { $_.producer_instance -eq '4' -and $_.contract_id -eq 'featuresTable' })
     $intermediate = @($results | Where-Object { $_.producer_instance -in @('1', '2', '3') })
     if ($terminal.Count -ne 1) { throw "Expected one published featuresTable from operation 4, found $($terminal.Count)." }
-    if ($intermediate.Count -ne 0) { throw "Pipeline published intermediate results: $($intermediate | ConvertTo-Json -Depth 10 -Compress)" }
-    Write-Host ("Pipeline mode passed: one terminal featuresTable result, no intermediate published results. Result id: " + $terminal[0].result_id)
+    if ($intermediate.Count -eq 0) { throw 'Pipeline mode did not retain any intermediate results for inspection.' }
+    $publishedNodes = @($results | Select-Object -ExpandProperty producer_instance -Unique)
+    if (@($publishedNodes | Where-Object { $_ -in @('1', '2', '3', '4') }).Count -ne 4) {
+        throw "Pipeline mode did not retain results from every completed node: $($publishedNodes -join ', ')"
+    }
+    $manifestFiles = @(Get-ChildItem (Join-Path $dataStore 'results') -Filter 'manifest.json' -Recurse -File)
+    if ($manifestFiles.Count -ne $results.Count) {
+        throw "Pipeline result inventory has $($results.Count) entries but the result store has $($manifestFiles.Count) manifests."
+    }
+    $queryBody = @{
+        result_id = $terminal[0].result_id
+        mode = 'page'
+        offset = 0
+        limit = 25
+        columns = @('analysis', 'feature', 'rt', 'mz')
+    } | ConvertTo-Json -Depth 10
+    $queryTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    $page = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/query" `
+        -Method Post -ContentType 'application/json' -Body $queryBody
+    $queryTimer.Stop()
+    if (@($page.rows).Count -ne 25 -or $page.total_rows -ne $terminal[0].row_count) {
+        throw "Result page query returned an invalid slice: $($page | ConvertTo-Json -Depth 10 -Compress)"
+    }
+    Write-Host ("Terminal result page returned 25/$($page.total_rows) rows in $($queryTimer.ElapsedMilliseconds) ms.")
+
+    $filteredQuery = @{
+        result_id = $terminal[0].result_id
+        mode = 'page'
+        offset = 0
+        limit = 25
+        columns = @('analysis', 'feature', 'rt', 'mz')
+        filters = @(
+            @{ column = 'analysis'; operator = 'eq'; value = $page.rows[0].analysis }
+            @{ column = 'rt'; operator = 'gt'; value = 0 }
+        )
+    } | ConvertTo-Json -Depth 10
+    $filterTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    $filteredPage = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/query" `
+        -Method Post -ContentType 'application/json' -Body $filteredQuery
+    $filterTimer.Stop()
+    $filteredRows = @($filteredPage.rows)
+    if ($filteredRows.Count -ne 25 -or $filteredPage.total_rows -lt $filteredRows.Count -or
+        @($filteredRows | Where-Object { $_.analysis -ne $page.rows[0].analysis }).Count -ne 0 -or
+        @($filteredRows | Where-Object { [double]$_.rt -le 0 }).Count -ne 0) {
+        throw "Filtered result query returned an invalid page: $($filteredPage | ConvertTo-Json -Depth 10 -Compress)"
+    }
+    Write-Host ("Native string/numeric Arrow filters returned 25/$($filteredPage.total_rows) rows in $($filterTimer.ElapsedMilliseconds) ms.")
+
+    $sampleQuery = @{
+        result_id = $terminal[0].result_id
+        mode = 'sample'
+        limit = 1
+        columns = @('analysis', 'feature')
+    } | ConvertTo-Json -Depth 10
+    $sample = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/query" `
+        -Method Post -ContentType 'application/json' -Body $sampleQuery
+    if (@($sample.rows).Count -ne 1) { throw 'Navigation-index seed query did not return one feature row.' }
+    $sampleAnalysis = $sample.rows[0].analysis
+    $featureTraceBody = @{
+        result_id = $terminal[0].result_id
+        trace_type = 'eic'
+        limit = 1
+        filters = @(
+            @{ column = 'analysis'; operator = 'eq'; value = $sampleAnalysis }
+            @{ column = 'feature'; operator = 'eq'; value = $sample.rows[0].feature }
+        )
+    } | ConvertTo-Json -Depth 10
+    $traceTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    $featureTrace = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/trace" `
+        -Method Post -ContentType 'application/json' -Body $featureTraceBody
+    $traceTimer.Stop()
+    if (@($featureTrace.traces).Count -ne 1 -or
+        -not $featureTrace.traces[0].eic_rt -or -not $featureTrace.traces[0].eic_intensity -or
+        @($featureTrace.traces[0].eic_rt).Count -ne @($featureTrace.traces[0].eic_intensity).Count) {
+        throw "Single-feature EIC query returned invalid paired axes: $($featureTrace | ConvertTo-Json -Depth 8 -Compress)"
+    }
+    $warmTraceTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    for ($traceAttempt = 0; $traceAttempt -lt 5; $traceAttempt++) {
+        $warmTrace = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/trace" `
+            -Method Post -ContentType 'application/json' -Body $featureTraceBody
+        if (@($warmTrace.traces).Count -ne 1) { throw 'Warm single-feature EIC query returned an invalid result.' }
+    }
+    $warmTraceTimer.Stop()
+    Write-Host ("Single-feature EIC: cold " + $traceTimer.ElapsedMilliseconds + " ms; warm average " +
+        [math]::Round($warmTraceTimer.ElapsedMilliseconds / 5.0, 2) + " ms; points " +
+        @($featureTrace.traces[0].eic_rt).Count + ".")
+
+    # Restart the service to prove that the derived index is persisted and
+    # validated independently of the previous process memory cache.
+    if (-not $serviceProcess.HasExited) { $serviceProcess.Kill(); $serviceProcess.WaitForExit() }
+    $restartStdout = Join-Path $logRoot 'pipeline-mass-spec-service-restart.stdout.log'
+    $restartStderr = Join-Path $logRoot 'pipeline-mass-spec-service-restart.stderr.log'
+    $serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList '8791' -WorkingDirectory $buildRoot `
+        -WindowStyle Hidden -PassThru -RedirectStandardOutput $restartStdout -RedirectStandardError $restartStderr
+    Start-Sleep -Milliseconds 500
+    $reopenBody = @{ mode = 'open'; session_id = $session; database_path = $database } | ConvertTo-Json -Depth 10
+    Invoke-RestMethod -Uri "$endpoint/projects" -Method Post -ContentType 'application/json' -Body $reopenBody | Out-Null
+    $reopenedTrace = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/trace" `
+        -Method Post -ContentType 'application/json' -Body $featureTraceBody
+    if (@($reopenedTrace.traces).Count -ne 1 -or
+        @($reopenedTrace.traces[0].eic_rt).Count -ne @($reopenedTrace.traces[0].eic_intensity).Count) {
+        throw 'Selected EIC could not be reconstructed with paired axes after service restart.'
+    }
+    Write-Host ("Selected EIC was reconstructed after service restart with " +
+        @($reopenedTrace.traces[0].eic_rt).Count + " paired points.")
+    $indexedQuery = @{
+        result_id = $terminal[0].result_id
+        mode = 'page'
+        limit = 10
+        columns = @('analysis', 'feature', 'rt')
+        filters = @(@{ column = 'analysis'; operator = 'eq'; value = $sampleAnalysis })
+    } | ConvertTo-Json -Depth 10
+    $indexed = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/query" `
+        -Method Post -ContentType 'application/json' -Body $indexedQuery
+    if (@($indexed.rows).Count -eq 0 -or @($indexed.rows | Where-Object { $_.analysis -ne $sampleAnalysis }).Count -ne 0) {
+        throw "Persisted navigation index query failed after service restart: $($indexed | ConvertTo-Json -Depth 10 -Compress)"
+    }
+    Write-Host ("Persisted equality index returned $(@($indexed.rows).Count)/$($indexed.total_rows) rows after service restart.")
+    $rangeQuery = @{
+        result_id = $terminal[0].result_id
+        mode = 'page'
+        limit = 25
+        columns = @('analysis', 'feature', 'rt')
+        filters = @(@{ column = 'rt'; operator = 'between'; min = 1000; max = 1100 })
+    } | ConvertTo-Json -Depth 10
+    $rangePage = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/query" `
+        -Method Post -ContentType 'application/json' -Body $rangeQuery
+    if ($null -eq $rangePage.query_stats -or
+        @($rangePage.rows | Where-Object { [double]$_.rt -lt 1000 -or [double]$_.rt -gt 1100 }).Count -ne 0) {
+        throw "Persisted range statistics query returned invalid rows or omitted scan diagnostics: $($rangePage | ConvertTo-Json -Depth 10 -Compress)"
+    }
+    Write-Host ("Range query scanned " + $rangePage.query_stats.arrow_batches_scanned +
+        " and skipped " + $rangePage.query_stats.arrow_batches_skipped + " Arrow batches after service restart.")
+    Write-Host ("Pipeline mode retained results from all four nodes, including " +
+        "$($intermediate.Count) intermediate outputs. Terminal result id: " + $terminal[0].result_id)
 } finally {
     Stop-StreamfindMcp $process
     if ($null -ne $serviceProcess -and -not $serviceProcess.HasExited) {
@@ -107,5 +267,9 @@ try {
     if (-not $KeepProject) {
         Remove-Item -Force -ErrorAction SilentlyContinue $database
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataStore
+        Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path (Split-Path $database -Parent) "$ProjectName.workflow.json")
+    } else {
+        Write-Host "Kept editable test project: $database"
+        Write-Host "Result store: $dataStore"
     }
 }

@@ -68,7 +68,6 @@ using Json = nlohmann::json;
             std::unordered_map<std::string, std::vector<size_t>> spectra_by_feature;
             for (size_t k = 0; k < spectra.id.size(); ++k)
                 spectra_by_feature[spectra.id[k]].push_back(k);
-            std::vector<std::vector<std::optional<std::string>>> updates;
             size_t updated_for_analysis = 0;
             for (int j = 0; j < buffers[i].size(); ++j)
             {
@@ -94,14 +93,11 @@ using Json = nlohmann::json;
                 if (merged.mz.empty())
                     continue;
                 ft.ms1_size = static_cast<int>(merged.mz.size());
-                ft.ms1_mz = utils::detail::encode_float_array(merged.mz);
-                ft.ms1_intensity = utils::detail::encode_float_array(merged.intensity);
+                ft.ms1_mz = merged.mz;
+                ft.ms1_intensity = merged.intensity;
                 buffers[i].set_feature(j, ft);
-                updates.push_back({ft.analysis, ft.feature, std::to_string(ft.ms1_size),
-                                   ft.ms1_mz, ft.ms1_intensity});
                 ++updated_for_analysis;
             }
-            (void)updates;
             std::cerr << "[load_features_ms1] updated " << updated_for_analysis
                       << " features" << std::endl;
             access.report_progress(

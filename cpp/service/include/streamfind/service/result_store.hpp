@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace streamfind::service {
 
@@ -32,24 +33,34 @@ struct ResultLease {
     std::string result_id;
     std::string run_id;
     std::string format;
+    std::string owner_session_id;
+    std::string owner_operation_id;
+    std::string owner_worker_id;
     std::filesystem::path staging_directory;
     std::filesystem::path staging_payload;
     std::filesystem::path published_directory;
     std::filesystem::path published_payload;
+    std::shared_ptr<class ResultStagingHandle> writer;
 };
 
-namespace detail {
-/** Decode one canonical base64 payload chunk received over the proxy. */
-std::vector<unsigned char> decode_base64(const std::string &value);
-}
+class ResultStagingHandle {
+public:
+    explicit ResultStagingHandle(std::intptr_t native_handle) : native_handle_(native_handle) {}
+    ~ResultStagingHandle();
+    ResultStagingHandle(const ResultStagingHandle &) = delete;
+    ResultStagingHandle &operator=(const ResultStagingHandle &) = delete;
+    std::intptr_t native_handle() const noexcept { return native_handle_; }
+    void close() noexcept;
+private:
+    std::intptr_t native_handle_{-1};
+};
 
 /**
  * Service-owned filesystem boundary for external result payloads.
  *
- * This class does not register results in DuckDB yet. It provides the
- * filesystem half of the publication protocol: isolated staging and atomic
- * promotion of a closed payload. Callers must perform metadata registration
- * only after publish() succeeds.
+ * It provides isolated staging, validation, and atomic promotion of closed
+ * payloads. Project metadata registration is committed only after publish()
+ * succeeds.
  */
 class ResultStore {
 public:
@@ -79,24 +90,32 @@ public:
     /** Return a format-neutral descriptor without exposing the payload path. */
     Json describe_result(const std::string &result_id) const;
 
+    /** Load/store a derived equality index for semantics-declared navigation columns. */
+    Json read_navigation_index(const std::string &result_id) const;
+    void write_navigation_index(const std::string &result_id, const Json &index) const;
+    /** Read/write one digest-bound per-batch numeric range index for a declared navigation column. */
+    Json read_range_statistics(const std::string &result_id, const std::string &column) const;
+    void write_range_statistics(const std::string &result_id,
+                                const std::string &column,
+                                const Json &batches) const;
+
     /** Read a bounded byte range for generic payload consumers. */
     Json read_result_range(const std::string &result_id,
                            std::uintmax_t offset,
                            std::uintmax_t length) const;
     /** Read and parse a bounded JSON result payload. */
     Json read_json_payload(const std::string &result_id) const;
-    Json read_jsonl_batch(const std::string &result_id,
-                          std::uintmax_t offset,
-                          std::uintmax_t limit) const;
     Json read_arrow_ipc_batch(const std::string &result_id,
                               std::uintmax_t offset,
                               std::uintmax_t limit,
                               const std::vector<std::string> &columns = {}) const;
-
-    /** Append one bounded chunk to an unpublished result lease. */
-    void append_staging_chunk(const ResultLease &lease,
-                              std::uintmax_t offset,
-                              const std::vector<unsigned char> &bytes) const;
+    /** Evaluate supported scalar predicates against Arrow arrays and return matching row offsets. */
+    Json scan_arrow_scalar_filters(const std::string &result_id,
+                                   const Json &filters,
+                                   std::uintmax_t offset,
+                                   std::uintmax_t limit) const;
+    /** Open an immutable published payload for a scoped worker read grant. */
+    std::shared_ptr<ResultStagingHandle> open_published_result(const std::string &result_id) const;
 
     ResultLease allocate(const std::string &run_id,
                            const std::string &result_id,

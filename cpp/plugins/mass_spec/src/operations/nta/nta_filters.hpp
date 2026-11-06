@@ -87,7 +87,7 @@ namespace streamfind::mass_spec::nta
     //   1. Collect MS2 peaks from blank analyses; cluster by mzClust + blankPresenceThreshold.
     //   2. Remove from every feature any MS2 peak within mzClust of a clustered blank peak.
     //   3. Keep only top-N peaks (if top > 0), apply minIntensity and relMinIntensity thresholds.
-    // All encoded peak lists are updated in-place (ms2_mz, ms2_intensity, ms2_size).
+    // Typed peak arrays are updated in-place (ms2_mz, ms2_intensity, ms2_size).
     void filter_features_ms2_impl(
       NtaProjectData &nta_data,
         int top,                        // 0 = no limit

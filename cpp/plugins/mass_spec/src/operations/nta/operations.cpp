@@ -28,7 +28,7 @@ Json get_features(sdk::PluginProjectAccess &access, const Json &parameters)
     auto rows = base::utils::input_rows(access, effective_parameters, "featuresTable", utils::feature_columns(), "analysis");
     if (!effective_parameters.value("filtered", false))
         rows.erase(std::remove_if(rows.begin(), rows.end(), [](const Json &row) { return utils::integer(row, "filtered") != 0; }), rows.end());
-    auto output = base::utils::filter_target_rows(rows, effective_parameters, "mass", "mz", "rt", "polarity");
+    auto output = base::utils::filter_target_rows(access, rows, effective_parameters, "mass", "mz", "rt", "polarity");
     access.emit_table_rows("featuresTable", utils::feature_columns(), utils::feature_types(), output);
     return Json{{"status", "finished"}, {"features", output.size()}};
 }
@@ -53,18 +53,18 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 Json get_suspects(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto rows = base::utils::input_rows(access, parameters, "suspectsTable", utils::suspects_columns(), "analysis");
-    return base::utils::filter_target_rows(rows, parameters, "exp_mass", nullptr, "exp_rt", "polarity");
+    return base::utils::filter_target_rows(access, rows, parameters, "exp_mass", nullptr, "exp_rt", "polarity");
 }
 
 Json get_internal_standards(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto rows = base::utils::input_rows(access, parameters, "internalStandardsTable", utils::internal_standards_columns(), "analysis");
-    return base::utils::filter_target_rows(rows, parameters, "exp_mass", nullptr, "exp_rt", "polarity");
+    return base::utils::filter_target_rows(access, rows, parameters, "exp_mass", nullptr, "exp_rt", "polarity");
 }
 
 Json get_transformation_products(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto rows = base::utils::input_rows(access, parameters, "transformationProductsTable", utils::transformation_products_columns(), "analysis");
-    return base::utils::filter_target_rows(rows, parameters, "mass", nullptr, nullptr, nullptr);
+    return base::utils::filter_target_rows(access, rows, parameters, "mass", nullptr, nullptr, nullptr);
 }
 }

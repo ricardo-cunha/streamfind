@@ -591,7 +591,7 @@ sfms:loadFeaturesMs1
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Load features MS1 spectra" ;
-    skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
+    skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store its m/z and intensity values as typed numeric arrays on the feature table." ;
     sf:category "nta-spectrum-loading" ;
     sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
     sf:hasParameter
@@ -612,7 +612,7 @@ sfms:loadFeaturesMs2
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Load features MS2 spectra" ;
-    skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
+    skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store its m/z and intensity values as typed numeric arrays on the feature table." ;
     sf:category "nta-spectrum-loading" ;
     sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. It updates ms2_size, ms2_mz, and ms2_intensity." ;
     sf:hasParameter

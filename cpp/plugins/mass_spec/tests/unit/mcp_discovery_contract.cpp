@@ -248,14 +248,13 @@ int main() {
                              streamfind::Json({{"name", "Untitled workflow"},
                                                 {"description", "Describe the purpose of this workflow."}}),
                 "new workflow did not receive required metadata defaults");
+        auto replacement_workflow = created_workflow;
+        replacement_workflow["metadata"] = {{"name", "MCP workflow"},
+                                             {"description", "MCP contract test workflow"},
+                                             {"owner", "mcp"}, {"purpose", "contract test"}};
         const auto updated = call(session, 7, "set_workflow",
                                   {{"database_path", metadata_path.string()},
-                                   {"workflow", {{"schema_version", 2}, {"workflow_id", "workflow"},
-                                                  {"name", "Workflow"}, {"version", 1},
-                                                  {"metadata", {{"name", "MCP workflow"}, {"description", "MCP contract test workflow"},
-                                                                 {"owner", "mcp"}, {"purpose", "contract test"}}},
-                                                  {"operations", streamfind::Json::array()},
-                                                  {"connections", streamfind::Json::array()}}}});
+                                   {"workflow", replacement_workflow}});
         require(!updated.at("result").value("isError", false), "MCP workflow metadata update failed");
         const auto saved_metadata = text_json(call(session, 8, "get_workflow", {{"database_path", metadata_path.string()}}));
         require(saved_metadata.at("metadata") ==

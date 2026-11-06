@@ -125,6 +125,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const inspectorRef = useRef<HTMLDivElement>(null);
   const initialLoadComplete = useRef(false);
+  const resultHasFeatureRows = useRef(false);
   const skipInitialFilterRefresh = useRef(true);
   const [filtersWidth, setFiltersWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
@@ -240,6 +241,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     void loadRows()
       .then(({ rows: loadedRows, totalRows: loadedTotalRows }) => {
         if (!active) return;
+        resultHasFeatureRows.current = loadedTotalRows > 0;
         setRows(loadedRows);
         setTotalRows(loadedTotalRows);
         setSelectedKey((current) =>
@@ -593,9 +595,9 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             ? { row_keys: directRowKey ? [directRowKey] : networkRowKeys }
             : { filters: buildSelectionQueryFilters(selectBy, representative) }),
           // Plotting every row of a component can transfer hundreds of large
-          // encoded traces. Keep the initial view responsive; the feature map
+          // large traces. Keep the initial view responsive; the feature map
           // still exposes the full selection for navigation. The page response
-          // already contains the encoded arrays, so do not immediately fetch
+          // already contains these arrays, so do not immediately fetch
           // the same rows again through a detail query.
           // Keep the first render lightweight for components with many
           // features. The full trace set remains available on demand.
@@ -655,7 +657,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       </div>
     );
   if (loadError) return <div role="alert">{loadError}</div>;
-  if (!rows.length) return <div role="status">No feature data is available in this result.</div>;
+  if (!rows.length && !resultHasFeatureRows.current)
+    return <div role="status">No feature data is available in this result.</div>;
 
   return (
     <div
@@ -820,6 +823,11 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
               });
           }}
         />
+        {!points.length ? (
+          <div className="sf-feature-inspector-empty" role="status">
+            No features match the current filters or visible plot range.
+          </div>
+        ) : null}
       </main>
       <div
         className="sf-resizable-splitter sf-feature-inspector-splitter sf-feature-inspector-details-splitter"
@@ -1659,8 +1667,8 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
   let plottedTraceCount = 0;
   const legendGroups = new Set<string>();
   const traces = rows.flatMap((row) => {
-    const x = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`], row[`${prefix}_size`]);
-    const y = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'intensity' : 'intensity'}`], row[`${prefix}_size`]);
+    const x = numericArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`]);
+    const y = numericArray(row[`${prefix}_intensity`]);
     if (!x.length || !y.length) return [];
     plottedTraceCount += 1;
     const label = signalTraceLabel(row, groupBy, selectBy);
@@ -1703,7 +1711,7 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
   if (!traces.length)
     return (
       <div className="sf-feature-inspector-empty">
-        No encoded {kind.toUpperCase()} data is available for the selected feature.
+        No {kind.toUpperCase()} data is available for the selected feature.
       </div>
     );
   const spec: VisualizationSpec = {
@@ -1770,7 +1778,7 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
     },
     provenance: {
       source_result_ids: [resultId],
-      producer_operation_id: 'frontend.feature_encoded_arrays',
+      producer_operation_id: 'frontend.feature_trace_arrays',
       producer_node_id: 'feature-inspector',
     },
     fallback: { description: `The ${kind.toUpperCase()} renderer is unavailable.` },
@@ -1807,59 +1815,10 @@ function escapeHoverText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-function decodeFloatArray(encoded: unknown, size: unknown): number[] {
-  if (!encoded) return [];
-  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
-  const text = String(encoded).trim();
-  const cacheKey = `${text}\u0000${size ?? ''}`;
-  const cached = signalArrayCache.get(cacheKey);
-  if (cached) return cached;
-  // Result-store Arrow decoding preserves JSON/list values for non-binary
-  // columns.  Accept those values as well as the historical base64 blob
-  // representation used by older feature tables.
-  if (text.startsWith('[')) {
-    try {
-      const values = JSON.parse(text);
-      if (Array.isArray(values)) {
-        const decoded = values.map(Number).filter(Number.isFinite);
-        rememberSignalArray(cacheKey, decoded);
-        return decoded;
-      }
-    } catch {
-      return [];
-    }
-  }
-  try {
-    const binary = atob(text.replaceAll('-', '+').replaceAll('_', '/'));
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const expected = Number(size ?? 0);
-    const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
-    if (bytes.byteLength % precision !== 0) return [];
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const decoded = Array.from({ length: bytes.byteLength / precision }, (_, index) =>
-      precision === 8 ? view.getFloat64(index * precision, true) : view.getFloat32(index * precision, true),
-    );
-    rememberSignalArray(cacheKey, decoded);
-    return decoded;
-  } catch {
-    return [];
-  }
-}
-
-const signalArrayCache = new Map<string, number[]>();
-let signalArrayCacheBytes = 0;
-function rememberSignalArray(key: string, values: number[]): void {
-  if (signalArrayCache.has(key)) return;
-  const estimatedBytes = values.length * Float64Array.BYTES_PER_ELEMENT;
-  if (estimatedBytes > 8 * 1024 * 1024) return;
-  while (signalArrayCacheBytes + estimatedBytes > 32 * 1024 * 1024 && signalArrayCache.size) {
-    const oldest = signalArrayCache.keys().next().value;
-    if (oldest === undefined) break;
-    signalArrayCacheBytes -= (signalArrayCache.get(oldest)?.length ?? 0) * Float64Array.BYTES_PER_ELEMENT;
-    signalArrayCache.delete(oldest);
-  }
-  signalArrayCache.set(key, values);
-  signalArrayCacheBytes += estimatedBytes;
+function numericArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  if (value.every((item) => typeof item === 'number' && Number.isFinite(item))) return value as number[];
+  return value.map(Number).filter(Number.isFinite);
 }
 
 function withAlpha(hex: string, alpha: number): string {
@@ -1893,7 +1852,10 @@ function getFilterColumns(
     const type = (column.type ?? '').toLowerCase();
     const values = rows
       .map((row) => row[column.name])
-      .filter((value): value is string => value !== null && value !== undefined);
+      // Typed Arrow list columns (EIC/MS traces) are arrays, not searchable
+      // scalar values. Exclude them from scalar filter inference rather than
+      // treating them as strings and calling trim() on the array.
+      .filter((value): value is string => typeof value === 'string');
     const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
     const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
     if (isNumericType(type) || (!type && inferredNumeric)) numeric.push(column);

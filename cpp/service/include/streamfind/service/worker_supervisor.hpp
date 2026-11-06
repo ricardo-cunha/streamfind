@@ -12,6 +12,8 @@
 
 namespace streamfind::service {
 
+struct WorkerHandleGrant;
+
 struct WorkerMetadata {
     std::string id;
     std::string kind{"operation"};
@@ -43,7 +45,6 @@ struct WorkerRequest {
     Json workflow = Json::object();
     Json parameters = Json::object();
     Json inputs = nullptr;
-    bool persist_outputs{true};
     std::uint64_t memory_limit_mb{0};
 };
 
@@ -68,6 +69,7 @@ public:
 
     WorkerResult run();
     void cancel();
+    std::string transfer_handle(WorkerHandleGrant grant, std::uintptr_t source_handle);
     WorkerMetadata metadata() const;
 
 private:

@@ -1,4 +1,5 @@
 #include "streamfind/service/worker_supervisor.hpp"
+#include "streamfind/service/worker_handle_broker.hpp"
 
 #include <chrono>
 #include <algorithm>
@@ -111,6 +112,8 @@ struct WorkerProcess::Impl {
     EventCallback callback;
     mutable std::mutex mutex;
     WorkerMetadata worker;
+    WorkerHandleBroker handle_broker;
+    std::unique_ptr<WorkerHandleBrokerEndpoint> handle_endpoint;
     bool cancel_requested{false};
     std::atomic_bool memory_limit_exceeded{false};
     std::atomic_uint64_t peak_memory_bytes{0};
@@ -155,10 +158,10 @@ struct WorkerProcess::Impl {
                     {"operation_id", request.operation_id}, {"operation", request.operation},
                     {"operation_instance", request.operation_instance}, {"project_database_path", request.project_database_path.string()},
                     {"computation_key", request.computation_key},
+                    {"worker_handle_endpoint", handle_endpoint ? handle_endpoint->address() : std::string{}},
                     {"workflow", request.workflow},
                     {"parameters", request.parameters},
-                    {"inputs", request.inputs},
-                    {"persist_outputs", request.persist_outputs}};
+                    {"inputs", request.inputs}};
     }
 
 #ifdef _WIN32
@@ -224,6 +227,7 @@ struct WorkerProcess::Impl {
             throw std::runtime_error("could not assign worker to Job Object");
         worker.process_id = process.dwProcessId;
         worker.state = "running";
+        handle_endpoint = std::make_unique<WorkerHandleBrokerEndpoint>(worker.id, worker.process_id);
         emit("worker.started", "Worker started.", worker.to_json());
         bool cancel_after_start = false;
         {
@@ -238,6 +242,9 @@ struct WorkerProcess::Impl {
         if (!WriteFile(input_write, line.data(), static_cast<DWORD>(line.size()), &written, nullptr))
             throw std::runtime_error("could not send worker request");
         close_handle(input_write);
+        if (!handle_endpoint->accept_authenticated(std::chrono::seconds(10)))
+            throw std::runtime_error("worker did not connect to its private handle broker endpoint");
+        emit("worker.handle_broker_connected", "Worker handle broker authenticated.", worker.to_json());
     }
 #else
     void start_posix() {
@@ -271,11 +278,15 @@ struct WorkerProcess::Impl {
         worker.process_group_id = static_cast<std::uint64_t>(pid);
         worker.job_id.clear();
         worker.state = "running";
+        handle_endpoint = std::make_unique<WorkerHandleBrokerEndpoint>(worker.id, worker.process_id);
         emit("worker.started", "Worker started.", worker.to_json());
         const auto line = detail::quote_json_line(payload());
         if (::write(input_write, line.data(), line.size()) < 0)
             throw std::runtime_error("could not send worker request");
         close(input_write); input_write = -1;
+        if (!handle_endpoint->accept_authenticated(std::chrono::seconds(10)))
+            throw std::runtime_error("worker did not connect to its private handle broker endpoint");
+        emit("worker.handle_broker_connected", "Worker handle broker authenticated.", worker.to_json());
     }
 #endif
 };
@@ -328,6 +339,27 @@ void WorkerProcess::cancel() {
             kill(-impl_->pid, SIGKILL);
     }
 #endif
+}
+
+std::string WorkerProcess::transfer_handle(WorkerHandleGrant grant, std::uintptr_t source_handle) {
+    std::lock_guard lock(impl_->mutex);
+    if (!impl_->handle_endpoint || !impl_->handle_endpoint->connected() ||
+        impl_->worker.state != "running")
+        throw std::runtime_error("supervised worker has no authenticated handle endpoint");
+    grant.worker_id = impl_->worker.id;
+    grant.process_id = impl_->worker.process_id;
+    if (grant.expires_at <= std::chrono::steady_clock::now())
+        throw std::invalid_argument("worker handle grant has expired");
+    const auto issued = impl_->handle_broker.issue(std::move(grant));
+    try {
+        impl_->handle_endpoint->transfer_granted_handle(impl_->handle_broker, issued.token,
+            issued.session_id, issued.run_id, issued.operation_id, issued.result_id,
+            issued.lease_id, issued.access, source_handle);
+    } catch (...) {
+        impl_->handle_broker.revoke(issued.token);
+        throw;
+    }
+    return issued.token;
 }
 
 WorkerResult WorkerProcess::run() {
@@ -473,6 +505,8 @@ WorkerResult WorkerProcess::run() {
         result.memory_limit_exceeded = impl_->memory_limit_exceeded.load();
         impl_->worker.state = result.cancelled ? "cancelled" : result.exit_code == 0 ? "completed" : "failed";
         result.worker = impl_->worker;
+        impl_->handle_broker.revoke_worker(impl_->worker.id);
+        impl_->handle_endpoint.reset();
     }
     if (result.cancelled) result.error = "Worker cancelled";
     else if (result.memory_limit_exceeded)

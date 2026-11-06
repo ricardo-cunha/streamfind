@@ -46,17 +46,6 @@ namespace streamfind::mass_spec::nta
       }
     }
 
-    // Helper function to decode base64-encoded EIC data
-    std::vector<float> decode_eic_base64(const std::string &base64_str) {
-      if (base64_str.empty()) return std::vector<float>();
-      try {
-        std::string decoded = ::mass_spec::reader::utils::decode_base64(base64_str);
-        return ::mass_spec::reader::utils::decode_little_endian_to_float(decoded, 4);
-      } catch (...) {
-        return std::vector<float>();
-      }
-    }
-
     // Helper function to calculate Pearson correlation between two aligned EIC vectors
     float calculate_pearson_correlation(
       const std::vector<float> &x,
@@ -267,8 +256,8 @@ namespace streamfind::mass_spec::nta
             feic.idx = sf.idx;
             feic.rt = static_cast<float>(ft.rt);
             feic.intensity = static_cast<float>(ft.intensity);
-            feic.eic_rt = decode_eic_base64(ft.eic_rt);
-            feic.eic_int = decode_eic_base64(ft.eic_intensity);
+            feic.eic_rt = ft.eic_rt;
+            feic.eic_int = ft.eic_intensity;
             feature_eics.push_back(std::move(feic));
           }
 

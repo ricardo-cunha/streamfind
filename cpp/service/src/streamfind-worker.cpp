@@ -1,4 +1,10 @@
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #include "streamfind/service/service_plugin_runtime.hpp"
+#include "streamfind/service/worker_handle_broker.hpp"
 #include "streamfind/vendor_runtime.hpp"
 #include "streamfind/data_proxy_protocol.hpp"
 #include "streamfind/data_proxy_output_sink.hpp"
@@ -15,10 +21,7 @@
 #include <stdexcept>
 #include <string>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
+#ifndef _WIN32
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -134,18 +137,30 @@ void emit_event(const Json &event) {
 
 namespace streamfind::service::detail {
 
+struct WorkerBrokerChannel final {
+#ifdef _WIN32
+    HANDLE value{INVALID_HANDLE_VALUE};
+    ~WorkerBrokerChannel() { if (value != INVALID_HANDLE_VALUE) CloseHandle(value); }
+#else
+    int value{-1};
+    ~WorkerBrokerChannel() { if (value >= 0) close(value); }
+#endif
+};
+
 class WorkerExecutionContext final : public OperationExecutionContext {
 public:
     WorkerExecutionContext(std::uint16_t service_port, std::string session_id,
                            std::string run_id, std::string operation_id,
                            std::string operation_instance, int workflow_revision,
                            Json inputs, std::shared_ptr<OperationOutputSink> outputs,
-                           std::string computation_key)
+                           std::string computation_key,
+                           std::function<std::intptr_t()> receive_input_handle)
         : service_port_(service_port), session_id_(std::move(session_id)),
           run_id_(std::move(run_id)), operation_id_(std::move(operation_id)),
           operation_instance_(std::move(operation_instance)), workflow_revision_(workflow_revision),
           inputs_(std::move(inputs)), outputs_(std::move(outputs)),
-          computation_key_(std::move(computation_key)) {}
+          computation_key_(std::move(computation_key)),
+          receive_input_handle_(std::move(receive_input_handle)) {}
 
     std::string operation_instance() const override { return operation_instance_; }
     int workflow_revision() const override { return workflow_revision_; }
@@ -167,6 +182,10 @@ public:
             request.operation_instance.empty() ? operation_instance_ : request.operation_instance,
             request.lease_id, request.payload);
         return response;
+    }
+    std::intptr_t receive_result_input_handle() override {
+        if (!receive_input_handle_) throw std::runtime_error("worker result handle broker is not available");
+        return receive_input_handle_();
     }
     std::string data_proxy_session_id() const override { return session_id_; }
     std::string data_proxy_run_id() const override { return run_id_; }
@@ -199,6 +218,7 @@ private:
 
     std::uint16_t service_port_;
     std::string session_id_, run_id_, operation_id_, operation_instance_, computation_key_;
+    std::function<std::intptr_t()> receive_input_handle_;
     int workflow_revision_;
     Json inputs_;
     std::shared_ptr<OperationOutputSink> outputs_;
@@ -219,6 +239,10 @@ int main(int argc, char **argv) {
             if (!std::getline(std::cin, line) || line.empty()) throw std::runtime_error("worker request is missing");
             return Json::parse(line);
         }();
+        const auto broker_endpoint = request_line.value("worker_handle_endpoint", std::string{});
+        if (broker_endpoint.empty())
+            throw std::runtime_error("worker request has no private handle broker endpoint");
+        detail::WorkerBrokerChannel broker_channel{connect_worker_handle_broker(broker_endpoint)};
         // The worker is a separate process from the service.  Configure the
         // package-owned DLL search paths here as well, before loading the
         // dynamic plugins.  The service process' AddDllDirectory state is
@@ -248,17 +272,25 @@ int main(int argc, char **argv) {
             if (navigation.is_array() && !navigation.empty())
                 navigation_columns_by_contract[port.id] = navigation;
         }
+        const auto receive_handle = [&broker_channel]() -> std::intptr_t {
+            const auto received = receive_worker_handle(broker_channel.value);
+#ifdef _WIN32
+            return reinterpret_cast<std::intptr_t>(received.handle);
+#else
+            return received.handle;
+#endif
+        };
         auto output_sink = std::make_shared<DataProxyOutputSink>(
             [service_port](const data_proxy::Envelope &request) {
                 return detail::request_data_proxy(service_port, request.session_id, request.run_id,
                                                   request.operation_id, request.operation_instance,
                                                   request.lease_id, request.payload);
             }, session_id, run_id, operation_id, operation_instance,
-            request_line.value("persist_outputs", true), std::move(navigation_columns_by_contract));
+            std::move(navigation_columns_by_contract), receive_handle);
         const auto workflow_revision = workflow.value("version", 0);
         detail::WorkerExecutionContext context(service_port, session_id, run_id, operation_id,
             operation_instance, workflow_revision, request_line.value("inputs", Json(nullptr)),
-            output_sink, request_line.value("computation_key", std::string{}));
+            output_sink, request_line.value("computation_key", std::string{}), receive_handle);
         emit_event(Json{{"type", "worker.ready"}});
         const auto project_database_path = request_line.value("project_database_path", std::string{});
         if (!project_database_path.empty()) {

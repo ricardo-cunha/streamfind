@@ -935,6 +935,9 @@ namespace streamfind
         }
         if (kind == ParameterType::table)
         {
+            if (value.is_object() && value.size() == 1 && value.contains("$result_ref") &&
+                value.at("$result_ref").is_string() && !value.at("$result_ref").get<std::string>().empty())
+                return;
             if (value.is_array())
             {
                 if (!table_schema)
@@ -1926,6 +1929,7 @@ namespace streamfind
     {
         Json output = {{"schema_version", schema_version}, {"workflow_id", workflow_id},
                        {"name", name}, {"version", version},
+                       {"definition_revision", definition_revision},
                        {"metadata", metadata},
                        {"operations", Json::array()}, {"connections", Json::array()}};
         for (const auto &operation : operations)
@@ -1954,6 +1958,9 @@ namespace streamfind
         workflow.schema_version = value.at("schema_version").get<int>();
         workflow.workflow_id = value.value("workflow_id", "");
         workflow.version = value.value("version", 1);
+        workflow.definition_revision = value.value("definition_revision", workflow.version);
+        if (workflow.definition_revision < 1)
+            throw Error(ErrorCode::SchemaMismatch, "Workflow definition_revision must be a positive integer");
         workflow.metadata = value.value("metadata", Json::object());
         if (workflow.metadata.is_null()) workflow.metadata = Json::object();
         if (workflow.metadata.is_string()) {
@@ -2777,6 +2784,41 @@ namespace streamfind
         return result_id;
     }
 
+    void Project::register_result_manifest(const Json &manifest)
+    {
+        const auto result_id = manifest.value("result_id", std::string{});
+        const auto contract_id = manifest.value("contract_id", std::string{});
+        const auto producer_operation = manifest.value("producer_operation", std::string{});
+        const auto producer_instance = manifest.value("producer_instance", std::string{});
+        if (result_id.empty() || contract_id.empty() || producer_operation.empty() ||
+            producer_instance.empty() || manifest.value("state", std::string{}) != "published")
+            throw Error(ErrorCode::InvalidArgument, "invalid published result manifest registration");
+        const auto representation = manifest.value("kind", std::string{"binary"});
+        const auto physical_table = representation == "table" ? "result:" + result_id : std::string{};
+        const auto revision = manifest.value("workflow_revision", 0);
+        execute_sql("INSERT OR REPLACE INTO RESULT_REGISTRY "
+                    "(result_id, contract_id, representation, physical_table, payload, producer_operation, "
+                    "producer_instance, workflow_revision, status) VALUES (" +
+                    detail::sql_quote(result_id) + ", " + detail::sql_quote(contract_id) + ", " +
+                    detail::sql_quote(representation) + ", " +
+                    (physical_table.empty() ? "NULL" : detail::sql_quote(physical_table)) +
+                    ", NULL, " + detail::sql_quote(producer_operation) + ", " +
+                    detail::sql_quote(producer_instance) + ", " + std::to_string(revision) +
+                    ", 'published')");
+        execute_sql("DELETE FROM RESULT_LINEAGE WHERE result_id = " + detail::sql_quote(result_id));
+        const auto provenance = manifest.value("provenance", Json::object());
+        const auto lineage = provenance.value("lineage_inputs", Json::array());
+        if (!lineage.is_array()) return;
+        for (const auto &source : lineage) {
+            if (!source.is_array() || source.size() < 3 || !source[0].is_string()) continue;
+            execute_sql("INSERT OR IGNORE INTO RESULT_LINEAGE "
+                        "(result_id, source_result_id, source_port_id, target_port_id) VALUES (" +
+                        detail::sql_quote(result_id) + ", " + detail::sql_quote(source[0].get<std::string>()) + ", " +
+                        detail::sql_quote(source[1].is_string() ? source[1].get<std::string>() : std::string{}) + ", " +
+                        detail::sql_quote(source[2].is_string() ? source[2].get<std::string>() : std::string{}) + ")");
+        }
+    }
+
     Json Project::resolve_workflow_inputs(const std::string &operation_id) const
     {
         return resolve_workflow_inputs(operation_id, Json::object());
@@ -2946,9 +2988,9 @@ namespace streamfind
                 return resolver ? resolver(operation_id, current_artifacts)
                                 : resolve_workflow_inputs(operation_id, current_artifacts);
             }();
-            // The graph's current run is authoritative.  This is essential for
-            // transient pipeline results, which are deliberately not in the
-            // published result registry.
+            // The graph's current run is authoritative while node outputs are
+            // being produced. Pipeline mode registers retained results when
+            // the run reaches a terminal state.
             for (const auto &connection : workflow.connections) {
                 if (connection.target_operation != operation_id) continue;
                 if (connection.target_port.rfind("parameter:", 0) == 0 &&

@@ -24,6 +24,30 @@ sfcore:workerIdParameter
     sf:default "" ;
     sf:example "frontend-worker-1" .
 
+sfcore:executionModeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution mode" ;
+    skos:definition "Controls when workflow node results become published and inspectable. Both modes retain every completed node result on disk and in the project result inventory. detailed publishes each node result immediately; pipeline publishes the retained results together when the workflow reaches a terminal state." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "detailed" ;
+    sf:constraints "detailed|pipeline" ;
+    sf:example "pipeline" .
+
+sfcore:executionStatusParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow execution status" ;
+    skos:definition "Requested lifecycle transition for a workflow execution. The running transition starts the saved workflow and may include execution_mode; cancelling or cancelled requests cancellation." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:constraints "running|cancelling|cancelled" ;
+    sf:example "running" .
+
 
 sfcore:domainParameter
     a sf:Parameter ;
@@ -64,7 +88,7 @@ sfcore:workflowParameter
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow" ;
-    skos:definition "Persisted operation graph containing configured operation nodes and explicit typed connections between their input and output ports." ;
+    skos:definition "Persisted operation graph containing configured operation nodes, explicit typed connections, and the definition_revision returned by get_workflow. Preserve that revision when saving so concurrent edits are detected." ;
     sf:type "object" ;
     sf:required true ;
     sf:default "{}" ;

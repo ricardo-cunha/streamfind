@@ -74,17 +74,12 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
   // ── Internal helpers ──────────────────────────────────────────────────────────
 
-  // Decode a base64 + little-endian float32 encoded string to vector<double>.
-  std::vector<double> decode_encoded(const std::string &encoded)
+  std::vector<double> to_double_array(const std::vector<float> &values)
   {
     std::vector<double> out;
-    if (encoded.empty())
-      return out;
-    std::string raw        = ::mass_spec::reader::utils::decode_base64(encoded);
-    std::vector<float> fv  = ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
-    out.reserve(fv.size());
-    for (float f : fv)
-      out.push_back(static_cast<double>(f));
+    out.reserve(values.size());
+    for (const float value : values)
+      out.push_back(static_cast<double>(value));
     return out;
   }
 
@@ -1317,15 +1312,16 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     auto query_cache_key = [&](const std::string &database_path,
                                double precursor_mass,
                                int polarity,
-                               const std::string &ms2_mz,
-                               const std::string &ms2_intensity)
+                               const std::vector<float> &ms2_mz,
+                               const std::vector<float> &ms2_intensity)
     {
       std::ostringstream key;
       key << params.database_type << '|' << database_path << '|'
           << std::setprecision(17) << precursor_mass << '|'
           << polarity << '|' << params.ppm << '|' << params.ppmMS2 << '|'
           << params.mzrMS2 << '|' << params.maximum_tree_depth << '|'
-          << params.use_smiles << '|' << ms2_mz << '|' << ms2_intensity;
+          << params.use_smiles << '|' << nlohmann::json(ms2_mz).dump() << '|'
+          << nlohmann::json(ms2_intensity).dump();
       return key.str();
     };
 
@@ -1388,8 +1384,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         FeatureResult result;
         result.feature_index = static_cast<std::size_t>(fi);
 
-        std::vector<double> ms2_mz = decode_encoded(feats.ms2_mz[fi]);
-        std::vector<double> ms2_int = decode_encoded(feats.ms2_intensity[fi]);
+        std::vector<double> ms2_mz = to_double_array(feats.ms2_mz[fi]);
+        std::vector<double> ms2_int = to_double_array(feats.ms2_intensity[fi]);
         const double precursor_mass = feats.mass[fi] > 0.0f
             ? static_cast<double>(feats.mass[fi])
             : static_cast<double>(feats.mz[fi]) - feats.polarity[fi] * 1.007276;
@@ -1470,8 +1466,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           std::vector<float> db_intf;
           db_intf.reserve(db_int.size());
           for (const double value : db_int) db_intf.push_back(static_cast<float>(value));
-          const std::string db_ms2_mz_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_mzf);
-          const std::string db_ms2_int_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_intf);
 
           const SuspectQuery *target = find_target_metadata(row, params.suspect_targets);
           // Every candidate source must use the same isotope scorer. Database
@@ -1591,8 +1585,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           s.InChIKey = row.InChIKey;
           s.xLogP = row.xLogP;
           s.db_ms2_size = static_cast<int>(db_mz.size());
-          s.db_ms2_mz = db_ms2_mz_enc;
-          s.db_ms2_intensity = db_ms2_int_enc;
+          s.db_ms2_mz = std::move(db_mzf);
+          s.db_ms2_intensity = std::move(db_intf);
           s.db_ms2_formula = db_form;
           s.db_ms2_smiles = strip_mass_prefixes(row.expl_smiles);
           s.exp_ms2_size = feats.ms2_size[fi];

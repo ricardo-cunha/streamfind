@@ -203,6 +203,7 @@ set(STREAMFIND_CORE_SOURCES
     core/src/vendor_runtime.cpp
     service/src/service_discovery.cpp
     service/src/worker_supervisor.cpp
+    service/src/worker_handle_broker.cpp
     core/src/vendors/openbabel/openbabel_adapter.cpp
 )
 
@@ -481,9 +482,25 @@ endif()
 set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 set_target_properties(streamfind_service PROPERTIES OUTPUT_NAME streamfind-server)
 
+# Explicit development-only scale harness. It is excluded from normal builds
+# and installation; run it through scripts/dev/cpp/benchmark-result-store.ps1.
+add_executable(streamfind_dev_result_store_benchmark EXCLUDE_FROM_ALL
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/dev/cpp/benchmark_result_store.cpp"
+    service/src/result_store.cpp)
+target_link_libraries(streamfind_dev_result_store_benchmark PRIVATE streamfind::cpp_core)
+target_include_directories(streamfind_dev_result_store_benchmark PRIVATE service/include)
+target_compile_definitions(streamfind_dev_result_store_benchmark PRIVATE
+    STREAMFIND_TEST_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+set_target_properties(streamfind_dev_result_store_benchmark PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+if(WIN32)
+    target_link_libraries(streamfind_dev_result_store_benchmark PRIVATE psapi)
+endif()
+
 add_executable(streamfind_worker
     service/src/streamfind-worker.cpp
-    service/src/service_plugin_runtime.cpp)
+    service/src/service_plugin_runtime.cpp
+    service/src/worker_handle_broker.cpp)
 add_dependencies(streamfind_worker streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_worker PRIVATE streamfind::cpp_core streamfind::cpp_sdk)

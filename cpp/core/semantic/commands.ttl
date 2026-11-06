@@ -138,9 +138,12 @@ sfcore:transitionExecution
     skos:inScheme sfcore:scheme ;
     sf:commandId "transition_execution" ;
     skos:prefLabel "Transition workflow execution" ;
-    skos:definition "Advance one workflow execution through a valid lifecycle transition." ;
+    skos:definition "Advance workflow execution. The running transition starts the saved workflow and accepts the same optional execution_mode as run_workflow; cancelling or cancelled requests cancellation." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter
+        sfcore:databasePathParameter,
+        sfcore:executionStatusParameter,
+        sfcore:executionModeParameter ;
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject true .
 
@@ -160,7 +163,8 @@ sfcore:setWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "set_workflow" ;
     skos:prefLabel "Set the project workflow" ;
-    skos:definition "Validate and replace a project's ordered workflow. Operation identifiers, dependency ordering, semantic connections, and parameters are checked before persistence." ;
+    skos:definition "Validate and replace a project's ordered workflow using the definition_revision returned by get_workflow. The service rejects stale revisions with a conflict instead of overwriting a concurrent app or MCP edit." ;
+    sf:guidance "Call get_workflow immediately before editing and preserve its top-level definition_revision in the submitted workflow. On a workflow revision conflict, fetch the latest definition, reconcile the edits, and submit again. The workflow version remains separate and tracks result validity; definition_revision advances for every save, including layout-only changes." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
@@ -187,13 +191,13 @@ sfcore:runWorkflow
     skos:inScheme sfcore:scheme ;
     sf:commandId "run_workflow" ;
     skos:prefLabel "Run the project workflow" ;
-    skos:definition "Execute the persisted workflow for a project in order, using each operation's domain/module implementation and cached results where valid." ;
+    skos:definition "Execute the persisted workflow for a project in order, using each operation's domain/module implementation and cached results where valid. Both execution modes retain every completed node result for inspection; detailed publishes results as nodes finish, while pipeline publishes retained results when the run reaches a terminal state." ;
     sf:category "workflow-execution" ;
-    sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Inspect get_result_inventory and structured results after execution." ;
+    sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Omit execution_mode to use detailed, or select pipeline to defer publication until the workflow ends. Both modes retain all completed node results. Inspect get_result_inventory and structured results after execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
-        sfcore:workerIdParameter ;
+        sfcore:executionModeParameter ;
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject true .
 

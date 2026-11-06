@@ -30,6 +30,7 @@ describe('workflow model', () => {
       connections: [],
       workflow_id: 'workflow',
       version: 1,
+      definition_revision: 1,
     };
     const second: WorkflowDefinition = {
       connections: [],
@@ -38,6 +39,7 @@ describe('workflow model', () => {
       operations: [],
       schema_version: 2,
       version: 1,
+      definition_revision: 1,
     };
     expect(workflowFingerprint(first)).toBe(workflowFingerprint(second));
   });
@@ -79,6 +81,7 @@ describe('workflow model', () => {
         metadata: { name: 'Workflow', description: 'Workflow definition.' },
         workflow_id: 'workflow',
         version: 1,
+        definition_revision: 1,
         operations: [{ id: 1, operation: 'sf:run', parameters: { known: 'value' } }],
         connections: [],
       },
