@@ -208,7 +208,11 @@ streamfind_plugin_status plugin_read_batch(
             detail::report_data_service_error(*context, std::move(message));
             return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
         };
-        if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
+        if (!detail::allowed_table(*context, table)) {
+            detail::report_data_service_error(*context,
+                "read_batch denied access to result table '" + table + "'");
+            return STREAMFIND_PLUGIN_NOT_ALLOWED;
+        }
         if (table.rfind("result:", 0) != 0)
             throw std::invalid_argument("worker table inputs must reference a published result file");
         std::vector<std::string> source_column_names;
@@ -221,7 +225,11 @@ streamfind_plugin_status plugin_read_batch(
             std::string bare_name = name;
             if (const auto dot = bare_name.find('.'); dot != std::string::npos)
                 bare_name = bare_name.substr(dot + 1);
-            if (!detail::allowed_column(*context, table, bare_name, false)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
+            if (!detail::allowed_column(*context, table, bare_name, false)) {
+                detail::report_data_service_error(*context,
+                    "read_batch denied access to column '" + bare_name + "' in result table '" + table + "'");
+                return STREAMFIND_PLUGIN_NOT_ALLOWED;
+            }
             source_column_names.push_back(std::move(bare_name));
         }
         const auto batch_limit = std::min<std::uint64_t>(

@@ -586,6 +586,30 @@ namespace streamfind
             return false;
         }
 
+        static std::string workflow_instance_id(const Json &value, const std::string &field)
+        {
+            if (value.is_string()) {
+                const auto id = value.get<std::string>();
+                if (!id.empty()) return id;
+            } else if (value.is_number_integer()) {
+                return value.dump();
+            }
+            throw Error(ErrorCode::WorkflowValidation,
+                        field + " must be a non-empty string or integer");
+        }
+
+        static Json workflow_instance_id_json(const std::string &id)
+        {
+            std::size_t consumed = 0;
+            try {
+                const auto numeric_id = std::stoll(id, &consumed);
+                if (consumed == id.size() && std::to_string(numeric_id) == id)
+                    return numeric_id;
+            } catch (const std::exception &) {
+            }
+            return id;
+        }
+
     } // namespace detail
 
     using namespace detail;
@@ -1747,11 +1771,10 @@ namespace streamfind
 
     Json WorkflowOperation::to_json() const
     {
-        std::size_t consumed = 0;
-        const auto numeric_id = std::stoll(id, &consumed);
-        if (consumed != id.size())
-            throw Error(ErrorCode::WorkflowValidation, "Workflow operation id must be an integer: " + id);
-        Json output = {{"id", numeric_id}, {"operation", operation},
+        if (id.empty() || operation.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow operation requires a non-empty id and operation");
+        Json output = {{"id", workflow_instance_id_json(id)}, {"operation", operation},
                        {"parameters", parameters.to_json()}, {"inputs", inputs}};
         if (!position.empty()) output["position"] = position;
         return output;
@@ -1759,13 +1782,13 @@ namespace streamfind
 
     WorkflowOperation WorkflowOperation::from_json(const Json &value)
     {
-        if (!value.is_object() || !value.contains("id") || !value.at("id").is_number_integer() ||
+        if (!value.is_object() || !value.contains("id") ||
             !value.contains("operation") || !value.at("operation").is_string() ||
             value.at("operation").get<std::string>().empty())
             throw Error(ErrorCode::WorkflowValidation,
-                        "Workflow operation requires an integer id and operation");
+                        "Workflow operation requires an id and non-empty operation");
         WorkflowOperation output;
-        output.id = std::to_string(value.at("id").get<std::int64_t>());
+        output.id = workflow_instance_id(value.at("id"), "Workflow operation id");
         output.operation = value.at("operation").get<std::string>();
         output.parameters = ParameterValues::from_json(value.value("parameters", Json::object()));
         output.inputs = value.value("inputs", Json::object());
@@ -1785,15 +1808,14 @@ namespace streamfind
 
     Json WorkflowConnection::to_json() const
     {
-        std::size_t source_consumed = 0;
-        std::size_t target_consumed = 0;
-        const auto source_id = std::stoll(source_operation, &source_consumed);
-        const auto target_id = std::stoll(target_operation, &target_consumed);
-        if (source_consumed != source_operation.size() || target_consumed != target_operation.size())
-            throw Error(ErrorCode::WorkflowValidation, "Workflow connection operation ids must be integers");
-        return {{"source_operation", source_id}, {"source_port", source_port},
-
-                {"target_operation", target_id}, {"target_port", target_port}};
+        if (source_operation.empty() || target_operation.empty() ||
+            source_port.empty() || target_port.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow connection requires operation ids and ports");
+        return {{"source_operation", workflow_instance_id_json(source_operation)},
+                {"source_port", source_port},
+                {"target_operation", workflow_instance_id_json(target_operation)},
+                {"target_port", target_port}};
     }
 
     WorkflowConnection WorkflowConnection::from_json(const Json &value)
@@ -1801,16 +1823,16 @@ namespace streamfind
         if (!value.is_object())
             throw Error(ErrorCode::WorkflowValidation,
                         "Workflow connection must be an object");
-        if (!value.contains("source_operation") || !value.at("source_operation").is_number_integer() ||
-            !value.contains("target_operation") || !value.at("target_operation").is_number_integer() ||
+        if (!value.contains("source_operation") ||
+            !value.contains("target_operation") ||
             !value.contains("source_port") || !value.at("source_port").is_string() ||
             !value.contains("target_port") || !value.at("target_port").is_string())
             throw Error(ErrorCode::WorkflowValidation,
-                        "Workflow connection requires integer source and target operation ids and ports");
+                        "Workflow connection requires source and target operation ids and ports");
         WorkflowConnection output{
-            std::to_string(value.at("source_operation").get<std::int64_t>()),
+            workflow_instance_id(value.at("source_operation"), "Workflow connection source operation id"),
             value.at("source_port").get<std::string>(),
-            std::to_string(value.at("target_operation").get<std::int64_t>()),
+            workflow_instance_id(value.at("target_operation"), "Workflow connection target operation id"),
             value.at("target_port").get<std::string>()};
         if (output.source_port.empty() || output.target_port.empty())
             throw Error(ErrorCode::WorkflowValidation,

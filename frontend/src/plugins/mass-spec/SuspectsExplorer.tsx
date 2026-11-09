@@ -147,8 +147,17 @@ function IdentificationOverview({
 }
 
 function decodeFloatArray(value: unknown): number[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
+  let decoded = value;
+  if (typeof decoded === 'string') {
+    try {
+      decoded = JSON.parse(decoded) as unknown;
+      if (typeof decoded === 'string') decoded = JSON.parse(decoded) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(decoded)) return [];
+  return decoded.map(Number).filter(Number.isFinite);
 }
 
 type EvidenceTab = 'eic' | 'ms1' | 'ms2';
@@ -464,6 +473,8 @@ function evidenceSpec(
     const experimentalIntensity = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms2_intensity'));
     const databaseMz = decodeFloatArray(rawValue(row, 'db_ms2_mz'));
     const databaseIntensity = decodeFloatArray(rawValue(row, 'db_ms2_intensity'));
+    const encodedDatabaseFormulas = text(row, 'db_ms2_formula');
+    const databaseFormulas = encodedDatabaseFormulas ? encodedDatabaseFormulas.split(';') : [];
     const experimentalCount = Math.min(experimentalMz.length, experimentalIntensity.length);
     const databaseCount = Math.min(databaseMz.length, databaseIntensity.length);
     if (!experimentalCount && !databaseCount) return null;
@@ -489,6 +500,11 @@ function evidenceSpec(
         y: databaseIntensity
           .slice(0, databaseCount)
           .flatMap((value) => [0, databaseMax > 0 ? -value / databaseMax : 0, null]),
+        customdata: databaseMz.slice(0, databaseCount).flatMap((_, index) => {
+          const formula = databaseFormulas[index]?.trim() || 'Formula unavailable';
+          return [formula, formula, null];
+        }),
+        hovertemplate: 'Database fragment formula: %{customdata}<br>m/z %{x:.5f}<br>Relative intensity %{y:.4f}<extra></extra>',
         line: { color: theme.reference, width: 1 },
       });
     yTitle = 'Relative intensity (experimental + / database −)';
@@ -887,7 +903,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
       'db_ms2_intensity',
       'formula',
       'polarity',
-    ].filter((column) => available.has(column));
+    ].filter((column) => column === 'row_key' || available.has(column));
   }, [context.artifact]);
 
   useEffect(() => {
@@ -1435,5 +1451,5 @@ function selectSuspectOverviewColumns(available: Column[] | undefined): string[]
   if (!available?.length) return undefined;
   const availableNames = new Set(available.map((column) => column.name));
   const selected = suspectOverviewColumns.filter((column) => availableNames.has(column));
-  return selected.length ? [...selected] : undefined;
+  return selected.length ? [...selected, 'row_key'] : undefined;
 }

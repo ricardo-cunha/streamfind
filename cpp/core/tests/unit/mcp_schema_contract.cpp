@@ -1,6 +1,5 @@
 #include <iostream>
 #include <filesystem>
-#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -19,11 +18,10 @@ const Json &tool_named(const Json &tools, const std::string &name) {
 }
 
 void require_node_reference(const Json &schema, const std::string &field) {
-    const auto &types = schema.at("properties").at(field).at("type");
-    if (!types.is_array() || std::set<std::string>{types.at(0), types.at(1)} !=
-                                 std::set<std::string>{"integer", "string"}) {
+    const auto &type = schema.at("properties").at(field).at("type");
+    if (type != "integer") {
         throw std::runtime_error("MCP schema contract: " + field +
-                                 " must advertise integer and string workflow node IDs");
+                                 " must advertise an integer workflow node ID");
     }
 }
 
@@ -55,6 +53,7 @@ void run() {
     const auto &workflow_execution =
         tool_named(tools, "get_workflow_execution").at("inputSchema");
     if (!workflow_execution.at("properties").contains("operation_instance") ||
+        workflow_execution.at("properties").at("operation_instance").at("type") != "integer" ||
         workflow_execution.at("required") != Json::array({"database_path"})) {
         throw std::runtime_error(
             "MCP schema contract: operation status polling must accept an optional operation_instance");
@@ -70,7 +69,11 @@ void run() {
     }
 
     const auto &add = tool_named(tools, "add_operation").at("inputSchema");
-    require_node_reference(add, "operation_id");
+    if (add.at("properties").contains("operation_id") ||
+        add.at("required") != Json::array({"database_path", "operation"})) {
+        throw std::runtime_error(
+            "MCP schema contract: add_operation must omit operation_id and assign it automatically");
+    }
     const auto &connect = tool_named(tools, "connect_operations").at("inputSchema");
     require_node_reference(connect, "source_operation");
     require_node_reference(connect, "target_operation");

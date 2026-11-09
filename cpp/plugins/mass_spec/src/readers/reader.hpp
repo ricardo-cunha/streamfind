@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <cstdlib>
 #include <cstdio>
+#include <functional>
 
 #include "streamfind/export.hpp"
 
@@ -348,6 +349,7 @@ namespace mass_spec
       virtual std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> indices = {}) = 0;
       virtual std::vector<std::vector<std::string>> get_software() = 0;
       virtual std::vector<std::vector<std::string>> get_hardware() = 0;
+      virtual std::string get_calibration_provenance() { return {}; }
       virtual MASS_SPEC_SPECTRUM get_spectrum(const int &idx) = 0;
 
       const std::string &file() const { return file_; }
@@ -417,8 +419,14 @@ namespace mass_spec
       std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> indices = {}) { return ms->get_chromatograms(indices); }
       std::vector<std::vector<std::string>> get_software() { return ms->get_software(); }
       std::vector<std::vector<std::string>> get_hardware() { return ms->get_hardware(); }
+      std::string get_calibration_provenance() { return ms->get_calibration_provenance(); }
       MASS_SPEC_SPECTRUM get_spectrum(const int &index) { return ms->get_spectrum(index); }
-      mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA get_spectra_targets(const mass_spec::spectra::MASS_SPEC_TARGETS &targets, const MASS_SPEC_SPECTRA_HEADERS &hd, const float &minIntLv1, const float &minIntLv2);
+      mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA get_spectra_targets(
+          const mass_spec::spectra::MASS_SPEC_TARGETS &targets,
+          const MASS_SPEC_SPECTRA_HEADERS &hd,
+          const float &minIntLv1,
+          const float &minIntLv2,
+          const std::function<void(size_t, size_t)> &progress = {});
 
       std::unique_ptr<MASS_SPEC_READER> ms;
       std::string file_path;

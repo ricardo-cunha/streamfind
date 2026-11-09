@@ -789,6 +789,13 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     if (!column.is_string() || column.get<std::string>().empty())
                         throw std::invalid_argument("result query columns must contain non-empty names");
                     const auto name = column.get<std::string>();
+                    if (name == "row_key") {
+                        if (std::find(projected_columns.begin(), projected_columns.end(), name) == projected_columns.end()) {
+                            projected_columns.push_back(name);
+                            columns.push_back({{"name", name}, {"type", "string"}});
+                        }
+                        continue;
+                    }
                     const auto schema_column = std::find_if(descriptor.at("schema").begin(), descriptor.at("schema").end(),
                         [&](const Json &candidate) { return candidate.value("name", std::string{}) == name; });
                     if (schema_column == descriptor.at("schema").end())

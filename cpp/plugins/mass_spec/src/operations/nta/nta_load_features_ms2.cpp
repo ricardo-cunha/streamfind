@@ -1,6 +1,7 @@
 #include "operations/nta/nta_load_features_ms2.hpp"
 #include "utils/nta.hpp"
 #include "readers/reader.hpp"
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -22,8 +23,12 @@ using Json = nlohmann::json;
         auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
         auto &buffers = data.feature_buffers();
         access.report_progress(0.0, "Preparing MS2 feature targets.");
+        const auto operation_started_at = std::chrono::steady_clock::now();
+        std::size_t total_targets = 0;
+        std::size_t completed_analyses = 0;
         for (size_t i = 0; i < buffers.size(); ++i)
         {
+            const auto analysis_started_at = std::chrono::steady_clock::now();
             ::mass_spec::spectra::MASS_SPEC_TARGETS targets;
             int counter = 0;
             for (int j = 0; j < buffers[i].size(); ++j)
@@ -49,13 +54,60 @@ using Json = nlohmann::json;
                 targets.mobilitymin.push_back(0.0f);
                 targets.mobilitymax.push_back(0.0f);
             }
+            total_targets += targets.id.size();
+            const auto analysis_name = data.analysis_names().at(i);
+            access.report_progress(
+                buffers.empty() ? 1.0 : static_cast<double>(i) / static_cast<double>(buffers.size()),
+                "MS2 analysis " + std::to_string(i + 1) + "/" + std::to_string(buffers.size()) +
+                    ": " + analysis_name + ", " + std::to_string(targets.id.size()) +
+                    " eligible features; " + std::to_string(total_targets) +
+                    " eligible targets across analyses so far.");
             if (targets.id.empty())
+            {
+                ++completed_analyses;
+                access.report_progress(
+                    buffers.empty() ? 1.0 : static_cast<double>(completed_analyses) / static_cast<double>(buffers.size()),
+                    "MS2 analysis " + std::to_string(i + 1) + "/" + std::to_string(buffers.size()) +
+                        ": " + analysis_name + " has no eligible targets; elapsed " +
+                        std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::steady_clock::now() - operation_started_at).count()) + " s.");
                 continue;
+            }
             if (!std::filesystem::exists(data.file_paths()[i]))
+            {
+                ++completed_analyses;
+                access.report_progress(
+                    buffers.empty() ? 1.0 : static_cast<double>(completed_analyses) / static_cast<double>(buffers.size()),
+                    "MS2 analysis " + std::to_string(i + 1) + "/" + std::to_string(buffers.size()) +
+                        ": source file is missing for " + analysis_name + ".");
                 continue;
+            }
+            access.report_progress(
+                buffers.empty() ? 0.0 : static_cast<double>(i) / static_cast<double>(buffers.size()),
+                "Extracting MS2 spectra for " + analysis_name + " (" +
+                    std::to_string(targets.id.size()) + " feature targets).");
             ::mass_spec::reader::MASS_SPEC_FILE file(data.file_paths()[i]);
             file.select_analysis(data.analysis_index_at(i));
-            auto spectra = file.get_spectra_targets(targets, data.spectra_headers_at(i), 0.0f, min_traces);
+            const auto analysis_fraction = [&](double within_analysis) {
+                return buffers.empty()
+                    ? 1.0
+                    : (static_cast<double>(i) + within_analysis) / static_cast<double>(buffers.size());
+            };
+            auto spectra = file.get_spectra_targets(
+                targets,
+                data.spectra_headers_at(i),
+                0.0f,
+                min_traces,
+                [&](size_t scans_completed, size_t total_scans) {
+                    const double within_analysis = total_scans == 0
+                        ? 1.0
+                        : static_cast<double>(scans_completed) / static_cast<double>(total_scans);
+                    access.report_progress(
+                        analysis_fraction(within_analysis),
+                        "MS2 extraction " + std::to_string(i + 1) + "/" + std::to_string(buffers.size()) +
+                            ": " + analysis_name + ", decoded " + std::to_string(scans_completed) + "/" +
+                            std::to_string(total_scans) + " candidate scans.");
+                });
             std::cerr << "[load_features_ms2] " << i + 1 << "/" << buffers.size()
                       << " targets=" << targets.id.size() << std::endl;
             std::cerr << "[load_features_ms2] extracted " << spectra.id.size()
@@ -95,9 +147,18 @@ using Json = nlohmann::json;
             }
             std::cerr << "[load_features_ms2] updated " << updated_for_analysis
                       << " features" << std::endl;
+            ++completed_analyses;
             access.report_progress(
-                static_cast<double>(i + 1) / static_cast<double>(buffers.size()),
-                "Loaded MS2 spectra for analysis " + std::to_string(i + 1) + "/" + std::to_string(buffers.size()) + ".");
+                buffers.empty() ? 1.0 : static_cast<double>(completed_analyses) / static_cast<double>(buffers.size()),
+                "Loaded MS2 spectra for analysis " + std::to_string(i + 1) + "/" + std::to_string(buffers.size()) +
+                    ": " + analysis_name + ", " + std::to_string(targets.id.size()) +
+                    " targets, " + std::to_string(spectra.mz.size()) + " spectrum points, " +
+                    std::to_string(updated_for_analysis) + " features updated; analysis elapsed " +
+                    std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() - analysis_started_at).count()) +
+                    " s, total elapsed " +
+                    std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() - operation_started_at).count()) + " s.");
         }
         access.report_progress(1.0, "MS2 spectra loading complete.");
         utils::detail::emit_features(access, data);

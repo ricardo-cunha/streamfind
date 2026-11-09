@@ -49,6 +49,8 @@ public:
 private:
     streamfind_plugin_column_type column_type(const std::string &table_name,
                                               const std::string &column_name) const;
+    bool column_is_array(const std::string &table_name,
+                         const std::string &column_name) const;
     const streamfind_plugin_host_api &host_;
     void *execution_context_;
 };

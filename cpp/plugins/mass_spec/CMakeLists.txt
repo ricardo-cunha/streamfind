@@ -8,6 +8,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/readers/reader_agilent_ims.cpp
     src/readers/reader_agilent_chemstation.cpp
     src/readers/reader_bruker.cpp
+    src/readers/reader_bruker_calibration.cpp
     src/readers/reader_sciex.cpp
     src/readers/reader_thermo.cpp
     src/operations/base.cpp
@@ -18,6 +19,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/chromatograms/operations.cpp
     src/operations/nta/operations.cpp
     src/operations/nta/nta_deconvolution.cpp
+    src/operations/nta/nta_noise_estimation.cpp
     src/operations/nta/nta_alignment.cpp
     src/operations/nta/nta_annotation.cpp
     src/operations/nta/nta_assign_transformation_products.cpp

@@ -37,6 +37,7 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     std::vector<std::string> allowed_tables;
     std::unordered_map<std::string, std::unordered_set<std::string>> readable_columns;
     std::unordered_map<std::string, std::unordered_set<std::string>> writable_columns;
+    std::unordered_map<std::string, std::unordered_set<std::string>> array_columns;
     std::unordered_map<std::string, std::unordered_map<std::string, streamfind_plugin_column_type>> column_types;
     std::unordered_map<std::string, std::string> output_tables;
     TableBatchEmitter emit_table_batch;

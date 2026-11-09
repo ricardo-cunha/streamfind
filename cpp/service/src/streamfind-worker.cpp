@@ -11,12 +11,14 @@
 #include "streamfind/operation_execution_context.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <atomic>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -29,6 +31,10 @@
 #endif
 
 namespace streamfind::service {
+
+namespace detail {
+std::mutex event_output_mutex;
+}
 
 namespace detail {
 
@@ -130,6 +136,7 @@ Json request_data_proxy(std::uint16_t port, const std::string &session_id,
 }  // namespace detail
 
 void emit_event(const Json &event) {
+    std::lock_guard<std::mutex> lock(detail::event_output_mutex);
     std::cout << event.dump() << '\n' << std::flush;
 }
 
@@ -197,8 +204,22 @@ public:
     }
     OperationOutputSink &outputs() override { return *outputs_; }
     void report_progress(double fraction, std::string_view message) override {
-        if (!message.empty()) emit_event(Json{{"type", "operation.log"}, {"operation_id", operation_id_},
-                                              {"message", "[" + std::to_string(static_cast<int>(std::clamp(fraction, 0.0, 1.0) * 100.0)) + "%] " + std::string(message)}});
+        if (message.empty()) return;
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex_);
+            const bool first = last_progress_at_.time_since_epoch().count() == 0;
+            const bool complete = std::isfinite(fraction) && fraction >= 1.0;
+            const bool scan_checkpoint = message.starts_with("MS2 extraction ") &&
+                                         message.find(" decoded ") != std::string_view::npos &&
+                                         message.find(" candidate scans.") != std::string_view::npos;
+            if (!first && !complete && !scan_checkpoint &&
+                now - last_progress_at_ < std::chrono::seconds(1)) return;
+            last_progress_at_ = now;
+        }
+        const auto normalized = std::isfinite(fraction) ? std::clamp(fraction, 0.0, 1.0) : 0.0;
+        emit_event(Json{{"type", "operation.log"}, {"operation_id", operation_id_},
+                        {"message", "[" + std::to_string(static_cast<int>(normalized * 100.0)) + "%] " + std::string(message)}});
     }
     void report_event(std::string_view event, const Json &payload) override {
         emit_event(Json{{"type", "operation.event"}, {"operation_id", operation_id_},
@@ -219,6 +240,8 @@ private:
     std::uint16_t service_port_;
     std::string session_id_, run_id_, operation_id_, operation_instance_, computation_key_;
     std::function<std::intptr_t()> receive_input_handle_;
+    std::mutex progress_mutex_;
+    std::chrono::steady_clock::time_point last_progress_at_{};
     int workflow_revision_;
     Json inputs_;
     std::shared_ptr<OperationOutputSink> outputs_;

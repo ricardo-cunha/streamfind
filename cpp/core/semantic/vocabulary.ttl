@@ -217,9 +217,9 @@ sf:optionalOutputPort
 sf:sourceNodeId
     a rdf:Property ;
     rdfs:domain sf:WorkflowConnection ;
-    rdfs:range rdfs:Literal ;
-    skos:prefLabel "source node identifier" ;
-    skos:definition "Project workflow node identifier at the output side of a connection." .
+    rdfs:range xsd:integer ;
+    skos:prefLabel "source node integer" ;
+    skos:definition "Integer identifier of the workflow node at the output side of a connection." .
 
 sf:sourcePortId
     a rdf:Property ;
@@ -231,9 +231,9 @@ sf:sourcePortId
 sf:targetNodeId
     a rdf:Property ;
     rdfs:domain sf:WorkflowConnection ;
-    rdfs:range rdfs:Literal ;
-    skos:prefLabel "target node identifier" ;
-    skos:definition "Project workflow node identifier at the input side of a connection." .
+    rdfs:range xsd:integer ;
+    skos:prefLabel "target node integer" ;
+    skos:definition "Integer identifier of the workflow node at the input side of a connection." .
 
 sf:targetPortId
     a rdf:Property ;

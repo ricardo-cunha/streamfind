@@ -191,12 +191,12 @@ sfcore:operationIdParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Workflow operation instance ID" ;
-    skos:definition "Unique identifier for one operation instance in the backend workflow graph." ;
-    sf:type "string" ;
+    skos:prefLabel "Workflow operation node ID" ;
+    skos:definition "Integer identifier assigned to a workflow operation node." ;
+    sf:type "integer" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "add_analyses_1" .
+    sf:example "1" .
 
 sfcore:operationParameter
     a sf:Parameter ;
@@ -213,12 +213,12 @@ sfcore:sourceOperationParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Source operation instance" ;
-    skos:definition "Workflow operation instance that publishes the connected output." ;
-    sf:type "string" ;
+    skos:prefLabel "Source operation node ID" ;
+    skos:definition "Integer identifier of the workflow node that publishes the connected output." ;
+    sf:type "integer" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "add_analyses_1" .
+    sf:example "1" .
 
 sfcore:sourcePortParameter
     a sf:Parameter ;
@@ -235,12 +235,12 @@ sfcore:targetOperationParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Target operation instance" ;
-    skos:definition "Workflow operation instance that consumes the connected input." ;
-    sf:type "string" ;
+    skos:prefLabel "Target operation node ID" ;
+    skos:definition "Integer identifier of the workflow node that consumes the connected input." ;
+    sf:type "integer" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "remove_analyses_1" .
+    sf:example "2" .
 
 sfcore:targetPortParameter
     a sf:Parameter ;
@@ -279,12 +279,12 @@ sfcore:operationInstanceParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Operation instance" ;
-    skos:definition "Workflow operation instance that produced or consumes an artifact." ;
-    sf:type "string" ;
+    skos:prefLabel "Operation node ID" ;
+    skos:definition "Integer workflow node identifier that produced or consumes a result." ;
+    sf:type "integer" ;
     sf:required false ;
     sf:default "" ;
-    sf:example "operation-1" .
+    sf:example "1" .
 
 sfcore:includeDataParameter
     a sf:Parameter ;

@@ -174,12 +174,15 @@ int main() {
             {"navigation_columns", {"label", "count"}},
             {"schema", {{{"name", "count"}, {"type", "integer"}},
                         {{"name", "enabled"}, {"type", "boolean"}},
-                        {{"name", "label"}, {"type", "string"}}}}});
+                        {{"name", "label"}, {"type", "string"}},
+                        {{"name", "trace"}, {"type", "array"}}}}});
         const auto output_handle = handle.at("output_handle").get<std::string>();
         sink.write_rows(output_handle, 0,
-                        {{{"count", 7}, {"enabled", true}, {"label", "first"}}});
+                        {{{"count", 7}, {"enabled", true}, {"label", "first"},
+                          {"trace", {1.25, 2.5, 3.75}}}});
         sink.write_rows(output_handle, 1,
-                        {{{"count", nullptr}, {"enabled", false}, {"label", "second"}}});
+                        {{{"count", nullptr}, {"enabled", false}, {"label", "second"},
+                          {"trace", nullptr}}});
         const auto published = sink.finish(output_handle, {{"cacheable", true}, {"computation_key", "key-1"}});
         const auto result_id = published.at("result_id").get<std::string>();
         const auto descriptor = store.describe_result(result_id);
@@ -231,12 +234,14 @@ int main() {
         auto owned_input = store.open_published_result(result_id);
         streamfind::data_proxy::ArrowFileBatchReader input_reader(
             duplicate_native_handle(owned_input->native_handle()));
-        const auto first_page = input_reader.read(0, 1, {"count", "label"});
-        const auto second_page = input_reader.read(1, 1, {"count", "label"});
+        const auto first_page = input_reader.read(0, 1, {"count", "label", "trace"});
+        const auto second_page = input_reader.read(1, 1, {"count", "label", "trace"});
         require(first_page.size() == 1 && second_page.size() == 1 &&
                     first_page.front().at("count") == 7 &&
                     second_page.front().at("count").is_null() &&
-                    second_page.front().at("label") == "second",
+                    second_page.front().at("label") == "second" &&
+                    first_page.front().at("trace") == streamfind::Json::array({1.25, 2.5, 3.75}) &&
+                    second_page.front().at("trace").is_null(),
                 "handle-backed Arrow reader did not return sequential projected pages");
 
         const auto empty_handle = sink.begin({

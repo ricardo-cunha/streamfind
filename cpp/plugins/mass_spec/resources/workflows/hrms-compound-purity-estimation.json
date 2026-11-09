@@ -261,6 +261,7 @@
       "parameters": {
         "debug_analysis": "",
         "debug_rt": 0,
+        "max_component_rt_span": 20,
         "min_correlation": 0.85,
         "rt_window": [
           -5,

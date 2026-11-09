@@ -11,6 +11,32 @@
 namespace streamfind::test_detail {
 
 int run() {
+    const auto string_id_workflow = streamfind::Workflow::from_json({
+        {"schema_version", 2}, {"definition_revision", 1},
+        {"operations", streamfind::Json::array({
+            {{"id", "operation-1"}, {"operation", "test.producer"}},
+            {{"id", "operation-2"}, {"operation", "test.consumer"}}})},
+        {"connections", streamfind::Json::array({
+            {{"source_operation", "operation-1"}, {"source_port", "result"},
+             {"target_operation", "operation-2"}, {"target_port", "input"}}})}});
+    const auto string_id_round_trip = string_id_workflow.to_json();
+    if (string_id_round_trip.at("operations").at(0).at("id") != "operation-1" ||
+        string_id_round_trip.at("connections").at(0).at("source_operation") != "operation-1" ||
+        string_id_round_trip.at("connections").at(0).at("target_operation") != "operation-2") {
+        std::cerr << "workflow string node IDs did not survive parsing and serialization\n";
+        return 1;
+    }
+    auto numeric_id_workflow = string_id_workflow;
+    numeric_id_workflow.operations.front().id = "1";
+    numeric_id_workflow.connections.front().source_operation = "1";
+    numeric_id_workflow.connections.front().target_operation = "2";
+    const auto numeric_id_round_trip = numeric_id_workflow.to_json();
+    if (!numeric_id_round_trip.at("operations").at(0).at("id").is_number_integer() ||
+        !numeric_id_round_trip.at("connections").at(0).at("source_operation").is_number_integer()) {
+        std::cerr << "numeric workflow node IDs changed JSON representation\n";
+        return 1;
+    }
+
     const auto path = streamfind::test::tmp_projects_dir() / "streamfind-core-project-lifecycle.duckdb";
     std::error_code error;
     std::filesystem::remove(path, error);

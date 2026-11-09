@@ -1746,8 +1746,38 @@ function AppShell({
         })
         .catch(() => undefined);
     const unsubscribe = client.subscribe((event) => {
-      if (event.type === 'project.created' || event.type === 'project.opened' || event.type === 'project.closed')
-        refreshProjects();
+      if (event.type !== 'project.created' && event.type !== 'project.opened' && event.type !== 'project.closed')
+        return;
+
+      // Project lifecycle events carry the session DTO. Apply it immediately so
+      // the workspace responds to MCP or CLI changes without waiting for a
+      // second request (which may be delayed or briefly fail while a project is
+      // being attached). The list request below remains the authoritative
+      // reconciliation step.
+      const changed = event.project;
+      if (changed && typeof changed === 'object' && !Array.isArray(changed)) {
+        const candidate = changed as Partial<ProjectSession>;
+        if (typeof candidate.session_id === 'string' && typeof candidate.database_path === 'string') {
+          if (event.type === 'project.closed') {
+            setProjects((items) => items.filter((item) => item.session_id !== candidate.session_id));
+            if (routeFromHash().sessionId === candidate.session_id) {
+              setActiveProject(null);
+              setRouteState({ route: 'projects' });
+              navigateHash('projects');
+            }
+          } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.domains)) {
+            const project = candidate as ProjectSession;
+            setProjects((items) => [
+              project,
+              ...items.filter((item) => item.session_id !== project.session_id),
+            ]);
+            setActiveProject((current) =>
+              current?.session_id === project.session_id ? project : current,
+            );
+          }
+        }
+      }
+      void refreshProjects();
     });
     client
       .capabilities()

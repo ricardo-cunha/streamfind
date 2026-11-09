@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -201,12 +202,28 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
     }
 
     case ProjectCommand::add_operation: {
-        if (!request.contains("operation_id") || !request.contains("operation"))
-            throw Error(ErrorCode::InvalidArgument, "Request requires operation_id and operation");
+        if (!request.contains("operation"))
+            throw Error(ErrorCode::InvalidArgument, "Request requires operation");
+        if (request.contains("operation_id"))
+            throw Error(ErrorCode::InvalidArgument, "operation_id is assigned automatically; omit it");
         auto project = Project::open(detail::options_from_request(request));
         auto workflow = project.get_workflow();
+        std::int64_t maximum_id = 0;
+        for (const auto &existing : workflow.operations) {
+            try {
+                std::size_t consumed = 0;
+                const auto id = std::stoll(existing.id, &consumed);
+                if (consumed == existing.id.size()) maximum_id = std::max(maximum_id, id);
+            } catch (const std::exception &) {
+                // Existing nonnumeric IDs do not participate in integer allocation.
+            }
+        }
+        maximum_id = std::max(maximum_id, static_cast<std::int64_t>(workflow.operations.size()));
+        if (maximum_id == std::numeric_limits<std::int64_t>::max())
+            throw Error(ErrorCode::InvalidArgument, "workflow has no available integer operation id");
+        const auto assigned_id = maximum_id + 1;
         WorkflowOperation operation;
-        operation.id = detail::workflow_operation_id(request.at("operation_id"));
+        operation.id = std::to_string(assigned_id);
         operation.operation = request.at("operation").get<std::string>();
         operation.parameters = ParameterValues::from_json(request.value("parameters", Json::object()));
         operation.inputs = request.value("inputs", Json::object());
@@ -222,7 +239,8 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
         // Incremental graph construction may temporarily contain unconnected
         // required inputs. validate_workflow remains the explicit validation gate.
         project.set_workflow(std::move(workflow));
-        return {{"updated", true}, {"workflow", project.get_workflow().to_json()}};
+        return {{"updated", true}, {"assigned_operation_id", assigned_id},
+                {"workflow", project.get_workflow().to_json()}};
     }
     case ProjectCommand::connect_operations: {
         auto project = Project::open(detail::options_from_request(request));

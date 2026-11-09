@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -162,10 +163,21 @@ streamfind_plugin_status describe_dependencies(streamfind_plugin_buffer *result_
          {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.find_internal_standards_metfrag", "mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/java"},
          {"installable", true}, {"network_required", true},
          {"available", ::streamfind::mass_spec::tools::resolve_java().has_value()}},
-        {{"id", "mass_spec.metfrag_fragmenter"}, {"label", "MetFrag Fragmenter"}, {"version", "0.2.0"}, {"kind", "jar"},
-         {"required_by", Json::array({"mass_spec.fragment_suspect_targets"})}, {"managed_path", ".streamfind/tools/metfrag/streamfind-metfrag-fragmenter.jar"},
+        {{"id", "mass_spec.metfrag_fragmenter"}, {"label", "MetFrag Fragmenter"}, {"version", std::string(::streamfind::mass_spec::tools::kMetFragFragmenterVersion)}, {"kind", "jar"},
+         {"embedded_version", std::string(::streamfind::mass_spec::tools::kMetFragFragmenterVersion)},
+         {"required_by", Json::array({"mass_spec.fragment_suspect_targets"})},
+         {"managed_path", ".streamfind/tools/metfrag/streamfind-metfrag-fragmenter-" +
+                          std::string(::streamfind::mass_spec::tools::kMetFragFragmenterVersion) + ".jar"},
          {"installable", true}, {"network_required", true},
-         {"available", ::streamfind::mass_spec::tools::resolve_metfrag_fragmenter_jar().has_value()}},
+         {"available", ::streamfind::mass_spec::tools::resolve_metfrag_fragmenter_jar().has_value()},
+         {"installed_version", []() -> Json {
+             if (const char* override_path = std::getenv("STREAMFIND_METFRAG_FRAGMENTER_JAR"); override_path && *override_path)
+                 return ::streamfind::mass_spec::tools::detail::metfrag_fragmenter_jar_version(override_path).value_or("");
+             const auto path = std::filesystem::path(::streamfind::mass_spec::tools::tools_dir()) / "metfrag" /
+                 ("streamfind-metfrag-fragmenter-" +
+                  std::string(::streamfind::mass_spec::tools::kMetFragFragmenterVersion) + ".jar");
+             return ::streamfind::mass_spec::tools::detail::metfrag_fragmenter_jar_version(path.string()).value_or("");
+         }()}},
         {{"id", "mass_spec.metfrag"}, {"label", "MetFragCL"}, {"version", "2.6.11"}, {"kind", "jar"},
          {"required_by", Json::array({"mass_spec.metfrag_screening", "mass_spec.find_internal_standards_metfrag"})}, {"managed_path", ".streamfind/tools/metfrag/MetFragCL.jar"},
          {"installable", true}, {"network_required", true},

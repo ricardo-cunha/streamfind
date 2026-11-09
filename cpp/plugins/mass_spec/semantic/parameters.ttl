@@ -296,7 +296,8 @@ sfms:baseQuantileParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Base noise quantile" ;
-    skos:definition "Base quantile for adaptive per-spectrum noise estimation." ;
+    skos:definition "Base percentile (strictly between 0 and 1) used to estimate the per-bin noise threshold from positive spectrum intensities. Lower values estimate a lower noise floor and can preserve weaker peaks; higher values apply stronger noise filtering. The operation adapts this percentile to spectrum variability and signal-to-noise ratio, then applies noise_threshold as a minimum." ;
+    sf:constraints "{\"exclusiveMinimum\":0,\"exclusiveMaximum\":1}" ;
     sf:type "real" ;
     sf:required false ;
     sf:defaultRequired true ;
@@ -523,7 +524,7 @@ sfms:filteredParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Include filtered features" ;
-    skos:definition "When false (default), features marked as filtered are excluded from the returned feature table. Set true to include them." ;
+    skos:definition "When false (default), rows marked filtered=true are excluded from operation processing. Set true to include those rows." ;
     sf:type "boolean" ;
     sf:required false ;
     sf:default false ;
@@ -540,6 +541,19 @@ sfms:rtWindowParameter
     sf:default "[-2.5, 2.5]" ;
     sf:items sfcore:realItemParameter ;
     sf:example "[-2.5, 2.5]" .
+
+sfms:maxComponentRtSpanParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum component RT span" ;
+    skos:definition "Maximum total difference in seconds between the earliest and latest feature RT in a component. Pairwise RT and EIC/isotope compatibility still determine candidate links; candidate links are processed strongest-first, and a link is rejected if merging its two groups would exceed this total-span limit. This prevents transitive RT chaining from creating very broad components." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 20 ;
+    sf:units "seconds" ;
+    sf:constraints "{\"minimum\":0}" ;
+    sf:example 20 .
 
 sfms:mzWindowParameter
     a sf:Parameter ;
@@ -1362,7 +1376,7 @@ sfms:topNParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag top N candidates" ;
-    skos:definition "Maximum number of MetFrag candidate fragments retained per feature." ;
+    skos:definition "Maximum number of score-ranked MetFrag candidates StreamFind evaluates and retains per feature. MetFrag still performs its configured database search; this limit bounds downstream structure normalization, isotope scoring, and result construction." ;
     sf:type "integer" ;
     sf:required false ;
     sf:default 5 ;
@@ -1473,6 +1487,19 @@ sfms:featureParallelismParameter
     sf:default 2 ;
     sf:constraints "{\"minimum\":1}" ;
     sf:example 2 .
+
+sfms:featureTimeoutSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Feature timeout" ;
+    skos:definition "Maximum seconds allowed for one MetFrag child-process search. Zero disables the timeout. If any selected feature times out, the whole operation fails and no partial result is published; the error identifies the analysis and feature." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default 0 ;
+    sf:constraints "{\"minimum\":0,\"maximum\":86400}" ;
+    sf:units "seconds" ;
+    sf:example 600 .
 
 sfms:cacheCandidatesParameter
     a sf:Parameter ;
@@ -1734,12 +1761,55 @@ sfms:fragmentationDepthParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragmentation depth" ;
-    skos:definition "Maximum top-down MetFrag fragmentation depth for each suspect target structure." ;
+    skos:definition "Maximum top-down MetFrag fragmentation depth for each suspect target structure. Values from 1 to 8 are supported; higher depths can grow the fragment tree rapidly." ;
     sf:type "integer" ;
     sf:required false ;
     sf:defaultRequired true ;
     sf:default 2 ;
+    sf:constraints "{\"minimum\":1,\"maximum\":8}" ;
     sf:example 2 .
+
+sfms:fragmenterTimeoutSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fragmenter component timeout" ;
+    skos:definition "Maximum wall-clock time for one MetFrag Fragmenter process handling a disconnected SMILES component. Each component gets its own timeout." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 120 ;
+    sf:constraints "{\"minimum\":1,\"maximum\":86400}" ;
+    sf:units "seconds" ;
+    sf:example 120 .
+
+sfms:fragmenterOutputLimitMbParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Fragmenter output limit" ;
+    skos:definition "Maximum combined standard output and error file size for one component's MetFrag Fragmenter process. The process is stopped if it exceeds this limit." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 64 ;
+    sf:constraints "{\"minimum\":1,\"maximum\":1024}" ;
+    sf:units "MiB" ;
+    sf:example 64 .
+
+sfms:maximumFragmentRowsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum fragment rows" ;
+    skos:definition "Maximum total number of fragment rows emitted by one operation across all target structures and disconnected components. Exceeding the limit fails the operation instead of publishing a silently truncated tree." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 250000 ;
+    sf:constraints "{\"minimum\":1,\"maximum\":1000000}" ;
+    sf:units "rows" ;
+    sf:example 250000 .
 
 sfms:maxInverseCandidatesParameter
     a sf:Parameter ;

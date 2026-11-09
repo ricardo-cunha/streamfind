@@ -3991,7 +3991,12 @@ namespace mass_spec
       selected_analysis = index;
     }
 
-    mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA MASS_SPEC_FILE::get_spectra_targets(const mass_spec::spectra::MASS_SPEC_TARGETS &targets, const MASS_SPEC_SPECTRA_HEADERS &hd, const float &minIntLv1, const float &minIntLv2)
+    mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA MASS_SPEC_FILE::get_spectra_targets(
+        const mass_spec::spectra::MASS_SPEC_TARGETS &targets,
+        const MASS_SPEC_SPECTRA_HEADERS &hd,
+        const float &minIntLv1,
+        const float &minIntLv2,
+        const std::function<void(size_t, size_t)> &progress)
     {
       mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA out;
       // Build the scan-to-target index before touching peak arrays. The previous
@@ -4032,46 +4037,54 @@ namespace mass_spec
       candidate_indices.reserve(hd.size());
       for (size_t i = 0; i < targets_by_scan.size(); ++i)
         if (!targets_by_scan[i].empty()) candidate_indices.push_back(static_cast<int>(i));
-      const auto raw = ms->get_spectra(candidate_indices);
       std::vector<mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA> per_target(targets.id.size());
-      for (size_t raw_index = 0; raw_index < raw.size() && raw_index < candidate_indices.size(); ++raw_index)
+      constexpr size_t scan_batch_size = 64;
+      for (size_t batch_start = 0; batch_start < candidate_indices.size(); batch_start += scan_batch_size)
       {
-        const size_t i = static_cast<size_t>(candidate_indices[raw_index]);
-        const auto &scan = raw[raw_index];
-        if (scan.size() < 2) continue;
-        for (const size_t t : targets_by_scan[i])
+        const size_t batch_end = std::min(candidate_indices.size(), batch_start + scan_batch_size);
+        std::vector<int> batch_indices(candidate_indices.begin() + static_cast<std::ptrdiff_t>(batch_start),
+                                       candidate_indices.begin() + static_cast<std::ptrdiff_t>(batch_end));
+        const auto raw = ms->get_spectra(batch_indices);
+        for (size_t raw_index = 0; raw_index < raw.size() && raw_index < batch_indices.size(); ++raw_index)
         {
-          const bool precursor = t < targets.precursor.size() ? targets.precursor[t] : false;
-          const int level = t < targets.level.size() ? targets.level[t] : 0;
-          const int polarity = t < targets.polarity.size() ? targets.polarity[t] : 0;
-          const float mzmin = t < targets.mzmin.size() ? targets.mzmin[t] : 0.0f;
-          const float mzmax = t < targets.mzmax.size() ? targets.mzmax[t] : 0.0f;
-          const float mzcenter = t < targets.mz.size() ? targets.mz[t] : 0.0f;
-          const float mmin = mzmin == 0.0f && mzmax == 0.0f ? mzcenter - 0.01f : mzmin;
-          const float mmax = mzmin == 0.0f && mzmax == 0.0f ? mzcenter + 0.01f : mzmax;
-          const float scan_pre_mz = (precursor && i < hd.precursor_mz.size()) ? hd.precursor_mz[i] : mzcenter;
-          const float scan_mobility = i < hd.mobility.size() ? hd.mobility[i] : (t < targets.mobility.size() ? targets.mobility[t] : 0.0f);
-          auto &matched = per_target[t];
-          for (size_t k = 0; k < scan[0].size(); ++k)
+          const size_t i = static_cast<size_t>(batch_indices[raw_index]);
+          const auto &scan = raw[raw_index];
+          if (scan.size() < 2) continue;
+          for (const size_t t : targets_by_scan[i])
           {
-            const float mzv = scan[0][k];
-            const float inv = scan[1][k];
-            if (level == 1 && inv < minIntLv1) continue;
-            if (level >= 2 && inv < minIntLv2) continue;
-            if (!precursor && (mzv < mmin || mzv > mmax)) continue;
-            matched.id.push_back(targets.id[t]);
-            matched.polarity.push_back(polarity);
-            matched.level.push_back(level);
-            matched.pre_mz.push_back(scan_pre_mz);
-            matched.pre_mzlow.push_back(mmin);
-            matched.pre_mzhigh.push_back(mmax);
-            matched.pre_ce.push_back(i < hd.activation_ce.size() ? hd.activation_ce[i] : 0.0f);
-            matched.rt.push_back(hd.rt[i]);
-            matched.mobility.push_back(scan_mobility);
-            matched.mz.push_back(mzv);
-            matched.intensity.push_back(inv);
+            const bool precursor = t < targets.precursor.size() ? targets.precursor[t] : false;
+            const int level = t < targets.level.size() ? targets.level[t] : 0;
+            const int polarity = t < targets.polarity.size() ? targets.polarity[t] : 0;
+            const float mzmin = t < targets.mzmin.size() ? targets.mzmin[t] : 0.0f;
+            const float mzmax = t < targets.mzmax.size() ? targets.mzmax[t] : 0.0f;
+            const float mzcenter = t < targets.mz.size() ? targets.mz[t] : 0.0f;
+            const float mmin = mzmin == 0.0f && mzmax == 0.0f ? mzcenter - 0.01f : mzmin;
+            const float mmax = mzmin == 0.0f && mzmax == 0.0f ? mzcenter + 0.01f : mzmax;
+            const float scan_pre_mz = (precursor && i < hd.precursor_mz.size()) ? hd.precursor_mz[i] : mzcenter;
+            const float scan_mobility = i < hd.mobility.size() ? hd.mobility[i] : (t < targets.mobility.size() ? targets.mobility[t] : 0.0f);
+            auto &matched = per_target[t];
+            for (size_t k = 0; k < scan[0].size(); ++k)
+            {
+              const float mzv = scan[0][k];
+              const float inv = scan[1][k];
+              if (level == 1 && inv < minIntLv1) continue;
+              if (level >= 2 && inv < minIntLv2) continue;
+              if (!precursor && (mzv < mmin || mzv > mmax)) continue;
+              matched.id.push_back(targets.id[t]);
+              matched.polarity.push_back(polarity);
+              matched.level.push_back(level);
+              matched.pre_mz.push_back(scan_pre_mz);
+              matched.pre_mzlow.push_back(mmin);
+              matched.pre_mzhigh.push_back(mmax);
+              matched.pre_ce.push_back(i < hd.activation_ce.size() ? hd.activation_ce[i] : 0.0f);
+              matched.rt.push_back(hd.rt[i]);
+              matched.mobility.push_back(scan_mobility);
+              matched.mz.push_back(mzv);
+              matched.intensity.push_back(inv);
+            }
           }
         }
+        if (progress) progress(batch_end, candidate_indices.size());
       }
       for (auto &matched : per_target)
       {

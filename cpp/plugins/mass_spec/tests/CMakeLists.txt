@@ -39,6 +39,79 @@ target_link_libraries(streamfind_mass_spec_data_contract PRIVATE streamfind::cpp
 add_test(NAME streamfind_mass_spec_data_contract COMMAND streamfind_mass_spec_data_contract)
 set_tests_properties(streamfind_mass_spec_data_contract PROPERTIES LABELS "mass_spec;data")
 
+add_executable(streamfind_mass_spec_filter_reason_contract
+    unit/filter_reason_contract.cpp)
+target_include_directories(streamfind_mass_spec_filter_reason_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_filter_reason_contract
+    COMMAND streamfind_mass_spec_filter_reason_contract)
+set_tests_properties(streamfind_mass_spec_filter_reason_contract PROPERTIES
+    LABELS "mass_spec;nta;filter")
+
+add_executable(streamfind_mass_spec_blank_replicate_matching_contract
+    unit/blank_replicate_matching_contract.cpp)
+target_include_directories(streamfind_mass_spec_blank_replicate_matching_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_blank_replicate_matching_contract
+    COMMAND streamfind_mass_spec_blank_replicate_matching_contract)
+set_tests_properties(streamfind_mass_spec_blank_replicate_matching_contract PROPERTIES
+    LABELS "mass_spec;nta;blank_subtraction")
+
+add_executable(streamfind_mass_spec_find_features_noise_quantile_contract
+    unit/find_features_noise_quantile_contract.cpp
+    ../src/operations/nta/nta_noise_estimation.cpp)
+target_include_directories(streamfind_mass_spec_find_features_noise_quantile_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_find_features_noise_quantile_contract
+    COMMAND streamfind_mass_spec_find_features_noise_quantile_contract)
+set_tests_properties(streamfind_mass_spec_find_features_noise_quantile_contract PROPERTIES
+    LABELS "mass_spec;nta;find_features")
+
+add_executable(streamfind_mass_spec_fragmenter_limits_contract
+    unit/fragmenter_limits_contract.cpp)
+target_include_directories(streamfind_mass_spec_fragmenter_limits_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_fragmenter_limits_contract
+    COMMAND streamfind_mass_spec_fragmenter_limits_contract)
+set_tests_properties(streamfind_mass_spec_fragmenter_limits_contract PROPERTIES
+    LABELS "mass_spec;fragmentation")
+
+add_executable(streamfind_mass_spec_metfrag_installer_contract
+    unit/metfrag_installer_contract.cpp
+    ../src/utils/tools_resolver.cpp)
+target_include_directories(streamfind_mass_spec_metfrag_installer_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include")
+target_link_libraries(streamfind_mass_spec_metfrag_installer_contract PRIVATE streamfind::zlib)
+target_compile_definitions(streamfind_mass_spec_metfrag_installer_contract PRIVATE
+    STREAMFIND_DOMAIN_BUILDING_SHARED)
+add_test(NAME streamfind_mass_spec_metfrag_installer_contract
+    COMMAND streamfind_mass_spec_metfrag_installer_contract)
+set_tests_properties(streamfind_mass_spec_metfrag_installer_contract PROPERTIES
+    LABELS "mass_spec;dependencies;installer")
+
+add_executable(streamfind_mass_spec_bruker_calibration_contract
+    unit/bruker_calibration_contract.cpp
+    ../src/readers/reader_bruker_calibration.cpp)
+target_include_directories(streamfind_mass_spec_bruker_calibration_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include")
+
+add_test(NAME streamfind_mass_spec_bruker_calibration_contract
+    COMMAND streamfind_mass_spec_bruker_calibration_contract)
+set_tests_properties(streamfind_mass_spec_bruker_calibration_contract PROPERTIES
+    LABELS "mass_spec;reader;calibration")
+
 foreach(_test_target IN ITEMS
     streamfind_mass_spec_mcp_discovery_contract
     streamfind_mass_spec_project_isolation_contract)

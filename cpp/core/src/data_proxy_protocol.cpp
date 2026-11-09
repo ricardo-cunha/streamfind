@@ -420,6 +420,25 @@ Json ArrowFileBatchReader::read(std::uint64_t offset, std::uint64_t limit,
                     row[field->name()] = value.is_discarded() ? Json(std::string(text)) : std::move(value);
                     break;
                 }
+                case arrow::Type::LIST: {
+                    const auto list = std::static_pointer_cast<arrow::ListArray>(array);
+                    const auto begin = list->value_offset(impl_->batch_row);
+                    const auto end = list->value_offset(impl_->batch_row + 1);
+                    const auto child = list->values();
+                    Json value = Json::array();
+                    for (auto child_index = begin; child_index < end; ++child_index) {
+                        if (child->IsNull(child_index)) value.push_back(nullptr);
+                        else if (child->type_id() == arrow::Type::INT64)
+                            value.push_back(std::static_pointer_cast<arrow::Int64Array>(child)->Value(child_index));
+                        else if (child->type_id() == arrow::Type::DOUBLE)
+                            value.push_back(std::static_pointer_cast<arrow::DoubleArray>(child)->Value(child_index));
+                        else if (child->type_id() == arrow::Type::STRING)
+                            value.push_back(std::static_pointer_cast<arrow::StringArray>(child)->GetString(child_index));
+                        else throw std::runtime_error("unsupported StreamFind Arrow list child type");
+                    }
+                    row[field->name()] = std::move(value);
+                    break;
+                }
                 default:
                     throw std::runtime_error("unsupported StreamFind Arrow file column type");
                 }

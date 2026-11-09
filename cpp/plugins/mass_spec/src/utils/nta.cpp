@@ -826,6 +826,22 @@ namespace streamfind::mass_spec::nta::utils::detail
         // Map the JSON `suspect_targets` array into SuspectQuery objects.
         std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &access, const Json &parameters, bool allow_table_input)
         {
+            const auto normalize_fragment_arrays = [](Json &row) {
+                for (const auto &key : {"fragments_mz_pos", "fragments_intensity_pos",
+                                        "fragments_mz_neg", "fragments_intensity_neg"})
+                {
+                    auto it = row.find(key);
+                    if (it == row.end() || it->is_null())
+                    {
+                        row[key] = Json::array();
+                    }
+                    else if (it->is_string())
+                    {
+                        const auto encoded = it->get<std::string>();
+                        row[key] = encoded.empty() ? Json::array() : Json::parse(encoded);
+                    }
+                }
+            };
             const auto json_array_value = [](const Json &value) {
                 if (value.is_null()) return Json::array();
                 if (!value.is_array())
@@ -843,7 +859,10 @@ namespace streamfind::mass_spec::nta::utils::detail
                 access.read_batches("result:" + result_id, columns, "name",
                     [&](const Json &batch) {
                         auto batch_parameters = parameters;
-                        batch_parameters["suspect_targets"] = batch;
+                        Json normalized_batch = batch;
+                        for (auto &row : normalized_batch)
+                            if (row.is_object()) normalize_fragment_arrays(row);
+                        batch_parameters["suspect_targets"] = std::move(normalized_batch);
                         auto parsed = parse_suspect_targets(access, batch_parameters, false);
                         out.insert(out.end(), std::make_move_iterator(parsed.begin()),
                                    std::make_move_iterator(parsed.end()));
@@ -859,9 +878,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 const std::vector<std::string> columns = {"name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP", "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
                 for (auto row : access.read(table, columns, "name"))
                 {
-                    for (const auto &key : {"fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"})
-                        if (row.contains(key) && row[key].is_string() && !row[key].get<std::string>().empty())
-                            row[key] = Json::parse(row[key].get<std::string>());
+                    normalize_fragment_arrays(row);
                     targets.push_back(std::move(row));
                 }
             }

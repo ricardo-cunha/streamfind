@@ -57,17 +57,6 @@ namespace streamfind::mass_spec::nta::filter_features
       return std::isnan(v);
     }
 
-    void append_filter(std::string &filter, const std::string &name)
-    {
-      if (filter.empty())
-      {
-        filter = name;
-      }
-      else
-      {
-        filter += " " + name;
-      }
-    }
   }
 
   using namespace streamfind::mass_spec::nta::filter_detail;
@@ -220,7 +209,7 @@ namespace streamfind::mass_spec::nta::filter_features
           if (predicate(fts, i, replicate))
           {
             fts.filtered[i] = true;
-            append_filter(fts.filter[i], name);
+            ::streamfind::mass_spec::nta::utils::append_filter_reason(fts.filter[i], name);
             updated++;
           }
         }

@@ -34,6 +34,7 @@ namespace streamfind::mass_spec::nta
     void create_components_impl(
       ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
         const std::vector<float> &rtWindow,
+        float maxComponentRtSpan = 20.0f,
         float minCorrelation = 0.8f,
         float debugRT = 0.0f,
         const std::string &debugAnalysis = "",

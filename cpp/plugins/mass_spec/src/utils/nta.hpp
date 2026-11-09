@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cstddef>
+#include <cctype>
 #include <optional>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -15,6 +17,22 @@ namespace streamfind::sdk { class DebugSession; }
 
 namespace streamfind::mass_spec::nta::utils
 {
+  inline void append_filter_reason(std::string &filter, const std::string_view reason)
+  {
+    if (reason.empty()) return;
+    std::size_t start = 0;
+    while (start < filter.size())
+    {
+      while (start < filter.size() && std::isspace(static_cast<unsigned char>(filter[start]))) ++start;
+      const auto end = filter.find_first_of(" \t\r\n", start);
+      const auto token_end = end == std::string::npos ? filter.size() : end;
+      if (std::string_view(filter).substr(start, token_end - start) == reason) return;
+      start = token_end;
+    }
+    if (!filter.empty() && !std::isspace(static_cast<unsigned char>(filter.back()))) filter.push_back(' ');
+    filter.append(reason);
+  }
+
   void set_debug_session(::streamfind::sdk::DebugSession *session);
   void write_debug_log(std::string_view value);
   struct NTA_FEATURE_ROW

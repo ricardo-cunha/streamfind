@@ -255,13 +255,12 @@ sfcore:addOperation
     skos:inScheme sfcore:scheme ;
     sf:commandId "add_operation" ;
     skos:prefLabel "Add an operation to the workflow" ;
-    skos:definition "Add a uniquely identified workflow operation with its parameters to the backend operation graph." ;
+    skos:definition "Add a workflow operation with its parameters; the service assigns the next integer node identifier." ;
     sf:category "workflow-construction" ;
-    sf:guidance "Use one unique operation_id per node instance. The operation value must be a canonical ontology operation id from tools/list, such as mass_spec.find_features. Parameters belong to this node instance; input artifacts are supplied only through explicit port connections." ;
+    sf:guidance "The service assigns the node ID as one greater than the highest integer ID in the workflow. Do not supply an operation_id. The operation value must be a canonical ontology operation id from tools/list, such as mass_spec.find_features. Parameters belong to this node; input results are supplied through explicit port connections." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,
-        sfcore:operationIdParameter,
         sfcore:operationParameter,
         sfcore:parametersParameter ;
     sf:mutatesProject true .
@@ -273,7 +272,7 @@ sfcore:connectOperations
     skos:prefLabel "Connect workflow operation ports" ;
     skos:definition "Create an explicit typed-port connection from one workflow operation output to another operation input." ;
     sf:category "workflow-construction" ;
-    sf:guidance "Connect a declared output port to a compatible declared input port or parameter. Use the exact operation instance ids and semantic port ids from the operation definitions. For dynamic parameter binding, set target_port to parameter:<parameter_name>; the published output payload is merged into that parameter before validation and execution. A target port accepts at most one connection; use validate_workflow before execution." ;
+    sf:guidance "Connect a declared output port to a compatible declared input port or parameter. Use the integer node IDs and semantic port IDs from the workflow and operation definitions. For dynamic parameter binding, set target_port to parameter:<parameter_name>; the published output payload is merged into that parameter before validation and execution. A target port accepts at most one connection; use validate_workflow before execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
         sfcore:databasePathParameter,

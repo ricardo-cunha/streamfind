@@ -210,6 +210,11 @@ export default function CanvasShell({
   const artifactsLoadedRef = useRef(false);
   const currentResultsRef = useRef<ResultRecord[]>([]);
   const artifactsRefreshInFlightRef = useRef<Promise<ResultRecord[]> | null>(null);
+  const artifactsRefreshPendingRef = useRef<{
+    promise: Promise<ResultRecord[]>;
+    resolve: (results: ResultRecord[]) => void;
+    reject: (reason?: unknown) => void;
+  } | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [documentationFocus, setDocumentationFocus] = useState<DocumentationFocus | null>(null);
@@ -328,7 +333,21 @@ export default function CanvasShell({
     (force = false) => {
       if (!client || typeof client.currentResults !== 'function') return Promise.resolve<ResultRecord[]>([]);
       if (!force && artifactsLoadedRef.current) return Promise.resolve(currentResultsRef.current);
-      if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
+      if (artifactsRefreshInFlightRef.current) {
+        if (force) {
+          if (!artifactsRefreshPendingRef.current) {
+            let resolve!: (results: ResultRecord[]) => void;
+            let reject!: (reason?: unknown) => void;
+            const promise = new Promise<ResultRecord[]>((resolvePromise, rejectPromise) => {
+              resolve = resolvePromise;
+              reject = rejectPromise;
+            });
+            artifactsRefreshPendingRef.current = { promise, resolve, reject };
+          }
+          return artifactsRefreshPendingRef.current.promise;
+        }
+        return artifactsRefreshInFlightRef.current;
+      }
       const request = client
         .currentResults(project.session_id)
         .then((artifacts) => {
@@ -340,7 +359,13 @@ export default function CanvasShell({
         .catch(() => []);
       artifactsRefreshInFlightRef.current = request;
       void request.finally(() => {
+        if (artifactsRefreshInFlightRef.current !== request) return;
         artifactsRefreshInFlightRef.current = null;
+        const pending = artifactsRefreshPendingRef.current;
+        if (pending) {
+          artifactsRefreshPendingRef.current = null;
+          void refreshArtifacts(true).then(pending.resolve, pending.reject);
+        }
       });
       return request;
     },
@@ -515,6 +540,11 @@ export default function CanvasShell({
               ? 'success'
               : 'info';
       if (event.operation_id) {
+        const operationInstance =
+          payload && typeof payload === 'object' && !Array.isArray(payload) &&
+          'operation_instance' in payload && typeof payload.operation_instance === 'string'
+            ? payload.operation_instance
+            : undefined;
         const executionState =
           event.type === 'operation.started'
             ? 'running'
@@ -526,7 +556,9 @@ export default function CanvasShell({
         if (executionState) {
           setNodes((current) =>
             current.map((node) =>
-              node.id === event.operation_id || node.capabilityId === event.operation_id
+              (operationInstance
+                ? node.id === operationInstance
+                : node.id === event.operation_id || node.capabilityId === event.operation_id)
                 ? { ...node, executionState }
                 : node,
             ),
@@ -2447,7 +2479,8 @@ export default function CanvasShell({
               })()
             : null}
         </svg>
-        {nodes.map((node) => {
+        {nodes.map((node, nodeIndex) => {
+          const nodeNumber = /^\d+$/.test(node.id) ? Number(node.id) : nodeIndex + 1;
           const capability = node.capabilityId
             ? capabilities.operations.find((item) => item.canonical_id === node.capabilityId)
             : undefined;
@@ -2473,8 +2506,8 @@ export default function CanvasShell({
             >
               <div className="sf-canvas-node-header">
                 <div className="sf-node-header-actions">
-                  <span className="sf-node-number" aria-label={`Node ${node.id}`} title={`Node ${node.id}`}>
-                    {node.id}
+                  <span className="sf-node-number" aria-label={`Node ${nodeNumber}`} title={`Node ${nodeNumber}`}>
+                    {nodeNumber}
                   </span>
                   <button
                     type="button"

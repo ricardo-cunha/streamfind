@@ -87,6 +87,29 @@ namespace streamfind::mass_spec::nta
     };
 
     // MARK: ISOTOPE_COMBINATIONS
+    struct ISOTOPE_COMBINATION_ISOTOPE
+    {
+      std::size_t isotope_index = 0;
+      int count = 0;
+      double minimum_intensity_coefficient = 1.0;
+      double maximum_intensity_coefficient = 1.0;
+      bool carbon_13 = false;
+      bool halogen = false;
+    };
+
+    struct ISOTOPE_COMBINATION_METADATA
+    {
+      std::vector<ISOTOPE_COMBINATION_ISOTOPE> isotope_counts;
+      std::string label;
+      bool has_deuterium = false;
+      bool pure_deuterium = false;
+      bool carbon_only = false;
+      double chemical_preference = 0.0;
+      double carbon_isotope_ratio = 0.0;
+      double single_isotope_ratio = 0.0;
+      double single_isotope_maximum_count = 0.0;
+    };
+
     struct ISOTOPE_COMBINATIONS
     {
       std::vector<int> step;
@@ -100,6 +123,7 @@ namespace streamfind::mass_spec::nta
       std::vector<std::vector<float>> tensor_abundances;
       std::vector<float> mass_distances;
       std::vector<std::vector<int>> combinations_by_step;
+      std::vector<ISOTOPE_COMBINATION_METADATA> metadata;
       int length;
 
       ISOTOPE_COMBINATIONS(ISOTOPE_SET &isotopes, const int &max_number_elements);
@@ -198,14 +222,20 @@ namespace streamfind::mass_spec::nta
       void find_isotopic_candidates(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft,
                                      const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts,
                                      const int &ft_index,
-                                     const int &maxIsotopes,
+                                      const double &max_isotope_mass_distance,
+                                      const double &max_candidate_mz_tolerance,
                                      const std::vector<int> *component_indices = nullptr,
-                                     const std::unordered_set<int> *assigned_features = nullptr);
+                                     const std::unordered_set<int> *assigned_features = nullptr,
+                                     std::size_t *candidate_window_count = nullptr,
+                                     std::size_t *retained_candidate_count = nullptr);
 
       void annotate_isotopes(const ISOTOPE_COMBINATIONS &combinations,
                               const int &maxIsotopes,
                               const int &maxCharge,
-                              const int &maxGaps,                             float ppm,                              bool debug = false);
+                              const int &maxGaps,
+                              float ppm,
+                              bool debug = false,
+                              const std::function<void(int, int, std::size_t, std::string_view)> &progress = {});
 
       void find_adduct_candidates(const ::streamfind::mass_spec::nta::api::NTA_FEATURE_ROW &ft,
                                    const ::streamfind::mass_spec::nta::api::NTA_FEATURES &fts,

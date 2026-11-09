@@ -266,6 +266,8 @@ Json invoke_dynamic(
                         ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
                         : STREAMFIND_PLUGIN_COLUMN_UTF8;
                     context.column_types[table_name][column_name] = type;
+                    if (semantic_type == "array")
+                        context.array_columns[table_name].insert(column_name);
                 }
             }
         }
@@ -275,6 +277,9 @@ Json invoke_dynamic(
                 const auto physical_table = artifact.value("physical_table", std::string{});
                 const auto contract = artifact.value("contract_id", std::string{});
                 if (physical_table.empty() || contract.empty()) continue;
+                if (std::find(context.allowed_tables.begin(), context.allowed_tables.end(), physical_table) ==
+                    context.allowed_tables.end())
+                    context.allowed_tables.push_back(physical_table);
                 bool schema_found = false;
                 for (const auto &table : *manifest) {
                     if (table.value("resource_id", std::string{}) != contract) continue;
@@ -290,6 +295,8 @@ Json invoke_dynamic(
                             : semantic_type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
                             : semantic_type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
                             : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                        if (semantic_type == "array")
+                            context.array_columns[physical_table].insert(name);
                     }
                     break;
                 }
@@ -309,6 +316,8 @@ Json invoke_dynamic(
                         context.readable_columns[physical_table].insert(name);
                         context.column_types[physical_table][name] = detail::dynamic_column_type(
                             column.value("type", std::string{}));
+                        if (column.value("type", std::string{}) == "array")
+                            context.array_columns[physical_table].insert(name);
                     }
                 }
             }
@@ -321,6 +330,9 @@ Json invoke_dynamic(
                 if (!artifact.is_object()) continue;
                 const auto physical_table = artifact.value("physical_table", std::string{});
                 if (physical_table.empty()) continue;
+                if (std::find(context.allowed_tables.begin(), context.allowed_tables.end(), physical_table) ==
+                    context.allowed_tables.end())
+                    context.allowed_tables.push_back(physical_table);
                 if (physical_table.rfind("result:", 0) == 0) continue;
                 Json description;
                 const auto response_json = execution_context.request_data(data_proxy::request(
@@ -505,6 +517,8 @@ Json invoke_dynamic(
                     const auto type = column.value("type", std::string{"string"});
                     context.readable_columns[physical_table].insert(name);
                     context.column_types[physical_table][name] = detail::dynamic_column_type(type);
+                    if (type == "array")
+                        context.array_columns[physical_table].insert(name);
                 }
                 context.allowed_tables.push_back(physical_table);
             }

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cmath>
+#include <map>
 #include <numeric>
 #include <limits>
 
@@ -142,6 +143,7 @@ namespace streamfind::mass_spec::nta
     void create_components_impl(
       ::streamfind::mass_spec::nta::NtaProjectData &nta_data,
         const std::vector<float> &rtWindow,
+        float maxComponentRtSpan,
         float minCorrelation,
         float debugRT,
         const std::string &debugAnalysis,
@@ -157,6 +159,7 @@ namespace streamfind::mass_spec::nta
                << "debug_rt: " << std::fixed << std::setprecision(6) << debugRT << "\n"
                << "debug_analysis: " << (debugAnalysis.empty() ? "<all analyses>" : debugAnalysis) << "\n"
                << "rt_window: [" << left_offset << ", " << right_offset << "]\n"
+               << "max_component_rt_span: " << maxComponentRtSpan << "\n"
                << "debug_rt_window: [" << (debugRT + left_offset) << ", "
                << (debugRT + right_offset) << "]\n"
                << "min_correlation: " << minCorrelation << "\n";
@@ -290,6 +293,14 @@ namespace streamfind::mass_spec::nta
 
           std::vector<std::vector<int>> adjacency(feature_count);
           std::vector<std::vector<float>> correlation_matrix(feature_count, std::vector<float>(feature_count, std::numeric_limits<float>::quiet_NaN()));
+          struct MergeEdge
+          {
+            int first;
+            int second;
+            float strength;
+            float rt_gap;
+          };
+          std::vector<MergeEdge> merge_edges;
           for (size_t a = 0; a < feature_count; ++a) {
             correlation_matrix[a][a] = 1.0f;
           }
@@ -307,6 +318,7 @@ namespace streamfind::mass_spec::nta
               if (detail::isotope_spacing_compatible(feature_a.mz, feature_b.mz)) {
                 adjacency[a].push_back(static_cast<int>(b));
                 adjacency[b].push_back(static_cast<int>(a));
+                merge_edges.push_back({static_cast<int>(a), static_cast<int>(b), -1.0f, rt_delta});
                 if (pair_in_debug_window)
                   DEBUG_LOG("  pair " << a << "-" << b << ": accepted isotope m/z spacing (" <<
                             std::abs(feature_b.mz - feature_a.mz) << ")\n");
@@ -315,6 +327,7 @@ namespace streamfind::mass_spec::nta
               if (minCorrelation <= 0.0f) {
                 adjacency[a].push_back(static_cast<int>(b));
                 adjacency[b].push_back(static_cast<int>(a));
+                merge_edges.push_back({static_cast<int>(a), static_cast<int>(b), 0.0f, rt_delta});
                 if (pair_in_debug_window)
                   DEBUG_LOG("  pair " << a << "-" << b << ": accepted (min_correlation <= 0)\n");
                 continue;
@@ -343,6 +356,7 @@ namespace streamfind::mass_spec::nta
               if (corr >= minCorrelation) {
                 adjacency[a].push_back(static_cast<int>(b));
                 adjacency[b].push_back(static_cast<int>(a));
+                merge_edges.push_back({static_cast<int>(a), static_cast<int>(b), corr, rt_delta});
                 if (pair_in_debug_window)
                   DEBUG_LOG("  pair " << a << "-" << b << ": accepted correlation=" << corr << "\n");
               } else if (pair_in_debug_window) {
@@ -352,38 +366,77 @@ namespace streamfind::mass_spec::nta
             }
           }
 
-          std::vector<bool> visited(feature_count, false);
+          // Process the strongest measured EIC relationships first. Isotope
+          // spacing remains a valid edge when EIC data is unavailable, but is
+          // considered after correlation-supported links. The constrained
+          // union prevents transitive chains from expanding a component beyond
+          // its configured total RT span.
+          std::sort(merge_edges.begin(), merge_edges.end(), [](const MergeEdge &lhs, const MergeEdge &rhs) {
+            if (lhs.strength != rhs.strength) return lhs.strength > rhs.strength;
+            if (lhs.rt_gap != rhs.rt_gap) return lhs.rt_gap < rhs.rt_gap;
+            if (lhs.first != rhs.first) return lhs.first < rhs.first;
+            return lhs.second < rhs.second;
+          });
+
+          std::vector<int> disjoint_parent(feature_count);
+          std::iota(disjoint_parent.begin(), disjoint_parent.end(), 0);
+          std::vector<int> disjoint_size(feature_count, 1);
+          std::vector<float> component_min_rt(feature_count);
+          std::vector<float> component_max_rt(feature_count);
+          for (size_t index = 0; index < feature_count; ++index) {
+            component_min_rt[index] = feature_eics[index].rt;
+            component_max_rt[index] = feature_eics[index].rt;
+          }
+          const auto find_root = [&disjoint_parent](int index) {
+            int root = index;
+            while (disjoint_parent[root] != root)
+              root = disjoint_parent[root];
+            while (disjoint_parent[index] != index) {
+              const int next = disjoint_parent[index];
+              disjoint_parent[index] = root;
+              index = next;
+            }
+            return root;
+          };
+          for (const auto &edge : merge_edges) {
+            int first_root = find_root(edge.first);
+            int second_root = find_root(edge.second);
+            if (first_root == second_root)
+              continue;
+
+            const float merged_min_rt = std::min(component_min_rt[first_root], component_min_rt[second_root]);
+            const float merged_max_rt = std::max(component_max_rt[first_root], component_max_rt[second_root]);
+            if (merged_max_rt - merged_min_rt > maxComponentRtSpan)
+              continue;
+
+            if (disjoint_size[first_root] < disjoint_size[second_root] ||
+                (disjoint_size[first_root] == disjoint_size[second_root] && first_root > second_root))
+              std::swap(first_root, second_root);
+            disjoint_parent[second_root] = first_root;
+            disjoint_size[first_root] += disjoint_size[second_root];
+            component_min_rt[first_root] = merged_min_rt;
+            component_max_rt[first_root] = merged_max_rt;
+          }
+
           struct ComponentMembers {
             std::vector<int> members;
             float mean_rt = 0.0f;
             float max_intensity = 0.0f;
           };
+          std::map<int, ComponentMembers> components_by_root;
+          for (size_t node = 0; node < feature_count; ++node) {
+            const int root = find_root(static_cast<int>(node));
+            auto &component = components_by_root[root];
+            component.members.push_back(static_cast<int>(node));
+            component.mean_rt += feature_eics[node].rt;
+            component.max_intensity = std::max(component.max_intensity, feature_eics[node].intensity);
+          }
+
           std::vector<ComponentMembers> components;
-
-          for (size_t start = 0; start < feature_count; ++start) {
-            if (visited[start]) continue;
-
-            std::vector<int> stack{static_cast<int>(start)};
-            visited[start] = true;
-            ComponentMembers component;
-            float rt_sum = 0.0f;
-
-            while (!stack.empty()) {
-              const int node = stack.back();
-              stack.pop_back();
-              component.members.push_back(node);
-              rt_sum += feature_eics[node].rt;
-              component.max_intensity = std::max(component.max_intensity, feature_eics[node].intensity);
-
-              for (const int neighbor : adjacency[node]) {
-                if (!visited[neighbor]) {
-                  visited[neighbor] = true;
-                  stack.push_back(neighbor);
-                }
-              }
-            }
-
-            component.mean_rt = rt_sum / static_cast<float>(component.members.size());
+          components.reserve(components_by_root.size());
+          for (auto &entry : components_by_root) {
+            auto &component = entry.second;
+            component.mean_rt /= static_cast<float>(component.members.size());
             std::sort(component.members.begin(), component.members.end(),
                       [&](int lhs, int rhs) {
                         const auto &ft_lhs = fts.get_feature(feature_eics[lhs].idx);
@@ -578,6 +631,7 @@ using Json = nlohmann::json;
     Json run(::streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
     {
         const float min_correlation = parameters.value("min_correlation", 0.8);
+        const float max_component_rt_span = parameters.value("max_component_rt_span", 20.0f);
         std::vector<float> rt_window;
         const auto rt_window_param = parameters.value("rt_window", Json::array());
         for (const auto &v : rt_window_param)
@@ -586,7 +640,8 @@ using Json = nlohmann::json;
             rt_window = {-2.5f, 2.5f};
         if (rt_window.size() != 2 || rt_window[0] > rt_window[1])
             throw Error(ErrorCode::InvalidArgument, "rt_window must contain [min, max] with min <= max");
-        if (min_correlation < 0 || min_correlation > 1)
+        if (min_correlation < 0 || min_correlation > 1 ||
+            !std::isfinite(max_component_rt_span) || max_component_rt_span < 0.0f)
             throw Error(ErrorCode::InvalidArgument, "invalid componentization parameters");
         // Componentization is intentionally all-analysis, like find_features.
         // Ignore any stale analysis_names value from an older workflow revision
@@ -603,7 +658,7 @@ using Json = nlohmann::json;
         utils::set_debug_session(&debug);
         try {
             ::streamfind::mass_spec::nta::componentization::create_components_impl(
-                data, rt_window, min_correlation, debug_rt, debug_analysis, &debug);
+                data, rt_window, max_component_rt_span, min_correlation, debug_rt, debug_analysis, &debug);
         } catch (...) {
             utils::set_debug_session(nullptr);
             throw;
