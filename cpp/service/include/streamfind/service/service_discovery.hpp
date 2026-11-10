@@ -17,6 +17,8 @@ struct ServiceDiscoveryRecord {
     std::string token;
     std::string executable;
     std::uint64_t process_id{0};
+    std::uint64_t manager_process_id{0};
+    std::string manager_executable;
     std::string started_at;
     std::filesystem::path record_path;
 
@@ -29,7 +31,9 @@ public:
     static std::vector<std::filesystem::path> record_paths();
     static ServiceDiscoveryRecord read(const std::filesystem::path &path);
 
-    ServiceDiscoveryRecord publish(std::uint16_t port, const std::string &protocol_version);
+    ServiceDiscoveryRecord publish(std::uint16_t port, const std::string &protocol_version,
+                                   std::uint64_t manager_process_id = 0,
+                                   const std::filesystem::path &manager_executable = {});
     void update_state(const std::string &state);
     void remove() noexcept;
 

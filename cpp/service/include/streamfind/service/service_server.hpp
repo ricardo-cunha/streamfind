@@ -63,7 +63,7 @@ private:
     Json service_identity_;
     std::string service_token_;
     std::atomic<bool> stopping_{false};
-    std::intptr_t listener_{-1};
+    std::atomic<std::intptr_t> listener_{-1};
     MethodRegistry methods_;
     OperationRegistry operations_;
     ServicePluginRuntime plugin_runtime_;

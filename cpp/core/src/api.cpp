@@ -213,7 +213,8 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
             try {
                 std::size_t consumed = 0;
                 const auto id = std::stoll(existing.id, &consumed);
-                if (consumed == existing.id.size()) maximum_id = std::max(maximum_id, id);
+                if (consumed == existing.id.size())
+                    maximum_id = std::max(maximum_id, static_cast<std::int64_t>(id));
             } catch (const std::exception &) {
                 // Existing nonnumeric IDs do not participate in integer allocation.
             }

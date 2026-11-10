@@ -183,6 +183,24 @@ configure_file(
     @ONLY
 )
 
+function(streamfind_add_windows_version_resource target executable_name description)
+    if(NOT WIN32)
+        return()
+    endif()
+    string(REPLACE "." "," STREAMFIND_VERSION_RESOURCE_NUMBERS "${PROJECT_VERSION}")
+    set(STREAMFIND_VERSION_RESOURCE_NUMBERS "${STREAMFIND_VERSION_RESOURCE_NUMBERS},0")
+    set(STREAMFIND_VERSION_RESOURCE_DESCRIPTION "${description}")
+    set(STREAMFIND_VERSION_RESOURCE_FILENAME "${executable_name}")
+    set(_resource_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/resources")
+    file(MAKE_DIRECTORY "${_resource_dir}")
+    set(_resource_file "${_resource_dir}/${target}-version.rc")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind-version.rc.in"
+        "${_resource_file}"
+        @ONLY)
+    target_sources(${target} PRIVATE "${_resource_file}")
+endfunction()
+
 set(STREAMFIND_CORE_SOURCES
     ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
     core/src/api.cpp
@@ -433,6 +451,7 @@ add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sd
 target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
 target_include_directories(streamfind_mcp PRIVATE service/include)
 set_target_properties(streamfind_mcp PROPERTIES OUTPUT_NAME streamfind-mcp)
+streamfind_add_windows_version_resource(streamfind_mcp "streamfind-mcp.exe" "streamfind MCP server")
 set(STREAMFIND_ENABLED_PLUGINS_JSON)
 foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
     if(STREAMFIND_ENABLED_PLUGINS_JSON)
@@ -450,10 +469,6 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
     DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli
     core/src/streamfind-cli.cpp)
-if(WIN32)
-    target_sources(streamfind_cli PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind.rc")
-endif()
 add_dependencies(streamfind_cli streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
@@ -462,6 +477,7 @@ if(WIN32)
 endif()
 target_include_directories(streamfind_cli PRIVATE service/include)
 set_target_properties(streamfind_cli PROPERTIES OUTPUT_NAME streamfind)
+streamfind_add_windows_version_resource(streamfind_cli "streamfind.exe" "streamfind command line")
 
 add_executable(streamfind_service
     service/src/streamfind-service.cpp
@@ -481,6 +497,7 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 set_target_properties(streamfind_service PROPERTIES OUTPUT_NAME streamfind-server)
+streamfind_add_windows_version_resource(streamfind_service "streamfind-server.exe" "streamfind backend service")
 
 # Explicit development-only scale harness. It is excluded from normal builds
 # and installation; run it through scripts/dev/cpp/benchmark-result-store.ps1.
@@ -513,6 +530,7 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_worker PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 set_target_properties(streamfind_worker PROPERTIES OUTPUT_NAME streamfind-worker)
+streamfind_add_windows_version_resource(streamfind_worker "streamfind-worker.exe" "streamfind operation worker")
 
 add_executable(streamfind_tray service/src/streamfind-tray.cpp)
 add_dependencies(streamfind_tray streamfind_aggregate_catalogue streamfind_cpp_sdk
@@ -526,6 +544,7 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_tray PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
     OUTPUT_NAME streamfind-tray)
+streamfind_add_windows_version_resource(streamfind_tray "streamfind-tray.exe" "streamfind service tray manager")
 
 # The service always launches the worker for operation execution.  Make the
 # pair an atomic development/build target so a service cannot be rebuilt while
@@ -540,6 +559,7 @@ if(WIN32)
     add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE streamfind::cpp_core ws2_32 shell32)
     set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind-app)
+    streamfind_add_windows_version_resource(streamfind_service_host "streamfind-app.exe" "streamfind app launcher")
     streamfind_static_mingw_executable(streamfind_service_host)
 else()
     add_executable(streamfind_service_host

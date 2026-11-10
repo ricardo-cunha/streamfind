@@ -53,19 +53,6 @@ void start_service(const char *executable) {
     waitpid(child, &status, 0);
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
         throw std::runtime_error("streamfind service did not become ready");
-    const auto configuration = streamfind::load_service_configuration(package_root(executable) / "bin" / "streamfind.json");
-    if (configuration.tray_enabled && configuration.tray_start_with_app) {
-        auto tray = package_root(executable) / "bin" / "streamfind-tray";
-        if (!std::filesystem::exists(tray)) tray = package_root(executable) / "streamfind-tray";
-        if (std::filesystem::exists(tray)) {
-            const auto child = fork();
-            if (child == 0) {
-                setsid();
-                execl(tray.c_str(), tray.c_str(), static_cast<char *>(nullptr));
-                _exit(127);
-            }
-        }
-    }
 }
 
 std::uint16_t service_port(const char *executable) {

@@ -660,7 +660,16 @@ Json ServiceServer::workflow_demos() const {
     return workflows;
 }
 
-void ServiceServer::stop() { stopping_ = true; if (listener_ != -1) detail::close_socket(listener_); }
+void ServiceServer::stop() {
+    stopping_.store(true);
+    const auto listener = listener_.load();
+    if (listener == -1) return;
+#ifdef _WIN32
+    ::shutdown(static_cast<SOCKET>(listener), SD_BOTH);
+#else
+    ::shutdown(static_cast<int>(listener), SHUT_RDWR);
+#endif
+}
 
 void ServiceServer::handle_client(std::intptr_t socket) {
     try {
@@ -1265,22 +1274,29 @@ void ServiceServer::handle_client(std::intptr_t socket) {
 }
 
 void ServiceServer::run() {
-    listener_ = static_cast<std::intptr_t>(::socket(AF_INET, SOCK_STREAM, 0));
-    if (listener_ == -1) throw std::runtime_error("unable to create service socket");
+    const auto listener = static_cast<std::intptr_t>(::socket(AF_INET, SOCK_STREAM, 0));
+    if (listener == -1) throw std::runtime_error("unable to create service socket");
+    listener_.store(listener);
     int reuse = 1;
-    setsockopt(static_cast<streamfind_socket_t>(listener_), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
+    setsockopt(static_cast<streamfind_socket_t>(listener), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
     sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); address.sin_port = htons(port_);
-    if (bind(static_cast<streamfind_socket_t>(listener_), reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0 || listen(static_cast<streamfind_socket_t>(listener_), 16) < 0) throw std::runtime_error("unable to bind service socket");
+    if (bind(static_cast<streamfind_socket_t>(listener), reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0 || listen(static_cast<streamfind_socket_t>(listener), 16) < 0) {
+        detail::close_socket(listener);
+        listener_.store(-1);
+        throw std::runtime_error("unable to bind service socket");
+    }
     while (!stopping_) {
         sockaddr_in client{};
 #ifdef _WIN32
-        int length = sizeof(client); const auto client_socket = ::accept(static_cast<SOCKET>(listener_), reinterpret_cast<sockaddr *>(&client), &length);
+        int length = sizeof(client); const auto client_socket = ::accept(static_cast<SOCKET>(listener), reinterpret_cast<sockaddr *>(&client), &length);
 #else
-        socklen_t length = sizeof(client); const auto client_socket = ::accept(static_cast<int>(listener_), reinterpret_cast<sockaddr *>(&client), &length);
+        socklen_t length = sizeof(client); const auto client_socket = ::accept(static_cast<int>(listener), reinterpret_cast<sockaddr *>(&client), &length);
 #endif
         if (client_socket == static_cast<streamfind_socket_t>(-1)) { if (!stopping_) continue; break; }
         std::thread(&ServiceServer::handle_client, this, static_cast<std::intptr_t>(client_socket)).detach();
     }
+    detail::close_socket(listener);
+    listener_.store(-1);
 }
 
 }  // namespace streamfind::service

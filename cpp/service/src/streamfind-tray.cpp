@@ -1,9 +1,13 @@
 #include "streamfind/service_runtime_client.hpp"
+#include "streamfind/service_configuration.hpp"
 #include "../include/streamfind/service/service_discovery.hpp"
 
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
+#include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
@@ -13,7 +17,15 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include <cerrno>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
 
+#ifdef _WIN32
 namespace streamfind::tray::detail {
 
 constexpr UINT kRefreshTimer = 1;
@@ -23,9 +35,7 @@ constexpr UINT kOpenApplication = 1001;
 constexpr UINT kOpenStatus = 1002;
 constexpr UINT kCopyEndpoint = 1003;
 constexpr UINT kOpenActivity = 1004;
-constexpr UINT kStartService = 1005;
 constexpr UINT kStopService = 1006;
-constexpr UINT kExitTray = 1007;
 constexpr UINT kIconId = 101;
 
 std::string utf8(const std::wstring &value) {
@@ -52,62 +62,8 @@ std::string tray_executable_path() {
     return path;
 }
 
-void start_service() {
-    const auto tray_path = tray_executable_path();
-    const auto bin_end = tray_path.find_last_of("\\/");
-    if (bin_end == std::string::npos) throw std::runtime_error("unable to locate streamfind package");
-    const auto bin = tray_path.substr(0, bin_end);
-    const auto package_end = bin.find_last_of("\\/");
-    if (package_end == std::string::npos) throw std::runtime_error("unable to locate streamfind package");
-    const auto cli = bin.substr(0, package_end + 1) + "bin\\streamfind.exe";
-    std::string command_line = "\"" + cli + "\" service start";
-    STARTUPINFOA startup{};
-    startup.cb = sizeof(startup);
-    PROCESS_INFORMATION process{};
-    if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
-                        nullptr, bin.c_str(), &startup, &process)) {
-        throw std::runtime_error("unable to start streamfind service");
-    }
-    CloseHandle(process.hThread);
-    const auto wait_result = WaitForSingleObject(process.hProcess, 15000);
-    if (wait_result != WAIT_OBJECT_0) {
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(process.hProcess);
-        throw std::runtime_error("timed out while starting streamfind service");
-    }
-    DWORD exit_code = 1;
-    GetExitCodeProcess(process.hProcess, &exit_code);
-    CloseHandle(process.hProcess);
-    if (exit_code != 0) throw std::runtime_error("streamfind service start failed");
-}
-
 void stop_service(const std::string &instance) {
-    const auto tray_path = tray_executable_path();
-    const auto bin_end = tray_path.find_last_of("\\/");
-    if (bin_end == std::string::npos) throw std::runtime_error("unable to locate streamfind package");
-    const auto bin = tray_path.substr(0, bin_end);
-    const auto package_end = bin.find_last_of("\\/");
-    if (package_end == std::string::npos) throw std::runtime_error("unable to locate streamfind package");
-    const auto cli = bin.substr(0, package_end + 1) + "bin\\streamfind.exe";
-    std::string command_line = "\"" + cli + "\" service stop --instance \"" + instance + "\"";
-    STARTUPINFOA startup{};
-    startup.cb = sizeof(startup);
-    PROCESS_INFORMATION process{};
-    if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
-                        nullptr, bin.c_str(), &startup, &process)) {
-        throw std::runtime_error("unable to stop streamfind service");
-    }
-    CloseHandle(process.hThread);
-    const auto wait_result = WaitForSingleObject(process.hProcess, 15000);
-    if (wait_result != WAIT_OBJECT_0) {
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(process.hProcess);
-        throw std::runtime_error("timed out while stopping streamfind service");
-    }
-    DWORD exit_code = 1;
-    GetExitCodeProcess(process.hProcess, &exit_code);
-    CloseHandle(process.hProcess);
-    if (exit_code != 0) throw std::runtime_error("streamfind service stop failed");
+    streamfind::service::stop_service(instance);
 }
 
 std::string endpoint(const streamfind::data_proxy::Json &services) {
@@ -151,9 +107,15 @@ streamfind::data_proxy::Json discovered_service_snapshot() {
 
 class TrayApplication {
 public:
+    ~TrayApplication() {
+        stop_owned_service();
+        if (mutex_ != nullptr) CloseHandle(mutex_);
+    }
+
     int run(HINSTANCE instance) {
         mutex_ = CreateMutexW(nullptr, TRUE, L"Local\\StreamFindTrayManager");
         if (mutex_ == nullptr || GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+        ensure_service();
         WNDCLASSW window_class{};
         window_class.lpfnWndProc = &TrayApplication::window_proc;
         window_class.hInstance = instance;
@@ -173,6 +135,7 @@ public:
             DispatchMessageW(&message);
         }
         if (mutex_) CloseHandle(mutex_);
+        mutex_ = nullptr;
         return 0;
     }
 
@@ -191,6 +154,123 @@ private:
     bool refresh_ready_{false};
     bool refresh_stopping_{false};
     streamfind::data_proxy::Json refreshed_services_ = streamfind::data_proxy::Json::array();
+    HANDLE service_process_{nullptr};
+    HANDLE service_job_{nullptr};
+
+    std::filesystem::path package_bin() const {
+        return std::filesystem::path(tray_executable_path()).parent_path();
+    }
+
+    std::filesystem::path server_executable() const {
+        return package_bin() / "streamfind-server.exe";
+    }
+
+    void ensure_service() {
+        const auto current_pid = static_cast<std::uint64_t>(GetCurrentProcessId());
+        for (const auto &value : streamfind::service::list_services()) {
+            if (value.value("health", "") != "healthy") continue;
+            if (value.value("manager_process_id", std::uint64_t{0}) == current_pid) {
+                const auto pid = static_cast<DWORD>(value.value("process_id", std::uint64_t{0}));
+                service_process_ = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                                               FALSE, pid);
+                if (service_process_ == nullptr)
+                    throw std::runtime_error("unable to attach to managed streamfind-server");
+                return;
+            }
+            stop_service(value.value("service_instance_id", std::string{}));
+            for (int attempt = 0; attempt < 150; ++attempt) {
+                if (streamfind::service::ServiceDiscovery::record_paths().empty()) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            break;
+        }
+
+        const auto server = server_executable();
+        const auto manager = tray_executable_path();
+        const auto config = streamfind::load_service_configuration(package_bin() / "streamfind.json");
+        std::string command = "\"" + server.string() + "\" " + std::to_string(config.port) +
+            " --manager-pid " + std::to_string(current_pid) + " --manager-executable \"" + manager + "\"";
+        STARTUPINFOA startup{};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION process{};
+        service_job_ = CreateJobObjectW(nullptr, nullptr);
+        if (service_job_ == nullptr) throw std::runtime_error("unable to create streamfind service job");
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(service_job_, JobObjectExtendedLimitInformation,
+                                     &limits, sizeof(limits))) {
+            CloseHandle(service_job_);
+            service_job_ = nullptr;
+            throw std::runtime_error("unable to configure streamfind service job");
+        }
+        const auto path = package_bin().string();
+        if (!CreateProcessA(server.string().c_str(), command.data(), nullptr, nullptr, FALSE,
+                            CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP,
+                            nullptr, path.c_str(), &startup, &process)) {
+            CloseHandle(service_job_);
+            service_job_ = nullptr;
+            throw std::runtime_error("unable to launch streamfind-server");
+        }
+        if (!AssignProcessToJobObject(service_job_, process.hProcess)) {
+            TerminateProcess(process.hProcess, 1);
+            CloseHandle(process.hThread);
+            CloseHandle(process.hProcess);
+            CloseHandle(service_job_);
+            service_job_ = nullptr;
+            throw std::runtime_error("unable to attach streamfind-server to its manager job");
+        }
+        ResumeThread(process.hThread);
+        CloseHandle(process.hThread);
+        service_process_ = process.hProcess;
+
+        for (int attempt = 0; attempt < 150; ++attempt) {
+            if (WaitForSingleObject(service_process_, 0) == WAIT_OBJECT_0)
+                throw std::runtime_error("streamfind-server exited during startup");
+            for (const auto &value : streamfind::service::list_services())
+                if (value.value("health", "") == "healthy" &&
+                    value.value("manager_process_id", std::uint64_t{0}) == current_pid) return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        stop_owned_service();
+        throw std::runtime_error("timed out waiting for streamfind-server to become ready");
+    }
+
+    void stop_owned_service() {
+        if (service_process_ != nullptr && WaitForSingleObject(service_process_, 0) != WAIT_OBJECT_0) {
+            auto current_services = services_;
+            try { current_services = streamfind::service::list_services(); }
+            catch (...) { }
+            const auto *service = healthy_service(current_services);
+            if (service != nullptr) {
+                try { stop_service(service->value("service_instance_id", std::string{})); }
+                catch (...) { }
+            }
+            if (WaitForSingleObject(service_process_, 15000) != WAIT_OBJECT_0 && service_job_ != nullptr) {
+                TerminateJobObject(service_job_, 1);
+                WaitForSingleObject(service_process_, 5000);
+            }
+        }
+        if (service_process_ != nullptr) CloseHandle(service_process_);
+        service_process_ = nullptr;
+        if (service_job_ != nullptr) CloseHandle(service_job_);
+        service_job_ = nullptr;
+    }
+
+    void supervise_service() {
+        if (service_process_ == nullptr || WaitForSingleObject(service_process_, 0) != WAIT_OBJECT_0) return;
+        DWORD exit_code = 1;
+        GetExitCodeProcess(service_process_, &exit_code);
+        CloseHandle(service_process_);
+        service_process_ = nullptr;
+        if (service_job_ != nullptr) CloseHandle(service_job_);
+        service_job_ = nullptr;
+        if (exit_code == 0) {
+            DestroyWindow(window_);
+            return;
+        }
+        try { ensure_service(); }
+        catch (...) { }
+    }
 
     void refresh() {
         {
@@ -278,11 +358,15 @@ private:
         } else if (message == kRefreshMessage) self->refresh();
         else if (message == kTrayMessage && is_context_menu_event(lparam)) self->show_menu();
         else if (message == WM_CONTEXTMENU) self->show_menu();
-        else if (message == WM_TIMER && wparam == kRefreshTimer) self->refresh();
+        else if (message == WM_TIMER && wparam == kRefreshTimer) {
+            self->supervise_service();
+            self->refresh();
+        }
         else if (message == WM_COMMAND) self->command(LOWORD(wparam));
         else if (message == WM_DESTROY) {
             KillTimer(window, kRefreshTimer);
             self->stop_refresh_worker();
+            self->stop_owned_service();
             Shell_NotifyIconW(NIM_DELETE, &self->icon_);
             PostQuitMessage(0);
         }
@@ -321,13 +405,12 @@ private:
         }
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         const auto has_service = healthy_service(services_) != nullptr;
-        AppendMenuW(menu, MF_STRING, kOpenApplication, L"Open streamfind");
+        AppendMenuW(menu, MF_STRING, kOpenApplication, L"Open streamfind app");
         AppendMenuW(menu, MF_STRING, kOpenStatus, L"Open streamfind service status");
         AppendMenuW(menu, MF_STRING, kCopyEndpoint, L"Copy endpoint");
         AppendMenuW(menu, MF_STRING, kOpenActivity, L"Open activity log");
-        AppendMenuW(menu, MF_STRING | (has_service ? MF_GRAYED : 0), kStartService, L"Start streamfind service");
-        AppendMenuW(menu, MF_STRING | (has_service ? 0 : MF_GRAYED), kStopService, L"Stop streamfind service");
-        AppendMenuW(menu, MF_STRING, kExitTray, L"Exit tray manager");
+        AppendMenuW(menu, MF_STRING | (has_service ? 0 : MF_GRAYED), kStopService,
+                    L"Stop service and close tray");
         const auto selected = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
                                              point.x, point.y, 0, window_, nullptr);
         PostMessageW(window_, WM_NULL, 0, 0);
@@ -343,11 +426,6 @@ private:
     }
 
     void command(UINT command_id) {
-        if (command_id == kStartService) {
-            try { start_service(); refresh(); }
-            catch (...) { MessageBoxW(window_, L"Unable to start the streamfind service.", L"streamfind", MB_OK | MB_ICONERROR); }
-            return;
-        }
         const auto value = endpoint(services_);
         const auto url = value.empty() ? std::string("http://127.0.0.1:8787/") : value + "/";
         if (command_id == kOpenApplication) ShellExecuteW(nullptr, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -359,9 +437,16 @@ private:
             const auto instance = service == nullptr
                 ? std::string{}
                 : service->value("service_instance_id", std::string{});
-            try { stop_service(instance); refresh(); }
+            try {
+                stop_service(instance);
+                if (service_process_ != nullptr &&
+                    WaitForSingleObject(service_process_, 15000) != WAIT_OBJECT_0 && service_job_ != nullptr)
+                    TerminateJobObject(service_job_, 1);
+                refresh();
+            }
             catch (...) { MessageBoxW(window_, L"Unable to stop the streamfind service.", L"streamfind", MB_OK | MB_ICONERROR); }
-        } else if (command_id == kExitTray) DestroyWindow(window_);
+            DestroyWindow(window_);
+        } else if (command_id == kStopService) DestroyWindow(window_);
     }
 
     void copy(const std::string &value) {
@@ -389,16 +474,99 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int) {
 
 #else
 
-int main() {
-    std::cout << "streamfind tray manager: no StatusNotifier/AppIndicator host is available in this build.\n"
-              << "Use 'streamfind service status' or the service web status page.\n" << std::flush;
-    try {
-        for (;;) {
-            const auto services = streamfind::service::list_services();
-            if (!services.empty()) std::cout << services.dump() << '\n' << std::flush;
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+namespace streamfind::tray::detail {
+
+volatile std::sig_atomic_t stop_requested = 0;
+void request_stop(int) { stop_requested = 1; }
+
+std::filesystem::path manager_path() {
+    std::error_code error;
+    const auto path = std::filesystem::read_symlink("/proc/self/exe", error);
+    if (error) throw std::runtime_error("unable to locate streamfind tray manager");
+    return path;
+}
+
+int supervise() {
+    std::signal(SIGINT, request_stop);
+    std::signal(SIGTERM, request_stop);
+    const auto manager = manager_path();
+    const auto server = manager.parent_path() / "streamfind-server";
+    const auto configuration = streamfind::load_service_configuration(manager.parent_path() / "streamfind.json");
+    const auto runtime_directory = streamfind::service::ServiceDiscovery::runtime_directory();
+    std::filesystem::create_directories(runtime_directory);
+    const auto lock_path = runtime_directory / "tray-manager.lock";
+    const auto lock = open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
+    if (lock < 0) throw std::runtime_error("unable to create streamfind tray manager lock");
+    if (flock(lock, LOCK_EX | LOCK_NB) != 0) {
+        close(lock);
+        return 0;
+    }
+    for (const auto &service : streamfind::service::list_services()) {
+        if (service.value("health", "") != "healthy") continue;
+        const auto manager_pid = service.value("manager_process_id", std::uint64_t{0});
+        if (manager_pid != 0 && manager_pid != static_cast<std::uint64_t>(getpid())) {
+            close(lock);
+            return 0;
         }
-    } catch (const std::exception &error) {
+        if (manager_pid == 0) {
+            streamfind::service::stop_service(service.value("service_instance_id", std::string{}));
+            for (int attempt = 0; attempt < 100; ++attempt) {
+                if (streamfind::service::ServiceDiscovery::record_paths().empty()) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            break;
+        }
+    }
+    pid_t child = -1;
+    for (;;) {
+        if (stop_requested != 0) {
+            if (child > 0) {
+                kill(child, SIGTERM);
+                for (int attempt = 0; attempt < 100; ++attempt) {
+                    const auto result = waitpid(child, nullptr, WNOHANG);
+                    if (result == child) { child = -1; break; }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                if (child > 0) {
+                    kill(child, SIGKILL);
+                    waitpid(child, nullptr, 0);
+                    child = -1;
+                }
+            }
+            close(lock);
+            return 0;
+        }
+        if (child < 0) {
+            const auto pid = std::to_string(static_cast<std::uint64_t>(getpid()));
+            const auto port = std::to_string(configuration.port);
+            child = fork();
+            if (child < 0) throw std::runtime_error("unable to launch streamfind-server");
+            if (child == 0) {
+                execl(server.c_str(), server.c_str(), port.c_str(), "--manager-pid", pid.c_str(),
+                      "--manager-executable", manager.c_str(), static_cast<char *>(nullptr));
+                _exit(127);
+            }
+        }
+        int status = 0;
+        const auto exited = waitpid(child, &status, WNOHANG);
+        if (exited == child) {
+            child = -1;
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                close(lock);
+                return 0;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            continue;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+}
+
+}  // namespace streamfind::tray::detail
+
+int main() {
+    try { return streamfind::tray::detail::supervise(); }
+    catch (const std::exception &error) {
         std::cerr << "streamfind-tray: " << error.what() << '\n';
         return 1;
     }

@@ -16,6 +16,14 @@ Linux:   <package>/bin/streamfind-mcp
 Keep the extracted package layout intact. The catalogue and native libraries
 are required runtime data for the server.
 
+When `streamfind-mcp` starts, it asks the package's `streamfind` CLI to start or
+reuse the local tray manager and service. On Windows the manager appears in the
+notification area; on Linux it runs headlessly. The MCP process only attaches
+to the shared service and does not stop it when the MCP client exits. The app
+launcher uses the same manager, so app and MCP sessions see the same open
+projects and workflow runs. Close the tray manager or run `streamfind service
+stop` to stop the service; closing the browser alone leaves it running.
+
 The package also contains one `streamfind.json` beside the service binaries.
 It controls the enabled plugins and the default local service port:
 

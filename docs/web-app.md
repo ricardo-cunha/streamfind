@@ -15,10 +15,12 @@ The {{ streamfind_version }} native archives include the same browser applicatio
 | Linux x86_64 | Built React assets under `app/` and executables under `bin/` | Run `./bin/streamfind-app` or use `./bin/streamfind` from a terminal |
 
 The application launcher asks the public CLI to start or reuse the package-local
-C++ service on loopback, waits for it to become ready, and opens the packaged
-`app/index.html` in the default browser. The service serves the static assets and
-backend API from the same local origin. Closing the browser or launcher does not
-stop the service; stop it explicitly with `bin\\streamfind service stop`.
+tray manager. The manager owns and supervises `streamfind-server`, then the
+launcher opens the packaged `app/index.html` in the default browser. The server
+serves the static assets and backend API from the same local origin. Closing the
+browser or launcher leaves the manager and server running. Closing the Windows
+tray manager stops the server; `streamfind service stop` stops both. On Linux,
+the same manager runs headlessly because desktop tray support is not included.
 
 The application is local rather than hosted and does not expose the backend
 beyond the local machine by default. On Linux, the
@@ -46,6 +48,10 @@ From a terminal, use:
 .\bin\streamfind.exe service stop
 ```
 
+The MCP executable starts or attaches to this same manager when it starts. It
+does not stop the shared server when the MCP client disconnects or exits. The
+app and MCP therefore share projects and active runs through one server.
+
 ## Linux release
 
 1. Download and extract `streamfind-core-cpp-{{ streamfind_version }}-Linux-x86_64.tgz` from the
@@ -64,7 +70,8 @@ static application is under `app/`; backend executables and runtime
 files are under `bin/` and `core/`. Keep the extracted directory layout intact.
 
 From a terminal, use `./bin/streamfind service start`, `./bin/streamfind service list`,
-`./bin/streamfind service status`, and `./bin/streamfind service stop`. When more than one service is
+`./bin/streamfind service status`, and `./bin/streamfind service stop`. `service start`
+launches the headless manager and server; `service stop` stops both. When more than one service is
 running, provide `--instance <id>` to select the service explicitly.
 
 ## Local development
