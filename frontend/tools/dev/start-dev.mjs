@@ -13,8 +13,13 @@ const executableSuffix = windows ? '.exe' : '';
 const serviceExecutable = resolve(buildRoot, `streamfind-server${executableSuffix}`);
 const workerExecutable = resolve(buildRoot, `streamfind-worker${executableSuffix}`);
 const serviceUrl = (process.env.STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790').replace(/\/+$/, '');
+const vitePort = Number(process.env.STREAMFIND_VITE_PORT || 5173);
 const children = [];
 let shuttingDown = false;
+
+if (!Number.isInteger(vitePort) || vitePort < 1 || vitePort > 65535) {
+  throw new Error('STREAMFIND_VITE_PORT must be an integer from 1 through 65535.');
+}
 
 function log(message) {
   process.stdout.write(`[streamfind] ${message}\n`);
@@ -78,7 +83,7 @@ async function waitForService(timeoutMs = 30_000) {
 
 function startFrontend() {
   const viteBin = resolve(frontendRoot, 'node_modules', 'vite', 'bin', 'vite.js');
-  const child = spawn(process.execPath, [viteBin, '--host', '127.0.0.1'], {
+  const child = spawn(process.execPath, [viteBin, '--host', '127.0.0.1', '--port', String(vitePort)], {
     cwd: frontendRoot,
     env: { ...process.env, VITE_STREAMFIND_SERVICE_URL: serviceUrl },
     stdio: 'inherit',
@@ -126,7 +131,7 @@ try {
     log(`Backend is ready at ${serviceUrl}. Press Ctrl+C to exit the launcher.`);
     if (!children.length) setInterval(() => {}, 60_000);
   } else {
-    log('Starting Vite frontend at http://127.0.0.1:5173/.');
+    log(`Starting Vite frontend at http://127.0.0.1:${vitePort}/.`);
     startFrontend();
   }
 } catch (error) {

@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include "streamfind/service_configuration.hpp"
+#include "streamfind/service_port.hpp"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -235,12 +236,23 @@ void start_tray_process(const char *executable) {
 #endif
 }
 
-std::uint16_t configured_service_port(const char *executable) {
+streamfind::ServiceConfiguration configured_service_configuration(const char *executable) {
     const auto root = package_root(executable);
     const auto packaged = root / "bin" / "streamfind.json";
     const auto development = root / "streamfind.json";
-    const auto configuration = std::filesystem::exists(packaged) ? packaged : development;
-    return streamfind::load_service_configuration(configuration).port;
+    return streamfind::load_service_configuration(
+        std::filesystem::exists(packaged) ? packaged : development);
+}
+
+void set_service_port_override(std::uint16_t port) {
+    const auto value = std::to_string(port);
+#ifdef _WIN32
+    if (_putenv_s("STREAMFIND_SERVICE_PORT", value.c_str()) != 0)
+        throw std::runtime_error("unable to set the selected streamfind service port");
+#else
+    if (setenv("STREAMFIND_SERVICE_PORT", value.c_str(), 1) != 0)
+        throw std::runtime_error("unable to set the selected streamfind service port");
+#endif
 }
 
 std::vector<Json> wait_for_service(const char *executable, std::uint16_t port) {
@@ -303,7 +315,9 @@ int main(int argc, char **argv) {
         const std::string command = argv[2];
         bool json = false;
         std::string instance;
-        std::uint16_t port = streamfind::service_cli::detail::configured_service_port(argv[0]);
+        const auto configuration = streamfind::service_cli::detail::configured_service_configuration(argv[0]);
+        std::uint16_t port = configuration.port;
+        bool explicit_port = false;
         for (int index = 3; index < argc; ++index) {
             if (std::string(argv[index]) == "--json") json = true;
             else if (std::string(argv[index]) == "--instance" && index + 1 < argc) instance = argv[++index];
@@ -311,6 +325,7 @@ int main(int argc, char **argv) {
                 const auto parsed = std::stoul(argv[++index]);
                 if (parsed > 65535 || parsed == 0) throw std::runtime_error("service start has an invalid port");
                 port = static_cast<std::uint16_t>(parsed);
+                explicit_port = true;
             }
             else throw std::runtime_error("unknown service option");
         }
@@ -318,13 +333,12 @@ int main(int argc, char **argv) {
         if (command == "start") {
             for (const auto &value : values) {
                 if (value.value("health", "") == "healthy") {
-                    if (value.value("endpoint", "") !=
-                        "http://127.0.0.1:" + std::to_string(port))
-                        throw std::runtime_error("a streamfind service is already running on another endpoint");
                     if (value.value("manager_process_id", std::uint64_t{0}) != 0) {
-                        streamfind::service_cli::detail::start_tray_process(argv[0]);
-                        const auto refreshed = streamfind::service_cli::detail::wait_for_service(argv[0], port);
-                        streamfind::service_cli::detail::print_services(refreshed, json);
+                        const auto running_port = streamfind::service_cli::detail::parse_endpoint(
+                            value.value("endpoint", "")).port;
+                        if (explicit_port && running_port != port)
+                            throw std::runtime_error("a streamfind service is already running on another endpoint");
+                        streamfind::service_cli::detail::print_services(values, json);
                         return finish(0);
                     }
                     streamfind::service::stop_service(value.value("service_instance_id", std::string{}));
@@ -334,6 +348,27 @@ int main(int argc, char **argv) {
                     break;
                 }
             }
+            if (!explicit_port && configuration.automatic_port_fallback) {
+                const auto selected = streamfind::select_service_port(port);
+                if (selected != port)
+                    std::cout << "Configured service port " << port << " is busy; using "
+                              << selected << ".\n";
+                port = selected;
+            } else if (!explicit_port) {
+                try {
+                    (void)streamfind::select_service_port(port, 1);
+                } catch (...) {
+                    throw std::runtime_error("configured streamfind service port is busy and automatic fallback is disabled");
+                }
+            } else {
+                try {
+                    (void)streamfind::select_service_port(port, 1);
+                } catch (...) {
+                    throw std::runtime_error("requested streamfind service port " + std::to_string(port) +
+                                             " is busy; choose another port with --port");
+                }
+            }
+            streamfind::service_cli::detail::set_service_port_override(port);
             streamfind::service_cli::detail::start_tray_process(argv[0]);
             const auto ready = streamfind::service_cli::detail::wait_for_service(argv[0], port);
             streamfind::service_cli::detail::print_services(ready, json);
@@ -408,6 +443,13 @@ int main(int argc, char **argv) {
                     : "multiple streamfind services are running; use --instance <id>");
                 instance = values.front().value("service_instance_id", "");
             }
+            for (const auto &value : values) {
+                if (value.value("service_instance_id", "") != instance) continue;
+                port = streamfind::service_cli::detail::parse_endpoint(
+                    value.value("endpoint", "")).port;
+                break;
+            }
+            streamfind::service_cli::detail::set_service_port_override(port);
             streamfind::service::stop_service(instance);
             for (int attempt = 0; attempt < 50 && !streamfind::service::ServiceDiscovery::record_paths().empty(); ++attempt)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -418,6 +460,17 @@ int main(int argc, char **argv) {
         }
         if (command == "tray") {
             if (!instance.empty()) throw std::runtime_error("service tray does not accept --instance");
+            bool attached_to_running_service = false;
+            for (const auto &value : values) {
+                if (value.value("health", "") != "healthy") continue;
+                port = streamfind::service_cli::detail::parse_endpoint(
+                    value.value("endpoint", "")).port;
+                attached_to_running_service = true;
+                break;
+            }
+            if (!attached_to_running_service && configuration.automatic_port_fallback)
+                port = streamfind::select_service_port(port);
+            streamfind::service_cli::detail::set_service_port_override(port);
             streamfind::service_cli::detail::start_tray_process(argv[0]);
             const auto ready = streamfind::service_cli::detail::wait_for_service(argv[0], port);
             streamfind::service_cli::detail::print_services(ready, json);

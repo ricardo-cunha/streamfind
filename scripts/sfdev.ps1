@@ -6,6 +6,7 @@ $platform = if ($IsWindows) { 'windows-core' } else { 'linux-core' }
 $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
 . (Join-Path $PSScriptRoot 'build/msys2-common.ps1')
 . (Join-Path $PSScriptRoot 'build/python-common.ps1')
+. (Join-Path $PSScriptRoot 'build/example-data-common.ps1')
 $ucrt = if ($IsWindows) { Get-StreamFindMSYS2Root $managedHome }
 $msys2ManagedRoot = Join-Path $managedHome 'tools/msys2'
 $bin = if ($IsWindows) { Join-Path $ucrt 'ucrt64/bin' }
@@ -41,7 +42,7 @@ function Show-Help([string]$Topic) {
         'env show' = @('env show [--json]', 'Show the checkout, default build directory, and resolved tool paths.', 'Use --json for machine-readable output.')
         'env shell' = @('env shell [--dry-run]', 'Open PowerShell 7 with a checkout-local sfdev command.', 'Starts in the repository root. Type exit to return to the parent shell.')
         'doctor' = @('doctor [--workflow native|frontend|scripts] [--json]', 'Check tool availability and version commands for a workflow.', 'Without --workflow, checks all listed tools. Returns a nonzero exit code on failure.')
-        'setup' = @('setup --components LIST [--dry-run]', 'Install native, java, frontend, browser, or python prerequisites.', 'Python setup reuses a compatible system interpreter or provisions the pinned Python under .streamfind/tools, then creates the repository .venv.')
+        'setup' = @('setup --components LIST [--dry-run]', 'Install native, java, frontend, browser, python, or data prerequisites.', 'The shared streamfind.data checkout is stored under .streamfind and downloaded on demand.')
         'configure' = @('configure [--config Debug|Release] [--dry-run]', 'Generate a native CMake build tree under the platform build directory.', "Defaults to $platform, Debug, and all plugins. CMake discovers all bundled plugins.", 'Example: sfdev configure --config Release')
         'build backend' = @('build backend [--target NAME] [--jobs N] [--dry-run]', 'Compile an existing native build with CMake.', "Configure first. Defaults to $platform and the default CMake target.", 'Example: sfdev build backend --target streamfind_statistics_unit')
         'build frontend' = @('build frontend [--dry-run]', 'Run npm run build in frontend/ and write assets to frontend/dist/.', 'Run sfdev setup --components frontend when Node.js/npm are missing or frontend dependencies are not installed.')
@@ -51,8 +52,8 @@ function Show-Help([string]$Topic) {
         'test browser' = @('test browser --url URL [--dry-run]', 'Run the Playwright smoke check against a running frontend.', 'Install frontend dependencies and Playwright Chromium first.')
         'check frontend' = @('check frontend [--dry-run]', 'Run the frontend build, lint, and formatting check in order.', 'Requires installed frontend dependencies. Stops at the first failed step.')
         'run backend' = @('run backend [--url URL] [--dry-run]', 'Start a development service or use one that is already ready.', "Defaults to $platform and http://127.0.0.1:8790. Build the service and worker first.")
-        'run frontend' = @('run frontend [--url URL] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed. Defaults to http://127.0.0.1:8790.')
-        'run app' = @('run app [--url URL] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Press Ctrl+C to stop processes started by this command.')
+        'run frontend' = @('run frontend [--url URL] [--vite-port PORT] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Defaults to service http://127.0.0.1:8790 and Vite port 5173.')
+        'run app' = @('run app [--url URL] [--vite-port PORT] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Defaults to service http://127.0.0.1:8790 and Vite port 5173. Press Ctrl+C to stop processes started by this command.')
         'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked native-Windows test distribution under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
         'clean' = @('clean --scope build|all-temp [--dry-run]', 'Remove the platform build tree or the contents of repository tmp/.', 'Use --dry-run to preview deletions. all-temp includes logs, test projects, packages, and release archives.')
         'script list' = @('script list [--json]', 'List public scripts under scripts/dev/ and show interpreter availability.', 'An available interpreter does not guarantee that the script has its required data or arguments.')
@@ -150,8 +151,8 @@ try {
         'clean/' { 'scope', 'dry-run' }
         'check/frontend' { 'dry-run' }
         'run/backend' { 'url', 'dry-run' }
-        'run/frontend' { 'url', 'dry-run' }
-        'run/app' { 'url', 'dry-run' }
+        'run/frontend' { 'url', 'vite-port', 'dry-run' }
+        'run/app' { 'url', 'vite-port', 'dry-run' }
         'package/' { 'frontend-only', 'dry-run' }
         'version/show' { }
         'version/bump' { 'dry-run' }
@@ -286,8 +287,12 @@ try {
             [ordered]@{ name = $entry.Key; path = $entry.Value; source = $source; available = $available
                 version = $version; diagnostic = $diagnostic }
         }
-        $dataRoot = Join-Path (Split-Path -Parent $root) 'streamfind.data'
+        $exampleData = Resolve-StreamfindExampleData
+        $dataRoot = $exampleData.RepositoryRoot
         $issues = @()
+        if (!(Test-Path -LiteralPath $exampleData.DataRoot -PathType Container)) {
+            $issues += "Shared example data is not installed. Run 'sfdev setup --components data' before data-backed builds or tests."
+        }
         if ($workflow -in 'all', 'native') {
             $cmakeVersion = ($inventory | Where-Object name -eq cmake).version
             if ($cmakeVersion -match '(\d+\.\d+\.\d+)' -and [version]$Matches[1] -lt [version]'3.25') {
@@ -317,7 +322,7 @@ try {
         }
         $report = [ordered]@{ checkout = $root; build_directory = $tree; workflow = $workflow
             managed_home = $managedHome; default_data_root = $dataRoot
-            default_data_available = (Test-Path -LiteralPath (Join-Path $dataRoot 'data') -PathType Container)
+            default_data_available = (Test-Path -LiteralPath $exampleData.DataRoot -PathType Container)
             tools = @($inventory); issues = $issues }
         if ($options.json) { $report | ConvertTo-Json -Depth 5 }
         else {
@@ -447,8 +452,11 @@ try {
     }
     if ($command -eq 'setup') {
         $components = @($options.components -split ',')
-        if (!$options.components -or ($components | Where-Object { $_ -notin 'native', 'java', 'frontend', 'browser', 'python' })) {
-            throw 'Choose components from native, java, frontend, browser, python'
+        if (!$options.components -or ($components | Where-Object { $_ -notin 'native', 'java', 'frontend', 'browser', 'python', 'data' })) {
+            throw 'Choose components from native, java, frontend, browser, python, data'
+        }
+        if ('data' -in $components) {
+            $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-example-data.ps1'))
         }
         if ('python' -in $components) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-python.ps1'))
@@ -497,6 +505,14 @@ try {
     if ($command -eq 'run') {
         $environment.STREAMFIND_DEV_BUILD_DIR = $tree
         $environment.STREAMFIND_SERVICE_URL = $options.url ?? $env:STREAMFIND_SERVICE_URL ?? 'http://127.0.0.1:8790'
+        $environment.STREAMFIND_VITE_PORT = $env:STREAMFIND_VITE_PORT ?? '5173'
+        if ($options.ContainsKey('vite-port')) {
+            $vitePort = 0
+            if (![int]::TryParse([string]$options['vite-port'], [ref]$vitePort) -or $vitePort -lt 1 -or $vitePort -gt 65535) {
+                throw 'The --vite-port value must be an integer from 1 through 65535.'
+            }
+            $environment.STREAMFIND_VITE_PORT = [string]$vitePort
+        }
         $arguments = @((Join-Path $frontend 'tools/dev/start-dev.mjs'))
         if ($subject -eq 'backend') { $arguments += '--backend-only' }
         if ($subject -eq 'frontend') { $arguments += '--frontend-only' }
@@ -609,6 +625,8 @@ try {
         $steps += New-Step $root $script.interpreter (@($arguments) + $forward)
     }
     if ($command -eq 'configure') {
+        $exampleData = Resolve-StreamfindExampleData
+        $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-example-data.ps1'))
         $config = $options.config ?? 'Debug'
         if ($config -cnotin 'Debug', 'Release') { throw 'Use Debug or Release for --config' }
         $cacheFile = Join-Path $tree 'CMakeCache.txt'
@@ -637,7 +655,8 @@ try {
             }
         }
         $steps += New-Step $root $tools.cmake @('--preset', $platform, '-S', (Join-Path $root 'cpp'),
-            '-B', $tree, "-DCMAKE_BUILD_TYPE=$config", '-DSTREAMFIND_ENABLED_PLUGINS=ALL', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON')
+            '-B', $tree, "-DCMAKE_BUILD_TYPE=$config", '-DSTREAMFIND_ENABLED_PLUGINS=ALL',
+            "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)", '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON')
     }
     if ($command -in 'build', 'test' -and $subject -in 'backend', 'all') {
         if (!$options['dry-run'] -and !(Test-Path -LiteralPath (Join-Path $tree 'CMakeCache.txt'))) {
@@ -649,6 +668,9 @@ try {
             if ($jobs) { $arguments += '--parallel', $jobs }
             $steps += New-Step $root $tools.cmake $arguments
         } else {
+            if (!$options.list) {
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-example-data.ps1'))
+            }
             $arguments = @('--test-dir', $tree, '--output-on-failure')
             if ($options.list) { $arguments += '-N' }
             if ($options.filter) { $arguments += '-R', $options.filter }

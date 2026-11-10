@@ -131,18 +131,8 @@ function Stop-StreamfindMcp {
 
 function Get-StreamfindDataRoot {
     param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
-    if ($env:STREAMFIND_EXAMPLE_DATA_ROOT) {
-        $override = (Resolve-Path $env:STREAMFIND_EXAMPLE_DATA_ROOT -ErrorAction Stop).Path
-        if (-not (Test-Path $override -PathType Container)) {
-            throw "STREAMFIND_EXAMPLE_DATA_ROOT is not a directory: $override"
-        }
-        return $override
-    }
-    $dataRoot = Join-Path (Join-Path (Split-Path $RepositoryRoot -Parent) 'streamfind.data') 'data'
-    if (-not (Test-Path $dataRoot -PathType Container)) {
-        throw "Sibling streamfind.data repository not found at $dataRoot"
-    }
-    return $dataRoot
+    . (Join-Path $RepositoryRoot 'scripts/build/example-data-common.ps1')
+    return (Resolve-StreamfindExampleData -Ensure).DataRoot
 }
 
 function Get-StreamfindVendorRoot {

@@ -19,8 +19,17 @@ if(UNIX AND NOT APPLE)
 endif()
 
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
-set(STREAMFIND_DATA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../streamfind.data" CACHE PATH
-    "Sibling streamfind.data repository used by official tests")
+if(DEFINED ENV{STREAMFIND_EXAMPLE_DATA_ROOT} AND NOT "$ENV{STREAMFIND_EXAMPLE_DATA_ROOT}" STREQUAL "")
+    get_filename_component(_streamfind_data_root "$ENV{STREAMFIND_EXAMPLE_DATA_ROOT}" DIRECTORY)
+elseif(DEFINED ENV{STREAMFIND_HOME} AND NOT "$ENV{STREAMFIND_HOME}" STREQUAL "")
+    set(_streamfind_data_root "$ENV{STREAMFIND_HOME}/streamfind.data")
+elseif(WIN32)
+    set(_streamfind_data_root "$ENV{USERPROFILE}/.streamfind/streamfind.data")
+else()
+    set(_streamfind_data_root "$ENV{HOME}/.streamfind/streamfind.data")
+endif()
+set(STREAMFIND_DATA_ROOT "${_streamfind_data_root}" CACHE PATH
+    "User-managed streamfind.data repository used by official tests")
 option(STREAMFIND_BUILD_SHARED "Build shared native libraries" OFF)
 option(STREAMFIND_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
 option(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT
@@ -222,6 +231,7 @@ set(STREAMFIND_CORE_SOURCES
     core/src/data_proxy_output_sink.cpp
     core/src/service_runtime_client.cpp
     core/src/service_configuration.cpp
+    core/src/service_port.cpp
     core/src/operations/operations.cpp
     core/src/plugin_loader.cpp
     core/src/plugin_configuration.cpp
@@ -439,7 +449,7 @@ if(STREAMFIND_BUILD_TESTS)
     enable_testing()
     if(NOT EXISTS "${STREAMFIND_DATA_ROOT}/data")
         message(FATAL_ERROR
-            "Official tests require the sibling streamfind.data repository with a data directory: ${STREAMFIND_DATA_ROOT}")
+            "Official tests require streamfind.data at ${STREAMFIND_DATA_ROOT}. Run 'sfdev setup --components data' or set STREAMFIND_EXAMPLE_DATA_ROOT to its data directory.")
     endif()
     add_subdirectory(core/tests)
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
@@ -468,10 +478,10 @@ foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
 endforeach()
 file(GENERATE
     OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787, \"automatic_port_fallback\": true},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787, \"automatic_port_fallback\": true},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
     DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli

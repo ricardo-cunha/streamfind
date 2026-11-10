@@ -1,5 +1,5 @@
 #include <windows.h>
-#include "streamfind/service_configuration.hpp"
+#include "streamfind/service_runtime_client.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -64,27 +64,47 @@ void start_service() {
     if (exit_code != 0) throw std::runtime_error("streamfind service did not become ready");
 }
 
-std::uint16_t service_port() {
-    return streamfind::load_service_configuration(package_root() / "bin" / "streamfind.json").port;
+std::string running_service_endpoint() {
+    for (const auto &service : streamfind::service::list_services()) {
+        if (service.value("health", "") == "healthy")
+            return service.value("endpoint", std::string{});
+    }
+    throw std::runtime_error("streamfind service did not publish a healthy endpoint");
 }
 
 }  // namespace streamfind::service::host_detail
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    WSADATA winsock{};
+    if (WSAStartup(MAKEWORD(2, 2), &winsock) != 0) return 1;
+#endif
     try {
         if (argc > 1 && std::string(argv[1]) == "service")
-            return streamfind::service::host_detail::run_service_command(argc, argv);
+        {
+            const auto result = streamfind::service::host_detail::run_service_command(argc, argv);
+#ifdef _WIN32
+            WSACleanup();
+#endif
+            return result;
+        }
 
         streamfind::service::host_detail::start_service();
-        const auto url = "http://127.0.0.1:" + std::to_string(streamfind::service::host_detail::service_port()) + "/";
+        const auto url = streamfind::service::host_detail::running_service_endpoint() + "/";
         std::cout << "\nstreamfind is ready.\n"
                   << "The background service remains running when this window or browser closes.\n"
                   << "Open the application: " << url << "\n"
                   << "Stop the service explicitly with: streamfind service stop --instance <id>\n"
                   << std::flush;
         ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#ifdef _WIN32
+        WSACleanup();
+#endif
         return 0;
     } catch (const std::exception &error) {
+#ifdef _WIN32
+        WSACleanup();
+#endif
         MessageBoxA(nullptr, error.what(), "streamfind-app startup failed", MB_OK | MB_ICONERROR);
         return 1;
     }

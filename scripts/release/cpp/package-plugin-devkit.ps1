@@ -7,6 +7,7 @@ param(
 )
 
 . "$PSScriptRoot\..\..\build\build-common.ps1"
+. "$PSScriptRoot\..\..\build\example-data-common.ps1"
 . "$PSScriptRoot\..\release-common.ps1"
 
 $root = $Script:REPO_ROOT
@@ -17,6 +18,7 @@ if ($canonicalVersion -ne $Version) {
     throw "Release version $Version does not match the canonical version $canonicalVersion"
 }
 $toolchain = Initialize-MinGWUcrt64
+$exampleData = Resolve-StreamfindExampleData -Ensure
 $buildDir = Join-Path $root 'tmp\build\windows\devkit'
 $installDir = Join-Path $buildDir 'install'
 $outDir = Join-Path $root 'tmp\release-output'
@@ -34,7 +36,7 @@ try {
     "-DCMAKE_CXX_COMPILER=$($toolchain.CxxCompiler)" `
     "-DCMAKE_BUILD_TYPE=$Config" `
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)" `
-    '-DSTREAMFIND_BUILD_TESTS=ON' '-DSTREAMFIND_BUILD_SHARED=OFF' `
+    '-DSTREAMFIND_BUILD_TESTS=ON' "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)" '-DSTREAMFIND_BUILD_SHARED=OFF' `
     '-DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=ON' `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-DCMAKE_INSTALL_PREFIX=$installDir" `

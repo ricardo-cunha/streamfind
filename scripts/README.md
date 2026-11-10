@@ -68,6 +68,7 @@ which machine-specific path or package is needed:
 sfdev setup --components native,java,frontend,python
 sfdev setup --components python
 sfdev setup --components browser
+sfdev setup --components data
 ```
 
 `native` includes the managed Java needed for semantic-catalogue generation.
@@ -79,8 +80,8 @@ Node.js/npm bundle under
 `frontend/node_modules`. The managed Node.js version is pinned in
 `scripts/build/node-version.txt`; update its official archive hashes in
 `scripts/build/setup-node.ps1` when changing that pin. `STREAMFIND_HOME` can
-override the managed tools root. Browser setup is only needed for browser
-smoke checks; Playwright browsers are stored in `tools/playwright` under the
+override the managed tools and shared example-data root. Browser setup is only
+needed for browser smoke checks; Playwright browsers are stored in `tools/playwright` under the
 same managed tools root. On Ubuntu/Debian, native setup uses the system
 package manager and needs an APT source that provides `libarrow-dev`; package
 installation uses `sudo`.
@@ -193,9 +194,11 @@ sfdev test browser --url http://127.0.0.1:5173/
 
 Large-data, mass-spectrometry, Raman, parser, and workflow checks are
 development checks, not CTest tests. Keep them under `scripts/dev/` and use
-the development-script runner described below. Large example data comes from
-the sibling `streamfind.data` repository, unless `STREAMFIND_EXAMPLE_DATA_ROOT`
-points to another data directory.
+the development-script runner described below. Example data is shared across
+checkouts at `<user>/.streamfind/streamfind.data`; run
+`sfdev setup --components data` to clone it on demand. Set
+`STREAMFIND_HOME` to change the managed directory, or set
+`STREAMFIND_EXAMPLE_DATA_ROOT` to use a specific data directory.
 
 ## 4. Development scripts and data checks
 
@@ -211,8 +214,9 @@ sfdev script run validate_native_dependencies.py -- --help
 Script paths are relative to `scripts/dev/`. Put script arguments after the
 separator `--`; `sfdev` arguments such as `--dry-run` go before it. Python
 scripts always use the repository `.venv`, never the system Python. Data-backed
-development scripts may require the sibling `streamfind.data` repository or
-explicit paths; use `script info` and the script's help to confirm them.
+development scripts resolve the shared managed `streamfind.data` checkout and
+download it when a data-backed check requires it; they may also accept
+explicit paths. Use `script info` and the script's help to confirm them.
 
 Use the JSON option where supported for automation. A dry run prints the
 planned working directory, executable, arguments, and relevant environment

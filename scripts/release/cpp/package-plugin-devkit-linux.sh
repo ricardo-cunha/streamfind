@@ -2,6 +2,7 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.sh"
 sanitize_linux_build_environment
+ensure_streamfind_example_data
 require_tool cmake; require_tool ninja; require_tool cpack
 VERSION="${1:?usage: package-plugin-devkit.sh VERSION}"
 OUT="${STREAMFIND_RELEASE_DIR:-$REPO_ROOT/tmp/release-output}"
@@ -20,6 +21,7 @@ cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$INSTALL" \
     -DSTREAMFIND_BUILD_TESTS=ON \
+    -DSTREAMFIND_DATA_ROOT="$STREAMFIND_DATA_REPOSITORY_ROOT" \
     -DSTREAMFIND_BUILD_SHARED=OFF \
     -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=ON \
     -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"

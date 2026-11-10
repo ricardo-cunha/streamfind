@@ -26,6 +26,7 @@ param(
 )
 
 . "$PSScriptRoot\..\build-common.ps1"
+. "$PSScriptRoot\..\example-data-common.ps1"
 Start-ScriptLog 'build-cpp'
 $buildDir = Join-Path $Script:TMP_BUILD 'windows\core'
 $srcDir   = Join-Path $Script:REPO_ROOT 'cpp'
@@ -39,6 +40,7 @@ if ($Clean -and (Test-Path $buildDir)) {
 }
 
 $toolchain = Initialize-MinGWUcrt64
+$exampleData = Resolve-StreamfindExampleData -Ensure
 $cmake = $toolchain.CMake
 $ninja = $toolchain.Ninja
 Write-Log "MinGW root: $($toolchain.Root)"
@@ -74,6 +76,7 @@ $configureArgs = @(
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')",
     '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
     '-DSTREAMFIND_BUILD_TESTS=ON',
+    "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)",
     '-DSTREAMFIND_BUILD_SHARED=OFF',
     "-B $buildDir", "-S $srcDir"
 )

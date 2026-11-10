@@ -1,6 +1,6 @@
 #ifndef _WIN32
 #include <cstdlib>
-#include "streamfind/service_configuration.hpp"
+#include "streamfind/service_runtime_client.hpp"
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -55,8 +55,12 @@ void start_service(const char *executable) {
         throw std::runtime_error("streamfind service did not become ready");
 }
 
-std::uint16_t service_port(const char *executable) {
-    return streamfind::load_service_configuration(package_root(executable) / "bin" / "streamfind.json").port;
+std::string running_service_endpoint() {
+    for (const auto &service : streamfind::service::list_services()) {
+        if (service.value("health", "") == "healthy")
+            return service.value("endpoint", std::string{});
+    }
+    throw std::runtime_error("streamfind service did not publish a healthy endpoint");
 }
 
 }  // namespace streamfind::service::launcher_detail
@@ -66,7 +70,7 @@ int main(int argc, char **argv) {
         if (argc > 1 && std::string(argv[1]) == "service")
             return streamfind::service::launcher_detail::run_service_command(argc, argv);
         streamfind::service::launcher_detail::start_service(argv[0]);
-        const auto url = "http://127.0.0.1:" + std::to_string(streamfind::service::launcher_detail::service_port(argv[0])) + "/";
+        const auto url = streamfind::service::launcher_detail::running_service_endpoint() + "/";
         std::cout << "\nstreamfind is ready.\n"
                   << "The background service remains running when this window or browser closes.\n"
                   << "Open the application: " << url << "\n"

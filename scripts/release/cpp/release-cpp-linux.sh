@@ -2,6 +2,7 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.sh"
 sanitize_linux_build_environment
+ensure_streamfind_example_data
 require_tool cmake; require_tool ninja; require_tool tar; require_tool sha256sum
 VERSION="${1:-$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")}"
 if [[ -z "$VERSION" ]]; then
@@ -25,7 +26,7 @@ if [[ "${STREAMFIND_SKIP_FRONTEND_BUILD:-0}" == 0 ]]; then
     (cd "$FRONTEND" && npm ci && npm run build)
 fi
 test -f "$FRONTEND_DIST/index.html"
-cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
+cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_DATA_ROOT="$STREAMFIND_DATA_REPOSITORY_ROOT" -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
 cmake --build "$BUILD" --parallel "${STREAMFIND_JOBS:-$(nproc)}"
 [[ "${STREAMFIND_RUN_TESTS:-1}" == 0 ]] || (cd "$BUILD" && ctest --output-on-failure)
 (cd "$BUILD" && cpack -G TGZ -C Release -B "$OUT")

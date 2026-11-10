@@ -184,8 +184,10 @@ Official native tests are C++ tests registered with CTest under
 Development-stage Python checks, data-backed workflow runs, and integration
 checks belong under `scripts/dev/` and are not part of CTest. Use the
 repository `.venv` for Python development checks. Large mass-spectrometry
-fixtures are maintained in the sibling `streamfind.data` repository rather
-than in the native unit-test directories.
+fixtures are maintained in the shared `<user>/.streamfind/streamfind.data`
+checkout rather than in the native unit-test directories. Run
+`sfdev setup --components data` to provision the checkout; worktrees and
+external plugin repositories resolve the same managed location.
 
 The native C++ package targets Windows x64 and Linux x86_64. It includes the
 runtime, MCP server, browser application, semantic catalogues, and built-in

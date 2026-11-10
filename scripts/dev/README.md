@@ -13,9 +13,11 @@ scripts\dev\cpp\test-nta.ps1 -MaxAnalyses 3
 scripts\dev\cpp\test-vendor-readers.ps1 -Vendor Shimadzu
 ```
 
-Add `-RunPipeline` to `test-nta.ps1` for the expensive NTA workflow. External data
-is resolved from the sibling `streamfind.data` repository and can be overridden with
-`STREAMFIND_EXAMPLE_DATA_ROOT`. Vendor fixtures use `STREAMFIND_VENDOR_DATA_ROOT`.
+Add `-RunPipeline` to `test-nta.ps1` for the expensive NTA workflow. Example
+data is resolved from the shared `<user>/.streamfind/streamfind.data` checkout;
+`sfdev setup --components data` provisions it on demand. Override the location
+with `STREAMFIND_EXAMPLE_DATA_ROOT`. Vendor fixtures use
+`STREAMFIND_VENDOR_DATA_ROOT`.
 
 The C++ scripts use the native catalogue generated at:
 

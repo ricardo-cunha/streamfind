@@ -11,7 +11,9 @@ param(
 )
 
 . "$PSScriptRoot\..\build-common.ps1"
+. "$PSScriptRoot\..\example-data-common.ps1"
 Start-ScriptLog 'test-cpp'
+$null = Resolve-StreamfindExampleData -Ensure
 
 $ctest    = Get-CTest
 $buildDir = Join-Path $Script:TMP_BUILD 'windows\core'

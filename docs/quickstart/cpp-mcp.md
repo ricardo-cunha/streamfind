@@ -25,19 +25,24 @@ projects and workflow runs. Close the tray manager or run `streamfind service
 stop` to stop the service; closing the browser alone leaves it running.
 
 The package also contains one `streamfind.json` beside the service binaries.
-It controls the enabled plugins and the default local service port:
+It controls the enabled plugins and the preferred local service port:
 
 ```json
 {
-  "server": {"port": 8787},
+  "server": {"port": 8787, "automatic_port_fallback": true},
   "plugin_roots": ["../plugins"],
   "enabled_plugins": ["mass_spec", "raman", "sensors", "statistics"]
 }
 ```
 
-The CLI, app host, and MCP runtime use this same configuration. An explicit
-CLI port option overrides `server.port`; keep the service bound to loopback
-unless remote access is deliberately configured and secured.
+The CLI, app host, tray, and MCP runtime use this same configuration. If the
+preferred port is busy, automatic fallback selects an available port from the
+next 128 ports and publishes the actual endpoint through local service
+discovery. The app opens that discovered endpoint; the MCP and CLI attach to the
+same running service. Set `automatic_port_fallback` to `false` to require the
+configured port. `streamfind service start --port <port>` is an explicit
+override and fails if that exact port is unavailable. Keep the service bound to
+loopback unless remote access is deliberately configured and secured.
 
 ## Create and run a project
 

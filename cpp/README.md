@@ -38,15 +38,22 @@ For a development-tree runtime, place `streamfind.json` beside
 
 ```json
 {
-  "server": {"port": 8787},
+  "server": {"port": 8787, "automatic_port_fallback": true},
   "worker": {"memory_limit_mb": 0},
   "plugin_roots": ["C:/path/to/plugins"],
   "enabled_plugins": ["mass_spec", "raman"]
 }
 ```
 
-The `server.port` value is used by the service, app host, and CLI when no
-explicit port is supplied. A command-line port override takes precedence.
+The `server.port` value is the preferred loopback port. When it is occupied by
+another process, `automatic_port_fallback` lets the CLI/tray select an available
+port from the next 128 ports. The selected endpoint is published in the local
+service discovery record; the app host, CLI, tray, and MCP use that endpoint
+instead of assuming the preferred port. The default is `true`. Set it to
+`false` to require the configured port and fail clearly if it is unavailable.
+An explicit `streamfind service start --port <port>` always uses that exact port
+and fails if it cannot bind. `streamfind service list` reports the endpoint
+actually selected.
 
 `worker.memory_limit_mb` sets an optional memory budget for each worker process
 tree. `0` (the default) disables the budget. On Windows, streamfind applies the
@@ -221,9 +228,11 @@ contracts covering:
 Core contracts are under `cpp/core/tests/`, and mass-spec, Raman, and Sensors
 contracts are under their respective plugin `tests/` directories. Python
 regressions and data-backed workflow checks are development scripts under
-`scripts/dev/cpp/`, not official C++ tests. Official test configuration requires the sibling
-`streamfind.data` checkout; override its location with
-`-DSTREAMFIND_DATA_ROOT=<path>`. The mass-spec data contract verifies the
+`scripts/dev/cpp/`, not official C++ tests. Official test configuration requires
+the shared user checkout at `<user>/.streamfind/streamfind.data`; provision it
+with `sfdev setup --components data`. Override its repository root with
+`-DSTREAMFIND_DATA_ROOT=<path>` or set `STREAMFIND_EXAMPLE_DATA_ROOT` to a data
+directory. The mass-spec data contract verifies the
 wastewater CSV and mzML fixtures before the suite can pass. Raw vendor corpora
 and full NTA pipelines remain opt-in; invoke those explicitly through the
 development scripts, for example:
@@ -245,7 +254,7 @@ build, and Release package. Adding a plugin therefore does not require editing
 
 ### Full native C++ NTA workflow
 
-The NTA development test imports the 18 wastewater analyses from the sibling
+The NTA development test imports the 18 wastewater analyses from the shared
 `streamfind.data` repository, executes the connected operation graph, and verifies the
 persisted DuckDB results with
 `scripts/dev/cpp/verify-nta-project.py`. Verification includes:
@@ -492,7 +501,7 @@ For a development-tree host, place `streamfind.json` beside `streamfind-mcp.exe`
 
 ```json
 {
-  "server": {"port": 8787},
+  "server": {"port": 8787, "automatic_port_fallback": true},
   "plugin_roots": ["C:/path/to/plugins"],
   "enabled_plugins": ["mass_spec", "raman"]
 }

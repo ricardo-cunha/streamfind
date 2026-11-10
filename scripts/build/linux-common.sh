@@ -9,6 +9,31 @@ require_tool() {
     command -v "$1" >/dev/null 2>&1 || { echo "missing required tool: $1" >&2; exit 1; }
 }
 
+ensure_streamfind_example_data() {
+    local managed_home repository_root data_root
+    if [[ -n "${STREAMFIND_EXAMPLE_DATA_ROOT:-}" ]]; then
+        data_root="$(realpath -m "$STREAMFIND_EXAMPLE_DATA_ROOT")"
+        [[ -d "$data_root" ]] || { echo "STREAMFIND_EXAMPLE_DATA_ROOT is not a directory: $data_root" >&2; return 1; }
+        export STREAMFIND_DATA_REPOSITORY_ROOT="$(dirname "$data_root")"
+        return 0
+    fi
+    managed_home="${STREAMFIND_HOME:-$HOME/.streamfind}"
+    repository_root="$managed_home/streamfind.data"
+    data_root="$repository_root/data"
+    if [[ ! -d "$data_root" ]]; then
+        [[ ! -e "$repository_root" ]] || { echo "managed streamfind.data path exists without data/: $repository_root" >&2; return 1; }
+        require_tool git
+        mkdir -p "$managed_home"
+        echo "Downloading streamfind.data to $repository_root"
+        if ! git clone --depth 1 https://git.uni-due.de/odea-project/streamfind/streamfind.data "$repository_root"; then
+            rm -rf -- "$repository_root"
+            return 1
+        fi
+    fi
+    [[ -d "$data_root" ]] || { echo "streamfind.data checkout has no data directory: $data_root" >&2; return 1; }
+    export STREAMFIND_DATA_REPOSITORY_ROOT="$repository_root"
+}
+
 sanitize_linux_build_environment() {
     local entry filtered_path='' variable value
     local -a path_entries=()

@@ -1,11 +1,26 @@
 import json
+import os
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DATA_ROOT = REPO_ROOT.parent / "streamfind.data" / "data"
+if os.environ.get("STREAMFIND_EXAMPLE_DATA_ROOT"):
+    DATA_ROOT = Path(os.environ["STREAMFIND_EXAMPLE_DATA_ROOT"]).expanduser().resolve()
+else:
+    managed_home = Path(os.environ.get("STREAMFIND_HOME", Path.home() / ".streamfind")).expanduser()
+    DATA_REPOSITORY = managed_home / "streamfind.data"
+    DATA_ROOT = DATA_REPOSITORY / "data"
+    if not DATA_ROOT.is_dir():
+        if DATA_REPOSITORY.exists():
+            raise RuntimeError(f"Managed streamfind.data checkout has no data directory: {DATA_ROOT}")
+        DATA_REPOSITORY.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "https://git.uni-due.de/odea-project/streamfind/streamfind.data", str(DATA_REPOSITORY)],
+            check=True,
+        )
 ANNOTATION_CPP = REPO_ROOT / "cpp/plugins/mass_spec/src/operations/nta/nta_annotation.cpp"
 ANNOTATION_HPP = REPO_ROOT / "cpp/plugins/mass_spec/src/operations/nta/nta_annotation.hpp"
 PARAMETERS_TTL = REPO_ROOT / "cpp/plugins/mass_spec/semantic/parameters.ttl"

@@ -26,6 +26,8 @@ ServiceConfiguration load_service_configuration(const std::filesystem::path &con
                 throw std::invalid_argument("streamfind.json server.port must be between 1 and 65535");
             configuration.port = static_cast<std::uint16_t>(value);
         }
+        if (server.contains("automatic_port_fallback"))
+            configuration.automatic_port_fallback = server.at("automatic_port_fallback").get<bool>();
     }
     if (document.contains("tray")) {
         const auto &tray = document.at("tray");

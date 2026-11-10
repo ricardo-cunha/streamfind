@@ -22,6 +22,7 @@ if (-not $IsWindows) {
 }
 
 . "$PSScriptRoot\..\build-common.ps1"
+. "$PSScriptRoot\..\example-data-common.ps1"
 . "$PSScriptRoot\..\..\release\release-common.ps1"
 
 Start-ScriptLog 'package-cpp'
@@ -40,6 +41,7 @@ if ($CleanBuild -and (Test-Path $buildDir)) {
 }
 
 $toolchain = Initialize-MinGWUcrt64
+$exampleData = Resolve-StreamfindExampleData -Ensure
 $cmake = $toolchain.CMake
 $ninja = $toolchain.Ninja
 
@@ -61,7 +63,7 @@ Write-Log "Configuring C++ package build ($Config)..."
     "-DSTREAMFIND_MINGW_RUNTIME_DIR=$($toolchain.Bin)" `
     "-DCMAKE_PREFIX_PATH=$($toolchain.Root)\ucrt64" `
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
-    '-DSTREAMFIND_BUILD_TESTS=ON' '-DSTREAMFIND_BUILD_SHARED=OFF' `
+    '-DSTREAMFIND_BUILD_TESTS=ON' "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)" '-DSTREAMFIND_BUILD_SHARED=OFF' `
     '-DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF' `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"

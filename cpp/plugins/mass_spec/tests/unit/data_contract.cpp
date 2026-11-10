@@ -15,7 +15,7 @@ int main() {
     if (!std::filesystem::is_directory(wastewater) ||
         !std::filesystem::is_regular_file(standards) ||
         !std::filesystem::is_regular_file(suspects))
-        throw std::runtime_error("official mass-spec tests require sibling streamfind.data wastewater fixtures");
+        throw std::runtime_error("official mass-spec tests require streamfind.data wastewater fixtures");
     std::ifstream input(standards);
     std::string line;
     if (!std::getline(input, line) || line.empty())

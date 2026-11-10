@@ -29,9 +29,12 @@
   `.venv`, and do not register them as official CTest tests.
 - Official native tests may use only small backend-neutral fixtures kept next to
   their owning C++ test area. Mass-spectrometry and other large example data
-  must come from the sibling `streamfind.data` repository at
-  `<parent>/streamfind.data`; development scripts resolve that repository for
-  data-backed checks.
+  must come from the shared `streamfind.data` checkout at
+  `<user>/.streamfind/streamfind.data` (or `$STREAMFIND_HOME/streamfind.data`).
+  Use `sfdev setup --components data` to provision it on demand. Development
+  scripts resolve the same checkout so worktrees and external plugin projects
+  use one data location. `STREAMFIND_EXAMPLE_DATA_ROOT` may explicitly point
+  to a different data directory.
 - Build and release validation may invoke CTest from `scripts/build/`, while
   development-stage Python and workflow validation remains in `scripts/dev/`.
 
@@ -196,6 +199,61 @@ run the executable from `tmp/packaged_build/bin/` so package-relative service,
 plugin, catalogue, frontend, and runtime resolution is exercised. Keep
 project databases and result-store sidecars used for testing under
 `tmp/projects/` unless the test explicitly targets a user-provided project.
+
+### Worktree sandbox testing
+
+Treat every Git worktree as an isolated development and test sandbox. Use only
+that worktree's source, build trees, package, release output, test projects,
+result stores, and logs. Never point a worktree test at another checkout's
+`tmp/` outputs, and never overwrite the main checkout's `tmp/packaged_build/`
+or release files from a worktree.
+
+- Assign each simultaneously tested worktree a unique service/Vite port pair.
+  Keep the primary checkout defaults (`8790` for the development service,
+  `5173` for Vite) and packaged service default (`8787`) reserved. Allocate
+  worktree slots from service ports `8791`–`8890` and Vite ports `5174`–`5273`
+  using the same slot number: slot 1 is service `8791` + Vite `5174`, slot 2
+  is `8792` + `5175`, and so on. Check that both ports are free and not assigned
+  to another active worktree before starting; never silently reuse another
+  worktree's pair.
+- For a development app, start it from the target worktree and pass both
+  assigned ports, for example:
+
+  ```powershell
+  sfdev run app --url http://127.0.0.1:8791 --vite-port 5174
+  ```
+
+  `sfdev run frontend` accepts the same options when connecting to an already
+  running service. The service URL selects the service port, and `--vite-port`
+  selects the Vite listener. Direct use of `frontend/tools/dev/start-dev.mjs`
+  can set `STREAMFIND_SERVICE_URL` and `STREAMFIND_VITE_PORT` instead.
+- Before browser testing, open the matching Vite URL (for example,
+  `http://127.0.0.1:5174/`) and verify both the Vite and service processes
+  belong to the intended worktree. Do not mistake another checkout's UI or
+  service for the worktree under test.
+- For a packaged build or extracted release package, run that package's
+  `bin/streamfind-server[.exe]` with the worktree's assigned service port as
+  its port argument, from that package's `bin/` directory, then test that
+  endpoint (for example, `http://127.0.0.1:8791/`). The server accepts a port
+  override, so package-relative resource resolution is tested without changing
+  packaged configuration. Use the package built or extracted inside the
+  current worktree's `tmp/`.
+  To test the packaged app launcher on that same assigned port, first run
+  `bin/streamfind[.exe] service start --port <assigned-service-port>`, then
+  launch `bin/streamfind-app[.exe]`; the app attaches to the active service's
+  discovered endpoint. Stop that service when the test is finished.
+- Keep any temporary project database and its sibling `.data` result store in
+  the current worktree's `tmp/projects/`. Do not open a user's live project for
+  routine worktree validation.
+- Record test server output under the worktree's `tmp/logs/`. Stop only the
+  server process started for that test (Ctrl+C for a foreground server), then
+  verify that the assigned ports are released. Never stop a service merely
+  because it is using one of the worktree test ports unless its executable path
+  confirms it belongs to the current worktree and test.
+- Before reporting a browser or release test as successful, verify the service
+  endpoint and running executable path belong to the intended worktree/package.
+  This prevents false results from a main-checkout service, stale package, or
+  another worktree.
 
 ## Plan Management
 

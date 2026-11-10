@@ -8,6 +8,7 @@ param(
 )
 
 . "$PSScriptRoot\..\..\build\build-common.ps1"
+. "$PSScriptRoot\..\..\build\example-data-common.ps1"
 . "$PSScriptRoot\..\release-common.ps1"
 
 $root = $Script:REPO_ROOT
@@ -22,6 +23,7 @@ $buildDir = Join-Path $root 'tmp\build\windows\core'
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'
 $toolchain = Initialize-MinGWUcrt64
+$exampleData = Resolve-StreamfindExampleData -Ensure
 $cmake = $toolchain.CMake
 $ninja = $toolchain.Ninja
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $buildDir
@@ -42,6 +44,7 @@ Write-ReleaseLog "Building C++ backend ($Config)..."
     "-DCMAKE_PREFIX_PATH=$($toolchain.Root)\ucrt64" `
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
     -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF `
+    "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)" `
     -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"

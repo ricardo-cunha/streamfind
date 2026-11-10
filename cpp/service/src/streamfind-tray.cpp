@@ -1,10 +1,12 @@
 #include "streamfind/service_runtime_client.hpp"
 #include "streamfind/service_configuration.hpp"
+#include "streamfind/service_port.hpp"
 #include "../include/streamfind/service/service_discovery.hpp"
 
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -24,6 +26,22 @@
 #include <sys/file.h>
 #include <unistd.h>
 #endif
+
+namespace streamfind::tray::detail {
+
+std::uint16_t startup_port(const streamfind::ServiceConfiguration &configuration) {
+    if (const auto *override_value = std::getenv("STREAMFIND_SERVICE_PORT")) {
+        const auto parsed = std::stoul(override_value);
+        if (parsed == 0 || parsed > 65535)
+            throw std::runtime_error("STREAMFIND_SERVICE_PORT must be between 1 and 65535");
+        return static_cast<std::uint16_t>(parsed);
+    }
+    return configuration.automatic_port_fallback
+               ? streamfind::select_service_port(configuration.port)
+               : configuration.port;
+}
+
+}  // namespace streamfind::tray::detail
 
 #ifdef _WIN32
 namespace streamfind::tray::detail {
@@ -188,7 +206,8 @@ private:
         const auto server = server_executable();
         const auto manager = tray_executable_path();
         const auto config = streamfind::load_service_configuration(package_bin() / "streamfind.json");
-        std::string command = "\"" + server.string() + "\" " + std::to_string(config.port) +
+        const auto port = startup_port(config);
+        std::string command = "\"" + server.string() + "\" " + std::to_string(port) +
             " --manager-pid " + std::to_string(current_pid) + " --manager-executable \"" + manager + "\"";
         STARTUPINFOA startup{};
         startup.cb = sizeof(startup);
@@ -538,7 +557,7 @@ int supervise() {
         }
         if (child < 0) {
             const auto pid = std::to_string(static_cast<std::uint64_t>(getpid()));
-            const auto port = std::to_string(configuration.port);
+    const auto port = std::to_string(startup_port(configuration));
             child = fork();
             if (child < 0) throw std::runtime_error("unable to launch streamfind-server");
             if (child == 0) {
