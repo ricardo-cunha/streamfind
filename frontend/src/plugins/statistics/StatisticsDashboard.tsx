@@ -33,7 +33,14 @@ const STATISTICS_PLOT_COLUMNS: Record<string, string[]> = {
   plsScoresTable: ['sample_id', 'component', 'x_score', 'y_score', 'group_label'],
   plsLoadingsTable: ['block', 'item_id', 'component', 'loading'],
   plsCoefficientsTable: ['response_id', 'predictor_id', 'coefficient'],
-  plsPredictionsTable: ['sample_id', 'observed_value', 'predicted_value', 'confidence', 'predicted_label', 'observed_label'],
+  plsPredictionsTable: [
+    'sample_id',
+    'observed_value',
+    'predicted_value',
+    'confidence',
+    'predicted_label',
+    'observed_label',
+  ],
   foldChangeTable: ['variable_id', 'log2_fold_change', 'p_value', 'significant'],
 };
 
@@ -69,9 +76,7 @@ function payloadObject(artifact: ResultRecord | undefined): Record<string, unkno
   if (typeof artifact.payload === 'string') {
     try {
       const parsed: unknown = JSON.parse(artifact.payload);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? (parsed as Record<string, unknown>)
-        : {};
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
     } catch {
       return {};
     }
@@ -117,17 +122,19 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
         if (!matching.some((candidate) => candidate.result_id === artifact.result_id)) matching.unshift(artifact);
         const requiredTables = new Set(requiredPlotTables(localArtifactContract(artifact.contract_id)));
         return Promise.all(
-          matching.filter((candidate) => requiredTables.has(localArtifactContract(candidate.contract_id))).map(async (candidate) => {
-            const contract = localArtifactContract(candidate.contract_id);
-            const result = await client.resultQuery(context.sessionId, {
-              result_id: candidate.result_id,
-              mode: 'page',
-              columns: STATISTICS_PLOT_COLUMNS[contract],
-              offset: 0,
-              limit: PLOT_ROW_LIMIT,
-            });
-            return [contract, result.rows] as const;
-          }),
+          matching
+            .filter((candidate) => requiredTables.has(localArtifactContract(candidate.contract_id)))
+            .map(async (candidate) => {
+              const contract = localArtifactContract(candidate.contract_id);
+              const result = await client.resultQuery(context.sessionId, {
+                result_id: candidate.result_id,
+                mode: 'page',
+                columns: STATISTICS_PLOT_COLUMNS[contract],
+                offset: 0,
+                limit: PLOT_ROW_LIMIT,
+              });
+              return [contract, result.rows] as const;
+            }),
         ).then((loaded) => ({ matching, loaded }));
       })
       .then(({ matching, loaded }) => {
@@ -174,12 +181,24 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
   const summary = payloadObject(artifact ?? diagnosticArtifacts[0]);
 
   if (!artifact || !client)
-    return <div className="sf-statistics-state sf-statistics-error" role="alert">Statistics result data is unavailable.</div>;
+    return (
+      <div className="sf-statistics-state sf-statistics-error" role="alert">
+        Statistics result data is unavailable.
+      </div>
+    );
   if (loading) return <LoadingLogo label="Loading statistics plot…" />;
   if (error)
-    return <div className="sf-statistics-state sf-statistics-error" role="alert">{error}</div>;
+    return (
+      <div className="sf-statistics-state sf-statistics-error" role="alert">
+        {error}
+      </div>
+    );
   if (!panels.length)
-    return <div className="sf-statistics-state" role="status">No plot-ready statistics results are available.</div>;
+    return (
+      <div className="sf-statistics-state" role="status">
+        No plot-ready statistics results are available.
+      </div>
+    );
 
   const handlePointClick = (point: VisualizationPointClick) => {
     const selection = getStatisticsSelection(point);
@@ -238,7 +257,11 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
           <label>
             Plot
             <select value={activePanel?.id ?? ''} onChange={(event) => setActivePanelId(event.target.value)}>
-              {panels.map((panel) => <option key={panel.id} value={panel.id}>{panel.title}</option>)}
+              {panels.map((panel) => (
+                <option key={panel.id} value={panel.id}>
+                  {panel.title}
+                </option>
+              ))}
             </select>
           </label>
           <details className="sf-statistics-json" open>
@@ -288,7 +311,10 @@ export function StatisticsDashboard({ context }: ViewerComponentProps) {
               <h3>Selected result: {selectedId}</h3>
               <dl>
                 {Object.entries(selectedDetails).map(([key, value]) => (
-                  <div key={key}><dt>{key}</dt><dd>{value ?? '—'}</dd></div>
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{value ?? '—'}</dd>
+                  </div>
                 ))}
               </dl>
             </section>

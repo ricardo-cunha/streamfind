@@ -2,7 +2,7 @@
 
 streamfind supports two extension surfaces:
 
-- **Backend plugins** are C++20 dynamic libraries built against the versioned StreamFind plugin ABI.
+- **Backend plugins** are C++20 dynamic libraries built against the versioned streamfind plugin ABI.
 - **Frontend plugins** are TypeScript packages that consume the frontend plugin and result contracts.
 
 ## Choose a development environment
@@ -53,7 +53,8 @@ sfdev test frontend
 ```
 
 Use `sfdev run app` to work against the local service while developing the UI.
-See the [C++ guide](../cpp/README.md) and [frontend guide](../frontend/README.md)
+See the [C++ guide](https://github.com/ricardo-cunha/streamfind/blob/main/cpp/README.md)
+and [frontend guide](https://github.com/ricardo-cunha/streamfind/blob/main/frontend/README.md)
 for toolchain and application details.
 
 The normal `streamfind-core-cpp` runtime archive is not a development SDK. It contains the built-in plugins and runtime vendor files, but no SDK headers, libraries, CMake package, Jena tools, or plugin validators.
@@ -114,6 +115,33 @@ frontend` and `sfdev test frontend` while developing. Keep frontend schemas
 derived from the shared catalogue contracts rather than duplicating backend
 table definitions.
 
+### Run the app during development
+
+From the repository root, start the app development environment with:
+
+```text
+sfdev run app
+```
+
+This starts Vite at `http://127.0.0.1:5173/` and starts or reuses the native
+development service at `http://127.0.0.1:8790`. It selects the native build
+tree for the current platform (`tmp/build/windows/core` or
+`tmp/build/linux/core`) and requires both `streamfind-server` and the matching
+`streamfind-worker` to be built. React and CSS edits use Vite hot module
+replacement. Press Ctrl+C to stop processes started by this command.
+
+`sfdev run app` works on Windows and Linux when the checkout has its native
+build and frontend dependencies. The `npm start` launcher in `frontend/` also
+supports both platforms. If it reuses an already-ready service, that service
+continues running after the launcher exits; if it starts the service, Ctrl+C
+stops the service and Vite together. To start only Vite, use
+`sfdev run frontend --url http://127.0.0.1:8790`; this requires an already-ready
+service.
+
+See the [frontend development guide](https://github.com/ricardo-cunha/streamfind/blob/main/frontend/README.md)
+and [sfdev guide](https://github.com/ricardo-cunha/streamfind/blob/main/scripts/README.md)
+for setup and command details.
+
 ## Vendor dependencies
 
 Runtime vendor binaries are centralized beside the executables:
@@ -132,3 +160,71 @@ delivery, and the release package stages its required runtime libraries under
 `bin/`. On Linux, install the distribution's Apache Arrow C++
 development package before configuring CMake. Keep compiler and runtime
 dependencies aligned with the target package.
+
+## Testing, compatibility, and release validation
+
+Run focused checks while developing a plugin. For backend work, list the
+registered native tests and filter to the relevant CTest cases:
+
+```powershell
+sfdev test backend --list
+sfdev test backend --filter <test-name-or-pattern>
+```
+
+For frontend plugins and viewers, run the frontend test suite and type/lint
+checks:
+
+```powershell
+sfdev test frontend
+sfdev check frontend
+```
+
+Official native tests are C++ tests registered with CTest under
+`cpp/core/tests/` or the owning `cpp/plugins/<domain>/tests/` directory.
+Development-stage Python checks, data-backed workflow runs, and integration
+checks belong under `scripts/dev/` and are not part of CTest. Use the
+repository `.venv` for Python development checks. Large mass-spectrometry
+fixtures are maintained in the sibling `streamfind.data` repository rather
+than in the native unit-test directories.
+
+The native C++ package targets Windows x64 and Linux x86_64. It includes the
+runtime, MCP server, browser application, semantic catalogues, and built-in
+domain plugins. Support depends on the backend, domain, file format, and
+platform; confirm vendor-reader availability against the specific format and
+dataset. Keep catalogue files with the executable. Optional scientific tools
+such as Open Babel, Java, and MetFrag are separate dependencies and are not
+automatically installed by the native packages.
+
+The packaged interfaces cover project creation and inspection, metadata and
+operation-graph access, cache and audit operations, catalogue-backed MCP
+schemas, and domain operations supplied by the enabled plugins. The mass-spec
+plugin includes analysis, spectrum, chromatogram, and supported native-file
+reader workflows. For the current platform and format matrix, see the
+[availability page](status.md).
+
+The native packages do not promise a stable cross-version C++ ABI. Match an
+independently developed plugin and its developer kit to the runtime version it
+targets. When reporting a compatibility issue, include the streamfind
+version, operating system, operation name, relevant parameters, and a minimal
+reproducible project or data description. Keep vendor-format support claims
+specific to the tested file family and acquisition mode.
+
+Before publishing a native release, validate both supported package platforms
+with the release scripts. They build the frontend and native runtime, run the
+CTest suite, check package contents and dependency closure, and smoke-test the
+packaged MCP interface:
+
+```powershell
+scripts\release\cpp\release-cpp.ps1
+```
+
+On Linux, run:
+
+```sh
+scripts/release/cpp/release-cpp-linux.sh
+```
+
+Confirm that the complete CTest suite passes and packaged MCP smoke validation
+succeeds. Review the generated archives and `sha256sums.txt` in
+`tmp/release-output/` before publishing. See the [release guide](releases.md)
+for the release process.

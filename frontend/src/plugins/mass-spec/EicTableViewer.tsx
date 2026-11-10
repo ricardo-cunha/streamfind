@@ -142,14 +142,13 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
         setLoadState({ resultId: artifact.result_id });
       }
     };
-    void loadAllRows()
-      .catch((reason: unknown) => {
-        if (!cancelled)
-          setLoadState({
-            resultId: artifact.result_id,
-            error: reason instanceof Error ? reason.message : 'Unable to load EIC rows.',
-          });
-      });
+    void loadAllRows().catch((reason: unknown) => {
+      if (!cancelled)
+        setLoadState({
+          resultId: artifact.result_id,
+          error: reason instanceof Error ? reason.message : 'Unable to load EIC rows.',
+        });
+    });
     return () => {
       cancelled = true;
     };

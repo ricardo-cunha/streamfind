@@ -16,8 +16,21 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
     domains: ['mass_spec'],
-    artifactContracts: ['featuresTable', 'eicTable', 'suspectTargetsTable', 'suspectsTable', 'internalStandardsTable', 'findFeaturesDebugResult'],
-    capabilities: ['feature-inspector', 'eic-viewer', 'suspect-targets-viewer', 'suspects-explorer', 'find-features-debug-viewer'],
+    artifactContracts: [
+      'featuresTable',
+      'eicTable',
+      'suspectTargetsTable',
+      'suspectsTable',
+      'internalStandardsTable',
+      'findFeaturesDebugResult',
+    ],
+    capabilities: [
+      'feature-inspector',
+      'eic-viewer',
+      'suspect-targets-viewer',
+      'suspects-explorer',
+      'find-features-debug-viewer',
+    ],
   },
   setup(api) {
     api.registerViewer({

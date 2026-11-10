@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamfind.dev/schema/workflow-definition.schema.json",
   "title": "streamfind portable workflow definition",
-  "description": "A reusable, versioned workflow graph. Runtime execution records, artifact inventory, and physical table locations are intentionally excluded.",
+  "description": "A reusable, versioned workflow graph. Runtime execution records, published result inventory, and physical result locations are intentionally excluded.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "workflow_id", "version", "metadata", "operations", "connections"],

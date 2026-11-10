@@ -1,7 +1,8 @@
 # streamfind-core
 
 Standalone C++20 core for project persistence and generic workflow execution.
-The core does not depend on R, Python, FastAPI, or React.
+The browser app is a separate client of the native service; scientific
+operations and project persistence are implemented in the C++ runtime.
 
 ## Native architecture
 
@@ -108,7 +109,9 @@ Native C++ preview packages are available from the
 
 ```cpp
 streamfind::ProjectOptions options{
-    "project.duckdb", "demo", std::nullopt, false, false, "mass_spec"
+    "project.duckdb",
+    streamfind::Json{{"name", "demo"}},
+    streamfind::Json::object()
 };
 auto project = streamfind::Project::create(options);
 ```
@@ -140,8 +143,10 @@ close()
 
 `Project` is move-only and owns its native DuckDB state. `close()` marks the
 handle closed; later operations fail. Destruction closes the handle as well.
-Project domains are assigned in `ProjectOptions` during creation and cannot be
-changed afterward. Opening a project does not modify its domain.
+`ProjectOptions` initializes project and workflow metadata; it does not assign
+domains. `get_domains()` derives the project's domain list from operation IDs
+in its persisted workflow, so a new empty project has no domains until workflow
+nodes are added.
 
 ## JSON API
 
@@ -178,7 +183,7 @@ Operation-graph execution returns a JSON graph result:
 ```
 
 Each persisted operation node carries its parameters. Typed connections determine
-the execution order and input artifacts; validate the graph before running it.
+the execution order and input results; validate the graph before running it.
 
 Errors use the stable `ErrorCode` enum, including invalid arguments, missing or
 existing projects, schema/database failures, workflow validation, method

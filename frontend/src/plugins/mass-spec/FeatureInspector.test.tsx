@@ -338,9 +338,7 @@ describe('FeatureInspector', () => {
     );
 
     expect(model.nodes.map((node) => node.id)).toEqual(['sample-a\u0000MAIN', 'sample-a\u0000ISO-1']);
-    expect(model.edges).toEqual([
-      { source: 'sample-a\u0000ISO-1', target: 'sample-a\u0000MAIN', weight: 0 },
-    ]);
+    expect(model.edges).toEqual([{ source: 'sample-a\u0000ISO-1', target: 'sample-a\u0000MAIN', weight: 0 }]);
   });
 
   it('selects only the connected feature network, not the whole component', () => {

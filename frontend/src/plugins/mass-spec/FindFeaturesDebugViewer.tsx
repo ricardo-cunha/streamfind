@@ -59,7 +59,10 @@ export function FindFeaturesDebugViewer({ context }: ViewerComponentProps): Reac
   }
   return (
     <main className="sf-find-features-debug-viewer" aria-label="Find features debug viewer">
-      <div className="sf-find-features-debug-body" style={{ gridTemplateColumns: `${leftPaneWidth}px 1.25rem minmax(0, 1fr)` }}>
+      <div
+        className="sf-find-features-debug-body"
+        style={{ gridTemplateColumns: `${leftPaneWidth}px 1.25rem minmax(0, 1fr)` }}
+      >
         <aside className="sf-find-features-debug-json" aria-label="Formatted debug JSON and diagnostic log">
           <h3>Debug JSON</h3>
           <pre>{JSON.stringify({ ...payload, log_text: undefined }, null, 2)}</pre>
@@ -87,7 +90,11 @@ export function FindFeaturesDebugViewer({ context }: ViewerComponentProps): Reac
 
 function readPayload(value: unknown): DebugPayload | null {
   if (typeof value === 'string') {
-    try { return readPayload(JSON.parse(value)); } catch { return null; }
+    try {
+      return readPayload(JSON.parse(value));
+    } catch {
+      return null;
+    }
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as DebugPayload;
@@ -96,10 +103,19 @@ function readPayload(value: unknown): DebugPayload | null {
 function vector(text: string, name: string): number[] {
   const match = text.match(new RegExp(`${name}\\s*<-\\s*c\\(([^)]*)\\)`));
   if (!match) return [];
-  return match[1].split(',').map((value) => Number(value.trim())).filter(Number.isFinite);
+  return match[1]
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter(Number.isFinite);
 }
 
-function clusterTable(text: string): { rt: number[]; mz: number[]; intensity: number[]; noise: number[]; smoothed: number[] } {
+function clusterTable(text: string): {
+  rt: number[];
+  mz: number[];
+  intensity: number[];
+  noise: number[];
+  smoothed: number[];
+} {
   const lines = text.split(/\r?\n/);
   const header = lines.findIndex((line) => line.trim() === 'cluster_rt\tcluster_mz\tcluster_intensity\tcluster_noise');
   const preparationHeader = lines.findIndex((line) => line.trim() === 'index\trt\tmz\tintensity\tbaseline\tsmoothed');
@@ -125,12 +141,18 @@ function clusterTable(text: string): { rt: number[]; mz: number[]; intensity: nu
 }
 
 function formattedLog(text: string): string {
-  return text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+  return text
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t');
 }
 
 function pointsFromLog(text: string): Point[] {
   const points: Point[] = [];
-  const expression = new RegExp(`(?:candidate index=\\d+|[-•✓×]\\s*)RT=(${numberPattern})[,\\s]+m\\/z=(${numberPattern})(?:[,\\s]+|\\s+)(?:smoothed(?:_intensity)?|intensity)=(${numberPattern})`, 'gi');
+  const expression = new RegExp(
+    `(?:candidate index=\\d+|[-•✓×]\\s*)RT=(${numberPattern})[,\\s]+m\\/z=(${numberPattern})(?:[,\\s]+|\\s+)(?:smoothed(?:_intensity)?|intensity)=(${numberPattern})`,
+    'gi',
+  );
   for (const match of text.matchAll(expression)) {
     const rt = Number(match[1]);
     const mz = Number(match[2]);
@@ -152,17 +174,34 @@ function parseLog(text: string) {
   const points = pointsFromLog(text);
   const candidates = points;
   const validPeaks: Point[] = [];
-  for (const match of text.matchAll(new RegExp(`[✓+]\\s*ACCEPTED:\\s*RT=(${numberPattern}).*?intensity=(${numberPattern})`, 'gi'))) {
+  for (const match of text.matchAll(
+    new RegExp(`[✓+]\\s*ACCEPTED:\\s*RT=(${numberPattern}).*?intensity=(${numberPattern})`, 'gi'),
+  )) {
     const point = { rt: Number(match[1]), mz: Number.NaN, intensity: Number(match[2]) };
     if ([point.rt, point.intensity].every(Number.isFinite)) validPeaks.push(point);
   }
   const finalFeatures: Point[] = [];
-  const finalFeatureExpression = new RegExp(`→\\s*FINAL FEATURE:[^\\n]*\\n\\s*RT=(${numberPattern})[^\\n]*\\n\\s*m\\/z=(${numberPattern})[^\\n]*\\n\\s*Intensity=(${numberPattern})`, 'g');
+  const finalFeatureExpression = new RegExp(
+    `→\\s*FINAL FEATURE:[^\\n]*\\n\\s*RT=(${numberPattern})[^\\n]*\\n\\s*m\\/z=(${numberPattern})[^\\n]*\\n\\s*Intensity=(${numberPattern})`,
+    'g',
+  );
   for (const match of text.matchAll(finalFeatureExpression)) {
     const point = { rt: Number(match[1]), mz: Number(match[2]), intensity: Number(match[3]) };
     if ([point.rt, point.mz, point.intensity].every(Number.isFinite)) finalFeatures.push(point);
   }
-  return { clusterRt, clusterMz, clusterIntensity, clusterSmoothed, clusterBaseline, firstDerivative, secondDerivative, candidates, points, validPeaks, finalFeatures };
+  return {
+    clusterRt,
+    clusterMz,
+    clusterIntensity,
+    clusterSmoothed,
+    clusterBaseline,
+    firstDerivative,
+    secondDerivative,
+    candidates,
+    points,
+    validPeaks,
+    finalFeatures,
+  };
 }
 
 function makeSpec(parsed: ReturnType<typeof parseLog>, payload: DebugPayload): VisualizationSpec {
@@ -174,21 +213,78 @@ function makeSpec(parsed: ReturnType<typeof parseLog>, payload: DebugPayload): V
   const length = Math.min(parsed.clusterRt.length, parsed.clusterIntensity.length);
   if (length) {
     traces.push({
-      type: 'scattergl', mode: 'lines+markers', name: 'Raw intensity',
-      x: parsed.clusterRt.slice(0, length), y: parsed.clusterIntensity.slice(0, length),
-      line: { color: '#38bdf8', width: 1 }, marker: { color: '#38bdf8', size: 4 },
-      customdata: parsed.clusterMz.slice(0, length), hovertemplate: 'RT=%{x}<br>Intensity=%{y}<br>m/z=%{customdata}<extra></extra>',
+      type: 'scattergl',
+      mode: 'lines+markers',
+      name: 'Raw intensity',
+      x: parsed.clusterRt.slice(0, length),
+      y: parsed.clusterIntensity.slice(0, length),
+      line: { color: '#38bdf8', width: 1 },
+      marker: { color: '#38bdf8', size: 4 },
+      customdata: parsed.clusterMz.slice(0, length),
+      hovertemplate: 'RT=%{x}<br>Intensity=%{y}<br>m/z=%{customdata}<extra></extra>',
     });
   }
-  if (parsed.clusterSmoothed.length) traces.push({ type: 'scattergl', mode: 'lines', name: 'Smoothed', x: parsed.clusterRt.slice(0, parsed.clusterSmoothed.length), y: parsed.clusterSmoothed, line: { color: '#f59e0b', width: 2 } });
-  if (parsed.clusterBaseline.length) traces.push({ type: 'scattergl', mode: 'lines', name: 'Baseline / noise', x: parsed.clusterRt.slice(0, parsed.clusterBaseline.length), y: parsed.clusterBaseline, line: { color: '#a78bfa', dash: 'dot', width: 2 } });
-  if (parsed.firstDerivative.length) traces.push({ type: 'scattergl', mode: 'lines', name: '1st derivative', x: parsed.clusterRt.slice(0, parsed.firstDerivative.length), y: parsed.firstDerivative, line: { color: '#f59e0b', width: 1.5 } });
-  if (parsed.secondDerivative.length) traces.push({ type: 'scattergl', mode: 'lines', name: '2nd derivative', x: parsed.clusterRt.slice(0, parsed.secondDerivative.length), y: parsed.secondDerivative, line: { color: '#f472b6', width: 1.5, dash: 'dash' } });
-  if (parsed.candidates.length) traces.push({ type: 'scatter', mode: 'markers', name: 'Candidates', x: parsed.candidates.map((point) => point.rt), y: parsed.candidates.map((point) => point.intensity), marker: { color: '#fb7185', size: 11, symbol: 'diamond' } });
-  if (parsed.finalFeatures.length) traces.push({ type: 'scatter', mode: 'markers', name: 'Final features', x: parsed.finalFeatures.map((point) => point.rt), y: parsed.finalFeatures.map((point) => point.intensity), marker: { color: '#4ade80', size: 14, symbol: 'star', line: { color: '#ffffff', width: 1 } } });
+  if (parsed.clusterSmoothed.length)
+    traces.push({
+      type: 'scattergl',
+      mode: 'lines',
+      name: 'Smoothed',
+      x: parsed.clusterRt.slice(0, parsed.clusterSmoothed.length),
+      y: parsed.clusterSmoothed,
+      line: { color: '#f59e0b', width: 2 },
+    });
+  if (parsed.clusterBaseline.length)
+    traces.push({
+      type: 'scattergl',
+      mode: 'lines',
+      name: 'Baseline / noise',
+      x: parsed.clusterRt.slice(0, parsed.clusterBaseline.length),
+      y: parsed.clusterBaseline,
+      line: { color: '#a78bfa', dash: 'dot', width: 2 },
+    });
+  if (parsed.firstDerivative.length)
+    traces.push({
+      type: 'scattergl',
+      mode: 'lines',
+      name: '1st derivative',
+      x: parsed.clusterRt.slice(0, parsed.firstDerivative.length),
+      y: parsed.firstDerivative,
+      line: { color: '#f59e0b', width: 1.5 },
+    });
+  if (parsed.secondDerivative.length)
+    traces.push({
+      type: 'scattergl',
+      mode: 'lines',
+      name: '2nd derivative',
+      x: parsed.clusterRt.slice(0, parsed.secondDerivative.length),
+      y: parsed.secondDerivative,
+      line: { color: '#f472b6', width: 1.5, dash: 'dash' },
+    });
+  if (parsed.candidates.length)
+    traces.push({
+      type: 'scatter',
+      mode: 'markers',
+      name: 'Candidates',
+      x: parsed.candidates.map((point) => point.rt),
+      y: parsed.candidates.map((point) => point.intensity),
+      marker: { color: '#fb7185', size: 11, symbol: 'diamond' },
+    });
+  if (parsed.finalFeatures.length)
+    traces.push({
+      type: 'scatter',
+      mode: 'markers',
+      name: 'Final features',
+      x: parsed.finalFeatures.map((point) => point.rt),
+      y: parsed.finalFeatures.map((point) => point.intensity),
+      marker: { color: '#4ade80', size: 14, symbol: 'star', line: { color: '#ffffff', width: 1 } },
+    });
   return {
-    schema: 'streamfind.visualization/v1', visualization_id: 'mass_spec.find_features_debug', semantic_type: 'mass_spec.find_features_debug',
-    title: 'Find features diagnostics', data_mode: 'inline', renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
+    schema: 'streamfind.visualization/v1',
+    visualization_id: 'mass_spec.find_features_debug',
+    semantic_type: 'mass_spec.find_features_debug',
+    title: 'Find features diagnostics',
+    data_mode: 'inline',
+    renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
     payload: {
       data: traces,
       layout: {
@@ -213,7 +309,11 @@ function makeSpec(parsed: ReturnType<typeof parseLog>, payload: DebugPayload): V
       },
       config: { responsive: true, displaylogo: false },
     },
-    provenance: { source_result_ids: ['find-features-debug'], producer_operation_id: 'mass_spec.find_features', producer_node_id: 'mass_spec.find_features' },
+    provenance: {
+      source_result_ids: ['find-features-debug'],
+      producer_operation_id: 'mass_spec.find_features',
+      producer_node_id: 'mass_spec.find_features',
+    },
     fallback: { description: `Feature debug data for ${payload.analysis || 'the selected analysis'} is unavailable.` },
   };
 }

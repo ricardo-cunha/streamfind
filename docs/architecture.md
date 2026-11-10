@@ -1,29 +1,31 @@
 # How streamfind works
 
-streamfind uses DuckDB for project metadata and a service-managed Result
-Runtime for execution data. The native service owns project sessions,
-persistence, validation, workflow scheduling, result publication, and the
-public HTTP/WebSocket boundary. Short-lived workers execute one operation at
-a time through the service data proxy. Domain plugins provide catalogued
-operations through the SDK. The semantic catalogue describes the operations,
-parameters, typed ports, results, and usage guidance exposed to applications
-and AI agents.
+streamfind separates project coordination from operation computation. Each
+project's DuckDB file stores workflow and metadata; a sibling `<project>.data`
+directory stores published result payloads and their query indexes. The native
+service is the single control plane: it owns project sessions, database
+transactions, workflow scheduling, worker supervision, and result publication.
+The browser app connects over HTTP and WebSocket, while the MCP server connects
+over its local service client and exposes JSON-RPC over stdio. Both clients see
+the same project and runtime state.
 
 ```text
                  Shared semantic catalogue
        operations • parameters • typed ports • results
                          │
-          ┌────────────────────────────┐
-          ▼                            ▼
-   Service control plane          MCP over stdio
-          │                            │
-    ┌─────┴─────┐                      │
-    ▼           ▼                      │
- Workers   Result Runtime              │
-    └─────┬─────┘                      │
-          └──────────────┬─────────────┘
+       ┌─────────────────┴──────────────────┐
+       ▼                                    ▼
+ Browser app                          MCP client
+ HTTP + WebSocket                   JSON-RPC over stdio
+       │                                    │
+       │                              MCP server
+       │                                    │
+       └─────────────────┬──────────────────┘
                          ▼
-                    React web app
+                 Native streamfind service
+                 ├── Project DuckDB metadata
+                 ├── Supervised operation workers
+                 └── Project .data result store
 ```
 
 ## Operations and operation graphs
@@ -40,9 +42,15 @@ connections[]  = output port -> input port
 ```
 
 The runtime validates the graph, resolves dependencies from typed connections,
-executes each operation, and publishes immutable typed results. Every required
-input must be connected explicitly. Intermediate data can be streamed between
-workers or spilled to the project result store according to the run mode.
+executes ready operations, and publishes immutable typed results. Every
+required input must be connected explicitly. The service passes intermediate
+data between workers using bounded IPC streams or disk-backed result handles,
+so large tables do not need to be copied as one in-memory object.
+
+Both workflow modes retain completed results. `detailed` publishes each
+operation's results as it completes. `pipeline` defers publication until the
+workflow finishes. The mode changes publication timing, not whether results
+remain available for inspection.
 
 ## Project usage model
 

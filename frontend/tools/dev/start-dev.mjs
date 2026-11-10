@@ -7,8 +7,8 @@ import { fileURLToPath, URL } from 'node:url';
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const worktreeRoot = resolve(frontendRoot, '..');
 const windows = process.platform === 'win32';
-const buildRoot = process.env.STREAMFIND_DEV_BUILD_DIR ||
-  resolve(worktreeRoot, 'tmp', 'build', windows ? 'windows' : 'linux', 'core');
+const buildRoot =
+  process.env.STREAMFIND_DEV_BUILD_DIR || resolve(worktreeRoot, 'tmp', 'build', windows ? 'windows' : 'linux', 'core');
 const executableSuffix = windows ? '.exe' : '';
 const serviceExecutable = resolve(buildRoot, `streamfind-server${executableSuffix}`);
 const workerExecutable = resolve(buildRoot, `streamfind-worker${executableSuffix}`);
@@ -36,7 +36,9 @@ function startService(servicePort) {
     throw new Error(`Native service was not found. Build streamfind_service in: ${buildRoot}`);
   }
   if (!existsSync(workerExecutable)) {
-    throw new Error(`Native worker was not found. Build streamfind_worker (packaged as streamfind-worker) in: ${buildRoot}`);
+    throw new Error(
+      `Native worker was not found. Build streamfind_worker (packaged as streamfind-worker) in: ${buildRoot}`,
+    );
   }
   log(`Using native service binary: ${serviceExecutable}`);
   log(`Using matching operation worker: ${workerExecutable}`);

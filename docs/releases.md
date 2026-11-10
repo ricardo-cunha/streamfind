@@ -2,10 +2,10 @@
 
 ## {{ streamfind_version }} release
 
-Version **{{ streamfind_version }}** is the next native runtime release. It includes the service-owned
-Result Runtime, supervised worker execution, improved operation cancellation and runtime transparency,
+Version **{{ streamfind_version }}** is the current native runtime release. It
+provides the service-managed Result Runtime, supervised operation workers,
 deuterium-aware mass-spectrometry processing, feature-network exploration, and
-the browser viewer and workflow improvements developed after 0.6.0.
+the browser workflow and result-viewing capabilities included in this version.
 
 Version {{ streamfind_version }} provides native runtime packages for Windows x64 and Linux
 x86_64. The packages include the built browser application, native service,
@@ -28,7 +28,8 @@ The {{ streamfind_version }} runtime distribution contains:
 - Linux x86_64 TGZ;
 - a checksum manifest covering both runtime archives.
 
-Runtime archives are intended for local use and application integration.
+Runtime archives are intended for local use by the browser app, CLI, MCP
+clients, and native C++ applications.
 Developer kits must be used with the matching runtime version; the C++ ABI is
 not guaranteed across versions.
 
@@ -48,7 +49,7 @@ pass the release checks:
 - the complete CTest suite on Windows x64;
 - the complete CTest suite on Linux x86_64;
 - native dependency-closure validation on each platform;
-- packaged MCP smoke validation exposing 40 tools on each platform.
+- packaged MCP smoke validation against the version's published tool catalogue.
 
 The release scripts write the packages and checksum manifest to
 `tmp/release-output/` during development. Published copies and their
@@ -62,7 +63,7 @@ The runtime archives contain:
 
 - the `bin/streamfind.exe` / `bin/streamfind` CLI and `bin/streamfind-app.exe` /
   `bin/streamfind-app` browser launcher;
-- the `streamfind-mcp.exe` or `streamfind-mcp` MCP server and C++ runtime libraries;
+- `bin/streamfind-mcp.exe` or `bin/streamfind-mcp`, the MCP server, plus C++ runtime libraries;
 - `core/catalogue.duckdb` and packaged plugin catalogues;
 - the native runtime dependencies assembled by CPack.
 
@@ -71,11 +72,11 @@ under `bin/`. Running the app launcher starts the local C++ service and opens
 the app in the default browser. See the [Web app](web-app.md) page for
 platform-specific instructions.
 
-The service is the shared control plane for the browser application, MCP, and
-CLI. It owns the project session and DuckDB metadata access, supervises
-operation workers, and publishes validated results in the project `.data`
-sidecar. Closing the browser does not stop the service; use `bin/streamfind
-service status` or `bin/streamfind service stop` to inspect or stop it.
+The service is the shared control plane for the browser app, MCP, and CLI. It
+owns project sessions and DuckDB metadata access, supervises operation workers,
+and publishes validated results in the project `.data` sidecar. Closing the
+browser does not stop the service; use `bin/streamfind service status` or
+`bin/streamfind service stop` to inspect or stop it.
 
 ### Developer kit
 
@@ -100,7 +101,7 @@ the licence terms that apply to the packaged runtime. Native archives do not
 include vendor SDKs, vendor DLLs, proprietary vendor software, development-only
 oracle tools, or external vendor sample files.
 
-See the repository [`NOTICE.md`](https://github.com/ricardo-cunha/streamfind/blob/dev_refactoring/NOTICE.md)
+See the repository [`NOTICE.md`](https://github.com/ricardo-cunha/streamfind/blob/main/NOTICE.md)
 for the current attribution and legal-review boundary.
 
 ## Extract and run
@@ -120,7 +121,10 @@ streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64/
 │   ├── streamfind.exe
 │   ├── streamfind-app.exe
 │   ├── streamfind-mcp.exe
-│   └── streamfind-server.exe
+│   ├── streamfind-server.exe
+│   ├── streamfind-tray.exe
+│   ├── streamfind-worker.exe
+│   └── streamfind.json
 ├── core/
 │   └── catalogue.duckdb
 └── plugins/

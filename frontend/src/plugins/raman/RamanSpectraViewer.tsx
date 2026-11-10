@@ -209,14 +209,13 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
         setLoadState({ resultId: artifact.result_id });
       }
     };
-    void loadRows()
-      .catch((reason: unknown) => {
-        if (!cancelled)
-          setLoadState({
-            resultId: artifact.result_id,
-            error: reason instanceof Error ? reason.message : 'Unable to load Raman spectra rows.',
-          });
-      });
+    void loadRows().catch((reason: unknown) => {
+      if (!cancelled)
+        setLoadState({
+          resultId: artifact.result_id,
+          error: reason instanceof Error ? reason.message : 'Unable to load Raman spectra rows.',
+        });
+    });
     return () => {
       cancelled = true;
     };
@@ -285,8 +284,7 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
           {currentData && currentData.total_rows > rows.length
             ? ` of ${currentData.total_rows.toLocaleString()}`
             : ''}{' '}
-          ·{' '}
-          {spec.payload.data.length} traces{loading ? ' · loading viewport…' : ''}
+          · {spec.payload.data.length} traces{loading ? ' · loading viewport…' : ''}
         </span>
       </div>
       <div className="sf-raman-viewer-plot">

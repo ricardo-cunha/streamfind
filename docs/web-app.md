@@ -5,6 +5,23 @@ workflows, running operations, and inspecting results. It uses the native C++
 service over HTTP and WebSocket; project files and scientific processing remain
 on the local machine.
 
+## Using the app
+
+The project hub lists the workflow projects available to the local service.
+Create a project, open an existing DuckDB project, or start from a workflow
+demo. Opening a project takes you to its workflow canvas.
+
+On the canvas, add operation nodes, connect compatible input and output ports,
+and configure each node's parameters. Run an operation to inspect one step, or
+run the workflow to execute connected steps in dependency order. The activity
+log shows operation progress and failures. Published results can be opened
+from output ports and explored with the result renderer provided for their
+type, including tables and domain-specific visualizations.
+
+The app and MCP clients use the same local service. A project opened through
+the service, and results produced by either client, are available to the other
+client through the shared project state.
+
 ## Release package support
 
 The {{ streamfind_version }} native archives include the same browser application layout:
@@ -73,51 +90,6 @@ From a terminal, use `./bin/streamfind service start`, `./bin/streamfind service
 `./bin/streamfind service status`, and `./bin/streamfind service stop`. `service start`
 launches the headless manager and server; `service stop` stops both. When more than one service is
 running, provide `--instance <id>` to select the service explicitly.
-
-## Local development
-
-From the repository's `frontend/` directory on Windows:
-
-```text
-npm install
-npm start
-```
-
-This starts the native C++ service on `http://127.0.0.1:8790` and Vite on
-`http://127.0.0.1:5173/`. Open the Vite URL in a browser. React and CSS changes
-use Vite hot module replacement.
-
-The checked-in development launcher currently expects the Windows native
-service at:
-
-```text
-../tmp/build/windows/core/streamfind-server.exe
-```
-
-Build that executable from the repository root when necessary:
-
-```text
-cmake --build tmp/build/windows/core --target streamfind_service -j2
-```
-
-On Linux, the checked-in `npm start` launcher is not yet platform-neutral: it
-currently resolves the Windows UCRT64 executable. Start the Linux service
-manually from the Linux build tree instead:
-
-```text
-../tmp/build/linux/core/streamfind-server
-```
-
-Build it from the repository root when necessary:
-
-```bash
-cmake --build tmp/build/linux/core --target streamfind_service --parallel
-```
-
-Then, from `frontend/`, run `npm run dev:ui`. The Vite URL and service URL are
-`http://127.0.0.1:5173/` and `http://127.0.0.1:8790` on both platforms.
-
-The development commands are defined in [`frontend/README.md`](https://github.com/ricardo-cunha/streamfind/blob/master/frontend/README.md).
 
 ## Frontend/backend boundary
 

@@ -164,7 +164,11 @@ type EvidenceTab = 'eic' | 'ms1' | 'ms2';
 type ModalEvidenceTab = 'ms1' | 'ms2';
 type RenderedTrace = { x: number[]; y: number[] };
 
-function traceFromResponse(response: { traces?: Array<Record<string, unknown>> }, xKey: string, yKey: string): RenderedTrace | null {
+function traceFromResponse(
+  response: { traces?: Array<Record<string, unknown>> },
+  xKey: string,
+  yKey: string,
+): RenderedTrace | null {
   const row = response.traces?.[0];
   if (!row) return null;
   const x = Array.isArray(row[xKey]) ? row[xKey].map(Number).filter(Number.isFinite) : [];
@@ -257,9 +261,7 @@ function EvidencePlots({
       {spec ? (
         <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
       ) : (
-        <p className="sf-suspects-explorer-empty">
-          No {tab.toUpperCase()} evidence is available for this suspect.
-        </p>
+        <p className="sf-suspects-explorer-empty">No {tab.toUpperCase()} evidence is available for this suspect.</p>
       )}
     </section>
   );
@@ -504,7 +506,8 @@ function evidenceSpec(
           const formula = databaseFormulas[index]?.trim() || 'Formula unavailable';
           return [formula, formula, null];
         }),
-        hovertemplate: 'Database fragment formula: %{customdata}<br>m/z %{x:.5f}<br>Relative intensity %{y:.4f}<extra></extra>',
+        hovertemplate:
+          'Database fragment formula: %{customdata}<br>m/z %{x:.5f}<br>Relative intensity %{y:.4f}<extra></extra>',
         line: { color: theme.reference, width: 1 },
       });
     yTitle = 'Relative intensity (experimental + / database −)';
@@ -1412,9 +1415,7 @@ function getSuspectFilterColumns(
   const textColumns: Column[] = [];
   for (const column of knownColumns) {
     const type = (column.type ?? '').toLowerCase();
-    const values = rows
-      .map((row) => row[column.name])
-      .filter((value): value is string => typeof value === 'string');
+    const values = rows.map((row) => row[column.name]).filter((value): value is string => typeof value === 'string');
     const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
     const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
     if (/int|decimal|numeric|real|double|float|hugeint/.test(type) || (!type && inferredNumeric)) {

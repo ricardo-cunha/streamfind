@@ -1,7 +1,4 @@
-export function stablePlotGroup(
-  row: Record<string, string | null | undefined>,
-  groupBy: string,
-): string {
+export function stablePlotGroup(row: Record<string, string | null | undefined>, groupBy: string): string {
   const selected = String(row[groupBy] ?? '').trim();
   if (groupBy !== 'replicate') return selected || String(row.analysis ?? '').trim() || '(unassigned)';
   const normalized = selected.toLowerCase();
