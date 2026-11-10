@@ -11,6 +11,13 @@ if(WIN32)
 endif()
 include(CMakePackageConfigHelpers)
 
+if(UNIX AND NOT APPLE)
+    # Runtime executables and shared libraries are packaged together under
+    # bin/. Resolve package-local dependencies relative to each executable so
+    # service startup works independently of the caller's LD_LIBRARY_PATH.
+    set(CMAKE_INSTALL_RPATH "$ORIGIN")
+endif()
+
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
 set(STREAMFIND_DATA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../streamfind.data" CACHE PATH
     "Sibling streamfind.data repository used by official tests")
