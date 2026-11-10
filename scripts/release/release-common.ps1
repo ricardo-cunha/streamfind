@@ -108,9 +108,10 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
     }
 }
 
-function Write-ReleaseChecksums {
+function Write-ReleaseChecksums([string]$Version) {
+    $versionPattern = [regex]::Escape($Version)
     $sums = Get-ChildItem $Script:RELEASE_OUTPUT -File |
-        Where-Object { $_.Name -like 'streamfind-*.zip' -or $_.Name -like 'streamfind-*.tgz' -or $_.Name -like 'streamfind-*.tar.gz' } |
+        Where-Object { $_.Name -match "^streamfind-.+-$versionPattern-(Windows|Linux)-.+\.(zip|tgz|tar\.gz)$" } |
         Sort-Object Name |
         ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

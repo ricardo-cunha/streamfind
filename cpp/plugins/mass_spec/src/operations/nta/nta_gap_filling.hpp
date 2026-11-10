@@ -84,11 +84,11 @@ namespace streamfind::mass_spec::nta
       bool filled;
       float correction;
       int eic_size;
-      std::string eic_rt;
-      std::string eic_mz;
-      std::string eic_intensity;
-      std::string eic_baseline;
-      std::string eic_smoothed;
+      std::vector<float> eic_rt;
+      std::vector<float> eic_mz;
+      std::vector<float> eic_intensity;
+      std::vector<float> eic_baseline;
+      std::vector<float> eic_smoothed;
     };
 
     // Analyze feature groups to identify gaps

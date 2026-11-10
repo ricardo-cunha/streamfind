@@ -10,6 +10,10 @@
 [CmdletBinding()]
 param()
 
+if (-not $IsWindows) {
+    throw 'Refresh tmp/packaged_build from native Windows PowerShell on the development machine. WSL is reserved for Linux release and developer-kit builds.'
+}
+
 . "$PSScriptRoot\..\build-common.ps1"
 
 Start-ScriptLog 'update-packaged-frontend'

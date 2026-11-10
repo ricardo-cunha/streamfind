@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cstddef>
+#include <cctype>
 #include <optional>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -15,6 +17,22 @@ namespace streamfind::sdk { class DebugSession; }
 
 namespace streamfind::mass_spec::nta::utils
 {
+  inline void append_filter_reason(std::string &filter, const std::string_view reason)
+  {
+    if (reason.empty()) return;
+    std::size_t start = 0;
+    while (start < filter.size())
+    {
+      while (start < filter.size() && std::isspace(static_cast<unsigned char>(filter[start]))) ++start;
+      const auto end = filter.find_first_of(" \t\r\n", start);
+      const auto token_end = end == std::string::npos ? filter.size() : end;
+      if (std::string_view(filter).substr(start, token_end - start) == reason) return;
+      start = token_end;
+    }
+    if (!filter.empty() && !std::isspace(static_cast<unsigned char>(filter.back()))) filter.push_back(' ');
+    filter.append(reason);
+  }
+
   void set_debug_session(::streamfind::sdk::DebugSession *session);
   void write_debug_log(std::string_view value);
   struct NTA_FEATURE_ROW
@@ -56,17 +74,17 @@ namespace streamfind::mass_spec::nta::utils
     bool filled = false;
     double correction = 0.0;
     int eic_size = 0;
-    std::string eic_rt;
-    std::string eic_mz;
-    std::string eic_intensity;
-    std::string eic_baseline;
-    std::string eic_smoothed;
+    std::vector<float> eic_rt;
+    std::vector<float> eic_mz;
+    std::vector<float> eic_intensity;
+    std::vector<float> eic_baseline;
+    std::vector<float> eic_smoothed;
     int ms1_size = 0;
-    std::string ms1_mz;
-    std::string ms1_intensity;
+    std::vector<float> ms1_mz;
+    std::vector<float> ms1_intensity;
     int ms2_size = 0;
-    std::string ms2_mz;
-    std::string ms2_intensity;
+    std::vector<float> ms2_mz;
+    std::vector<float> ms2_intensity;
     std::string annotation_category;
     std::string annotation_type;
     std::string annotation_parent_feature;
@@ -111,7 +129,6 @@ namespace streamfind::mass_spec::nta::utils
   float mean(const std::vector<float> &);
   float standard_deviation(const std::vector<float> &, float);
   float quantile(std::vector<float>, float);
-  std::string encode_floats_base64(const std::vector<float> &, int precision = 4);
   std::vector<size_t> get_sort_indices_float(const std::vector<float> &);
   void reorder_multiple_vectors(const std::vector<size_t> &, std::vector<float> &, std::vector<float> &, std::vector<float> &);
   void reorder_multiple_vectors(const std::vector<size_t> &, std::vector<float> &, std::vector<float> &, std::vector<float> &, std::vector<float> &);
@@ -188,17 +205,17 @@ namespace streamfind::mass_spec::nta::api
         std::vector<bool> filled;
         std::vector<float> correction;
         std::vector<int> eic_size;
-        std::vector<std::string> eic_rt;
-        std::vector<std::string> eic_mz;
-        std::vector<std::string> eic_intensity;
-        std::vector<std::string> eic_baseline;
-        std::vector<std::string> eic_smoothed;
+        std::vector<std::vector<float>> eic_rt;
+        std::vector<std::vector<float>> eic_mz;
+        std::vector<std::vector<float>> eic_intensity;
+        std::vector<std::vector<float>> eic_baseline;
+        std::vector<std::vector<float>> eic_smoothed;
         std::vector<int> ms1_size;
-        std::vector<std::string> ms1_mz;
-        std::vector<std::string> ms1_intensity;
+        std::vector<std::vector<float>> ms1_mz;
+        std::vector<std::vector<float>> ms1_intensity;
         std::vector<int> ms2_size;
-        std::vector<std::string> ms2_mz;
-        std::vector<std::string> ms2_intensity;
+        std::vector<std::vector<float>> ms2_mz;
+        std::vector<std::vector<float>> ms2_intensity;
         std::vector<std::string> annotation_category;
         std::vector<std::string> annotation_type;
         std::vector<std::string> annotation_parent_feature;
@@ -563,17 +580,17 @@ namespace streamfind::mass_spec::nta::api
             std::vector<bool> filled_sorted(feature.size());
             std::vector<float> correction_sorted(feature.size());
             std::vector<int> eic_size_sorted(feature.size());
-            std::vector<std::string> eic_rt_sorted(feature.size());
-            std::vector<std::string> eic_mz_sorted(feature.size());
-            std::vector<std::string> eic_intensity_sorted(feature.size());
-            std::vector<std::string> eic_baseline_sorted(feature.size());
-            std::vector<std::string> eic_smoothed_sorted(feature.size());
+            std::vector<std::vector<float>> eic_rt_sorted(feature.size());
+            std::vector<std::vector<float>> eic_mz_sorted(feature.size());
+            std::vector<std::vector<float>> eic_intensity_sorted(feature.size());
+            std::vector<std::vector<float>> eic_baseline_sorted(feature.size());
+            std::vector<std::vector<float>> eic_smoothed_sorted(feature.size());
             std::vector<int> ms1_size_sorted(feature.size());
-            std::vector<std::string> ms1_mz_sorted(feature.size());
-            std::vector<std::string> ms1_intensity_sorted(feature.size());
+            std::vector<std::vector<float>> ms1_mz_sorted(feature.size());
+            std::vector<std::vector<float>> ms1_intensity_sorted(feature.size());
             std::vector<int> ms2_size_sorted(feature.size());
-            std::vector<std::string> ms2_mz_sorted(feature.size());
-            std::vector<std::string> ms2_intensity_sorted(feature.size());
+            std::vector<std::vector<float>> ms2_mz_sorted(feature.size());
+            std::vector<std::vector<float>> ms2_intensity_sorted(feature.size());
             std::vector<std::string> annotation_category_sorted(feature.size());
             std::vector<std::string> annotation_type_sorted(feature.size());
             std::vector<std::string> annotation_parent_feature_sorted(feature.size());
@@ -822,13 +839,13 @@ namespace streamfind::mass_spec::nta::api
         double xLogP = 0.0;
 
         int db_ms2_size = 0;
-        std::string db_ms2_mz;
-        std::string db_ms2_intensity;
+        std::vector<float> db_ms2_mz;
+        std::vector<float> db_ms2_intensity;
         std::string db_ms2_formula;
         std::string db_ms2_smiles;
         int exp_ms2_size = 0;
-        std::string exp_ms2_mz;
-        std::string exp_ms2_intensity;
+        std::vector<float> exp_ms2_mz;
+        std::vector<float> exp_ms2_intensity;
         int isotope_theoretical_peaks = 0;
         int isotope_matched_peaks = 0;
         double isotope_similarity = 0.0;
@@ -863,13 +880,13 @@ namespace streamfind::mass_spec::nta::api
         std::vector<double> xLogP;
 
         std::vector<int> db_ms2_size;
-        std::vector<std::string> db_ms2_mz;
-        std::vector<std::string> db_ms2_intensity;
+        std::vector<std::vector<float>> db_ms2_mz;
+        std::vector<std::vector<float>> db_ms2_intensity;
         std::vector<std::string> db_ms2_formula;
         std::vector<std::string> db_ms2_smiles;
         std::vector<int> exp_ms2_size;
-        std::vector<std::string> exp_ms2_mz;
-        std::vector<std::string> exp_ms2_intensity;
+        std::vector<std::vector<float>> exp_ms2_mz;
+        std::vector<std::vector<float>> exp_ms2_intensity;
         std::vector<int> isotope_theoretical_peaks;
         std::vector<int> isotope_matched_peaks;
         std::vector<double> isotope_similarity;
@@ -1189,22 +1206,22 @@ namespace streamfind::mass_spec::nta::api
         double xLogP = 0.0;
 
         int db_ms2_size = 0;
-        std::string db_ms2_mz;
-        std::string db_ms2_intensity;
+        std::vector<float> db_ms2_mz;
+        std::vector<float> db_ms2_intensity;
         std::string db_ms2_formula;
         std::string db_ms2_smiles;
         int eic_size = 0;
-        std::string eic_rt;
-        std::string eic_mz;
-        std::string eic_intensity;
-        std::string eic_baseline;
-        std::string eic_smoothed;
+        std::vector<float> eic_rt;
+        std::vector<float> eic_mz;
+        std::vector<float> eic_intensity;
+        std::vector<float> eic_baseline;
+        std::vector<float> eic_smoothed;
         int ms1_size = 0;
-        std::string ms1_mz;
-        std::string ms1_intensity;
+        std::vector<float> ms1_mz;
+        std::vector<float> ms1_intensity;
         int exp_ms2_size = 0;
-        std::string exp_ms2_mz;
-        std::string exp_ms2_intensity;
+        std::vector<float> exp_ms2_mz;
+        std::vector<float> exp_ms2_intensity;
         int isotope_theoretical_peaks = 0;
         int isotope_matched_peaks = 0;
         double isotope_similarity = 0.0;
@@ -1242,22 +1259,22 @@ namespace streamfind::mass_spec::nta::api
         std::vector<double> xLogP;
 
         std::vector<int> db_ms2_size;
-        std::vector<std::string> db_ms2_mz;
-        std::vector<std::string> db_ms2_intensity;
+        std::vector<std::vector<float>> db_ms2_mz;
+        std::vector<std::vector<float>> db_ms2_intensity;
         std::vector<std::string> db_ms2_formula;
         std::vector<std::string> db_ms2_smiles;
         std::vector<int> eic_size;
-        std::vector<std::string> eic_rt;
-        std::vector<std::string> eic_mz;
-        std::vector<std::string> eic_intensity;
-        std::vector<std::string> eic_baseline;
-        std::vector<std::string> eic_smoothed;
+        std::vector<std::vector<float>> eic_rt;
+        std::vector<std::vector<float>> eic_mz;
+        std::vector<std::vector<float>> eic_intensity;
+        std::vector<std::vector<float>> eic_baseline;
+        std::vector<std::vector<float>> eic_smoothed;
         std::vector<int> ms1_size;
-        std::vector<std::string> ms1_mz;
-        std::vector<std::string> ms1_intensity;
+        std::vector<std::vector<float>> ms1_mz;
+        std::vector<std::vector<float>> ms1_intensity;
         std::vector<int> exp_ms2_size;
-        std::vector<std::string> exp_ms2_mz;
-        std::vector<std::string> exp_ms2_intensity;
+        std::vector<std::vector<float>> exp_ms2_mz;
+        std::vector<std::vector<float>> exp_ms2_intensity;
         std::vector<int> isotope_theoretical_peaks;
         std::vector<int> isotope_matched_peaks;
         std::vector<double> isotope_similarity;
@@ -1475,7 +1492,6 @@ namespace streamfind::mass_spec::nta::utils::detail
 struct MZ_INTENSITY { std::vector<float> mz; std::vector<float> intensity; };
 std::string sql(const std::string &);
 MZ_INTENSITY merge_nta_feature_spectra(const ::mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA &, float, float);
-std::string encode_float_array(const std::vector<float> &);
 ::streamfind::mass_spec::nta::NtaProjectData load_analysis_features(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
 ::streamfind::mass_spec::nta::NtaProjectData load_internal_standards_only(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
 std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parse_suspect_targets(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &, bool allow_table_input = true);
@@ -1486,7 +1502,7 @@ void load_suspects(streamfind::sdk::PluginProjectAccess &, ::streamfind::mass_sp
 void load_internal_standards(streamfind::sdk::PluginProjectAccess &, ::streamfind::mass_spec::nta::NtaProjectData &, const nlohmann::json &);
 void emit_suspects(streamfind::sdk::PluginProjectAccess &, ::streamfind::mass_spec::nta::NtaProjectData &);
 void emit_internal_standards(streamfind::sdk::PluginProjectAccess &, ::streamfind::mass_spec::nta::NtaProjectData &);
-std::vector<::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> parse_transformation_products(const nlohmann::json &);
+std::vector<::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCT_ROW> parse_transformation_products(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
 void append_transformation_products_to_suspects(::streamfind::mass_spec::nta::NtaProjectData &, const ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCTS &);
 void emit_transformation_products(streamfind::sdk::PluginProjectAccess &, ::streamfind::mass_spec::nta::NtaProjectData &, const ::streamfind::mass_spec::nta::api::NTA_TRANSFORMATION_PRODUCTS &);
 std::string write_local_metfrag_database(const nlohmann::json &, const std::string &);

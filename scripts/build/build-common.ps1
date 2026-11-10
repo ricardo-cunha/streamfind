@@ -20,6 +20,7 @@
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'msys2-common.ps1')
 
 # ---- repository root --------------------------------------------------------
 
@@ -157,13 +158,8 @@ function Get-Ninja {
 }
 
 function Initialize-MinGWUcrt64 {
-    $msysRoot = if ($env:STREAMFIND_MSYS2_ROOT) {
-        $env:STREAMFIND_MSYS2_ROOT
-    } elseif ($env:STREAMFIND_MINGW_ROOT) {
-        $env:STREAMFIND_MINGW_ROOT
-    } else {
-        'C:\msys64'
-    }
+    $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
+    $msysRoot = Get-StreamFindMSYS2Root $managedHome
     $mingwBin = Join-Path $msysRoot 'ucrt64\bin'
     $msysBin = Join-Path $msysRoot 'usr\bin'
 
@@ -171,29 +167,17 @@ function Initialize-MinGWUcrt64 {
         throw "MSYS2 installation was not found at $msysRoot. Install MSYS2 or set STREAMFIND_MSYS2_ROOT."
     }
 
-    $cmakeCandidates = @(
-        (Join-Path $mingwBin 'cmake.exe'),
-        (Join-Path $msysBin 'cmake.exe'))
-    $cmakePath = $cmakeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $cmakePath = Join-Path $mingwBin 'cmake.exe'
     $ninjaPath = Join-Path $mingwBin 'ninja.exe'
     $missingPackages = @()
     if (-not (Test-Path (Join-Path $mingwBin 'gcc.exe'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-gcc' }
     if (-not (Test-Path (Join-Path $mingwBin 'g++.exe'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-gcc' }
-    if (-not $cmakePath) { $missingPackages += 'mingw-w64-ucrt-x86_64-cmake' }
+    if (-not (Test-Path $cmakePath)) { $missingPackages += 'mingw-w64-ucrt-x86_64-cmake' }
     if (-not (Test-Path $ninjaPath)) { $missingPackages += 'mingw-w64-ucrt-x86_64-ninja' }
     if (-not (Test-Path (Join-Path $msysRoot 'ucrt64\include\arrow\api.h'))) { $missingPackages += 'mingw-w64-ucrt-x86_64-arrow' }
     $missingPackages = @($missingPackages | Select-Object -Unique)
     if ($missingPackages.Count -gt 0) {
-        $pacman = Join-Path $msysBin 'pacman.exe'
-        if (-not (Test-Path $pacman)) {
-            throw "MSYS2 tools are missing ($($missingPackages -join ', ')) and pacman was not found at $pacman"
-        }
-        Write-Log "Installing missing MSYS2 UCRT64 packages: $($missingPackages -join ', ')"
-        & $pacman -S --needed --noconfirm @missingPackages
-        if ($LASTEXITCODE -ne 0) {
-            throw "MSYS2 package installation failed ($LASTEXITCODE)"
-        }
-        $cmakePath = $cmakeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        throw "Missing MSYS2 packages ($($missingPackages -join ', ')). Run sfdev setup --components native."
     }
     foreach ($requiredPath in @(
         (Join-Path $mingwBin 'gcc.exe'),
@@ -205,6 +189,7 @@ function Initialize-MinGWUcrt64 {
         }
     }
     $env:MSYSTEM = 'UCRT64'
+    $env:STREAMFIND_MSYS2_ROOT = $msysRoot
     $env:PATH = "$mingwBin;$msysBin;$env:PATH"
     $env:CMAKE = $cmakePath
     $env:NINJA = $ninjaPath

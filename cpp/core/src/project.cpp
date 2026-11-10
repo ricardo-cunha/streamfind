@@ -586,6 +586,30 @@ namespace streamfind
             return false;
         }
 
+        static std::string workflow_instance_id(const Json &value, const std::string &field)
+        {
+            if (value.is_string()) {
+                const auto id = value.get<std::string>();
+                if (!id.empty()) return id;
+            } else if (value.is_number_integer()) {
+                return value.dump();
+            }
+            throw Error(ErrorCode::WorkflowValidation,
+                        field + " must be a non-empty string or integer");
+        }
+
+        static Json workflow_instance_id_json(const std::string &id)
+        {
+            std::size_t consumed = 0;
+            try {
+                const auto numeric_id = std::stoll(id, &consumed);
+                if (consumed == id.size() && std::to_string(numeric_id) == id)
+                    return numeric_id;
+            } catch (const std::exception &) {
+            }
+            return id;
+        }
+
     } // namespace detail
 
     using namespace detail;
@@ -935,6 +959,9 @@ namespace streamfind
         }
         if (kind == ParameterType::table)
         {
+            if (value.is_object() && value.size() == 1 && value.contains("$result_ref") &&
+                value.at("$result_ref").is_string() && !value.at("$result_ref").get<std::string>().empty())
+                return;
             if (value.is_array())
             {
                 if (!table_schema)
@@ -1744,11 +1771,10 @@ namespace streamfind
 
     Json WorkflowOperation::to_json() const
     {
-        std::size_t consumed = 0;
-        const auto numeric_id = std::stoll(id, &consumed);
-        if (consumed != id.size())
-            throw Error(ErrorCode::WorkflowValidation, "Workflow operation id must be an integer: " + id);
-        Json output = {{"id", numeric_id}, {"operation", operation},
+        if (id.empty() || operation.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow operation requires a non-empty id and operation");
+        Json output = {{"id", workflow_instance_id_json(id)}, {"operation", operation},
                        {"parameters", parameters.to_json()}, {"inputs", inputs}};
         if (!position.empty()) output["position"] = position;
         return output;
@@ -1756,13 +1782,13 @@ namespace streamfind
 
     WorkflowOperation WorkflowOperation::from_json(const Json &value)
     {
-        if (!value.is_object() || !value.contains("id") || !value.at("id").is_number_integer() ||
+        if (!value.is_object() || !value.contains("id") ||
             !value.contains("operation") || !value.at("operation").is_string() ||
             value.at("operation").get<std::string>().empty())
             throw Error(ErrorCode::WorkflowValidation,
-                        "Workflow operation requires an integer id and operation");
+                        "Workflow operation requires an id and non-empty operation");
         WorkflowOperation output;
-        output.id = std::to_string(value.at("id").get<std::int64_t>());
+        output.id = workflow_instance_id(value.at("id"), "Workflow operation id");
         output.operation = value.at("operation").get<std::string>();
         output.parameters = ParameterValues::from_json(value.value("parameters", Json::object()));
         output.inputs = value.value("inputs", Json::object());
@@ -1782,15 +1808,14 @@ namespace streamfind
 
     Json WorkflowConnection::to_json() const
     {
-        std::size_t source_consumed = 0;
-        std::size_t target_consumed = 0;
-        const auto source_id = std::stoll(source_operation, &source_consumed);
-        const auto target_id = std::stoll(target_operation, &target_consumed);
-        if (source_consumed != source_operation.size() || target_consumed != target_operation.size())
-            throw Error(ErrorCode::WorkflowValidation, "Workflow connection operation ids must be integers");
-        return {{"source_operation", source_id}, {"source_port", source_port},
-
-                {"target_operation", target_id}, {"target_port", target_port}};
+        if (source_operation.empty() || target_operation.empty() ||
+            source_port.empty() || target_port.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Workflow connection requires operation ids and ports");
+        return {{"source_operation", workflow_instance_id_json(source_operation)},
+                {"source_port", source_port},
+                {"target_operation", workflow_instance_id_json(target_operation)},
+                {"target_port", target_port}};
     }
 
     WorkflowConnection WorkflowConnection::from_json(const Json &value)
@@ -1798,16 +1823,16 @@ namespace streamfind
         if (!value.is_object())
             throw Error(ErrorCode::WorkflowValidation,
                         "Workflow connection must be an object");
-        if (!value.contains("source_operation") || !value.at("source_operation").is_number_integer() ||
-            !value.contains("target_operation") || !value.at("target_operation").is_number_integer() ||
+        if (!value.contains("source_operation") ||
+            !value.contains("target_operation") ||
             !value.contains("source_port") || !value.at("source_port").is_string() ||
             !value.contains("target_port") || !value.at("target_port").is_string())
             throw Error(ErrorCode::WorkflowValidation,
-                        "Workflow connection requires integer source and target operation ids and ports");
+                        "Workflow connection requires source and target operation ids and ports");
         WorkflowConnection output{
-            std::to_string(value.at("source_operation").get<std::int64_t>()),
+            workflow_instance_id(value.at("source_operation"), "Workflow connection source operation id"),
             value.at("source_port").get<std::string>(),
-            std::to_string(value.at("target_operation").get<std::int64_t>()),
+            workflow_instance_id(value.at("target_operation"), "Workflow connection target operation id"),
             value.at("target_port").get<std::string>()};
         if (output.source_port.empty() || output.target_port.empty())
             throw Error(ErrorCode::WorkflowValidation,
@@ -1926,6 +1951,7 @@ namespace streamfind
     {
         Json output = {{"schema_version", schema_version}, {"workflow_id", workflow_id},
                        {"name", name}, {"version", version},
+                       {"definition_revision", definition_revision},
                        {"metadata", metadata},
                        {"operations", Json::array()}, {"connections", Json::array()}};
         for (const auto &operation : operations)
@@ -1954,6 +1980,9 @@ namespace streamfind
         workflow.schema_version = value.at("schema_version").get<int>();
         workflow.workflow_id = value.value("workflow_id", "");
         workflow.version = value.value("version", 1);
+        workflow.definition_revision = value.value("definition_revision", workflow.version);
+        if (workflow.definition_revision < 1)
+            throw Error(ErrorCode::SchemaMismatch, "Workflow definition_revision must be a positive integer");
         workflow.metadata = value.value("metadata", Json::object());
         if (workflow.metadata.is_null()) workflow.metadata = Json::object();
         if (workflow.metadata.is_string()) {
@@ -2777,6 +2806,41 @@ namespace streamfind
         return result_id;
     }
 
+    void Project::register_result_manifest(const Json &manifest)
+    {
+        const auto result_id = manifest.value("result_id", std::string{});
+        const auto contract_id = manifest.value("contract_id", std::string{});
+        const auto producer_operation = manifest.value("producer_operation", std::string{});
+        const auto producer_instance = manifest.value("producer_instance", std::string{});
+        if (result_id.empty() || contract_id.empty() || producer_operation.empty() ||
+            producer_instance.empty() || manifest.value("state", std::string{}) != "published")
+            throw Error(ErrorCode::InvalidArgument, "invalid published result manifest registration");
+        const auto representation = manifest.value("kind", std::string{"binary"});
+        const auto physical_table = representation == "table" ? "result:" + result_id : std::string{};
+        const auto revision = manifest.value("workflow_revision", 0);
+        execute_sql("INSERT OR REPLACE INTO RESULT_REGISTRY "
+                    "(result_id, contract_id, representation, physical_table, payload, producer_operation, "
+                    "producer_instance, workflow_revision, status) VALUES (" +
+                    detail::sql_quote(result_id) + ", " + detail::sql_quote(contract_id) + ", " +
+                    detail::sql_quote(representation) + ", " +
+                    (physical_table.empty() ? "NULL" : detail::sql_quote(physical_table)) +
+                    ", NULL, " + detail::sql_quote(producer_operation) + ", " +
+                    detail::sql_quote(producer_instance) + ", " + std::to_string(revision) +
+                    ", 'published')");
+        execute_sql("DELETE FROM RESULT_LINEAGE WHERE result_id = " + detail::sql_quote(result_id));
+        const auto provenance = manifest.value("provenance", Json::object());
+        const auto lineage = provenance.value("lineage_inputs", Json::array());
+        if (!lineage.is_array()) return;
+        for (const auto &source : lineage) {
+            if (!source.is_array() || source.size() < 3 || !source[0].is_string()) continue;
+            execute_sql("INSERT OR IGNORE INTO RESULT_LINEAGE "
+                        "(result_id, source_result_id, source_port_id, target_port_id) VALUES (" +
+                        detail::sql_quote(result_id) + ", " + detail::sql_quote(source[0].get<std::string>()) + ", " +
+                        detail::sql_quote(source[1].is_string() ? source[1].get<std::string>() : std::string{}) + ", " +
+                        detail::sql_quote(source[2].is_string() ? source[2].get<std::string>() : std::string{}) + ")");
+        }
+    }
+
     Json Project::resolve_workflow_inputs(const std::string &operation_id) const
     {
         return resolve_workflow_inputs(operation_id, Json::object());
@@ -2946,9 +3010,9 @@ namespace streamfind
                 return resolver ? resolver(operation_id, current_artifacts)
                                 : resolve_workflow_inputs(operation_id, current_artifacts);
             }();
-            // The graph's current run is authoritative.  This is essential for
-            // transient pipeline results, which are deliberately not in the
-            // published result registry.
+            // The graph's current run is authoritative while node outputs are
+            // being produced. Pipeline mode registers retained results when
+            // the run reaches a terminal state.
             for (const auto &connection : workflow.connections) {
                 if (connection.target_operation != operation_id) continue;
                 if (connection.target_port.rfind("parameter:", 0) == 0 &&

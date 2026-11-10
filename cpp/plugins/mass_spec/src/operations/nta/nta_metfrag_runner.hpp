@@ -41,6 +41,7 @@ namespace streamfind::mass_spec::nta
       int         maximum_tree_depth = 2; ///< Maximum fragmentation tree depth.
       int         number_threads = 1; ///< Number of threads requested from MetFrag.
       int         feature_parallelism = 2; ///< Number of independent feature-level MetFrag jobs.
+      int         feature_timeout_seconds = 0; ///< Per-feature child-process timeout; zero disables it.
       bool        cache_candidates = true; ///< Cache identical MetFrag feature queries in this run.
       bool        include_fragment_smiles = true; ///< Retain MetFrag fragment SMILES PSV output.
       bool        use_smiles = true; ///< Use SMILES rather than InChI for fragmentation.

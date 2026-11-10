@@ -14,6 +14,9 @@ struct STREAMFIND_CORE_API ServiceConfiguration {
     bool tray_start_with_service{true};
     std::uint32_t tray_status_interval_ms{2000};
     bool tray_notifications{true};
+    // Zero leaves the worker process tree unlimited. Configure in MiB after
+    // measuring representative workloads on the target machine.
+    std::uint64_t worker_memory_limit_mb{0};
 };
 
 STREAMFIND_CORE_API ServiceConfiguration load_service_configuration(

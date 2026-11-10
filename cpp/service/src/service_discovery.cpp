@@ -95,6 +95,8 @@ Json ServiceDiscoveryRecord::to_json() const {
                 {"token", token},
                 {"executable", executable},
                 {"process_id", process_id},
+                {"manager_process_id", manager_process_id},
+                {"manager_executable", manager_executable},
                 {"started_at", started_at}};
 }
 
@@ -149,6 +151,14 @@ std::vector<std::filesystem::path> ServiceDiscovery::record_paths() {
                 error.clear();
                 continue;
             }
+            if (record.manager_process_id != 0 &&
+                (!detail::process_alive(record.manager_process_id) ||
+                 (!record.manager_executable.empty() &&
+                  !detail::process_matches(record.manager_process_id, record.manager_executable)))) {
+                std::filesystem::remove(entry.path(), error);
+                error.clear();
+                continue;
+            }
         } catch (...) {
             std::filesystem::remove(entry.path(), error);
             error.clear();
@@ -172,6 +182,8 @@ ServiceDiscoveryRecord ServiceDiscovery::read(const std::filesystem::path &path)
     record.token = value.value("token", std::string{});
     record.executable = value.value("executable", std::string{});
     record.process_id = value.value("process_id", std::uint64_t{0});
+    record.manager_process_id = value.value("manager_process_id", std::uint64_t{0});
+    record.manager_executable = value.value("manager_executable", std::string{});
     record.started_at = value.value("started_at", std::string{});
     record.record_path = path;
     return record;
@@ -239,7 +251,10 @@ void ServiceDiscovery::write_record(const ServiceDiscoveryRecord &record) {
     if (error) throw std::runtime_error("cannot publish service discovery record: " + error.message());
 }
 
-ServiceDiscoveryRecord ServiceDiscovery::publish(std::uint16_t port, const std::string &protocol_version) {
+ServiceDiscoveryRecord ServiceDiscovery::publish(
+    std::uint16_t port, const std::string &protocol_version,
+    const std::uint64_t manager_process_id,
+    const std::filesystem::path &manager_executable) {
     record_ = ServiceDiscoveryRecord{};
     record_.service_instance_id = create_id();
     record_.endpoint = "http://127.0.0.1:" + std::to_string(port);
@@ -248,6 +263,8 @@ ServiceDiscoveryRecord ServiceDiscovery::publish(std::uint16_t port, const std::
     record_.token = create_token();
     record_.executable = current_executable_path().string();
     record_.process_id = current_process_id();
+    record_.manager_process_id = manager_process_id;
+    record_.manager_executable = manager_executable.string();
     record_.started_at = timestamp();
     record_.record_path = runtime_directory() /
         ("service-" + std::to_string(record_.process_id) + "-" + record_.service_instance_id + ".json");

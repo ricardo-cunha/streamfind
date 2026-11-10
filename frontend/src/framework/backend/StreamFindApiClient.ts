@@ -84,15 +84,23 @@ function normalizeResultData(value: unknown): ResultDataResponse {
   const rows = rawRows.map((row) => {
     if (Array.isArray(row)) {
       const columns = Array.isArray(nested.columns) ? nested.columns : [];
-      return Object.fromEntries(columns.map((column, index) => [column.name, normalizeCell(row[index])])) as Record<string, string | null>;
+      return Object.fromEntries(columns.map((column, index) => [column.name, normalizeCell(row[index])])) as Record<
+        string,
+        string | null
+      >;
     }
     if (!row || typeof row !== 'object') return {};
-    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<string, string | null>;
+    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<
+      string,
+      string | null
+    >;
   });
   const columns = Array.isArray(nested.columns)
-    ? nested.columns.filter((column): column is { name: string; type: string } =>
-        Boolean(column && typeof column === 'object' && typeof column.name === 'string'),
-      ).map((column) => ({ name: column.name, type: typeof column.type === 'string' ? column.type : 'VARCHAR' }))
+    ? nested.columns
+        .filter((column): column is { name: string; type: string } =>
+          Boolean(column && typeof column === 'object' && typeof column.name === 'string'),
+        )
+        .map((column) => ({ name: column.name, type: typeof column.type === 'string' ? column.type : 'VARCHAR' }))
     : [];
   return {
     result_id: typeof nested.result_id === 'string' ? nested.result_id : '',
@@ -203,7 +211,9 @@ export type IsotopePatternResponse = {
 
 type EventHandler = (event: StreamFindEvent) => void;
 
-const defaultBaseUrl = import.meta.env.DEV ? 'http://127.0.0.1:8790' : window.location.origin;
+const defaultBaseUrl = import.meta.env.DEV
+  ? import.meta.env.VITE_STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790'
+  : window.location.origin;
 
 export class StreamFindApiClient {
   private socket: WebSocket | null = null;
@@ -344,7 +354,10 @@ export class StreamFindApiClient {
     return result.result;
   }
 
-  async cancelOperation(sessionId: string, operationInstance: string): Promise<{ state: string; worker?: RuntimeWorker | null }> {
+  async cancelOperation(
+    sessionId: string,
+    operationInstance: string,
+  ): Promise<{ state: string; worker?: RuntimeWorker | null }> {
     const response = await fetch(
       `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationInstance)}/cancel`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
@@ -353,7 +366,10 @@ export class StreamFindApiClient {
     return response.json() as Promise<{ state: string }>;
   }
 
-  async operationState(sessionId: string, operationInstance: string): Promise<{ state: string; worker?: RuntimeWorker | null }> {
+  async operationState(
+    sessionId: string,
+    operationInstance: string,
+  ): Promise<{ state: string; worker?: RuntimeWorker | null }> {
     const response = await fetch(
       `${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationInstance)}/state`,
     );

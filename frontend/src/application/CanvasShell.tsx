@@ -9,11 +9,7 @@ import {
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import {
-  StreamFindApiClient,
-  type ResultRecord,
-  type ProjectSession,
-} from '../framework/backend/StreamFindApiClient';
+import { StreamFindApiClient, type ResultRecord, type ProjectSession } from '../framework/backend/StreamFindApiClient';
 import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
 import { LoadingLogo } from '../framework/ui/LoadingLogo';
 
@@ -199,13 +195,23 @@ export default function CanvasShell({
   const [artifactCleanupNode, setArtifactCleanupNode] = useState<CanvasNode | null>(null);
   const [artifactCleanupBusy, setArtifactCleanupBusy] = useState(false);
   const [workflowRevision, setWorkflowRevision] = useState(1);
-  const [workflowLoaded, setWorkflowLoaded] = useState(surface !== 'workflow' || !client);
+  const [workflowDefinitionRevision, setWorkflowDefinitionRevision] = useState(1);
   const [workflowReloadNonce, setWorkflowReloadNonce] = useState(0);
+  const workflowLoadKey = `${surface}:${project.session_id}:${workflowReloadNonce}`;
+  const [loadedWorkflowKey, setLoadedWorkflowKey] = useState<string | null>(
+    surface !== 'workflow' || !client ? workflowLoadKey : null,
+  );
+  const workflowLoaded = surface !== 'workflow' || !client || loadedWorkflowKey === workflowLoadKey;
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
-  const lastObservedWorkflowStateRef = useRef<WorkflowState | null>(null);
   const artifactsLoadedRef = useRef(false);
   const currentResultsRef = useRef<ResultRecord[]>([]);
   const artifactsRefreshInFlightRef = useRef<Promise<ResultRecord[]> | null>(null);
+  const refreshArtifactsRef = useRef<(force?: boolean) => Promise<ResultRecord[]>>(() => Promise.resolve([]));
+  const artifactsRefreshPendingRef = useRef<{
+    promise: Promise<ResultRecord[]>;
+    resolve: (results: ResultRecord[]) => void;
+    reject: (reason?: unknown) => void;
+  } | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [documentationFocus, setDocumentationFocus] = useState<DocumentationFocus | null>(null);
@@ -251,7 +257,7 @@ export default function CanvasShell({
   const showOutputRendererMenu = (key: string) => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
     setHoveredOutputAnchor(key);
-    if (!artifactsLoadedRef.current) void refreshArtifacts();
+    if (!artifactsLoadedRef.current) void refreshArtifactsRef.current();
   };
   const hideOutputRendererMenu = () => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
@@ -324,7 +330,21 @@ export default function CanvasShell({
     (force = false) => {
       if (!client || typeof client.currentResults !== 'function') return Promise.resolve<ResultRecord[]>([]);
       if (!force && artifactsLoadedRef.current) return Promise.resolve(currentResultsRef.current);
-      if (artifactsRefreshInFlightRef.current) return artifactsRefreshInFlightRef.current;
+      if (artifactsRefreshInFlightRef.current) {
+        if (force) {
+          if (!artifactsRefreshPendingRef.current) {
+            let resolve!: (results: ResultRecord[]) => void;
+            let reject!: (reason?: unknown) => void;
+            const promise = new Promise<ResultRecord[]>((resolvePromise, rejectPromise) => {
+              resolve = resolvePromise;
+              reject = rejectPromise;
+            });
+            artifactsRefreshPendingRef.current = { promise, resolve, reject };
+          }
+          return artifactsRefreshPendingRef.current.promise;
+        }
+        return artifactsRefreshInFlightRef.current;
+      }
       const request = client
         .currentResults(project.session_id)
         .then((artifacts) => {
@@ -336,12 +356,21 @@ export default function CanvasShell({
         .catch(() => []);
       artifactsRefreshInFlightRef.current = request;
       void request.finally(() => {
+        if (artifactsRefreshInFlightRef.current !== request) return;
         artifactsRefreshInFlightRef.current = null;
+        const pending = artifactsRefreshPendingRef.current;
+        if (pending) {
+          artifactsRefreshPendingRef.current = null;
+          void refreshArtifactsRef.current(true).then(pending.resolve, pending.reject);
+        }
       });
       return request;
     },
     [client, project.session_id],
   );
+  useEffect(() => {
+    refreshArtifactsRef.current = refreshArtifacts;
+  }, [refreshArtifacts]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -387,8 +416,8 @@ export default function CanvasShell({
   ]);
   const nodeTemplates = useMemo(() => capabilityTemplates(capabilities), [capabilities]);
   const currentWorkflow = useMemo(
-    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata),
-    [capabilities, edges, nodes, workflowMetadata, workflowRevision],
+    () => canvasWorkflow(nodes, edges, capabilities, workflowRevision, workflowMetadata, workflowDefinitionRevision),
+    [capabilities, edges, nodes, workflowDefinitionRevision, workflowMetadata, workflowRevision],
   );
   const currentWorkflowFingerprint = useMemo(() => workflowFingerprint(currentWorkflow), [currentWorkflow]);
 
@@ -490,15 +519,19 @@ export default function CanvasShell({
         const pid = 'process_id' in worker && worker.process_id ? String(worker.process_id) : '—';
         const state = 'state' in worker ? String(worker.state) : 'unknown';
         const job = 'job_id' in worker && worker.job_id ? ` · Job ${String(worker.job_id)}` : '';
-        const group = 'process_group_id' in worker && worker.process_group_id
-          ? ` · Group ${String(worker.process_group_id)}`
-          : '';
+        const group =
+          'process_group_id' in worker && worker.process_group_id ? ` · Group ${String(worker.process_group_id)}` : '';
         return ` · Worker ${id} · PID ${pid}${group}${job} · ${state}`;
       })();
       if (payload && typeof payload === 'object' && !Array.isArray(payload) && 'worker' in payload) {
         const worker = payload.worker;
-        if (worker && typeof worker === 'object' && !Array.isArray(worker) &&
-            'state' in worker && ['completed', 'failed', 'cancelled'].includes(String(worker.state))) {
+        if (
+          worker &&
+          typeof worker === 'object' &&
+          !Array.isArray(worker) &&
+          'state' in worker &&
+          ['completed', 'failed', 'cancelled'].includes(String(worker.state))
+        ) {
           updateActiveWorker(null);
         }
       }
@@ -511,6 +544,14 @@ export default function CanvasShell({
               ? 'success'
               : 'info';
       if (event.operation_id) {
+        const operationInstance =
+          payload &&
+          typeof payload === 'object' &&
+          !Array.isArray(payload) &&
+          'operation_instance' in payload &&
+          typeof payload.operation_instance === 'string'
+            ? payload.operation_instance
+            : undefined;
         const executionState =
           event.type === 'operation.started'
             ? 'running'
@@ -522,7 +563,11 @@ export default function CanvasShell({
         if (executionState) {
           setNodes((current) =>
             current.map((node) =>
-              node.id === event.operation_id || node.capabilityId === event.operation_id
+              (
+                operationInstance
+                  ? node.id === operationInstance
+                  : node.id === event.operation_id || node.capabilityId === event.operation_id
+              )
                 ? { ...node, executionState }
                 : node,
             ),
@@ -533,6 +578,38 @@ export default function CanvasShell({
         workflowExecutionIdRef.current = event.execution_id ?? workflowExecutionIdRef.current;
         resetActivityLog();
         setWorkflowState('queued');
+      }
+      if (event.type === 'workflow.definition_changed') {
+        const changedWorkflow =
+          payload &&
+          typeof payload === 'object' &&
+          !Array.isArray(payload) &&
+          'workflow' in payload &&
+          payload.workflow &&
+          typeof payload.workflow === 'object' &&
+          !Array.isArray(payload.workflow)
+            ? (payload.workflow as WorkflowDefinition)
+            : null;
+        if (changedWorkflow) {
+          const changedFingerprint = workflowFingerprint(changedWorkflow);
+          const changedMetadata = changedWorkflow.metadata || {};
+          const revision = Number(changedWorkflow.version);
+          const localDefinitionMatches =
+            changedFingerprint === currentWorkflowFingerprint &&
+            JSON.stringify(changedMetadata) === JSON.stringify(workflowMetadata);
+          if (localDefinitionMatches) {
+            setWorkflowRevision(revision);
+            setWorkflowDefinitionRevision(changedWorkflow.definition_revision);
+            setSavedWorkflowFingerprint(changedFingerprint);
+          } else if (workflowDirty || savingWorkflow) {
+            setStatus(
+              `Workflow changed in another client (revision ${revision}); local edits are preserved. Reload the workflow to view the external changes.`,
+            );
+          } else {
+            setStatus(`Workflow updated by another client (revision ${revision}); refreshing the canvas.`);
+            setWorkflowReloadNonce((current) => current + 1);
+          }
+        }
       }
       appendLog(
         detail ? `${event.type}${operation}: ${detail}${workerDetail}` : `${event.type}${operation}${workerDetail}`,
@@ -573,7 +650,19 @@ export default function CanvasShell({
         void refreshArtifacts(true);
       }
     },
-    [appendLog, project.session_id, refreshArtifacts, resetActivityLog, updateActiveWorker],
+    [
+      appendLog,
+      currentWorkflowFingerprint,
+      project.session_id,
+      refreshArtifacts,
+      resetActivityLog,
+      savingWorkflow,
+      setStatus,
+      setWorkflowReloadNonce,
+      updateActiveWorker,
+      workflowDirty,
+      workflowMetadata,
+    ],
   );
 
   useEffect(() => {
@@ -651,12 +740,20 @@ export default function CanvasShell({
     return () => {
       active = false;
     };
-  }, [appendLog, applyWorkflowEvent, client, project.session_id, resetActivityLog, surface, updateActiveWorker, workflowLoaded]);
+  }, [
+    appendLog,
+    applyWorkflowEvent,
+    client,
+    project.session_id,
+    resetActivityLog,
+    surface,
+    updateActiveWorker,
+    workflowLoaded,
+  ]);
 
   useEffect(() => {
     if (surface !== 'workflow' || !client || typeof client.workflowDefinition !== 'function') return undefined;
     let active = true;
-    setWorkflowLoaded(false);
     // The workflow definition and the published-result snapshot are
     // independent reads. Start them together so large result stores do not
     // delay the canvas after the definition has already arrived.
@@ -667,13 +764,14 @@ export default function CanvasShell({
         if (!active) return;
         initialViewportFittedRef.current = false;
         setWorkflowRevision(result.workflow.version);
+        setWorkflowDefinitionRevision(result.workflow.definition_revision);
         if (result.workflow.metadata) setWorkflowMetadata(result.workflow.metadata);
         setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
         if (!result.valid) {
           setStatus(`Saved workflow is invalid: ${result.diagnostics.map((item) => item.message).join('; ')}`);
           await artifactRefresh;
           if (!active) return;
-          setWorkflowLoaded(true);
+          setLoadedWorkflowKey(workflowLoadKey);
           return;
         }
         const loadedNodes = result.workflow.operations.map((operation, index) => {
@@ -719,18 +817,18 @@ export default function CanvasShell({
         // not briefly render with every output looking unpublished.
         await artifactRefresh;
         if (!active) return;
-        setWorkflowLoaded(true);
+        setLoadedWorkflowKey(workflowLoadKey);
       })
       .catch((error) => {
         if (active) {
-          setWorkflowLoaded(true);
+          setLoadedWorkflowKey(workflowLoadKey);
           setStatus(error instanceof Error ? error.message : 'Workflow could not be loaded.');
         }
       });
     return () => {
       active = false;
     };
-  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface, workflowReloadNonce]);
+  }, [capabilities.operations, client, project.session_id, refreshArtifacts, setStatus, surface, workflowLoadKey]);
 
   useLayoutEffect(() => {
     if (!workflowLoaded || !nodes.length || initialViewportFittedRef.current) return undefined;
@@ -810,7 +908,6 @@ export default function CanvasShell({
   const discardWorkflowChanges = () => {
     if (!workflowDirty || workflowBusy) return;
     setStatus('Discarding changes and loading the saved workflow...');
-    setWorkflowLoaded(false);
     setWorkflowReloadNonce((value) => value + 1);
   };
 
@@ -826,6 +923,7 @@ export default function CanvasShell({
       }
       const result = await client.saveWorkflow(project.session_id, workflowToSave);
       setWorkflowRevision(result.workflow.version);
+      setWorkflowDefinitionRevision(result.workflow.definition_revision);
       setSavedWorkflowFingerprint(workflowFingerprint(result.workflow));
 
       setStatus(`Workflow saved (revision ${result.workflow.version}).`);
@@ -932,6 +1030,7 @@ export default function CanvasShell({
         workflow_id: parsed.workflow_id,
         name: parsed.name,
         version: workflowRevision,
+        definition_revision: workflowDefinitionRevision,
         metadata: parsed.metadata || workflowMetadata,
         operations: parsed.operations,
         connections: parsed.connections,
@@ -1833,7 +1932,8 @@ export default function CanvasShell({
     );
     if (missing.length > 0) {
       const names = missing.map((dependency) => `${dependency.label} ${dependency.version}`).join(', ');
-      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`)) return false;
+      if (!window.confirm(`Install required dependencies: ${names}? This may download files from the network.`))
+        return false;
       await client.installDependencies(
         missing.map((dependency) => dependency.id),
         true,
@@ -1957,8 +2057,8 @@ export default function CanvasShell({
     }
   };
   const workflowExecutionActive = ['queued', 'running', 'cancelling'].includes(workflowState);
-  const directOperationActive = !workflowExecutionActive && activeWorker?.state === 'running' &&
-    activeWorker.operation_id.length > 0;
+  const directOperationActive =
+    !workflowExecutionActive && activeWorker?.state === 'running' && activeWorker.operation_id.length > 0;
   const stopActiveExecution = async () => {
     if (!client || workflowBusy) return;
     if (directOperationActive && activeWorker) {
@@ -2414,7 +2514,8 @@ export default function CanvasShell({
               })()
             : null}
         </svg>
-        {nodes.map((node) => {
+        {nodes.map((node, nodeIndex) => {
+          const nodeNumber = /^\d+$/.test(node.id) ? Number(node.id) : nodeIndex + 1;
           const capability = node.capabilityId
             ? capabilities.operations.find((item) => item.canonical_id === node.capabilityId)
             : undefined;
@@ -2440,8 +2541,8 @@ export default function CanvasShell({
             >
               <div className="sf-canvas-node-header">
                 <div className="sf-node-header-actions">
-                  <span className="sf-node-number" aria-label={`Node ${node.id}`} title={`Node ${node.id}`}>
-                    {node.id}
+                  <span className="sf-node-number" aria-label={`Node ${nodeNumber}`} title={`Node ${nodeNumber}`}>
+                    {nodeNumber}
                   </span>
                   <button
                     type="button"

@@ -3,7 +3,6 @@
 // Feature blank subtraction implementations for NtaProjectData
 
 #include "utils/nta.hpp"
-#include "utils/nta.hpp"
 #include "operations/base.hpp"
 #include <unordered_map>
 #include <algorithm>
@@ -27,11 +26,7 @@ namespace streamfind::mass_spec::nta::blank_subtraction
       return;
 
     // Map replicate -> analysis indices for blank lookup
-    std::unordered_map<std::string, std::vector<size_t>> replicate_to_indices;
-    for (size_t i = 0; i < analysis_names.size(); ++i)
-    {
-      replicate_to_indices[replicate_names[i]].push_back(i);
-    }
+    const auto replicate_to_indices = index_analyses_by_replicate(replicate_names);
 
     for (size_t a = 0; a < analysis_names.size(); ++a)
     {
@@ -132,7 +127,8 @@ namespace streamfind::mass_spec::nta::blank_subtraction
           if (fts.intensity[idx] < (blank_intensity * blankThreshold))
           {
             fts.filtered[idx] = true;
-            fts.filter[idx] = "blank_subtraction";
+            ::streamfind::mass_spec::nta::utils::append_filter_reason(
+                fts.filter[idx], "blank_subtraction");
           }
         }
       }

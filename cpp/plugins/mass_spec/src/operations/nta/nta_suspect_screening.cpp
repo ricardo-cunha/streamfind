@@ -35,24 +35,13 @@ namespace streamfind::mass_spec::nta
       return std::abs(value - target) <= sec;
     }
 
-    std::string encode_floats(const std::vector<double> &input)
+    std::vector<float> to_float_array(const std::vector<double> &input)
     {
-      if (input.empty())
-        return "";
       std::vector<float> tmp;
       tmp.reserve(input.size());
       for (double v : input)
         tmp.push_back(static_cast<float>(v));
-      std::string enc = ::mass_spec::reader::utils::encode_little_endian_from_float(tmp, 4);
-      return ::mass_spec::reader::utils::encode_base64(enc);
-    }
-
-    std::vector<float> decode_floats(const std::string &encoded)
-    {
-      if (encoded.empty())
-        return {};
-      std::string decoded = ::mass_spec::reader::utils::decode_base64(encoded);
-      return ::mass_spec::reader::utils::decode_little_endian_to_float(decoded, 4);
+      return tmp;
     }
 
     template <typename T>
@@ -187,8 +176,8 @@ namespace streamfind::mass_spec::nta
       if (suspect.formula.empty())
         return {};
 
-      const auto experimental_mz = decode_floats(get_or_default(features.ms1_mz, feature_index, std::string()));
-      const auto experimental_intensity = decode_floats(get_or_default(features.ms1_intensity, feature_index, std::string()));
+      const auto experimental_mz = get_or_default(features.ms1_mz, feature_index, std::vector<float>{});
+      const auto experimental_intensity = get_or_default(features.ms1_intensity, feature_index, std::vector<float>{});
       if (experimental_mz.empty() || experimental_mz.size() != experimental_intensity.size())
         return {};
 
@@ -637,13 +626,13 @@ namespace streamfind::mass_spec::nta
         }
 
         row.db_ms2_size = 0;
-        row.db_ms2_mz = "";
-        row.db_ms2_intensity = "";
+        row.db_ms2_mz.clear();
+        row.db_ms2_intensity.clear();
         row.db_ms2_formula = "";
         row.db_ms2_smiles = "";
         row.exp_ms2_size = get_or_default(fts.ms2_size, idx, 0);
-        row.exp_ms2_mz = get_or_default(fts.ms2_mz, idx, std::string());
-        row.exp_ms2_intensity = get_or_default(fts.ms2_intensity, idx, std::string());
+        row.exp_ms2_mz = get_or_default(fts.ms2_mz, idx, std::vector<float>{});
+        row.exp_ms2_intensity = get_or_default(fts.ms2_intensity, idx, std::vector<float>{});
         const IsotopeMatch isotope = matches_isotope_pattern(*sus, fts, idx, isotopePpm);
         row.isotope_theoretical_peaks = isotope.theoretical_peaks;
         row.isotope_matched_peaks = isotope.matched_peaks;
@@ -671,13 +660,13 @@ namespace streamfind::mass_spec::nta
         if (can_check_ms2)
         {
           row.db_ms2_size = static_cast<int>(sus_mz->size());
-          row.db_ms2_mz = encode_floats(*sus_mz);
-          row.db_ms2_intensity = encode_floats(*sus_int);
+          row.db_ms2_mz = to_float_array(*sus_mz);
+          row.db_ms2_intensity = to_float_array(*sus_int);
           row.db_ms2_formula = "";
           row.db_ms2_smiles = "";
 
-          std::vector<float> exp_mz = decode_floats(row.exp_ms2_mz);
-          std::vector<float> exp_int = decode_floats(row.exp_ms2_intensity);
+          const auto &exp_mz = row.exp_ms2_mz;
+          const auto &exp_int = row.exp_ms2_intensity;
           if (!exp_mz.empty() && exp_mz.size() == exp_int.size())
           {
             std::vector<int> exp_idx(sus_mz->size(), -1);

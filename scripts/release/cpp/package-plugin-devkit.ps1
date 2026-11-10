@@ -17,7 +17,7 @@ if ($canonicalVersion -ne $Version) {
     throw "Release version $Version does not match the canonical version $canonicalVersion"
 }
 $toolchain = Initialize-MinGWUcrt64
-$buildDir = Join-Path $root 'tmp\build\mingw-plugin-devkit'
+$buildDir = Join-Path $root 'tmp\build\windows\devkit'
 $installDir = Join-Path $buildDir 'install'
 $outDir = Join-Path $root 'tmp\release-output'
 $frontendDist = Join-Path $root 'frontend\dist'
@@ -63,5 +63,5 @@ if ($LASTEXITCODE -ne 0) { throw "CPack failed ($LASTEXITCODE)" }
 $archive = Get-ChildItem (Join-Path $cpackDir "streamfind-plugin-dev-$Version-Windows-*.zip") | Select-Object -First 1
 if (-not $archive) { throw 'Developer-kit archive was not produced' }
 Copy-Item $archive.FullName (Join-Path $outDir $archive.Name) -Force
-Write-ReleaseChecksums
+Write-ReleaseChecksums $Version
 Write-ReleaseLog "Plugin developer kit written to $outDir"

@@ -13,6 +13,7 @@
 #include "utils/nta.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
 #include <cmath>
 #include <chrono>
@@ -35,6 +36,7 @@
 #include <windows.h>
 #else
 #include <spawn.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -74,17 +76,12 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
   // ── Internal helpers ──────────────────────────────────────────────────────────
 
-  // Decode a base64 + little-endian float32 encoded string to vector<double>.
-  std::vector<double> decode_encoded(const std::string &encoded)
+  std::vector<double> to_double_array(const std::vector<float> &values)
   {
     std::vector<double> out;
-    if (encoded.empty())
-      return out;
-    std::string raw        = ::mass_spec::reader::utils::decode_base64(encoded);
-    std::vector<float> fv  = ::mass_spec::reader::utils::decode_little_endian_to_float(raw, 4);
-    out.reserve(fv.size());
-    for (float f : fv)
-      out.push_back(static_cast<double>(f));
+    out.reserve(values.size());
+    for (const float value : values)
+      out.push_back(static_cast<double>(value));
     return out;
   }
 
@@ -300,8 +297,11 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       const std::string &metfrag_path,
       const std::string &java_path,
       const std::string &params_path,
-      const std::string &log_path)
+      const std::string &log_path,
+      int timeout_seconds,
+      bool &timed_out)
   {
+    timed_out = false;
 
     // JAR mode: file ends with .jar (case-insensitive)
     bool is_jar = (metfrag_path.size() > 4) &&
@@ -323,11 +323,41 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdOutput = output; startup.hStdError = output; startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION process{};
-    const BOOL created = CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr,
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (!job) { CloseHandle(output); return -1; }
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limits{};
+    job_limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                 &job_limits, sizeof(job_limits)))
+    {
+      CloseHandle(job); CloseHandle(output); return -1;
+    }
+    const BOOL created = CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, TRUE,
+                                        CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr,
                                         &startup, &process);
-    if (!created) { CloseHandle(output); return -1; }
-    WaitForSingleObject(process.hProcess, INFINITE); DWORD code = 1; GetExitCodeProcess(process.hProcess, &code);
-    CloseHandle(process.hThread); CloseHandle(process.hProcess); CloseHandle(output); return static_cast<int>(code);
+    if (!created) { CloseHandle(job); CloseHandle(output); return -1; }
+    if (!AssignProcessToJobObject(job, process.hProcess) ||
+        ResumeThread(process.hThread) == static_cast<DWORD>(-1))
+    {
+      TerminateProcess(process.hProcess, 1);
+      WaitForSingleObject(process.hProcess, INFINITE);
+      CloseHandle(process.hThread); CloseHandle(process.hProcess);
+      CloseHandle(job); CloseHandle(output); return -1;
+    }
+    const DWORD wait_result = WaitForSingleObject(
+      process.hProcess,
+      timeout_seconds > 0 ? static_cast<DWORD>(timeout_seconds) * 1000U : INFINITE);
+    if (wait_result == WAIT_TIMEOUT)
+    {
+      timed_out = true;
+      TerminateJobObject(job, 124);
+      WaitForSingleObject(process.hProcess, INFINITE);
+    }
+    DWORD code = 1;
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+    CloseHandle(job); CloseHandle(output);
+    return timed_out ? 124 : static_cast<int>(code);
 #else
     std::vector<std::string> values;
     values.push_back(is_jar ? java_path : metfrag_path);
@@ -338,9 +368,45 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
     posix_spawn_file_actions_adddup2(&actions, output, STDOUT_FILENO);
     posix_spawn_file_actions_adddup2(&actions, output, STDERR_FILENO);
-    pid_t pid = 0; const int spawned = posix_spawn(&pid, values.front().c_str(), &actions, nullptr, argv.data(), environ);
+    posix_spawnattr_t attributes;
+    if (posix_spawnattr_init(&attributes) != 0)
+    {
+      posix_spawn_file_actions_destroy(&actions); close(output); return -1;
+    }
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    posix_spawnattr_setpgroup(&attributes, 0);
+    pid_t pid = 0;
+    const int spawned = posix_spawn(&pid, values.front().c_str(), &actions, &attributes, argv.data(), environ);
+    posix_spawnattr_destroy(&attributes);
     posix_spawn_file_actions_destroy(&actions); close(output); if (spawned != 0) return -1;
-    int status = 0; if (waitpid(pid, &status, 0) < 0) return -1; return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    int status = 0;
+    if (timeout_seconds <= 0)
+    {
+      pid_t waited = 0;
+      do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
+      return waited < 0 ? -1 : (WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+      const pid_t waited = waitpid(pid, &status, WNOHANG);
+      if (waited == pid) return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+      if (waited < 0 && errno != EINTR) return -1;
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    timed_out = true;
+    kill(-pid, SIGTERM);
+    const auto terminate_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (std::chrono::steady_clock::now() < terminate_deadline)
+    {
+      const pid_t waited = waitpid(pid, &status, WNOHANG);
+      if (waited == pid || (waited < 0 && errno != EINTR)) return 124;
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    kill(-pid, SIGKILL);
+    pid_t waited = 0;
+    do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
+    return 124;
 #endif
   }
 
@@ -697,27 +763,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         if (!ms.empty()) r.neutral_mass = std::atof(ms.c_str());
         r.expl_peaks          = gf(row, ci_expl);
         r.expl_formulas       = gf(row, ci_exform);
-        const bool complete_structure =
-          !r.SMILES.empty() && !r.InChI.empty() && !r.InChIKey.empty() &&
-          !r.formula.empty() && std::isfinite(r.neutral_mass);
-        if (!complete_structure)
-        {
-          std::lock_guard<std::mutex> lock(g_openbabel_normalization_mutex);
-          normalize_structure_fields(
-              r.SMILES,
-              r.InChI,
-              r.InChIKey,
-              r.formula,
-              r.neutral_mass,
-              r.xLogP);
-        }
-        r.identifier = resolve_structure_identifier(
-            r.identifier,
-            r.InChIKey,
-            r.InChI,
-            r.SMILES,
-            r.name,
-            out.size() + 1);
       }
       // Always extract SMILES columns (available in both CSV and PSV).
       r.expl_smiles         = gf(row, ci_exsmi);
@@ -731,7 +776,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
   // then supplement fragment SMILES from PSV (if available).
   std::vector<MetFragRow> parse_metfrag_output(
       const std::string &results_dir,
-      const std::string &sample_name)
+      const std::string &sample_name,
+      int maximum_candidates)
   {
     std::vector<std::string> candidates = collect_metfrag_result_files(results_dir, sample_name);
 
@@ -777,6 +823,30 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     // Sort descending by score.
     std::stable_sort(out.begin(), out.end(),
         [](const MetFragRow &a, const MetFragRow &b) { return a.score > b.score; });
+    if (maximum_candidates > 0 &&
+        out.size() > static_cast<std::size_t>(maximum_candidates))
+      out.resize(static_cast<std::size_t>(maximum_candidates));
+
+    // Structure normalization invokes Open Babel and is materially more
+    // expensive than reading the candidate row. Do it only for the ranked
+    // candidates that can be returned by this operation.
+    for (std::size_t i = 0; i < out.size(); ++i)
+    {
+      auto &row = out[i];
+      const bool complete_structure =
+        !row.SMILES.empty() && !row.InChI.empty() && !row.InChIKey.empty() &&
+        !row.formula.empty() && std::isfinite(row.neutral_mass);
+      if (!complete_structure)
+      {
+        std::lock_guard<std::mutex> lock(g_openbabel_normalization_mutex);
+        normalize_structure_fields(
+            row.SMILES, row.InChI, row.InChIKey, row.formula,
+            row.neutral_mass, row.xLogP);
+      }
+      row.identifier = resolve_structure_identifier(
+          row.identifier, row.InChIKey, row.InChI, row.SMILES,
+          row.name, i + 1);
+    }
     return out;
   }
 
@@ -1213,6 +1283,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       throw std::invalid_argument("MetFrag number_threads must be at least 1.");
     if (out.feature_parallelism < 1)
       throw std::invalid_argument("MetFrag feature_parallelism must be at least 1.");
+    if (out.feature_timeout_seconds < 0 || out.feature_timeout_seconds > 86400)
+      throw std::invalid_argument("MetFrag feature_timeout_seconds must be between 0 and 86400.");
 
     if (is_local_database_type(out.database_type))
     {
@@ -1297,8 +1369,10 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
     // Reset suspects for all analyses. Feature work is independent, but the
     // columnar suspect buffers and workflow progress reporter are updated only
-    // by this coordinator thread after each worker result is complete.
+    // by this coordinator thread as feature jobs finish.
+    const auto screening_started_at = std::chrono::steady_clock::now();
     std::size_t total_completed_work = 0;
+    std::size_t total_candidates = 0;
     for (size_t ai = 0; ai < n_ana; ++ai)
       suspect_buffers[ai] = ::streamfind::mass_spec::nta::api::NTA_SUSPECTS();
 
@@ -1309,6 +1383,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       std::size_t candidate_count = 0;
       int status = 0;
       bool cache_hit = false;
+      bool timed_out = false;
+      std::int64_t elapsed_ms = 0;
     };
 
     std::unordered_map<std::string, std::vector<MetFragRow>> candidate_cache;
@@ -1317,15 +1393,16 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     auto query_cache_key = [&](const std::string &database_path,
                                double precursor_mass,
                                int polarity,
-                               const std::string &ms2_mz,
-                               const std::string &ms2_intensity)
+                               const std::vector<float> &ms2_mz,
+                               const std::vector<float> &ms2_intensity)
     {
       std::ostringstream key;
       key << params.database_type << '|' << database_path << '|'
           << std::setprecision(17) << precursor_mass << '|'
           << polarity << '|' << params.ppm << '|' << params.ppmMS2 << '|'
           << params.mzrMS2 << '|' << params.maximum_tree_depth << '|'
-          << params.use_smiles << '|' << ms2_mz << '|' << ms2_intensity;
+          << params.use_smiles << '|' << nlohmann::json(ms2_mz).dump() << '|'
+          << nlohmann::json(ms2_intensity).dump();
       return key.str();
     };
 
@@ -1385,11 +1462,12 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 
       auto process_feature = [&](int fi) -> FeatureResult
       {
+        const auto feature_started_at = std::chrono::steady_clock::now();
         FeatureResult result;
         result.feature_index = static_cast<std::size_t>(fi);
 
-        std::vector<double> ms2_mz = decode_encoded(feats.ms2_mz[fi]);
-        std::vector<double> ms2_int = decode_encoded(feats.ms2_intensity[fi]);
+        std::vector<double> ms2_mz = to_double_array(feats.ms2_mz[fi]);
+        std::vector<double> ms2_int = to_double_array(feats.ms2_intensity[fi]);
         const double precursor_mass = feats.mass[fi] > 0.0f
             ? static_cast<double>(feats.mass[fi])
             : static_cast<double>(feats.mz[fi]) - feats.polarity[fi] * 1.007276;
@@ -1435,8 +1513,22 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           write_params_file(params_path, common_params_template, precursor_mass,
                             feats.polarity[fi], ms2_path, sample_name);
           result.status = run_metfrag(params.metfrag_path, params.java_path,
-                                      params_path, log_path);
-          rows = parse_metfrag_output(run_dir, sample_name);
+                                      params_path, log_path,
+                                      params.feature_timeout_seconds,
+                                      result.timed_out);
+          if (result.timed_out)
+          {
+            result.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - feature_started_at).count();
+            return result;
+          }
+          if (result.status != 0)
+            throw std::runtime_error(
+              "MetFrag process failed for analysis '" + ana + "', feature '" +
+              feats.feature[fi] + "' with exit status " +
+              std::to_string(result.status) + "; inspect " + log_path +
+              ". No partial results were published.");
+          rows = parse_metfrag_output(run_dir, sample_name, params.top_n);
           if (params.cache_candidates)
           {
             std::lock_guard<std::mutex> lock(candidate_cache_mutex);
@@ -1453,6 +1545,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           if (has_ms2) defer_cleanup(ms2_path);
           defer_cleanup(params_path);
           for (const auto &csv_path : csv_paths) defer_cleanup(csv_path);
+          result.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - feature_started_at).count();
           return result;
         }
 
@@ -1470,8 +1564,6 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           std::vector<float> db_intf;
           db_intf.reserve(db_int.size());
           for (const double value : db_int) db_intf.push_back(static_cast<float>(value));
-          const std::string db_ms2_mz_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_mzf);
-          const std::string db_ms2_int_enc = ::streamfind::mass_spec::nta::utils::encode_floats_base64(db_intf);
 
           const SuspectQuery *target = find_target_metadata(row, params.suspect_targets);
           // Every candidate source must use the same isotope scorer. Database
@@ -1591,8 +1683,8 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           s.InChIKey = row.InChIKey;
           s.xLogP = row.xLogP;
           s.db_ms2_size = static_cast<int>(db_mz.size());
-          s.db_ms2_mz = db_ms2_mz_enc;
-          s.db_ms2_intensity = db_ms2_int_enc;
+          s.db_ms2_mz = std::move(db_mzf);
+          s.db_ms2_intensity = std::move(db_intf);
           s.db_ms2_formula = db_form;
           s.db_ms2_smiles = strip_mass_prefixes(row.expl_smiles);
           s.exp_ms2_size = feats.ms2_size[fi];
@@ -1615,36 +1707,73 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         if (has_ms2) defer_cleanup(ms2_path);
         defer_cleanup(params_path);
         result.candidate_count = result.suspects.size();
+        result.elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - feature_started_at).count();
         return result;
       };
 
       std::vector<std::future<FeatureResult>> pending;
       pending.reserve(static_cast<std::size_t>(params.feature_parallelism));
       std::size_t completed_work = 0;
-      const std::size_t log_interval = std::max<std::size_t>(1, analysis_work / 20);
-      auto collect_pending = [&]()
+      auto collect_ready = [&]()
       {
-        for (auto &future : pending)
+        bool collected_any = false;
+        for (auto it = pending.begin(); it != pending.end();)
         {
-          FeatureResult result = future.get();
+          if (it->wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+          {
+            ++it;
+            continue;
+          }
+          FeatureResult result = it->get();
+          it = pending.erase(it);
+          collected_any = true;
+          if (result.timed_out)
+          {
+            const auto feature_id = result.feature_index < feats.feature.size()
+              ? feats.feature[result.feature_index] : std::string("unknown");
+            throw std::runtime_error(
+              "MetFrag feature timeout: analysis '" + ana + "', feature '" + feature_id +
+              "' exceeded feature_timeout_seconds=" +
+              std::to_string(params.feature_timeout_seconds) +
+              "; the operation failed and did not publish partial results.");
+          }
           ++completed_work;
           ++total_completed_work;
+          total_candidates += result.candidate_count;
           for (auto &suspect : result.suspects)
             suspect_buffers[ai].append(std::move(suspect));
-          if (completed_work == analysis_work ||
-              completed_work % log_interval == 0)
-          {
-            const std::size_t global_completed = total_completed_work;
-            const double progress = total_work == 0 ? 1.0
-              : static_cast<double>(global_completed) / static_cast<double>(total_work);
-            access.report_progress(progress,
-              "MetFrag " + ana + " completed " + std::to_string(completed_work) +
-                "/" + std::to_string(analysis_work) + " features; " +
-                std::to_string(result.suspects.size()) + " candidates" +
-                (result.cache_hit ? " (cache hit)" : ""));
-          }
+          const auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - screening_started_at).count();
+          const auto eta_seconds = total_completed_work > 0 && elapsed_seconds > 0 &&
+              total_completed_work < total_work
+            ? static_cast<long long>(static_cast<double>(elapsed_seconds) *
+                static_cast<double>(total_work - total_completed_work) /
+                static_cast<double>(total_completed_work))
+            : -1;
+          const auto feature_id = result.feature_index < feats.feature.size()
+            ? feats.feature[result.feature_index] : std::string("unknown");
+          const double progress = total_work == 0 ? 1.0
+            : static_cast<double>(total_completed_work) / static_cast<double>(total_work);
+          std::string message = "MetFrag completed " + std::to_string(total_completed_work) +
+            "/" + std::to_string(total_work) + " features across analyses; current analysis " +
+            std::to_string(ai + 1) + "/" + std::to_string(n_ana) + " " + ana +
+            "; " + std::to_string(total_candidates) + " candidates accumulated; feature " +
+            feature_id + " yielded " + std::to_string(result.candidate_count) +
+            " candidates in " + std::to_string(result.elapsed_ms) + " ms" +
+            (result.cache_hit ? " (cache hit)" : "") + "; " +
+            std::to_string(pending.size()) + " feature jobs pending; elapsed " +
+            std::to_string(elapsed_seconds) + " s";
+          if (eta_seconds >= 0)
+            message += "; estimated remaining " + std::to_string(eta_seconds) + " s";
+          access.report_progress(progress, message + ".");
         }
-        pending.clear();
+        return collected_any;
+      };
+      auto wait_for_ready = [&]()
+      {
+        while (!collect_ready())
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
       };
 
       for (int fi = 0; fi < n_feat; ++fi)
@@ -1660,10 +1789,10 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           continue;
         pending.emplace_back(std::async(std::launch::async, process_feature, fi));
         if (pending.size() >= static_cast<std::size_t>(params.feature_parallelism))
-          collect_pending();
+          wait_for_ready();
       }
-      if (!pending.empty())
-        collect_pending();
+      while (!pending.empty())
+        wait_for_ready();
 
       std::cerr << "  Found " << suspect_buffers[ai].size()
                 << " suspect(s) in " << ana << std::endl;
@@ -1720,6 +1849,7 @@ using Json = nlohmann::json;
         const int maximum_tree_depth = parameters.value("maximum_tree_depth", 2);
         const int number_threads = parameters.value("number_threads", 1);
         const int feature_parallelism = parameters.value("feature_parallelism", 2);
+        const int feature_timeout_seconds = parameters.value("feature_timeout_seconds", 0);
         const bool cache_candidates = parameters.value("cache_candidates", true);
         const bool include_fragment_smiles = parameters.value("include_fragment_smiles", true);
         const bool use_smiles = parameters.value("use_smiles", true);
@@ -1741,6 +1871,8 @@ using Json = nlohmann::json;
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: number_threads must be >= 1");
         if (feature_parallelism < 1)
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: feature_parallelism must be >= 1");
+        if (feature_timeout_seconds < 0 || feature_timeout_seconds > 86400)
+            throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: feature_timeout_seconds must be between 0 and 86400");
         if (score_types.size() != score_weights.size())
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: score_types and score_weights must have the same length");
 
@@ -1830,6 +1962,7 @@ using Json = nlohmann::json;
             ? "LocalCSV" : database_type;
         p.comp_tox_database = database_type == "CompToxCSV";
         p.feature_parallelism = feature_parallelism;
+        p.feature_timeout_seconds = feature_timeout_seconds;
         p.cache_candidates = cache_candidates;
         p.ppm = ppm;
         p.isotopePpm = isotope_ppm;

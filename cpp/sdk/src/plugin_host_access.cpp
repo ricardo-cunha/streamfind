@@ -12,11 +12,13 @@ namespace detail {
 
 struct ReadRows {
     std::vector<std::string> names;
+    std::vector<bool> arrays;
     Json rows = Json::array();
 };
 
 struct ReadBatch {
     std::vector<std::string> names;
+    std::vector<bool> arrays;
     PluginProjectAccess::JsonBatchCallback callback;
     std::exception_ptr exception;
     std::uint64_t row_count = 0;
@@ -44,7 +46,15 @@ streamfind_plugin_status consume_rows(
                 if (source.element_size != sizeof(streamfind_plugin_string_view))
                     return STREAMFIND_PLUGIN_SCHEMA_ERROR;
                 const auto *values = static_cast<const streamfind_plugin_string_view *>(source.data);
-                object[result.names[column]] = std::string(values[row].data, values[row].size);
+                const std::string text(values[row].data, values[row].size);
+                if (result.arrays[column]) {
+                    auto parsed = Json::parse(text, nullptr, false);
+                    if (parsed.is_discarded() || !parsed.is_array())
+                        return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                    object[result.names[column]] = std::move(parsed);
+                } else {
+                    object[result.names[column]] = text;
+                }
                 break;
             }
             case STREAMFIND_PLUGIN_COLUMN_INT64:
@@ -92,7 +102,15 @@ streamfind_plugin_status consume_batch(
                 if (source.element_size != sizeof(streamfind_plugin_string_view))
                     return STREAMFIND_PLUGIN_SCHEMA_ERROR;
                 const auto *values = static_cast<const streamfind_plugin_string_view *>(source.data);
-                object[result.names[column]] = std::string(values[row].data, values[row].size);
+                const std::string text(values[row].data, values[row].size);
+                if (result.arrays[column]) {
+                    auto parsed = Json::parse(text, nullptr, false);
+                    if (parsed.is_discarded() || !parsed.is_array())
+                        return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                    object[result.names[column]] = std::move(parsed);
+                } else {
+                    object[result.names[column]] = text;
+                }
                 break;
             }
             case STREAMFIND_PLUGIN_COLUMN_INT64:
@@ -157,6 +175,13 @@ streamfind_plugin_column_type PluginHostAccess::column_type(
     return column->second;
 }
 
+bool PluginHostAccess::column_is_array(
+    const std::string &table_name, const std::string &column_name) const {
+    const auto &context = *static_cast<const PluginDataServiceContext *>(execution_context_);
+    const auto table = context.array_columns.find(table_name);
+    return table != context.array_columns.end() && table->second.contains(column_name);
+}
+
 Json PluginHostAccess::query(const std::string &sql) {
     const auto select = std::string("SELECT ");
     const auto from = sql.find(" FROM ", select.size());
@@ -176,13 +201,17 @@ Json PluginHostAccess::query(const std::string &sql) {
         begin = end + 1;
     }
     std::vector<streamfind_plugin_batch_column> requested(names.size());
-    for (std::size_t i = 0; i < names.size(); ++i) {
-        const auto type = column_type(table, names[i]);
-        requested[i] = {names[i].data(), static_cast<uint32_t>(names[i].size()),
-                        type, 0, nullptr, 0, 0, nullptr};
-    }
     detail::ReadRows result;
     result.names = names;
+    result.arrays.reserve(names.size());
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        const auto type = column_type(table, names[i]);
+        const bool array = column_is_array(table, names[i]);
+        result.arrays.push_back(array);
+        requested[i] = {names[i].data(), static_cast<uint32_t>(names[i].size()),
+                        type, array ? STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY : 0u,
+                        nullptr, 0, 0, nullptr};
+    }
     const auto status = host_.read_batch(
         execution_context_, table.data(), static_cast<uint32_t>(table.size()), requested.data(),
         static_cast<uint32_t>(requested.size()), 0, UINT64_MAX, &detail::consume_rows, &result,
@@ -192,7 +221,8 @@ Json PluginHostAccess::query(const std::string &sql) {
                                  std::to_string(status));
     for (auto &row : result.rows) {
         for (auto &[name, value] : row.items()) {
-            if (!value.is_string() && !value.is_null()) value = value.dump();
+            if (!value.is_string() && !value.is_null() && !column_is_array(table, name))
+                value = value.dump();
         }
     }
     return result.rows;
@@ -232,11 +262,17 @@ void PluginHostAccess::read_batches(const std::string &table_name,
         throw std::invalid_argument("invalid dynamic project batch read request");
 
     std::vector<streamfind_plugin_batch_column> requested(column_names.size());
+    detail::ReadBatch batch_template;
+    batch_template.names = column_names;
+    batch_template.arrays.reserve(column_names.size());
     for (std::size_t i = 0; i < column_names.size(); ++i) {
         if (column_names[i].empty()) throw std::invalid_argument("empty dynamic project read column");
         const auto type = column_type(table_name, column_names[i]);
+        const bool array = column_is_array(table_name, column_names[i]);
+        batch_template.arrays.push_back(array);
         requested[i] = {column_names[i].data(), static_cast<uint32_t>(column_names[i].size()),
-                        type, 0, nullptr, 0, 0, nullptr};
+                        type, array ? STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY : 0u,
+                        nullptr, 0, 0, nullptr};
     }
 
     constexpr std::uint64_t batch_size = 4096;
@@ -245,6 +281,7 @@ void PluginHostAccess::read_batches(const std::string &table_name,
         if (is_cancelled()) return;
         detail::ReadBatch batch;
         batch.names = column_names;
+        batch.arrays = batch_template.arrays;
         batch.callback = callback;
         const auto status = host_.read_batch(
             execution_context_, table_name.data(), static_cast<uint32_t>(table_name.size()),
@@ -406,7 +443,8 @@ void PluginHostAccess::emit_table_rows(
         auto &descriptor = columns[column];
         descriptor.name = column_names[column].data();
         descriptor.name_size = static_cast<uint32_t>(column_names[column].size());
-        descriptor.flags = 0;
+        descriptor.flags = column_types[column] == "array"
+            ? STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY : 0;
         descriptor.row_count = rows.size();
         descriptor.validity_bitmap = validity[column].data();
         if (column_types[column] == "integer") {

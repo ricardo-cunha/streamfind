@@ -109,6 +109,7 @@ export type WorkflowDefinition = {
   workflow_id?: string;
   name?: string;
   version: number;
+  definition_revision: number;
   metadata: WorkflowMetadata;
   operations: WorkflowOperationDefinition[];
   connections: WorkflowConnectionDefinition[];

@@ -905,46 +905,51 @@ sfms:eicRtColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Rt" ;
-    skos:definition "Mass-spectrometry table column eic_rt." ;
+    skos:definition "Retention-time axis for a feature EIC, as a typed numeric array." ;
     sf:columnName "eic_rt" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:eicMzColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Mz" ;
-    skos:definition "Mass-spectrometry table column eic_mz." ;
+    skos:definition "Observed m/z values paired with the feature EIC points, as a typed numeric array." ;
     sf:columnName "eic_mz" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:eicIntensityColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Intensity" ;
-    skos:definition "Mass-spectrometry table column eic_intensity." ;
+    skos:definition "Raw EIC intensities, as a typed numeric array paired with eic_rt." ;
     sf:columnName "eic_intensity" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:eicBaselineColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Baseline" ;
-    skos:definition "Mass-spectrometry table column eic_baseline." ;
+    skos:definition "Baseline values paired with the feature EIC points, as a typed numeric array." ;
     sf:columnName "eic_baseline" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:eicSmoothedColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Smoothed" ;
-    skos:definition "Mass-spectrometry table column eic_smoothed." ;
+    skos:definition "Smoothed EIC intensities paired with eic_rt, as a typed numeric array." ;
     sf:columnName "eic_smoothed" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:ms1SizeColumn
     a sf:Column ;
@@ -959,19 +964,21 @@ sfms:ms1MzColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Ms1 Mz" ;
-    skos:definition "Mass-spectrometry table column ms1_mz." ;
+    skos:definition "MS1 centroid m/z values, as a typed numeric array." ;
     sf:columnName "ms1_mz" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:ms1IntensityColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Ms1 Intensity" ;
-    skos:definition "Mass-spectrometry table column ms1_intensity." ;
+    skos:definition "MS1 centroid intensities paired with ms1_mz, as a typed numeric array." ;
     sf:columnName "ms1_intensity" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:ms2SizeColumn
     a sf:Column ;
@@ -986,19 +993,21 @@ sfms:ms2MzColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Ms2 Mz" ;
-    skos:definition "Mass-spectrometry table column ms2_mz." ;
+    skos:definition "MS2 fragment m/z values, as a typed numeric array." ;
     sf:columnName "ms2_mz" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:ms2IntensityColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Ms2 Intensity" ;
-    skos:definition "Mass-spectrometry table column ms2_intensity." ;
+    skos:definition "MS2 fragment intensities paired with ms2_mz, as a typed numeric array." ;
     sf:columnName "ms2_intensity" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:isotopeTheoreticalPeaksColumn
     a sf:Column ;
@@ -2117,20 +2126,22 @@ sfms:dbMs2MzColumn
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Mz" ;
-    skos:definition "NTA suspect or internal-standard table column db_ms2_mz." ;
+    skos:definition "Database MS2 fragment m/z values as a typed numeric array." ;
     sf:columnName "db_ms2_mz" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:dbMs2IntensityColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Intensity" ;
-    skos:definition "NTA suspect or internal-standard table column db_ms2_intensity." ;
+    skos:definition "Database MS2 fragment intensities as a typed numeric array paired with db_ms2_mz." ;
     sf:columnName "db_ms2_intensity" ;
-    sf:type "string" ;
-    sf:storageType "VARCHAR" .
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
 
 sfms:dbMs2FormulaColumn
     a sf:Column ;

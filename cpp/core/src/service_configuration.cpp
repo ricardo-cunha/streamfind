@@ -41,6 +41,19 @@ ServiceConfiguration load_service_configuration(const std::filesystem::path &con
             configuration.tray_status_interval_ms = static_cast<std::uint32_t>(value);
         }
     }
+    if (document.contains("worker")) {
+        const auto &worker = document.at("worker");
+        if (!worker.is_object()) throw std::invalid_argument("streamfind.json worker must be an object");
+        if (worker.contains("memory_limit_mb")) {
+            const auto &value = worker.at("memory_limit_mb");
+            if (!value.is_number_unsigned() && !value.is_number_integer())
+                throw std::invalid_argument("streamfind.json worker.memory_limit_mb must be a non-negative integer");
+            const auto limit = value.get<std::int64_t>();
+            if (limit < 0 || static_cast<std::uint64_t>(limit) > 1048576)
+                throw std::invalid_argument("streamfind.json worker.memory_limit_mb must be between 0 and 1048576");
+            configuration.worker_memory_limit_mb = static_cast<std::uint64_t>(limit);
+        }
+    }
     return configuration;
 }
 

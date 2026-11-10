@@ -562,7 +562,7 @@ sfms:findFeatures
     skos:prefLabel "Find features" ;
     skos:definition "Detect chromatographic MS1 features from every analysis in the analyses table. The operation reads source files through the native reader, optionally reuses persisted spectra headers, clusters centroid traces within retention-time windows, applies configurable adaptive smoothing, and emits the feature table. Smoothing defaults to enabled with a seven-point main window, a three-point sharp-peak window, and full strength." ;
     sf:category "nta-feature-detection" ;
-    sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range. Smoothing is enabled by default: smoothingWindow=7 and smoothingSharpWindow=3 are window lengths in sampled data points, not seconds, and smoothingStrength=1 uses the configured smoother fully. Disable smoothing or set strength to 0 when weak peaks must be preserved; this copies raw EIC intensities into eic_smoothed but may retain more noise. Larger windows suppress more noise but can merge or flatten nearby peaks." ;
+    sf:guidance "Connect analysesTable. Optionally connect spectraHeadersTable to reuse persisted spectra headers; use it only when its rows match the same analysis names and indices. If it is omitted or stale, headers are read directly from the source files. The operation processes every analysis in analysesTable. Optionally add rows to rtWindows with columns rtmin and rtmax to restrict detection to multiple retention-time windows; omit it or leave it empty to use the full retention-time range. baseQuantile must be strictly between 0 and 1; it selects the base percentile for each RT bin's positive intensities, then adapts to spectrum variability and signal-to-noise ratio. Lower values lower the estimated noise threshold and can preserve weak peaks; noiseThreshold remains a minimum. Smoothing is enabled by default: smoothingWindow=7 and smoothingSharpWindow=3 are window lengths in sampled data points, not seconds, and smoothingStrength=1 uses the configured smoother fully. Disable smoothing or set strength to 0 when weak peaks must be preserved; this copies raw EIC intensities into eic_smoothed but may retain more noise. Larger windows suppress more noise but can merge or flatten nearby peaks." ;
     sf:hasParameter
         sfms:rtWindowsParameter,
         sfms:baseQuantileParameter,
@@ -591,7 +591,7 @@ sfms:loadFeaturesMs1
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Load features MS1 spectra" ;
-    skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store the encoded MS1 spectrum on the feature table." ;
+    skos:definition "Read MS1 points from the native source files for each persisted feature, cluster them into a consensus spectrum, and store its m/z and intensity values as typed numeric arrays on the feature table." ;
     sf:category "nta-spectrum-loading" ;
     sf:guidance "Run after find_features. The operation reads every analysis from the analyses table and the latest connected feature table; filtered controls whether already-filtered features are skipped. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. The output updates ms1_size, ms1_mz, and ms1_intensity." ;
     sf:hasParameter
@@ -612,7 +612,7 @@ sfms:loadFeaturesMs2
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Load features MS2 spectra" ;
-    skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store the encoded MS2 spectrum on the feature table." ;
+    skos:definition "Read MS2 points from the native source files for each persisted feature using the precursor isolation window, cluster them into a consensus spectrum, and store its m/z and intensity values as typed numeric arrays on the feature table." ;
     sf:category "nta-spectrum-loading" ;
     sf:guidance "Run after load_features_ms1 when MS1 and MS2 evidence are both required. The operation reads every analysis from the analyses table and the latest connected feature table. Optionally connect spectraHeadersTable from read_mass_spec_files to reuse persisted scan headers and avoid reparsing native headers. It updates ms2_size, ms2_mz, and ms2_intensity." ;
     sf:hasParameter
@@ -633,7 +633,7 @@ sfms:subtractBlank
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Subtract blank background" ;
     skos:definition "Flag features whose intensity is largely explained by blank analyses, using RT and m/z expansion windows. The operation processes every analysis and resolves its associated blank replicate from analysesTable." ;
-    sf:guidance "Connect analysesTable and featuresTable. The replicate and blank columns in featuresTable describe feature rows but do not replace analysesTable: analysesTable remains required because it supplies authoritative native source paths and analysis indices needed to load each associated blank spectrum. Every analysis is processed using its blank assignment. Optionally connect spectraHeadersTable to reuse persisted spectra headers for RT/m/z targeting. Matching persisted headers avoid reparsing source headers; missing or stale rows fall back to native header loading." ;
+    sf:guidance "Connect analysesTable and featuresTable. The replicate and blank columns in featuresTable describe feature rows but do not replace analysesTable: analysesTable remains required because it supplies authoritative native source paths and analysis indices needed to load each associated blank spectrum. Every feature row is evaluated using its analysis's blank assignment, including rows already marked filtered. When blank subtraction filters a row, it preserves existing filter reasons and appends blank_subtraction once. Run before quality filters when you want blank subtraction applied before later filtering decisions. Optionally connect spectraHeadersTable to reuse persisted spectra headers for RT/m/z targeting. Matching persisted headers avoid reparsing source headers; missing or stale rows fall back to native header loading." ;
     sf:hasParameter
         sfms:blankThresholdParameter,
         sfms:rtExpandParameter,
@@ -759,10 +759,11 @@ sfms:createComponents
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Create components" ;
-    skos:definition "Join correlated features from every analysis into components based on EIC correlation within a retention-time window." ;
-    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. It does not accept an analysis_names parameter." ;
+    skos:definition "Join correlated features from every analysis into RT-bounded components based on EIC correlation and isotope spacing." ;
+    sf:guidance "The operation processes every analysis in the connected featuresTable, matching find_features. Pairwise RT compatibility uses rt_window, while max_component_rt_span limits the total RT width of each resulting component and prevents transitive chains from extending across broad RT ranges. Candidate links are processed strongest EIC correlation first, then by smaller RT gap; isotope-spacing links are retained but processed after correlation-supported links. It does not accept an analysis_names parameter." ;
     sf:hasParameter
         sfms:rtWindowParameter,
+        sfms:maxComponentRtSpanParameter,
         sfms:minCorrelationParameter,
         sfcore:debugAnalysisParameter,
         sfms:debugRtParameter ;
@@ -932,7 +933,7 @@ sfms:metfragScreening
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Suspect screening with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features using a selectable candidate database, then rank resulting candidates into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. Provide user-defined candidates through the suspect_targets parameter; those rows take precedence and automatically use LocalCSV. Select PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets is empty, LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
+    sf:guidance "Requires Java 21 and MetFragCL. The operation processes every row in the connected featuresTable except rows marked filtered=true when filtered is false; set filtered=true to include those rows. Provide user-defined candidates through the suspect_targets parameter; those rows take precedence and automatically use LocalCSV. Select PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets is empty, LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. top_n limits score-ranked candidates that StreamFind normalizes, isotope-scores, and emits per feature; it does not stop MetFrag's database search early. Set feature_timeout_seconds above zero to bound each MetFrag child process. A timeout terminates that process tree and fails the entire operation with no partial result publication; zero leaves the timeout disabled. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -950,6 +951,7 @@ sfms:metfragScreening
         sfms:maximumTreeDepthParameter,
         sfms:numberThreadsParameter,
         sfms:featureParallelismParameter,
+        sfms:featureTimeoutSecondsParameter,
         sfms:cacheCandidatesParameter,
         sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
@@ -965,7 +967,7 @@ sfms:findInternalStandardsMetfrag
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards with MetFrag" ;
     skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and user-supplied internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
-    skos:guidance "Provide user-defined internal-standard candidates through the suspect_targets parameter, normally including deuterated compounds. The operation always uses those rows as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure; D or [2H] formulas also include bounded partial D-to-H isotopologues below the dominant labelled ion, matching the annotate_components base-ion convention, and the result is reported in the internal-standard table. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    skos:guidance "The operation processes every row in the connected featuresTable except rows marked filtered=true when filtered is false; set filtered=true to include those rows. Provide user-defined internal-standard candidates through the suspect_targets parameter, normally including deuterated compounds. The operation always uses those rows as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. top_n limits score-ranked candidates that StreamFind normalizes, isotope-scores, and emits per feature, after MetFrag has completed its database search. Set feature_timeout_seconds above zero to bound each MetFrag child process. A timeout terminates that process tree and fails the entire operation with no partial result publication; zero disables the timeout. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure; D or [2H] formulas also include bounded partial D-to-H isotopologues below the dominant labelled ion, matching the annotate_components base-ion convention, and the result is reported in the internal-standard table. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -981,6 +983,7 @@ sfms:findInternalStandardsMetfrag
         sfms:maximumTreeDepthParameter,
         sfms:numberThreadsParameter,
         sfms:featureParallelismParameter,
+        sfms:featureTimeoutSecondsParameter,
         sfms:cacheCandidatesParameter,
         sfms:includeFragmentSmilesParameter,
         sfms:useSmilesParameter,
@@ -995,10 +998,14 @@ sfms:fragmentSuspectTargets
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:prefLabel "Generate suspect fragmentation trees" ;
-    skos:definition "Generate a structural top-down fragmentation tree for every SMILES in the connected suspectTargetsTable using the standalone MetFrag Fragmenter CLI, preserving MetFrag-generated parent links and exposed structure metadata." ;
+    skos:definition "Generate a structural top-down fragmentation tree for every SMILES in the connected suspectTargetsTable using the standalone MetFrag Fragmenter CLI, preserving MetFrag-generated parent links and exposed structure metadata. Per-component runtime and output size, fragmentation depth, and total emitted fragment rows are bounded by operation parameters; exceeding an output or row limit fails the operation without publishing a partial table." ;
     sf:category "structure-fragmentation" ;
-    sf:guidance "Connect suspectTargetsTable. Rows without SMILES are skipped. Requires Java 21 and the streamfind MetFrag Fragmenter JAR. Install dependency mass_spec.metfrag_fragmenter to download the pinned public v0.2.0 release into <streamfind-home>/tools/metfrag/streamfind-metfrag-fragmenter.jar, or set STREAMFIND_METFRAG_FRAGMENTER_JAR to a local JAR path. Parent links describe the generator's top-down traversal, not experimentally observed MS/MS transitions. Neutral-loss structures are limited to matches exposed by MetFrag." ;
-    sf:hasParameter sfms:fragmentationDepthParameter ;
+    sf:guidance "Connect suspectTargetsTable. Rows without SMILES are skipped. Requires Java 21 and the streamfind MetFrag Fragmenter JAR. Install dependency mass_spec.metfrag_fragmenter to download the pinned public release into <streamfind-home>/tools/metfrag; its release and embedded JAR versions are kept in sync by the dependency definition. Alternatively, set STREAMFIND_METFRAG_FRAGMENTER_JAR to a local JAR path with that same version. Parent links describe the generator's top-down traversal, not experimentally observed MS/MS transitions. fragmentation_depth is limited to 1–8. fragmenter_timeout_seconds applies per disconnected SMILES component (default 120 seconds) and uses bounded process termination. fragmenter_output_limit_mb caps combined stdout/stderr per component (default 64 MiB). maximum_fragment_rows caps the full operation output (default 250,000); exceeding a limit fails before publishing a partial table. A successful empty fragment array is a valid zero-fragment result; timeouts, nonzero exits, and malformed JSON are failures. Neutral-loss structures are limited to matches exposed by MetFrag." ;
+    sf:hasParameter
+        sfms:fragmentationDepthParameter,
+        sfms:fragmenterTimeoutSecondsParameter,
+        sfms:fragmenterOutputLimitMbParameter,
+        sfms:maximumFragmentRowsParameter ;
     sf:hasInputPort sfms:suspectTargetsTable ;
     sf:hasOutputPort sfms:fragmentationTreeTable, sfcore:operationSuccessSignal .
 

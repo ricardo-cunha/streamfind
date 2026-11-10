@@ -10,6 +10,8 @@
 #if defined(_WIN32)
 #include <windows.h>
 #elif defined(__linux__)
+#include <fcntl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 #include "streamfind/catalogue.hpp"
@@ -46,6 +48,64 @@ std::filesystem::path executable_path(int argc, char **argv) {
     if (argc > 0 && argv != nullptr && argv[0] != nullptr)
         return std::filesystem::absolute(std::filesystem::path(argv[0]));
     return std::filesystem::current_path() / "streamfind-mcp";
+}
+
+void ensure_local_service(const std::filesystem::path &mcp_executable) {
+#ifdef _WIN32
+    const auto cli = mcp_executable.parent_path() / "streamfind.exe";
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
+    const auto null_handle = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING,
+                                        FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (null_handle == INVALID_HANDLE_VALUE)
+        throw std::runtime_error("unable to prepare streamfind service startup");
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = null_handle;
+    startup.hStdOutput = null_handle;
+    startup.hStdError = null_handle;
+    PROCESS_INFORMATION process{};
+    auto command = L"\"" + cli.wstring() + L"\" service start";
+    const auto launched = CreateProcessW(cli.c_str(), command.data(), nullptr, nullptr, TRUE,
+                                         CREATE_NO_WINDOW, nullptr,
+                                         mcp_executable.parent_path().c_str(), &startup, &process);
+    CloseHandle(null_handle);
+    if (!launched) throw std::runtime_error("unable to start streamfind service manager");
+    CloseHandle(process.hThread);
+    const auto waited = WaitForSingleObject(process.hProcess, 30000);
+    if (waited != WAIT_OBJECT_0) {
+        TerminateProcess(process.hProcess, 1);
+        CloseHandle(process.hProcess);
+        throw std::runtime_error("timed out waiting for streamfind service manager");
+    }
+    DWORD exit_code = 1;
+    GetExitCodeProcess(process.hProcess, &exit_code);
+    CloseHandle(process.hProcess);
+    if (exit_code != 0) throw std::runtime_error("streamfind service manager startup failed");
+#elif defined(__linux__)
+    const auto cli = mcp_executable.parent_path() / "streamfind";
+    const auto child = fork();
+    if (child < 0) throw std::runtime_error("unable to start streamfind service manager");
+    if (child == 0) {
+        const auto null_descriptor = open("/dev/null", O_RDWR);
+        if (null_descriptor >= 0) {
+            dup2(null_descriptor, STDIN_FILENO);
+            dup2(null_descriptor, STDOUT_FILENO);
+            dup2(null_descriptor, STDERR_FILENO);
+            if (null_descriptor > STDERR_FILENO) close(null_descriptor);
+        }
+        execl(cli.c_str(), cli.c_str(), "service", "start", static_cast<char *>(nullptr));
+        _exit(127);
+    }
+    int status = 0;
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        throw std::runtime_error("streamfind service manager startup failed");
+#else
+    (void)mcp_executable;
+#endif
 }
 
 namespace host_callbacks {
@@ -193,6 +253,14 @@ public:
         return Json{{"results", result}};
     }
 
+    std::vector<std::filesystem::path> workflow_demo_directories() const {
+        std::vector<std::filesystem::path> directories;
+        directories.reserve(plugins_.size());
+        for (const auto &loaded : plugins_)
+            directories.push_back(loaded->package_root / "resources" / "workflows");
+        return directories;
+    }
+
 private:
     struct LoadedPlugin {
         std::filesystem::path package_root;
@@ -219,6 +287,7 @@ int main(int argc, char **argv) {
         configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");
+        streamfind::mcp::detail::ensure_local_service(executable);
         dynamic_plugins = std::make_unique<streamfind::mcp::detail::DynamicPluginRuntime>();
         dynamic_plugins->load_and_register(configuration_path, registry, operations);
     } catch (const std::exception &error) {
@@ -235,7 +304,8 @@ int main(int argc, char **argv) {
 #else
             "streamfind-worker",
 #endif
-        configuration_path);
+        configuration_path,
+        [&dynamic_plugins] { return dynamic_plugins->workflow_demo_directories(); });
     while (std::getline(std::cin, line)) {
             try {
                 const auto request = streamfind::Json::parse(line);

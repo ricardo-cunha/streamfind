@@ -20,143 +20,6 @@
 namespace streamfind::mass_spec::nta::deconvolution
 {
 
-  // MARK: VectorStats
-  VectorStats::VectorStats(const std::vector<float> &input_data)
-  {
-    count = input_data.size();
-    if (count == 0)
-    {
-      mean = std_dev = coefficient_variation = 0.0f;
-      min_val = max_val = signal_noise_ratio = 0.0f;
-      return;
-    }
-    mean = ::streamfind::mass_spec::nta::utils::mean(input_data);
-    std_dev = ::streamfind::mass_spec::nta::utils::standard_deviation(input_data, mean);
-    coefficient_variation = (mean != 0.0f) ? std_dev / mean : 0.0f;
-    auto [min_it, max_it] = std::minmax_element(input_data.begin(), input_data.end());
-    min_val = *min_it;
-    max_val = *max_it;
-    float q25_val = ::streamfind::mass_spec::nta::utils::quantile(input_data, 0.25f);
-    float q90_val = ::streamfind::mass_spec::nta::utils::quantile(input_data, 0.90f);
-    signal_noise_ratio = (q25_val != 0.0f) ? q90_val / q25_val : 0.0f;
-  };
-
-  // MARK: AdaptiveNoiseParams
-  AdaptiveNoiseParams::AdaptiveNoiseParams(const VectorStats &stats, int data_size, float base_quantile)
-  {
-    bins = std::max(10, std::min(200, static_cast<int>(std::sqrt(data_size) * 1.5)));
-    // Adaptive quantile estimation based on coefficient of variation
-    if (stats.coefficient_variation > 2.0f)
-    {
-      quantile = base_quantile * 0.5f; // High variability
-    }
-    else if (stats.coefficient_variation > 1.0f)
-    {
-      quantile = base_quantile; // Medium variability
-    }
-    else
-    {
-      quantile = base_quantile * 2.0f; // Low variability
-    }
-    // Adjust based on signal-to-noise ratio
-    if (stats.signal_noise_ratio > 100.0f)
-    {
-      quantile *= 0.5f; // High dynamic range
-      threshold_multiplier = 1.2f;
-    }
-    else if (stats.signal_noise_ratio < 10.0f)
-    {
-      quantile *= 1.5f; // Low dynamic range
-      threshold_multiplier = 0.8f;
-    }
-    else
-    {
-      threshold_multiplier = 1.0f;
-    }
-
-    // Dynamic upper limit based on base_quantile to allow aggressive denoising when requested
-    float max_quantile = std::max(0.30f, base_quantile * 1.2f); // Allow up to 20% higher than base_quantile
-    quantile = std::clamp(quantile, 0.01f, max_quantile);
-
-    // Adjust bins based on data sparsity
-    float data_sparsity = static_cast<float>(data_size) / bins;
-    if (data_sparsity < 5.0f)
-    {
-      bins = std::max(5, data_size / 5);
-    }
-    else if (data_sparsity > 50.0f)
-    {
-      bins = std::min(200, data_size / 20);
-    }
-  };
-
-  // MARK: calculate_bin_assignments
-  std::vector<int> calculate_bin_assignments(const std::vector<float> &data, int num_bins)
-  {
-    const size_t n = data.size();
-    std::vector<int> assignments(n);
-
-    if (num_bins <= 1 || n == 0)
-    {
-      std::fill(assignments.begin(), assignments.end(), 0);
-      return assignments;
-    }
-
-    for (size_t i = 0; i < n; ++i)
-    {
-      assignments[i] = std::min(static_cast<int>(i * num_bins / n), num_bins - 1);
-    }
-    return assignments;
-  };
-
-  // MARK: calculate_noise_levels
-  std::vector<float> calculate_noise_levels(const std::vector<float> &intensities,
-                                            const AdaptiveNoiseParams &params,
-                                            float noise_threshold)
-  {
-    const int n = intensities.size();
-    std::vector<float> noise_levels(n);
-    auto bin_assignments = calculate_bin_assignments(intensities, params.bins);
-    std::vector<std::vector<float>> bin_data(params.bins);
-    for (int i = 0; i < n; ++i)
-    {
-      bin_data[bin_assignments[i]].push_back(intensities[i]);
-    }
-    std::vector<float> bin_quantiles(params.bins, noise_threshold);
-    for (int bin_idx = 0; bin_idx < params.bins; ++bin_idx)
-    {
-      if (!bin_data[bin_idx].empty())
-      {
-        std::vector<float> positive;
-        positive.reserve(bin_data[bin_idx].size());
-        for (const float value : bin_data[bin_idx])
-          if (std::isfinite(value) && value > 0.0f)
-            positive.push_back(value);
-        if (positive.empty())
-          continue;
-
-        // The upper tail contains chromatographic ions, so using the requested
-        // quantile directly makes the noise estimate follow signal intensity.
-        // Estimate the background from the lower half and a robust IQR fence.
-        const float q25 = ::streamfind::mass_spec::nta::utils::quantile(positive, 0.25f);
-        const float q50 = ::streamfind::mass_spec::nta::utils::quantile(positive, 0.50f);
-        const float q75 = ::streamfind::mass_spec::nta::utils::quantile(positive, 0.75f);
-        const float robust_threshold = q50 + 1.5f * std::max(0.0f, q75 - q25);
-        const float lower_tail_quantile = std::min(params.quantile, 0.50f);
-        const float quantile_threshold =
-            ::streamfind::mass_spec::nta::utils::quantile(positive, lower_tail_quantile) *
-            params.threshold_multiplier;
-        bin_quantiles[bin_idx] = std::max(
-            noise_threshold, std::max(robust_threshold, quantile_threshold));
-      }
-    }
-    for (int i = 0; i < n; ++i)
-    {
-      noise_levels[i] = bin_quantiles[bin_assignments[i]];
-    }
-    return noise_levels;
-  };
-
   // MARK: cluster_by_mz
   std::vector<int> cluster_by_mz(
       const std::vector<float> &mz_values,
@@ -314,7 +177,7 @@ namespace streamfind::mass_spec::nta::deconvolution
       float noise_mean = ::streamfind::mass_spec::nta::utils::mean(raw_noise);
       float noise_stddev = ::streamfind::mass_spec::nta::utils::standard_deviation(raw_noise, noise_mean);
       int zeros_removed = raw_n_traces - static_cast<int>(non_zero_intensities.size());
-      float max_quantile = std::max(0.30f, baseQuantile * 1.2f);
+      constexpr float max_quantile = 0.50f;
 
       DEBUG_LOG("DEBUG Auto noise estimation: baseQuantile=" << baseQuantile
                                                              << " -> adaptive_quantile=" << noise_params.quantile << "/" << max_quantile
@@ -2154,25 +2017,19 @@ namespace streamfind::mass_spec::nta::deconvolution
         feature.correction = 1.0f;
 
         feature.eic_size = static_cast<int>(peak_rt.size());
-        std::string rt_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_rt, 4);
-        std::string mz_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_mz, 4);
-        std::string intensity_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_intensity, 4);
-        std::string baseline_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_baseline, 4);
-        std::string smoothed_encoded = ::mass_spec::reader::utils::encode_little_endian_from_float(peak_smoothed, 4);
-
-        feature.eic_rt = ::mass_spec::reader::utils::encode_base64(rt_encoded);
-        feature.eic_mz = ::mass_spec::reader::utils::encode_base64(mz_encoded);
-        feature.eic_intensity = ::mass_spec::reader::utils::encode_base64(intensity_encoded);
-        feature.eic_baseline = ::mass_spec::reader::utils::encode_base64(baseline_encoded);
-        feature.eic_smoothed = ::mass_spec::reader::utils::encode_base64(smoothed_encoded);
+        feature.eic_rt = std::move(peak_rt);
+        feature.eic_mz = std::move(peak_mz);
+        feature.eic_intensity = std::move(peak_intensity);
+        feature.eic_baseline = std::move(peak_baseline);
+        feature.eic_smoothed = std::move(peak_smoothed);
 
         // Set MS1 and MS2 as empty for now
         feature.ms1_size = 0;
-        feature.ms1_mz = "";
-        feature.ms1_intensity = "";
+        feature.ms1_mz.clear();
+        feature.ms1_intensity.clear();
         feature.ms2_size = 0;
-        feature.ms2_mz = "";
-        feature.ms2_intensity = "";
+        feature.ms2_mz.clear();
+        feature.ms2_intensity.clear();
 
         if (cluster_matches_debug_mz)
         {
@@ -2535,12 +2392,22 @@ namespace streamfind::mass_spec::nta::deconvolution
     input.buffers.resize(input.names.size());
 
     std::vector<float> mins, maxs;
-    for (const auto &row : parameters.value("rt_windows", Json::array()))
-    {
-      if (!row.is_object() || !row.contains("rtmin") || !row.contains("rtmax"))
-        throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
-      mins.push_back(row.at("rtmin").get<float>());
-      maxs.push_back(row.at("rtmax").get<float>());
+    const auto append_rt_windows = [&](const Json &rows) {
+      for (const auto &row : rows) {
+        if (!row.is_object() || !row.contains("rtmin") || !row.contains("rtmax"))
+          throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
+        mins.push_back(row.at("rtmin").get<float>());
+        maxs.push_back(row.at("rtmax").get<float>());
+      }
+    };
+    const auto rt_windows = parameters.value("rt_windows", Json::array());
+    if (rt_windows.is_object() && rt_windows.contains("$result_ref")) {
+      const auto result_id = rt_windows.at("$result_ref").get<std::string>();
+      if (result_id.empty()) throw std::invalid_argument("rt_windows result reference is empty");
+      access.read_batches("result:" + result_id, {"rtmin", "rtmax"}, "rtmin", append_rt_windows);
+    } else {
+      if (!rt_windows.is_array()) throw std::invalid_argument("rt_windows must be an array or table result reference");
+      append_rt_windows(rt_windows);
     }
     const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
         ? parameters.at("debug_analysis").get<std::string>() : std::string{};
@@ -2550,6 +2417,9 @@ namespace streamfind::mass_spec::nta::deconvolution
     const int smoothing_window = parameters.value("smoothing_window", 7);
     const int smoothing_sharp_window = parameters.value("smoothing_sharp_window", 3);
     const float smoothing_strength = parameters.value("smoothing_strength", 1.0f);
+    const float base_quantile = parameters.value("base_quantile", 0.99f);
+    if (!std::isfinite(base_quantile) || !(base_quantile > 0.0f && base_quantile < 1.0f))
+      throw std::invalid_argument("base_quantile must be greater than 0 and less than 1");
     if (smoothing_window < 1 || smoothing_sharp_window < 1 || smoothing_sharp_window > smoothing_window)
       throw std::invalid_argument("smoothing windows must be positive and smoothing_sharp_window must not exceed smoothing_window");
     if (smoothing_strength < 0.0f || smoothing_strength > 1.0f)
@@ -2561,7 +2431,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     try {
       find_features(input, mins, maxs, parameters.value("ppm_threshold", 10.0f), parameters.value("noise_threshold", 250.0f),
                     parameters.value("min_snr", 3.0f), parameters.value("min_traces", 3), parameters.value("baseline_window", 200.0f),
-                    parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), parameters.value("base_quantile", 0.99f),
+                    parameters.value("max_feature_width", parameters.value("max_width", 250.0f)), base_quantile,
                     smoothing_enabled, smoothing_window, smoothing_sharp_window, smoothing_strength,
                     debug_analysis, debug_mz, debug_spec_idx, debug);
     } catch (...) {

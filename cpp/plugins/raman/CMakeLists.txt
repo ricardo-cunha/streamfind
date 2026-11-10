@@ -33,7 +33,7 @@ target_include_directories(streamfind_raman_plugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src")
 add_custom_command(TARGET streamfind_raman_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+        "${STREAMFIND_BUNDLED_MANIFEST}"
         "$<TARGET_FILE_DIR:streamfind_raman_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
@@ -47,7 +47,7 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/raman/ontology)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
     DESTINATION plugins/raman/resources)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
     DESTINATION plugins/raman)
 install(TARGETS streamfind_raman_plugin
     RUNTIME DESTINATION plugins/raman

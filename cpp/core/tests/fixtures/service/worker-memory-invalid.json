@@ -1,0 +1,5 @@
+{
+  "worker": {
+    "memory_limit_mb": -1
+  }
+}

@@ -53,6 +53,7 @@ struct TsfLineSpectrum
 struct TsfCalibration
 {
   std::int32_t id = 0;
+  std::int32_t state_id = 0;
   std::int32_t model_type = 0;
   double digitizer_timebase = 0.0;
   double digitizer_delay = 0.0;
@@ -69,6 +70,7 @@ struct TsfCalibration
   double mz_max = 0.0;
   std::uint32_t tof_max = 0;
   bool otof_control = false;
+  bool data_analysis_recalibration = false;
 };
 
 struct BafLineSpectrum
@@ -93,6 +95,29 @@ struct BafCalibration
   double c3 = 0.0;
   double c4 = 0.0;
   bool valid = false;
+};
+
+struct BafCalibrantError
+{
+  double reference_mz = 0.0;
+  double error_ppm = 0.0;
+  double weight = 0.0;
+};
+
+struct BafMassCorrection
+{
+  bool applied = false;
+  int degree = -1;
+  double mz_min = 0.0;
+  double mz_max = 0.0;
+  double mz_center = 0.0;
+  double mz_scale = 1.0;
+  double coefficients[3] = {0.0, 0.0, 0.0};
+  double rms_before_ppm = 0.0;
+  double rms_after_ppm = 0.0;
+  double loo_rms_ppm = 0.0;
+  std::size_t reference_count = 0;
+  std::size_t scan_count = 0;
 };
 
 struct BafSpectrumMetadata
@@ -142,7 +167,16 @@ std::vector<TsfFrame> read_tsf_frames(const std::string &path);
 std::vector<TsfMsMsInfo> read_tsf_msms_info(const std::string &path);
 TsfLineSpectrum read_tsf_line_spectrum(const std::string &path, const TsfFrame &frame);
 TsfCalibration read_tsf_calibration(const std::string &path, const TsfFrame &frame);
-std::vector<double> tsf_tof_to_mz(const TsfCalibration &calibration, double frame_t1, double frame_t2, const std::vector<double> &tof);
+std::vector<TsfCalibration> read_tsf_calibrations(const std::string &path, const std::vector<TsfFrame> &frames);
+std::vector<double> tsf_tof_to_mz(
+    const TsfCalibration &calibration,
+    double frame_t1,
+    double frame_t2,
+    const std::vector<double> &tof);
+BafCalibration parse_baf_calibration(const std::string &hex_blob);
+double baf_index_to_mz(const BafCalibration &calibration, double index);
+BafMassCorrection fit_baf_mass_correction(const std::vector<BafCalibrantError> &calibrants);
+double apply_baf_mass_correction(const BafMassCorrection &correction, double mz);
 BafLineSpectrum read_baf_line_spectrum(const std::string &path, std::uint64_t line_array_id);
 BafProfileSpectrum read_baf_profile_spectrum(const std::string &path, std::uint64_t profile_array_id);
 std::vector<BafSpectrumMetadata> read_baf_spectra_metadata(const std::string &path);

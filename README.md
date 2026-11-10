@@ -5,11 +5,12 @@
 </p>
 
 streamfind is an open-source platform for reproducible analytical data
-processing. Projects are stored in DuckDB and processing is expressed as
-validated workflows. The platform includes a browser application, a native C++
-runtime, an MCP interface for applications and AI agents, and extensible
-domain plugins. Mass-spectrometry processing is provided by the built-in
-mass-spec plugin.
+processing. A project combines a DuckDB database for its workflow and metadata
+with a sibling `.data` folder for operation results. You build processing as a
+typed, validated workflow and run it through the local C++ service. The service
+supervises isolated operation workers and makes results available to both the
+browser app and MCP clients. Domain plugins provide the scientific operations;
+frontend plugins provide result viewers and other UI capabilities.
 
 ## Start here
 
@@ -19,31 +20,28 @@ mass-spec plugin.
 - [Use the C++ MCP server](docs/quickstart/cpp-mcp.md).
 - [Build and develop the C++ backend](cpp/README.md).
 - [Run the development frontend](frontend/README.md).
-- [Use the R interface](docs/components/bindings-r.md).
 - [Check the supported platform and interfaces](docs/status.md).
 
 ## What you can do
 
-- Create portable projects with metadata, workflows, results, and execution
-  history.
+- Create project databases with metadata and workflows, alongside their
+  `.data` result stores and execution history.
 - Discover operations and their typed inputs, outputs, parameters, constraints,
   and results from the shared semantic catalogue.
 - Build mass-spectrometry workflows for analyses, spectra, chromatograms,
   feature processing, isotope/adduct/loss annotation, and suspect screening.
 - Run workflows interactively in the browser or programmatically through MCP.
-- Extend the runtime with C++ domain plugins and build compatible frontend
-  viewers or editors.
+- Extend the backend with C++ domain plugins and the browser app with frontend
+  plugins for result viewers, editors, and other UI capabilities.
 
 ## Available interfaces
 
 | Interface | Availability | Recommended use |
 | --- | --- | --- |
-| Native C++ runtime | Windows x64 and Linux x86_64 packages | Native applications and integrations |
+| Native C++ runtime | Windows x64 and Linux x86_64 packages | Standalone use and client applications |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
 | Browser application | Included in native packages | Local project and workflow editing |
 | C++ developer kit | Separate Windows and Linux archives | Out-of-tree C++ plugins |
-| R package | Separate R interface | Existing R and Shiny workflows |
-| Python package | No public package | Use the C++ CLI or MCP interface |
 
 The current native package version is defined in [`VERSION`](VERSION). See
 [Releases](docs/releases.md) for archives, checksums, package contents, and
@@ -51,23 +49,35 @@ developer kits.
 
 ## How it is used
 
-The native service owns project sessions, DuckDB metadata transactions,
-workflow validation and execution, result publication, schemas, and audit
-information. Short-lived workers execute operations through the service data
-proxy; they do not open the project DuckDB. Domain plugins provide readers,
-algorithms, schemas, and catalogue entries.
-Applications can use the browser UI, the C++ API, the CLI, or MCP depending on
-the integration.
+The service is the shared control plane for the browser app, CLI, and MCP
+server. It owns project sessions, workflow state, DuckDB metadata updates,
+worker supervision, result publication, and audit information. Workers execute
+one operation at a time and exchange typed data through the service runtime;
+they do not open the project DuckDB. Tabular results use Arrow files in the
+project's `.data` store, while other result types use formats suited to their
+payload. Both web and MCP clients inspect the same published results and run
+state.
+
+## R package (legacy)
+
+The R package is maintained separately as [`streamfind.r`](https://git.uni-due.de/odea-project/streamfind/streamfind.r),
+with its reference documentation at <https://streamfind-r-836f9a.gitpages.uni-due.de>.
+It is the legacy StreamFind R package and is not part of this repository's
+native runtime or plugin framework. It may provide a starting point for a
+future R binding to the current streamfind platform; for now, consult its own
+repository and documentation for package status and usage.
 
 The C++ development guide documents the current MSYS2 UCRT64/GCC and Linux GCC
 toolchains, build and test commands, runtime package layout, plugin generator,
 optional developer kit, out-of-tree consumer check, and extracted-package release
-validation routines: [`cpp/README.md`](cpp/README.md).
+validation routines: [`cpp/README.md`](cpp/README.md). The plugin framework has
+two extension surfaces: native C++ backend plugins and TypeScript frontend
+plugins. See [`docs/plugin-development.md`](docs/plugin-development.md).
 
-The native archives include the built web app and a root-level `streamfind`
-launcher. Running it starts the local service and opens the app in the default
-browser. See [`docs/web-app.md`](docs/web-app.md) for installation and local
-development instructions.
+The native archives include the built web app and executables under `bin/`.
+Run `streamfind-app` to open the browser app; use `streamfind` to manage the
+shared local service. See [`docs/web-app.md`](docs/web-app.md) for installation
+and local development instructions.
 
 ## Vendor compatibility and trademarks
 
@@ -99,9 +109,12 @@ A typical client:
 
 1. calls `initialize`;
 2. discovers callable Operations with `tools/list`;
-3. calls `create`, then `describe`, `get_domain`, or `get_metadata`;
-4. invokes domain Operations with `database_path`;
-5. builds a persisted operation graph with operation nodes and typed connections;
+3. calls `create` to create a project, then `describe` or `get_metadata` to
+   inspect it;
+4. calls `get_domains` to discover available operation domains and
+   `get_operations` / `get_operation` to inspect operations;
+5. invokes operations with `database_path`, or builds a persisted operation
+   graph with nodes and typed connections;
 6. validates and runs the graph, then inspects its published results.
 
 Operations are discovered through `tools/list` and operation metadata. A
@@ -114,22 +127,6 @@ for request examples.
 The semantic catalogue defines operation names, operation parameters,
 nested input schemas, results, units, constraints, and agent-facing guidance.
 The C++ backend implements that public contract.
-
-## R package
-
-The R package provides the existing R and Shiny workflows for mass-spectrometry
-and non-target screening. Install it from GitHub:
-
-```r
-options(timeout = 600)
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("ricardo-cunha/streamfind", subdir = "bindings/r")
-```
-
-See [`docs/components/bindings-r.md`](docs/components/bindings-r.md) for the R
-workflow and Shiny application.
 
 ## Licensing
 

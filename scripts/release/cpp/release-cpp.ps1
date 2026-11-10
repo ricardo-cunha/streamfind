@@ -18,7 +18,7 @@ if ($canonicalVersion -ne $Version) {
     throw "Release version $Version does not match canonical version $canonicalVersion in $versionFile"
 }
 $env:STREAMFIND_PACKAGE_VERSION = $Version
-$buildDir = Join-Path $root 'tmp\build\mingw-ucrt64'
+$buildDir = Join-Path $root 'tmp\build\windows\core'
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'
 $toolchain = Initialize-MinGWUcrt64
@@ -77,5 +77,5 @@ if ($LASTEXITCODE -ne 0) { throw "Packaged C++ MCP smoke test failed ($LASTEXITC
 $runtimeArchive = Join-Path $Script:RELEASE_OUTPUT "streamfind-core-cpp-$Version-Windows-x86_64.zip"
 Move-Item $built.FullName $runtimeArchive -Force
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $cpackDir
-Write-ReleaseChecksums
+Write-ReleaseChecksums $Version
 Write-ReleaseLog "C++ runtime archive written to $Script:RELEASE_OUTPUT"

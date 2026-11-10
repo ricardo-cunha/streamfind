@@ -116,7 +116,8 @@ Json proxy_call(PluginDataServiceContext &context, const std::string &method, Js
     const auto response_json = context.data_proxy_request(data_proxy::request(
         "plugin-data-" + std::to_string(timestamp) + "-" +
             std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)),
-        context.data_proxy_session_id, context.data_proxy_run_id, {},
+        context.data_proxy_session_id, context.data_proxy_run_id,
+        context.data_proxy_operation_id,
         context.operation_instance, {}, std::move(payload)));
     const auto response = data_proxy::Envelope::from_json(response_json);
     if (!response.error_code.empty())
@@ -207,8 +208,14 @@ streamfind_plugin_status plugin_read_batch(
             detail::report_data_service_error(*context, std::move(message));
             return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
         };
-        if (!detail::allowed_table(*context, table)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-        Json requested_names = Json::array();
+        if (!detail::allowed_table(*context, table)) {
+            detail::report_data_service_error(*context,
+                "read_batch denied access to result table '" + table + "'");
+            return STREAMFIND_PLUGIN_NOT_ALLOWED;
+        }
+        if (table.rfind("result:", 0) != 0)
+            throw std::invalid_argument("worker table inputs must reference a published result file");
+        std::vector<std::string> source_column_names;
         for (uint32_t index = 0; index < column_count; ++index) {
             const auto &column = requested_columns[index];
             if (column.name == nullptr || column.name_size == 0)
@@ -218,127 +225,135 @@ streamfind_plugin_status plugin_read_batch(
             std::string bare_name = name;
             if (const auto dot = bare_name.find('.'); dot != std::string::npos)
                 bare_name = bare_name.substr(dot + 1);
-            if (!detail::allowed_column(*context, table, bare_name, false)) return STREAMFIND_PLUGIN_NOT_ALLOWED;
-            requested_names.push_back(bare_name);
-        }
-        Json rows;
-        {
-            rows = Json::array();
-            const auto batch_limit = std::min<std::uint64_t>(
-                limit == std::numeric_limits<std::uint64_t>::max() ? 16384 : limit, 16384);
-            std::uint64_t proxy_offset = offset;
-            while (rows.size() < batch_limit || limit == std::numeric_limits<std::uint64_t>::max()) {
-                const auto encoded = detail::proxy_call(*context, "read_batch_binary",
-                    Json{{"table", table}, {"columns", requested_names},
-                         {"offset", proxy_offset}, {"limit", batch_limit}});
-                const auto bytes = data_proxy::base64_decode(encoded.value("data", std::string{}));
-                const auto batch = data_proxy::arrow_ipc_decode_rows(bytes);
-                if (!batch.is_array() || batch.empty()) break;
-                for (const auto &row : batch) rows.push_back(row);
-                proxy_offset += batch.size();
-                if (batch.size() < batch_limit || limit != std::numeric_limits<std::uint64_t>::max()) break;
+            if (!detail::allowed_column(*context, table, bare_name, false)) {
+                detail::report_data_service_error(*context,
+                    "read_batch denied access to column '" + bare_name + "' in result table '" + table + "'");
+                return STREAMFIND_PLUGIN_NOT_ALLOWED;
             }
-            if (limit != std::numeric_limits<std::uint64_t>::max() && rows.size() > limit)
-                rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(limit), rows.end());
+            source_column_names.push_back(std::move(bare_name));
         }
+        const auto batch_limit = std::min<std::uint64_t>(
+            limit == std::numeric_limits<std::uint64_t>::max() ? 16384 : limit, 16384);
+        std::uint64_t proxy_offset = offset;
         constexpr std::size_t batch_size = 4096;
-        for (std::size_t begin = 0; begin < rows.size(); begin += batch_size) {
-            if (context->cancelled != nullptr && context->cancelled->load())
-                return STREAMFIND_PLUGIN_CANCELLED;
-            const auto count = std::min(batch_size, rows.size() - begin);
-            std::vector<std::vector<std::string>> text(column_count, std::vector<std::string>(count));
-            std::vector<std::vector<streamfind_plugin_string_view>> strings(column_count);
-            std::vector<std::vector<int64_t>> integers(column_count);
-            std::vector<std::vector<double>> doubles(column_count);
-            std::vector<std::vector<uint8_t>> booleans(column_count);
-            std::vector<std::vector<uint8_t>> validity(column_count, std::vector<uint8_t>((count + 7) / 8, 0));
-            std::vector<streamfind_plugin_batch_column> columns(column_count);
-            for (uint32_t column_index = 0; column_index < column_count; ++column_index) {
-                const auto &request = requested_columns[column_index];
-                // A read descriptor is metadata supplied by the plugin.  The
-                // proxy owns the authoritative schema, so an omitted/unknown
-                // type must not turn a valid remote read into an argument
-                // failure; represent it as UTF-8 text at the boundary.
-                auto request_type = request.type;
-                if (request_type < STREAMFIND_PLUGIN_COLUMN_UTF8 ||
-                    request_type > STREAMFIND_PLUGIN_COLUMN_BINARY)
-                    request_type = STREAMFIND_PLUGIN_COLUMN_UTF8;
-                strings[column_index].resize(count);
-                integers[column_index].resize(count);
-                doubles[column_index].resize(count);
-                booleans[column_index].resize(count);
-                for (std::size_t row = 0; row < count; ++row) {
-                    const auto &value = rows[begin + row].at(std::string(request.name, request.name_size));
-                    if (value.is_null()) continue;
-                    text[column_index][row] = value.is_string() ? value.get<std::string>() : value.dump();
-                    const auto numeric_type = request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ||
-                                              request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64;
-                    if (numeric_type && (text[column_index][row].empty() ||
-                                         text[column_index][row] == "null" ||
-                                         text[column_index][row] == "NULL"))
-                        continue;
-                    validity[column_index][row / 8] |= static_cast<uint8_t>(1u << (row % 8));
-                    switch (request_type) {
-                    case STREAMFIND_PLUGIN_COLUMN_UTF8:
-                    case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
-                    case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
-                    case STREAMFIND_PLUGIN_COLUMN_BINARY:
-                        if ((request.flags & STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY) != 0) {
-                            const auto parsed = Json::parse(text[column_index][row], nullptr, false);
-                            if (parsed.is_discarded() || !parsed.is_array()) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+        const auto emit_rows = [&](const Json &rows) -> streamfind_plugin_status {
+            if (!rows.is_array())
+                throw std::runtime_error("data proxy returned a non-array row batch");
+            for (std::size_t begin = 0; begin < rows.size(); begin += batch_size) {
+                if (context->cancelled != nullptr && context->cancelled->load())
+                    return STREAMFIND_PLUGIN_CANCELLED;
+                const auto count = std::min(batch_size, rows.size() - begin);
+                std::vector<std::vector<std::string>> text(column_count, std::vector<std::string>(count));
+                std::vector<std::vector<streamfind_plugin_string_view>> strings(column_count);
+                std::vector<std::vector<int64_t>> integers(column_count);
+                std::vector<std::vector<double>> doubles(column_count);
+                std::vector<std::vector<uint8_t>> booleans(column_count);
+                std::vector<std::vector<uint8_t>> validity(column_count, std::vector<uint8_t>((count + 7) / 8, 0));
+                std::vector<streamfind_plugin_batch_column> columns(column_count);
+                for (uint32_t column_index = 0; column_index < column_count; ++column_index) {
+                    const auto &request = requested_columns[column_index];
+                    // A read descriptor is metadata supplied by the plugin.  The
+                    // proxy owns the authoritative schema, so an omitted/unknown
+                    // type must not turn a valid remote read into an argument
+                    // failure; represent it as UTF-8 text at the boundary.
+                    auto request_type = request.type;
+                    if (request_type < STREAMFIND_PLUGIN_COLUMN_UTF8 ||
+                        request_type > STREAMFIND_PLUGIN_COLUMN_BINARY)
+                        request_type = STREAMFIND_PLUGIN_COLUMN_UTF8;
+                    strings[column_index].resize(count);
+                    integers[column_index].resize(count);
+                    doubles[column_index].resize(count);
+                    booleans[column_index].resize(count);
+                    for (std::size_t row = 0; row < count; ++row) {
+                        const auto &value = rows[begin + row].at(source_column_names[column_index]);
+                        if (value.is_null()) continue;
+                        text[column_index][row] = value.is_string() ? value.get<std::string>() : value.dump();
+                        const auto numeric_type = request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ||
+                                                  request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64;
+                        if (numeric_type && (text[column_index][row].empty() ||
+                                             text[column_index][row] == "null" ||
+                                             text[column_index][row] == "NULL"))
+                            continue;
+                        validity[column_index][row / 8] |= static_cast<uint8_t>(1u << (row % 8));
+                        switch (request_type) {
+                        case STREAMFIND_PLUGIN_COLUMN_UTF8:
+                        case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
+                        case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
+                        case STREAMFIND_PLUGIN_COLUMN_BINARY:
+                            if ((request.flags & STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY) != 0) {
+                                const auto parsed = Json::parse(text[column_index][row], nullptr, false);
+                                if (parsed.is_discarded() || !parsed.is_array()) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                            }
+                            strings[column_index][row] = {text[column_index][row].data(),
+                                                           static_cast<uint32_t>(text[column_index][row].size())};
+                            break;
+                        case STREAMFIND_PLUGIN_COLUMN_INT64:
+                            try {
+                                integers[column_index][row] = std::stoll(text[column_index][row]);
+                            } catch (const std::exception &) {
+                                throw std::invalid_argument("invalid integer in " + table + "." +
+                                                            std::string(request.name, request.name_size) +
+                                                            ": " + text[column_index][row]);
+                            }
+                            break;
+                        case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+                            try {
+                                doubles[column_index][row] = std::stod(text[column_index][row]);
+                            } catch (const std::exception &) {
+                                throw std::invalid_argument("invalid real in " + table + "." +
+                                                            std::string(request.name, request.name_size) +
+                                                            ": " + text[column_index][row]);
+                            }
+                            break;
+                        case STREAMFIND_PLUGIN_COLUMN_BOOL:
+                            if (text[column_index][row] != "true" && text[column_index][row] != "false" &&
+                                text[column_index][row] != "0" && text[column_index][row] != "1")
+                                return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+                            booleans[column_index][row] = text[column_index][row] == "true" || text[column_index][row] == "1";
+                            break;
+                        default: break;
                         }
-                        strings[column_index][row] = {text[column_index][row].data(),
-                                                       static_cast<uint32_t>(text[column_index][row].size())};
-                        break;
-                    case STREAMFIND_PLUGIN_COLUMN_INT64:
-                        try {
-                            integers[column_index][row] = std::stoll(text[column_index][row]);
-                        } catch (const std::exception &) {
-                            throw std::invalid_argument("invalid integer in " + table + "." +
-                                                        std::string(request.name, request.name_size) +
-                                                        ": " + text[column_index][row]);
-                        }
-                        break;
-                    case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
-                        try {
-                            doubles[column_index][row] = std::stod(text[column_index][row]);
-                        } catch (const std::exception &) {
-                            throw std::invalid_argument("invalid real in " + table + "." +
-                                                        std::string(request.name, request.name_size) +
-                                                        ": " + text[column_index][row]);
-                        }
-                        break;
-                    case STREAMFIND_PLUGIN_COLUMN_BOOL:
-                        if (text[column_index][row] != "true" && text[column_index][row] != "false" &&
-                            text[column_index][row] != "0" && text[column_index][row] != "1")
-                            return STREAMFIND_PLUGIN_SCHEMA_ERROR;
-                        booleans[column_index][row] = text[column_index][row] == "true" || text[column_index][row] == "1";
-                        break;
-                    default: break;
                     }
+                    auto &output = columns[column_index];
+                    output = request;
+                    output.type = request_type;
+                    output.data = (request_type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
+                                   request_type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
+                                   request_type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
+                                   request_type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? static_cast<const void *>(strings[column_index].data())
+                               : request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ? static_cast<const void *>(integers[column_index].data())
+                               : request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? static_cast<const void *>(doubles[column_index].data())
+                               : static_cast<const void *>(booleans[column_index].data());
+                    output.row_count = count;
+                    output.element_size = (request_type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
+                                           request_type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
+                                           request_type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
+                                           request_type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? sizeof(streamfind_plugin_string_view)
+                                         : request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ? sizeof(int64_t)
+                                         : request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? sizeof(double)
+                                         : sizeof(uint8_t);
+                    output.validity_bitmap = validity[column_index].data();
                 }
-                auto &output = columns[column_index];
-                output = request;
-                output.type = request_type;
-                output.data = (request_type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
-                               request_type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
-                               request_type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
-                               request_type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? static_cast<const void *>(strings[column_index].data())
-                           : request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ? static_cast<const void *>(integers[column_index].data())
-                           : request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? static_cast<const void *>(doubles[column_index].data())
-                           : static_cast<const void *>(booleans[column_index].data());
-                output.row_count = count;
-                output.element_size = (request_type == STREAMFIND_PLUGIN_COLUMN_UTF8 ||
-                                       request_type == STREAMFIND_PLUGIN_COLUMN_TIMESTAMP ||
-                                       request_type == STREAMFIND_PLUGIN_COLUMN_DECIMAL ||
-                                       request_type == STREAMFIND_PLUGIN_COLUMN_BINARY) ? sizeof(streamfind_plugin_string_view)
-                                     : request_type == STREAMFIND_PLUGIN_COLUMN_INT64 ? sizeof(int64_t)
-                                     : request_type == STREAMFIND_PLUGIN_COLUMN_FLOAT64 ? sizeof(double)
-                                     : sizeof(uint8_t);
-                output.validity_bitmap = validity[column_index].data();
+                const auto status = consume(consumer_context, columns.data(), column_count, count);
+                if (status != STREAMFIND_PLUGIN_OK) return status;
             }
-            const auto status = consume(consumer_context, columns.data(), column_count, count);
+            return STREAMFIND_PLUGIN_OK;
+        };
+        if (!context->receive_result_input_handle)
+            throw std::runtime_error("worker result input handle receiver is not configured");
+        const auto result_id = table.substr(std::string("result:").size());
+        const auto grant = detail::proxy_call(*context, "lease_result_input",
+            Json{{"result_id", result_id}});
+        (void)grant;
+        const auto native_handle = context->receive_result_input_handle();
+        data_proxy::ArrowFileBatchReader reader(native_handle);
+        for (;;) {
+            const auto batch = reader.read(proxy_offset, batch_limit, source_column_names);
+            if (batch.empty()) break;
+            const auto status = emit_rows(batch);
             if (status != STREAMFIND_PLUGIN_OK) return status;
+            proxy_offset += batch.size();
+            if (batch.size() < batch_limit || limit != std::numeric_limits<std::uint64_t>::max()) break;
         }
         return STREAMFIND_PLUGIN_OK;
     } catch (const std::exception &error) {

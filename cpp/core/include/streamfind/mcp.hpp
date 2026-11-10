@@ -4,6 +4,7 @@
 #include "streamfind/project.hpp"
 #include <filesystem>
 #include <functional>
+#include <vector>
 
 namespace streamfind::mcp {
 
@@ -13,10 +14,12 @@ class STREAMFIND_CORE_API Session {
 public:
     using DependencyList = std::function<Json()>;
     using DependencyInstaller = std::function<Json(const Json &)>;
+    using WorkflowDemoDirectories = std::function<std::vector<std::filesystem::path>()>;
     explicit Session(const OperationRegistry &operations = mcp::operations(),
                      DependencyList dependencies = {}, DependencyInstaller installer = {},
                      std::filesystem::path worker_executable = {},
-                     std::filesystem::path worker_configuration = {});
+                     std::filesystem::path worker_configuration = {},
+                     WorkflowDemoDirectories workflow_demo_directories = {});
     Json handle(const Json &request);
 
 private:
@@ -25,6 +28,7 @@ private:
     DependencyInstaller installer_;
     std::filesystem::path worker_executable_;
     std::filesystem::path worker_configuration_;
+    WorkflowDemoDirectories workflow_demo_directories_;
     Json project_ = Json::object();
 
 };

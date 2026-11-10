@@ -8,6 +8,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/readers/reader_agilent_ims.cpp
     src/readers/reader_agilent_chemstation.cpp
     src/readers/reader_bruker.cpp
+    src/readers/reader_bruker_calibration.cpp
     src/readers/reader_sciex.cpp
     src/readers/reader_thermo.cpp
     src/operations/base.cpp
@@ -18,6 +19,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/chromatograms/operations.cpp
     src/operations/nta/operations.cpp
     src/operations/nta/nta_deconvolution.cpp
+    src/operations/nta/nta_noise_estimation.cpp
     src/operations/nta/nta_alignment.cpp
     src/operations/nta/nta_annotation.cpp
     src/operations/nta/nta_assign_transformation_products.cpp
@@ -60,7 +62,7 @@ if(WIN32)
 endif()
 add_custom_command(TARGET streamfind_mass_spec_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+        "${STREAMFIND_BUNDLED_MANIFEST}"
         "$<TARGET_FILE_DIR:streamfind_mass_spec_plugin>/plugin.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue/catalogue.duckdb"
@@ -105,7 +107,7 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/COPYING"
     DESTINATION licenses RENAME zstd-COPYING.txt)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
     DESTINATION plugins/mass_spec/ontology)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"
+install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
     DESTINATION plugins/mass_spec)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
     DESTINATION plugins/mass_spec/resources)

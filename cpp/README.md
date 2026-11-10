@@ -1,7 +1,8 @@
 # streamfind-core
 
 Standalone C++20 core for project persistence and generic workflow execution.
-The core does not depend on R, Python, FastAPI, or React.
+The browser app is a separate client of the native service; scientific
+operations and project persistence are implemented in the C++ runtime.
 
 ## Native architecture
 
@@ -12,7 +13,7 @@ The C++ implementation is split into three layers:
 - `sdk/` defines the public plugin contract, semantic catalogue projection,
   manifest validation, and the versioned C ABI used by runtime-loaded libraries.
 - `plugins/` owns domain catalogues, readers, algorithms, and domain capability
-  bindings. The shipped domains are `mass_spec`, `raman`, and `sensors`.
+  implementations. The shipped domains are `mass_spec`, `raman`, and `sensors`.
 
 Plugins do not receive `Project`, DuckDB handles, STL objects, JSON objects, or
 C++ exceptions across the dynamic boundary. Dynamic execution receives an opaque
@@ -38,6 +39,7 @@ For a development-tree runtime, place `streamfind.json` beside
 ```json
 {
   "server": {"port": 8787},
+  "worker": {"memory_limit_mb": 0},
   "plugin_roots": ["C:/path/to/plugins"],
   "enabled_plugins": ["mass_spec", "raman"]
 }
@@ -45,6 +47,36 @@ For a development-tree runtime, place `streamfind.json` beside
 
 The `server.port` value is used by the service, app host, and CLI when no
 explicit port is supplied. A command-line port override takes precedence.
+
+`worker.memory_limit_mb` sets an optional memory budget for each worker process
+tree. `0` (the default) disables the budget. On Windows, streamfind applies the
+limit to the worker Job Object; on Linux, it monitors aggregate resident memory
+of the worker process group and terminates that group when it reaches the limit.
+Linux monitoring is sampled every 100 ms, so a short-lived spike can exceed the
+configured value briefly. A limit breach fails that operation and reports the
+configured budget; the service remains outside the worker process tree. Measure
+the workflow’s peak memory before choosing a limit, since a low value can stop a
+valid large analysis. The default is intentionally unlimited: operating systems
+already manage system memory, while a fixed application cap could reject a
+legitimate large analysis. Under Linux system-wide OOM pressure, workers raise
+their `oom_score_adj` so the kernel is more likely to reclaim a worker before
+the service; this is a preference, not a guarantee or a substitute for cgroup
+limits where strict isolation is required.
+Worker lifecycle metadata reports sampled `peak_memory_bytes` and
+`peak_memory_kind` (`job_commit` on Windows, `process_group_rss` on Linux), which
+can guide the choice of an optional cap using measurements from real runs. It
+also reports `last_progress_at` in UTC after the latest worker progress/log
+event.
+
+`GET /health` is the lightweight service liveness/readiness endpoint. It reports
+`alive`, `ready`, `state` (`ready` or `busy`), active worker/workflow counts, and
+the service instance. The CLI uses it for `service list`; `/session` remains the
+project-session inventory endpoint.
+
+The C++ service client uses a 300-second socket inactivity timeout by default.
+Set `STREAMFIND_SERVICE_REQUEST_TIMEOUT_SECONDS` to an integer from 1 to 86400
+to adjust the limit. A timed-out MCP request returns a clear service-timeout
+error instead of waiting indefinitely; clients can retry status reads.
 
 The host loads the core catalogue first, validates each selected package and
 ABI descriptor, imports the package catalogue, and exposes only capabilities
@@ -77,7 +109,9 @@ Native C++ preview packages are available from the
 
 ```cpp
 streamfind::ProjectOptions options{
-    "project.duckdb", "demo", std::nullopt, false, false, "mass_spec"
+    "project.duckdb",
+    streamfind::Json{{"name", "demo"}},
+    streamfind::Json::object()
 };
 auto project = streamfind::Project::create(options);
 ```
@@ -109,8 +143,10 @@ close()
 
 `Project` is move-only and owns its native DuckDB state. `close()` marks the
 handle closed; later operations fail. Destruction closes the handle as well.
-Project domains are assigned in `ProjectOptions` during creation and cannot be
-changed afterward. Opening a project does not modify its domain.
+`ProjectOptions` initializes project and workflow metadata; it does not assign
+domains. `get_domains()` derives the project's domain list from operation IDs
+in its persisted workflow, so a new empty project has no domains until workflow
+nodes are added.
 
 ## JSON API
 
@@ -147,7 +183,7 @@ Operation-graph execution returns a JSON graph result:
 ```
 
 Each persisted operation node carries its parameters. Typed connections determine
-the execution order and input artifacts; validate the graph before running it.
+the execution order and input results; validate the graph before running it.
 
 Errors use the stable `ErrorCode` enum, including invalid arguments, missing or
 existing projects, schema/database failures, workflow validation, method
@@ -307,25 +343,33 @@ Run from the repository root in PowerShell:
 
 ```powershell
 $env:STREAMFIND_MSYS2_ROOT = 'C:\msys64'
-cmake --preset mingw-ucrt64
-cmake --build tmp\\build\\mingw-ucrt64 --parallel 8
-ctest --test-dir tmp\\build\\mingw-ucrt64 --output-on-failure
+cmake --preset windows-core
+cmake --build tmp\\build\\windows\\core --parallel 8
+ctest --test-dir tmp\\build\\windows\\core --output-on-failure
 ```
 
 The preset uses the UCRT64 GCC/G++ compiler and Ninja from the selected MSYS2 root. For a developer-kit configuration:
 
 ```powershell
-cmake --preset mingw-ucrt64-devkit
-cmake --build tmp\\build\\mingw-ucrt64-devkit --parallel 8
-cmake --install tmp\\build\\mingw-ucrt64-devkit --prefix tmp\\build\\mingw-ucrt64-devkit\\install
+cmake --preset windows-devkit
+cmake --build tmp\\build\\windows\\devkit --parallel 8
+cmake --install tmp\\build\\windows\\devkit --prefix tmp\\build\\windows\\devkit\\install
 ```
 
 ### Linux GCC build
 
 ```bash
-cmake --preset linux-gcc
-cmake --build tmp/build/linux-gcc --parallel
-ctest --test-dir tmp/build/linux-gcc --output-on-failure
+cmake --preset linux-core
+cmake --build tmp/build/linux/core --parallel
+ctest --test-dir tmp/build/linux/core --output-on-failure
+```
+
+The Linux developer-kit tree is isolated from the runtime build:
+
+```bash
+cmake --preset linux-devkit
+cmake --build tmp/build/linux/devkit --parallel
+cmake --install tmp/build/linux/devkit --prefix tmp/build/linux/devkit/install
 ```
 
 ### Frontend assets
@@ -355,9 +399,36 @@ bash scripts/release/cpp/release-cpp-linux.sh
 
 Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
 
-## Plugin development routine
+## Develop bundled plugins
 
-Generate a backend/frontend project scaffold:
+For backend plugins shipped with streamfind, work directly in the repository.
+Each directory under `cpp/plugins/` with a `CMakeLists.txt` is discovered by
+the normal CMake configuration; all bundled plugins are enabled by default.
+No installed SDK is needed:
+
+```powershell
+sfdev configure
+sfdev build backend
+sfdev test backend --list
+```
+
+Frontend plugin work also belongs in this repository, under
+`frontend/src/plugins/`, with shared contracts under
+`frontend/src/framework/plugins/`. Use `sfdev build frontend` and
+`sfdev test frontend` for the corresponding checks. Frontend plugins do not
+use the C++ developer kit.
+
+## Develop an out-of-tree plugin
+
+Use this optional workflow only when a backend plugin is developed outside
+the streamfind repository. Build the platform developer kit with
+`sfdev sdk build`, or configure the SDK install option in a local developer
+build. On Windows, this command also builds the Linux kit when Ubuntu/WSL is
+available. The kit is platform-specific and is not part of the runtime
+release. Frontend-only plugins stay in the repository frontend workspace and
+do not need the C++ kit.
+
+Generate an external backend/frontend project scaffold:
 
 ```powershell
 .venv\\Scripts\\python.exe scripts\\dev\\plugin_generator.py init tmp\\scratch\\my-plugin --kind full --domain example --name my-plugin
@@ -367,7 +438,7 @@ Build the generated backend against an installed developer kit:
 
 ```powershell
 cmake -G Ninja -S tmp\\scratch\\my-plugin\\backend -B tmp\\build\\my-plugin `
-  -DCMAKE_PREFIX_PATH="$PWD\\tmp\\build\\mingw-ucrt64-devkit\\install\\sdk\\cmake" `
+  -DCMAKE_PREFIX_PATH="$PWD\\tmp\\build\\windows\\devkit\\install\\sdk\\cmake" `
   -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/ninja.exe `
   -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe
 cmake --build tmp\\build\\my-plugin
@@ -376,7 +447,7 @@ cmake --build tmp\\build\\my-plugin
 The first-party out-of-tree consumer check is:
 
 ```powershell
-.venv\\Scripts\\python.exe scripts\\dev\\test_plugin_consumer.py --source cpp\\sdk\\examples\\minimal_plugin --prefix tmp\\build\\mingw-ucrt64-devkit\\install --build tmp\\build\\plugin-consumer --cmake C:/msys64/ucrt64/bin/cmake.exe --ninja C:/msys64/ucrt64/bin/ninja.exe
+.venv\\Scripts\\python.exe scripts\\dev\\test_plugin_consumer.py --source cpp\\sdk\\examples\\minimal_plugin --prefix tmp\\build\\windows\\devkit\\install --build tmp\\build\\plugin-consumer --cmake C:/msys64/ucrt64/bin/cmake.exe --ninja C:/msys64/ucrt64/bin/ninja.exe
 ```
 
 For a distributable developer kit, use:

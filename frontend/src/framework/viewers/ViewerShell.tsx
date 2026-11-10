@@ -10,7 +10,14 @@ type ViewerShellProps = {
   children: ReactNode;
 };
 
-export function ViewerShell({ title, subtitle, variant = 'json', onClose, showHeader = true, children }: ViewerShellProps) {
+export function ViewerShell({
+  title,
+  subtitle,
+  variant = 'json',
+  onClose,
+  showHeader = true,
+  children,
+}: ViewerShellProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -40,7 +47,12 @@ export function ViewerShell({ title, subtitle, variant = 'json', onClose, showHe
           </header>
         ) : null}
         {!showHeader ? (
-          <button type="button" className="sf-artifact-viewer-close sf-icon-button" aria-label="Close result viewer" onClick={onClose}>
+          <button
+            type="button"
+            className="sf-artifact-viewer-close sf-icon-button"
+            aria-label="Close result viewer"
+            onClick={onClose}
+          >
             <i className="fa-solid fa-xmark" />
           </button>
         ) : null}

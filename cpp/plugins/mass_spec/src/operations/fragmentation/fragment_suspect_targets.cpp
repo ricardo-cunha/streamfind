@@ -1,12 +1,15 @@
 #include "operations/fragmentation/fragment_suspect_targets.hpp"
+#include "operations/fragmentation/fragmenter_limits.hpp"
 #include "utils/tools_resolver.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -36,10 +39,37 @@ struct ProcessResult
     std::string error;
     bool timed_out = false;
     bool cancelled = false;
+    bool output_limit_exceeded = false;
 };
 
 using StopPredicate = std::function<bool()>;
-constexpr auto kProcessTimeout = std::chrono::seconds(120);
+constexpr std::uint64_t kDiagnosticLimitBytes = 4096;
+
+std::uint64_t output_size(const fs::path &stdout_path, const fs::path &stderr_path)
+{
+    std::error_code error;
+    const auto stdout_size = fs::file_size(stdout_path, error);
+    if (error) return std::numeric_limits<std::uint64_t>::max();
+    const auto stderr_size = fs::file_size(stderr_path, error);
+    if (error || stdout_size > std::numeric_limits<std::uint64_t>::max() - stderr_size)
+        return std::numeric_limits<std::uint64_t>::max();
+    return stdout_size + stderr_size;
+}
+
+std::string read_file_prefix(const fs::path &path, std::uint64_t maximum_bytes)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input || maximum_bytes == 0) return {};
+    std::error_code error;
+    const auto file_bytes = fs::file_size(path, error);
+    if (error) throw std::runtime_error("Could not inspect MetFrag Fragmenter output file size.");
+    const auto bytes_to_read = std::min(maximum_bytes, file_bytes);
+    std::string content;
+    content.resize(static_cast<std::size_t>(bytes_to_read));
+    input.read(content.data(), static_cast<std::streamsize>(content.size()));
+    content.resize(static_cast<std::size_t>(input.gcount()));
+    return content;
+}
 
 class TemporaryDirectory
 {
@@ -105,6 +135,7 @@ std::wstring quote_windows_argument(const std::wstring &value)
 
 ProcessResult run_cli(const std::string &java, const std::string &jar,
                       const std::string &smiles, int depth,
+                      std::uint32_t timeout_seconds, std::uint64_t output_limit_bytes,
                       const fs::path &stdout_path, const fs::path &stderr_path,
                       const StopPredicate &stop_requested)
 {
@@ -142,7 +173,7 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
     if (!created) throw std::runtime_error("Could not start Java for MetFrag Fragmenter (Windows error " +
                                             std::to_string(GetLastError()) + ").");
     ProcessResult result;
-    const auto deadline = std::chrono::steady_clock::now() + kProcessTimeout;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
     bool terminated = false;
     while (true)
     {
@@ -161,6 +192,13 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
             terminated = true;
             break;
         }
+        if (output_size(stdout_path, stderr_path) > output_limit_bytes)
+        {
+            TerminateProcess(process.hProcess, 1);
+            result.output_limit_exceeded = true;
+            terminated = true;
+            break;
+        }
         if (std::chrono::steady_clock::now() >= deadline)
         {
             TerminateProcess(process.hProcess, 1);
@@ -175,15 +213,17 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     result.exit_code = static_cast<int>(exit_code);
-    std::ifstream out(stdout_path, std::ios::binary);
-    std::ifstream err(stderr_path, std::ios::binary);
-    result.output.assign(std::istreambuf_iterator<char>(out), {});
-    result.error.assign(std::istreambuf_iterator<char>(err), {});
+    if (output_size(stdout_path, stderr_path) > output_limit_bytes)
+        result.output_limit_exceeded = true;
+    if (!result.output_limit_exceeded)
+        result.output = read_file_prefix(stdout_path, output_limit_bytes);
+    result.error = read_file_prefix(stderr_path, kDiagnosticLimitBytes);
     return result;
 }
 #else
 ProcessResult run_cli(const std::string &java, const std::string &jar,
                       const std::string &smiles, int depth,
+                      std::uint32_t timeout_seconds, std::uint64_t output_limit_bytes,
                       const fs::path &stdout_path, const fs::path &stderr_path,
                       const StopPredicate &stop_requested)
 {
@@ -213,7 +253,7 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
     if (spawned != 0) throw std::runtime_error("Could not start Java for MetFrag Fragmenter (error " +
                                                 std::to_string(spawned) + ").");
     ProcessResult result;
-    const auto deadline = std::chrono::steady_clock::now() + kProcessTimeout;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
     int status = 0;
     bool finished = false;
     while (!finished)
@@ -229,25 +269,70 @@ ProcessResult run_cli(const std::string &java, const std::string &jar,
         {
             kill(process, SIGTERM);
             result.cancelled = true;
-            if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not wait for cancelled MetFrag Fragmenter process.");
-            finished = true;
+            const auto grace_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            while (std::chrono::steady_clock::now() < grace_deadline)
+            {
+                const pid_t grace_wait = waitpid(process, &status, WNOHANG);
+                if (grace_wait == process) { finished = true; break; }
+                if (grace_wait < 0) throw std::runtime_error("Could not wait for cancelled MetFrag Fragmenter process.");
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            if (!finished)
+            {
+                kill(process, SIGKILL);
+                if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not reap cancelled MetFrag Fragmenter process.");
+                finished = true;
+            }
+            break;
+        }
+        if (output_size(stdout_path, stderr_path) > output_limit_bytes)
+        {
+            kill(process, SIGTERM);
+            result.output_limit_exceeded = true;
+            const auto grace_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            while (std::chrono::steady_clock::now() < grace_deadline)
+            {
+                const pid_t grace_wait = waitpid(process, &status, WNOHANG);
+                if (grace_wait == process) { finished = true; break; }
+                if (grace_wait < 0) throw std::runtime_error("Could not wait for output-limited MetFrag Fragmenter process.");
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            if (!finished)
+            {
+                kill(process, SIGKILL);
+                if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not reap output-limited MetFrag Fragmenter process.");
+                finished = true;
+            }
             break;
         }
         if (std::chrono::steady_clock::now() >= deadline)
         {
             kill(process, SIGTERM);
             result.timed_out = true;
-            if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not wait for timed-out MetFrag Fragmenter process.");
-            finished = true;
+            const auto grace_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            while (std::chrono::steady_clock::now() < grace_deadline)
+            {
+                const pid_t grace_wait = waitpid(process, &status, WNOHANG);
+                if (grace_wait == process) { finished = true; break; }
+                if (grace_wait < 0) throw std::runtime_error("Could not wait for timed-out MetFrag Fragmenter process.");
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            if (!finished)
+            {
+                kill(process, SIGKILL);
+                if (waitpid(process, &status, 0) < 0) throw std::runtime_error("Could not reap timed-out MetFrag Fragmenter process.");
+                finished = true;
+            }
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-    std::ifstream out(stdout_path, std::ios::binary);
-    std::ifstream err(stderr_path, std::ios::binary);
-    result.output.assign(std::istreambuf_iterator<char>(out), {});
-    result.error.assign(std::istreambuf_iterator<char>(err), {});
+    if (output_size(stdout_path, stderr_path) > output_limit_bytes)
+        result.output_limit_exceeded = true;
+    if (!result.output_limit_exceeded)
+        result.output = read_file_prefix(stdout_path, output_limit_bytes);
+    result.error = read_file_prefix(stderr_path, kDiagnosticLimitBytes);
     return result;
 }
 #endif
@@ -286,13 +371,12 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         !table_input->contains("physical_table") || !table_input->at("physical_table").is_string())
         throw std::invalid_argument("Connect a suspectTargetsTable input containing candidate SMILES.");
 
-    const int depth = parameters.value("fragmentation_depth", 2);
-    if (depth < 1) throw std::invalid_argument("fragmentation_depth must be at least 1.");
+    const auto limits = streamfind::mass_spec::fragmentation::detail::parse_fragmenter_limits(parameters);
     const auto java = tools::resolve_java();
     if (!java) throw std::runtime_error("Java 21 was not found. Install the runtime.java dependency first.");
     const auto jar = tools::resolve_metfrag_fragmenter_jar();
     if (!jar)
-        throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency from the public v0.2.0 release.");
+        throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency.");
 
     const auto physical_table = table_input->at("physical_table").get<std::string>();
     const auto targets = access.read(physical_table, {"name", "SMILES"}, "name");
@@ -328,25 +412,42 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
             if (access.is_cancelled()) throw std::runtime_error("Operation cancelled");
             streamfind::mass_spec::fragmentation::detail::TemporaryDirectory temp;
             const auto process = streamfind::mass_spec::fragmentation::detail::run_cli(
-                *java, *jar, components[component_index], depth,
+                *java, *jar, components[component_index], limits.depth,
+                limits.timeout_seconds, limits.output_limit_bytes,
                 temp.path() / "stdout.json", temp.path() / "stderr.log",
                 [&access]() { return access.is_cancelled(); });
-            Json document = Json::parse(process.output, nullptr, false);
             if (process.cancelled) throw std::runtime_error("Operation cancelled");
+            if (process.output_limit_exceeded)
+            {
+                target_fragmented = false;
+                ++failed_components;
+                errors.push_back({{"name", name}, {"component_index", component_index},
+                    {"timed_out", false}, {"output_limit_exceeded", true},
+                    {"message", "MetFrag Fragmenter output exceeded the configured fragmenter_output_limit_mb (" +
+                        std::to_string(limits.output_limit_bytes / (1024ULL * 1024ULL)) + " MiB)."},
+                    {"stderr_excerpt", process.error}});
+                continue;
+            }
+            Json document = Json::parse(process.output, nullptr, false);
             if (process.exit_code != 0 || process.timed_out || document.is_discarded() || !document.is_object() ||
                 !document.contains("fragments") || !document.at("fragments").is_array())
             {
                 target_fragmented = false;
                 ++failed_components;
                 errors.push_back({{"name", name}, {"component_index", component_index},
-                    {"input_smiles", components[component_index]}, {"exit_code", process.exit_code},
-                    {"timed_out", process.timed_out}, {"message", process.timed_out ? "MetFrag Fragmenter timed out." : process.error},
-                    {"stdout", process.output}});
+                    {"exit_code", process.exit_code},
+                    {"timed_out", process.timed_out},
+                    {"message", process.timed_out ? "MetFrag Fragmenter timed out." :
+                        (process.error.empty() ? "MetFrag Fragmenter returned a nonzero exit code or invalid JSON." : process.error)},
+                    {"stderr_excerpt", process.error}});
                 continue;
             }
             ++fragmented_components;
             for (const auto &fragment : document.at("fragments"))
             {
+                if (rows.size() >= limits.maximum_fragment_rows)
+                    throw std::runtime_error("MetFrag Fragmenter exceeded maximum_fragment_rows (" +
+                        std::to_string(limits.maximum_fragment_rows) + "); no partial result was published.");
                 const auto atom_indices = fragment.value("atom_indices", Json::array());
                 const auto broken_bond_indices = fragment.value("broken_bond_indices", Json::array());
                 const auto neutral_losses = fragment.value("neutral_losses", Json::array());
@@ -376,13 +477,20 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         }
         if (target_fragmented) ++fragmented;
     }
+    if (fragmented_components == 0 && failed_components > 0)
+        throw std::runtime_error("MetFrag Fragmenter failed for every structure component; no fragmentation result was published. First error: " +
+            errors.front().value("message", std::string("unknown fragmenter failure")));
     access.emit_table_rows("fragmentationTreeTable", columns, types, rows);
     return {{"status", errors.empty() ? "finished" : "partial"},
             {"target_rows", targets.size()}, {"fragmented_targets", fragmented},
             {"skipped_without_smiles", skipped}, {"failed_targets", errors.size()},
             {"total_components", total_components}, {"fragmented_components", fragmented_components},
             {"failed_components", failed_components},
-            {"fragment_rows", rows.size()}, {"depth", depth}, {"fragmentation_method", "MetFrag top-down per-depth traversal"},
+            {"fragment_rows", rows.size()}, {"depth", limits.depth},
+            {"timeout_seconds", limits.timeout_seconds},
+            {"output_limit_bytes", limits.output_limit_bytes},
+            {"maximum_fragment_rows", limits.maximum_fragment_rows},
+            {"fragmentation_method", "MetFrag top-down per-depth traversal"},
             {"artifact", "fragmentationTreeTable"}, {"errors", errors}};
 }
 } // namespace streamfind::mass_spec::fragmentation::fragment_suspect_targets

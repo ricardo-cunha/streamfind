@@ -22,6 +22,7 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     using ResultEmitter = std::function<streamfind_plugin_status(
         void *, const char *, uint32_t, const char *, uint64_t, void *)>;
     std::string operation_instance;
+    std::string data_proxy_operation_id;
     std::atomic_bool *cancelled{nullptr};
     std::function<bool()> cancellation_requested;
     std::function<void(double, std::string_view)> progress;
@@ -31,10 +32,12 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     // The service-owned proxy is the only execution boundary for table and
     // typed-result access.
     Project::DataProxyRequest data_proxy_request;
+    std::function<std::intptr_t()> receive_result_input_handle;
     OperationOutputSink *output_sink{nullptr};
     std::vector<std::string> allowed_tables;
     std::unordered_map<std::string, std::unordered_set<std::string>> readable_columns;
     std::unordered_map<std::string, std::unordered_set<std::string>> writable_columns;
+    std::unordered_map<std::string, std::unordered_set<std::string>> array_columns;
     std::unordered_map<std::string, std::unordered_map<std::string, streamfind_plugin_column_type>> column_types;
     std::unordered_map<std::string, std::string> output_tables;
     TableBatchEmitter emit_table_batch;

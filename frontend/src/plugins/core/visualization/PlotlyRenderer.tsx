@@ -151,7 +151,7 @@ export function PlotlyRenderer({
     // Plotly.react is efficient for updates, but it is unreliable as the
     // first operation on a newly mounted/hidden modal. Create the graph once
     // with newPlot, then use react for subsequent payload updates.
-    const render = initializedElementRef.current === element ? runtime.react ?? runtime.newPlot : runtime.newPlot;
+    const render = initializedElementRef.current === element ? (runtime.react ?? runtime.newPlot) : runtime.newPlot;
     Promise.resolve(render(element, spec.payload.data, layout, spec.payload.config))
       .then(() => {
         if (!active) return;

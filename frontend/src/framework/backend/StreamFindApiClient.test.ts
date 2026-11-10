@@ -62,7 +62,7 @@ describe('StreamFindApiClient capability discovery', () => {
             id: 'demo',
             name: 'Demo',
             description: 'Example',
-            workflow: { schema_version: 2, version: 1, operations: [], connections: [] },
+            workflow: { schema_version: 2, version: 1, definition_revision: 1, operations: [], connections: [] },
           },
         ],
       }),
@@ -90,6 +90,30 @@ describe('StreamFindApiClient capability discovery', () => {
     await expect(
       new StreamFindApiClient('http://service').runOperation('session', 'mass_spec.read_mass_spec_files', {}),
     ).rejects.toThrow('Operation request failed (400): Workflow execution lock was lost');
+  });
+
+  it('surfaces concurrent workflow save conflicts from the service', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      response(
+        {
+          code: 'workflow_revision_conflict',
+          error: 'workflow definition revision conflict: expected 3, current revision is 4; reload before saving',
+        },
+        false,
+        409,
+      ),
+    );
+
+    await expect(
+      new StreamFindApiClient('http://service').saveWorkflow('session', {
+        schema_version: 2,
+        version: 2,
+        definition_revision: 3,
+        metadata: {},
+        operations: [],
+        connections: [],
+      }),
+    ).rejects.toThrow('workflow definition revision conflict: expected 3, current revision is 4');
   });
 
   it('queries bounded artifact data through the generic query endpoint', async () => {

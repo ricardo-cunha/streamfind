@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.sh"
+sanitize_linux_build_environment
 require_tool cmake; require_tool ninja; require_tool cpack
 VERSION="${1:?usage: package-plugin-devkit.sh VERSION}"
 OUT="${STREAMFIND_RELEASE_DIR:-$REPO_ROOT/tmp/release-output}"
-BUILD="$REPO_ROOT/tmp/build/release-plugin-devkit-linux"
+BUILD="$REPO_ROOT/tmp/build/linux/devkit"
 INSTALL="$BUILD/install"
 FRONTEND="$REPO_ROOT/frontend"
 FRONTEND_DIST="$FRONTEND/dist"
@@ -36,5 +37,12 @@ test -x "$PYTHON" || { echo "missing repository Python environment: $PYTHON" >&2
 archive="$BUILD/cpack/streamfind-plugin-dev-$VERSION-Linux-$(uname -m).tar.gz"
 test -f "$archive"
 cp -f "$archive" "$OUT/"
-(cd "$OUT" && find . -maxdepth 1 -type f -name 'streamfind-plugin-dev-*' -printf '%f\n' | sort | xargs -r sha256sum > sha256sums.txt)
+(cd "$OUT" && {
+    shopt -s nullglob
+    archives=(streamfind-*-${VERSION}-Windows-*.zip \
+              streamfind-*-${VERSION}-Linux-*.tgz \
+              streamfind-*-${VERSION}-Linux-*.tar.gz)
+    ((${#archives[@]} > 0))
+    sha256sum "${archives[@]}" > sha256sums.txt
+})
 echo "Plugin developer kit: $OUT/$(basename "$archive")"

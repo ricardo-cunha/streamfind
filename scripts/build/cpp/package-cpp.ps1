@@ -17,6 +17,10 @@ param(
     [switch]$CleanBuild
 )
 
+if (-not $IsWindows) {
+    throw 'Create tmp/packaged_build from native Windows PowerShell on the development machine. WSL is reserved for Linux release and developer-kit builds.'
+}
+
 . "$PSScriptRoot\..\build-common.ps1"
 . "$PSScriptRoot\..\..\release\release-common.ps1"
 
@@ -25,7 +29,7 @@ Set-RepositoryTemp
 $root = $Script:REPO_ROOT
 $version = (Get-Content -Raw (Join-Path $root 'VERSION')).Trim()
 $env:STREAMFIND_PACKAGE_VERSION = $version
-$buildDir = Join-Path $root 'tmp\build\mingw-ucrt64'
+$buildDir = Join-Path $root 'tmp\build\windows\core'
 $packageBuild = Join-Path $root 'tmp\packaged_build'
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'

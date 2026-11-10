@@ -30,13 +30,17 @@ tool names, descriptions, input schemas, ports, and result contracts.
 Typical project entry points are:
 
 ```text
-create -> describe -> get_domain/get_metadata
-      -> get_operations -> get_operation
+create -> describe/get_metadata
+      -> get_domains -> get_operations -> get_operation
       -> add_operation -> connect_operations
       -> validate_workflow -> run_workflow
-      -> get_result_registry
+      -> get_result_inventory -> request_result
         -> close
 ```
+
+`get_domains` lists operation domains in the enabled catalogue.
+`get_project_domains` lists domains inferred from operation nodes already
+stored in the project's workflow; it is empty for a new workflow.
 
 ## Runtime catalogue
 

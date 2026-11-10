@@ -15,16 +15,13 @@ import { VisualizationRenderer } from '../../framework/visualization/Visualizati
 
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
+import { colorFor, stablePlotGroup } from './featurePlotUtils';
 
 type FeatureRow = Record<string, string | null>;
 type QueryKind = 'eic' | 'ms1' | 'ms2';
 type DetailTab = 'details' | QueryKind | 'network';
 export type SelectionMode =
-  | 'feature'
-  | 'feature_group'
-  | 'feature_component'
-  | 'feature_group_component'
-  | 'feature_network';
+  'feature' | 'feature_group' | 'feature_component' | 'feature_group_component' | 'feature_network';
 type FeatureColumn = { name: string; type: string };
 type NumericFilter = { min: string; max: string };
 type TextFilter = string;
@@ -107,7 +104,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [selectBy, setSelectBy] = useState<SelectionMode>('feature');
   const [showFiltered, setShowFiltered] = useState(false);
   const [numericFilters, setNumericFilters] = useState<Record<string, NumericFilter>>({});
-  const initialNumericFilters = useRef<Record<string, NumericFilter>>({});
+  const [initialNumericFilters, setInitialNumericFilters] = useState<Record<string, NumericFilter>>({});
   const [booleanFilters, setBooleanFilters] = useState<Record<string, boolean>>({});
   const [textFilters, setTextFilters] = useState<Record<string, TextFilter>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -125,6 +122,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme === 'dark');
   const inspectorRef = useRef<HTMLDivElement>(null);
   const initialLoadComplete = useRef(false);
+  const [resultHasFeatureRows, setResultHasFeatureRows] = useState(false);
   const skipInitialFilterRefresh = useRef(true);
   const [filtersWidth, setFiltersWidth] = useState(240);
   const [detailsWidth, setDetailsWidth] = useState(380);
@@ -216,9 +214,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         result_id: resultId,
         mode: 'sample',
         columns: overviewColumns,
-        filters: overviewColumns?.includes('filtered') && !showFiltered
-          ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
-          : undefined,
+        filters:
+          overviewColumns?.includes('filtered') && !showFiltered
+            ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
+            : undefined,
         x_column: 'rt',
         y_column: 'mz',
         sampling_strategy: 'grid',
@@ -230,7 +229,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       setColumns(firstPage.columns);
       const loadedFilterColumns = getFilterColumns(firstPage.columns, loadedRows);
       const nextNumericFilters = createInitialNumericFilters(loadedFilterColumns.numeric, loadedRows);
-      initialNumericFilters.current = nextNumericFilters;
+      setInitialNumericFilters(nextNumericFilters);
       setNumericFilters(nextNumericFilters);
       setBooleanFilters(Object.fromEntries(loadedFilterColumns.boolean.map((column) => [column.name, false])));
       setTextFilters(Object.fromEntries(loadedFilterColumns.text.map((column) => [column.name, ''])));
@@ -240,6 +239,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     void loadRows()
       .then(({ rows: loadedRows, totalRows: loadedTotalRows }) => {
         if (!active) return;
+        setResultHasFeatureRows(loadedTotalRows > 0);
         setRows(loadedRows);
         setTotalRows(loadedTotalRows);
         setSelectedKey((current) =>
@@ -257,7 +257,15 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     return () => {
       active = false;
     };
-  }, [context.artifact, context.pluginApi, context.sessionId, overviewColumns, featureTraceColumns]);
+  }, [
+    context.artifact,
+    context.pluginApi,
+    context.sessionId,
+    overviewColumns,
+    featureTraceColumns,
+    selectBy,
+    showFiltered,
+  ]);
 
   useEffect(() => {
     if (!initialLoadComplete.current || !context.artifact || !context.pluginApi?.client) return;
@@ -292,7 +300,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
             numericFilters,
             booleanFilters,
             textFilters,
-            initialNumericFilters.current,
+            initialNumericFilters,
             showFiltered,
           ).concat(
             viewport
@@ -330,8 +338,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     context.pluginApi,
     context.sessionId,
     numericFilters,
+    initialNumericFilters,
     overviewColumns,
     featureTraceColumns,
+    selectBy,
     search,
     showFiltered,
     textFilters,
@@ -360,12 +370,11 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       return (
         filterColumns.numeric.every((column) => {
           const value = numericFilters[column.name];
-          const initial = initialNumericFilters.current[column.name];
+          const initial = initialNumericFilters[column.name];
           // The displayed bounds are initialized from the loaded data. They
           // are informational until the user edits them, so they must not
           // hide additional rows when filtered features are enabled.
-          const isInitialRange =
-            value && initial && value.min === initial.min && value.max === initial.max;
+          const isInitialRange = value && initial && value.min === initial.min && value.max === initial.max;
           return Boolean(isInitialRange) || withinRange(row, [column.name], value?.min ?? '', value?.max ?? '');
         }) &&
         filterColumns.boolean.every((column) => {
@@ -380,7 +389,17 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         })
       );
     });
-  }, [booleanFilters, filterColumns, numericFilters, rows, search, selectBy, showFiltered, textFilters]);
+  }, [
+    booleanFilters,
+    filterColumns,
+    initialNumericFilters,
+    numericFilters,
+    rows,
+    search,
+    selectBy,
+    showFiltered,
+    textFilters,
+  ]);
   const points = useMemo(() => makePoints(filteredRows, groupBy), [filteredRows, groupBy]);
   const sampledSelectedRows = useMemo(
     () => filteredRows.filter((row) => selectionKey(row, selectBy) === selectedKey),
@@ -397,10 +416,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
     // EIC/MS tabs load their signal columns separately. Do not also issue the
     // detail and network queries here: on Arrow-backed results those queries
     // are independent sequential scans of the same large payload.
-    if (
-      activeTab !== 'details' &&
-      activeTab !== 'network'
-    ) {
+    if (activeTab !== 'details' && activeTab !== 'network') {
       return () => {
         active = false;
       };
@@ -425,7 +441,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         const pageSize = 1000;
         const rows: FeatureRow[] = [];
         let offset = 0;
-        let totalRows = 0;
+        let totalRows: number;
         do {
           const response = await api.resultQuery(context.sessionId, {
             result_id: artifact.result_id,
@@ -442,9 +458,10 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         } while (offset < totalRows);
         return rows;
       };
-      const evidenceRows = activeTab === 'details'
-        ? await loadSelection(buildSelectionQueryFilters(selectBy, representative))
-        : [representative];
+      const evidenceRows =
+        activeTab === 'details'
+          ? await loadSelection(buildSelectionQueryFilters(selectBy, representative))
+          : [representative];
       const networkRepresentative = evidenceRows[0] ?? representative;
       if (activeTab === 'details') return { evidenceRows, expandedNetworkRows: [] };
       let expandedNetworkRows: FeatureRow[];
@@ -551,7 +568,9 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       const networkSignature =
         selectBy === 'feature_network'
           ? selectedNetworkRows
-              .map((row) => `${String(row.analysis ?? '')}\u0000${String(row.feature ?? row.feature_id ?? row.id ?? '')}`)
+              .map(
+                (row) => `${String(row.analysis ?? '')}\u0000${String(row.feature ?? row.feature_id ?? row.id ?? '')}`,
+              )
               .sort()
               .join('\u0001')
           : '';
@@ -566,45 +585,44 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
           ? selectedNetworkRows.map((row) => String(row.row_key ?? '')).filter(Boolean)
           : [];
       const directRowKey = selectBy === 'feature' && representative?.row_key ? representative.row_key : undefined;
-      let loadedRows: FeatureRow[] = [];
-      let totalRows = 0;
-      if (selectBy === 'feature_network' && !networkRowKeys.length) {
-        // Older feature artifacts do not expose a stable row_key. Query each
-        // network member by its analysis/feature identity instead of falling
-        // back to the clicked feature only.
-        const memberRows = await Promise.all(
-          selectedNetworkRows.map(async (row) => {
-            const response = await api.resultTrace(context.sessionId, {
-              result_id: artifact.result_id,
-              trace_type: activeTab,
-              filters: buildSelectionQueryFilters('feature', row),
-              limit: 1,
-            });
-            return response.traces as FeatureRow[];
-          }),
-        );
-        loadedRows = memberRows.flat();
-        totalRows = loadedRows.length;
-      } else {
-        const overview = await api.resultTrace(context.sessionId, {
-          result_id: artifact.result_id,
-          trace_type: activeTab,
-          ...(directRowKey || networkRowKeys.length
-            ? { row_keys: directRowKey ? [directRowKey] : networkRowKeys }
-            : { filters: buildSelectionQueryFilters(selectBy, representative) }),
-          // Plotting every row of a component can transfer hundreds of large
-          // encoded traces. Keep the initial view responsive; the feature map
-          // still exposes the full selection for navigation. The page response
-          // already contains the encoded arrays, so do not immediately fetch
-          // the same rows again through a detail query.
-          // Keep the first render lightweight for components with many
-          // features. The full trace set remains available on demand.
-          limit: loadAllSignalRows ? 2000 : 64,
-        });
-        loadedRows = overview.traces as FeatureRow[];
-        totalRows = overview.returned_rows;
-      }
-      const loaded = { rows: loadedRows, totalRows };
+      const loaded =
+        selectBy === 'feature_network' && !networkRowKeys.length
+          ? await (async () => {
+              // Older feature artifacts do not expose a stable row_key. Query each
+              // network member by its analysis/feature identity instead of falling
+              // back to the clicked feature only.
+              const memberRows = await Promise.all(
+                selectedNetworkRows.map(async (row) => {
+                  const response = await api.resultTrace(context.sessionId, {
+                    result_id: artifact.result_id,
+                    trace_type: activeTab,
+                    filters: buildSelectionQueryFilters('feature', row),
+                    limit: 1,
+                  });
+                  return response.traces as FeatureRow[];
+                }),
+              );
+              const rows = memberRows.flat();
+              return { rows, totalRows: rows.length };
+            })()
+          : await (async () => {
+              const overview = await api.resultTrace(context.sessionId, {
+                result_id: artifact.result_id,
+                trace_type: activeTab,
+                ...(directRowKey || networkRowKeys.length
+                  ? { row_keys: directRowKey ? [directRowKey] : networkRowKeys }
+                  : { filters: buildSelectionQueryFilters(selectBy, representative) }),
+                // Plotting every row of a component can transfer hundreds of large
+                // large traces. Keep the initial view responsive; the feature map
+                // still exposes the full selection for navigation. The page response
+                // already contains these arrays, so do not immediately fetch
+                // the same rows again through a detail query.
+                // Keep the first render lightweight for components with many
+                // features. The full trace set remains available on demand.
+                limit: loadAllSignalRows ? 2000 : 64,
+              });
+              return { rows: overview.traces as FeatureRow[], totalRows: overview.returned_rows };
+            })();
       signalCache.current.set(cacheKey, loaded);
       return loaded;
     };
@@ -640,9 +658,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
 
   const signalReady = signalSelectionKey === selectedKey && signalSelectionKind === activeTab;
   const selectedSignalRows = signalReady && signalRows.length ? signalRows : [];
-  const signalPending = Boolean(
-    selectedKey && sampledSelectedRows.length && !signalReady && activeTab !== 'network',
-  );
+  const signalPending = Boolean(selectedKey && sampledSelectedRows.length && !signalReady && activeTab !== 'network');
 
   const selectPoint = (key: string) => {
     setSelectedKey(key);
@@ -655,7 +671,8 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
       </div>
     );
   if (loadError) return <div role="alert">{loadError}</div>;
-  if (!rows.length) return <div role="status">No feature data is available in this result.</div>;
+  if (!rows.length && !resultHasFeatureRows)
+    return <div role="status">No feature data is available in this result.</div>;
 
   return (
     <div
@@ -750,18 +767,20 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
               </fieldset>
             );
           })}
-          {filterColumns.boolean.filter((column) => column.name !== 'filtered').map((column) => (
-            <label className="sf-feature-filter-checkbox" key={column.name}>
-              {column.name}
-              <input
-                type="checkbox"
-                checked={Boolean(booleanFilters[column.name])}
-                onChange={(event) =>
-                  setBooleanFilters((current) => ({ ...current, [column.name]: event.target.checked }))
-                }
-              />
-            </label>
-          ))}
+          {filterColumns.boolean
+            .filter((column) => column.name !== 'filtered')
+            .map((column) => (
+              <label className="sf-feature-filter-checkbox" key={column.name}>
+                {column.name}
+                <input
+                  type="checkbox"
+                  checked={Boolean(booleanFilters[column.name])}
+                  onChange={(event) =>
+                    setBooleanFilters((current) => ({ ...current, [column.name]: event.target.checked }))
+                  }
+                />
+              </label>
+            ))}
           {filterColumns.text.map((column) => (
             <label key={column.name}>
               {column.name}
@@ -820,6 +839,11 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
               });
           }}
         />
+        {!points.length ? (
+          <div className="sf-feature-inspector-empty" role="status">
+            No features match the current filters or visible plot range.
+          </div>
+        ) : null}
       </main>
       <div
         className="sf-resizable-splitter sf-feature-inspector-splitter sf-feature-inspector-details-splitter"
@@ -973,9 +997,7 @@ function featureScatterSpec(
     intensityMax > intensityMin ? 10 + ((point.intensity - intensityMin) / (intensityMax - intensityMin)) * 20 : 20,
   );
   const selectedNetworkKeys = new Set(
-    selectBy === 'feature_network'
-      ? selectedNetworkRows.map((row) => selectionKey(row, 'feature_network'))
-      : [],
+    selectBy === 'feature_network' ? selectedNetworkRows.map((row) => selectionKey(row, 'feature_network')) : [],
   );
   const selectedKeys = points.map((point) => selectionKey(point.row, selectBy));
   const isSelected = (key: string) =>
@@ -1011,7 +1033,8 @@ function featureScatterSpec(
             opacity: markerOpacity,
             line: { color: plotTheme.text, width: markerLineWidth },
           },
-          hovertemplate: 'Analysis: %{customdata[1]}<br>Feature: %{customdata[2]}<br>RT %{x}<br>m/z %{y}<extra></extra>',
+          hovertemplate:
+            'Analysis: %{customdata[1]}<br>Feature: %{customdata[2]}<br>RT %{x}<br>m/z %{y}<extra></extra>',
         },
       ],
       layout: {
@@ -1155,7 +1178,6 @@ function networkTagLabel(row: FeatureRow, tagKind: FeatureNetworkModel['nodes'][
     .trim();
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 function connectedFeatureNetworkRows(rows: FeatureRow[], selected: FeatureRow): FeatureRow[] {
   const analysis = String(selected.analysis ?? '');
   const candidates = rows.filter((row) => String(row.analysis ?? '') === analysis);
@@ -1175,14 +1197,21 @@ function connectedFeatureNetworkRows(rows: FeatureRow[], selected: FeatureRow): 
   candidates.forEach((row) => {
     const kind = networkTagKind(row);
     if (kind === 'main' && featureKey(row) !== start) return;
-    const target = kind === 'main'
-      ? String(row.component_best_partner ?? '').trim()
-      : String(row.annotation_parent_feature ?? '').trim();
+    const target =
+      kind === 'main'
+        ? String(row.component_best_partner ?? '').trim()
+        : String(row.annotation_parent_feature ?? '').trim();
     if (kind === 'main') {
       const targetRow = byFeature.get(target);
       const sourceGroup = String(row.feature_group ?? '').trim();
       const targetGroup = String(targetRow?.feature_group ?? '').trim();
-      if (targetRow && networkTagKind(targetRow) === 'main' && sourceGroup && targetGroup && sourceGroup !== targetGroup)
+      if (
+        targetRow &&
+        networkTagKind(targetRow) === 'main' &&
+        sourceGroup &&
+        targetGroup &&
+        sourceGroup !== targetGroup
+      )
         return;
     }
     connect(featureKey(row), target);
@@ -1226,29 +1255,31 @@ export function buildFeatureNetwork(
   );
   const featureNodeId = (row: FeatureRow, index = 0) =>
     `${String(row.analysis ?? '')}\u0000${String(row.feature ?? row.feature_id ?? index)}`;
-  const members = selectBy === 'feature_network' && selected[0]
-    ? connectedFeatureNetworkRows(rows, selected[0])
-    : rows.filter((row) => {
-    if (selectBy === 'feature_component')
-      return sameAnalysis(row) && Boolean(row.feature_component && components.has(row.feature_component));
-    if (selectBy === 'feature_group')
-      return (
-        Boolean(row.feature_group && groups.has(row.feature_group)) ||
-        componentKeys.has(`${String(row.analysis ?? '')}\u0000${String(row.feature_component ?? '')}`)
-      );
-    if (selectBy === 'feature_group_component')
-      return componentKeys.has(`${String(row.analysis ?? '')}\u0000${String(row.feature_component ?? '')}`);
-    if (selected[0]?.feature_component)
-      return (
-        sameAnalysis(row) && Boolean(row.feature_component && row.feature_component === selected[0].feature_component)
-      );
-    if (selected[0]?.feature_group)
-      return sameAnalysis(row) && Boolean(row.feature_group && row.feature_group === selected[0].feature_group);
-    // If component/group metadata is unavailable for the selected child, keep
-    // all rows from the analysis and let the persisted annotation links reduce
-    // this to the connected isotope/adduct/loss network below.
-      return sameAnalysis(row);
-    });
+  const members =
+    selectBy === 'feature_network' && selected[0]
+      ? connectedFeatureNetworkRows(rows, selected[0])
+      : rows.filter((row) => {
+          if (selectBy === 'feature_component')
+            return sameAnalysis(row) && Boolean(row.feature_component && components.has(row.feature_component));
+          if (selectBy === 'feature_group')
+            return (
+              Boolean(row.feature_group && groups.has(row.feature_group)) ||
+              componentKeys.has(`${String(row.analysis ?? '')}\u0000${String(row.feature_component ?? '')}`)
+            );
+          if (selectBy === 'feature_group_component')
+            return componentKeys.has(`${String(row.analysis ?? '')}\u0000${String(row.feature_component ?? '')}`);
+          if (selected[0]?.feature_component)
+            return (
+              sameAnalysis(row) &&
+              Boolean(row.feature_component && row.feature_component === selected[0].feature_component)
+            );
+          if (selected[0]?.feature_group)
+            return sameAnalysis(row) && Boolean(row.feature_group && row.feature_group === selected[0].feature_group);
+          // If component/group metadata is unavailable for the selected child, keep
+          // all rows from the analysis and let the persisted annotation links reduce
+          // this to the connected isotope/adduct/loss network below.
+          return sameAnalysis(row);
+        });
   const ids = new Set(members.map((row) => featureNodeId(row)).filter(Boolean));
   const nodes = members.map((row, index) => ({
     id: featureNodeId(row, index),
@@ -1651,20 +1682,20 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
   const plotTheme = getPlotTheme(darkMode);
   const prefix = kind === 'eic' ? 'eic' : kind;
   const labels = rows.map((row) => signalTraceLabel(row, groupBy, selectBy));
-  const categories = Array.from(new Set(labels)).sort();
   const maxLabelLength = labels.reduce((maximum, label) => Math.max(maximum, label.length), 0);
   // A legend describes comparisons between plotted signals, not the number of
   // distinct grouping labels.  Several rows can legitimately share one label
   // (for example when grouping is disabled), so count valid source traces.
-  let plottedTraceCount = 0;
   const legendGroups = new Set<string>();
-  const traces = rows.flatMap((row) => {
-    const x = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`], row[`${prefix}_size`]);
-    const y = decodeFloatArray(row[`${prefix}_${kind === 'eic' ? 'intensity' : 'intensity'}`], row[`${prefix}_size`]);
+  const signalRows = rows.flatMap((row) => {
+    const x = numericArray(row[`${prefix}_${kind === 'eic' ? 'rt' : 'mz'}`]);
+    const y = numericArray(row[`${prefix}_intensity`]);
     if (!x.length || !y.length) return [];
-    plottedTraceCount += 1;
     const label = signalTraceLabel(row, groupBy, selectBy);
-    const color = colorFor(label, categories);
+    return [{ row, x, y, label, color: colorFor(label) }];
+  });
+  const plottedTraceCount = signalRows.length;
+  const traces = signalRows.flatMap(({ row, x, y, label, color }) => {
     const showTraceLegend = !legendGroups.has(label);
     legendGroups.add(label);
     const isSpectrum = kind === 'ms1' || kind === 'ms2';
@@ -1703,7 +1734,7 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
   if (!traces.length)
     return (
       <div className="sf-feature-inspector-empty">
-        No encoded {kind.toUpperCase()} data is available for the selected feature.
+        No {kind.toUpperCase()} data is available for the selected feature.
       </div>
     );
   const spec: VisualizationSpec = {
@@ -1770,7 +1801,7 @@ const FeatureSignalPlot = memo(function FeatureSignalPlot({
     },
     provenance: {
       source_result_ids: [resultId],
-      producer_operation_id: 'frontend.feature_encoded_arrays',
+      producer_operation_id: 'frontend.feature_trace_arrays',
       producer_node_id: 'feature-inspector',
     },
     fallback: { description: `The ${kind.toUpperCase()} renderer is unavailable.` },
@@ -1807,59 +1838,10 @@ function escapeHoverText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-function decodeFloatArray(encoded: unknown, size: unknown): number[] {
-  if (!encoded) return [];
-  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
-  const text = String(encoded).trim();
-  const cacheKey = `${text}\u0000${size ?? ''}`;
-  const cached = signalArrayCache.get(cacheKey);
-  if (cached) return cached;
-  // Result-store Arrow decoding preserves JSON/list values for non-binary
-  // columns.  Accept those values as well as the historical base64 blob
-  // representation used by older feature tables.
-  if (text.startsWith('[')) {
-    try {
-      const values = JSON.parse(text);
-      if (Array.isArray(values)) {
-        const decoded = values.map(Number).filter(Number.isFinite);
-        rememberSignalArray(cacheKey, decoded);
-        return decoded;
-      }
-    } catch {
-      return [];
-    }
-  }
-  try {
-    const binary = atob(text.replaceAll('-', '+').replaceAll('_', '/'));
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const expected = Number(size ?? 0);
-    const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
-    if (bytes.byteLength % precision !== 0) return [];
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const decoded = Array.from({ length: bytes.byteLength / precision }, (_, index) =>
-      precision === 8 ? view.getFloat64(index * precision, true) : view.getFloat32(index * precision, true),
-    );
-    rememberSignalArray(cacheKey, decoded);
-    return decoded;
-  } catch {
-    return [];
-  }
-}
-
-const signalArrayCache = new Map<string, number[]>();
-let signalArrayCacheBytes = 0;
-function rememberSignalArray(key: string, values: number[]): void {
-  if (signalArrayCache.has(key)) return;
-  const estimatedBytes = values.length * Float64Array.BYTES_PER_ELEMENT;
-  if (estimatedBytes > 8 * 1024 * 1024) return;
-  while (signalArrayCacheBytes + estimatedBytes > 32 * 1024 * 1024 && signalArrayCache.size) {
-    const oldest = signalArrayCache.keys().next().value;
-    if (oldest === undefined) break;
-    signalArrayCacheBytes -= (signalArrayCache.get(oldest)?.length ?? 0) * Float64Array.BYTES_PER_ELEMENT;
-    signalArrayCache.delete(oldest);
-  }
-  signalArrayCache.set(key, values);
-  signalArrayCacheBytes += estimatedBytes;
+function numericArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  if (value.every((item) => typeof item === 'number' && Number.isFinite(item))) return value as number[];
+  return value.map(Number).filter(Number.isFinite);
 }
 
 function withAlpha(hex: string, alpha: number): string {
@@ -1893,7 +1875,10 @@ function getFilterColumns(
     const type = (column.type ?? '').toLowerCase();
     const values = rows
       .map((row) => row[column.name])
-      .filter((value): value is string => value !== null && value !== undefined);
+      // Typed Arrow list columns (EIC/MS traces) are arrays, not searchable
+      // scalar values. Exclude them from scalar filter inference rather than
+      // treating them as strings and calling trim() on the array.
+      .filter((value): value is string => typeof value === 'string');
     const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
     const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
     if (isNumericType(type) || (!type && inferredNumeric)) numeric.push(column);
@@ -2056,9 +2041,6 @@ function booleanValue(value: string | null | undefined): boolean | undefined {
 }
 
 function makePoints(rows: FeatureRow[], groupBy: string): FeaturePlotPoint[] {
-  const categories = Array.from(
-    new Set(rows.map((row, index) => String(row[groupBy] ?? row.analysis ?? index))),
-  ).sort();
   return rows.flatMap((row, index) => {
     const mz = numericValue(row, ['mz', 'feature_mz']);
     const rt = numericValue(row, ['rt', 'retention_time']);
@@ -2067,7 +2049,7 @@ function makePoints(rows: FeatureRow[], groupBy: string): FeaturePlotPoint[] {
       {
         row,
         index,
-        color: colorFor(stablePlotGroup(row, groupBy), categories),
+        color: colorFor(stablePlotGroup(row, groupBy)),
         intensity: numericValue(row, ['intensity', 'feature_intensity', 'max_intensity']) ?? 0,
       },
     ];
@@ -2136,40 +2118,6 @@ function arrayMax(values: number[]): number {
   let result = Number.NEGATIVE_INFINITY;
   for (const value of values) if (value > result) result = value;
   return Number.isFinite(result) ? result : 0;
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function stablePlotGroup(row: Record<string, string | null | undefined>, groupBy: string): string {
-  const selected = String(row[groupBy] ?? '').trim();
-  if (groupBy !== 'replicate') return selected || String(row.analysis ?? '').trim() || '(unassigned)';
-  const normalized = selected.toLowerCase();
-  if (normalized === 'plant' || normalized === 'substrate') return normalized;
-  const analysis = String(row.analysis ?? '').trim();
-  const sampleClass = analysis.match(/^(plant|substrate)(?:[_\s]|$)/i)?.[1];
-  return sampleClass?.toLowerCase() ?? (selected || '(unassigned)');
-}
-
-export function colorFor(value: string, _categories: string[] = [value]): string {
-  const palette = [
-    '#0072b2',
-    '#d55e00',
-    '#009e73',
-    '#cc79a7',
-    '#e69f00',
-    '#56b4e9',
-    '#f0e442',
-    '#882255',
-    '#117733',
-    '#332288',
-    '#aa4499',
-    '#44aa99',
-  ];
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return palette[(hash >>> 0) % palette.length];
 }
 
 function signalTraceLabel(row: FeatureRow, groupBy: string, selectBy: SelectionMode): string {

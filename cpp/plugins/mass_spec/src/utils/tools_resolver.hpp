@@ -3,10 +3,27 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "streamfind/export.hpp"
 
 namespace streamfind::mass_spec::tools {
+
+inline constexpr std::string_view kMetFragFragmenterVersion{"0.3.0"};
+
+namespace detail {
+/// Reads the pinned version from the fragmenter's embedded Maven metadata.
+std::optional<std::string> metfrag_fragmenter_jar_version(const std::string& path);
+/// Builds curl arguments, optionally enabling the explicitly requested Windows Schannel workaround.
+std::vector<std::string> curl_download_arguments(const std::string& destination, const std::string& url,
+                                                bool allow_windows_revocation_bypass,
+                                                const std::string& stderr_path = {});
+std::string read_curl_diagnostic(const std::string& stderr_path);
+bool curl_revocation_bypass_requested();
+/// Validates the embedded release version, then publishes it at the version-specific destination.
+void promote_metfrag_fragmenter_jar(const std::string& staged, const std::string& destination);
+} // namespace detail
 
 /// `%USERPROFILE%\.streamfind` on Windows or `$HOME/.streamfind` on Linux/macOS.
 STREAMFIND_DOMAIN_API std::string streamfind_home();

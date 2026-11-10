@@ -338,9 +338,7 @@ describe('FeatureInspector', () => {
     );
 
     expect(model.nodes.map((node) => node.id)).toEqual(['sample-a\u0000MAIN', 'sample-a\u0000ISO-1']);
-    expect(model.edges).toEqual([
-      { source: 'sample-a\u0000ISO-1', target: 'sample-a\u0000MAIN', weight: 0 },
-    ]);
+    expect(model.edges).toEqual([{ source: 'sample-a\u0000ISO-1', target: 'sample-a\u0000MAIN', weight: 0 }]);
   });
 
   it('selects only the connected feature network, not the whole component', () => {
@@ -467,8 +465,8 @@ describe('FeatureInspector', () => {
           mz: '275.2',
           rt: '12.5',
           eic_size: '2',
-          eic_rt: 'AACAPwAAAEA=',
-          eic_intensity: 'AADIQgAASEM=',
+          eic_rt: [1, 2],
+          eic_intensity: [100, 200],
         },
         { feature_id: 'F2', analysis: 'sample-b', mz: '300.1', rt: '18.0' },
       ],
@@ -492,7 +490,7 @@ describe('FeatureInspector', () => {
     expect(point).not.toBeNull();
     fireEvent.click(point as Element);
     fireEvent.click(screen.getByRole('tab', { name: 'EIC' }));
-    await waitFor(() => expect(screen.queryByText(/No encoded EIC data/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/No EIC data/)).not.toBeInTheDocument());
   });
 
   it('renders resizers for both the filter and details panes', async () => {

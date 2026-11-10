@@ -427,7 +427,8 @@ void send_all(std::intptr_t socket, const std::string &data) {
 
 void send_http(std::intptr_t socket, int status, const Json &body) {
     const auto text = body.dump();
-    send_all(socket, "HTTP/1.1 " + std::to_string(status) + " OK\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(text.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n" + text);
+    const auto reason = status == 409 ? "Conflict" : "OK";
+    send_all(socket, "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(text.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n" + text);
 }
 
 void send_file(std::intptr_t socket, const std::filesystem::path &root, const std::string &request_path) {
@@ -445,7 +446,7 @@ void send_file(std::intptr_t socket, const std::filesystem::path &root, const st
     std::ifstream input(file, std::ios::binary);
     const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     const auto extension = file.extension().string();
-    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : extension == ".js" ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".json" ? "application/json; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
+    const auto content_type = extension == ".html" ? "text/html; charset=utf-8" : (extension == ".js" || extension == ".mjs") ? "text/javascript; charset=utf-8" : extension == ".css" ? "text/css; charset=utf-8" : extension == ".json" ? "application/json; charset=utf-8" : extension == ".png" ? "image/png" : extension == ".svg" ? "image/svg+xml" : "application/octet-stream";
     send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: " + std::string(content_type) + "\r\nContent-Length: " + std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
 }
 
@@ -659,7 +660,16 @@ Json ServiceServer::workflow_demos() const {
     return workflows;
 }
 
-void ServiceServer::stop() { stopping_ = true; if (listener_ != -1) detail::close_socket(listener_); }
+void ServiceServer::stop() {
+    stopping_.store(true);
+    const auto listener = listener_.load();
+    if (listener == -1) return;
+#ifdef _WIN32
+    ::shutdown(static_cast<SOCKET>(listener), SD_BOTH);
+#else
+    ::shutdown(static_cast<int>(listener), SHUT_RDWR);
+#endif
+}
 
 void ServiceServer::handle_client(std::intptr_t socket) {
     try {
@@ -766,6 +776,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             else if (method == "GET" && std::filesystem::exists(application_root_) &&
                      (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
                 detail::send_file(socket, application_root_, path);
+            else if (method == "GET" && path == "/health") {
+                auto health = projects_.health_snapshot();
+                health["health"] = "healthy";
+                if (!service_identity_.empty()) health["service_instance"] = service_identity_;
+                detail::send_http(socket, 200, health);
+            }
             else if (method == "GET" && path == "/session") {
                 Json session = SessionDto{};
                 if (!service_identity_.empty()) session["service_instance"] = service_identity_;
@@ -1050,7 +1066,14 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.save_workflow(session_id, Json::parse(body)));
+                const auto saved = projects_.save_workflow(session_id, Json::parse(body));
+                const auto workflow = saved.value("workflow", Json::object());
+                events_.publish(Json{{"type", "workflow.definition_changed"},
+                                     {"project", session_id},
+                                     {"payload", Json{{"workflow_revision", workflow.value("version", 0)},
+                                                       {"definition_revision", workflow.value("definition_revision", 0)},
+                                                       {"workflow", workflow}}}});
+                detail::send_http(socket, 200, saved);
             } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/state");
@@ -1064,6 +1087,24 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), marker_position - prefix.size()));
                 const auto operation_instance = detail::percent_decode(path.substr(marker_position + marker.size(), path.size() - marker_position - marker.size() - suffix.size()));
                 detail::send_http(socket, 200, projects_.operation_snapshot(session_id, operation_instance));
+            } else if (method == "POST" && path.rfind("/projects/", 0) == 0 &&
+                       path.find("/operations/") != std::string::npos && path.ends_with("/run")) {
+                const auto prefix = std::string("/projects/");
+                const auto marker = std::string("/operations/");
+                const auto suffix = std::string("/run");
+                const auto marker_position = path.find(marker, prefix.size());
+                const auto session_id = detail::percent_decode(
+                    path.substr(prefix.size(), marker_position - prefix.size()));
+                const auto operation_id = detail::percent_decode(path.substr(
+                    marker_position + marker.size(),
+                    path.size() - marker_position - marker.size() - suffix.size()));
+                const auto request = Json::parse(body.empty() ? "{}" : body);
+                const auto parameters = request.value("parameters", Json::object());
+                const auto operation_instance = request.value("operation_instance", operation_id);
+                const auto inputs = request.value("inputs", Json(nullptr));
+                const auto accepted = projects_.start_operation(
+                    session_id, operation_id, parameters, operation_instance, inputs);
+                detail::send_http(socket, 202, accepted);
             } else if (method == "GET" && route.rfind("/projects/", 0) == 0 && route.ends_with("/workflow/events")) {
                             const auto prefix = std::string("/projects/");
                             const auto suffix = std::string("/workflow/events");
@@ -1221,27 +1262,41 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                                                      {"hint", "Run streamfind-app from a packaged distribution, or start the frontend development server."}});
             else detail::send_http(socket, 404, Json{{"error", "endpoint not found"}});
         }
+    } catch (const WorkflowRevisionConflict &error) {
+        try {
+            detail::send_http(socket, 409, Json{{"error", error.what()},
+                                                {"code", "workflow_revision_conflict"},
+                                                {"expected_revision", error.expected()},
+                                                {"current_revision", error.current()}});
+        } catch (...) {}
     } catch (const std::exception &error) { try { detail::send_http(socket, 400, Json{{"error", error.what()}}); } catch (...) {} }
     detail::close_socket(socket);
 }
 
 void ServiceServer::run() {
-    listener_ = static_cast<std::intptr_t>(::socket(AF_INET, SOCK_STREAM, 0));
-    if (listener_ == -1) throw std::runtime_error("unable to create service socket");
+    const auto listener = static_cast<std::intptr_t>(::socket(AF_INET, SOCK_STREAM, 0));
+    if (listener == -1) throw std::runtime_error("unable to create service socket");
+    listener_.store(listener);
     int reuse = 1;
-    setsockopt(static_cast<streamfind_socket_t>(listener_), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
+    setsockopt(static_cast<streamfind_socket_t>(listener), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
     sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); address.sin_port = htons(port_);
-    if (bind(static_cast<streamfind_socket_t>(listener_), reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0 || listen(static_cast<streamfind_socket_t>(listener_), 16) < 0) throw std::runtime_error("unable to bind service socket");
+    if (bind(static_cast<streamfind_socket_t>(listener), reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0 || listen(static_cast<streamfind_socket_t>(listener), 16) < 0) {
+        detail::close_socket(listener);
+        listener_.store(-1);
+        throw std::runtime_error("unable to bind service socket");
+    }
     while (!stopping_) {
         sockaddr_in client{};
 #ifdef _WIN32
-        int length = sizeof(client); const auto client_socket = ::accept(static_cast<SOCKET>(listener_), reinterpret_cast<sockaddr *>(&client), &length);
+        int length = sizeof(client); const auto client_socket = ::accept(static_cast<SOCKET>(listener), reinterpret_cast<sockaddr *>(&client), &length);
 #else
-        socklen_t length = sizeof(client); const auto client_socket = ::accept(static_cast<int>(listener_), reinterpret_cast<sockaddr *>(&client), &length);
+        socklen_t length = sizeof(client); const auto client_socket = ::accept(static_cast<int>(listener), reinterpret_cast<sockaddr *>(&client), &length);
 #endif
         if (client_socket == static_cast<streamfind_socket_t>(-1)) { if (!stopping_) continue; break; }
         std::thread(&ServiceServer::handle_client, this, static_cast<std::intptr_t>(client_socket)).detach();
     }
+    detail::close_socket(listener);
+    listener_.store(-1);
 }
 
 }  // namespace streamfind::service

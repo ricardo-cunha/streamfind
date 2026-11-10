@@ -1,0 +1,15 @@
+{
+  "plugin_id": "sensors",
+  "name": "StreamFind Sensors plugin",
+  "version": "@PROJECT_VERSION@",
+  "abi_version": { "major": 1, "minor": 1 },
+  "sdk_compatibility": { "minimum": "@PROJECT_VERSION@", "maximum": "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.x" },
+  "library": {
+    "windows-x86_64": "streamfind_sensors.dll",
+    "linux-x86_64": "libstreamfind_sensors.so"
+  },
+  "domain": "sensors",
+  "semantic_catalogue": "catalogue.duckdb",
+  "static_composition": false,
+  "platforms": ["windows-x86_64", "linux-x86_64"]
+}

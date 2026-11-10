@@ -1,8 +1,9 @@
 # C++ runtime and API
 
-The C++ runtime provides the native project API, workflow engine, dynamic
-plugin framework, CLI, service, and MCP server. Windows x64 and Linux x86_64
-packages are listed on [Releases](../releases.md).
+The C++ runtime is the native foundation of streamfind. It provides the
+project and workflow engine, shared service, CLI, MCP server, worker supervisor,
+and dynamic backend plugin host. Windows x64 and Linux x86_64 packages are
+listed on [Releases](../releases.md).
 
 !!! note "Compatibility"
     The native C++ package is versioned. Use a matching developer kit when
@@ -13,11 +14,14 @@ packages are listed on [Releases](../releases.md).
 The C++ package includes:
 
 - `streamfind-mcp` / `streamfind-mcp.exe`;
-- the C++ libraries and public headers;
+- the native runtime libraries and platform dependencies;
 - DuckDB and other native runtime dependencies;
 - `core/catalogue.duckdb` and packaged plugin catalogues.
 
-The catalogue is required by the MCP server and must remain with the package.
+The runtime archive contains the built-in plugin packages and app assets, but
+not the C++ developer kit. The catalogue is required by the MCP server and
+must remain with the package. Use the matching developer kit to build an
+out-of-tree backend plugin.
 
 ## Extension model
 
@@ -42,26 +46,38 @@ the file independently:
 
 ```cpp
 streamfind::ProjectOptions options{
-    "project.duckdb", "demo", std::nullopt, false, false, "mass_spec"
+    "project.duckdb",
+    streamfind::Json{{"name", "demo"}},
+    streamfind::Json::object()
 };
 auto project = streamfind::Project::create(options);
 ```
 
-Common project operations include:
+`ProjectOptions` contains the database path, project metadata, and initial
+workflow metadata. A new project starts with an empty workflow. The project's
+`get_domains()` result is inferred from the domain prefixes of operation IDs in
+that workflow; it is not a setting supplied at project creation.
+
+The MCP exposes these project tools:
 
 ```text
 create, describe, validate
-get_metadata, set_metadata
-get_domain
-get_workflow, set_workflow, validate_workflow, run_workflow
-get_operations, get_operation, add_operation, connect_operations
-get_result_registry, get_current_result_registry, request_result
-get_audit_trail
-copy, close
+get_metadata, set_metadata, get_project_domains
+get_workflow, get_workflow_execution
+get_result_inventory, get_current_result_inventory, request_result
+get_audit_trail, close
 ```
 
-Domains are assigned when a project is created. The project API exposes project
-metadata, workflows, published results, audit information, and domain operations.
+Catalogue discovery is separate from project inspection:
+
+```text
+get_domains, get_modules, get_operations, get_operation
+```
+
+The C++ `Project` API also provides workflow editing, result inventory queries,
+audit access, and project copying. These are C++ API methods and should not be
+confused with MCP tool names. The project API exposes project metadata,
+workflow-derived domains, published results, and audit information.
 
 ## MCP
 

@@ -1,5 +1,0 @@
-src/core/external/openbabel/openbabel-3-2-0/src/formats/libinchi/*.c
-src/core/external/openbabel/inchi-iupac-1.07.5/src/ichilnct.c
-src/core/external/openbabel/inchi-iupac-1.07.5/src/inchi_dll_a.c
-src/core/external/openbabel/inchi-iupac-1.07.5/src/inchi_dll_b.c
-src/core/external/openbabel/inchi-iupac-1.07.5/src/inchi_dll_main.c

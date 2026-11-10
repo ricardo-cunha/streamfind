@@ -578,11 +578,11 @@ std::vector<::streamfind::mass_spec::nta::gap_filling::FEATURE_GROUP_INFO> strea
   filled_feature.eic_size = peak_rt.size();
 
   // Encode EIC data
-  filled_feature.eic_rt = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_rt, 4);
-  filled_feature.eic_mz = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_mz, 4);
-  filled_feature.eic_intensity = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_intensity, 4);
-  filled_feature.eic_baseline = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_baseline, 4);
-  filled_feature.eic_smoothed = ::streamfind::mass_spec::nta::utils::encode_floats_base64(peak_intensity, 4);
+  filled_feature.eic_rt = peak_rt;
+  filled_feature.eic_mz = peak_mz;
+  filled_feature.eic_intensity = peak_intensity;
+  filled_feature.eic_baseline = peak_baseline;
+  filled_feature.eic_smoothed = peak_intensity;
 
   return filled_feature;
 }
@@ -1017,11 +1017,11 @@ void ::streamfind::mass_spec::nta::gap_filling::fill_features_impl(
       new_feature.eic_baseline = filled_feature.eic_baseline;
       new_feature.eic_smoothed = filled_feature.eic_smoothed;
       new_feature.ms1_size = 0;
-      new_feature.ms1_mz = "";
-      new_feature.ms1_intensity = "";
+      new_feature.ms1_mz.clear();
+      new_feature.ms1_intensity.clear();
       new_feature.ms2_size = 0;
-      new_feature.ms2_mz = "";
-      new_feature.ms2_intensity = "";
+      new_feature.ms2_mz.clear();
+      new_feature.ms2_intensity.clear();
 
       // Add to features
       feature_buffers[gap.analysis_idx].append_feature(new_feature);

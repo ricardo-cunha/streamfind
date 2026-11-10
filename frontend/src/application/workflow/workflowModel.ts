@@ -105,6 +105,7 @@ export function canvasWorkflow(
   capabilities: ServiceCapabilities,
   revision: number,
   metadata: Partial<WorkflowDefinition['metadata']> = {},
+  definitionRevision = revision,
 ): WorkflowDefinition {
   const operations: WorkflowOperationDefinition[] = nodes
     .filter((node) => node.capabilityId)
@@ -129,6 +130,7 @@ export function canvasWorkflow(
     workflow_id: 'workflow',
     name: 'Workflow',
     version: revision,
+    definition_revision: definitionRevision,
     metadata: {
       name: 'Untitled workflow',
       description: 'Describe the purpose of this workflow.',
@@ -201,13 +203,13 @@ export function workflowFingerprint(workflow: WorkflowDefinition): string {
 }
 
 export function nextCanvasNodeNumber(nodes: CanvasNode[]): number {
-  return (
-    Math.max(
-      0,
-      ...nodes.map((node) => {
-        const match = /^(?:.*-)?(\d+)$/.exec(node.id);
-        return match ? Number(match[1]) : 0;
-      }),
-    ) + 1
+  const highestExistingId = Math.max(
+    0,
+    nodes.length,
+    ...nodes.map((node) => {
+      const match = /^(?:.*-)?(\d+)$/.exec(node.id);
+      return match ? Number(match[1]) : 0;
+    }),
   );
+  return highestExistingId + 1;
 }

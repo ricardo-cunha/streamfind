@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/linux-common.sh"
+sanitize_linux_build_environment
 require_tool cmake; require_tool ninja
-BUILD_DIR="${STREAMFIND_CPP_BUILD_DIR:-$REPO_ROOT/tmp/build/linux-cpp}"
+BUILD_DIR="${STREAMFIND_CPP_BUILD_DIR:-$REPO_ROOT/tmp/build/linux/core}"
+reset_mixed_linux_build_tree "$BUILD_DIR"
 PLUGINS="${STREAMFIND_PLUGINS:-ALL}"
 cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE="${STREAMFIND_BUILD_TYPE:-Release}" \

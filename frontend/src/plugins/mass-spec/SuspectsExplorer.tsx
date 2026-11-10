@@ -13,7 +13,7 @@ import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
-import { colorFor, stablePlotGroup } from './FeatureInspector';
+import { colorFor, stablePlotGroup } from './featurePlotUtils';
 import { StructureImage } from './SuspectTargetsViewer';
 
 type Row = Record<string, string | null>;
@@ -146,40 +146,29 @@ function IdentificationOverview({
   );
 }
 
-function decodeFloatArray(encoded: unknown, size: unknown): number[] {
-  if (Array.isArray(encoded)) return encoded.map(Number).filter(Number.isFinite);
-  if (encoded === null || encoded === undefined) return [];
-  const text = String(encoded).trim();
-  if (!text) return [];
-  if (text.startsWith('[')) {
+function decodeFloatArray(value: unknown): number[] {
+  let decoded = value;
+  if (typeof decoded === 'string') {
     try {
-      const values = JSON.parse(text);
-      return Array.isArray(values) ? values.map(Number).filter(Number.isFinite) : [];
+      decoded = JSON.parse(decoded) as unknown;
+      if (typeof decoded === 'string') decoded = JSON.parse(decoded) as unknown;
     } catch {
       return [];
     }
   }
-  try {
-    const normalized = text.replaceAll('-', '+').replaceAll('_', '/');
-    const binary = atob(normalized);
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const expected = Number(size || 0);
-    const precision = expected > 0 && bytes.byteLength === expected * 8 ? 8 : 4;
-    if (bytes.byteLength % precision !== 0) return [];
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return Array.from({ length: bytes.byteLength / precision }, (_, index) =>
-      precision === 8 ? view.getFloat64(index * precision, true) : view.getFloat32(index * precision, true),
-    );
-  } catch {
-    return [];
-  }
+  if (!Array.isArray(decoded)) return [];
+  return decoded.map(Number).filter(Number.isFinite);
 }
 
 type EvidenceTab = 'eic' | 'ms1' | 'ms2';
 type ModalEvidenceTab = 'ms1' | 'ms2';
 type RenderedTrace = { x: number[]; y: number[] };
 
-function traceFromResponse(response: { traces?: Array<Record<string, unknown>> }, xKey: string, yKey: string): RenderedTrace | null {
+function traceFromResponse(
+  response: { traces?: Array<Record<string, unknown>> },
+  xKey: string,
+  yKey: string,
+): RenderedTrace | null {
   const row = response.traces?.[0];
   if (!row) return null;
   const x = Array.isArray(row[xKey]) ? row[xKey].map(Number).filter(Number.isFinite) : [];
@@ -200,9 +189,12 @@ function EvidencePlots({
 }): ReactNode {
   const [tab, setTab] = useState<ModalEvidenceTab>('ms1');
   const [isotope, setIsotope] = useState<{ mz: number[]; probability: number[]; labels: string[] } | null>(null);
-  const [experimentalTrace, setExperimentalTrace] = useState<RenderedTrace | null>(null);
+  const [traceResult, setTraceResult] = useState<{ key: string; trace: RenderedTrace | null } | null>(null);
   const formula = text(row, 'formula');
   const polarity = number(row, 'polarity');
+  const rowKey = text(row, 'row_key');
+  const traceKey = `${resultId}:${rowKey}:${tab}`;
+  const experimentalTrace = traceResult?.key === traceKey ? traceResult.trace : null;
 
   useEffect(() => {
     let active = true;
@@ -233,27 +225,21 @@ function EvidencePlots({
 
   useEffect(() => {
     let active = true;
-    const rowKey = text(row, 'row_key');
-    if (!client || !rowKey) {
-      setExperimentalTrace(null);
-      return () => {
-        active = false;
-      };
-    }
+    if (!rowKey) return undefined;
     const xKey = tab === 'ms1' ? 'ms1_mz' : 'ms2_mz';
     const yKey = tab === 'ms1' ? 'ms1_intensity' : 'ms2_intensity';
     void client
       .resultTrace(sessionId, { result_id: resultId, trace_type: tab, row_keys: [rowKey], limit: 1 })
       .then((response) => {
-        if (active) setExperimentalTrace(traceFromResponse(response, xKey, yKey));
+        if (active) setTraceResult({ key: traceKey, trace: traceFromResponse(response, xKey, yKey) });
       })
       .catch(() => {
-        if (active) setExperimentalTrace(null);
+        if (active) setTraceResult({ key: traceKey, trace: null });
       });
     return () => {
       active = false;
     };
-  }, [client, resultId, row, sessionId, tab]);
+  }, [client, resultId, row, rowKey, sessionId, tab, traceKey]);
 
   const spec = evidenceSpec(row, tab, isotope, resultId, experimentalTrace);
   return (
@@ -275,9 +261,7 @@ function EvidencePlots({
       {spec ? (
         <VisualizationRenderer spec={spec} className="sf-suspects-explorer-evidence-plot" />
       ) : (
-        <p className="sf-suspects-explorer-empty">
-          No encoded {tab.toUpperCase()} evidence is available for this suspect.
-        </p>
+        <p className="sf-suspects-explorer-empty">No {tab.toUpperCase()} evidence is available for this suspect.</p>
       )}
     </section>
   );
@@ -443,8 +427,8 @@ function evidenceSpec(
   let xTitle = 'm/z';
   let yTitle = 'Intensity';
   if (tab === 'eic') {
-    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'eic_rt'), rawValue(row, 'eic_size'));
-    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'eic_intensity'), rawValue(row, 'eic_size'));
+    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'eic_rt'));
+    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'eic_intensity'));
     if (!x.length || !y.length) return null;
     xTitle = 'Retention time (s)';
     data = [
@@ -459,8 +443,8 @@ function evidenceSpec(
       },
     ];
   } else if (tab === 'ms1') {
-    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms1_mz'), rawValue(row, 'ms1_size'));
-    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms1_intensity'), rawValue(row, 'ms1_size'));
+    const x = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms1_mz'));
+    const y = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms1_intensity'));
     if (!x.length || !y.length) return null;
     data = [
       {
@@ -487,10 +471,12 @@ function evidenceSpec(
     }
     yTitle = 'Intensity (experimental + / isotope −)';
   } else {
-    const experimentalMz = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms2_mz'), rawValue(row, 'ms2_size'));
-    const experimentalIntensity = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms2_intensity'), rawValue(row, 'ms2_size'));
-    const databaseMz = decodeFloatArray(rawValue(row, 'db_ms2_mz'), rawValue(row, 'db_ms2_size'));
-    const databaseIntensity = decodeFloatArray(rawValue(row, 'db_ms2_intensity'), rawValue(row, 'db_ms2_size'));
+    const experimentalMz = experimentalTrace?.x ?? decodeFloatArray(rawValue(row, 'ms2_mz'));
+    const experimentalIntensity = experimentalTrace?.y ?? decodeFloatArray(rawValue(row, 'ms2_intensity'));
+    const databaseMz = decodeFloatArray(rawValue(row, 'db_ms2_mz'));
+    const databaseIntensity = decodeFloatArray(rawValue(row, 'db_ms2_intensity'));
+    const encodedDatabaseFormulas = text(row, 'db_ms2_formula');
+    const databaseFormulas = encodedDatabaseFormulas ? encodedDatabaseFormulas.split(';') : [];
     const experimentalCount = Math.min(experimentalMz.length, experimentalIntensity.length);
     const databaseCount = Math.min(databaseMz.length, databaseIntensity.length);
     if (!experimentalCount && !databaseCount) return null;
@@ -516,6 +502,12 @@ function evidenceSpec(
         y: databaseIntensity
           .slice(0, databaseCount)
           .flatMap((value) => [0, databaseMax > 0 ? -value / databaseMax : 0, null]),
+        customdata: databaseMz.slice(0, databaseCount).flatMap((_, index) => {
+          const formula = databaseFormulas[index]?.trim() || 'Formula unavailable';
+          return [formula, formula, null];
+        }),
+        hovertemplate:
+          'Database fragment formula: %{customdata}<br>m/z %{x:.5f}<br>Relative intensity %{y:.4f}<extra></extra>',
         line: { color: theme.reference, width: 1 },
       });
     yTitle = 'Relative intensity (experimental + / database −)';
@@ -593,7 +585,11 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [totalSuspects, setTotalSuspects] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedFeatureDetail, setSelectedFeatureDetail] = useState<Row | null>(null);
-  const [selectedFeatureTrace, setSelectedFeatureTrace] = useState<RenderedTrace | null>(null);
+  const [featureTraceResult, setFeatureTraceResult] = useState<{
+    resultId: string;
+    rowKey: string;
+    trace: RenderedTrace | null;
+  } | null>(null);
   const featureDetailCache = useRef(new Map<string, Row>());
   const [selectedSuspect, setSelectedSuspect] = useState<Row | null>(null);
   const [selectedSuspectLoading, setSelectedSuspectLoading] = useState(false);
@@ -626,6 +622,13 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [structureCache, setStructureCache] = useState<StructureCache>({});
   const [viewport, setViewport] = useState<PlotViewport | null>(null);
+  const selectedFeatureRowKey = selectedFeatureDetail ? text(selectedFeatureDetail, 'row_key') : '';
+  const selectedFeatureTrace =
+    featureTraceResult &&
+    featureTraceResult.resultId === context.artifact?.result_id &&
+    featureTraceResult.rowKey === selectedFeatureRowKey
+      ? featureTraceResult.trace
+      : null;
   const overviewColumns = useMemo(
     () => selectSuspectOverviewColumns(context.artifact?.columns),
     [context.artifact?.columns],
@@ -903,7 +906,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
       'db_ms2_intensity',
       'formula',
       'polarity',
-    ].filter((column) => available.has(column));
+    ].filter((column) => column === 'row_key' || available.has(column));
   }, [context.artifact]);
 
   useEffect(() => {
@@ -945,13 +948,9 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
 
   useEffect(() => {
     let active = true;
-    const rowKey = selectedFeatureDetail ? text(selectedFeatureDetail, 'row_key') : '';
-    if (!client || !context.artifact || !rowKey) {
-      setSelectedFeatureTrace(null);
-      return () => {
-        active = false;
-      };
-    }
+    const rowKey = selectedFeatureRowKey;
+    if (!client || !context.artifact || !rowKey) return undefined;
+    const resultId = context.artifact.result_id;
     void client
       .resultTrace(context.sessionId, {
         result_id: context.artifact.result_id,
@@ -960,15 +959,20 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         limit: 1,
       })
       .then((response) => {
-        if (active) setSelectedFeatureTrace(traceFromResponse(response, 'eic_rt', 'eic_intensity'));
+        if (active)
+          setFeatureTraceResult({
+            resultId,
+            rowKey,
+            trace: traceFromResponse(response, 'eic_rt', 'eic_intensity'),
+          });
       })
       .catch(() => {
-        if (active) setSelectedFeatureTrace(null);
+        if (active) setFeatureTraceResult({ resultId, rowKey, trace: null });
       });
     return () => {
       active = false;
     };
-  }, [client, context.artifact, context.sessionId, selectedFeatureDetail]);
+  }, [client, context.artifact, context.sessionId, selectedFeatureRowKey]);
 
   const openSuspectDetail = async (row: Row) => {
     setSelectedSuspect(row);
@@ -1411,9 +1415,7 @@ function getSuspectFilterColumns(
   const textColumns: Column[] = [];
   for (const column of knownColumns) {
     const type = (column.type ?? '').toLowerCase();
-    const values = rows
-      .map((row) => row[column.name])
-      .filter((value): value is string => value !== null && value !== undefined);
+    const values = rows.map((row) => row[column.name]).filter((value): value is string => typeof value === 'string');
     const inferredNumeric = values.length > 0 && values.every((value) => Number.isFinite(Number(value)));
     const inferredBoolean = values.length > 0 && values.every((value) => /^(true|false)$/i.test(value));
     if (/int|decimal|numeric|real|double|float|hugeint/.test(type) || (!type && inferredNumeric)) {
@@ -1450,5 +1452,5 @@ function selectSuspectOverviewColumns(available: Column[] | undefined): string[]
   if (!available?.length) return undefined;
   const availableNames = new Set(available.map((column) => column.name));
   const selected = suspectOverviewColumns.filter((column) => availableNames.has(column));
-  return selected.length ? [...selected] : undefined;
+  return selected.length ? [...selected, 'row_key'] : undefined;
 }

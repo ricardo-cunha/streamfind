@@ -62,9 +62,9 @@ sfcore:OperationShape
 sfcore:WorkflowConnectionShape
     a sh:NodeShape ;
     sh:targetClass sf:WorkflowConnection ;
-    sh:property [ sh:path sf:sourceNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:sourceNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ] ;
     sh:property [ sh:path sf:sourcePortId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:property [ sh:path sf:targetNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+    sh:property [ sh:path sf:targetNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ] ;
     sh:property [ sh:path sf:targetPortId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
 sfcore:DomainModuleShape

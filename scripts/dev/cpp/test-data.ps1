@@ -4,7 +4,7 @@ param(
     [switch]$SkipBuild
 )
 
-. (Join-Path $PSScriptRoot '..\mcp-common.ps1')
+. (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $dataRoot = Get-StreamfindDataRoot $repoRoot
 $dataFile = Join-Path $dataRoot $RelativePath
@@ -18,14 +18,14 @@ if (-not $SkipBuild) {
 }
 
 $executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
-$catalogue = Join-Path $repoRoot 'tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb'
+$catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
 $database = Join-Path $repoRoot 'tmp\projects\streamfind-cpp-data-script.duckdb'
 $projectId = 'data-cpp'
 $analysisName = [System.IO.Path]::GetFileNameWithoutExtension($dataFile)
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
-$env:PATH = (Join-Path $repoRoot 'tmp\build\mingw-ucrt64\tests') + ';' + $env:PATH
+$env:PATH = (Join-Path $repoRoot 'tmp\build\windows\core\tests') + ';' + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 try {

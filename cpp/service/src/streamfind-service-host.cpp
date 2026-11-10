@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <shellapi.h>
 #include "streamfind/service_configuration.hpp"
 
 #include <filesystem>
@@ -63,16 +62,6 @@ void start_service() {
     CloseHandle(process.hProcess);
     CloseHandle(process.hThread);
     if (exit_code != 0) throw std::runtime_error("streamfind service did not become ready");
-    const auto configuration = streamfind::load_service_configuration(package_root() / "bin" / "streamfind.json");
-    if (configuration.tray_enabled && configuration.tray_start_with_app) {
-        auto tray = package_root() / "bin" / "streamfind-tray.exe";
-        if (!std::filesystem::exists(tray)) tray = package_root() / "streamfind-tray.exe";
-        if (!std::filesystem::exists(tray)) return;
-        const auto result = ShellExecuteA(nullptr, "open", tray.string().c_str(), nullptr,
-                                          tray.parent_path().string().c_str(), SW_SHOWNORMAL);
-        if (reinterpret_cast<std::intptr_t>(result) <= 32)
-            throw std::runtime_error("unable to start streamfind tray");
-    }
 }
 
 std::uint16_t service_port() {

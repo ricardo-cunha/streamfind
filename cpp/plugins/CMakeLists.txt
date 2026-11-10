@@ -2,6 +2,7 @@
 # when it contains a CMakeLists.txt; the directory name is its canonical domain
 # and its CMake target follows streamfind_<domain>_plugin.
 file(GLOB STREAMFIND_PLUGIN_DIRECTORIES
+    CONFIGURE_DEPENDS
     RELATIVE "${CMAKE_CURRENT_LIST_DIR}"
     LIST_DIRECTORIES true
     "${CMAKE_CURRENT_LIST_DIR}/*")
@@ -27,12 +28,16 @@ foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DIRECTORIES)
        NOT _plugin_domain IN_LIST STREAMFIND_ENABLED_PLUGINS)
         continue()
     endif()
+    set(STREAMFIND_BUNDLED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/manifests/${_plugin_domain}/plugin.json")
+    configure_file("${_plugin_domain}/plugin.json.in" "${STREAMFIND_BUNDLED_MANIFEST}" @ONLY)
     add_subdirectory("${_plugin_domain}")
     set(_plugin_target "streamfind_${_plugin_domain}_plugin")
     if(NOT TARGET ${_plugin_target})
         message(FATAL_ERROR
             "Plugin ${_plugin_domain} must define ${_plugin_target}")
     endif()
+    target_compile_definitions(${_plugin_target} PRIVATE STREAMFIND_BUNDLED_PLUGIN_VERSION="${PROJECT_VERSION}")
+    set_property(TARGET ${_plugin_target} APPEND PROPERTY LINK_DEPENDS "${STREAMFIND_BUNDLED_MANIFEST}")
     list(APPEND STREAMFIND_PLUGIN_DOMAINS "${_plugin_domain}")
     list(APPEND STREAMFIND_PLUGIN_TARGETS "${_plugin_target}")
     list(APPEND STREAMFIND_PLUGIN_SEMANTIC_DIRS

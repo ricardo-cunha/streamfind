@@ -1,9 +1,0 @@
-{
-  "name": "openbabel",
-  "version": "3.2.0",
-  "type": "compiled-library-with-runtime-data",
-  "compiled_from": "src/core/external/openbabel",
-  "runtime_data": "src/core/external/openbabel/openbabel-3-2-0/data",
-  "r_install_target": "inst/extdata/openbabel/data",
-  "python_install_target": "python/cf_streamfind/resources/openbabel/data"
-}

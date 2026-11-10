@@ -11,6 +11,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <zstd.h>
 
 namespace mass_spec::reader::bruker
@@ -76,22 +77,6 @@ std::string value_string(duckdb_result &result, idx_t column, idx_t row)
   std::string output(value);
   duckdb_free(value);
   return output;
-}
-
-std::vector<std::uint8_t> decode_hex_blob(const std::string &value)
-{
-  if (value.size() % 2 != 0) throw std::runtime_error("Odd-length Bruker transformator blob.");
-  std::vector<std::uint8_t> bytes;
-  bytes.reserve(value.size() / 2);
-  const auto nibble = [](const char c) -> std::uint8_t {
-    if (c >= '0' && c <= '9') return static_cast<std::uint8_t>(c - '0');
-    if (c >= 'A' && c <= 'F') return static_cast<std::uint8_t>(c - 'A' + 10);
-    if (c >= 'a' && c <= 'f') return static_cast<std::uint8_t>(c - 'a' + 10);
-    throw std::runtime_error("Invalid hexadecimal Bruker transformator blob.");
-  };
-  for (std::size_t i = 0; i < value.size(); i += 2)
-    bytes.push_back(static_cast<std::uint8_t>((nibble(value[i]) << 4) | nibble(value[i + 1])));
-  return bytes;
 }
 
 std::vector<std::uint8_t> value_blob(duckdb_result &result, const idx_t column, const idx_t row)
@@ -175,55 +160,6 @@ void classify_bruker_chromatogram(BrukerChromatogram &chromatogram)
   chromatogram.units = bruker_chromatogram_units(chromatogram.description);
 }
 
-double read_le_double(const std::vector<std::uint8_t> &bytes, const std::size_t offset)
-{
-  if (offset + sizeof(double) > bytes.size()) throw std::runtime_error("Truncated Bruker transformator blob.");
-  double value = 0.0;
-  std::memcpy(&value, bytes.data() + offset, sizeof(value));
-  if (!std::isfinite(value)) throw std::runtime_error("Non-finite Bruker transformator coefficient.");
-  return value;
-}
-
-BafCalibration parse_baf_calibration(const std::string &hex_blob)
-{
-  const auto bytes = decode_hex_blob(hex_blob);
-  if (bytes.size() < 60) throw std::runtime_error("Unsupported Bruker transformator blob size.");
-  BafCalibration calibration;
-  calibration.digitizer_delay = read_le_double(bytes, 4);
-  calibration.digitizer_timebase = read_le_double(bytes, 12);
-  calibration.c0 = read_le_double(bytes, 20);
-  calibration.c1 = read_le_double(bytes, 28);
-  calibration.c2 = read_le_double(bytes, 36);
-  calibration.c3 = read_le_double(bytes, 44);
-  calibration.c4 = read_le_double(bytes, 52);
-  calibration.valid = calibration.digitizer_timebase > 0.0 && calibration.c1 > 0.0;
-  if (!calibration.valid) throw std::runtime_error("Invalid Bruker transformator calibration.");
-  return calibration;
-}
-
-double baf_index_to_mz(const BafCalibration &calibration, const double index)
-{
-  const double tof = calibration.digitizer_delay + calibration.digitizer_timebase * index;
-  const double linear = std::sqrt(1.0e12 / calibration.c1);
-  const auto equation = [&](const double root) {
-    return calibration.c0 + linear * root + calibration.c2 * root * root + calibration.c3 * root * root * root - tof;
-  };
-  double lower = 0.0;
-  double upper = 100.0;
-  while (equation(upper) < 0.0 && upper < 1.0e6) upper *= 2.0;
-  if (equation(lower) > 0.0 || equation(upper) < 0.0)
-    throw std::runtime_error("Bruker transformator root is outside supported range.");
-  for (int iteration = 0; iteration < 80; ++iteration)
-  {
-    const double middle = (lower + upper) * 0.5;
-    if (equation(middle) < 0.0) lower = middle;
-    else upper = middle;
-  }
-  const double root = (lower + upper) * 0.5;
-  const double mz = root * root - calibration.c4;
-  if (!std::isfinite(mz) || mz < 0.0) throw std::runtime_error("Invalid Bruker calibrated m/z.");
-  return mz;
-}
 }
 
 Family detect_family(const std::string &path)
@@ -294,81 +230,180 @@ TsfLineSpectrum read_tsf_line_spectrum(const std::string &path, const TsfFrame &
   return spectrum;
 }
 
-TsfCalibration read_tsf_calibration(const std::string &path, const TsfFrame &frame)
+std::vector<TsfCalibration> read_tsf_calibrations(const std::string &path, const std::vector<TsfFrame> &frames)
 {
   if (detect_family(path) != Family::Tsf)
     throw std::runtime_error("Not a Bruker TSF directory: " + path);
-  detail::SqliteScan database((std::filesystem::path(path) / "analysis.tsf").string());
-  const auto calibration_query = "SELECT CAST(Id AS VARCHAR),CAST(ModelType AS VARCHAR),CAST(DigitizerTimebase AS VARCHAR),CAST(DigitizerDelay AS VARCHAR),CAST(T1 AS VARCHAR),CAST(T2 AS VARCHAR),CAST(dC1 AS VARCHAR),CAST(dC2 AS VARCHAR),CAST(C0 AS VARCHAR),CAST(C1 AS VARCHAR),CAST(C2 AS VARCHAR),CAST(C3 AS VARCHAR),CAST(C4 AS VARCHAR) FROM " + database.scan("MzCalibration") + " WHERE Id=" + std::to_string(frame.mz_calibration);
-  auto calibration_result = database.query(calibration_query);
-  if (duckdb_row_count(&calibration_result) != 1)
+  if (frames.empty())
+    return {};
+
+  detail::SqliteScan acquisition((std::filesystem::path(path) / "analysis.tsf").string());
+  std::unordered_map<std::int32_t, TsfCalibration> acquisition_calibrations;
+  auto calibration_result = acquisition.query(
+      "SELECT CAST(Id AS VARCHAR),CAST(ModelType AS VARCHAR),CAST(DigitizerTimebase AS VARCHAR),"
+      "CAST(DigitizerDelay AS VARCHAR),CAST(T1 AS VARCHAR),CAST(T2 AS VARCHAR),CAST(dC1 AS VARCHAR),"
+      "CAST(dC2 AS VARCHAR),CAST(C0 AS VARCHAR),CAST(C1 AS VARCHAR),CAST(C2 AS VARCHAR),"
+      "CAST(C3 AS VARCHAR),CAST(C4 AS VARCHAR) FROM " + acquisition.scan("MzCalibration"));
+  for (idx_t row = 0; row < duckdb_row_count(&calibration_result); ++row)
   {
-    duckdb_destroy_result(&calibration_result);
-    throw std::runtime_error("Missing TSF MzCalibration row.");
+    TsfCalibration calibration;
+    calibration.id = static_cast<std::int32_t>(std::stoi(detail::value_string(calibration_result, 0, row)));
+    calibration.model_type = static_cast<std::int32_t>(std::stoi(detail::value_string(calibration_result, 1, row)));
+    calibration.digitizer_timebase = std::stod(detail::value_string(calibration_result, 2, row));
+    calibration.digitizer_delay = std::stod(detail::value_string(calibration_result, 3, row));
+    calibration.t1 = std::stod(detail::value_string(calibration_result, 4, row));
+    calibration.t2 = std::stod(detail::value_string(calibration_result, 5, row));
+    calibration.dc1 = std::stod(detail::value_string(calibration_result, 6, row));
+    calibration.dc2 = std::stod(detail::value_string(calibration_result, 7, row));
+    calibration.c0 = std::stod(detail::value_string(calibration_result, 8, row));
+    calibration.c1 = std::stod(detail::value_string(calibration_result, 9, row));
+    calibration.c2 = std::stod(detail::value_string(calibration_result, 10, row));
+    calibration.c3 = std::stod(detail::value_string(calibration_result, 11, row));
+    calibration.c4 = std::stod(detail::value_string(calibration_result, 12, row));
+    acquisition_calibrations.emplace(calibration.id, calibration);
   }
-  TsfCalibration calibration;
-  calibration.id = static_cast<std::int32_t>(std::stoi(detail::value_string(calibration_result, 0, 0)));
-  calibration.model_type = static_cast<std::int32_t>(std::stoi(detail::value_string(calibration_result, 1, 0)));
-  calibration.digitizer_timebase = std::stod(detail::value_string(calibration_result, 2, 0));
-  calibration.digitizer_delay = std::stod(detail::value_string(calibration_result, 3, 0));
-  calibration.t1 = std::stod(detail::value_string(calibration_result, 4, 0));
-  calibration.t2 = std::stod(detail::value_string(calibration_result, 5, 0));
-  calibration.dc1 = std::stod(detail::value_string(calibration_result, 6, 0));
-  calibration.dc2 = std::stod(detail::value_string(calibration_result, 7, 0));
-  calibration.c0 = std::stod(detail::value_string(calibration_result, 8, 0));
-  calibration.c1 = std::stod(detail::value_string(calibration_result, 9, 0));
-  calibration.c2 = std::stod(detail::value_string(calibration_result, 10, 0));
-  calibration.c3 = std::stod(detail::value_string(calibration_result, 11, 0));
-  calibration.c4 = std::stod(detail::value_string(calibration_result, 12, 0));
   duckdb_destroy_result(&calibration_result);
-  auto metadata_result = database.query("SELECT Key,Value FROM " + database.scan("GlobalMetadata") + " WHERE Key IN ('MzAcqRangeLower','MzAcqRangeUpper','DigitizerNumSamples','AcquisitionSoftware')");
+
+  TsfCalibration metadata;
+  auto metadata_result = acquisition.query(
+      "SELECT Key,Value FROM " + acquisition.scan("GlobalMetadata") +
+      " WHERE Key IN ('MzAcqRangeLower','MzAcqRangeUpper','DigitizerNumSamples','AcquisitionSoftware')");
   for (idx_t row = 0; row < duckdb_row_count(&metadata_result); ++row)
   {
     const auto key = detail::value_string(metadata_result, 0, row);
     const auto value = detail::value_string(metadata_result, 1, row);
-    if (key == "MzAcqRangeLower") calibration.mz_min = std::stod(value);
-    else if (key == "MzAcqRangeUpper") calibration.mz_max = std::stod(value);
-    else if (key == "DigitizerNumSamples") calibration.tof_max = static_cast<std::uint32_t>(std::stoul(value));
-    else if (key == "AcquisitionSoftware") calibration.otof_control = value == "Bruker otofControl";
+    if (key == "MzAcqRangeLower") metadata.mz_min = std::stod(value);
+    else if (key == "MzAcqRangeUpper") metadata.mz_max = std::stod(value);
+    else if (key == "DigitizerNumSamples") metadata.tof_max = static_cast<std::uint32_t>(std::stoul(value));
+    else if (key == "AcquisitionSoftware") metadata.otof_control = value == "Bruker otofControl";
   }
   duckdb_destroy_result(&metadata_result);
-  if (!(calibration.mz_min > 0.0 && calibration.mz_max > calibration.mz_min && calibration.tof_max > 0))
+  if (!(metadata.mz_min > 0.0 && metadata.mz_max > metadata.mz_min && metadata.tof_max > 0))
     throw std::runtime_error("Incomplete TSF calibration metadata.");
-  return calibration;
+
+  std::unordered_map<std::int64_t, TsfCalibration> recalibrated;
+  std::unordered_map<std::int64_t, std::int32_t> frame_calibration_ids;
+  frame_calibration_ids.reserve(frames.size());
+  for (const auto &frame : frames)
+    frame_calibration_ids.emplace(frame.id, frame.mz_calibration);
+  const auto recalibration_path = std::filesystem::path(path) / "calibration.sqlite";
+  if (std::filesystem::is_regular_file(recalibration_path))
+  {
+    try
+    {
+      detail::SqliteScan recalibration(recalibration_path.string());
+      auto tables = recalibration.query("SELECT name FROM " + recalibration.scan("sqlite_master") +
+                                        " WHERE type='table'");
+      std::unordered_map<std::string, bool> available_tables;
+      for (idx_t row = 0; row < duckdb_row_count(&tables); ++row)
+        available_tables.emplace(detail::value_string(tables, 0, row), true);
+      duckdb_destroy_result(&tables);
+      if (available_tables.find("CalibrationState") == available_tables.end())
+        return [&]() {
+          std::vector<TsfCalibration> acquisition_only;
+          acquisition_only.reserve(frames.size());
+          for (const auto &frame : frames)
+          {
+            const auto found = acquisition_calibrations.find(frame.mz_calibration);
+            if (found == acquisition_calibrations.end())
+              throw std::runtime_error("Missing TSF MzCalibration row for frame " +
+                                       std::to_string(frame.id) + ".");
+            auto calibration = found->second;
+            calibration.mz_min = metadata.mz_min;
+            calibration.mz_max = metadata.mz_max;
+            calibration.tof_max = metadata.tof_max;
+            calibration.otof_control = metadata.otof_control;
+            acquisition_only.push_back(calibration);
+          }
+          return acquisition_only;
+        }();
+      for (const auto *required : {"FrameMzCalibrationMapping", "FrameMzCalibration"})
+        if (available_tables.find(required) == available_tables.end())
+          throw std::runtime_error(std::string("DataAnalysis calibration database is incomplete: missing table ") +
+                                   required);
+      const auto recalibration_query =
+          "SELECT CAST(m.FrameId AS VARCHAR),CAST(c.CalibrationState AS VARCHAR),CAST(c.Id AS VARCHAR),"
+          "CAST(c.ModelType AS VARCHAR),CAST(c.C0 AS VARCHAR),CAST(c.C1 AS VARCHAR),CAST(c.C2 AS VARCHAR),"
+          "CAST(c.C3 AS VARCHAR),CAST(c.C4 AS VARCHAR) "
+          "FROM " + recalibration.scan("FrameMzCalibrationMapping") + " AS m JOIN " +
+          recalibration.scan("FrameMzCalibration") + " AS c ON c.CalibrationState=m.CalibrationState "
+          "AND c.Id=m.FrameMzCalibrationId JOIN " + recalibration.scan("CalibrationState") +
+          " AS s ON s.Id=m.CalibrationState WHERE s.HasFrameCalibrators=1 AND "
+          "m.CalibrationState=(SELECT MAX(Id) FROM " + recalibration.scan("CalibrationState") +
+          " WHERE HasFrameCalibrators=1)";
+      auto result = recalibration.query(recalibration_query);
+      for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
+      {
+        TsfCalibration calibration;
+        calibration.state_id = static_cast<std::int32_t>(std::stoi(detail::value_string(result, 1, row)));
+        calibration.id = static_cast<std::int32_t>(std::stoi(detail::value_string(result, 2, row)));
+        calibration.model_type = static_cast<std::int32_t>(std::stoi(detail::value_string(result, 3, row)));
+        const auto frame_id = std::stoll(detail::value_string(result, 0, row));
+        const auto frame_calibration_it = frame_calibration_ids.find(frame_id);
+        if (frame_calibration_it == frame_calibration_ids.end())
+          throw std::runtime_error("DataAnalysis calibration references unknown frame " +
+                                   std::to_string(frame_id) + ".");
+        const auto acquisition_it = acquisition_calibrations.find(frame_calibration_it->second);
+        if (acquisition_it == acquisition_calibrations.end())
+          throw std::runtime_error("Missing acquisition digitizer metadata for TSF frame " +
+                                   std::to_string(frame_id) + ".");
+        calibration.digitizer_timebase = acquisition_it->second.digitizer_timebase;
+        calibration.digitizer_delay = acquisition_it->second.digitizer_delay;
+        calibration.c0 = std::stod(detail::value_string(result, 4, row));
+        calibration.c1 = std::stod(detail::value_string(result, 5, row));
+        calibration.c2 = std::stod(detail::value_string(result, 6, row));
+        calibration.c3 = std::stod(detail::value_string(result, 7, row));
+        calibration.c4 = std::stod(detail::value_string(result, 8, row));
+        calibration.data_analysis_recalibration = true;
+        if (calibration.model_type != 1 || !(calibration.digitizer_timebase > 0.0) ||
+            !(calibration.c1 > 0.0) || !std::isfinite(calibration.digitizer_delay) ||
+            !std::isfinite(calibration.c0) || !std::isfinite(calibration.c1) ||
+            !std::isfinite(calibration.c2) || !std::isfinite(calibration.c3) ||
+            !std::isfinite(calibration.c4))
+          throw std::runtime_error("Unsupported or invalid DataAnalysis frame calibration for frame " +
+                                   std::to_string(frame_id) + ".");
+        recalibrated[frame_id] = calibration;
+      }
+      duckdb_destroy_result(&result);
+    }
+    catch (const std::exception &error)
+    {
+      throw std::runtime_error("Unable to load Bruker DataAnalysis recalibration from " +
+                               recalibration_path.string() + ": " + error.what());
+    }
+  }
+
+  std::vector<TsfCalibration> output;
+  output.reserve(frames.size());
+  for (const auto &frame : frames)
+  {
+    const auto acquisition_it = acquisition_calibrations.find(frame.mz_calibration);
+    if (acquisition_it == acquisition_calibrations.end())
+      throw std::runtime_error("Missing TSF MzCalibration row for frame " + std::to_string(frame.id) + ".");
+    auto calibration = acquisition_it->second;
+    calibration.mz_min = metadata.mz_min;
+    calibration.mz_max = metadata.mz_max;
+    calibration.tof_max = metadata.tof_max;
+    calibration.otof_control = metadata.otof_control;
+    const auto recalibrated_it = recalibrated.find(frame.id);
+    if (recalibrated_it != recalibrated.end())
+    {
+      auto recalibrated_calibration = recalibrated_it->second;
+      recalibrated_calibration.mz_min = metadata.mz_min;
+      recalibrated_calibration.mz_max = metadata.mz_max;
+      recalibrated_calibration.tof_max = metadata.tof_max;
+      recalibrated_calibration.otof_control = metadata.otof_control;
+      calibration = recalibrated_calibration;
+    }
+    output.push_back(calibration);
+  }
+  return output;
 }
 
-std::vector<double> tsf_tof_to_mz(const TsfCalibration &calibration, const double frame_t1, const double frame_t2, const std::vector<double> &tof)
+TsfCalibration read_tsf_calibration(const std::string &path, const TsfFrame &frame)
 {
-  if (calibration.model_type != 1 || !(calibration.c1 > 0.0))
-    throw std::runtime_error("Unsupported or incomplete TSF m/z calibration model.");
-  const double temperature_factor = 1.0 + (calibration.dc1 * (calibration.t1 - frame_t1) + calibration.dc2 * (calibration.t2 - frame_t2)) / 1.0e6;
-  if (!(temperature_factor > 0.0))
-    throw std::runtime_error("Invalid TSF m/z calibration temperature factor.");
-  const double c1 = calibration.c1 * temperature_factor;
-  const double sqrt_term = std::sqrt(1.0e12 / c1);
-  const double max_mz = std::max(calibration.mz_max + std::abs(calibration.c4), 1.0);
-  const double max_x = std::sqrt(max_mz);
-  std::vector<double> mz;
-  mz.reserve(tof.size());
-  for (const auto value : tof)
-  {
-    const double target = value * calibration.digitizer_timebase + calibration.digitizer_delay - calibration.c0;
-    if (!(target >= 0.0))
-      throw std::runtime_error("TSF TOF is below the calibration model intercept.");
-    auto equation = [&](const double x) { return sqrt_term * x + calibration.c2 * x * x + calibration.c3 * x * x * x - target; };
-    double low = 0.0;
-    double high = max_x;
-    while (equation(high) < 0.0) high *= 2.0;
-    for (int iteration = 0; iteration < 80; ++iteration)
-    {
-      const double middle = (low + high) / 2.0;
-      if (equation(middle) < 0.0) low = middle;
-      else high = middle;
-    }
-    const double x = (low + high) / 2.0;
-    mz.push_back(x * x - calibration.c4);
-  }
-  return mz;
+  const auto calibrations = read_tsf_calibrations(path, {frame});
+  return calibrations.front();
 }
 
 std::vector<TsfFrame> read_tsf_frames(const std::string &path)
@@ -500,7 +535,16 @@ std::vector<BafSpectrumMetadata> read_baf_spectra_metadata(const std::string &pa
     spectrum.precursor_charge = static_cast<std::int32_t>(duckdb_value_int64(&result, 20, row));
     const auto transformator_blob = detail::value_string(result, 21, row);
     if (transformator_blob.empty()) throw std::runtime_error("Missing Bruker transformator calibration.");
-    spectrum.calibration = detail::parse_baf_calibration(transformator_blob);
+    try
+    {
+      spectrum.calibration = parse_baf_calibration(transformator_blob);
+    }
+    catch (const std::exception &error)
+    {
+      throw std::runtime_error("Invalid Bruker BAF transformator calibration for spectrum " +
+                               std::to_string(spectrum.id) + " (transformator " +
+                               std::to_string(spectrum.transformator_id) + "): " + error.what());
+    }
     spectra.push_back(std::move(spectrum));
   }
   duckdb_destroy_result(&result);
@@ -822,13 +866,45 @@ std::vector<std::vector<std::vector<float>>> make_chromatogram_arrays(const std:
 class TsfReader final : public MASS_SPEC_READER
 {
 public:
-  explicit TsfReader(const std::string &file) : MASS_SPEC_READER(file), frames_(read_tsf_frames(file)), msms_(read_tsf_msms_info(file)), chromatograms_(read_chromatograms(file)) {}
+  explicit TsfReader(const std::string &file)
+      : MASS_SPEC_READER(file),
+        frames_(read_tsf_frames(file)),
+        calibrations_(read_tsf_calibrations(file, frames_)),
+        msms_(read_tsf_msms_info(file)),
+        chromatograms_(read_chromatograms(file)) {}
   int get_number_spectra() override { return static_cast<int>(frames_.size()); }
   int get_number_chromatograms() override { return static_cast<int>(chromatograms_.size()); }
   int get_number_spectra_binary_arrays() override { return static_cast<int>(frames_.size() * 2); }
   std::string get_format() override { return "BrukerTSF"; }
   std::string get_type() override { return "MS"; }
   std::string get_time_stamp() override { return {}; }
+  std::string get_calibration_provenance() override
+  {
+    std::unordered_map<std::int32_t, std::size_t> states;
+    std::size_t acquisition_frames = 0;
+    for (const auto &calibration : calibrations_)
+    {
+      if (calibration.data_analysis_recalibration)
+        ++states[calibration.state_id];
+      else
+        ++acquisition_frames;
+    }
+    if (states.empty())
+      return "TSF acquisition calibration; no supported DataAnalysis frame recalibration was present.";
+    std::string provenance = "TSF DataAnalysis frame calibration state";
+    if (states.size() != 1) provenance += "s";
+    provenance += " ";
+    bool first = true;
+    for (const auto &[state, count] : states)
+    {
+      if (!first) provenance += ", ";
+      provenance += std::to_string(state) + " (" + std::to_string(count) + " frames)";
+      first = false;
+    }
+    if (acquisition_frames > 0)
+      provenance += "; acquisition calibration used for " + std::to_string(acquisition_frames) + " frames";
+    return provenance;
+  }
   std::vector<int> get_polarity() override { return metadata_int([](const TsfFrame &f) { return f.polarity == "+" ? 1 : f.polarity == "-" ? -1 : 0; }); }
   std::vector<int> get_mode() override { return std::vector<int>(frames_.size(), 1); }
   std::vector<int> get_level() override { return metadata_int([](const TsfFrame &f) { return f.msms_type == 0 ? 1 : 2; }); }
@@ -879,7 +955,7 @@ public:
   MASS_SPEC_SPECTRUM get_spectrum(const int &index) override
   {
     trace_spectrum_decode(index);
-    const auto &frame = frames_.at(static_cast<std::size_t>(index)); const auto raw = read_tsf_line_spectrum(file_, frame); const auto calibration = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(calibration, frame.t1, frame.t2, raw.tof); const auto *info = find_msms(frame.id); MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(frame.id); out.array_length = static_cast<int>(mz.size()); out.level = frame.msms_type == 0 ? 1 : 2; out.mode = 1; out.polarity = frame.polarity == "+" ? 1 : frame.polarity == "-" ? -1 : 0; out.lowmz = 95.0f; out.highmz = 2505.0f; out.bpint = static_cast<float>(frame.max_intensity); out.tic = static_cast<float>(frame.summed_intensities); out.rt = static_cast<float>(frame.retention_time); if (info) { out.window_mz = static_cast<float>(info->trigger_mass); out.window_mzlow = static_cast<float>(info->trigger_mass - info->isolation_width / 2.0); out.window_mzhigh = static_cast<float>(info->trigger_mass + info->isolation_width / 2.0); out.precursor_mz = static_cast<float>(info->trigger_mass); out.precursor_charge = info->precursor_charge; out.activation_ce = static_cast<float>(info->collision_energy); } out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].reserve(mz.size()); out.binary_data[1].reserve(raw.intensity.size()); for (std::size_t n = 0; n < mz.size(); ++n) { out.binary_data[0].push_back(static_cast<float>(mz[n])); out.binary_data[1].push_back(raw.intensity[n]); } return out;
+    const auto &frame = frames_.at(static_cast<std::size_t>(index)); const auto raw = read_tsf_line_spectrum(file_, frame); const auto &calibration = calibrations_.at(static_cast<std::size_t>(index)); const auto mz = tsf_tof_to_mz(calibration, frame.t1, frame.t2, raw.tof); const auto *info = find_msms(frame.id); MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = static_cast<int>(frame.id); out.array_length = static_cast<int>(mz.size()); out.level = frame.msms_type == 0 ? 1 : 2; out.mode = 1; out.polarity = frame.polarity == "+" ? 1 : frame.polarity == "-" ? -1 : 0; out.lowmz = 95.0f; out.highmz = 2505.0f; out.bpint = static_cast<float>(frame.max_intensity); out.tic = static_cast<float>(frame.summed_intensities); out.rt = static_cast<float>(frame.retention_time); if (info) { out.window_mz = static_cast<float>(info->trigger_mass); out.window_mzlow = static_cast<float>(info->trigger_mass - info->isolation_width / 2.0); out.window_mzhigh = static_cast<float>(info->trigger_mass + info->isolation_width / 2.0); out.precursor_mz = static_cast<float>(info->trigger_mass); out.precursor_charge = info->precursor_charge; out.activation_ce = static_cast<float>(info->collision_energy); } out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].reserve(mz.size()); out.binary_data[1].reserve(raw.intensity.size()); for (std::size_t n = 0; n < mz.size(); ++n) { out.binary_data[0].push_back(static_cast<float>(mz[n])); out.binary_data[1].push_back(raw.intensity[n]); } return out;
   }
 private:
   std::vector<int> normalize(std::vector<int> indices) const { if (indices.empty()) { indices.resize(frames_.size()); std::iota(indices.begin(), indices.end(), 0); } return indices; }
@@ -887,8 +963,8 @@ private:
   template <typename F> std::vector<float> values_float(const std::vector<int> &indices, F f) const { std::vector<float> out; for (const auto i : normalize(indices)) out.push_back(f(frames_.at(i))); return out; }
   template <typename F> std::vector<int> metadata_int(F f) const { return values({}, f); }
   const TsfMsMsInfo *find_msms(std::int64_t frame) const { for (const auto &i : msms_) if (i.frame == frame) return &i; return nullptr; }
-  float base_peak_mz(const TsfFrame &frame) const { const auto raw = read_tsf_line_spectrum(file_, frame); const auto cal = read_tsf_calibration(file_, frame); const auto mz = tsf_tof_to_mz(cal, frame.t1, frame.t2, raw.tof); const auto it = std::max_element(raw.intensity.begin(), raw.intensity.end()); return it == raw.intensity.end() ? 0.0f : static_cast<float>(mz[static_cast<std::size_t>(std::distance(raw.intensity.begin(), it))]); }
-  std::vector<TsfFrame> frames_; std::vector<TsfMsMsInfo> msms_; std::vector<BrukerChromatogram> chromatograms_;
+  float base_peak_mz(const TsfFrame &frame) const { const auto raw = read_tsf_line_spectrum(file_, frame); const auto &cal = calibrations_.at(static_cast<std::size_t>(&frame - frames_.data())); const auto mz = tsf_tof_to_mz(cal, frame.t1, frame.t2, raw.tof); const auto it = std::max_element(raw.intensity.begin(), raw.intensity.end()); return it == raw.intensity.end() ? 0.0f : static_cast<float>(mz[static_cast<std::size_t>(std::distance(raw.intensity.begin(), it))]); }
+  std::vector<TsfFrame> frames_; std::vector<TsfCalibration> calibrations_; std::vector<TsfMsMsInfo> msms_; std::vector<BrukerChromatogram> chromatograms_;
 };
 
 std::unique_ptr<MASS_SPEC_READER> create_tsf_reader(const std::string &path)
@@ -910,10 +986,147 @@ std::size_t baf_profile_point_count(const std::string &path, const std::uint64_t
   return static_cast<std::size_t>(count);
 }
 
+namespace detail
+{
+struct BafCalibrantScan
+{
+  std::vector<double> mz;
+  std::vector<double> intensity;
+};
+
+bool has_positive_tuning_mix(const std::filesystem::path &path)
+{
+  const auto method_path = path / "Calibrator.ami";
+  std::ifstream input(method_path, std::ios::binary);
+  if (!input) return false;
+  const std::string bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  const bool tuning_mix = bytes.find("Tuning Mix") != std::string::npos;
+  const bool positive = bytes.find("(pos)") != std::string::npos ||
+                        bytes.find("positive") != std::string::npos ||
+                        bytes.find("ESI-L") != std::string::npos;
+  return tuning_mix && positive;
+}
+
+double median_intensity(const std::vector<double> &intensities)
+{
+  if (intensities.empty()) return 0.0;
+  auto values = intensities;
+  const auto middle = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+  std::nth_element(values.begin(), middle, values.end());
+  if (values.size() % 2 != 0) return *middle;
+  const auto lower = *std::max_element(values.begin(), middle);
+  return (lower + *middle) * 0.5;
+}
+
+std::vector<BafCalibrantError> measure_baf_calibrants(
+    const std::vector<BafCalibrantScan> &scans, const std::vector<double> &references)
+{
+  struct WeightedError { double weighted_error = 0.0; double weight = 0.0; std::size_t scans = 0; };
+  std::vector<WeightedError> weighted(references.size());
+  for (const auto &scan : scans)
+  {
+    if (scan.mz.size() != scan.intensity.size()) continue;
+    std::vector<double> coarse_errors(references.size(), std::numeric_limits<double>::quiet_NaN());
+    for (std::size_t ref = 0; ref < references.size(); ++ref)
+    {
+      const double lower = references[ref] * (1.0 - 100.0e-6);
+      const double upper = references[ref] * (1.0 + 100.0e-6);
+      std::size_t strongest = scan.mz.size();
+      for (std::size_t peak = 0; peak < scan.mz.size(); ++peak)
+        if (scan.mz[peak] >= lower && scan.mz[peak] <= upper &&
+            (strongest == scan.mz.size() || scan.intensity[peak] > scan.intensity[strongest]))
+          strongest = peak;
+      if (strongest != scan.mz.size())
+        coarse_errors[ref] = (scan.mz[strongest] - references[ref]) / references[ref] * 1.0e6;
+    }
+    std::vector<double> finite_errors;
+    for (const auto error : coarse_errors)
+      if (std::isfinite(error)) finite_errors.push_back(error);
+    if (finite_errors.empty()) continue;
+    const auto midpoint = finite_errors.begin() + static_cast<std::ptrdiff_t>(finite_errors.size() / 2);
+    std::nth_element(finite_errors.begin(), midpoint, finite_errors.end());
+    const double shift = *midpoint;
+    for (std::size_t ref = 0; ref < references.size(); ++ref)
+    {
+      const double expected = references[ref] * (1.0 + shift * 1.0e-6);
+      const double tolerance = references[ref] * 10.0e-6;
+      std::size_t strongest = scan.mz.size();
+      for (std::size_t peak = 0; peak < scan.mz.size(); ++peak)
+        if (std::abs(scan.mz[peak] - expected) <= tolerance &&
+            (strongest == scan.mz.size() || scan.intensity[peak] > scan.intensity[strongest]))
+          strongest = peak;
+      if (strongest == scan.mz.size()) continue;
+      const double error = (scan.mz[strongest] - references[ref]) / references[ref] * 1.0e6;
+      const double intensity = std::max(0.0, scan.intensity[strongest]);
+      weighted[ref].weighted_error += error * intensity;
+      weighted[ref].weight += intensity;
+      ++weighted[ref].scans;
+    }
+  }
+  std::vector<BafCalibrantError> result;
+  for (std::size_t ref = 0; ref < references.size(); ++ref)
+    if (weighted[ref].scans && weighted[ref].weight > 0.0)
+      result.push_back({references[ref], weighted[ref].weighted_error / weighted[ref].weight,
+                        weighted[ref].weight});
+  return result;
+}
+
+BafMassCorrection estimate_baf_mass_correction(const std::string &file,
+                                               const std::vector<BafSpectrumMetadata> &spectra)
+{
+  if (!has_positive_tuning_mix(std::filesystem::path(file))) return {};
+  static const std::vector<double> references = {
+      322.04812, 622.02896, 922.00980, 1221.99064, 1521.97148,
+      1821.95231, 2121.93315, 2421.91399, 2721.89483};
+
+  std::vector<BafCalibrantScan> calibrant_scans;
+  const auto search_end = std::min<std::size_t>(spectra.size(), 200);
+  for (std::size_t index = 0; index < search_end; ++index)
+  {
+    const auto &spectrum = spectra[index];
+    if (spectrum.ms_level != 0 || spectrum.polarity != 1) continue;
+    BafLineSpectrum line;
+    try
+    {
+      line = read_baf_line_spectrum(file, spectrum.line_intensity_id);
+    }
+    catch (const std::exception &)
+    {
+      continue;
+    }
+    if (line.coordinate.empty() || line.coordinate.size() != line.intensity.size()) continue;
+    std::vector<double> mz;
+    mz.reserve(line.coordinate.size());
+    for (const auto coordinate : line.coordinate)
+      mz.push_back(baf_index_to_mz(spectrum.calibration, coordinate));
+    const double intensity_floor = 20.0 * median_intensity(line.intensity);
+    std::size_t intense_references = 0;
+    for (const auto reference : references)
+    {
+      std::size_t strongest = mz.size();
+      for (std::size_t peak = 0; peak < mz.size(); ++peak)
+        if (std::abs(mz[peak] - reference) <= reference * 100.0e-6 &&
+            (strongest == mz.size() || line.intensity[peak] > line.intensity[strongest]))
+          strongest = peak;
+      if (strongest != mz.size() && line.intensity[strongest] > intensity_floor)
+        ++intense_references;
+    }
+    if (intense_references >= std::min<std::size_t>(5, references.size() - 1))
+      calibrant_scans.push_back({std::move(mz), std::move(line.intensity)});
+  }
+  if (calibrant_scans.empty()) return {};
+  auto errors = measure_baf_calibrants(calibrant_scans, references);
+  if (errors.size() < 3) return {};
+  auto correction = fit_baf_mass_correction(errors);
+  correction.scan_count = calibrant_scans.size();
+  return correction;
+}
+}
+
 class BafReader final : public MASS_SPEC_READER
 {
 public:
-  explicit BafReader(const std::string &file) : MASS_SPEC_READER(file), spectra_(read_baf_spectra_metadata(file)), chromatograms_(read_chromatograms(file))
+  explicit BafReader(const std::string &file) : MASS_SPEC_READER(file), spectra_(read_baf_spectra_metadata(file)), chromatograms_(read_chromatograms(file)), correction_(detail::estimate_baf_mass_correction(file, spectra_))
   {
     if (spectra_.empty())
       throw std::runtime_error("Bruker BAF contains no spectra.");
@@ -924,6 +1137,28 @@ public:
   std::string get_format() override { return "BrukerBAF"; }
   std::string get_type() override { return "MS"; }
   std::string get_time_stamp() override { return {}; }
+  std::string get_calibration_provenance() override
+  {
+    const bool recalibration_present = std::filesystem::is_regular_file(std::filesystem::path(file_) / "Calibrator.ami") ||
+                                       std::filesystem::is_regular_file(std::filesystem::path(file_) / "calibration.sqlite");
+    std::string provenance = correction_.applied
+                                 ? "BAF acquisition transformator plus calibrant-fitted polynomial correction."
+                                 : "BAF acquisition transformator calibration.";
+    if (correction_.reference_count)
+    {
+      provenance += correction_.applied ? " Applied correction" : " Correction candidate not applied";
+      provenance += ": " + std::to_string(correction_.reference_count) + " references across " +
+                    std::to_string(correction_.scan_count) + " scans; calibrant RMS " +
+                    std::to_string(correction_.rms_before_ppm) + " ppm before and " +
+                    std::to_string(correction_.rms_after_ppm) + " ppm after, leave-one-out " +
+                    std::to_string(correction_.loo_rms_ppm) + " ppm.";
+    }
+    if (recalibration_present && !correction_.applied)
+      provenance += " DataAnalysis recalibration metadata is present; its proprietary correction state was not applied by the native reader.";
+    if (!recalibration_present && !correction_.applied)
+      provenance += " No DataAnalysis recalibration metadata or validated calibrant correction was available.";
+    return provenance;
+  }
   std::vector<int> get_polarity() override { return values([](const auto &s) { return s.polarity; }); }
   std::vector<int> get_mode() override { return values([this](const auto &s) { return has_line_data(s) ? 1 : 0; }); }
   std::vector<int> get_level() override { return values([](const auto &s) { return s.ms_level + 1; }); }
@@ -955,10 +1190,10 @@ public:
   std::vector<float> get_spectra_rt(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.retention_time); }); }
   std::vector<float> get_spectra_mobility(std::vector<int> indices = {}) override { return std::vector<float>(normalize(std::move(indices)).size(), 0.0f); }
   std::vector<int> get_spectra_precursor_scan(std::vector<int> indices = {}) override { return selected(indices, [](const auto &s) { return static_cast<int>(s.parent); }); }
-  std::vector<float> get_spectra_precursor_mz(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.precursor_mz); }); }
+  std::vector<float> get_spectra_precursor_mz(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return static_cast<float>(correct_mass_value(s.precursor_mz)); }); }
   std::vector<float> get_spectra_precursor_window_mz(std::vector<int> indices = {}) override { return get_spectra_precursor_mz(indices); }
-  std::vector<float> get_spectra_precursor_window_mzlow(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); }); }
-  std::vector<float> get_spectra_precursor_window_mzhigh(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); }); }
+  std::vector<float> get_spectra_precursor_window_mzlow(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return static_cast<float>(correct_mass_value(s.precursor_mz - s.isolation_width / 2.0)); }); }
+  std::vector<float> get_spectra_precursor_window_mzhigh(std::vector<int> indices = {}) override { return selected_float(indices, [this](const auto &s) { return static_cast<float>(correct_mass_value(s.precursor_mz + s.isolation_width / 2.0)); }); }
   std::vector<float> get_spectra_collision_energy(std::vector<int> indices = {}) override { return selected_float(indices, [](const auto &s) { return static_cast<float>(s.activation_ce); }); }
   MASS_SPEC_SPECTRA_HEADERS get_spectra_headers(std::vector<int> indices = {}, bool = false) override
   {
@@ -968,8 +1203,8 @@ public:
       const auto &s = spectra_.at(selected_indices[n]); BafLineSpectrum line; const auto has_line = has_line_data(s, &line); const auto length = has_line ? static_cast<int>(line.intensity.size()) : static_cast<int>(baf_profile_point_count(file_, s.profile_intensity_id));
       out.index[n] = static_cast<int>(selected_indices[n]); out.scan[n] = static_cast<int>(selected_indices[n]); out.array_length[n] = length;
       out.level[n] = s.ms_level + 1; out.mode[n] = has_line ? 1 : 0; out.polarity[n] = s.polarity; out.configuration[n] = 0;
-      out.lowmz[n] = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.front())) : calibrated_lowmz(s); out.highmz[n] = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.back())) : calibrated_highmz(s); out.bpmz[n] = base_peak_mz(s); out.bpint[n] = base_peak_intensity(s);
-      out.tic[n] = total_intensity(s); out.rt[n] = static_cast<float>(s.retention_time); out.precursor_mz[n] = static_cast<float>(s.precursor_mz); out.window_mz[n] = static_cast<float>(s.precursor_mz); out.window_mzlow[n] = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh[n] = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce[n] = static_cast<float>(s.activation_ce); out.precursor_charge[n] = s.precursor_charge;
+      out.lowmz[n] = has_line && !line.coordinate.empty() ? static_cast<float>(to_mz(s, line.coordinate.front())) : calibrated_lowmz(s); out.highmz[n] = has_line && !line.coordinate.empty() ? static_cast<float>(to_mz(s, line.coordinate.back())) : calibrated_highmz(s); out.bpmz[n] = base_peak_mz(s); out.bpint[n] = base_peak_intensity(s);
+      out.tic[n] = total_intensity(s); out.rt[n] = static_cast<float>(s.retention_time); out.precursor_mz[n] = static_cast<float>(correct_mass_value(s.precursor_mz)); out.window_mz[n] = static_cast<float>(correct_mass_value(s.precursor_mz)); out.window_mzlow[n] = static_cast<float>(correct_mass_value(s.precursor_mz - s.isolation_width / 2.0)); out.window_mzhigh[n] = static_cast<float>(correct_mass_value(s.precursor_mz + s.isolation_width / 2.0)); out.activation_ce[n] = static_cast<float>(s.activation_ce); out.precursor_charge[n] = s.precursor_charge;
     }
     return out;
   }
@@ -984,13 +1219,22 @@ public:
     const auto &s = spectra_.at(static_cast<std::size_t>(index)); BafLineSpectrum line; const auto has_line = has_line_data(s, &line);
     const auto profile = has_line ? BafProfileSpectrum{} : read_baf_profile_spectrum(file_, s.profile_intensity_id);
     MASS_SPEC_SPECTRUM out{}; out.index = index; out.scan = index; out.array_length = has_line ? static_cast<int>(line.intensity.size()) : static_cast<int>(profile.intensity.size()); out.level = s.ms_level + 1;
-    out.mode = has_line ? 1 : 0; out.polarity = s.polarity; out.lowmz = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.front())) : calibrated_lowmz(s); out.highmz = has_line && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.back())) : calibrated_highmz(s);
-    out.bpint = static_cast<float>(s.maximum_intensity); out.tic = static_cast<float>(s.summed_intensity); out.rt = static_cast<float>(s.retention_time); out.precursor_mz = static_cast<float>(s.precursor_mz); out.window_mz = static_cast<float>(s.precursor_mz); out.window_mzlow = static_cast<float>(s.precursor_mz - s.isolation_width / 2.0); out.window_mzhigh = static_cast<float>(s.precursor_mz + s.isolation_width / 2.0); out.activation_ce = static_cast<float>(s.activation_ce); out.precursor_charge = s.precursor_charge;
+    out.mode = has_line ? 1 : 0; out.polarity = s.polarity; out.lowmz = has_line && !line.coordinate.empty() ? static_cast<float>(to_mz(s, line.coordinate.front())) : calibrated_lowmz(s); out.highmz = has_line && !line.coordinate.empty() ? static_cast<float>(to_mz(s, line.coordinate.back())) : calibrated_highmz(s);
+    out.bpint = static_cast<float>(s.maximum_intensity); out.tic = static_cast<float>(s.summed_intensity); out.rt = static_cast<float>(s.retention_time); out.precursor_mz = static_cast<float>(correct_mass_value(s.precursor_mz)); out.window_mz = static_cast<float>(correct_mass_value(s.precursor_mz)); out.window_mzlow = static_cast<float>(correct_mass_value(s.precursor_mz - s.isolation_width / 2.0)); out.window_mzhigh = static_cast<float>(correct_mass_value(s.precursor_mz + s.isolation_width / 2.0)); out.activation_ce = static_cast<float>(s.activation_ce); out.precursor_charge = s.precursor_charge;
     out.binary_arrays_count = 2; out.binary_names = {"m/z", "intensity"}; out.binary_data.resize(2); out.binary_data[0].resize(out.array_length); out.binary_data[1].resize(out.array_length);
 
-    double decoded_tic = 0.0; for (std::size_t n = 0; n < static_cast<std::size_t>(out.array_length); ++n) { const auto coordinate = has_line ? line.coordinate[n] : static_cast<double>(n); const auto intensity = has_line ? line.intensity[n] : static_cast<float>(profile.intensity[n]); out.binary_data[0][n] = static_cast<float>(detail::baf_index_to_mz(s.calibration, coordinate)); out.binary_data[1][n] = intensity; decoded_tic += intensity; } out.tic = has_line ? static_cast<float>(decoded_tic) : static_cast<float>(decoded_tic); return out;
+    double decoded_tic = 0.0; for (std::size_t n = 0; n < static_cast<std::size_t>(out.array_length); ++n) { const auto coordinate = has_line ? line.coordinate[n] : static_cast<double>(n); const auto intensity = has_line ? line.intensity[n] : static_cast<float>(profile.intensity[n]); out.binary_data[0][n] = static_cast<float>(to_mz(s, coordinate)); out.binary_data[1][n] = intensity; decoded_tic += intensity; } out.tic = has_line ? static_cast<float>(decoded_tic) : static_cast<float>(decoded_tic); return out;
   }
 private:
+  double to_mz(const BafSpectrumMetadata &s, const double coordinate) const
+  {
+    return apply_baf_mass_correction(correction_, baf_index_to_mz(s.calibration, coordinate));
+  }
+  double correct_mass_value(const double mz) const
+  {
+    if (!(mz > 0.0) || !std::isfinite(mz)) return mz;
+    return apply_baf_mass_correction(correction_, mz);
+  }
   std::vector<int> normalize(std::vector<int> indices) const { if (indices.empty()) { indices.resize(spectra_.size()); std::iota(indices.begin(), indices.end(), 0); } return indices; }
   template <typename F> std::vector<int> selected(const std::vector<int> &indices, F f) const { std::vector<int> out; for (const auto i : normalize(indices)) out.push_back(f(spectra_.at(static_cast<std::size_t>(i)))); return out; }
   template <typename F> std::vector<float> selected_float(const std::vector<int> &indices, F f) const { std::vector<float> out; for (const auto i : normalize(indices)) out.push_back(f(spectra_.at(static_cast<std::size_t>(i)))); return out; }
@@ -1009,8 +1253,8 @@ private:
       return false;
     }
   }
-  float spectrum_lowmz(const BafSpectrumMetadata &s) const { BafLineSpectrum line; return has_line_data(s, &line) && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.front())) : calibrated_lowmz(s); }
-  float spectrum_highmz(const BafSpectrumMetadata &s) const { BafLineSpectrum line; return has_line_data(s, &line) && !line.coordinate.empty() ? static_cast<float>(detail::baf_index_to_mz(s.calibration, line.coordinate.back())) : calibrated_highmz(s); }
+  float spectrum_lowmz(const BafSpectrumMetadata &s) const { BafLineSpectrum line; return has_line_data(s, &line) && !line.coordinate.empty() ? static_cast<float>(to_mz(s, line.coordinate.front())) : calibrated_lowmz(s); }
+  float spectrum_highmz(const BafSpectrumMetadata &s) const { BafLineSpectrum line; return has_line_data(s, &line) && !line.coordinate.empty() ? static_cast<float>(to_mz(s, line.coordinate.back())) : calibrated_highmz(s); }
   float base_peak_intensity(const BafSpectrumMetadata &s) const
   {
     BafLineSpectrum line;
@@ -1023,8 +1267,8 @@ private:
     if (has_line_data(s, &line)) return std::accumulate(line.intensity.begin(), line.intensity.end(), 0.0f);
     return static_cast<float>(s.summed_intensity);
   }
-  float calibrated_lowmz(const BafSpectrumMetadata &s) const { return static_cast<float>(detail::baf_index_to_mz(s.calibration, 0.0)); }
-  float calibrated_highmz(const BafSpectrumMetadata &s) const { const auto count = baf_profile_point_count(file_, s.profile_intensity_id); return count == 0 ? 0.0f : static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(count - 1))); }
+  float calibrated_lowmz(const BafSpectrumMetadata &s) const { return static_cast<float>(to_mz(s, 0.0)); }
+  float calibrated_highmz(const BafSpectrumMetadata &s) const { const auto count = baf_profile_point_count(file_, s.profile_intensity_id); return count == 0 ? 0.0f : static_cast<float>(to_mz(s, static_cast<double>(count - 1))); }
   float base_peak_mz(const BafSpectrumMetadata &s) const
   {
     try
@@ -1032,19 +1276,19 @@ private:
       const auto line = read_baf_line_spectrum(file_, s.line_intensity_id);
       const auto it = std::max_element(line.intensity.begin(), line.intensity.end());
       if (it != line.intensity.end())
-        return static_cast<float>(detail::baf_index_to_mz(
-            s.calibration, line.coordinate[static_cast<std::size_t>(std::distance(line.intensity.begin(), it))]));
+        return static_cast<float>(to_mz(
+            s, line.coordinate[static_cast<std::size_t>(std::distance(line.intensity.begin(), it))]));
     }
     catch (const std::exception &)
     {
       const auto values = read_baf_profile_spectrum(file_, s.profile_intensity_id).intensity;
       const auto profile_it = std::max_element(values.begin(), values.end());
       if (profile_it == values.end()) return 0.0f;
-      return static_cast<float>(detail::baf_index_to_mz(s.calibration, static_cast<double>(std::distance(values.begin(), profile_it))));
+      return static_cast<float>(to_mz(s, static_cast<double>(std::distance(values.begin(), profile_it))));
     }
     return 0.0f;
   }
-  std::vector<BafSpectrumMetadata> spectra_; std::vector<BrukerChromatogram> chromatograms_;
+  std::vector<BafSpectrumMetadata> spectra_; std::vector<BrukerChromatogram> chromatograms_; BafMassCorrection correction_;
 };
 
 std::unique_ptr<MASS_SPEC_READER> create_baf_reader(const std::string &path)

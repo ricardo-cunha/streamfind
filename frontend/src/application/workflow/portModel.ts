@@ -175,13 +175,14 @@ export function portMatchesParameter(sourcePort: NodePort, parameter: Capability
       ? parameter.schema['x-streamfind-semantic-contract']
       : undefined);
   const contractsMatch = !parameterContract || sourcePort.semanticContract === parameterContract;
-  return contractsMatch && schemaShape(sourcePort.schema) === schemaShape(parameter.schema) && sourceKind === parameterKind;
+  return (
+    contractsMatch && schemaShape(sourcePort.schema) === schemaShape(parameter.schema) && sourceKind === parameterKind
+  );
 }
 
 export function portMatchesPort(sourcePort: NodePort, targetPort: NodePort): boolean {
   const dynamicTableConnection =
-    (targetPort.semanticContract === 'anyTable' ||
-      sourcePort.semanticContract === 'anyTable') &&
+    (targetPort.semanticContract === 'anyTable' || sourcePort.semanticContract === 'anyTable') &&
     targetPort.dataKind === 'duckdb_table' &&
     sourcePort.dataKind === 'duckdb_table';
   const typeCompatible = dynamicTableConnection || sourcePort.typeKey === targetPort.typeKey;

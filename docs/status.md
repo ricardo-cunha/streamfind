@@ -1,18 +1,20 @@
 # Availability and compatibility
 
-streamfind is a native C++ analytical platform with a browser application,
-catalogue-backed MCP server, and domain plugins. Native packages target Windows
-x64 and Linux x86_64.
+streamfind is a native C++ analytical platform with a browser app, a shared
+project service, an MCP server, and domain plugins. Native packages target
+Windows x64 and Linux x86_64. The service coordinates app and MCP access;
+project metadata stays in DuckDB, while published result payloads live in the
+project's sibling `.data` folder.
 
 ## Available interfaces
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
-| Native C++ runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Native applications and integrations |
-| C++ MCP server | Included in the C++ packages | Applications or agents using the C++ implementation |
-| R package | Separate R interface | Existing R and Shiny workflows |
-| Python package | No public package | Use the C++ CLI or MCP interface |
-| React web app | Browser interface using the C++ service | Included in the Windows and Linux native archives |
+| C++ backend runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Project, workflow, and domain processing |
+| MCP server | Included in the C++ packages | Applications and AI agents using the shared operation catalogue |
+| React web app | Browser interface using the C++ service | Interactive project and workflow work |
+| C++ backend plugins | Built-in plugins and an out-of-tree developer kit | Add native operations and domain capabilities |
+| Frontend plugins | TypeScript plugin contracts in the frontend workspace | Add UI capabilities, viewers, and editors |
 
 See [Releases](releases.md) for package downloads and checksums.
 
@@ -59,8 +61,12 @@ The native packages do not promise:
 - identical support for every vendor format on every platform;
 - automatic installation of Java, MetFrag, or other optional scientific tools;
 
-The R package is a separate interface and installation path. It should not be
-installed as a replacement for the native C++ package.
+Backend and frontend plugin contracts evolve with the streamfind runtime. Use a
+matching runtime and developer-kit version; cross-version C++ ABI stability is
+not guaranteed. See [Plugin development](plugin-development.md) for the two
+plugin surfaces. The separate legacy R package documents its own capabilities
+and does not connect to the current native Result Runtime; see [R package
+(legacy)](index.md#r-package-legacy).
 
 ## Vendor compatibility and trademarks
 
@@ -78,12 +84,12 @@ calibration variant is not implied merely because a reader exists.
 
 SCIEX WIFF2 decryption is not implemented.
 
-See the root [`NOTICE.md`](https://github.com/ricardo-cunha/streamfind/blob/dev_refactoring/NOTICE.md)
+See the root [`NOTICE.md`](https://github.com/ricardo-cunha/streamfind/blob/main/NOTICE.md)
 for the distribution notice and compatibility boundaries.
 
 The browser application is backed by the C++ service.
-Both native archives include the built static assets and a root-level `streamfind`
-launcher, which starts the local service and opens the app in the default browser.
+Both native archives include the built static assets and launchers under `bin/`;
+`streamfind-app` opens the app and `streamfind` manages the shared service.
 For development, the app can be run from `frontend/` with the Vite launcher. It
 uses the C++ backend's public service boundary and does not contain a second
 persistence or domain-processing implementation. See [Web app](web-app.md).

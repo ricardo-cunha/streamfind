@@ -197,7 +197,14 @@ namespace streamfind::mass_spec::base
                                          std::to_string(summary.number_spectra_binary_arrays), std::to_string(summary.min_mz),
                                          std::to_string(summary.max_mz), std::to_string(summary.start_rt), std::to_string(summary.end_rt),
                                          summary.has_ion_mobility ? "true" : "false", std::nullopt, utc_now()});
-                added.push_back({{"analysis", analysis}, {"file_path", path.string()}, {"analysis_index", descriptor.analysis_index}, {"source_analysis_number", descriptor.source_analysis_number}, {"replicate", replicate}, {"blank", blank}});
+                Json added_analysis = {{"analysis", analysis}, {"file_path", path.string()},
+                                       {"analysis_index", descriptor.analysis_index},
+                                       {"source_analysis_number", descriptor.source_analysis_number},
+                                       {"replicate", replicate}, {"blank", blank}};
+                const auto calibration_provenance = file.get_calibration_provenance();
+                if (!calibration_provenance.empty())
+                    added_analysis["calibration_provenance"] = calibration_provenance;
+                added.push_back(std::move(added_analysis));
 
                 const auto spectra = file.get_spectra_headers();
                 for (std::size_t index = 0; index < spectra.index.size(); ++index)
@@ -745,7 +752,7 @@ namespace streamfind::mass_spec::base
     {
         const auto &effective_parameters = parameters;
         const auto analyses = selected_analysis_rows(access, effective_parameters);
-        const auto targets = base::utils::normalize_targets(effective_parameters);
+        const auto targets = base::utils::normalize_targets(access, effective_parameters);
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();
         const bool eic_logging = parameters.value("_eic_logging", false);
@@ -901,7 +908,7 @@ namespace streamfind::mass_spec::base
         copy["_suppress_raw_table"] = true;
         copy["_eic_logging"] = true;
         const auto analyses = selected_analysis_rows(access, parameters);
-        const auto targets = base::utils::normalize_targets(parameters);
+        const auto targets = base::utils::normalize_targets(access, parameters);
         access.report_progress(0.0, "EIC: preparing " + std::to_string(analyses.size()) +
             " analyses and " + std::to_string(targets.size()) + " targets.");
         const auto result = base::utils::summarize_eic(get_raw_spectra(access, copy));
@@ -921,14 +928,40 @@ namespace streamfind::mass_spec::base
     {
         auto copy = parameters;
         copy["levels"] = Json::array({1});
-        return base::utils::merge_ms_rows(get_raw_spectra(access, copy), copy.value("mz_clust", 0.003), copy.value("presence", 0.8));
+        copy["_suppress_raw_table"] = true;
+        auto result = base::utils::merge_ms_rows(
+            get_raw_spectra(access, copy),
+            copy.value("mz_clust", 0.003),
+            copy.value("presence", 0.8));
+        const std::vector<std::string> columns = {
+            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
+            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
+            "mz", "intensity"};
+        const std::vector<std::string> types = {
+            "string", "string", "string", "integer", "integer", "real", "real",
+            "real", "real", "real", "real", "real", "real"};
+        access.emit_table_rows("ms1Table", columns, types, result);
+        return result;
     }
 
     Json get_raw_spectra_ms2(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         auto copy = parameters;
         copy["levels"] = Json::array({2});
-        return base::utils::merge_ms_rows(get_raw_spectra(access, copy), copy.value("mz_clust", 0.005), copy.value("presence", 0.0));
+        copy["_suppress_raw_table"] = true;
+        auto result = base::utils::merge_ms_rows(
+            get_raw_spectra(access, copy),
+            copy.value("mz_clust", 0.005),
+            copy.value("presence", 0.0));
+        const std::vector<std::string> columns = {
+            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
+            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
+            "mz", "intensity"};
+        const std::vector<std::string> types = {
+            "string", "string", "string", "integer", "integer", "real", "real",
+            "real", "real", "real", "real", "real", "real"};
+        access.emit_table_rows("ms2Table", columns, types, result);
+        return result;
     }
 
     Json get_raw_chromatograms(sdk::PluginProjectAccess &access, const Json &parameters)

@@ -20,5 +20,5 @@ is resolved from the sibling `streamfind.data` repository and can be overridden 
 The C++ scripts use the native catalogue generated at:
 
 ```text
-tmp\build\mingw-ucrt64\semantic_catalogue\catalogue.duckdb
+tmp\build\windows\core\semantic_catalogue\catalogue.duckdb
 ```

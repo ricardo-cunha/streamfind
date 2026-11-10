@@ -104,6 +104,7 @@
   min-height: 260px;
 }
 .sf-feature-inspector-plot {
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;

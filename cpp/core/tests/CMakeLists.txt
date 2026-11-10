@@ -51,6 +51,46 @@ target_link_libraries(streamfind_plugin_configuration_validation PRIVATE streamf
 add_test(NAME streamfind_plugin_configuration_validation COMMAND streamfind_plugin_configuration_validation)
 set_tests_properties(streamfind_plugin_configuration_validation PROPERTIES LABELS "framework")
 
+add_executable(streamfind_service_configuration_contract unit/service_configuration_contract.cpp)
+target_link_libraries(streamfind_service_configuration_contract PRIVATE streamfind::cpp_core)
+target_compile_definitions(streamfind_service_configuration_contract PRIVATE
+    STREAMFIND_TEST_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/service")
+add_test(NAME streamfind_service_configuration_contract COMMAND streamfind_service_configuration_contract)
+set_tests_properties(streamfind_service_configuration_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_worker_fixture
+    fixtures/worker/worker_fixture.cpp
+    ../../service/src/worker_handle_broker.cpp)
+target_include_directories(streamfind_worker_fixture PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../service/include)
+add_executable(streamfind_worker_supervisor_contract unit/worker_supervisor_contract.cpp)
+target_link_libraries(streamfind_worker_supervisor_contract PRIVATE streamfind::cpp_core)
+target_include_directories(streamfind_worker_supervisor_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../service/include)
+add_dependencies(streamfind_worker_supervisor_contract streamfind_worker_fixture)
+add_test(NAME streamfind_worker_supervisor_contract
+    COMMAND streamfind_worker_supervisor_contract "$<TARGET_FILE:streamfind_worker_fixture>")
+set_tests_properties(streamfind_worker_supervisor_contract PROPERTIES LABELS "framework" TIMEOUT 30)
+
+add_executable(streamfind_worker_handle_broker_contract
+    unit/worker_handle_broker_contract.cpp
+    ../../service/src/worker_handle_broker.cpp)
+target_include_directories(streamfind_worker_handle_broker_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../service/include)
+add_test(NAME streamfind_worker_handle_broker_contract
+    COMMAND streamfind_worker_handle_broker_contract)
+set_tests_properties(streamfind_worker_handle_broker_contract PROPERTIES
+    LABELS "framework" TIMEOUT 10)
+
+add_executable(streamfind_service_runtime_client_timeout_contract
+    unit/service_runtime_client_timeout_contract.cpp)
+target_link_libraries(streamfind_service_runtime_client_timeout_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_service_runtime_client_timeout_contract
+    COMMAND streamfind_service_runtime_client_timeout_contract)
+set_tests_properties(streamfind_service_runtime_client_timeout_contract PROPERTIES
+    LABELS "framework" TIMEOUT 10)
+
 add_executable(streamfind_dynamic_plugin_package_contract unit/dynamic_plugin_package_contract.cpp)
 target_link_libraries(streamfind_dynamic_plugin_package_contract PRIVATE streamfind::cpp_sdk)
 
@@ -119,6 +159,16 @@ target_compile_definitions(streamfind_execution_lifecycle_contract PRIVATE
 )
 add_test(NAME streamfind_execution_lifecycle_contract COMMAND streamfind_execution_lifecycle_contract)
 set_tests_properties(streamfind_execution_lifecycle_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_mcp_schema_contract unit/mcp_schema_contract.cpp)
+target_link_libraries(streamfind_mcp_schema_contract PRIVATE streamfind::cpp_core)
+add_dependencies(streamfind_mcp_schema_contract streamfind_aggregate_catalogue)
+target_compile_definitions(streamfind_mcp_schema_contract PRIVATE
+    STREAMFIND_CATALOGUE_PATH="${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb")
+add_test(NAME streamfind_mcp_schema_contract COMMAND streamfind_mcp_schema_contract)
+set_tests_properties(streamfind_mcp_schema_contract PROPERTIES
+    LABELS "framework"
+    ENVIRONMENT "STREAMFIND_CATALOGUE=${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb")
 
 add_executable(streamfind_artifact_publication_contract unit/artifact_publication_contract.cpp)
 target_link_libraries(streamfind_artifact_publication_contract PRIVATE streamfind::cpp_core)

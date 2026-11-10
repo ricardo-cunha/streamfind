@@ -1,8 +1,10 @@
 #pragma once
 
 #include <functional>
+#include <cstdint>
 #include <string>
 #include <string_view>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
@@ -43,6 +45,10 @@ public:
     virtual void log(std::string_view message) = 0;
     virtual Json resolve_inputs(const Json &provided_inputs) = 0;
     virtual Json request_data(const data_proxy::Envelope &request) = 0;
+    /** Receive one service-authorized read-only result handle on the worker broker. */
+    virtual std::intptr_t receive_result_input_handle() {
+        throw std::runtime_error("result handle transport is unavailable in this execution context");
+    }
     /** Routing identity used when the SDK opens a service-owned data-proxy request. */
     virtual std::string data_proxy_session_id() const { return {}; }
     virtual std::string data_proxy_run_id() const { return {}; }

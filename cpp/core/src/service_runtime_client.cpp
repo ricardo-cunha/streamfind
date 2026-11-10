@@ -14,8 +14,10 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <cerrno>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #endif
 
@@ -26,6 +28,35 @@ struct Endpoint {
     std::string host;
     std::uint16_t port{0};
 };
+
+std::uint32_t request_timeout_seconds() {
+    constexpr std::uint32_t default_timeout = 300;
+    const auto *configured = std::getenv("STREAMFIND_SERVICE_REQUEST_TIMEOUT_SECONDS");
+    if (configured == nullptr || *configured == '\0') return default_timeout;
+    char *end = nullptr;
+    const auto value = std::strtoul(configured, &end, 10);
+    if (end == configured || *end != '\0' || value < 1 || value > 86400)
+        throw std::runtime_error("STREAMFIND_SERVICE_REQUEST_TIMEOUT_SECONDS must be between 1 and 86400");
+    return static_cast<std::uint32_t>(value);
+}
+
+void set_socket_timeouts(std::intptr_t socket, std::uint32_t timeout_seconds) {
+#ifdef _WIN32
+    const DWORD timeout = static_cast<DWORD>(timeout_seconds * 1000ull);
+    if (setsockopt(static_cast<SOCKET>(socket), SOL_SOCKET, SO_SNDTIMEO,
+                   reinterpret_cast<const char *>(&timeout), sizeof(timeout)) != 0 ||
+        setsockopt(static_cast<SOCKET>(socket), SOL_SOCKET, SO_RCVTIMEO,
+                   reinterpret_cast<const char *>(&timeout), sizeof(timeout)) != 0)
+        throw std::runtime_error("unable to set streamfind service request timeout");
+#else
+    const timeval timeout{static_cast<time_t>(timeout_seconds), 0};
+    if (setsockopt(static_cast<int>(socket), SOL_SOCKET, SO_SNDTIMEO,
+                   &timeout, sizeof(timeout)) != 0 ||
+        setsockopt(static_cast<int>(socket), SOL_SOCKET, SO_RCVTIMEO,
+                   &timeout, sizeof(timeout)) != 0)
+        throw std::runtime_error("unable to set streamfind service request timeout");
+#endif
+}
 
 Endpoint parse_endpoint(const std::string &value) {
     constexpr std::string_view prefix = "http://";
@@ -64,6 +95,7 @@ void send_all(std::intptr_t socket, const std::string &value) {
 Json request(const Endpoint &endpoint, const std::string &method,
              const std::string &path, const Json &payload = Json::object(),
              const std::vector<std::string> &headers = {}) {
+    const auto timeout_seconds = request_timeout_seconds();
 #ifdef _WIN32
     WSADATA winsock{};
     if (WSAStartup(MAKEWORD(2, 2), &winsock) != 0)
@@ -75,6 +107,15 @@ Json request(const Endpoint &endpoint, const std::string &method,
     const auto socket_handle = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_handle < 0) throw std::runtime_error("unable to create service connection");
 #endif
+    try {
+        set_socket_timeouts(static_cast<std::intptr_t>(socket_handle), timeout_seconds);
+    } catch (...) {
+        close_socket(static_cast<std::intptr_t>(socket_handle));
+#ifdef _WIN32
+        cleanup();
+#endif
+        throw;
+    }
     bool socket_closed = false;
     const auto close = [&] {
         if (socket_closed) return;
@@ -110,7 +151,18 @@ Json request(const Endpoint &endpoint, const std::string &method,
 #else
             const auto count = recv(socket_handle, buffer.data(), buffer.size(), 0);
 #endif
-            if (count <= 0) break;
+            if (count < 0) {
+#ifdef _WIN32
+                const auto socket_error = WSAGetLastError();
+                if (socket_error == WSAETIMEDOUT || socket_error == WSAEWOULDBLOCK)
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+#endif
+                    throw std::runtime_error("streamfind service request timed out after " +
+                                             std::to_string(timeout_seconds) + " seconds");
+                throw std::runtime_error("streamfind service connection failed while receiving a response");
+            }
+            if (count == 0) break;
             response.append(buffer.data(), static_cast<std::size_t>(count));
         }
         const auto separator = response.find("\r\n\r\n");
@@ -346,6 +398,33 @@ data_proxy::Json run_operation(const ServiceProjectAttachment &attachment,
                                            "/projects/" + attachment.session_id + "/operations/" + operation_id,
                                            payload);
     return response.value("result", response);
+}
+
+data_proxy::Json start_operation(const ServiceProjectAttachment &attachment,
+                                 const std::string &operation_id,
+                                 const data_proxy::Json &parameters,
+                                 const std::string &operation_instance,
+                                 const data_proxy::Json &inputs) {
+    if (attachment.port == 0 || attachment.session_id.empty())
+        throw std::invalid_argument("service project attachment is incomplete");
+    if (operation_id.empty()) throw std::invalid_argument("operation_id is required");
+    const auto endpoint = detail::parse_endpoint(attachment.endpoint);
+    data_proxy::Json payload{{"parameters", parameters.is_object() ? parameters : data_proxy::Json::object()}};
+    if (!operation_instance.empty()) payload["operation_instance"] = operation_instance;
+    if (!inputs.is_null()) payload["inputs"] = inputs;
+    return detail::request(endpoint, "POST",
+                           "/projects/" + attachment.session_id + "/operations/" + operation_id + "/run",
+                           payload);
+}
+
+data_proxy::Json operation_snapshot(const ServiceProjectAttachment &attachment,
+                                    const std::string &operation_instance) {
+    if (attachment.port == 0 || attachment.session_id.empty())
+        throw std::invalid_argument("service project attachment is incomplete");
+    if (operation_instance.empty()) throw std::invalid_argument("operation_instance is required");
+    const auto endpoint = detail::parse_endpoint(attachment.endpoint);
+    return detail::request(endpoint, "GET",
+                           "/projects/" + attachment.session_id + "/operations/" + operation_instance + "/state");
 }
 
 data_proxy::Json validate_workflow(const ServiceProjectAttachment &attachment,

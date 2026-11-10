@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" STREAMFIND_PROJECT_VERSION)
 string(STRIP "${STREAMFIND_PROJECT_VERSION}" STREAMFIND_PROJECT_VERSION)
 if(NOT STREAMFIND_PROJECT_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
@@ -9,6 +10,13 @@ if(WIN32)
     enable_language(RC)
 endif()
 include(CMakePackageConfigHelpers)
+
+if(UNIX AND NOT APPLE)
+    # Runtime executables and shared libraries are packaged together under
+    # bin/. Resolve package-local dependencies relative to each executable so
+    # service startup works independently of the caller's LD_LIBRARY_PATH.
+    set(CMAKE_INSTALL_RPATH "$ORIGIN")
+endif()
 
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
 set(STREAMFIND_DATA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../streamfind.data" CACHE PATH
@@ -40,7 +48,8 @@ if(STREAMFIND_BUILD_TESTS)
 endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/core/cmake/streamfind_dependencies.cmake)
-find_package(Arrow CONFIG REQUIRED)
+# Arrow probes optional package configs before trying its other discovery methods.
+find_package(Arrow CONFIG REQUIRED QUIET)
 if(NOT WIN32)
     # Ubuntu's static Arrow package keeps Abseil's time symbols outside the
     # bundled dependency archive. Link the imported target explicitly so Linux
@@ -181,6 +190,24 @@ configure_file(
     @ONLY
 )
 
+function(streamfind_add_windows_version_resource target executable_name description)
+    if(NOT WIN32)
+        return()
+    endif()
+    string(REPLACE "." "," STREAMFIND_VERSION_RESOURCE_NUMBERS "${PROJECT_VERSION}")
+    set(STREAMFIND_VERSION_RESOURCE_NUMBERS "${STREAMFIND_VERSION_RESOURCE_NUMBERS},0")
+    set(STREAMFIND_VERSION_RESOURCE_DESCRIPTION "${description}")
+    set(STREAMFIND_VERSION_RESOURCE_FILENAME "${executable_name}")
+    set(_resource_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/resources")
+    file(MAKE_DIRECTORY "${_resource_dir}")
+    set(_resource_file "${_resource_dir}/${target}-version.rc")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind-version.rc.in"
+        "${_resource_file}"
+        @ONLY)
+    target_sources(${target} PRIVATE "${_resource_file}")
+endfunction()
+
 set(STREAMFIND_CORE_SOURCES
     ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
     core/src/api.cpp
@@ -201,6 +228,7 @@ set(STREAMFIND_CORE_SOURCES
     core/src/vendor_runtime.cpp
     service/src/service_discovery.cpp
     service/src/worker_supervisor.cpp
+    service/src/worker_handle_broker.cpp
     core/src/vendors/openbabel/openbabel_adapter.cpp
 )
 
@@ -415,8 +443,12 @@ if(STREAMFIND_BUILD_TESTS)
     endif()
     add_subdirectory(core/tests)
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
-    add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
-    add_dependencies(streamfind_mass_spec_mcp_discovery_contract streamfind_aggregate_catalogue)
+    if(TARGET streamfind_mass_spec_project_isolation_contract)
+        add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
+    endif()
+    if(TARGET streamfind_mass_spec_mcp_discovery_contract)
+        add_dependencies(streamfind_mass_spec_mcp_discovery_contract streamfind_aggregate_catalogue)
+    endif()
 endif()
 
 add_executable(streamfind_mcp
@@ -426,6 +458,7 @@ add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sd
 target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
 target_include_directories(streamfind_mcp PRIVATE service/include)
 set_target_properties(streamfind_mcp PROPERTIES OUTPUT_NAME streamfind-mcp)
+streamfind_add_windows_version_resource(streamfind_mcp "streamfind-mcp.exe" "streamfind MCP server")
 set(STREAMFIND_ENABLED_PLUGINS_JSON)
 foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
     if(STREAMFIND_ENABLED_PLUGINS_JSON)
@@ -435,18 +468,14 @@ foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
 endforeach()
 file(GENERATE
     OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
     DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli
     core/src/streamfind-cli.cpp)
-if(WIN32)
-    target_sources(streamfind_cli PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind.rc")
-endif()
 add_dependencies(streamfind_cli streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_cli PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
@@ -455,6 +484,7 @@ if(WIN32)
 endif()
 target_include_directories(streamfind_cli PRIVATE service/include)
 set_target_properties(streamfind_cli PROPERTIES OUTPUT_NAME streamfind)
+streamfind_add_windows_version_resource(streamfind_cli "streamfind.exe" "streamfind command line")
 
 add_executable(streamfind_service
     service/src/streamfind-service.cpp
@@ -474,10 +504,27 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_service PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 set_target_properties(streamfind_service PROPERTIES OUTPUT_NAME streamfind-server)
+streamfind_add_windows_version_resource(streamfind_service "streamfind-server.exe" "streamfind backend service")
+
+# Explicit development-only scale harness. It is excluded from normal builds
+# and installation; run it through scripts/dev/cpp/benchmark-result-store.ps1.
+add_executable(streamfind_dev_result_store_benchmark EXCLUDE_FROM_ALL
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/dev/cpp/benchmark_result_store.cpp"
+    service/src/result_store.cpp)
+target_link_libraries(streamfind_dev_result_store_benchmark PRIVATE streamfind::cpp_core)
+target_include_directories(streamfind_dev_result_store_benchmark PRIVATE service/include)
+target_compile_definitions(streamfind_dev_result_store_benchmark PRIVATE
+    STREAMFIND_TEST_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+set_target_properties(streamfind_dev_result_store_benchmark PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+if(WIN32)
+    target_link_libraries(streamfind_dev_result_store_benchmark PRIVATE psapi)
+endif()
 
 add_executable(streamfind_worker
     service/src/streamfind-worker.cpp
-    service/src/service_plugin_runtime.cpp)
+    service/src/service_plugin_runtime.cpp
+    service/src/worker_handle_broker.cpp)
 add_dependencies(streamfind_worker streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_worker PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
@@ -490,6 +537,7 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_worker PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 set_target_properties(streamfind_worker PROPERTIES OUTPUT_NAME streamfind-worker)
+streamfind_add_windows_version_resource(streamfind_worker "streamfind-worker.exe" "streamfind operation worker")
 
 add_executable(streamfind_tray service/src/streamfind-tray.cpp)
 add_dependencies(streamfind_tray streamfind_aggregate_catalogue streamfind_cpp_sdk
@@ -503,6 +551,7 @@ if(WIN32)
 endif()
 set_target_properties(streamfind_tray PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
     OUTPUT_NAME streamfind-tray)
+streamfind_add_windows_version_resource(streamfind_tray "streamfind-tray.exe" "streamfind service tray manager")
 
 # The service always launches the worker for operation execution.  Make the
 # pair an atomic development/build target so a service cannot be rebuilt while
@@ -517,6 +566,7 @@ if(WIN32)
     add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE streamfind::cpp_core ws2_32 shell32)
     set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind-app)
+    streamfind_add_windows_version_resource(streamfind_service_host "streamfind-app.exe" "streamfind app launcher")
     streamfind_static_mingw_executable(streamfind_service_host)
 else()
     add_executable(streamfind_service_host
