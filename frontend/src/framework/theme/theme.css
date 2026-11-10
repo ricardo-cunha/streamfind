@@ -745,24 +745,33 @@ h2 {
   align-content: start;
   gap: 12px;
   min-height: 0;
+  padding: 8px 6px 12px;
   overflow: auto;
 }
 .sf-demo-list-item {
+  --sf-project-card-border: color-mix(
+    in srgb,
+    var(--sf-project-domain-color, var(--sf-domain-core)) 42%,
+    var(--sf-border)
+  );
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   min-height: 170px;
   padding: 16px;
-  border: 1px solid var(--sf-border);
+  border: 1px solid var(--sf-project-card-border);
   border-radius: var(--sf-radius);
   color: var(--sf-text);
-  background: var(--sf-surface);
+  background: color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 14%, var(--sf-surface-raised));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 20%, transparent);
   text-align: left;
   cursor: pointer;
+  transition: transform 0.18s ease;
 }
 .sf-demo-list-item:hover {
-  border-color: var(--sf-accent);
+  border-color: var(--sf-project-card-border);
+  transform: translateY(-2px);
 }
 .sf-demo-list-item > span:last-child {
   display: grid;
@@ -772,6 +781,9 @@ h2 {
 .sf-demo-list-item small {
   color: var(--sf-text-secondary);
   line-height: 1.35;
+}
+.sf-demo-list-item .sf-card-icon {
+  color: var(--sf-project-domain-color, var(--sf-domain-core));
 }
 .sf-card-icon {
   color: var(--sf-accent);
@@ -1735,20 +1747,23 @@ h2 {
 }
 .sf-project-hub .sf-card,
 .sf-project-hub .sf-project-row {
+  --sf-project-card-border: color-mix(
+    in srgb,
+    var(--sf-project-domain-color, var(--sf-domain-core)) 42%,
+    var(--sf-border)
+  );
   position: relative;
   min-width: 0;
   aspect-ratio: 5 / 7;
   overflow: hidden;
-  border: 0;
+  border: 1px solid var(--sf-project-card-border);
   border-radius: 14px;
-  background: var(--sf-surface-raised);
+  background: color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 14%, var(--sf-surface-raised));
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--sf-accent) 24%, transparent),
-    0 3px 0 color-mix(in srgb, var(--sf-accent) 22%, transparent),
-    0 5px 10px color-mix(in srgb, var(--sf-accent) 14%, transparent);
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease;
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 24%, transparent),
+    0 3px 0 color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 22%, transparent),
+    0 5px 10px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 14%, transparent);
+  transition: transform 0.18s ease;
 }
 .sf-project-hub .action-card {
   display: grid;
@@ -1760,11 +1775,6 @@ h2 {
 }
 .sf-project-hub .action-card:not(:disabled):hover,
 .sf-project-hub .sf-project-row:hover {
-  border-color: transparent;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--sf-accent) 34%, transparent),
-    0 2px 0 color-mix(in srgb, var(--sf-accent) 28%, transparent),
-    0 8px 14px color-mix(in srgb, var(--sf-accent) 18%, transparent);
   transform: translateY(-6px) rotate(-1deg);
 }
 .sf-project-hub .action-card:nth-child(2):not(:disabled):hover {
@@ -3069,14 +3079,13 @@ h2 {
 /* Apply the selected layout style consistently to project cards and canvas nodes. */
 :root[data-style='classic'] .sf-project-hub .sf-card,
 :root[data-style='classic'] .sf-project-hub .sf-project-row {
-  border: 1px solid var(--sf-accent);
   border-radius: 3px;
-  box-shadow: 2px 3px 0 var(--sf-accent) !important;
+  box-shadow: 2px 3px 0 var(--sf-project-card-border) !important;
 }
 :root[data-style='classic'] .sf-project-hub .action-card:not(:disabled):hover,
 :root[data-style='classic'] .sf-project-hub .sf-project-row:hover {
   transform: translateY(-3px);
-  box-shadow: 3px 4px 0 var(--sf-accent) !important;
+  box-shadow: 2px 3px 0 var(--sf-project-card-border) !important;
 }
 :root[data-style='classic'] .sf-canvas-node {
   border-radius: 3px;
@@ -3093,9 +3102,9 @@ h2 {
 :root[data-style='studio'] .sf-project-hub .sf-project-row {
   border-radius: 10px;
   box-shadow:
-    0 0 0 1px var(--sf-accent),
-    0 3px 0 var(--sf-accent),
-    0 5px 10px var(--sf-accent) !important;
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 50%, transparent),
+    0 3px 0 color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 40%, transparent),
+    0 5px 10px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 28%, transparent) !important;
 }
 :root[data-style='studio'] .sf-canvas-node {
   border-radius: 10px;
@@ -3104,20 +3113,20 @@ h2 {
 :root[data-style='chrome'] .sf-project-hub .sf-card,
 :root[data-style='chrome'] .sf-project-hub .sf-project-row {
   border-radius: 22px;
-  background: color-mix(in srgb, var(--sf-surface-raised) 86%, transparent) !important;
+  background: color-mix(
+    in srgb,
+    var(--sf-project-domain-color, var(--sf-domain-core)) 14%,
+    var(--sf-surface-raised)
+  ) !important;
   box-shadow:
-    0 0 0 1px var(--sf-accent),
-    0 8px 0 var(--sf-accent),
-    0 14px 24px var(--sf-accent) !important;
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 50%, transparent),
+    0 8px 0 color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 38%, transparent),
+    0 14px 24px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 25%, transparent) !important;
   backdrop-filter: blur(10px);
 }
 :root[data-style='chrome'] .sf-project-hub .action-card:not(:disabled):hover,
 :root[data-style='chrome'] .sf-project-hub .sf-project-row:hover {
   transform: translateY(-8px) rotate(-1deg);
-  box-shadow:
-    0 0 0 1px var(--sf-accent),
-    0 8px 0 var(--sf-accent),
-    0 18px 30px var(--sf-accent) !important;
 }
 :root[data-style='chrome'] .sf-project-hub .action-card:nth-child(2):not(:disabled):hover {
   transform: translateY(-8px) rotate(1deg);

@@ -1,4 +1,14 @@
-import { Component, memo, type ErrorInfo, type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+  Component,
+  memo,
+  type CSSProperties,
+  type ErrorInfo,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import logo from '../assets/streamfind.png';
 
 import WorkflowCanvas from './WorkflowCanvas';
@@ -48,6 +58,7 @@ type WorkflowSummary = {
   revision?: number;
   state: WorkflowState;
   artifactCount?: number;
+  domains?: string[];
 };
 const defaultWorkflowMetadata = {
   name: 'Untitled workflow',
@@ -696,6 +707,29 @@ function formatDatabaseSize(bytes: number): string {
   if (megabytes >= 1) return `${megabytes.toFixed(2)} MB`;
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
+function workflowDomains(workflow: WorkflowDefinition): string[] {
+  const domains = new Set(
+    workflow.operations.map((operation) => {
+      const domain = workflowDomainClass(operation.operation);
+      return domain === 'mass-spec' || domain === 'raman' || domain === 'sensors' || domain === 'statistics'
+        ? domain
+        : domain === 'streamfind'
+          ? 'streamfind'
+          : 'core';
+    }),
+  );
+  return domains.size ? [...domains].sort() : ['core'];
+}
+function projectDomainColor(domains?: string[]): string {
+  const colors = (domains?.length ? domains : ['core']).map((domain) => `var(--sf-domain-${domain})`);
+  return colors
+    .slice(1)
+    .reduce(
+      (blend, color, index) =>
+        `color-mix(in srgb, ${blend} ${(100 * (index + 1)) / (index + 2)}%, ${color} ${100 / (index + 2)}%)`,
+      colors[0],
+    );
+}
 function ProjectCard({
   project,
   summary,
@@ -719,7 +753,10 @@ function ProjectCard({
   };
 
   return (
-    <article className="sf-project-row">
+    <article
+      className="sf-project-row"
+      style={{ '--sf-project-domain-color': projectDomainColor(summary?.domains) } as CSSProperties}
+    >
       <div>
         <strong>{projectFileName(project)}</strong>
         <span>{project.domains?.join(', ') || 'No domains'}</span>
@@ -1168,6 +1205,7 @@ function ProjectHub({
                 ? {
                     operationCount: workflow.operations.length,
                     revision: workflow.version,
+                    domains: workflowDomains(workflow),
                   }
                 : {}),
               state: stateResult.value.state,
@@ -1211,7 +1249,13 @@ function ProjectHub({
             if (!entry || !next[entry[0]]) continue;
             next[entry[0]] = {
               ...next[entry[0]],
-              ...(entry[2] ? { operationCount: entry[2].operations.length, revision: entry[2].version } : {}),
+              ...(entry[2]
+                ? {
+                    operationCount: entry[2].operations.length,
+                    revision: entry[2].version,
+                    domains: workflowDomains(entry[2]),
+                  }
+                : {}),
               state: entry[1],
             };
           }
@@ -1295,6 +1339,7 @@ function ProjectHub({
       <div className="sf-card-grid">
         <button
           className="sf-card action-card"
+          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
             setDatabasePath('');
@@ -1310,6 +1355,7 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
+          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
           disabled={!canInteract}
           onClick={async () => {
             if (!client) return;
@@ -1340,7 +1386,12 @@ function ProjectHub({
           </span>
           <strong>Open workflow</strong>
         </button>
-        <button className="sf-card action-card" disabled={!canInteract} onClick={() => setDemosOpen(true)}>
+        <button
+          className="sf-card action-card"
+          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          disabled={!canInteract}
+          onClick={() => setDemosOpen(true)}
+        >
           <span className="sf-card-icon">
             <i className="fa-solid fa-list-check" />
           </span>
@@ -1384,6 +1435,11 @@ function ProjectHub({
                     key={demo.id}
                     type="button"
                     className="sf-demo-list-item"
+                    style={
+                      {
+                        '--sf-project-domain-color': projectDomainColor(workflowDomains(demo.workflow)),
+                      } as CSSProperties
+                    }
                     onClick={() => {
                       const metadata = demo.workflow.metadata ?? {};
                       setSelectedDemo(demo);
@@ -1767,13 +1823,8 @@ function AppShell({
             }
           } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.domains)) {
             const project = candidate as ProjectSession;
-            setProjects((items) => [
-              project,
-              ...items.filter((item) => item.session_id !== project.session_id),
-            ]);
-            setActiveProject((current) =>
-              current?.session_id === project.session_id ? project : current,
-            );
+            setProjects((items) => [project, ...items.filter((item) => item.session_id !== project.session_id)]);
+            setActiveProject((current) => (current?.session_id === project.session_id ? project : current));
           }
         }
       }
