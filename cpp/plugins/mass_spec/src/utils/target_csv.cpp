@@ -62,6 +62,13 @@ namespace streamfind::mass_spec::target_csv
             return fields;
         }
 
+        void strip_utf8_bom(std::string &value)
+        {
+            constexpr std::string_view bom = "\xEF\xBB\xBF";
+            if (value.size() >= bom.size() && value.compare(0, bom.size(), bom) == 0)
+                value.erase(0, bom.size());
+        }
+
         bool present(const nlohmann::json &row, const char *key)
         {
             const auto it = row.find(key);
@@ -215,8 +222,11 @@ namespace streamfind::mass_spec::target_csv
         if (!input) throw std::invalid_argument("Cannot open CSV file: " + path);
         std::string line;
         if (!std::getline(input, line)) throw std::invalid_argument("CSV file is empty: " + path);
-        const auto header = detail::split_csv_line(line);
+        auto header = detail::split_csv_line(line);
         if (header.empty()) throw std::invalid_argument("CSV header is empty: " + path);
+        // CSV files exported by spreadsheet tools commonly start with a UTF-8
+        // BOM. It belongs to the first header field, not its column name.
+        detail::strip_utf8_bom(header.front());
         nlohmann::json rows = nlohmann::json::array();
         std::size_t line_number = 1;
         while (std::getline(input, line))
