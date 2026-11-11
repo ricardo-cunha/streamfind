@@ -601,19 +601,27 @@ namespace streamfind::mass_spec::nta::utils::detail
             const auto wanted = parameters.value("analysis_names", Json::array());
             const auto inputs = parameters.value("_inputs", Json::object());
             const auto spectra_input = inputs.find("spectraHeadersTable");
+            // Service data-proxy queries preserve Arrow scalar types. Convert
+            // scalar cells explicitly because numeric and boolean columns are
+            // returned as JSON numbers/booleans rather than legacy JSON text.
+            const auto scalar_text = [](const Json &value)
+            {
+                if (value.is_string()) return value.get<std::string>();
+                if (value.is_number() || value.is_boolean()) return value.dump();
+                return std::string{};
+            };
             if (spectra_input != inputs.end() && spectra_input->is_object())
             {
                 persisted_headers = persisted_spectra_headers(access.query(
                     "SELECT analysis,index,scan,array_length,level,mode,polarity,configuration,lowmz,highmz,bpmz,bpint,tic,rt,mobility,window_mz,window_mzlow,window_mzhigh,precursor_mz,precursor_intensity,precursor_charge,activation_ce FROM "
                     + spectra_input->at("physical_table").get<std::string>() + " ORDER BY analysis,index"));
             }
-            // query_json stringifies every column; parse the analysis index tolerantly.
             auto analysis_index_of = [&](const Json &row)
             {
                 auto it = row.find("analysis_index");
                 if (it == row.end() || it->is_null())
                     return 0;
-                const auto v = it->get<std::string>();
+                const auto v = scalar_text(*it);
                 return v.empty() ? 0 : std::stoi(v);
             };
             const bool has_analysis_input = parameters.contains("_inputs") &&
@@ -679,11 +687,12 @@ namespace streamfind::mass_spec::nta::utils::detail
                 buffers[i].analysis = data.analysis_names()[i];
             std::vector<std::string> feature_replicates(data.analysis_names().size());
             std::vector<std::string> feature_blanks(data.analysis_names().size());
-            // NULL-tolerant row accessors (query_json stringifies all column values).
+            // NULL-tolerant accessors for typed Arrow scalar values returned by
+            // the service data proxy.
             auto s = [&](const Json &row, const char *col)
             {
                 auto it = row.find(col);
-                return (it != row.end() && !it->is_null()) ? it->get<std::string>() : std::string();
+                return (it != row.end() && !it->is_null()) ? scalar_text(*it) : std::string();
             };
             auto d = [&](const Json &row, const char *col)
             { auto v = s(row, col); return v.empty() ? 0.0 : std::stod(v); };
@@ -1105,11 +1114,14 @@ namespace streamfind::mass_spec::nta::utils::detail
             access.emit_table_rows("internalStandardsTable", internal_standards_columns(), suspects_types(), rows);
         }
 
-        // NULL-tolerant accessors (query_json stringifies all column values).
+        // NULL-tolerant accessors for typed values returned by the service data proxy.
         static std::string col_s(const Json &row, const char *col)
         {
             auto it = row.find(col);
-            return (it != row.end() && !it->is_null()) ? it->get<std::string>() : std::string();
+            if (it == row.end() || it->is_null()) return {};
+            if (it->is_string()) return it->get<std::string>();
+            if (it->is_number() || it->is_boolean()) return it->dump();
+            return {};
         }
         static std::vector<float> col_float_array(const Json &row, const char *col)
         {

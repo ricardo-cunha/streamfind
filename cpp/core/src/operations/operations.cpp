@@ -1,12 +1,14 @@
 #include "streamfind/core_operations.hpp"
 
 #include "streamfind/catalogue_binding.hpp"
+#include "streamfind/data_proxy_protocol.hpp"
 #include "streamfind/operation_execution_context.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -75,14 +77,82 @@ Json write_table_csv(OperationExecutionContext &context, const Json &parameters,
     const auto input = inputs.find("anyTable");
     if (input == inputs.end() || !input->is_object())
         throw std::invalid_argument("Connect a table input.");
-    const auto physical_table = input->value("physical_table", std::string{});
-    if (physical_table.empty())
-        throw std::invalid_argument("The connected table artifact has no physical table.");
-
     const auto csv_path = parameters.at("csv_path").get<std::string>();
-    const auto sql = "COPY (SELECT * FROM " + quote_identifier(physical_table) + ") TO " +
-                     quote_sql_string(csv_path) + " (HEADER, DELIMITER ',')";
-    context.query(sql);
+    std::string result_id;
+    const auto result_ref = input->find("$result_ref");
+    if (result_ref != input->end() && result_ref->is_string())
+        result_id = result_ref->get<std::string>();
+    if (result_id.empty()) {
+        const auto descriptor_id = input->find("result_id");
+        if (descriptor_id != input->end() && descriptor_id->is_string())
+            result_id = descriptor_id->get<std::string>();
+    }
+    if (result_id.empty())
+        throw std::invalid_argument("The connected table input must reference a published result.");
+    if (context.data_proxy_session_id().empty() || context.data_proxy_run_id().empty())
+        throw std::runtime_error("CSV result export requires an active service worker session.");
+
+    static std::atomic_uint64_t request_sequence{0};
+    const auto request_id = "csv-export-" + std::to_string(request_sequence.fetch_add(1));
+    const auto grant_request = data_proxy::request(
+        request_id, context.data_proxy_session_id(), context.data_proxy_run_id(), {},
+        operation_instance, {}, Json{{"method", "lease_result_input"}, {"result_id", result_id}});
+    const auto grant_response = data_proxy::Envelope::from_json(context.request_data(grant_request));
+    if (!grant_response.error_code.empty())
+        throw std::runtime_error(grant_response.error_code + ": " + grant_response.error_message);
+
+    const auto schema_request = data_proxy::request(
+        request_id + "-describe", context.data_proxy_session_id(), context.data_proxy_run_id(), {},
+        operation_instance, {}, Json{{"method", "describe_result"}, {"result_id", result_id}});
+    const auto schema_response = data_proxy::Envelope::from_json(context.request_data(schema_request));
+    if (!schema_response.error_code.empty())
+        throw std::runtime_error(schema_response.error_code + ": " + schema_response.error_message);
+    const auto schema = schema_response.payload.value("schema", Json::array());
+    if (!schema.is_array()) throw std::runtime_error("Published table result has an invalid schema.");
+
+    std::ofstream output(csv_path, std::ios::out | std::ios::trunc);
+    if (!output) throw std::invalid_argument("csv_path is not writable");
+    const auto csv_cell = [](const Json &value) {
+        if (value.is_null()) return std::string{};
+        const auto text = value.is_string() ? value.get<std::string>() : value.dump();
+        if (text.find_first_of(",\"\r\n") == std::string::npos) return text;
+        std::string escaped = "\"";
+        for (const auto character : text) escaped += character == '"' ? "\"\"" : std::string(1, character);
+        return escaped + "\"";
+    };
+    std::vector<std::string> columns;
+    columns.reserve(schema.size());
+    for (const auto &column : schema) {
+        if (!column.is_object() || !column.value("name", Json{}).is_string())
+            throw std::runtime_error("Published table result has an invalid column definition.");
+        columns.push_back(column.at("name").get<std::string>());
+    }
+    for (std::size_t index = 0; index < columns.size(); ++index) {
+        if (index != 0) output << ',';
+        output << csv_cell(columns[index]);
+    }
+    output << "\r\n";
+
+    const auto lease_id = grant_response.payload.value("lease_id", std::string{});
+    if (lease_id.empty()) throw std::runtime_error("Service did not grant a result read handle.");
+    const auto native_handle = context.receive_result_input_handle();
+    data_proxy::ArrowFileBatchReader reader(native_handle);
+    std::uint64_t offset = 0;
+    for (;;) {
+        const auto rows = reader.read(offset, 4096, columns);
+        if (rows.empty()) break;
+        for (const auto &row : rows) {
+            for (std::size_t index = 0; index < columns.size(); ++index) {
+                if (index != 0) output << ',';
+                const auto value = row.find(columns[index]);
+                output << csv_cell(value == row.end() ? Json(nullptr) : value.value());
+            }
+            output << "\r\n";
+        }
+        offset += rows.size();
+        if (rows.size() < 4096) break;
+    }
+    if (!output) throw std::runtime_error("Failed while writing CSV output");
     (void)operation_instance;
     return Json{{"status", "finished"}, {"csvPath", csv_path}};
 }

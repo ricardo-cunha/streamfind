@@ -851,9 +851,14 @@ using Json = nlohmann::json;
         auto data = utils::detail::load_analysis_features(access, parameters);
         if (method == "internal_standards")
         {
-            if (!parameters.contains("internal_standards") ||
-                !parameters.at("internal_standards").is_array() ||
-                parameters.at("internal_standards").empty())
+            const auto standards = parameters.find("internal_standards");
+            const bool has_rows = standards != parameters.end() &&
+                standards->is_array() && !standards->empty();
+            const bool has_result_reference = standards != parameters.end() &&
+                standards->is_object() && standards->contains("$result_ref") &&
+                standards->at("$result_ref").is_string() &&
+                !standards->at("$result_ref").get<std::string>().empty();
+            if (!has_rows && !has_result_reference)
                 throw Error(ErrorCode::WorkflowValidation,
                             "grouping_method=internal_standards requires a populated internal_standards table parameter");
             utils::detail::load_internal_standards(access, data, parameters);
