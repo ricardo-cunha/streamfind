@@ -1131,6 +1131,7 @@ function ProjectHub({
   client,
   onOpened,
   onAdded,
+  onProjectsRefreshed,
   onPreview,
   onOpenWorkflow,
 
@@ -1141,6 +1142,7 @@ function ProjectHub({
   client: StreamFindApiClient | null;
   onOpened: (project: ProjectSession) => void;
   onAdded: (project: ProjectSession) => void;
+  onProjectsRefreshed: (projects: ProjectSession[]) => void;
   onPreview: (project: ProjectSession) => void;
   onOpenWorkflow: (project: ProjectSession) => void;
 
@@ -1166,6 +1168,20 @@ function ProjectHub({
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [demosOpen, mode, selectedDemo]);
+
+  useEffect(() => {
+    let active = true;
+    if (!client) return undefined;
+    void client
+      .projects()
+      .then((items) => {
+        if (active) onProjectsRefreshed(items);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [client, onProjectsRefreshed]);
 
   useEffect(() => {
     let active = true;
@@ -2021,6 +2037,7 @@ function AppShell({
                     items.some((item) => item.session_id === project.session_id) ? items : [...items, project],
                   )
                 }
+                onProjectsRefreshed={setProjects}
                 onPreview={setPreviewProject}
                 onOpenWorkflow={openProject}
                 onCloseProject={disconnectProject}
