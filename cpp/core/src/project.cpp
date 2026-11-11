@@ -2469,6 +2469,11 @@ namespace streamfind
         query(connection.get(), "DELETE FROM RESULT_REGISTRY", "clear result registry");
         query(connection.get(), "DELETE FROM RESULT_CACHE_OUTPUT", "clear result cache outputs");
         query(connection.get(), "DELETE FROM RESULT_CACHE", "clear result cache entries");
+        query(connection.get(),
+              "UPDATE WORKFLOW_EXECUTION SET status = 'idle', progress = '{}', result_reference = NULL, "
+              "error = NULL, process_id = NULL, server_id = NULL, started_at = NULL, completed_at = NULL, "
+              "updated_at = CURRENT_TIMESTAMP",
+              "reset workflow status after clearing results");
     }
 
     void Project::clear_results_for_producer_instance(const std::string &producer_instance)

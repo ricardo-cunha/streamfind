@@ -523,6 +523,39 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
     return matches;
 }
 
+std::size_t ResultStore::clear_cache() const {
+    const auto inspection = inspect(false);
+    if (inspection.status != ResultStoreStatus::ready)
+        throw std::runtime_error("cannot clear result cache: result store is not ready");
+
+    std::size_t invalidated = 0;
+    std::error_code error;
+    const auto results_directory = root_ / "results";
+    if (!std::filesystem::exists(results_directory, error)) {
+        if (error) throw std::runtime_error("cannot inspect result cache: " + error.message());
+        return invalidated;
+    }
+    for (const auto &entry : std::filesystem::directory_iterator(results_directory, error)) {
+        if (error) throw std::runtime_error("cannot enumerate result cache: " + error.message());
+        if (!entry.is_directory(error) || error) {
+            if (error) throw std::runtime_error("cannot inspect result cache entry: " + error.message());
+            continue;
+        }
+        const auto manifest_path = entry.path() / "manifest.json";
+        try {
+            auto manifest = read_json_file(manifest_path);
+            if (!manifest.value("cacheable", false)) continue;
+            manifest["cacheable"] = false;
+            write_json_file(manifest_path, manifest);
+            ++invalidated;
+        } catch (const std::exception &exception) {
+            throw std::runtime_error("cannot invalidate result cache entry " +
+                                     entry.path().filename().string() + ": " + exception.what());
+        }
+    }
+    return invalidated;
+}
+
 void ResultStore::remove_published_results(const std::vector<std::string> &result_ids) const {
     for (const auto &result_id : result_ids) {
         require_component(result_id, "result_id");

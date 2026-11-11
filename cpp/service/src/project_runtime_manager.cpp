@@ -55,6 +55,60 @@ std::string create_operation_run_id() {
     return output.str();
 }
 
+Json stable_result_cache_identity(const Json &descriptor) {
+    const auto producer_key = descriptor.value("computation_key", std::string{});
+    if (descriptor.value("cacheable", false) && !producer_key.empty()) {
+        return Json{
+            {"$producer_computation_key", producer_key},
+            {"output_port_id", descriptor.value("output_port_id",
+                descriptor.value("contract_id", std::string{}))},
+            {"representation", descriptor.value("representation",
+                descriptor.value("kind", std::string{}))},
+            {"format", descriptor.value("format", std::string{})}};
+    }
+
+    const auto digest = descriptor.value("payload_digest", std::string{});
+    if (digest.empty() || descriptor.value("state", std::string{}) != "published")
+        return descriptor;
+
+    return Json{
+        {"$result_content_digest", digest},
+        {"payload_size", descriptor.value("payload_size", std::uintmax_t{0})},
+        {"format", descriptor.value("format", std::string{})},
+        {"representation", descriptor.value("representation",
+            descriptor.value("kind", std::string{}))},
+        {"contract_id", descriptor.value("contract_id", std::string{})}};
+}
+
+Json stable_cache_value(const Json &value, const ResultStore &store) {
+    if (value.is_array()) {
+        Json normalized = Json::array();
+        for (const auto &item : value) normalized.push_back(stable_cache_value(item, store));
+        return normalized;
+    }
+    if (!value.is_object()) return value;
+
+    const auto result_ref = value.find("$result_ref");
+    if (result_ref != value.end() && result_ref->is_string()) {
+        try {
+            return stable_result_cache_identity(store.describe_result(result_ref->get<std::string>()));
+        } catch (...) {
+            // Keep unresolved references identity-sensitive; never let an
+            // unavailable result become a cache hit through an empty digest.
+            return value;
+        }
+    }
+
+    if (value.contains("result_id") && value.contains("payload_digest") &&
+        value.value("state", std::string{}) == "published")
+        return stable_result_cache_identity(value);
+
+    Json normalized = Json::object();
+    for (const auto &[key, item] : value.items())
+        normalized[key] = stable_cache_value(item, store);
+    return normalized;
+}
+
 std::int64_t unix_time_milliseconds() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -391,13 +445,16 @@ Json ProjectRuntimeManager::clear_result_cache(const std::string &session_id) {
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     iterator->second->clear_result_cache();
+    const auto invalidated_results = ResultStore(iterator->second->get_database_path()).clear_cache();
     {
         std::lock_guard cache_lock(result_cache_mutex_);
         result_row_key_cache_.clear();
         result_navigation_index_cache_.clear();
     }
     clear_decoded_trace_cache_locked();
-    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+    return Json{{"workflow", iterator->second->get_workflow().to_json()},
+                {"cleared", true},
+                {"invalidated_results", invalidated_results}};
 }
 
 Json ProjectRuntimeManager::clear_all_results(const std::string &session_id) {
@@ -419,6 +476,10 @@ Json ProjectRuntimeManager::clear_all_results(const std::string &session_id) {
     }
     iterator->second->clear_all_results();
     store.remove_published_results(result_ids);
+    workflow_states_[session_id] = kWorkflowIdle;
+    workflow_progress_[session_id] = Json{{"completed", 0},
+                                         {"total", workflow_definitions_.at(session_id).operations.size()},
+                                         {"current_step", 0}};
     {
         std::lock_guard cache_lock(result_cache_mutex_);
         result_row_key_cache_.clear();
@@ -505,7 +566,8 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
         catch (...) { return std::uint64_t{0}; }
     }();
     const auto execution_status = summary.value("execution_status", std::string{"idle"});
-    if (execution_status == "failed") persisted_state = "failed";
+    if (execution_status == "idle") persisted_state = kWorkflowIdle;
+    else if (execution_status == "failed") persisted_state = "failed";
     else if (execution_status == "running") persisted_state = "running";
     else if (execution_status == "completed" || (!workflow.operations.empty() && completed >= workflow.operations.size()))
         persisted_state = "completed";
@@ -1937,10 +1999,12 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
         effective_inputs = resolve_workflow_inputs(session_id, effective_instance);
     if (!effective_inputs.is_object()) effective_inputs = Json::object();
     const auto resolved_parameters = operation->resolve_parameters(parameters);
+    const ResultStore store(project->get_database_path());
+    const auto cache_parameters = detail::stable_cache_value(resolved_parameters, store);
+    const auto cache_inputs = detail::stable_cache_value(effective_inputs, store);
     const auto computation_key = fingerprint::operation(
         operation_id, effective_instance, operation->definition().version,
-        resolved_parameters, effective_inputs);
-    const ResultStore store(project->get_database_path());
+        cache_parameters, cache_inputs);
     const auto cached_results = store.find_cached_results(computation_key);
     if (cached_results.is_array() && !cached_results.empty()) {
         bool complete = true;
@@ -1975,6 +2039,11 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
             return Json{{"emitted_results", std::move(emitted_results)}, {"cache_hit", true}};
         }
     }
+
+    if (operation_log_callback_)
+        operation_log_callback_(session_id, operation_id,
+            "operation.cache_miss (" + operation_id + "): No complete checksum-validated result set matched computation key " +
+            computation_key + ".");
 
     if (cancellation->load()) throw Error(ErrorCode::Cancelled, "Operation cancelled");
 
