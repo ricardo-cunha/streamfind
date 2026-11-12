@@ -281,7 +281,11 @@ void PluginHostAccess::read_batches(const std::string &table_name,
                         nullptr, 0, 0, nullptr};
     }
 
-    constexpr std::uint64_t batch_size = 4096;
+    // Keep the SDK-side batch within the data-service limit while avoiding
+    // unnecessary repeated result-handle leases.  A 4,096-row table read
+    // forced an 8,215-row peak table through a second Arrow-file open, where
+    // the supervised worker could remain blocked waiting for the next handle.
+    constexpr std::uint64_t batch_size = 16384;
     std::uint64_t offset = 0;
     for (;;) {
         if (is_cancelled()) return;
