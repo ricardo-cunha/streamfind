@@ -37,6 +37,11 @@
   white-space: nowrap;
 }
 
+.sf-eic-viewer-help {
+  color: var(--sf-text-secondary);
+  font-size: 0.78rem;
+}
+
 .sf-eic-viewer-plot {
   flex: 1 1 auto;
   min-height: 360px;

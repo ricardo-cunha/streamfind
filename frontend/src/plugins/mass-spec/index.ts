@@ -19,6 +19,7 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     artifactContracts: [
       'featuresTable',
       'eicTable',
+      'chromatogramPeaksTable',
       'suspectTargetsTable',
       'suspectsTable',
       'internalStandardsTable',
@@ -47,8 +48,8 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     });
     api.registerViewer({
       id: 'mass-spec.eic-viewer',
-      label: 'EIC viewer',
-      accepts: ['eicTable'],
+      label: 'EIC and chromatogram peak viewer',
+      accepts: ['eicTable', 'chromatogramPeaksTable'],
       component: EicTableViewer,
     });
     api.registerViewer({
