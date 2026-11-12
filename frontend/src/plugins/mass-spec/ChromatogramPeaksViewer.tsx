@@ -43,6 +43,16 @@ function numericArray(row: PeakRow, column: string): number[] {
   }
 }
 
+function withAlpha(hex: string, alpha: number): string {
+  const normalized = hex.replace('#', '');
+  if (normalized.length !== 6) return hex;
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  if (![red, green, blue].every(Number.isFinite)) return hex;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
 function peakLabel(row: PeakRow): string {
   const analysis = text(row, 'analysis') || '(unassigned analysis)';
   const name = text(row, 'name') || text(row, 'channel') || text(row, 'chromatogram_id') || '(unnamed trace)';
@@ -93,7 +103,7 @@ function makePeakSpec(
         legendgroup: label,
         line: { color, width: 1.8 },
         fill: 'tozeroy',
-        fillcolor: `${color}35`,
+        fillcolor: withAlpha(color, 0.21),
         x,
         y,
         hovertemplate: peakHoverTemplate(row),
@@ -225,7 +235,6 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
           'chromatogram_id',
           'chromatogram_index',
           'peak_id',
-          'name',
           'channel',
           'polarity',
           'signal_type',
