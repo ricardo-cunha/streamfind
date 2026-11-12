@@ -730,7 +730,7 @@ const std::vector<std::string> &point_columns()
 
 const std::vector<std::string> &peak_columns()
 {
-    static const std::vector<std::string> columns = {"analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end", "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm", "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm", "integration_status", "manual_override"};
+    static const std::vector<std::string> columns = {"analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end", "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm", "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm", "integration_status", "manual_override", "chromatogram_id", "polarity", "precursor_mz", "product_mz", "activation_ce", "signal_type", "chromatogram_type", "detector", "channel", "wavelength_nm", "units", "eic_size", "eic_rt", "eic_intensity", "eic_raw_intensity", "eic_baseline"};
     return columns;
 }
 

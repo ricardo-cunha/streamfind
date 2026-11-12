@@ -33,11 +33,16 @@ namespace streamfind::mass_spec::chromatograms
             "analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end",
             "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm",
             "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm",
-            "integration_status", "manual_override", "created_at"};
+            "integration_status", "manual_override", "chromatogram_id", "polarity", "precursor_mz",
+            "product_mz", "activation_ce", "signal_type", "chromatogram_type", "detector", "channel",
+            "wavelength_nm", "units", "eic_size", "eic_rt", "eic_intensity", "eic_raw_intensity",
+            "eic_baseline", "created_at"};
         const std::vector<std::string> peak_types = {
             "string", "integer", "integer", "real", "real", "real", "real", "real", "real",
             "real", "real", "real", "real", "real", "real", "real", "real", "integer",
-            "string", "string", "boolean", "timestamp"};
+            "string", "string", "boolean", "string", "integer", "real", "real", "real", "string",
+            "string", "string", "string", "real", "string", "integer", "array", "array", "array", "array",
+            "timestamp"};
 
         Json analysis_name_parameters(const Json &parameters, const Json &analyses)
         {
@@ -184,6 +189,8 @@ namespace streamfind::mass_spec::chromatograms
                 auto &group = groups[{utils::text(row, "analysis"), utils::integer(row, "index")}];
                 group.chromatogram_index = utils::integer(row, "index");
                 group.rt.push_back(utils::real(row, "rt"));
+                group.raw_intensity.push_back(utils::real(row, "raw_intensity"));
+                group.baseline.push_back(utils::real(row, "baseline"));
                 group.intensity.push_back(utils::real(row, "intensity"));
             }
             return groups;
@@ -291,6 +298,9 @@ namespace streamfind::mass_spec::chromatograms
     Json find_chromatogram_peaks(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         const auto rows = point_rows(access, parameters);
+        const auto headers = base::utils::input_rows(
+            access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis,index");
+        const auto header_map = utils::make_header_map(headers);
         const auto groups = groups_from(rows);
         const bool merge = parameters.value("merge", true);
         const double merge_distance = parameters.value("merge_distance", 45.0);
@@ -299,6 +309,9 @@ namespace streamfind::mass_spec::chromatograms
         const double min_width = parameters.value("min_peak_width", 5.0);
         const double max_width = parameters.value("max_peak_width", 120.0);
         const double min_snr = parameters.value("min_snr", 10.0);
+        const double trace_padding = parameters.value("peak_trace_padding_seconds", 0.0);
+        if (trace_padding < 0.0)
+            throw std::invalid_argument("peak_trace_padding_seconds must be non-negative");
         Json output = Json::array();
         int peak_id = 0;
         for (const auto &[key, group] : groups)
@@ -310,7 +323,31 @@ namespace streamfind::mass_spec::chromatograms
             for (auto &peak : peaks)
             {
                 peak.peak_id = ++peak_id;
-                output.push_back({{"analysis", key.first}, {"chromatogram_index", key.second}, {"peak_id", peak.peak_id}, {"rt", peak.rt}, {"rt_start", peak.rt_start}, {"rt_end", peak.rt_end}, {"height", peak.height}, {"raw_height", peak.raw_height}, {"area", peak.area}, {"raw_area", peak.raw_area}, {"baseline_area", peak.baseline_area}, {"width", peak.width}, {"fwhm", peak.fwhm}, {"snr", peak.snr}, {"asymmetry", peak.asymmetry}, {"sharpness", peak.sharpness}, {"plates", peak.plates}, {"number_points", peak.number_points}, {"integration_algorithm", "streamfind.integration.v1"}, {"integration_status", "integrated"}, {"manual_override", false}});
+                Json row{{"analysis", key.first}, {"chromatogram_index", key.second}, {"peak_id", peak.peak_id}, {"rt", peak.rt}, {"rt_start", peak.rt_start}, {"rt_end", peak.rt_end}, {"height", peak.height}, {"raw_height", peak.raw_height}, {"area", peak.area}, {"raw_area", peak.raw_area}, {"baseline_area", peak.baseline_area}, {"width", peak.width}, {"fwhm", peak.fwhm}, {"snr", peak.snr}, {"asymmetry", peak.asymmetry}, {"sharpness", peak.sharpness}, {"plates", peak.plates}, {"number_points", peak.number_points}, {"integration_algorithm", "streamfind.integration.v1"}, {"integration_status", "integrated"}, {"manual_override", false}};
+                const auto header = header_map.find(key);
+                if (header != header_map.end())
+                    utils::append_header_fields(row, header->second);
+                const auto trace_start = peak.rt_start - trace_padding;
+                const auto trace_end = peak.rt_end + trace_padding;
+                Json eic_rt = Json::array();
+                Json eic_intensity = Json::array();
+                Json eic_raw_intensity = Json::array();
+                Json eic_baseline = Json::array();
+                const auto count = std::min({group.rt.size(), group.intensity.size(), group.raw_intensity.size(), group.baseline.size()});
+                for (std::size_t point = 0; point < count; ++point)
+                {
+                    if (group.rt[point] < trace_start || group.rt[point] > trace_end) continue;
+                    eic_rt.push_back(group.rt[point]);
+                    eic_intensity.push_back(group.intensity[point]);
+                    eic_raw_intensity.push_back(group.raw_intensity[point]);
+                    eic_baseline.push_back(group.baseline[point]);
+                }
+                row["eic_size"] = eic_rt.size();
+                row["eic_rt"] = std::move(eic_rt);
+                row["eic_intensity"] = std::move(eic_intensity);
+                row["eic_raw_intensity"] = std::move(eic_raw_intensity);
+                row["eic_baseline"] = std::move(eic_baseline);
+                output.push_back(std::move(row));
             }
         }
         for (auto &row : output)

@@ -539,7 +539,7 @@ sfms:findChromatogramPeaks
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Find chromatogram peaks" ;
-    skos:definition "Detect and integrate chromatographic peaks from the processed chromatogram signal (intensity column). Expects intensity to reflect any prior baseline correction and smoothing. The algorithm uses Savitzky-Golay smoothing and first-derivative zero-crossing detection to locate peak apices, then integrates accepted peaks and publishes peak metrics as a new chromatogramPeaksTable artifact. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
+    skos:definition "Detect and integrate chromatographic peaks from the processed chromatogram signal (intensity column). Expects intensity to reflect any prior baseline correction and smoothing. The algorithm uses Savitzky-Golay smoothing and first-derivative zero-crossing detection to locate peak apices, then publishes self-describing peak rows with channel metadata and optional EIC arrays covering rt_start minus and rt_end plus peak_trace_padding_seconds. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
     sf:hasParameter
         sfms:analysisNamesParameter,
         sfms:indicesParameter,
@@ -549,8 +549,9 @@ sfms:findChromatogramPeaks
         sfms:minPeakDistanceParameter,
         sfms:minPeakWidthParameter,
         sfms:maxPeakWidthParameter,
-        sfms:minSnrParameter ;
-    sf:hasInputPort sfms:chromatogramsTable ;
+        sfms:minSnrParameter,
+        sfms:peakTracePaddingSecondsParameter ;
+    sf:hasInputPort sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
 
 

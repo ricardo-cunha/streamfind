@@ -37,6 +37,8 @@ struct ChromatogramData
 {
     int chromatogram_index = 0;
     std::vector<double> rt;
+    std::vector<double> raw_intensity;
+    std::vector<double> baseline;
     std::vector<double> intensity;
 };
 

@@ -925,8 +925,19 @@ sfms:eicIntensityColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Intensity" ;
-    skos:definition "Raw EIC intensities, as a typed numeric array paired with eic_rt." ;
+    skos:definition "Processed chromatogram intensities, as a typed numeric array paired with eic_rt." ;
     sf:columnName "eic_intensity" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:eicRawIntensityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Eic Raw Intensity" ;
+    skos:definition "Raw chromatogram intensities paired with eic_rt for a detected peak window." ;
+    sf:columnName "eic_raw_intensity" ;
     sf:type "array" ;
     sf:storageType "JSON" ;
     sf:items sfcore:realItemParameter .

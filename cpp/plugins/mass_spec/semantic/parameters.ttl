@@ -1624,6 +1624,17 @@ sfms:minPeakWidthParameter
     sf:default 0.0 ;
     sf:example 5.0 .
 
+sfms:peakTracePaddingSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak trace padding" ;
+    skos:definition "Retention-time padding added on both sides of each detected peak when storing its EIC arrays." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 0.0 ;
+    sf:example 5.0 .
+
 sfms:smoothingEnabledParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

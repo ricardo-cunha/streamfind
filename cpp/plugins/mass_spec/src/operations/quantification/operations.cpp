@@ -332,7 +332,11 @@ Json extract_quantification_responses(sdk::PluginProjectAccess &access, const Js
     std::uint64_t scanned_peaks = 0;
     std::uint64_t peak_batches = 0;
     const auto peak_scan_started = std::chrono::steady_clock::now();
-    access.read_batches(peak_table, chromatograms::utils::peak_columns(), "analysis",
+    const std::vector<std::string> quantification_peak_columns{
+        "analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end", "height", "raw_height",
+        "area", "raw_area", "baseline_area", "width", "fwhm", "snr", "asymmetry", "sharpness", "plates",
+        "number_points", "integration_algorithm", "integration_status", "manual_override"};
+    access.read_batches(peak_table, quantification_peak_columns, "analysis",
         [&](const Json &batch)
         {
             for (const auto &peak : batch)

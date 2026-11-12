@@ -336,7 +336,7 @@ try {
             operations = @(
                 @{ id = 1; operation = 'mass_spec.read_mass_spec_files'; parameters = @{ source_paths = @($sourcePath) }; inputs = @{}; position = @{} },
                 @{ id = 2; operation = 'mass_spec.load_chromatograms'; parameters = @{ analysis_names = @(); chromatogram_id_regex = $chromatogramPatterns; invert = $false; ignore_case = $false }; inputs = @{}; position = @{} },
-                @{ id = 3; operation = 'mass_spec.find_chromatogram_peaks'; parameters = @{ analysis_names = @(); indices = @(); min_snr = 0.0; min_peak_height = 0.0 }; inputs = @{}; position = @{} },
+                @{ id = 3; operation = 'mass_spec.find_chromatogram_peaks'; parameters = @{ analysis_names = @(); indices = @(); min_snr = 0.0; min_peak_height = 0.0; peak_trace_padding_seconds = 5.0 }; inputs = @{}; position = @{} },
                 @{ id = 4; operation = 'mass_spec.set_quantification_method'; parameters = @{ quantification_method = $method }; inputs = @{}; position = @{} },
                 @{ id = 5; operation = 'mass_spec.set_quantification_analyses'; parameters = @{ quant_sample_assignments = $assignments }; inputs = @{}; position = @{} },
                 @{ id = 6; operation = 'mass_spec.extract_quantification_responses'; parameters = @{}; inputs = @{}; position = @{} }
@@ -345,8 +345,8 @@ try {
                 @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 2; target_port = 'analysesTable' },
                 @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 2; target_port = 'chromatogramsHeadersTable' },
                 @{ source_operation = 2; source_port = 'chromatogramsTable'; target_operation = 3; target_port = 'chromatogramsTable' },
+                @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 3; target_port = 'chromatogramsHeadersTable' },
                 @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 5; target_port = 'analysesTable' },
-                @{ source_operation = 4; source_port = 'quantificationMethodTable'; target_operation = 5; target_port = 'quantificationMethodTable' },
                 @{ source_operation = 4; source_port = 'quantificationMethodTable'; target_operation = 6; target_port = 'quantificationMethodTable' },
                 @{ source_operation = 5; source_port = 'quantificationAnalysesTable'; target_operation = 6; target_port = 'quantificationAnalysesTable' },
                 @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 6; target_port = 'chromatogramsHeadersTable' },

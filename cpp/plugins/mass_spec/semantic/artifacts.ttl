@@ -167,13 +167,24 @@ sfms:chromatogramPeaksTable
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry chromatogram peaks table" ;
-    skos:definition "Persisted chromatographic peak records. Detector-independent: one row per detected peak within a chromatogram. Join to MASS_SPEC_CHROMATOGRAMS_HEADERS through analysis and chromatogram_index." ;
+    skos:definition "Persisted chromatographic peak records. Detector-independent: one self-describing row per detected peak within a chromatogram, including channel metadata and optional padded EIC arrays. Join to MASS_SPEC_CHROMATOGRAMS_HEADERS through analysis and chromatogram_index." ;
     sf:tableContractName "MASS_SPEC_CHROMATOGRAM_PEAKS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:chromatogramIndexColumn,
         sfms:peakIdColumn,
+        sfms:chromatogramIdColumn,
+        sfms:polarityColumn,
+        sfms:precursorMzColumn,
+        sfms:productMzColumn,
+        sfms:activationCeColumn,
+        sfms:signalTypeColumn,
+        sfms:chromatogramTypeColumn,
+        sfms:detectorColumn,
+        sfms:channelColumn,
+        sfms:wavelengthNmColumn,
+        sfms:unitsColumn,
         sfms:rtColumn,
         sfms:rtStartColumn,
         sfms:rtEndColumn,
@@ -189,6 +200,11 @@ sfms:chromatogramPeaksTable
         sfms:peakSharpnessColumn,
         sfms:peakPlatesColumn,
         sfms:peakNumberPointsColumn,
+        sfms:eicSizeColumn,
+        sfms:eicRtColumn,
+        sfms:eicIntensityColumn,
+        sfms:eicRawIntensityColumn,
+        sfms:eicBaselineColumn,
         sfms:integrationAlgorithmColumn,
         sfms:integrationStatusColumn,
         sfms:manualOverrideColumn,
