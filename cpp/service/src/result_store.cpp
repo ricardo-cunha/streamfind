@@ -16,6 +16,7 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -41,6 +42,16 @@ void ResultStagingHandle::close() noexcept {
 }
 
 namespace detail {
+
+#ifdef _WIN32
+std::filesystem::path windows_extended_path(const std::filesystem::path &path) {
+    const auto value = path.wstring();
+    if (value.rfind(L"\\\\?\\", 0) == 0) return path;
+    if (value.rfind(L"\\\\", 0) == 0)
+        return std::filesystem::path(L"\\\\?\\UNC\\" + value.substr(2));
+    return std::filesystem::path(L"\\\\?\\" + value);
+}
+#endif
 
 Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
                              const std::vector<std::string> &columns) {
@@ -521,6 +532,39 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
         return left.value("result_id", std::string{}) < right.value("result_id", std::string{});
     });
     return matches;
+}
+
+std::size_t ResultStore::clear_cache() const {
+    const auto inspection = inspect(false);
+    if (inspection.status != ResultStoreStatus::ready)
+        throw std::runtime_error("cannot clear result cache: result store is not ready");
+
+    std::size_t invalidated = 0;
+    std::error_code error;
+    const auto results_directory = root_ / "results";
+    if (!std::filesystem::exists(results_directory, error)) {
+        if (error) throw std::runtime_error("cannot inspect result cache: " + error.message());
+        return invalidated;
+    }
+    for (const auto &entry : std::filesystem::directory_iterator(results_directory, error)) {
+        if (error) throw std::runtime_error("cannot enumerate result cache: " + error.message());
+        if (!entry.is_directory(error) || error) {
+            if (error) throw std::runtime_error("cannot inspect result cache entry: " + error.message());
+            continue;
+        }
+        const auto manifest_path = entry.path() / "manifest.json";
+        try {
+            auto manifest = read_json_file(manifest_path);
+            if (!manifest.value("cacheable", false)) continue;
+            manifest["cacheable"] = false;
+            write_json_file(manifest_path, manifest);
+            ++invalidated;
+        } catch (const std::exception &exception) {
+            throw std::runtime_error("cannot invalidate result cache entry " +
+                                     entry.path().filename().string() + ": " + exception.what());
+        }
+    }
+    return invalidated;
 }
 
 void ResultStore::remove_published_results(const std::vector<std::string> &result_ids) const {
@@ -1102,16 +1146,30 @@ ResultLease ResultStore::allocate(const std::string &run_id,
     if (std::filesystem::exists(staging_directory, error) ||
         std::filesystem::exists(published_directory, error))
         throw std::runtime_error("result allocation already exists: " + result_id);
-    if (!std::filesystem::create_directories(staging_directory, error) && error)
+    if (!std::filesystem::create_directories(
+#ifdef _WIN32
+            detail::windows_extended_path(staging_directory), error
+#else
+            staging_directory, error
+#endif
+        ) && error)
         throw std::runtime_error("cannot create result staging directory: " + error.message());
     const auto normalized_extension = normalize_extension(extension);
     const auto staging_payload = staging_directory / ("payload." + normalized_extension);
 #ifdef _WIN32
-    const auto native = CreateFileW(staging_payload.c_str(), GENERIC_WRITE,
+    const auto native = CreateFileW(detail::windows_extended_path(staging_payload).c_str(), GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-    if (native == INVALID_HANDLE_VALUE)
-        throw std::runtime_error("cannot create result staging payload");
+    if (native == INVALID_HANDLE_VALUE) {
+        const auto native_error = GetLastError();
+        std::error_code cleanup_error;
+        std::filesystem::remove_all(detail::windows_extended_path(staging_directory), cleanup_error);
+        cleanup_empty_runs();
+        const auto message = std::system_category().message(static_cast<int>(native_error));
+        throw std::runtime_error("cannot create result staging payload at " +
+            staging_payload.string() + ": " + message + " (Win32 error " +
+            std::to_string(native_error) + ")");
+    }
     const auto writer = std::make_shared<ResultStagingHandle>(reinterpret_cast<std::intptr_t>(native));
 #else
     const auto native = ::open(staging_payload.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);

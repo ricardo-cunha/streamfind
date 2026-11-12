@@ -101,15 +101,13 @@ namespace streamfind::mass_spec::chromatograms
         {
             const auto analysis_rows = base::utils::input_rows(
                 access, parameters, "analysesTable", {"analysis", "file_path", "analysis_index"}, "analysis");
-            const std::vector<std::string> columns = {
-                "analysis", "index", "chromatogram_id", "array_length", "polarity", "precursor_mz",
-                "activation_ce", "product_mz", "signal_type", "chromatogram_type", "detector", "channel",
-                "units", "wavelength_nm", "interval_ms", "start_time", "end_time", "intensity_multiplier"};
-            const std::vector<std::string> types = {
-                "string", "integer", "string", "integer", "integer", "real", "real", "real", "string",
-                "string", "string", "string", "string", "real", "real", "real", "real", "real"};
-            Json headers = Json::array();
+            const auto header_rows = base::utils::input_rows(
+                access, parameters, "chromatogramsHeadersTable", {"analysis", "index", "chromatogram_id"}, "analysis");
+            std::map<std::string, std::vector<Json>> headers_by_analysis;
+            for (const auto &header : header_rows)
+                headers_by_analysis[utils::text(header, "analysis")].push_back(header);
             Json points = Json::array();
+            std::size_t selected_chromatograms = 0;
             const auto wanted = parameters.value("analysis_names", Json::array());
             const auto patterns = parameters.value("chromatogram_id_regex", Json::array());
             const bool invert = parameters.value("invert", false);
@@ -122,9 +120,12 @@ namespace streamfind::mass_spec::chromatograms
                     continue;
                 ::mass_spec::reader::MASS_SPEC_FILE file(utils::text(analysis_row, "file_path"));
                 file.select_analysis(utils::integer(analysis_row, "analysis_index"));
-                const auto raw_headers = file.get_chromatograms_headers();
-                const auto arrays = file.get_chromatograms();
-                for (std::size_t i = 0; i < raw_headers.index.size(); ++i)
+                std::vector<int> selected_indices;
+                std::vector<Json> selected_headers;
+                const auto header_it = headers_by_analysis.find(analysis);
+                if (header_it == headers_by_analysis.end())
+                    continue;
+                for (const auto &header : header_it->second)
                 {
                     bool match = patterns.empty();
                     for (const auto &pattern : patterns)
@@ -134,7 +135,7 @@ namespace streamfind::mass_spec::chromatograms
                             auto flags = std::regex::ECMAScript;
                             if (ignore_case)
                                 flags |= std::regex::icase;
-                            if (std::regex_search(raw_headers.chromatogram_id[i], std::regex(pattern.get<std::string>(), flags)))
+                            if (std::regex_search(utils::text(header, "chromatogram_id"), std::regex(pattern.get<std::string>(), flags)))
                                 match = true;
                         }
                         catch (const std::regex_error &)
@@ -146,19 +147,22 @@ namespace streamfind::mass_spec::chromatograms
                         match = !match;
                     if (!match)
                         continue;
-                    Json header = {
-                        {"analysis", analysis}, {"index", raw_headers.index[i]}, {"chromatogram_id", raw_headers.chromatogram_id[i]}, {"array_length", raw_headers.array_length[i]}, {"polarity", raw_headers.polarity[i]}, {"precursor_mz", raw_headers.precursor_mz[i]}, {"activation_ce", raw_headers.activation_ce[i]}, {"product_mz", raw_headers.product_mz[i]}, {"signal_type", raw_headers.signal_type[i]}, {"chromatogram_type", raw_headers.chromatogram_type[i]}, {"detector", raw_headers.detector[i]}, {"channel", raw_headers.channel[i]}, {"units", raw_headers.units[i]}, {"wavelength_nm", raw_headers.wavelength_nm[i]}, {"interval_ms", raw_headers.interval_ms[i]}, {"start_time", raw_headers.start_time[i]}, {"end_time", raw_headers.end_time[i]}, {"intensity_multiplier", raw_headers.intensity_multiplier[i]}};
-                    headers.push_back(std::move(header));
-                    if (i >= arrays.size() || arrays[i].size() < 2)
+                    ++selected_chromatograms;
+                    selected_indices.push_back(utils::integer(header, "index"));
+                    selected_headers.push_back(header);
+                }
+                const auto arrays = file.get_chromatograms(selected_indices);
+                for (std::size_t selected = 0; selected < selected_headers.size(); ++selected)
+                {
+                    if (selected >= arrays.size() || arrays[selected].size() < 2)
                         continue;
-                    const auto count = std::min(arrays[i][0].size(), arrays[i][1].size());
+                    const auto count = std::min(arrays[selected][0].size(), arrays[selected][1].size());
                     for (std::size_t j = 0; j < count; ++j)
-                        points.push_back({{"analysis", analysis}, {"index", raw_headers.index[i]}, {"rt", arrays[i][0][j]}, {"raw_intensity", arrays[i][1][j]}, {"baseline", 0.0}, {"intensity", arrays[i][1][j]}});
+                        points.push_back({{"analysis", analysis}, {"index", utils::integer(selected_headers[selected], "index")}, {"rt", arrays[selected][0][j]}, {"raw_intensity", arrays[selected][1][j]}, {"baseline", 0.0}, {"intensity", arrays[selected][1][j]}});
                 }
             }
-            access.emit_table_rows("chromatogramsHeadersTable", columns, types, headers);
             emit_points(access, std::move(points));
-            return Json{{"status", "finished"}, {"chromatograms", headers.size()}};
+            return Json{{"status", "finished"}, {"chromatograms", selected_chromatograms}};
         }
 
         Json transform_points(sdk::PluginProjectAccess &access, const Json &parameters,

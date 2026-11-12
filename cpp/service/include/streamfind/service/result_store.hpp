@@ -83,6 +83,8 @@ public:
     Json find_cached_result(const std::string &computation_key) const;
     /** Return all checksum-validated results for a computation key. */
     Json find_cached_results(const std::string &computation_key) const;
+    /** Disable cache reuse for published results while retaining their payloads. */
+    std::size_t clear_cache() const;
 
     /** Remove published payload directories after their registry entries are cleared. */
     void remove_published_results(const std::vector<std::string> &result_ids) const;

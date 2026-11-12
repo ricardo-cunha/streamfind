@@ -108,7 +108,7 @@ sfms:removeAnalyses
     skos:definition "Read the analyses table and remove every analysis whose name matches at least one ECMAScript regular-expression pattern." ;
     sf:guidance "Provide analysis_names as exact names or regex patterns. Plain strings match one exact analysis name. Use ^prefix for a prefix batch, suffix$ for a suffix batch, or .*middle.* for text occurring anywhere in the name. Regex matching uses ECMAScript syntax, is case-sensitive, and uses regex search.\n\nExamples:\n[\"sample_exact\"]\nRemoves one exact analysis.\n\n[\"^QC_\"]\nRemoves all analyses beginning with QC_.\n\n[\"_blank$\"]\nRemoves all analyses ending with _blank.\n\n[\".*blank.*\"]\nRemoves all analyses containing blank anywhere in the name; because matching uses regex search, [\"blank\"] is equivalent." ;
     sf:hasParameter sfcore:analysisNamesParameter ;
-    sf:hasInputPort sfms:analysesTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
     sf:hasOutputPort sfms:analysesTable, sfcore:operationSuccessSignal .
 
 sfms:getAnalyses
@@ -237,7 +237,7 @@ sfms:getChromatogramsHeaders
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
+    sf:hasInputPort sfms:analysesTable ;
     sf:hasOutputPort sfms:chromatogramsHeadersTable, sfcore:operationSuccessSignal .
 
 sfms:getSpectraTic
@@ -396,6 +396,40 @@ sfms:getChromatogramPeaks
     sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable, sfms:chromatogramPeaksTable ;
     sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
 
+sfms:setQuantificationMethod
+    a sf:Operation ;
+    sf:operationId "mass_spec.set_quantification_method" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Set quantification method" ;
+    skos:definition "Validate and persist one horizontal method row per analyte or internal standard, including quantifier and optional qualifier transitions." ;
+    sf:hasParameter sfms:quantificationMethodParameter ;
+    sf:hasOutputPort sfms:quantificationMethodTable, sfcore:operationSuccessSignal .
+
+sfms:setQuantificationAnalyses
+    a sf:Operation ;
+    sf:operationId "mass_spec.set_quantification_analyses" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Set quantification analyses" ;
+    skos:definition "Validate project-specific analysis roles, calibration levels, nominal concentrations, and dilution factors against the current analyses list. Target identifiers are resolved against the selected quantification method by downstream quantification operations." ;
+    sf:hasParameter sfms:quantSampleAssignmentsParameter ;
+    sf:hasInputPort sfms:analysesTable ;
+    sf:hasOutputPort sfms:quantificationAnalysesTable, sfcore:operationSuccessSignal .
+
+sfms:extractQuantificationResponses
+    a sf:Operation ;
+    sf:operationId "mass_spec.extract_quantification_responses" ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Extract quantification responses" ;
+    skos:definition "Match configured quantifier and qualifier transitions to persisted chromatogram headers and peaks, extract area or height responses, calculate internal-standard ratios, and retain explicit failure statuses. Calibration fitting is a later operation." ;
+    sf:hasInputPort sfms:quantificationMethodTable, sfms:quantificationAnalysesTable, sfms:chromatogramsHeadersTable, sfms:chromatogramPeaksTable ;
+    sf:hasOutputPort sfms:quantificationResponsesTable, sfcore:operationSuccessSignal .
+
 sfms:getFeatures
     a sf:Operation ;
     sf:operationId "mass_spec.get_features" ;
@@ -474,14 +508,14 @@ sfms:loadChromatograms
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Load chromatograms" ;
-    skos:definition "Read chromatogram signal arrays and channel metadata from the native reader and persist them as immutable chromatogram-header and point artifacts. Each point stores retention time and raw intensity; intensity is initialized from raw_intensity and can be modified by subsequent baseline correction and smoothing steps. Use chromatogram_id_regex to select specific channels, such as MRM or DAD wavelengths." ;
+    skos:definition "Read chromatogram signal arrays from the native reader and persist the selected points as an immutable chromatogramsTable artifact. The complete channel metadata is already supplied by read_mass_spec_files through chromatogramsHeadersTable. Each point stores retention time and raw intensity; intensity is initialized from raw_intensity and can be modified by subsequent baseline correction and smoothing steps. Use chromatogram_id_regex to select specific channels, such as MRM or DAD wavelengths." ;
     sf:hasParameter
         sfms:analysisNamesParameter,
         sfms:chromatogramIdRegexParameter,
         sfms:invertParameter,
         sfms:ignoreCaseParameter ;
-    sf:hasInputPort sfms:analysesTable ;
-    sf:hasOutputPort sfms:chromatogramsHeadersTable, sfms:chromatogramsTable, sfcore:operationSuccessSignal .
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable ;
+    sf:hasOutputPort sfms:chromatogramsTable, sfcore:operationSuccessSignal .
 
 
 sfms:filterChromatogramsRetentionTime
@@ -933,7 +967,7 @@ sfms:metfragScreening
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Suspect screening with MetFrag" ;
     skos:definition "Run in-silico MetFrag fragmenter screening for all persisted detected features using a selectable candidate database, then rank resulting candidates into the suspect results." ;
-    sf:guidance "Requires Java 21 and MetFragCL. The operation processes every row in the connected featuresTable except rows marked filtered=true when filtered is false; set filtered=true to include those rows. Provide user-defined candidates through the suspect_targets parameter; those rows take precedence and automatically use LocalCSV. Select PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path. If suspect_targets is empty, LocalCSV reads database_path. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. top_n limits score-ranked candidates that StreamFind normalizes, isotope-scores, and emits per feature; it does not stop MetFrag's database search early. Set feature_timeout_seconds above zero to bound each MetFrag child process. A timeout terminates that process tree and fails the entire operation with no partial result publication; zero leaves the timeout disabled. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are always searched by precursor mass and returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
+    sf:guidance "Requires Java 21 and MetFragCL. The operation considers every row in featuresTable except rows marked filtered=true when filtered is false; set filtered=true to include those rows. When suspect_targets contains targets, StreamFind first shortlists features using both precursor-mass tolerance (ppm) and, for targets with an RT value, retention-time tolerance (sec). Targets without RT are matched by mass only. Features outside this shortlist do not launch MetFrag. For shortlisted features with experimental MS2, MetFrag compares the experimental spectrum with candidate in-silico fragment spectra; it does not use database/reference MS2 spectra for this comparison. Shortlisted features without experimental MS2 use direct target mass/RT matching and do not launch MetFrag. When suspect_targets is empty, candidates come from the selected database: PubChem or ExtendedPubChem for online retrieval, PubChemLite for a local PubChemLite CSV, or CompToxCSV for a local CompTox CSV. All local database modes use database_path; LocalCSV reads database_path when no suspect_targets are supplied. CompTox rows lacking an identifier, name, neutral mass, formula, or individual-component SMILES are excluded and duplicate component identifiers are collapsed. top_n limits score-ranked candidates that StreamFind normalizes, isotope-scores, and emits per feature; it does not stop MetFrag's database search early. Set feature_timeout_seconds above zero to bound each MetFrag child process. A timeout terminates that process tree and fails the entire operation with no partial result publication; zero leaves the timeout disabled. Isotope matching is evaluated from each candidate formula or structure for every database mode and reported as MS1 isotope fields; it is evidence, not a replacement for mass/RT/MS2 criteria. Candidates without experimental MS2 are returned at Cat. 4 unless RT or fragment evidence supports a higher level. feature_parallelism controls bounded feature-level concurrency, number_threads controls threads within each MetFrag job, and cache_candidates reuses identical queries. MetFrag in-silico MS2 evidence is Cat. 3; Cat. 1 and Cat. 2 are reserved for reference-MS2 screening." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,
@@ -967,7 +1001,7 @@ sfms:findInternalStandardsMetfrag
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Find internal standards with MetFrag" ;
     skos:definition "Run the MetFrag in-silico fragmentation screening path against detected features and user-supplied internal-standard suspect targets, then publish the resulting assignments in the independent internalStandardsTable contract." ;
-    skos:guidance "The operation processes every row in the connected featuresTable except rows marked filtered=true when filtered is false; set filtered=true to include those rows. Provide user-defined internal-standard candidates through the suspect_targets parameter, normally including deuterated compounds. The operation always uses those rows as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. top_n limits score-ranked candidates that StreamFind normalizes, isotope-scores, and emits per feature, after MetFrag has completed its database search. Set feature_timeout_seconds above zero to bound each MetFrag child process. A timeout terminates that process tree and fails the entire operation with no partial result publication; zero disables the timeout. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure; D or [2H] formulas also include bounded partial D-to-H isotopologues below the dominant labelled ion, matching the annotate_components base-ion convention, and the result is reported in the internal-standard table. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
+    skos:guidance "The operation considers every row in the connected featuresTable except rows marked filtered=true when filtered is false; set filtered=true to include those rows. Provide internal-standard candidates through the suspect_targets parameter, normally including labelled compounds. StreamFind first shortlists features using both precursor-mass tolerance (ppm) and, for targets with an RT value, retention-time tolerance (sec); targets without RT are matched by mass only. Features outside this shortlist do not launch MetFrag. For shortlisted features with experimental MS2, MetFrag compares the experimental spectrum with candidate in-silico fragment spectra, not database/reference MS2 spectra. Shortlisted features without experimental MS2 use direct target mass/RT matching without launching MetFrag. The operation always uses the supplied rows as its LocalCSV candidate database; public database selection and database-path parameters are intentionally unavailable. top_n limits score-ranked candidates that StreamFind normalizes and isotope-scores after MetFrag has completed its search. Set feature_timeout_seconds above zero to bound each MetFrag child process. A timeout terminates that process tree and fails the entire operation with no partial result publication; zero disables the timeout. Use after loadFeaturesMs2 when experimental MS2 is available. MS1 isotope-pattern matching is evaluated from each target formula or structure and reported in the internal-standard table. Requires Java 21 and MetFragCL 2.6.11. The operation emits only internalStandardsTable and an operation-success signal." ;
     sf:hasParameter
         sfms:suspectTargetsParameter,
         sfms:ppmParameter,

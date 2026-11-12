@@ -317,6 +317,30 @@ sfms:targetsParameter
     sf:default "[]" ;
     sf:example "[{\"name\":\"caffeine\",\"mass\":194.0804},{\"name\":\"acetaminophen\",\"mass\":151.0633}]" .
 
+sfms:quantificationMethodParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification method" ;
+    skos:definition "Editable horizontal method rows with one analyte or internal standard per row and quantifier and optional qualifier transition columns." ;
+    sf:type "table" ;
+    sf:tableContract sfms:quantificationMethodTable ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[{\"target_id\":\"caffeine\",\"role\":\"analyte\",\"internal_standard_id\":\"caffeine_d9\",\"rt\":1020.0,\"rt_tolerance\":30.0,\"response_metric\":\"area\",\"normalization\":\"internal_standard\",\"quantifier_signal_type\":\"MS\",\"quantifier_precursor_mz\":195.1,\"quantifier_product_mz\":138.1,\"qualifier_signal_type\":\"MS\",\"qualifier_precursor_mz\":195.1,\"qualifier_product_mz\":110.1},{\"target_id\":\"caffeine_d9\",\"role\":\"internal_standard\",\"rt\":1018.0,\"rt_tolerance\":30.0,\"response_metric\":\"area\",\"normalization\":\"none\",\"quantifier_signal_type\":\"MS\",\"quantifier_precursor_mz\":204.1,\"quantifier_product_mz\":144.1}]" .
+
+sfms:quantSampleAssignmentsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification sample assignments" ;
+    skos:definition "Editable analysis and target rows identifying blanks, calibrators, QCs, and unknowns with concentration and dilution context." ;
+    sf:type "table" ;
+    sf:tableContract sfms:quantificationAnalysesTable ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine\",\"sample_type\":\"calibrator\",\"calibration_level\":5,\"nominal_concentration\":5.0,\"dilution_factor\":1.0}]" .
+
 sfms:targetsCsvPathParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

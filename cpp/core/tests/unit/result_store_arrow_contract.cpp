@@ -210,6 +210,13 @@ int main() {
                 "Arrow-native null filter returned incorrect row offsets");
         require(store.find_cached_results("key-1").size() == 1,
                 "published Arrow result was not available to cache lookup");
+        require(store.clear_cache() == 1,
+                "result-cache clear did not invalidate the reusable manifest");
+        require(store.find_cached_results("key-1").empty(),
+                "result-cache clear left a published result reusable");
+        require(store.describe_result(result_id).value("state", std::string{}) == "published" &&
+                    store.read_arrow_ipc_batch(result_id, 0, 10).at("rows").size() == 2,
+                "result-cache clear removed or damaged a published payload");
         const streamfind::Json expected_navigation_index = {
             {"label", {{"\"first\"", {0}}, {"\"second\"", {1}}}}};
         store.write_navigation_index(result_id, expected_navigation_index);

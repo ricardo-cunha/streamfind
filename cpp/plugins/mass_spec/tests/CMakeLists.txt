@@ -112,6 +112,17 @@ add_test(NAME streamfind_mass_spec_bruker_calibration_contract
 set_tests_properties(streamfind_mass_spec_bruker_calibration_contract PROPERTIES
     LABELS "mass_spec;reader;calibration")
 
+add_executable(streamfind_mass_spec_quantification_validation_contract
+    unit/quantification_validation_contract.cpp
+    ../src/utils/quantification.cpp)
+target_include_directories(streamfind_mass_spec_quantification_validation_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_quantification_validation_contract
+    COMMAND streamfind_mass_spec_quantification_validation_contract)
+set_tests_properties(streamfind_mass_spec_quantification_validation_contract PROPERTIES
+    LABELS "mass_spec;quantification;configuration")
+
 foreach(_test_target IN ITEMS
     streamfind_mass_spec_mcp_discovery_contract
     streamfind_mass_spec_project_isolation_contract)

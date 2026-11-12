@@ -386,12 +386,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 
     const auto table = input->at("physical_table").get<std::string>();
     const auto columns = ::streamfind::mass_spec::nta::utils::suspects_columns();
-    const std::vector<std::string> types = {
-        "string", "string", "string", "string", "string", "string", "integer", "string", "integer",
-        "real", "real", "real", "real", "real", "real", "real", "real", "integer", "real", "integer",
-        "real", "string", "string", "string", "string", "real", "integer", "string", "string", "string",
-        "string", "integer", "string", "string", "string", "string", "string", "integer", "string",
-        "string", "integer", "string", "string", "integer", "integer", "real", "boolean"};
+    const auto types = ::streamfind::mass_spec::nta::utils::detail::suspects_types();
     const auto rows = access.read(table, columns, "analysis");
     access.emit_table_rows("suspectsTable", columns, types, rows);
     access.report_progress(1.0, "Converted internal standards to the suspectsTable contract.");

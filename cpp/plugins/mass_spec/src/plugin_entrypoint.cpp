@@ -6,6 +6,7 @@
 #include "operations/fragmentation/expand_fragmentation_tree.hpp"
 #include "operations/fragmentation/filter_fragmentation_tree.hpp"
 #include "operations/chromatograms/operations.hpp"
+#include "operations/quantification/operations.hpp"
 #include "operations/nta/nta_deconvolution.hpp"
 #include "operations/nta/operations.hpp"
 #include "streamfind/plugin_abi.h"
@@ -67,6 +68,9 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Operation, &chromatograms::find_chromatogram_peaks},
         {"mass_spec.correct_chromatogram_baseline", sdk::CapabilityKind::Operation, &chromatograms::correct_chromatogram_baseline},
         {"mass_spec.smooth_chromatograms", sdk::CapabilityKind::Operation, &chromatograms::smooth_chromatograms},
+        {"mass_spec.set_quantification_method", sdk::CapabilityKind::Operation, &quantification::set_quantification_method},
+        {"mass_spec.set_quantification_analyses", sdk::CapabilityKind::Operation, &quantification::set_quantification_analyses},
+        {"mass_spec.extract_quantification_responses", sdk::CapabilityKind::Operation, &quantification::extract_quantification_responses},
         {"mass_spec.find_features", sdk::CapabilityKind::Operation, &nta::deconvolution::find_features},
         {"mass_spec.load_features_ms1", sdk::CapabilityKind::Operation, &nta::load_features_ms1::run},
         {"mass_spec.load_features_ms2", sdk::CapabilityKind::Operation, &nta::load_features_ms2::run},

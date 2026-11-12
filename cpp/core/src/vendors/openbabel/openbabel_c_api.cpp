@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <string>
 #include <cstdlib>
@@ -226,26 +227,50 @@ namespace streamfind::obabel_detail
     return std::string(begin, end);
   }
 
-  std::string normalize_formula(const std::string &formula)
+  std::string isotope_aware_formula(OpenBabel::OBMol &mol)
   {
-    std::string out;
-    out.reserve(formula.size() + 8);
-    for (size_t i = 0; i < formula.size(); ++i)
+    std::map<std::pair<std::string, unsigned int>, std::size_t> counts;
+    for (OpenBabel::OBMolAtomIter iterator(mol); iterator; ++iterator)
     {
-      if (formula[i] == 'D')
-      {
-        out += "[2H]";
-      }
-      else if (formula[i] == 'T')
-      {
-        out += "[3H]";
-      }
-      else
-      {
-        out += formula[i];
-      }
+      OpenBabel::OBAtom &atom = *iterator;
+      const char *element_symbol = OpenBabel::OBElements::GetSymbol(atom.GetAtomicNum());
+      if (element_symbol == nullptr || *element_symbol == '\0')
+        return {};
+
+      ++counts[{element_symbol, atom.GetIsotope()}];
+      if (atom.GetAtomicNum() != 1)
+        counts[{"H", 0}] += atom.GetImplicitHCount();
     }
-    return out;
+
+    const bool contains_carbon = std::any_of(
+        counts.begin(), counts.end(), [](const auto &entry) {
+          return entry.first.first == "C";
+        });
+    const auto element_order = [contains_carbon](const std::string &symbol) {
+      if (contains_carbon && symbol == "C") return std::string("0");
+      if (contains_carbon && symbol == "H") return std::string("1");
+      return std::string("2") + symbol;
+    };
+
+    std::vector<std::pair<std::pair<std::string, unsigned int>, std::size_t>> ordered(
+        counts.begin(), counts.end());
+    std::sort(ordered.begin(), ordered.end(), [&](const auto &left, const auto &right) {
+      const auto left_order = element_order(left.first.first);
+      const auto right_order = element_order(right.first.first);
+      if (left_order != right_order) return left_order < right_order;
+      return left.first.second < right.first.second;
+    });
+
+    std::ostringstream formula;
+    for (const auto &[element_and_isotope, count] : ordered)
+    {
+      if (count == 0) continue;
+      const auto &[symbol, isotope] = element_and_isotope;
+      if (isotope > 0) formula << '[' << isotope << symbol << ']';
+      else formula << symbol;
+      if (count > 1) formula << count;
+    }
+    return formula.str();
   }
 
   bool finite_value(double value)
@@ -446,7 +471,7 @@ extern "C"
     copy_text(out->canonical_smiles, streamfind_OB_SMILES_CAPACITY, canonical_smiles);
     copy_text(out->inchi, streamfind_OB_INCHI_CAPACITY, normalized_inchi);
     copy_text(out->inchikey, streamfind_OB_INCHIKEY_CAPACITY, inchikey);
-    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, normalize_formula(mol.GetFormula()));
+    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, isotope_aware_formula(mol));
     out->exact_mass = mol.GetExactMass();
 
     if (OpenBabel::OBDescriptor *logp = OpenBabel::OBDescriptor::FindType("logP"))
@@ -523,7 +548,7 @@ extern "C"
     copy_text(out->canonical_smiles, streamfind_OB_SMILES_CAPACITY, canonical_smiles);
     copy_text(out->inchi, streamfind_OB_INCHI_CAPACITY, normalized_inchi);
     copy_text(out->inchikey, streamfind_OB_INCHIKEY_CAPACITY, inchikey);
-    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, normalize_formula(mol.GetFormula()));
+    copy_text(out->formula, streamfind_OB_FORMULA_CAPACITY, isotope_aware_formula(mol));
     out->exact_mass = mol.GetExactMass();
 
     if (OpenBabel::OBDescriptor *logp = OpenBabel::OBDescriptor::FindType("logP"))

@@ -2,10 +2,14 @@
 
 #include <array>
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <ctime>
+#include <iomanip>
 #include <limits>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,7 +27,55 @@ namespace streamfind::data_proxy {
 
 namespace detail {
 
-enum class ArrowColumnKind { Boolean, Integer, FloatingPoint, IntegerList, FloatingPointList, StringList, String };
+enum class ArrowColumnKind { Boolean, Integer, FloatingPoint, IntegerList, FloatingPointList, StringList, Timestamp, String };
+
+std::int64_t timestamp_micros(const std::string &value) {
+    if (value.size() < 19 || value[4] != '-' || value[7] != '-' ||
+        (value[10] != ' ' && value[10] != 'T') || value[13] != ':' || value[16] != ':')
+        throw std::invalid_argument("invalid timestamp: " + value);
+    std::tm time{};
+    time.tm_year = std::stoi(value.substr(0, 4)) - 1900;
+    time.tm_mon = std::stoi(value.substr(5, 2)) - 1;
+    time.tm_mday = std::stoi(value.substr(8, 2));
+    time.tm_hour = std::stoi(value.substr(11, 2));
+    time.tm_min = std::stoi(value.substr(14, 2));
+    time.tm_sec = std::stoi(value.substr(17, 2));
+#ifdef _WIN32
+    const auto seconds = _mkgmtime(&time);
+#else
+    const auto seconds = timegm(&time);
+#endif
+    if (seconds < 0) throw std::invalid_argument("invalid timestamp: " + value);
+    std::int64_t micros = static_cast<std::int64_t>(seconds) * 1000000;
+    if (value.size() > 19 && value[19] == '.') {
+        std::int64_t fraction = 0;
+        int digits = 0;
+        for (std::size_t index = 20; index < value.size() && digits < 6; ++index, ++digits) {
+            if (value[index] < '0' || value[index] > '9')
+                throw std::invalid_argument("invalid timestamp: " + value);
+            fraction = fraction * 10 + (value[index] - '0');
+        }
+        while (digits++ < 6) fraction *= 10;
+        micros += fraction;
+    }
+    return micros;
+}
+
+std::string timestamp_text(std::int64_t micros) {
+    const auto seconds = micros / 1000000;
+    const auto fraction = micros % 1000000;
+    const auto time = static_cast<std::time_t>(seconds);
+    std::tm utc{};
+#ifdef _WIN32
+    if (gmtime_s(&utc, &time) != 0) throw std::runtime_error("invalid Arrow timestamp");
+#else
+    if (gmtime_r(&time, &utc) == nullptr) throw std::runtime_error("invalid Arrow timestamp");
+#endif
+    std::ostringstream out;
+    out << std::put_time(&utc, "%Y-%m-%d %H:%M:%S") << '.'
+        << std::setw(6) << std::setfill('0') << fraction;
+    return out.str();
+}
 
 ArrowColumnKind classify_numeric_list(const Json &value) {
     if (!value.is_array()) return ArrowColumnKind::String;
@@ -120,6 +172,7 @@ std::vector<unsigned char> arrow_ipc_encode_rows(const Json &rows, const Json &s
             if (type == "boolean") kinds[found->second] = detail::ArrowColumnKind::Boolean;
             else if (type == "integer") kinds[found->second] = detail::ArrowColumnKind::Integer;
             else if (type == "number" || type == "real") kinds[found->second] = detail::ArrowColumnKind::FloatingPoint;
+            else if (type == "timestamp") kinds[found->second] = detail::ArrowColumnKind::Timestamp;
             else if (type == "array") {
                 const auto items = column.value("items", Json::object());
                 const auto item_type = items.value("type", std::string{"number"});
@@ -173,6 +226,20 @@ std::vector<unsigned char> arrow_ipc_encode_rows(const Json &rows, const Json &s
             }
             detail::append_arrow_error(builder.Finish(&array));
             type = arrow::float64();
+            break;
+        }
+        case detail::ArrowColumnKind::Timestamp: {
+            const auto timestamp_type = arrow::timestamp(arrow::TimeUnit::MICRO);
+            arrow::TimestampBuilder builder(timestamp_type, arrow::default_memory_pool());
+            for (const auto &row : rows) {
+                if (!row.contains(names[column]) || row.at(names[column]).is_null())
+                    detail::append_arrow_error(builder.AppendNull());
+                else
+                    detail::append_arrow_error(builder.Append(detail::timestamp_micros(
+                        row.at(names[column]).get<std::string>())));
+            }
+            detail::append_arrow_error(builder.Finish(&array));
+            type = timestamp_type;
             break;
         }
         case detail::ArrowColumnKind::IntegerList: {
@@ -413,6 +480,10 @@ Json ArrowFileBatchReader::read(std::uint64_t offset, std::uint64_t limit,
                     break;
                 case arrow::Type::DOUBLE:
                     row[field->name()] = std::static_pointer_cast<arrow::DoubleArray>(array)->Value(impl_->batch_row);
+                    break;
+                case arrow::Type::TIMESTAMP:
+                    row[field->name()] = detail::timestamp_text(
+                        std::static_pointer_cast<arrow::TimestampArray>(array)->Value(impl_->batch_row));
                     break;
                 case arrow::Type::STRING: {
                     const auto text = std::static_pointer_cast<arrow::StringArray>(array)->GetView(impl_->batch_row);

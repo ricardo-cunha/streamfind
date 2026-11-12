@@ -194,6 +194,107 @@ sfms:chromatogramPeaksTable
         sfms:manualOverrideColumn,
         sfcore:createdAtColumn .
 
+sfms:quantificationMethodTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry quantification method table" ;
+    skos:definition "One horizontal row per analyte or internal standard, including quantifier and optional qualifier transition settings." ;
+    sf:tableContractName "MASS_SPEC_QUANTIFICATION_METHOD" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:quantTargetIdColumn,
+        sfms:nameColumn,
+        sfms:quantRoleColumn,
+        sfms:internalStandardIdColumn,
+        sfms:rtColumn,
+        sfms:rtToleranceColumn,
+        sfms:responseMetricColumn,
+        sfms:normalizationColumn,
+        sfms:concentrationUnitColumn,
+        sfms:regressionModelColumn,
+        sfms:weightingColumn,
+        sfms:interceptModeColumn,
+        sfms:quantifierSignalTypeColumn,
+        sfms:quantifierChromatogramTypeColumn,
+        sfms:quantifierPolarityColumn,
+        sfms:quantifierPrecursorMzColumn,
+        sfms:quantifierProductMzColumn,
+        sfms:quantifierActivationCeColumn,
+        sfms:quantifierDetectorColumn,
+        sfms:quantifierWavelengthNmColumn,
+        sfms:quantifierMzTolerancePpmColumn,
+        sfms:qualifierSignalTypeColumn,
+        sfms:qualifierChromatogramTypeColumn,
+        sfms:qualifierPolarityColumn,
+        sfms:qualifierPrecursorMzColumn,
+        sfms:qualifierProductMzColumn,
+        sfms:qualifierActivationCeColumn,
+        sfms:qualifierDetectorColumn,
+        sfms:qualifierWavelengthNmColumn,
+        sfms:qualifierMzTolerancePpmColumn,
+        sfms:expectedRatioColumn,
+        sfms:ratioToleranceColumn,
+        sfms:enabledColumn,
+        sfcore:createdAtColumn .
+
+sfms:quantificationAnalysesTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry quantification analyses table" ;
+    skos:definition "Analysis and sample-role assignments supplying calibrator, QC, blank, zero, and unknown context for quantification." ;
+    sf:tableContractName "MASS_SPEC_QUANTIFICATION_ANALYSES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:quantTargetIdColumn,
+        sfms:sampleTypeColumn,
+        sfms:calibrationLevelColumn,
+        sfms:nominalConcentrationColumn,
+        sfms:isConcentrationColumn,
+        sfms:dilutionFactorColumn,
+        sfms:excludeColumn,
+        sfcore:createdAtColumn .
+
+sfms:quantificationResponsesTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry quantification responses table" ;
+    skos:definition "Peak-assignment and response-extraction rows for configured quantification targets. This table records explicit matching statuses and does not perform calibration fitting." ;
+    sf:tableContractName "MASS_SPEC_QUANTIFICATION_RESPONSES" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:analysisNameColumn,
+        sfms:quantTargetIdColumn,
+        sfms:quantRoleColumn,
+        sfms:sampleTypeColumn,
+        sfms:calibrationLevelColumn,
+        sfms:nominalConcentrationColumn,
+        sfms:dilutionFactorColumn,
+        sfms:excludeColumn,
+        sfms:internalStandardIdColumn,
+        sfms:normalizationColumn,
+        sfms:chromatogramIndexColumn,
+        sfms:peakIdColumn,
+        sfms:quantPeakRtColumn,
+        sfms:quantPeakAreaColumn,
+        sfms:quantPeakHeightColumn,
+        sfms:responseMetricColumn,
+        sfms:responseColumn,
+        sfms:internalStandardResponseColumn,
+        sfms:responseRatioColumn,
+        sfms:qualifierResponseColumn,
+        sfms:qualifierRatioColumn,
+        sfms:quantificationStatusColumn,
+        sfms:candidateCountColumn,
+        sfms:qualifierStatusColumn,
+        sfcore:createdAtColumn .
+
 sfms:featuresTable
     a sf:Table ;
     sf:availableInDomain sfms:mass_spec ;

@@ -1491,6 +1491,7 @@ namespace streamfind::mass_spec::nta::utils::detail
 {
 struct MZ_INTENSITY { std::vector<float> mz; std::vector<float> intensity; };
 std::string sql(const std::string &);
+std::vector<std::string> suspects_types();
 MZ_INTENSITY merge_nta_feature_spectra(const ::mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA &, float, float);
 ::streamfind::mass_spec::nta::NtaProjectData load_analysis_features(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
 ::streamfind::mass_spec::nta::NtaProjectData load_internal_standards_only(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);

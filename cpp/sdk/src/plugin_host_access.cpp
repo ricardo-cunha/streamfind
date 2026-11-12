@@ -245,7 +245,13 @@ Json PluginHostAccess::read(const std::string &table_name,
             auto &value = row[name];
             if (value.is_null() || !value.is_string()) continue;
             const auto type = column_type(table_name, name);
-            if (type == STREAMFIND_PLUGIN_COLUMN_INT64) value = std::stoll(value.get<std::string>());
+            if (column_is_array(table_name, name)) {
+                auto parsed = Json::parse(value.get<std::string>(), nullptr, false);
+                if (parsed.is_discarded() || !parsed.is_array())
+                    throw std::runtime_error("plugin read returned an invalid array value for " +
+                                             table_name + "." + name);
+                value = std::move(parsed);
+            } else if (type == STREAMFIND_PLUGIN_COLUMN_INT64) value = std::stoll(value.get<std::string>());
             else if (type == STREAMFIND_PLUGIN_COLUMN_BOOL) value = value.get<std::string>() == "true";
             else if (type == STREAMFIND_PLUGIN_COLUMN_FLOAT64) value = std::stod(value.get<std::string>());
         }
@@ -459,6 +465,13 @@ void PluginHostAccess::emit_table_rows(
             descriptor.type = STREAMFIND_PLUGIN_COLUMN_BOOL;
             descriptor.data = booleans[column].data();
             descriptor.element_size = sizeof(uint8_t);
+        } else if (column_types[column] == "timestamp") {
+            views[column].reserve(strings[column].size());
+            for (const auto &value : strings[column])
+                views[column].push_back({value.data(), static_cast<uint32_t>(value.size())});
+            descriptor.type = STREAMFIND_PLUGIN_COLUMN_TIMESTAMP;
+            descriptor.data = views[column].data();
+            descriptor.element_size = sizeof(streamfind_plugin_string_view);
         } else {
             views[column].reserve(strings[column].size());
             for (const auto &value : strings[column])

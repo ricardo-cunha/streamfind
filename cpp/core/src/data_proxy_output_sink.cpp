@@ -175,7 +175,8 @@ private:
             if (!writer_) {
                 if (schema_->num_fields() == 0) schema_ = batch->schema();
                 else if (!schema_->Equals(*batch->schema()))
-                    throw std::runtime_error("table output batch does not match its semantic Arrow schema");
+                    throw std::runtime_error("table output batch does not match its semantic Arrow schema; expected " +
+                                             schema_->ToString() + "; received " + batch->schema()->ToString());
                 auto created = arrow::ipc::MakeFileWriter(sink_, schema_);
                 if (!created.ok()) throw std::runtime_error(created.status().ToString());
                 writer_ = *created;
@@ -196,6 +197,7 @@ private:
             if (type == "integer") arrow_type = arrow::int64();
             else if (type == "real" || type == "number") arrow_type = arrow::float64();
             else if (type == "boolean") arrow_type = arrow::boolean();
+            else if (type == "timestamp") arrow_type = arrow::timestamp(arrow::TimeUnit::MICRO);
             else if (type == "array") {
                 const auto item_type = column.value("items", Json::object()).value("type", std::string{"number"});
                 if (item_type == "integer") arrow_type = arrow::list(arrow::int64());
