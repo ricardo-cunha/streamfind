@@ -2,6 +2,7 @@
 #include "streamfind/sdk/plugin_data_service.hpp"
 
 #include <exception>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -281,28 +282,24 @@ void PluginHostAccess::read_batches(const std::string &table_name,
                         nullptr, 0, 0, nullptr};
     }
 
-    // Keep the SDK-side batch within the data-service limit while avoiding
-    // unnecessary repeated result-handle leases.  A 4,096-row table read
-    // forced an 8,215-row peak table through a second Arrow-file open, where
-    // the supervised worker could remain blocked waiting for the next handle.
-    constexpr std::uint64_t batch_size = 16384;
-    std::uint64_t offset = 0;
-    for (;;) {
-        if (is_cancelled()) return;
-        detail::ReadBatch batch;
-        batch.names = column_names;
-        batch.arrays = batch_template.arrays;
-        batch.callback = callback;
-        const auto status = host_.read_batch(
-            execution_context_, table_name.data(), static_cast<uint32_t>(table_name.size()),
-            requested.data(), static_cast<uint32_t>(requested.size()), offset, batch_size,
-            &detail::consume_batch, &batch, host_.user_data);
-        if (batch.exception) std::rethrow_exception(batch.exception);
-        if (status != STREAMFIND_PLUGIN_OK)
-            throw std::runtime_error("plugin read_batch failed with status " + std::to_string(status));
-        if (batch.row_count == 0 || batch.row_count < batch_size) return;
-        offset += batch.row_count;
-    }
+    // Let the data service stream bounded callbacks from one operation-scoped
+    // Arrow reader.  Reissuing read_batch for every SDK chunk reacquired the
+    // worker result handle and could deadlock the service during the next
+    // lease.  The host implementation caps each callback-sized chunk while
+    // retaining the reader and handle for the complete scan.
+    if (is_cancelled()) return;
+    detail::ReadBatch batch;
+    batch.names = column_names;
+    batch.arrays = batch_template.arrays;
+    batch.callback = callback;
+    const auto status = host_.read_batch(
+        execution_context_, table_name.data(), static_cast<uint32_t>(table_name.size()),
+        requested.data(), static_cast<uint32_t>(requested.size()), 0,
+        std::numeric_limits<std::uint64_t>::max(), &detail::consume_batch, &batch,
+        host_.user_data);
+    if (batch.exception) std::rethrow_exception(batch.exception);
+    if (status != STREAMFIND_PLUGIN_OK)
+        throw std::runtime_error("plugin read_batch failed with status " + std::to_string(status));
 }
 
 std::uint64_t PluginHostAccess::count_rows(const std::string &table_name) {
