@@ -7,6 +7,8 @@ import { SuspectsExplorer } from './SuspectsExplorer';
 import './SuspectsExplorer.css';
 import { EicTableViewer } from './EicTableViewer';
 import './EicTableViewer.css';
+import { ChromatogramPeaksViewer } from './ChromatogramPeaksViewer';
+import './ChromatogramPeaksViewer.css';
 import { FindFeaturesDebugViewer } from './FindFeaturesDebugViewer';
 
 export const massSpecFrontendPlugin: FrontendPlugin = {
@@ -48,9 +50,15 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     });
     api.registerViewer({
       id: 'mass-spec.eic-viewer',
-      label: 'EIC and chromatogram peak viewer',
-      accepts: ['eicTable', 'chromatogramPeaksTable'],
+      label: 'EIC viewer',
+      accepts: ['eicTable'],
       component: EicTableViewer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.chromatogram-peaks-viewer',
+      label: 'Chromatogram peak viewer',
+      accepts: ['chromatogramPeaksTable'],
+      component: ChromatogramPeaksViewer,
     });
     api.registerViewer({
       id: 'mass-spec.suspects-explorer',
