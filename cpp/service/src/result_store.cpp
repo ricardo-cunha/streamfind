@@ -45,13 +45,36 @@ namespace detail {
 
 #ifdef _WIN32
 std::filesystem::path windows_extended_path(const std::filesystem::path &path) {
-    const auto value = path.wstring();
+    auto value = path.wstring();
+    std::replace(value.begin(), value.end(), L'/', L'\\');
     if (value.rfind(L"\\\\?\\", 0) == 0) return path;
     if (value.rfind(L"\\\\", 0) == 0)
         return std::filesystem::path(L"\\\\?\\UNC\\" + value.substr(2));
     return std::filesystem::path(L"\\\\?\\" + value);
 }
 #endif
+
+std::filesystem::path storage_path(const std::filesystem::path &path) {
+#ifdef _WIN32
+    // MinGW's filesystem implementation handles ordinary paths more
+    // consistently than the extended prefix for short paths.  Switch only
+    // before the path approaches the Win32 MAX_PATH boundary.
+    return path.wstring().size() >= 240 ? windows_extended_path(path) : path;
+#else
+    return path;
+#endif
+}
+
+std::filesystem::path enumeration_path(const std::filesystem::path &path) {
+#ifdef _WIN32
+    // The parent may be short while its result entries are long.  Starting
+    // an iterator from an ordinary parent makes MinGW emit ordinary child
+    // paths, which then fail once a published result crosses MAX_PATH.
+    return windows_extended_path(path);
+#else
+    return path;
+#endif
+}
 
 Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
                              const std::vector<std::string> &columns) {
@@ -140,7 +163,7 @@ Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
 }
 
 std::string payload_digest(const std::filesystem::path &path, std::uintmax_t &size) {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(storage_path(path), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read result payload: " + path.string());
 
     // Keep the first implementation dependency-free and deterministic across
@@ -165,6 +188,29 @@ std::string payload_digest(const std::filesystem::path &path, std::uintmax_t &si
     std::ostringstream output;
     output << "fnv1a64:" << std::hex << std::setw(16) << std::setfill('0') << hash;
     return output.str();
+}
+
+std::uintmax_t payload_size(const std::filesystem::path &path) {
+    std::error_code error;
+    const auto fast_size = std::filesystem::file_size(storage_path(path), error);
+    if (!error) return fast_size;
+
+    // Keep a stream fallback for runtimes that cannot query a long path's
+    // metadata directly.  The separator-normalized extended path makes this
+    // fallback safe on Windows and remains correct for zero-length payloads.
+    std::ifstream input(storage_path(path), std::ios::binary);
+    if (!input) throw std::runtime_error("cannot inspect result payload: " + path.string());
+    constexpr std::size_t buffer_size = 64 * 1024;
+    std::array<char, buffer_size> buffer{};
+    std::uintmax_t size = 0;
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const auto count = input.gcount();
+        if (count <= 0) break;
+        size += static_cast<std::uintmax_t>(count);
+    }
+    if (!input.eof()) throw std::runtime_error("cannot inspect result payload: " + path.string());
+    return size;
 }
 
 std::string result_store_status_name(ResultStoreStatus status) {
@@ -200,19 +246,27 @@ Json validated_manifest(const std::filesystem::path &root,
         result_id.find(':') != std::string::npos)
         throw std::invalid_argument("result_id must be a single safe path component");
     const auto directory = root / "results" / result_id;
-    std::ifstream input(directory / "manifest.json", std::ios::binary);
+    std::ifstream input(storage_path(directory / "manifest.json"), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read result manifest: " + result_id);
     Json manifest;
     input >> manifest;
     const auto payload_value = manifest.value("payload", std::string{});
     const auto payload_path = root / std::filesystem::path(payload_value);
     std::error_code error;
-    const auto relative = std::filesystem::relative(payload_path, root, error);
-    if (error || relative.empty() || relative.begin()->string() == ".." ||
-        !std::filesystem::is_regular_file(payload_path))
+    // This is a containment check, not a canonicalization request.  The
+    // filesystem-based relative() implementation touches both paths and can
+    // fail at the Windows MAX_PATH boundary even when the payload exists.
+    const auto relative = payload_path.lexically_relative(root);
+    const auto native_payload_path = storage_path(payload_path);
+    if (error || relative.empty() || relative.begin()->string() == "..")
         throw std::runtime_error("result payload is unavailable: " + result_id);
-    const auto size = std::filesystem::file_size(payload_path, error);
-    if (error || manifest.value("state", std::string{}) != "published" ||
+    std::uintmax_t size = 0;
+    try {
+        size = payload_size(native_payload_path);
+    } catch (...) {
+        throw std::runtime_error("result payload is unavailable: " + result_id);
+    }
+    if (manifest.value("state", std::string{}) != "published" ||
         manifest.value("payload_size", std::uintmax_t{0}) != size ||
         manifest.value("payload_digest", std::string{}).empty())
         throw std::runtime_error("result payload metadata failed validation: " + result_id);
@@ -285,14 +339,14 @@ std::string ResultStore::normalize_extension(const std::string &extension) {
 }
 
 void ResultStore::write_json_file(const std::filesystem::path &path, const Json &value) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    std::ofstream output(detail::storage_path(path), std::ios::binary | std::ios::trunc);
     if (!output) throw std::runtime_error("cannot create result store metadata: " + path.string());
     output << value.dump(2) << '\n';
     if (!output) throw std::runtime_error("cannot write result store metadata: " + path.string());
 }
 
 Json ResultStore::read_json_file(const std::filesystem::path &path) {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(detail::storage_path(path), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read result store metadata: " + path.string());
     Json value;
     input >> value;
@@ -315,7 +369,7 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
         // concurrent delete instead of turning a healthy store into invalid.
         error.clear();
         for (std::filesystem::recursive_directory_iterator iterator(
-                 root_, std::filesystem::directory_options::skip_permission_denied, error), end;
+                 detail::enumeration_path(root_), std::filesystem::directory_options::skip_permission_denied, error), end;
              iterator != end;) {
             if (error) {
                 if (error == std::errc::no_such_file_or_directory ||
@@ -328,8 +382,12 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
             const auto path = iterator->path();
             error.clear();
             if (std::filesystem::is_regular_file(path, error) && !error) {
-                const auto bytes = std::filesystem::file_size(path, error);
-                if (!error) result.size_bytes += bytes;
+                try {
+                    result.size_bytes += detail::payload_size(path);
+                } catch (...) {
+                    // Size accounting is advisory; a transiently removed or
+                    // inaccessible entry must not invalidate the store.
+                }
             }
             error.clear();
             iterator.increment(error);
@@ -343,7 +401,13 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
             return result;
         }
         result.store_id = value.at("store_id").get<std::string>();
-        const auto results = root_ / "results";
+        // Enumerate through the same native path representation used for
+        // payload access.  A result directory can be valid even when its
+        // ordinary Win32 spelling is already beyond MAX_PATH; asking the
+        // filesystem iterator/status APIs to inspect that spelling makes a
+        // healthy store look invalid during project attach.
+        const auto results = detail::enumeration_path(root_ / "results");
+        std::vector<std::string> invalid_result_ids;
         error.clear();
         if (std::filesystem::exists(results, error) && !error) {
             for (std::filesystem::directory_iterator iterator(
@@ -371,19 +435,39 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     const auto manifest = read_json_file(manifest_path);
                     const auto payload_value = manifest.value("payload", std::string{});
                     const auto payload_path = root_ / std::filesystem::path(payload_value);
-                    const auto relative = std::filesystem::relative(payload_path, root_, error);
-                    const bool outside_root = error || relative.empty() || relative.begin()->string() == "..";
-                    const auto payload_exists = !outside_root && std::filesystem::is_regular_file(payload_path);
+                    const auto relative = payload_path.lexically_relative(root_);
+                    const bool outside_root = relative.empty() || relative.begin()->string() == "..";
+                    const auto native_payload_path = detail::storage_path(payload_path);
+                    bool payload_exists = !outside_root;
                     const auto declared_size = manifest.value("payload_size", std::uintmax_t{0});
-                    std::uintmax_t actual_size = payload_exists ? std::filesystem::file_size(payload_path) : 0;
+                    std::uintmax_t actual_size = 0;
+                    std::string payload_error;
+                    if (payload_exists) {
+                        try {
+                            actual_size = detail::payload_size(native_payload_path);
+                        } catch (const std::exception &exception) {
+                            payload_exists = false;
+                            payload_error = exception.what();
+                        }
+                    }
                     const auto digest = verify_payloads && payload_exists
-                        ? detail::payload_digest(payload_path, actual_size) : std::string{};
+                        ? detail::payload_digest(native_payload_path, actual_size) : std::string{};
                     const auto valid = manifest.value("state", std::string{}) == "published" && payload_exists &&
                         (verify_payloads
                             ? (declared_size == actual_size && manifest.value("payload_digest", std::string{}) == digest)
                             : (declared_size == 0 || declared_size == actual_size));
                     if (!valid) {
                         ++result.invalid_count;
+                        if (invalid_result_ids.size() < 3) {
+                            std::string reason;
+                            if (manifest.value("state", std::string{}) != "published") reason = "state";
+                            else if (outside_root) reason = "outside-root";
+                            else if (!payload_exists) reason = "payload-open:" + payload_error;
+                            else if (declared_size != actual_size) reason = "size";
+                            else if (verify_payloads && manifest.value("payload_digest", std::string{}) != digest)
+                                reason = "digest";
+                            invalid_result_ids.push_back(result_directory.filename().string() + "[" + reason + "]");
+                        }
                     } else {
                         ++result.published_count;
                     }
@@ -391,11 +475,13 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     error.clear();
                     if (std::filesystem::exists(result_directory, error) && !error)
                         ++result.invalid_count;
+                    if (invalid_result_ids.size() < 3)
+                        invalid_result_ids.push_back(result_directory.filename().string());
                     error.clear();
                 }
             }
         }
-        const auto runs = root_ / "runs";
+        const auto runs = detail::enumeration_path(root_ / "runs");
         error.clear();
         if (std::filesystem::exists(runs, error) && !error) {
             for (std::filesystem::directory_iterator iterator(
@@ -416,8 +502,16 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
             }
         }
         result.status = result.invalid_count == 0 ? ResultStoreStatus::ready : ResultStoreStatus::invalid;
-        if (result.invalid_count != 0)
+        if (result.invalid_count != 0) {
             result.error = "one or more published result payloads failed manifest validation";
+            if (!invalid_result_ids.empty()) {
+                result.error += ": ";
+                for (std::size_t index = 0; index < invalid_result_ids.size(); ++index) {
+                    if (index != 0) result.error += ", ";
+                    result.error += invalid_result_ids[index];
+                }
+            }
+        }
         return result;
     } catch (const std::exception &exception) {
         result.status = ResultStoreStatus::invalid;
@@ -434,9 +528,9 @@ ResultStoreInspection ResultStore::initialize(bool verify_payloads) {
     if (existing.status == ResultStoreStatus::invalid)
         throw std::runtime_error(existing.error);
 
-    std::filesystem::create_directories(root_ / "results", error);
+    std::filesystem::create_directories(detail::storage_path(root_ / "results"), error);
     if (error) throw std::runtime_error("cannot create result store: " + error.message());
-    std::filesystem::create_directories(root_ / "runs", error);
+    std::filesystem::create_directories(detail::storage_path(root_ / "runs"), error);
     if (error) throw std::runtime_error("cannot create result run store: " + error.message());
     const Json manifest{{"layout_version", kLayoutVersion},
                         {"database_filename", database_path_.filename().string()},
@@ -448,9 +542,10 @@ ResultStoreInspection ResultStore::initialize(bool verify_payloads) {
 void ResultStore::cleanup_empty_runs() const {
     const auto runs = root_ / "runs";
     std::error_code error;
-    if (!std::filesystem::is_directory(runs, error) || error) return;
+    const auto native_runs = detail::enumeration_path(runs);
+    if (!std::filesystem::is_directory(native_runs, error) || error) return;
     std::vector<std::filesystem::path> directories;
-    for (std::filesystem::recursive_directory_iterator iterator(runs, error), end;
+    for (std::filesystem::recursive_directory_iterator iterator(native_runs, error), end;
          iterator != end && !error; iterator.increment(error)) {
         if (iterator->is_directory(error) && !error) directories.push_back(iterator->path());
     }
@@ -465,7 +560,7 @@ void ResultStore::cleanup_empty_runs() const {
 Json ResultStore::published_results() const {
     Json results = Json::array();
     std::error_code error;
-    const auto directory = root_ / "results";
+    const auto directory = detail::enumeration_path(root_ / "results");
     if (!std::filesystem::exists(directory, error)) return results;
     for (const auto &entry : std::filesystem::directory_iterator(directory, error)) {
         if (error || !entry.is_directory()) continue;
@@ -501,7 +596,7 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
 
     Json matches = Json::array();
     std::error_code error;
-    const auto results_directory = root_ / "results";
+    const auto results_directory = detail::enumeration_path(root_ / "results");
     if (!std::filesystem::exists(results_directory, error)) return Json::array();
     for (const auto &entry : std::filesystem::directory_iterator(results_directory, error)) {
         if (error || !entry.is_directory()) continue;
@@ -512,9 +607,8 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
                 continue;
             const auto payload_value = manifest.value("payload", std::string{});
             const auto payload_path = root_ / std::filesystem::path(payload_value);
-            const auto relative = std::filesystem::relative(payload_path, root_, error);
-            if (error || relative.empty() || relative.begin()->string() == ".." ||
-                !std::filesystem::is_regular_file(payload_path)) continue;
+            const auto relative = payload_path.lexically_relative(root_);
+            if (error || relative.empty() || relative.begin()->string() == "..") continue;
             std::uintmax_t payload_size = 0;
             const auto digest = detail::payload_digest(payload_path, payload_size);
             if (manifest.value("payload_size", std::uintmax_t{0}) != payload_size ||
@@ -541,7 +635,7 @@ std::size_t ResultStore::clear_cache() const {
 
     std::size_t invalidated = 0;
     std::error_code error;
-    const auto results_directory = root_ / "results";
+    const auto results_directory = detail::enumeration_path(root_ / "results");
     if (!std::filesystem::exists(results_directory, error)) {
         if (error) throw std::runtime_error("cannot inspect result cache: " + error.message());
         return invalidated;
@@ -610,8 +704,13 @@ Json ResultStore::read_navigation_index(const std::string &result_id) const {
     const auto path = root_ / "results" / result_id / "navigation.json";
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error) || error) return nullptr;
-    const auto size = std::filesystem::file_size(path, error);
-    if (error || size > max_index_bytes) return nullptr;
+    std::uintmax_t size = 0;
+    try {
+        size = detail::payload_size(path);
+    } catch (...) {
+        return nullptr;
+    }
+    if (size > max_index_bytes) return nullptr;
     try {
         auto index = read_json_file(path);
         if (!index.is_object() || index.value("result_id", std::string{}) != result_id ||
@@ -687,8 +786,13 @@ Json ResultStore::read_range_statistics(const std::string &result_id, const std:
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error) || error) return nullptr;
     constexpr std::uintmax_t max_range_index_bytes = 8 * 1024 * 1024;
-    const auto size = std::filesystem::file_size(path, error);
-    if (error || size > max_range_index_bytes) return nullptr;
+    std::uintmax_t size = 0;
+    try {
+        size = detail::payload_size(path);
+    } catch (...) {
+        return nullptr;
+    }
+    if (size > max_range_index_bytes) return nullptr;
     try {
         const auto index = read_json_file(path);
         if (index.value("result_id", std::string{}) != result_id ||
@@ -758,7 +862,7 @@ Json ResultStore::read_result_range(const std::string &result_id,
     if (offset > size) throw std::invalid_argument("result range offset is outside the payload");
     const auto available = size - offset;
     const auto actual_length = std::min(length, available);
-    std::ifstream input(payload_path, std::ios::binary);
+    std::ifstream input(detail::storage_path(payload_path), std::ios::binary);
     input.seekg(static_cast<std::streamoff>(offset));
     std::vector<unsigned char> bytes(static_cast<std::size_t>(actual_length));
     if (actual_length != 0)
@@ -781,7 +885,7 @@ Json ResultStore::read_json_payload(const std::string &result_id) const {
     if (size > max_json_payload)
         throw std::invalid_argument("JSON result payload is too large for inline reuse");
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
-    std::ifstream input(payload_path, std::ios::binary);
+    std::ifstream input(detail::storage_path(payload_path), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read JSON result payload");
     std::string text(static_cast<std::size_t>(size), '\0');
     if (size != 0) input.read(text.data(), static_cast<std::streamsize>(size));
@@ -819,7 +923,7 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
         batch_row_counts.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         throw std::runtime_error("Arrow result row-batch directory does not match its manifest; regenerate this result");
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
-    auto file_result = arrow::io::ReadableFile::Open(payload_path.string());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
     if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
     const auto file = *file_result;
     auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
@@ -899,7 +1003,7 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
             filter_columns.push_back(name);
     }
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
-    auto file_result = arrow::io::ReadableFile::Open(payload_path.string());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
     if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
     const auto file = *file_result;
     auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
@@ -1114,7 +1218,7 @@ std::shared_ptr<ResultStagingHandle> ResultStore::open_published_result(
         throw std::invalid_argument("worker input must reference a published Arrow table result");
     const auto payload = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
 #ifdef _WIN32
-    const auto handle = CreateFileW(payload.c_str(), GENERIC_READ,
+    const auto handle = CreateFileW(detail::storage_path(payload).c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
     if (handle == INVALID_HANDLE_VALUE)
@@ -1190,13 +1294,20 @@ ResultLease ResultStore::allocate(const std::string &run_id,
 
 Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     if (lease.writer) lease.writer->close();
-    if (!std::filesystem::is_regular_file(lease.staging_payload))
-        throw std::runtime_error("result payload is missing or is not a regular file");
+    const auto native_staging_payload = detail::storage_path(lease.staging_payload);
+    std::error_code payload_error;
+    const auto payload_is_file = std::filesystem::is_regular_file(native_staging_payload, payload_error);
+    if (!payload_is_file) {
+        const auto payload_exists = std::filesystem::exists(native_staging_payload, payload_error);
+        throw std::runtime_error("result payload is missing or is not a regular file: " +
+            lease.staging_payload.string() + " (exists=" + (payload_exists ? "true" : "false") +
+            ", error=" + payload_error.message() + ")");
+    }
     Json batch_row_counts = Json::array();
     if (lease.format == "arrow-ipc-file") {
         if (metadata.value("kind", std::string{}) != "table")
             throw std::invalid_argument("Arrow IPC file publication requires a table result");
-        auto file_result = arrow::io::ReadableFile::Open(lease.staging_payload.string());
+        auto file_result = arrow::io::ReadableFile::Open(native_staging_payload.string());
         if (!file_result.ok()) throw std::runtime_error("cannot validate Arrow result: " + file_result.status().ToString());
         auto reader_result = arrow::ipc::RecordBatchFileReader::Open(*file_result);
         if (!reader_result.ok()) throw std::runtime_error("Arrow result has no valid IPC file footer: " + reader_result.status().ToString());
@@ -1226,9 +1337,10 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
         }
     }
     std::uintmax_t payload_size = 0;
-    const auto payload_digest_value = detail::payload_digest(lease.staging_payload, payload_size);
+    const auto payload_digest_value = detail::payload_digest(native_staging_payload, payload_size);
     std::error_code error;
-    if (std::filesystem::exists(lease.published_directory, error))
+    const auto native_published_directory = detail::storage_path(lease.published_directory);
+    if (std::filesystem::exists(native_published_directory, error))
         throw std::runtime_error("result has already been published: " + lease.result_id);
     Json manifest = metadata;
     if (lease.format == "arrow-ipc-file") {
@@ -1239,7 +1351,7 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     manifest["run_id"] = lease.run_id;
     manifest["format"] = lease.format;
     manifest["state"] = "published";
-    manifest["payload"] = std::filesystem::relative(lease.published_payload, root_).generic_string();
+    manifest["payload"] = lease.published_payload.lexically_relative(root_).generic_string();
     manifest["payload_size"] = payload_size;
     manifest["payload_digest"] = payload_digest_value;
     manifest["digest_algorithm"] = "fnv1a64";
@@ -1253,8 +1365,8 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     // Prepare the complete publication unit while it is still private. A
     // process crash must never expose a promoted payload directory without its
     // manifest; the directory rename is the single visibility boundary.
-    write_json_file(lease.staging_directory / "manifest.json", manifest);
-    std::filesystem::rename(lease.staging_directory, lease.published_directory, error);
+    write_json_file(detail::storage_path(lease.staging_directory / "manifest.json"), manifest);
+    std::filesystem::rename(detail::storage_path(lease.staging_directory), native_published_directory, error);
     if (error) throw std::runtime_error("cannot publish result payload: " + error.message());
     cleanup_empty_runs();
     return manifest;
@@ -1263,9 +1375,22 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
 void ResultStore::abort(const ResultLease &lease) const {
     if (lease.writer) lease.writer->close();
     std::error_code error;
-    if (std::filesystem::exists(lease.staging_directory, error))
-        std::filesystem::remove_all(lease.staging_directory, error);
-    if (error) throw std::runtime_error("cannot remove aborted result staging payload: " + error.message());
+    // A staging result has a fixed, shallow layout (payload plus optional
+    // manifest).  Do not use recursive remove_all here: on Windows a failed
+    // output can leave a leased handle or a transient filesystem entry and
+    // remove_all may spend an unbounded time walking the directory.  Cleanup
+    // the known files explicitly and fail fast if an unexpected entry remains.
+    for (const auto &path : {detail::storage_path(lease.staging_payload),
+                             detail::storage_path(lease.staging_directory / "manifest.json")}) {
+        error.clear();
+        static_cast<void>(std::filesystem::remove(path, error));
+        if (error)
+            throw std::runtime_error("cannot remove aborted result staging payload: " + error.message());
+    }
+    error.clear();
+    static_cast<void>(std::filesystem::remove(detail::storage_path(lease.staging_directory), error));
+    if (error)
+        throw std::runtime_error("cannot remove aborted result staging directory: " + error.message());
     cleanup_empty_runs();
 }
 

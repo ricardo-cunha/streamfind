@@ -216,10 +216,10 @@ function Get-QuantificationAssignments {
         }
 
         $analyte = [ordered]@{ analysis = $name; target_id = $AnalyteId; sample_type = $sampleType; exclude = $false; dilution_factor = 1.0 }
-        $internalStandard = [ordered]@{ analysis = $name; target_id = $InternalStandardId; sample_type = $sampleType; exclude = $false; dilution_factor = 1.0; is_concentration = $InternalStandardConcentration }
+        $internalStandard = [ordered]@{ analysis = $name; target_id = $InternalStandardId; sample_type = $sampleType; exclude = $false; dilution_factor = 1.0 }
+        $internalStandard.nominal_concentration = $InternalStandardConcentration
         if ($null -ne $nominal) {
             $analyte.nominal_concentration = $nominal
-            $internalStandard.nominal_concentration = $nominal
         }
         if ($null -ne $calibrationLevel) {
             $analyte.calibration_level = $calibrationLevel
@@ -337,20 +337,18 @@ try {
                 @{ id = 1; operation = 'mass_spec.read_mass_spec_files'; parameters = @{ source_paths = @($sourcePath) }; inputs = @{}; position = @{} },
                 @{ id = 2; operation = 'mass_spec.load_chromatograms'; parameters = @{ analysis_names = @(); chromatogram_id_regex = $chromatogramPatterns; invert = $false; ignore_case = $false }; inputs = @{}; position = @{} },
                 @{ id = 3; operation = 'mass_spec.find_chromatogram_peaks'; parameters = @{ analysis_names = @(); indices = @(); min_snr = 0.0; min_peak_height = 0.0; peak_trace_padding_seconds = 5.0 }; inputs = @{}; position = @{} },
-                @{ id = 4; operation = 'mass_spec.set_quantification_method'; parameters = @{ quantification_method = $method }; inputs = @{}; position = @{} },
-                @{ id = 5; operation = 'mass_spec.set_quantification_analyses'; parameters = @{ quant_sample_assignments = $assignments }; inputs = @{}; position = @{} },
-                @{ id = 6; operation = 'mass_spec.extract_quantification_responses'; parameters = @{}; inputs = @{}; position = @{} }
+                @{ id = 4; operation = 'mass_spec.set_quantification_plan'; parameters = @{ quantification_method = $method; quant_sample_assignments = $assignments }; inputs = @{}; position = @{} },
+                @{ id = 5; operation = 'mass_spec.quantify'; parameters = @{ minimum_calibration_points = 3; require_qualifier = $false; qc_max_relative_error = 20.0 }; inputs = @{}; position = @{} }
             )
             connections = @(
                 @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 2; target_port = 'analysesTable' },
                 @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 2; target_port = 'chromatogramsHeadersTable' },
                 @{ source_operation = 2; source_port = 'chromatogramsTable'; target_operation = 3; target_port = 'chromatogramsTable' },
                 @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 3; target_port = 'chromatogramsHeadersTable' },
-                @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 5; target_port = 'analysesTable' },
-                @{ source_operation = 4; source_port = 'quantificationMethodTable'; target_operation = 6; target_port = 'quantificationMethodTable' },
-                @{ source_operation = 5; source_port = 'quantificationAnalysesTable'; target_operation = 6; target_port = 'quantificationAnalysesTable' },
-                @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 6; target_port = 'chromatogramsHeadersTable' },
-                @{ source_operation = 3; source_port = 'chromatogramPeaksTable'; target_operation = 6; target_port = 'chromatogramPeaksTable' }
+                @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 4; target_port = 'analysesTable' },
+                @{ source_operation = 4; source_port = 'quantificationMethodTable'; target_operation = 5; target_port = 'quantificationMethodTable' },
+                @{ source_operation = 4; source_port = 'quantificationAnalysesTable'; target_operation = 5; target_port = 'quantificationAnalysesTable' },
+                @{ source_operation = 3; source_port = 'chromatogramPeaksTable'; target_operation = 5; target_port = 'chromatogramPeaksTable' }
             )
         }
         $workflowRevision = (Invoke-McpTool $process $script:requestId 'get_workflow' @{ database_path = $database }).definition_revision
@@ -366,8 +364,8 @@ try {
         Wait-Workflow $process $database $workflow
 
         $methodRows = Invoke-ResultRows $process $database 4 @('target_id', 'role', 'internal_standard_id', 'quantifier_precursor_mz', 'quantifier_product_mz') 'quantificationMethodTable'
-        $assignmentRows = Invoke-ResultRows $process $database 5 @('analysis', 'target_id', 'sample_type') 'quantificationAnalysesTable'
-        $responseRows = Invoke-ResultRows $process $database 6 @('analysis', 'target_id', 'response', 'response_ratio', 'status', 'qualifier_status') 'quantificationResponsesTable'
+        $assignmentRows = Invoke-ResultRows $process $database 4 @('analysis', 'target_id', 'sample_type') 'quantificationAnalysesTable'
+        $responseRows = Invoke-ResultRows $process $database 5 @('analysis', 'target_id', 'response', 'response_ratio', 'status', 'qualifier_status') 'quantificationTable'
         if ($methodRows.Count -ne 2) { throw "Expected two horizontal method rows for $sourcePath, found $($methodRows.Count)" }
         if ($assignmentRows.Count -ne ($analysisNames.Count * 2)) {
             throw "Expected $($analysisNames.Count * 2) assignment rows for $sourcePath, found $($assignmentRows.Count)"

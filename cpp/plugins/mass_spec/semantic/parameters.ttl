@@ -322,7 +322,7 @@ sfms:quantificationMethodParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quantification method" ;
-    skos:definition "Editable horizontal method rows with one analyte or internal standard per row and quantifier and optional qualifier transition columns." ;
+    skos:definition "Editable horizontal method rows for the quantification plan, with one analyte or internal standard per row, retention-time selection settings, calibration settings, and quantifier plus optional qualifier transition matching columns. The Set quantification plan operation publishes this table together with the project-specific analysis assignments. Output contains only fields consumed by quantification; activation energy and audit timestamps remain in raw chromatogram metadata rather than being duplicated here. If rt is omitted or null, response extraction selects the strongest matching peak by the row's response_metric (area by default, or height)." ;
     sf:type "table" ;
     sf:tableContract sfms:quantificationMethodTable ;
     sf:required true ;
@@ -334,12 +334,48 @@ sfms:quantSampleAssignmentsParameter
     sf:availableInDomain sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quantification sample assignments" ;
-    skos:definition "Editable analysis and target rows identifying blanks, calibrators, QCs, and unknowns with concentration and dilution context." ;
+    skos:definition "Editable project-specific rows for the quantification plan, identifying blanks, calibrators, QCs, and unknowns with concentration, dilution, and exclusion context. The Set quantification plan operation publishes these assignments together with the method table; transition and calibration settings remain in the method rows." ;
     sf:type "table" ;
     sf:tableContract sfms:quantificationAnalysesTable ;
     sf:required true ;
     sf:default "[]" ;
     sf:example "[{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine\",\"sample_type\":\"calibrator\",\"calibration_level\":5,\"nominal_concentration\":5.0,\"dilution_factor\":1.0}]" .
+
+sfms:minimumCalibrationPointsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum calibration points" ;
+    skos:definition "Minimum number of valid calibrator observations required for a calibration model." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 3 ;
+    sf:example 3 .
+
+sfms:requireQualifierParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Require qualifier" ;
+    skos:definition "When enabled, a result with a missing or failing qualifier is not accepted as quantified." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default false ;
+    sf:example false .
+
+sfms:qcMaxRelativeErrorParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "QC maximum relative error percent" ;
+    skos:definition "Maximum absolute deviation from 100 percent allowed for QC accuracy." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 20.0 ;
+    sf:example 20.0 .
 
 sfms:targetsCsvPathParameter
     a sf:Parameter ;

@@ -41,7 +41,8 @@ int main()
     if (streamfind::mass_spec::quantification::utils::validate_method(invalid).empty())
         return 4;
     invalid = assignments;
-    invalid[1]["nominal_concentration"] = 1.0;
+    invalid[1]["sample_type"] = "calibrator";
+    invalid[1]["nominal_concentration"] = -1.0;
     if (streamfind::mass_spec::quantification::utils::validate_assignments(invalid).empty())
         return 5;
     invalid = target_rows;

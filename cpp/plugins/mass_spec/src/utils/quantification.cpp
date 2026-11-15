@@ -212,9 +212,6 @@ std::vector<ValidationError> validate_assignments(const nlohmann::json &assignme
             (!row.contains("nominal_concentration") || !row.at("nominal_concentration").is_number() ||
              row.at("nominal_concentration").get<double>() < 0.0))
             errors.push_back({path + ".nominal_concentration", "is required and must be non-negative for calibrators and QCs"});
-        if ((sample_type == "blank" || sample_type == "zero" || sample_type == "unknown") &&
-            row.contains("nominal_concentration") && !row.at("nominal_concentration").is_null())
-            errors.push_back({path + ".nominal_concentration", "must be absent for blank, zero, and unknown samples"});
         if (row.contains("dilution_factor") && (!row.at("dilution_factor").is_number() || row.at("dilution_factor").get<double>() <= 0.0))
             errors.push_back({path + ".dilution_factor", "must be greater than zero"});
         if (row.contains("exclude") && !row.at("exclude").is_boolean())

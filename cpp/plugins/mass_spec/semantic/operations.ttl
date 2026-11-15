@@ -389,46 +389,43 @@ sfms:getChromatogramPeaks
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Get chromatogram peaks" ;
-    skos:definition "Read persisted chromatographic peak records joined with channel metadata from MASS_SPEC_CHROMATOGRAMS_HEADERS. Filter by analysis names and chromatogram indices." ;
+    skos:definition "Read persisted self-describing chromatographic peak records and add the selected analysis replicate. Filter by analysis names and chromatogram indices." ;
     sf:hasParameter
         sfcore:analysisNamesParameter,
         sfms:indicesParameter ;
-    sf:hasInputPort sfms:analysesTable, sfms:chromatogramsHeadersTable, sfms:chromatogramPeaksTable ;
+    sf:hasInputPort sfms:analysesTable, sfms:chromatogramPeaksTable ;
     sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
 
-sfms:setQuantificationMethod
+sfms:setQuantificationPlan
     a sf:Operation ;
-    sf:operationId "mass_spec.set_quantification_method" ;
+    sf:operationId "mass_spec.set_quantification_plan" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Set quantification method" ;
-    skos:definition "Validate and persist one horizontal method row per analyte or internal standard, including quantifier and optional qualifier transitions." ;
-    sf:hasParameter sfms:quantificationMethodParameter ;
-    sf:hasOutputPort sfms:quantificationMethodTable, sfcore:operationSuccessSignal .
-
-sfms:setQuantificationAnalyses
-    a sf:Operation ;
-    sf:operationId "mass_spec.set_quantification_analyses" ;
-    sf:availableInDomain sfms:mass_spec ;
-    sf:providedByModule sfms:chromatogramsModule ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Set quantification analyses" ;
-    skos:definition "Validate project-specific analysis roles, calibration levels, nominal concentrations, and dilution factors against the current analyses list. Target identifiers are resolved against the selected quantification method by downstream quantification operations." ;
-    sf:hasParameter sfms:quantSampleAssignmentsParameter ;
+    skos:prefLabel "Set quantification plan" ;
+    skos:definition "Validate and persist the quantification method and project-specific analysis assignments together. The single plan node publishes the lean method and analysis tables consumed by response extraction and downstream calibration." ;
+    sf:hasParameter
+        sfms:quantificationMethodParameter,
+        sfms:quantSampleAssignmentsParameter ;
     sf:hasInputPort sfms:analysesTable ;
-    sf:hasOutputPort sfms:quantificationAnalysesTable, sfcore:operationSuccessSignal .
+    sf:hasOutputPort sfms:quantificationMethodTable, sfms:quantificationAnalysesTable, sfcore:operationSuccessSignal .
 
-sfms:extractQuantificationResponses
+sfms:quantify
     a sf:Operation ;
-    sf:operationId "mass_spec.extract_quantification_responses" ;
+    sf:operationId "mass_spec.quantify" ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Extract quantification responses" ;
-    skos:definition "Match configured quantifier and qualifier transitions to persisted chromatogram headers and peaks, extract area or height responses, calculate internal-standard ratios, and retain explicit failure statuses. Calibration fitting is a later operation." ;
-    sf:hasInputPort sfms:quantificationMethodTable, sfms:quantificationAnalysesTable, sfms:chromatogramsHeadersTable, sfms:chromatogramPeaksTable ;
-    sf:hasOutputPort sfms:quantificationResponsesTable, sfcore:operationSuccessSignal .
+    skos:prefLabel "Quantify samples" ;
+    skos:definition "Run the complete quantification workflow from the configured plan and chromatogram peak table: extract quantifier and qualifier responses, calculate internal-standard ratios, fit calibration models and diagnostics, and quantify calibrators, QCs, and unknown samples with dilution and QC policy." ;
+    sf:hasParameter
+        sfcore:debugAnalysisParameter,
+        sfms:minimumCalibrationPointsParameter,
+        sfms:requireQualifierParameter,
+        sfms:qcMaxRelativeErrorParameter ;
+    sf:hasInputPort sfms:quantificationMethodTable, sfms:quantificationAnalysesTable, sfms:chromatogramPeaksTable ;
+    sf:hasOutputPort sfms:quantificationTable, sfms:quantificationCalibrationModelsTable, sfcore:operationSuccessSignal ;
+    sf:optionalOutputPort sfms:quantificationDebugResult .
 
 sfms:getFeatures
     a sf:Operation ;
@@ -508,7 +505,7 @@ sfms:loadChromatograms
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Load chromatograms" ;
-    skos:definition "Read chromatogram signal arrays from the native reader and persist the selected points as an immutable chromatogramsTable artifact. The complete channel metadata is already supplied by read_mass_spec_files through chromatogramsHeadersTable. Each point stores retention time and raw intensity; intensity is initialized from raw_intensity and can be modified by subsequent baseline correction and smoothing steps. Use chromatogram_id_regex to select specific channels, such as MRM or DAD wavelengths." ;
+    skos:definition "Read chromatogram signal arrays from the native reader and persist the selected points as a self-describing chromatogramsTable artifact. Each point stores retention time, raw and processed intensity, and the selected channel metadata. Use chromatogram_id_regex to select specific channels, such as MRM or DAD wavelengths." ;
     sf:hasParameter
         sfms:analysisNamesParameter,
         sfms:chromatogramIdRegexParameter,
@@ -539,7 +536,7 @@ sfms:findChromatogramPeaks
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:prefLabel "Find chromatogram peaks" ;
-    skos:definition "Detect and integrate chromatographic peaks from the processed chromatogram signal (intensity column). Expects intensity to reflect any prior baseline correction and smoothing. The algorithm uses Savitzky-Golay smoothing and first-derivative zero-crossing detection to locate peak apices, then publishes self-describing peak rows with channel metadata and optional EIC arrays covering rt_start minus and rt_end plus peak_trace_padding_seconds. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
+    skos:definition "Detect and integrate chromatographic peaks from the processed self-describing chromatogram signal (intensity column). Expects intensity to reflect any prior baseline correction and smoothing. The algorithm uses Savitzky-Golay smoothing and first-derivative zero-crossing detection to locate peak apices, then publishes self-describing peak rows with channel metadata and optional EIC arrays covering rt_start minus and rt_end plus peak_trace_padding_seconds. Detector-independent: works for MRM, DAD, UV, EIC, and TIC chromatograms." ;
     sf:hasParameter
         sfms:analysisNamesParameter,
         sfms:indicesParameter,
@@ -551,7 +548,7 @@ sfms:findChromatogramPeaks
         sfms:maxPeakWidthParameter,
         sfms:minSnrParameter,
         sfms:peakTracePaddingSecondsParameter ;
-    sf:hasInputPort sfms:chromatogramsTable, sfms:chromatogramsHeadersTable ;
+    sf:hasInputPort sfms:chromatogramsTable ;
     sf:hasOutputPort sfms:chromatogramPeaksTable, sfcore:operationSuccessSignal .
 
 

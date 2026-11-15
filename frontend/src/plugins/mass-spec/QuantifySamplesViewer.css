@@ -1,0 +1,36 @@
+.sf-quantification-viewer { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; color: var(--sf-text); }
+.sf-quantification-viewer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 0; position: sticky; top: 0; z-index: 2; background: var(--sf-surface-raised); }
+.sf-quantification-viewer-toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--sf-text-secondary); font-size: .82rem; }
+.sf-quantification-viewer select, .sf-quantification-viewer input { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text); padding: 4px 7px; font: inherit; }
+.sf-quantification-viewer input { width: 64px; }
+.sf-quantification-tabs { display: inline-flex; gap: 4px; }
+.sf-quantification-tabs button { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text-secondary); padding: 5px 10px; cursor: pointer; font: inherit; }
+.sf-quantification-tabs button.is-active { background: var(--sf-accent); color: var(--sf-on-accent, white); border-color: var(--sf-accent); }
+.sf-quantification-summary { margin-left: auto; color: var(--sf-text-secondary); white-space: nowrap; font-size: .8rem; }
+.sf-quantification-calibration-plots { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 12px; min-width: 0; }
+.sf-quantification-calibration-plots section { min-width: 0; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-calibration-plots h3 { margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--sf-border); font-size: .85rem; color: var(--sf-text-secondary); }
+.sf-quantification-plot { min-height: 360px; height: 42vh; min-width: 0; }
+.sf-quantification-plot > section, .sf-quantification-plot > section > [role='img'], .sf-quantification-plot > div, .sf-quantification-plot .js-plotly-plot, .sf-quantification-plot .plot-container, .sf-quantification-plot .svg-container { width: 100% !important; height: 100% !important; }
+.sf-quantification-table-card { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-table-card--fill { flex: 1 1 0; }
+.sf-quantification-table-card h3 { margin: 0; padding: 9px 12px; font-size: .9rem; border-bottom: 1px solid var(--sf-border); }
+.sf-quantification-table-card h3 small { color: var(--sf-text-secondary); font-weight: normal; margin-left: 6px; }
+.sf-quantification-table-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.sf-quantification-table-card table { width: 100%; border-collapse: collapse; font-size: .75rem; white-space: nowrap; }
+.sf-quantification-table-card th, .sf-quantification-table-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--sf-border); }
+.sf-quantification-table-card th { position: sticky; top: 0; background: var(--sf-surface-raised); color: var(--sf-text-secondary); font-weight: 600; }
+.sf-quantification-table-card tbody tr { cursor: pointer; }
+.sf-quantification-table-card tbody tr:hover { background: color-mix(in srgb, var(--sf-accent) 8%, transparent); }
+.sf-quantification-table-card tbody tr.is-selected { background: color-mix(in srgb, var(--sf-accent) 16%, transparent); outline: 1px solid var(--sf-accent); outline-offset: -1px; }
+.sf-quantification-eic { display: block; width: 92px; height: 24px; overflow: visible; }
+.sf-quantification-eic-line { fill: none; stroke: var(--sf-accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.sf-quantification-eic-area { fill: color-mix(in srgb, var(--sf-accent) 18%, transparent); stroke: none; }
+.sf-quantification-eic-empty { color: var(--sf-text-secondary); display: inline-block; width: 92px; text-align: center; }
+.sf-quantification-table-card td.is-good { color: var(--sf-success, #258a52); }
+.sf-quantification-table-card td.is-warning { color: var(--sf-warning, #b47700); }
+.sf-quantification-table-card td.is-bad { color: var(--sf-danger, #c43d3d); }
+.sf-quantification-status { font-weight: 600; }
+.sf-quantification-note { margin: 0; padding: 7px 10px; color: var(--sf-text-secondary); font-size: .78rem; }
+.sf-quantification-viewer-state { display: grid; min-height: 180px; place-items: center; color: var(--sf-text-secondary); }
+@media (max-width: 900px) { .sf-quantification-viewer { overflow: auto; } .sf-quantification-calibration-plots { grid-template-columns: 1fr; } .sf-quantification-table-card--fill { flex: 0 0 auto; } .sf-quantification-table-scroll { max-height: 280px; } }

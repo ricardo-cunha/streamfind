@@ -59,7 +59,8 @@ configured quantifier and qualifier transitions to chromatogram headers,
 selects peaks inside the configured RT window, extracts area or height,
 resolves the assigned internal-standard response for the same analysis, and
 publishes explicit statuses and qualifier ratios in
-`quantificationResponsesTable`.
+`quantificationTable` (the unified per-analysis table containing response,
+calibration-point diagnostics, and final quantification fields).
 
 ### Contract constraints discovered during the audit
 
@@ -217,7 +218,6 @@ Assigns concentration and role to each analysis × target combination.
 | `sample_type` | string | yes | `blank`, `zero`, `calibrator`, `qc`, `unknown` |
 | `calibration_level` | integer | no | Level number (calibrators only) |
 | `nominal_concentration` | real | no | Known concentration (calibrators/QCs) |
-| `is_concentration` | real | no | IS concentration (if constant across samples) |
 | `dilution_factor` | real | no | Dilution factor (default 1.0) |
 | `exclude` | boolean | yes | Whether to exclude from calibration |
 | `created_at` | timestamp | yes | Creation time |
@@ -639,20 +639,37 @@ frontend workflow configuration. Each addition needs a contract test and an
 ontology/catalogue update. Do not introduce compatibility shims for the
 pre-quantification API because none is released or implemented.
 
-## Immediate next task
+## Implementation status and next task
 
-The configuration and response-extraction slices are in place. The next task
-is Phase 4, task 1: implement the MVP linear calibration model with free
-intercept and no weighting over `quantificationResponsesTable`, retaining
-coefficients, residuals, included/excluded point decisions, and fit status.
-The node-parameter UI remains a required product task and should expose the
-same horizontal method and assignment tables without duplicating execution
-logic.
+Phase 4 task 1 and the Phase 5 MVP operation boundary are implemented. The
+workflow now provides:
+
+- `mass_spec.fit_quantification_calibration`, which fits the unweighted linear
+  free-intercept model from calibrant rows in `quantificationTable` and publishes typed
+  calibration-model and calibration-point tables;
+- `mass_spec.quantify_samples`, which consumes those tables, applies dilution
+  correction, reports unknown/QC/calibrator status, evaluates qualifier ratios,
+  and publishes a typed final-results table;
+- explicit rejection of non-invertible calibration models. A negative slope or
+  otherwise failed fit is exposed as `fit_status=failed`, and final
+  concentrations are withheld with `calibration_not_available` rather than
+  emitting misleading values.
+
+The development SCIEX project was rerun through the packaged service. It
+produced 15 included calibration points, one excluded point due to a missing
+internal-standard response, and a failed NDMA model (slope approximately
+`-0.003125`, `R²` approximately `0.11`). This is now a visible method/raw-peak
+quality problem to investigate, not a silent numerical result.
+
+The next task is Phase 4 task 3 / Phase 6 expansion: add a deterministic
+calibration-curve inspection view and then implement weighted, forced-zero,
+and quadratic models only after the current fixture's analyte/internal-standard
+peak assignment and response monotonicity are corrected.
 
 ### Current validation note
 
-The native build, catalogue conformance, focused quantification validation
-contract, and fixture-script syntax checks pass. The raw WIFF harness reaches
-the quantification workflow but currently loses its isolated service connection
-during the full asynchronous run; this remains a development-harness/runtime
-issue to resolve before using the fixtures as an end-to-end acceptance gate.
+The native build, catalogue conformance, packaged-service workflow run, and
+focused mass-spec contracts pass. The full CTest suite passes after updating
+the project-isolation fixture for the three new quantification tables. The
+current fixture is intentionally not an end-to-end acceptance result for
+unknown concentrations until its failed calibration model is resolved.

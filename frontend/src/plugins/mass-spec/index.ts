@@ -9,7 +9,11 @@ import { EicTableViewer } from './EicTableViewer';
 import './EicTableViewer.css';
 import { ChromatogramPeaksViewer } from './ChromatogramPeaksViewer';
 import './ChromatogramPeaksViewer.css';
+import { ChromatogramsTableViewer } from './ChromatogramsTableViewer';
+import './ChromatogramsTableViewer.css';
+import './MassSpecFilterToolbar.css';
 import { FindFeaturesDebugViewer } from './FindFeaturesDebugViewer';
+import { QuantifySamplesViewer } from './QuantifySamplesViewer';
 
 export const massSpecFrontendPlugin: FrontendPlugin = {
   manifest: {
@@ -21,11 +25,14 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     artifactContracts: [
       'featuresTable',
       'eicTable',
+      'chromatogramsTable',
       'chromatogramPeaksTable',
       'suspectTargetsTable',
       'suspectsTable',
       'internalStandardsTable',
       'findFeaturesDebugResult',
+    'quantificationTable',
+    'quantificationCalibrationModelsTable',
     ],
     capabilities: [
       'feature-inspector',
@@ -33,6 +40,7 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       'suspect-targets-viewer',
       'suspects-explorer',
       'find-features-debug-viewer',
+      'quantification-viewer',
     ],
   },
   setup(api) {
@@ -61,6 +69,12 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       component: ChromatogramPeaksViewer,
     });
     api.registerViewer({
+      id: 'mass-spec.chromatograms-table-viewer',
+      label: 'Raw chromatograms viewer',
+      accepts: ['chromatogramsTable'],
+      component: ChromatogramsTableViewer,
+    });
+    api.registerViewer({
       id: 'mass-spec.suspects-explorer',
       label: 'Suspects explorer',
       accepts: ['suspectsTable', 'internalStandardsTable'],
@@ -71,6 +85,15 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       label: 'Find features diagnostics',
       accepts: ['findFeaturesDebugResult'],
       component: FindFeaturesDebugViewer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.quantification-viewer',
+      label: 'Quantification curves and results',
+      accepts: [
+        'quantificationTable',
+        'quantificationCalibrationModelsTable',
+      ],
+      component: QuantifySamplesViewer,
     });
   },
 };

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <future>
 
 #include <stdexcept>
 #include <string>
@@ -342,10 +343,16 @@ streamfind_plugin_status plugin_read_batch(
         if (!context->receive_result_input_handle)
             throw std::runtime_error("worker result input handle receiver is not configured");
         const auto result_id = table.substr(std::string("result:").size());
+        // Receive the duplicated handle while the service is servicing this
+        // request. Waiting until after the HTTP response can deadlock when the
+        // service's pipe write waits for the worker to read the broker message.
+        auto handle_future = std::async(std::launch::async, [context] {
+            return context->receive_result_input_handle();
+        });
         const auto grant = detail::proxy_call(*context, "lease_result_input",
             Json{{"result_id", result_id}});
         (void)grant;
-        const auto native_handle = context->receive_result_input_handle();
+        const auto native_handle = handle_future.get();
         data_proxy::ArrowFileBatchReader reader(native_handle);
         for (;;) {
             const auto batch = reader.read(proxy_offset, batch_limit, source_column_names);

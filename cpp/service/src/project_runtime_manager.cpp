@@ -9,6 +9,7 @@
 #include <cmath>
 #include <chrono>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
@@ -458,67 +459,87 @@ Json ProjectRuntimeManager::clear_result_cache(const std::string &session_id) {
 }
 
 Json ProjectRuntimeManager::clear_all_results(const std::string &session_id) {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto inventory = iterator->second->get_result_inventory();
+    std::filesystem::path database_path;
+    Json workflow_json;
     std::vector<std::string> result_ids;
-    for (const auto &entry : inventory) {
-        const auto value = entry.find("result_id");
-        if (value != entry.end() && value->is_string() && !value->get<std::string>().empty())
-            result_ids.push_back(value->get<std::string>());
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+        const auto inventory = iterator->second->get_result_inventory();
+        for (const auto &entry : inventory) {
+            const auto value = entry.find("result_id");
+            if (value != entry.end() && value->is_string() && !value->get<std::string>().empty())
+                result_ids.push_back(value->get<std::string>());
+        }
+        for (const auto &manifest : ResultStore(database_path).published_results()) {
+            const auto value = manifest.find("result_id");
+            if (value != manifest.end() && value->is_string() && !value->get<std::string>().empty())
+                result_ids.push_back(value->get<std::string>());
+        }
+        iterator->second->clear_all_results();
+        workflow_json = iterator->second->get_workflow().to_json();
+        workflow_states_[session_id] = kWorkflowIdle;
+        workflow_progress_[session_id] = Json{{"completed", 0},
+                                             {"total", workflow_definitions_.at(session_id).operations.size()},
+                                             {"current_step", 0}};
+        clear_decoded_trace_cache_locked();
     }
-    const ResultStore store(iterator->second->get_database_path());
-    for (const auto &manifest : store.published_results()) {
-        const auto value = manifest.find("result_id");
-        if (value != manifest.end() && value->is_string() && !value->get<std::string>().empty())
-            result_ids.push_back(value->get<std::string>());
-    }
-    iterator->second->clear_all_results();
+
+    // Published result deletion can recurse through large Arrow payloads. Do
+    // not hold the project-manager mutex while performing filesystem cleanup:
+    // health, workflow snapshots, and unrelated project requests must remain
+    // responsive while a result is being removed.
+    const ResultStore store(database_path);
     store.remove_published_results(result_ids);
-    workflow_states_[session_id] = kWorkflowIdle;
-    workflow_progress_[session_id] = Json{{"completed", 0},
-                                         {"total", workflow_definitions_.at(session_id).operations.size()},
-                                         {"current_step", 0}};
     {
         std::lock_guard cache_lock(result_cache_mutex_);
         result_row_key_cache_.clear();
         result_navigation_index_cache_.clear();
     }
-    clear_decoded_trace_cache_locked();
-    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+    return Json{{"workflow", workflow_json}, {"cleared", true}};
 }
 
 Json ProjectRuntimeManager::clear_node_results(const std::string &session_id, const std::string &producer_instance) {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto inventory = iterator->second->get_result_inventory();
+    std::filesystem::path database_path;
+    Json workflow_json;
     std::vector<std::string> result_ids;
-    for (const auto &entry : inventory) {
-        const auto producer = entry.find("producer_instance");
-        const auto result = entry.find("result_id");
-        if (producer != entry.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
-            result != entry.end() && result->is_string() && !result->get<std::string>().empty())
-            result_ids.push_back(result->get<std::string>());
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+        const auto inventory = iterator->second->get_result_inventory();
+        for (const auto &entry : inventory) {
+            const auto producer = entry.find("producer_instance");
+            const auto result = entry.find("result_id");
+            if (producer != entry.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
+                result != entry.end() && result->is_string() && !result->get<std::string>().empty())
+                result_ids.push_back(result->get<std::string>());
+        }
+        for (const auto &manifest : ResultStore(database_path).published_results()) {
+            const auto producer = manifest.find("producer_instance");
+            const auto result = manifest.find("result_id");
+            if (producer != manifest.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
+                result != manifest.end() && result->is_string() && !result->get<std::string>().empty())
+                result_ids.push_back(result->get<std::string>());
+        }
+        iterator->second->clear_results_for_producer_instance(producer_instance);
+        workflow_json = iterator->second->get_workflow().to_json();
+        clear_decoded_trace_cache_locked();
     }
-    const ResultStore store(iterator->second->get_database_path());
-    for (const auto &manifest : store.published_results()) {
-        const auto producer = manifest.find("producer_instance");
-        const auto result = manifest.find("result_id");
-        if (producer != manifest.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
-            result != manifest.end() && result->is_string() && !result->get<std::string>().empty())
-            result_ids.push_back(result->get<std::string>());
-    }
-    iterator->second->clear_results_for_producer_instance(producer_instance);
+
+    // Keep recursive result-directory removal outside mutex_ so a large Arrow
+    // artifact cannot block service health and workflow-state requests.
+    const ResultStore store(database_path);
     store.remove_published_results(result_ids);
     {
         std::lock_guard cache_lock(result_cache_mutex_);
         result_row_key_cache_.clear();
         result_navigation_index_cache_.clear();
     }
-    clear_decoded_trace_cache_locked();
-    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}, {"producer_instance", producer_instance}};
+    return Json{{"workflow", workflow_json}, {"cleared", true}, {"producer_instance", producer_instance}};
 }
 
 Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) const {
@@ -830,11 +851,62 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
         if (descriptor.value("kind", std::string{}) == "table" &&
             descriptor.value("format", std::string{}) == "arrow-ipc-file") {
             const auto mode = request.value("mode", std::string{"page"});
-            if (mode != "page" && mode != "sample" && mode != "detail" && mode != "eic" && mode != "visualization")
-                throw std::invalid_argument("result table query mode must be page, sample, detail, eic, or visualization");
+            if (mode != "page" && mode != "sample" && mode != "detail" && mode != "eic" &&
+                mode != "visualization" && mode != "distinct")
+                throw std::invalid_argument("result table query mode must be page, sample, detail, eic, visualization, or distinct");
             const auto offset = request.value("offset", std::uintmax_t{0});
             const auto limit = std::clamp(request.value("limit", std::uintmax_t{1000}),
                                           std::uintmax_t{1}, std::uintmax_t{250000});
+            if (mode == "distinct") {
+                const auto requested = request.value("distinct_columns", Json::array());
+                if (!requested.is_array() || requested.empty())
+                    throw std::invalid_argument("distinct result query requires a non-empty distinct_columns array");
+                std::vector<std::string> distinct_columns;
+                for (const auto &column : requested) {
+                    if (!column.is_string() || column.get<std::string>().empty())
+                        throw std::invalid_argument("distinct_columns must contain non-empty names");
+                    const auto name = column.get<std::string>();
+                    const auto schema = descriptor.value("schema", Json::array());
+                    const auto schema_column = std::find_if(schema.begin(), schema.end(),
+                        [&](const Json &candidate) { return candidate.value("name", std::string{}) == name; });
+                    if (schema_column == schema.end())
+                        throw std::invalid_argument("distinct result query column not found: " + name);
+                    if (std::find(distinct_columns.begin(), distinct_columns.end(), name) == distinct_columns.end())
+                        distinct_columns.push_back(name);
+                }
+
+                std::map<std::string, std::map<std::string, Json>> distinct_values;
+                std::uintmax_t scan_offset = 0;
+                constexpr std::uintmax_t scan_batch_size = 65536;
+                for (;;) {
+                    const auto batch = store.read_arrow_ipc_batch(result_id, scan_offset, scan_batch_size, distinct_columns);
+                    const auto batch_rows = batch.value("rows", Json::array());
+                    if (!batch_rows.is_array() || batch_rows.empty()) break;
+                    for (const auto &row : batch_rows) {
+                        if (!row.is_object()) continue;
+                        for (const auto &column : distinct_columns) {
+                            const auto value = row.find(column);
+                            if (value == row.end() || value->is_null()) continue;
+                            distinct_values[column].emplace(value->dump(), *value);
+                        }
+                    }
+                    scan_offset += batch_rows.size();
+                    if (!batch.value("has_more", false)) break;
+                }
+
+                Json distinct = Json::object();
+                for (const auto &column : distinct_columns) {
+                    auto &values = distinct[column] = Json::array();
+                    const auto found = distinct_values.find(column);
+                    if (found == distinct_values.end()) continue;
+                    for (const auto &[key, value] : found->second) values.push_back(value);
+                }
+                return Json{{"result_id", result_id}, {"columns", Json::array()}, {"rows", Json::array()},
+                            {"offset", 0}, {"limit", 0},
+                            {"total_rows", descriptor.value("row_count", std::uintmax_t{0})},
+                            {"returned_rows", 0}, {"mode", "distinct"}, {"has_more", false},
+                            {"distinct", distinct}};
+            }
             const auto format = descriptor.value("format", std::string{});
             Json columns = descriptor.value("schema", Json::array());
             std::vector<std::string> projected_columns;
@@ -1506,7 +1578,7 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
     request.validate();
     if (request.session_id != session_id)
         throw std::invalid_argument("data-proxy session does not match the request path");
-    std::lock_guard lock(mutex_);
+    std::unique_lock lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     const auto method = request.payload.value("method", std::string{});
@@ -1536,7 +1608,8 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         const auto worker_iterator = active_workers_.find(session_id);
         if (worker_iterator == active_workers_.end() || !worker_iterator->second)
             throw std::runtime_error("no active worker owns this result lease");
-        const auto worker = worker_iterator->second->metadata();
+        const auto worker_process = worker_iterator->second;
+        const auto worker = worker_process->metadata();
         if (worker.state != "running" || worker.operation_id != request.operation_id)
             throw std::invalid_argument("result lease request does not match the active worker");
         const auto lease_id = detail::create_data_proxy_lease_id();
@@ -1553,12 +1626,17 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         grant.lease_id = lease_id;
         grant.access = WorkerHandleAccess::WriteOnly;
         grant.expires_at = std::chrono::steady_clock::now() + std::chrono::minutes(2);
+        const auto source_handle = static_cast<std::uintptr_t>(lease.writer->native_handle());
+        lock.unlock();
         try {
-            worker_iterator->second->transfer_handle(std::move(grant),
-                static_cast<std::uintptr_t>(lease.writer->native_handle()));
+            worker_process->transfer_handle(std::move(grant), source_handle);
         } catch (...) {
-            data_proxy_leases_.erase(session_id + ":" + lease_id);
-            store.abort(lease);
+            lock.lock();
+            const auto failed_lease = data_proxy_leases_.find(session_id + ":" + lease_id);
+            if (failed_lease != data_proxy_leases_.end()) {
+                store.abort(failed_lease->second);
+                data_proxy_leases_.erase(failed_lease);
+            }
             throw;
         }
         return data_proxy::response(request, { {"lease_id", lease_id}, {"result_id", result_id},
@@ -1592,8 +1670,15 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
             active_worker == active_workers_.end() || !active_worker->second ||
             active_worker->second->metadata().id != lease_iterator->second.owner_worker_id)
             throw std::invalid_argument("result abort request does not own this lease");
-        store.abort(lease_iterator->second);
+        // Filesystem cleanup can recurse through a result staging directory and
+        // can block on Windows while an inherited/duplicated handle is being
+        // released.  Do not hold the project manager mutex across that work:
+        // health, workflow snapshots, and unrelated project requests must not
+        // become hostage to a failed output cleanup.
+        auto lease = std::move(lease_iterator->second);
         data_proxy_leases_.erase(lease_iterator);
+        lock.unlock();
+        store.abort(lease);
         return data_proxy::response(request, {{"lease_id", request.lease_id}, {"state", "aborted"}}).to_json();
     }
     if (method == "lease_result_input") {
@@ -1602,7 +1687,8 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         const auto worker_iterator = active_workers_.find(session_id);
         if (worker_iterator == active_workers_.end() || !worker_iterator->second)
             throw std::runtime_error("no active worker can receive the result input");
-        const auto worker = worker_iterator->second->metadata();
+        const auto worker_process = worker_iterator->second;
+        const auto worker = worker_process->metadata();
         if (worker.state != "running" || worker.operation_id != request.operation_id ||
             request.run_id.empty())
             throw std::invalid_argument("result input request does not match the active worker");
@@ -1616,8 +1702,9 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         grant.lease_id = read_lease_id;
         grant.access = WorkerHandleAccess::ReadOnly;
         grant.expires_at = std::chrono::steady_clock::now() + std::chrono::minutes(2);
-        worker_iterator->second->transfer_handle(std::move(grant),
-            static_cast<std::uintptr_t>(reader->native_handle()));
+        const auto source_handle = static_cast<std::uintptr_t>(reader->native_handle());
+        lock.unlock();
+        worker_process->transfer_handle(std::move(grant), source_handle);
         return data_proxy::response(request, {{"result_id", result_id},
             {"lease_id", read_lease_id}, {"format", "arrow-ipc-file"},
             {"capabilities", {"read_handle"}}}).to_json();

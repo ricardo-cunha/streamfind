@@ -33,15 +33,16 @@ const row = {
   chromatogram_type: 'SIC',
   precursor_mz: '81',
   product_mz: '46',
+  wavelength_nm: '254.1',
   rt: '5',
   rt_start: '4',
   rt_end: '6',
   height: '100',
   area: '200',
+  noise: '5',
+  snr: '20',
   eic_rt: JSON.stringify([4, 5, 6]),
   eic_intensity: JSON.stringify([0, 100, 0]),
-  eic_raw_intensity: JSON.stringify([0, 110, 0]),
-  eic_baseline: JSON.stringify([0, 0, 0]),
 };
 
 afterEach(() => cleanup());
@@ -71,11 +72,19 @@ describe('ChromatogramPeaksViewer', () => {
     render(<ChromatogramPeaksViewer context={context} />);
 
     await waitFor(() => expect(screen.getByTestId('peak-plot')).toBeInTheDocument());
-    const request = resultQuery.mock.calls[0][1];
+    const request = resultQuery.mock.calls.find(([, value]) => value.mode === 'sample')?.[1];
     expect(request.columns).not.toContain('name');
+    expect(request.columns).not.toContain('eic_raw_intensity');
+    expect(request.columns).not.toContain('eic_baseline');
     expect(request.columns).toEqual(
-      expect.arrayContaining(['chromatogram_id', 'precursor_mz', 'product_mz', 'eic_rt']),
+      expect.arrayContaining(['chromatogram_id', 'precursor_mz', 'product_mz', 'noise', 'snr', 'eic_rt']),
     );
+    const spec = JSON.parse(screen.getByTestId('peak-plot').textContent ?? '') as VisualizationSpec;
+    const hovertemplate = String((spec.payload.data[0] as { hovertemplate?: unknown }).hovertemplate);
+    expect(hovertemplate).not.toContain(row.chromatogram_id);
+    expect(hovertemplate).toContain('Wavelength:');
+    expect(hovertemplate).toContain('S/N:');
+    expect(hovertemplate).toContain('<extra></extra>');
     expect(screen.getByTestId('peak-plot').textContent).toMatch(/"fillcolor":"rgba\(/);
   });
 });

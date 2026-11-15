@@ -1,16 +1,45 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResultDataResponse } from '../../framework/backend/StreamFindApiClient';
+import type { ResultDataResponse, ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { colorFor } from './featurePlotUtils';
+import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
+import { buildResultQueryFilter, filterValueMatches, formatFilterValue } from './massSpecFilterUtils';
 
 type PeakRow = Record<string, string | null>;
 type PlotTheme = { text: string; grid: string; background: string };
 
 const EMPTY_PEAK_ROWS: PeakRow[] = [];
-const PEAK_QUERY_LIMIT = 128;
+const PEAK_QUERY_LIMIT = 4096;
+const FILTERED_PEAK_QUERY_LIMIT = 250000;
+
+const SELECT_BY_COLUMNS = [
+  ['analysis', 'analysis'],
+  ['precursor_mz', 'precursor m/z'],
+  ['product_mz', 'product m/z'],
+  ['chromatogram_type', 'type'],
+  ['signal_type', 'signal'],
+  ['detector', 'detector'],
+  ['channel', 'channel'],
+  ['wavelength_nm', 'wavelength'],
+  ['polarity', 'polarity'],
+  ['peak_id', 'peak'],
+] as const;
+const FILTER_COLUMNS = [
+  ['analysis', 'Analysis'],
+  ['precursor_mz', 'Precursor m/z'],
+  ['product_mz', 'Product m/z'],
+  ['wavelength_nm', 'Wavelength'],
+  ['chromatogram_type', 'Chromatogram type'],
+  ['signal_type', 'Signal type'],
+  ['detector', 'Detector'],
+  ['channel', 'Channel'],
+  ['polarity', 'Polarity'],
+] as const;
+type SelectByColumn = (typeof SELECT_BY_COLUMNS)[number][0];
+const DEFAULT_SELECT_BY: SelectByColumn[] = ['analysis', 'precursor_mz', 'product_mz'];
 
 function getPlotTheme(): PlotTheme {
   const readThemeColor = (name: string, fallback: string) =>
@@ -53,37 +82,97 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
-function peakLabel(row: PeakRow): string {
-  const analysis = text(row, 'analysis') || '(unassigned analysis)';
-  const name = text(row, 'name') || text(row, 'channel') || text(row, 'chromatogram_id') || '(unnamed trace)';
-  const precursor = text(row, 'precursor_mz');
-  const product = text(row, 'product_mz');
-  const transition = precursor && product ? ` · Q1 ${precursor} → Q3 ${product}` : '';
-  const peakId = text(row, 'peak_id');
-  return `${analysis} · ${name}${transition}${peakId ? ` · peak ${peakId}` : ''}`;
+function shortText(value: string, maximum = 42): string {
+  if (value.length <= maximum) return value;
+  const side = Math.max(8, Math.floor((maximum - 1) / 2));
+  return `${value.slice(0, side)}…${value.slice(-side)}`;
+}
+
+function compactLegendLabel(row: PeakRow, selectBy: SelectByColumn[]): string {
+  const selected = new Set(selectBy);
+  const labelParts: string[] = [];
+  if (selected.has('analysis')) labelParts.push(shortText(text(row, 'analysis') || '(unassigned)'));
+  if (selected.has('precursor_mz') && selected.has('product_mz')) {
+    const precursor = text(row, 'precursor_mz');
+    const product = text(row, 'product_mz');
+    if (precursor || product) labelParts.push(`Q1 ${precursor || '?'} → Q3 ${product || '?'}`);
+  } else {
+    if (selected.has('precursor_mz')) labelParts.push(`Q1 ${text(row, 'precursor_mz') || '?'}`);
+    if (selected.has('product_mz')) labelParts.push(`Q3 ${text(row, 'product_mz') || '?'}`);
+  }
+  for (const [column, name] of SELECT_BY_COLUMNS) {
+    if (!selected.has(column) || column === 'analysis' || column === 'precursor_mz' || column === 'product_mz')
+      continue;
+    const value = text(row, column);
+    if (value) labelParts.push(`${name} ${shortText(value, 24)}`);
+  }
+  return labelParts.join(' · ') || shortText(text(row, 'chromatogram_id') || 'trace');
+}
+
+function rowFilterKey(row: PeakRow, column: string): string {
+  return text(row, column) || '(empty)';
+}
+
+function filterRows(rows: PeakRow[], filters: MassSpecFilterValues): PeakRow[] {
+  return rows.filter((row) =>
+    Object.entries(filters).every(
+      ([column, values]) => !values.length || filterValueMatches(column, rowFilterKey(row, column), values),
+    ),
+  );
+}
+
+function escapeHoverText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function hoverNumber(row: PeakRow, column: string, digits = 3): string {
+  const raw = text(row, column);
+  if (!raw) return '(not available)';
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return escapeHoverText(raw);
+  if (value === 0) return '0';
+  if (Math.abs(value) >= 10000 || Math.abs(value) < 0.001) return value.toExponential(3);
+  return value.toLocaleString('en-US', { maximumFractionDigits: digits, useGrouping: false });
 }
 
 function peakHoverTemplate(row: PeakRow): string {
+  const analysis = escapeHoverText(text(row, 'analysis') || '(unassigned)');
+  const channelDetails = [
+    text(row, 'chromatogram_type'),
+    text(row, 'signal_type'),
+    text(row, 'detector'),
+    text(row, 'channel'),
+  ]
+    .filter(Boolean)
+    .map(escapeHoverText)
+    .join(' · ');
+  const wavelength = text(row, 'wavelength_nm') ? `Wavelength: ${hoverNumber(row, 'wavelength_nm', 1)} nm` : '';
+  const peakId = text(row, 'peak_id') ? `Peak: ${escapeHoverText(text(row, 'peak_id'))}` : '';
   const metadata = [
-    `Analysis: ${text(row, 'analysis') || '(unassigned)'}`,
-    `Chromatogram: ${text(row, 'chromatogram_id') || '(unknown)'}`,
-    `Precursor m/z: ${text(row, 'precursor_mz') || '(not available)'}`,
-    `Product m/z: ${text(row, 'product_mz') || '(not available)'}`,
-    `Peak RT: ${text(row, 'rt') || '(not available)'} s`,
-    `RT window: ${text(row, 'rt_start') || '(not available)'}–${text(row, 'rt_end') || '(not available)'} s`,
-    `Area: ${text(row, 'area') || '(not available)'}`,
-    `Height: ${text(row, 'height') || '(not available)'}`,
-  ].join('<br>');
-  return `${metadata}<br>RT: %{x:.4f} s<br>Intensity: %{y:.4f}<extra>${peakLabel(row)}</extra>`;
+    `<b>${analysis}</b>`,
+    `Q1 → Q3: ${hoverNumber(row, 'precursor_mz', 4)} → ${hoverNumber(row, 'product_mz', 4)}`,
+    channelDetails ? `Channel: ${channelDetails}` : '',
+    wavelength,
+    peakId,
+    `Peak RT: ${hoverNumber(row, 'rt', 2)} s · window ${hoverNumber(row, 'rt_start', 2)}–${hoverNumber(row, 'rt_end', 2)} s`,
+    `Area: ${hoverNumber(row, 'area')} · Height: ${hoverNumber(row, 'height')}`,
+    `Noise: ${hoverNumber(row, 'noise')} · S/N: ${hoverNumber(row, 'snr', 2)}`,
+    `RT: %{x:.2f} s · Intensity: %{y:.4~f}`,
+  ]
+    .filter(Boolean)
+    .join('<br>');
+  // Keep the Plotly extra field empty: it otherwise renders the full SCIEX
+  // chromatogram ID as a second, green hover line.
+  return `${metadata}<extra></extra>`;
 }
 
 function makePeakSpec(
   rows: PeakRow[],
   resultId: string,
   theme: PlotTheme,
-  showRaw: boolean,
-  showBaseline: boolean,
+  selectBy: SelectByColumn[],
 ): VisualizationSpec {
+  const legendGroups = new Set<string>();
   const traces = rows.flatMap((row) => {
     const rt = numericArray(row, 'eic_rt');
     const intensity = numericArray(row, 'eic_intensity');
@@ -91,7 +180,9 @@ function makePeakSpec(
     const pointCount = Math.min(rt.length, intensity.length);
     const x = rt.slice(0, pointCount);
     const y = intensity.slice(0, pointCount);
-    const label = peakLabel(row);
+    const legendLabel = compactLegendLabel(row, selectBy);
+    const showLegend = !legendGroups.has(legendLabel);
+    legendGroups.add(legendLabel);
     const color = colorFor(`${text(row, 'analysis')}\n${text(row, 'chromatogram_id')}`);
     const peakRt = number(row, 'rt');
     const peakHeight = number(row, 'height') || Math.max(...y);
@@ -99,8 +190,9 @@ function makePeakSpec(
       {
         type: 'scattergl',
         mode: 'lines',
-        name: label,
-        legendgroup: label,
+        name: legendLabel,
+        showlegend: showLegend,
+        legendgroup: legendLabel,
         line: { color, width: 1.8 },
         fill: 'tozeroy',
         fillcolor: withAlpha(color, 0.21),
@@ -111,8 +203,8 @@ function makePeakSpec(
       {
         type: 'scattergl',
         mode: 'markers',
-        name: `${label} apex`,
-        legendgroup: label,
+        name: `${legendLabel} apex`,
+        legendgroup: legendLabel,
         showlegend: false,
         marker: { color, size: 8, symbol: 'diamond' },
         x: [peakRt],
@@ -120,40 +212,6 @@ function makePeakSpec(
         hovertemplate: peakHoverTemplate(row),
       },
     ];
-    if (showRaw) {
-      const raw = numericArray(row, 'eic_raw_intensity').slice(0, pointCount);
-      if (raw.length === pointCount) {
-        result.push({
-          type: 'scattergl',
-          mode: 'lines',
-          name: `${label} raw`,
-          legendgroup: label,
-          showlegend: false,
-          line: { color, width: 1, dash: 'dot' },
-          opacity: 0.65,
-          x,
-          y: raw,
-          hovertemplate: `${label}<br>Raw RT: %{x:.4f} s<br>Raw intensity: %{y:.4f}<extra></extra>`,
-        });
-      }
-    }
-    if (showBaseline) {
-      const baseline = numericArray(row, 'eic_baseline').slice(0, pointCount);
-      if (baseline.length === pointCount) {
-        result.push({
-          type: 'scattergl',
-          mode: 'lines',
-          name: `${label} baseline`,
-          legendgroup: label,
-          showlegend: false,
-          line: { color, width: 1, dash: 'dash' },
-          opacity: 0.75,
-          x,
-          y: baseline,
-          hovertemplate: `${label}<br>Baseline RT: %{x:.4f} s<br>Baseline: %{y:.4f}<extra></extra>`,
-        });
-      }
-    }
     return result;
   });
   const plottedPeaks = rows.filter(
@@ -208,13 +266,18 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
   const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
-  const [showRaw, setShowRaw] = useState(false);
-  const [showBaseline, setShowBaseline] = useState(false);
-  const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
+  const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
+  const [selectBy, setSelectBy] = useState<SelectByColumn[]>(DEFAULT_SELECT_BY);
+  const [filters, setFilters] = useState<MassSpecFilterValues>({});
+  const [loadState, setLoadState] = useState<{ key: string; error?: string } | null>(null);
   const [, setThemeRevision] = useState(0);
   const resultId = artifact?.result_id ?? '';
-  const loading = !loadState || loadState.resultId !== resultId;
-  const error = loadState?.resultId === resultId ? loadState.error : undefined;
+  const activeFilters = useMemo(() => Object.entries(filters).filter(([, values]) => values.length), [filters]);
+  const queryKey = `${resultId}:${JSON.stringify(activeFilters)}`;
+  const loading = !loadState || loadState.key !== queryKey;
+  const error = loadState?.key === queryKey ? loadState.error : undefined;
+  // Keep the previous plot mounted while a new multi-value filter request is
+  // in flight so the dropdown can accept several checks without closing.
   const currentData = data?.resultId === resultId ? data.response : null;
 
   useEffect(() => {
@@ -226,10 +289,37 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
   useEffect(() => {
     if (!artifact || !client) return;
     let cancelled = false;
+    const loadDistinctOptions = async () => {
+      const response = await client.resultQuery(context.sessionId, {
+        result_id: artifact.result_id,
+        mode: 'distinct',
+        distinct_columns: FILTER_COLUMNS.map(([column]) => column),
+      });
+      if (cancelled) return;
+      const values: Record<string, string[]> = {};
+      for (const [column] of FILTER_COLUMNS) {
+        const rawValues = response.distinct?.[column] ?? [];
+        values[column] = [...new Set(rawValues.map((value) => formatFilterValue(column, value)))];
+      }
+      setOptionValues(values);
+    };
+    void loadDistinctOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact, client, context.sessionId]);
+
+  useEffect(() => {
+    if (!artifact || !client) return;
+    let cancelled = false;
+    const filtersForQuery: ResultQueryFilter[] = activeFilters.map(([column, values]) =>
+      buildResultQueryFilter(column, values),
+    );
     const loadPeakRows = async () => {
       const response = await client.resultQuery(context.sessionId, {
         result_id: artifact.result_id,
-        mode: 'sample',
+        mode: activeFilters.length ? 'page' : 'sample',
+        filters: filtersForQuery,
         columns: [
           'analysis',
           'chromatogram_id',
@@ -246,75 +336,78 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
           'rt_end',
           'height',
           'area',
+          'noise',
+          'snr',
           'eic_rt',
           'eic_intensity',
-          'eic_raw_intensity',
-          'eic_baseline',
         ],
         // Peak rows already contain bounded per-peak windows. Limit the
         // number of plotted peaks so a large result remains interactive.
-        limit: PEAK_QUERY_LIMIT,
+        limit: activeFilters.length ? FILTERED_PEAK_QUERY_LIMIT : PEAK_QUERY_LIMIT,
       });
       if (!cancelled) {
         setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });
-        setLoadState({ resultId: artifact.result_id });
+        setLoadState({ key: queryKey });
       }
     };
     void loadPeakRows().catch((reason: unknown) => {
       if (!cancelled)
         setLoadState({
-          resultId: artifact.result_id,
+          key: queryKey,
           error: reason instanceof Error ? reason.message : 'Unable to load chromatogram peak rows.',
         });
     });
     return () => {
       cancelled = true;
     };
-  }, [artifact, client, context.sessionId]);
+  }, [activeFilters, artifact, client, context.sessionId, queryKey]);
 
   const rows = currentData?.rows ?? EMPTY_PEAK_ROWS;
+  const visibleRows = useMemo(() => filterRows(rows, filters), [filters, rows]);
   const theme = getPlotTheme();
   const spec = useMemo(
-    () => (rows.length ? makePeakSpec(rows, resultId, theme, showRaw, showBaseline) : null),
-    [resultId, rows, theme, showRaw, showBaseline],
+    () => (visibleRows.length ? makePeakSpec(visibleRows, resultId, theme, selectBy) : null),
+    [resultId, selectBy, theme, visibleRows],
   );
 
   if (!artifact || !client) return <div role="alert">Chromatogram peak result data is unavailable.</div>;
-  if (loading) return <LoadingLogo label="Loading chromatogram peaks…" />;
+  if (loading && !currentData) return <LoadingLogo label="Loading chromatogram peaks…" />;
   if (error)
     return (
       <div className="sf-chromatogram-peaks-viewer-state" role="alert">
         {error}
       </div>
     );
-  if (!rows.length || !spec)
+  if (!rows.length)
     return <div className="sf-chromatogram-peaks-viewer-state">No chromatogram peak rows are available.</div>;
 
   return (
     <div className="sf-chromatogram-peaks-viewer">
-      <div className="sf-chromatogram-peaks-viewer-toolbar" aria-label="Chromatogram peak trace controls">
-        <span className="sf-chromatogram-peaks-viewer-toolbar-label">Peak windows</span>
-        <label>
-          <input type="checkbox" checked={showRaw} onChange={() => setShowRaw((current) => !current)} />
-          raw signal
-        </label>
-        <label>
-          <input type="checkbox" checked={showBaseline} onChange={() => setShowBaseline((current) => !current)} />
-          baseline
-        </label>
-        <span className="sf-chromatogram-peaks-viewer-help">
-          Filled traces are the integrated EIC windows; diamonds mark selected apices.
-        </span>
-        <span className="sf-chromatogram-peaks-viewer-summary">
-          {currentData && currentData.total_rows > rows.length
-            ? `showing ${rows.length} of ${currentData.total_rows} peaks · `
-            : `${rows.length} rows · `}
-          {spec.payload.data.length} traces
-        </span>
-      </div>
-      <div className="sf-chromatogram-peaks-viewer-plot">
-        <VisualizationRenderer spec={spec} />
-      </div>
+      <MassSpecFilterToolbar
+        selectByColumns={SELECT_BY_COLUMNS}
+        filterColumns={FILTER_COLUMNS}
+        selectBy={selectBy}
+        onSelectByChange={(columns) => setSelectBy(columns as SelectByColumn[])}
+        optionValues={optionValues}
+        filters={filters}
+        onFiltersChange={setFilters}
+        summary={
+          <>
+            {currentData && currentData.total_rows > rows.length
+              ? `showing ${rows.length} of ${currentData.total_rows} peaks`
+              : `${rows.length} rows`}
+            {visibleRows.length !== rows.length ? ` · ${visibleRows.length} selected` : ''}
+            {spec ? ` · ${spec.payload.data.length} traces` : ''}
+          </>
+        }
+      />
+      {spec ? (
+        <div className="sf-chromatogram-peaks-viewer-plot">
+          <VisualizationRenderer spec={spec} />
+        </div>
+      ) : (
+        <div className="sf-chromatogram-peaks-viewer-state">No peak rows match the selected filters.</div>
+      )}
     </div>
   );
 }

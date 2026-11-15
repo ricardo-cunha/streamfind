@@ -26,22 +26,59 @@ namespace streamfind::mass_spec::chromatograms
     namespace
     {
         const std::vector<std::string> point_columns = {
-            "analysis", "index", "rt", "raw_intensity", "baseline", "intensity", "created_at"};
+            "analysis", "index", "chromatogram_id", "polarity", "precursor_mz", "activation_ce",
+            "product_mz", "signal_type", "chromatogram_type", "detector", "channel", "wavelength_nm", "units",
+            "rt", "raw_intensity", "baseline", "intensity", "created_at"};
         const std::vector<std::string> point_types = {
-            "string", "integer", "real", "real", "real", "real", "timestamp"};
+            "string", "integer", "string", "integer", "real", "real", "real", "string", "string", "string",
+            "string", "real", "string", "real", "real", "real", "real", "timestamp"};
         const std::vector<std::string> peak_columns = {
             "analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end",
             "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm",
-            "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm",
+            "noise", "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm",
             "integration_status", "manual_override", "chromatogram_id", "polarity", "precursor_mz",
             "product_mz", "activation_ce", "signal_type", "chromatogram_type", "detector", "channel",
             "wavelength_nm", "units", "eic_size", "eic_rt", "eic_intensity", "eic_raw_intensity",
             "eic_baseline", "created_at"};
         const std::vector<std::string> peak_types = {
-            "string", "integer", "integer", "real", "real", "real", "real", "real", "real",
-            "real", "real", "real", "real", "real", "real", "real", "real", "integer",
-            "string", "string", "boolean", "string", "integer", "real", "real", "real", "string",
-            "string", "string", "string", "real", "string", "integer", "array", "array", "array", "array",
+            "string",  // analysis
+            "integer", // chromatogram_index
+            "integer", // peak_id
+            "real",    // rt
+            "real",    // rt_start
+            "real",    // rt_end
+            "real",    // height
+            "real",    // raw_height
+            "real",    // area
+            "real",    // raw_area
+            "real",    // baseline_area
+            "real",    // width
+            "real",    // fwhm
+            "real",    // noise
+            "real",    // snr
+            "real",    // asymmetry
+            "real",    // sharpness
+            "real",    // plates
+            "integer", // number_points
+            "string",  // integration_algorithm
+            "string",  // integration_status
+            "boolean", // manual_override
+            "string",  // chromatogram_id
+            "integer", // polarity
+            "real",    // precursor_mz
+            "real",    // product_mz
+            "real",    // activation_ce
+            "string",  // signal_type
+            "string",  // chromatogram_type
+            "string",  // detector
+            "string",  // channel
+            "real",    // wavelength_nm
+            "string",  // units
+            "integer", // eic_size
+            "array",   // eic_rt
+            "array",   // eic_intensity
+            "array",   // eic_raw_intensity
+            "array",   // eic_baseline
             "timestamp"};
 
         Json analysis_name_parameters(const Json &parameters, const Json &analyses)
@@ -107,7 +144,8 @@ namespace streamfind::mass_spec::chromatograms
             const auto analysis_rows = base::utils::input_rows(
                 access, parameters, "analysesTable", {"analysis", "file_path", "analysis_index"}, "analysis");
             const auto header_rows = base::utils::input_rows(
-                access, parameters, "chromatogramsHeadersTable", {"analysis", "index", "chromatogram_id"}, "analysis");
+                access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis");
+            const auto header_map = utils::make_header_map(header_rows);
             std::map<std::string, std::vector<Json>> headers_by_analysis;
             for (const auto &header : header_rows)
                 headers_by_analysis[utils::text(header, "analysis")].push_back(header);
@@ -163,7 +201,16 @@ namespace streamfind::mass_spec::chromatograms
                         continue;
                     const auto count = std::min(arrays[selected][0].size(), arrays[selected][1].size());
                     for (std::size_t j = 0; j < count; ++j)
-                        points.push_back({{"analysis", analysis}, {"index", utils::integer(selected_headers[selected], "index")}, {"rt", arrays[selected][0][j]}, {"raw_intensity", arrays[selected][1][j]}, {"baseline", 0.0}, {"intensity", arrays[selected][1][j]}});
+                    {
+                        const auto index = utils::integer(selected_headers[selected], "index");
+                        Json point{{"analysis", analysis}, {"index", index}, {"rt", arrays[selected][0][j]},
+                                   {"raw_intensity", arrays[selected][1][j]}, {"baseline", 0.0},
+                                   {"intensity", arrays[selected][1][j]}};
+                        const auto header = header_map.find({analysis, index});
+                        if (header != header_map.end())
+                            utils::append_header_fields(point, header->second);
+                        points.push_back(std::move(point));
+                    }
                 }
             }
             emit_points(access, std::move(points));
@@ -195,6 +242,44 @@ namespace streamfind::mass_spec::chromatograms
             }
             return groups;
         }
+
+        Json nonzero_chromatogram_rows(Json rows)
+        {
+            rows.erase(std::remove_if(rows.begin(), rows.end(), [](const Json &row)
+                                      { return utils::real(row, "raw_intensity") <= 0.0; }),
+                       rows.end());
+            return rows;
+        }
+    }
+
+    static std::vector<Peak> deduplicate_peaks(std::vector<Peak> peaks)
+    {
+        // A vendor trace can contain repeated samples at the same retention
+        // time, and the detector may report the derivative and local-maximum
+        // candidates separately.  Quantification must see one peak per
+        // chromatogram/apex, otherwise an otherwise valid transition becomes
+        // ambiguous.  The tolerance is much smaller than the SCIEX sampling
+        // interval, so it cannot merge two independently sampled peaks.
+        constexpr double retention_time_tolerance = 1.0e-3;
+        std::sort(peaks.begin(), peaks.end(), [](const Peak &left, const Peak &right) {
+            if (left.rt != right.rt) return left.rt < right.rt;
+            if (left.area != right.area) return left.area > right.area;
+            return left.raw_area > right.raw_area;
+        });
+        std::vector<Peak> unique;
+        unique.reserve(peaks.size());
+        for (const auto &peak : peaks)
+        {
+            if (!unique.empty() && std::abs(peak.rt - unique.back().rt) <= retention_time_tolerance)
+            {
+                if (peak.area > unique.back().area ||
+                    (peak.area == unique.back().area && peak.raw_area > unique.back().raw_area))
+                    unique.back() = peak;
+                continue;
+            }
+            unique.push_back(peak);
+        }
+        return unique;
     }
 
     Json load_chromatograms(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -297,10 +382,8 @@ namespace streamfind::mass_spec::chromatograms
 
     Json find_chromatogram_peaks(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto rows = point_rows(access, parameters);
-        const auto headers = base::utils::input_rows(
-            access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis,index");
-        const auto header_map = utils::make_header_map(headers);
+        const auto rows = nonzero_chromatogram_rows(point_rows(access, parameters));
+        const auto header_map = utils::make_header_map(rows);
         const auto groups = groups_from(rows);
         const bool merge = parameters.value("merge", true);
         const double merge_distance = parameters.value("merge_distance", 45.0);
@@ -319,11 +402,12 @@ namespace streamfind::mass_spec::chromatograms
             if (!utils::selected_analysis(parameters, Json{{"analysis", key.first}}) ||
                 !utils::selected_index(parameters, key.second))
                 continue;
-            auto peaks = utils::find_peaks(group, merge, merge_distance, min_height, min_distance, min_width, max_width, min_snr);
+            auto peaks = deduplicate_peaks(
+                utils::find_peaks(group, merge, merge_distance, min_height, min_distance, min_width, max_width, min_snr));
             for (auto &peak : peaks)
             {
                 peak.peak_id = ++peak_id;
-                Json row{{"analysis", key.first}, {"chromatogram_index", key.second}, {"peak_id", peak.peak_id}, {"rt", peak.rt}, {"rt_start", peak.rt_start}, {"rt_end", peak.rt_end}, {"height", peak.height}, {"raw_height", peak.raw_height}, {"area", peak.area}, {"raw_area", peak.raw_area}, {"baseline_area", peak.baseline_area}, {"width", peak.width}, {"fwhm", peak.fwhm}, {"snr", peak.snr}, {"asymmetry", peak.asymmetry}, {"sharpness", peak.sharpness}, {"plates", peak.plates}, {"number_points", peak.number_points}, {"integration_algorithm", "streamfind.integration.v1"}, {"integration_status", "integrated"}, {"manual_override", false}};
+                Json row{{"analysis", key.first}, {"chromatogram_index", key.second}, {"peak_id", peak.peak_id}, {"rt", peak.rt}, {"rt_start", peak.rt_start}, {"rt_end", peak.rt_end}, {"height", peak.height}, {"raw_height", peak.raw_height}, {"area", peak.area}, {"raw_area", peak.raw_area}, {"baseline_area", peak.baseline_area}, {"width", peak.width}, {"fwhm", peak.fwhm}, {"noise", peak.noise}, {"snr", peak.snr}, {"asymmetry", peak.asymmetry}, {"sharpness", peak.sharpness}, {"plates", peak.plates}, {"number_points", peak.number_points}, {"integration_algorithm", "streamfind.integration.v1"}, {"integration_status", "integrated"}, {"manual_override", false}};
                 const auto header = header_map.find(key);
                 if (header != header_map.end())
                     utils::append_header_fields(row, header->second);
@@ -377,18 +461,13 @@ namespace streamfind::mass_spec::chromatograms
         for (const auto &analysis : analyses)
             replicates[utils::text(analysis, "analysis")] = utils::text(analysis, "replicate");
         const auto selection_parameters = analysis_name_parameters(parameters, analyses);
-        const auto headers = base::utils::input_rows(access, parameters, "chromatogramsHeadersTable", utils::header_columns(), "analysis");
         const auto peaks = base::utils::input_rows(access, parameters, "chromatogramPeaksTable", utils::peak_columns(), "analysis");
-        const auto header_map = utils::make_header_map(headers);
         Json output = Json::array();
         for (const auto &peak : peaks)
         {
             if (!utils::selected_analysis(selection_parameters, peak) || !utils::selected_index(parameters, utils::integer(peak, "chromatogram_index")))
                 continue;
             Json row = peak;
-            const auto it = header_map.find({utils::text(peak, "analysis"), utils::integer(peak, "chromatogram_index")});
-            if (it != header_map.end())
-                utils::append_header_fields(row, it->second);
             row["replicate"] = replicates[utils::text(peak, "analysis")];
             output.push_back(std::move(row));
         }

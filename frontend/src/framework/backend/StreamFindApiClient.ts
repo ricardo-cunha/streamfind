@@ -121,7 +121,8 @@ export type ResultQueryFilter = {
 };
 export type ResultQueryRequest = {
   result_id: string;
-  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
+  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
+  distinct_columns?: string[];
   columns?: string[];
   filters?: ResultQueryFilter[];
   offset?: number;
@@ -143,8 +144,9 @@ export type ResultQueryRequest = {
 };
 export type ResultQueryResponse = ResultDataResponse & {
   returned_rows: number;
-  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
+  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
   has_more: boolean;
+  distinct?: Record<string, JsonValue[]>;
 };
 export type ResultTraceRequest = {
   result_id: string;
@@ -473,6 +475,7 @@ export class StreamFindApiClient {
         returned_rows: typeof raw.returned_rows === 'number' ? raw.returned_rows : result.rows.length,
         mode: raw.mode ?? 'page',
         has_more: Boolean(raw.has_more),
+        distinct: raw.distinct,
       };
     })();
     const remembered = rememberResultQuery(key, pending);

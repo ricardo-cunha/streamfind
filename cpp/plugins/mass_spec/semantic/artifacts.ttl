@@ -12,6 +12,15 @@ sfms:findFeaturesDebugResult
     skos:definition "Structured in-artifact diagnostic payload produced by mass-spec feature detection when debug selectors are enabled." ;
     sf:type "object" .
 
+sfms:quantificationDebugResult
+    a sf:OperationResult ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:dataKind "json" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification debug result" ;
+    skos:definition "Structured in-artifact diagnostic payload produced by the complete quantification workflow when debug selectors are enabled." ;
+    sf:type "object" .
+
 sfms:createComponentsDebugResult
     a sf:OperationResult ;
     sf:availableInDomain sfms:mass_spec ;
@@ -149,12 +158,23 @@ sfms:chromatogramsTable
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry chromatograms table" ;
-    skos:definition "Persisted chromatogram point records for mass spectrometry analyses. Channel metadata lives in MASS_SPEC_CHROMATOGRAMS_HEADERS; join through analysis and index." ;
+    skos:definition "Persisted self-describing chromatogram point records for mass spectrometry analyses. Each point carries the channel metadata needed to identify its acquisition transition." ;
     sf:tableContractName "MASS_SPEC_CHROMATOGRAMS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:indexColumn,
+        sfms:chromatogramIdColumn,
+        sfms:polarityColumn,
+        sfms:precursorMzColumn,
+        sfms:activationCeColumn,
+        sfms:productMzColumn,
+        sfms:signalTypeColumn,
+        sfms:chromatogramTypeColumn,
+        sfms:detectorColumn,
+        sfms:channelColumn,
+        sfms:wavelengthNmColumn,
+        sfms:unitsColumn,
         sfms:rtColumn,
         sfms:rawIntensityColumn,
         sfms:baselineColumn,
@@ -167,7 +187,7 @@ sfms:chromatogramPeaksTable
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry chromatogram peaks table" ;
-    skos:definition "Persisted chromatographic peak records. Detector-independent: one self-describing row per detected peak within a chromatogram, including channel metadata and optional padded EIC arrays. Join to MASS_SPEC_CHROMATOGRAMS_HEADERS through analysis and chromatogram_index." ;
+    skos:definition "Persisted chromatographic peak records. Detector-independent: one self-describing row per detected peak within a chromatogram, including channel metadata and optional padded EIC arrays." ;
     sf:tableContractName "MASS_SPEC_CHROMATOGRAM_PEAKS" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -195,6 +215,7 @@ sfms:chromatogramPeaksTable
         sfms:peakBaselineAreaColumn,
         sfms:peakWidthColumn,
         sfms:peakFwhmColumn,
+        sfms:noiseColumn,
         sfms:peakSnrColumn,
         sfms:peakAsymmetryColumn,
         sfms:peakSharpnessColumn,
@@ -216,12 +237,11 @@ sfms:quantificationMethodTable
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification method table" ;
-    skos:definition "One horizontal row per analyte or internal standard, including quantifier and optional qualifier transition settings." ;
+    skos:definition "One lean horizontal row per analyte or internal standard containing only retention-time, response/calibration, and quantifier or optional qualifier matching settings consumed by quantification." ;
     sf:tableContractName "MASS_SPEC_QUANTIFICATION_METHOD" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfms:quantTargetIdColumn,
-        sfms:nameColumn,
         sfms:quantRoleColumn,
         sfms:internalStandardIdColumn,
         sfms:rtColumn,
@@ -237,7 +257,6 @@ sfms:quantificationMethodTable
         sfms:quantifierPolarityColumn,
         sfms:quantifierPrecursorMzColumn,
         sfms:quantifierProductMzColumn,
-        sfms:quantifierActivationCeColumn,
         sfms:quantifierDetectorColumn,
         sfms:quantifierWavelengthNmColumn,
         sfms:quantifierMzTolerancePpmColumn,
@@ -246,14 +265,12 @@ sfms:quantificationMethodTable
         sfms:qualifierPolarityColumn,
         sfms:qualifierPrecursorMzColumn,
         sfms:qualifierProductMzColumn,
-        sfms:qualifierActivationCeColumn,
         sfms:qualifierDetectorColumn,
         sfms:qualifierWavelengthNmColumn,
         sfms:qualifierMzTolerancePpmColumn,
         sfms:expectedRatioColumn,
         sfms:ratioToleranceColumn,
-        sfms:enabledColumn,
-        sfcore:createdAtColumn .
+        sfms:enabledColumn .
 
 sfms:quantificationAnalysesTable
     a sf:Table ;
@@ -261,7 +278,7 @@ sfms:quantificationAnalysesTable
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification analyses table" ;
-    skos:definition "Analysis and sample-role assignments supplying calibrator, QC, blank, zero, and unknown context for quantification." ;
+    skos:definition "Project-specific analysis and sample-role assignments supplying only calibrator, QC, blank, zero, and unknown concentration context required by quantification." ;
     sf:tableContractName "MASS_SPEC_QUANTIFICATION_ANALYSES" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
@@ -270,19 +287,17 @@ sfms:quantificationAnalysesTable
         sfms:sampleTypeColumn,
         sfms:calibrationLevelColumn,
         sfms:nominalConcentrationColumn,
-        sfms:isConcentrationColumn,
         sfms:dilutionFactorColumn,
-        sfms:excludeColumn,
-        sfcore:createdAtColumn .
+        sfms:excludeColumn .
 
-sfms:quantificationResponsesTable
+sfms:quantificationTable
     a sf:Table ;
     sf:availableInDomain sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Mass spectrometry quantification responses table" ;
-    skos:definition "Peak-assignment and response-extraction rows for configured quantification targets. This table records explicit matching statuses and does not perform calibration fitting." ;
-    sf:tableContractName "MASS_SPEC_QUANTIFICATION_RESPONSES" ;
+    skos:prefLabel "Mass spectrometry quantification table" ;
+    skos:definition "Unified per-analysis quantification rows containing selected peak responses, compact EIC arrays, calibration-point diagnostics, and final concentration results." ;
+    sf:tableContractName "MASS_SPEC_QUANTIFICATION" ;
     sf:dataKind "duckdb_table" ;
     sf:hasColumn
         sfms:analysisNameColumn,
@@ -300,6 +315,12 @@ sfms:quantificationResponsesTable
         sfms:quantPeakRtColumn,
         sfms:quantPeakAreaColumn,
         sfms:quantPeakHeightColumn,
+        sfms:eicSizeColumn,
+        sfms:eicRtColumn,
+        sfms:eicIntensityColumn,
+        sfms:qualifierEicSizeColumn,
+        sfms:qualifierEicRtColumn,
+        sfms:qualifierEicIntensityColumn,
         sfms:responseMetricColumn,
         sfms:responseColumn,
         sfms:internalStandardResponseColumn,
@@ -307,8 +328,48 @@ sfms:quantificationResponsesTable
         sfms:qualifierResponseColumn,
         sfms:qualifierRatioColumn,
         sfms:quantificationStatusColumn,
+        sfms:quantifierStatusColumn,
+        sfms:internalStandardStatusColumn,
         sfms:candidateCountColumn,
         sfms:qualifierStatusColumn,
+        sfms:includedColumn,
+        sfms:backCalculatedConcentrationColumn,
+        sfms:residualColumn,
+        sfms:relativeResidualColumn,
+        sfms:exclusionReasonColumn,
+        sfms:rtErrorColumn,
+        sfms:calculatedConcentrationColumn,
+        sfms:finalConcentrationColumn,
+        sfms:concentrationUnitColumn,
+        sfms:qualifierRatioPassColumn,
+        sfms:accuracyPercentColumn,
+        sfms:flagsColumn,
+        sfcore:createdAtColumn .
+
+sfms:quantificationCalibrationModelsTable
+    a sf:Table ;
+    sf:availableInDomain sfms:mass_spec ;
+    sf:providedByModule sfms:chromatogramsModule ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Mass spectrometry quantification calibration models table" ;
+    skos:definition "Persisted calibration model coefficients and fit diagnostics for each configured analyte." ;
+    sf:tableContractName "MASS_SPEC_QUANT_CALIBRATION_MODELS" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfms:quantTargetIdColumn,
+        sfms:calibrationModelColumn,
+        sfms:weightingColumn,
+        sfms:interceptModeColumn,
+        sfms:coefficient0Column,
+        sfms:coefficient1Column,
+        sfms:coefficient2Column,
+        sfms:rSquaredColumn,
+        sfms:adjustedRSquaredColumn,
+        sfms:rmseColumn,
+        sfms:nPointsColumn,
+        sfms:rangeMinColumn,
+        sfms:rangeMaxColumn,
+        sfms:fitStatusColumn,
         sfcore:createdAtColumn .
 
 sfms:featuresTable

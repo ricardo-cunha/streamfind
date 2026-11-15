@@ -28,13 +28,32 @@
   color: var(--sf-text);
 }
 
-.sf-chromatogram-peaks-viewer-toolbar-label {
+.sf-chromatogram-peaks-viewer-control-label {
+  color: var(--sf-text-secondary);
   font-weight: 600;
 }
 
-.sf-chromatogram-peaks-viewer-help {
-  color: var(--sf-text-secondary);
-  font-size: 0.78rem;
+.sf-chromatogram-peaks-viewer-select {
+  gap: 6px !important;
+}
+
+.sf-chromatogram-peaks-viewer-select select {
+  max-width: 180px;
+  min-width: 84px;
+  padding: 2px 22px 2px 6px;
+  border: 1px solid var(--sf-border);
+  border-radius: 4px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  font: inherit;
+}
+
+.sf-chromatogram-peaks-viewer-select select:disabled {
+  opacity: 0.55;
+}
+
+.sf-chromatogram-peaks-viewer-toolbar-label {
+  font-weight: 600;
 }
 
 .sf-chromatogram-peaks-viewer-summary {

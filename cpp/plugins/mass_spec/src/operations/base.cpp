@@ -2,6 +2,7 @@
 #include "readers/reader.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
 #include "utils/base.hpp"
+#include "utils/chromatograms.hpp"
 #include "utils/target_csv.hpp"
 
 #include <algorithm>
@@ -225,8 +226,8 @@ namespace streamfind::mass_spec::base
                 for (std::size_t index = 0; index < chromatograms.chromatogram_id.size(); ++index)
                     chromatogram_rows.push_back({analysis, std::to_string(chromatograms.index[index]),
                                                  chromatograms.chromatogram_id[index], std::to_string(chromatograms.array_length[index]),
-                                                 std::to_string(chromatograms.polarity[index]), std::to_string(chromatograms.precursor_mz[index]),
-                                                 std::to_string(chromatograms.activation_ce[index]), std::to_string(chromatograms.product_mz[index]),
+                                                 std::to_string(chromatograms.polarity[index]), std::to_string(chromatograms::utils::normalize_mz(chromatograms.precursor_mz[index])),
+                                                 std::to_string(chromatograms.activation_ce[index]), std::to_string(chromatograms::utils::normalize_mz(chromatograms.product_mz[index])),
                                                  chromatograms.signal_type[index], chromatograms.chromatogram_type[index], chromatograms.detector[index],
                                                  chromatograms.channel[index], chromatograms.units[index], std::to_string(chromatograms.wavelength_nm[index]),
                                                  std::to_string(chromatograms.interval_ms[index]), std::to_string(chromatograms.start_time[index]),
@@ -982,7 +983,7 @@ namespace streamfind::mass_spec::base
             const auto arrays = file.get_chromatograms(selected_indices);
             for (std::size_t i = 0; i < arrays.size() && i < headers.chromatogram_id.size(); ++i)
                 for (std::size_t j = 0; j < arrays[i][0].size() && j < arrays[i][1].size(); ++j)
-                    result.push_back({{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"index", headers.index[i]}, {"chromatogram_id", headers.chromatogram_id[i]}, {"polarity", headers.polarity[i]}, {"precursor_mz", headers.precursor_mz[i]}, {"activation_ce", headers.activation_ce[i]}, {"product_mz", headers.product_mz[i]}, {"signal_type", headers.signal_type[i]}, {"chromatogram_type", headers.chromatogram_type[i]}, {"detector", headers.detector[i]}, {"channel", headers.channel[i]}, {"units", headers.units[i]}, {"wavelength_nm", headers.wavelength_nm[i]}, {"rt", arrays[i][0][j]}, {"raw_intensity", arrays[i][1][j]}, {"baseline", 0.0}, {"intensity", arrays[i][1][j]}});
+                    result.push_back({{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"index", headers.index[i]}, {"chromatogram_id", headers.chromatogram_id[i]}, {"polarity", headers.polarity[i]}, {"precursor_mz", chromatograms::utils::normalize_mz(headers.precursor_mz[i])}, {"activation_ce", headers.activation_ce[i]}, {"product_mz", chromatograms::utils::normalize_mz(headers.product_mz[i])}, {"signal_type", headers.signal_type[i]}, {"chromatogram_type", headers.chromatogram_type[i]}, {"detector", headers.detector[i]}, {"channel", headers.channel[i]}, {"units", headers.units[i]}, {"wavelength_nm", headers.wavelength_nm[i]}, {"rt", arrays[i][0][j]}, {"raw_intensity", arrays[i][1][j]}, {"baseline", 0.0}, {"intensity", arrays[i][1][j]}});
         }
         return result;
     }
