@@ -1697,13 +1697,25 @@ function BackendStatusPane({
   state,
   onClose,
   endpoint,
-  serviceInstance,
+  serviceSession,
 }: {
   state: ServiceState;
   onClose: () => void;
   endpoint: string;
-  serviceInstance?: ServiceSession['service_instance'];
+  serviceSession: ServiceSession | null;
 }) {
+  const serviceInstance = serviceSession?.service_instance;
+  const startedAt = serviceInstance?.started_at;
+  const startedAtLabel = startedAt ? new Date(startedAt).toLocaleString() : 'unavailable';
+  const detail = (label: string, value: string | number | null | undefined, title?: string) => (
+    <div key={label}>
+      <dt>{label}</dt>
+      <dd title={title ?? (typeof value === 'string' ? value : undefined)}>
+        {value === null || value === undefined || value === '' ? 'unavailable' : value}
+      </dd>
+    </div>
+  );
+
   return (
     <div
       className="sf-side-pane-backdrop sf-backend-backdrop"
@@ -1720,36 +1732,25 @@ function BackendStatusPane({
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
-        <div className="sf-backend-state">
-          <span className={`sf-connection-dot ${state}`} />
-          <strong>{state === 'ready' ? 'healthy' : state}</strong>
-        </div>
-        <dl>
-          <div>
-            <dt>App client</dt>
-            <dd>
-              <span className="sf-health-check">running</span>
-            </dd>
+        <section className="sf-backend-section" aria-labelledby="sf-backend-service-heading">
+          <div className="sf-backend-section-heading">
+            <div>
+              <h3 id="sf-backend-service-heading">streamfind service</h3>
+            </div>
+            <span className={`sf-health-check ${state}`}>{state === 'ready' ? 'connected' : state}</span>
           </div>
-          <div>
-            <dt>streamfind service</dt>
-            <dd>
-              <span className={`sf-health-check ${state}`}>{state === 'ready' ? 'connected' : state}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>Endpoint</dt>
-            <dd>{endpoint.replace(/^https?:\/\//, '')}</dd>
-          </div>
-          <div>
-            <dt>Instance</dt>
-            <dd>{serviceInstance?.service_instance_id || 'unavailable'}</dd>
-          </div>
-          <div>
-            <dt>PID</dt>
-            <dd>{serviceInstance?.process_id ?? 'unavailable'}</dd>
-          </div>
-        </dl>
+          <dl>
+            {detail('Endpoint', endpoint.replace(/^https?:\/\//, ''))}
+            {detail('Instance ID', serviceInstance?.service_instance_id)}
+            {detail('Service process ID', serviceInstance?.process_id)}
+            {detail('Service executable', serviceInstance?.executable)}
+            {detail('Tray manager process ID', serviceInstance?.manager_process_id)}
+            {detail('Tray manager executable', serviceInstance?.manager_executable)}
+            {detail('Started', startedAtLabel, startedAt)}
+            {detail('API protocol', serviceInstance?.protocol_version)}
+            {detail('Open projects', serviceSession?.projects?.length ?? 0)}
+          </dl>
+        </section>
       </aside>
     </div>
   );
@@ -2081,7 +2082,7 @@ function AppShell({
           state={serviceState}
           onClose={() => setBackendOpen(false)}
           endpoint={client.endpoint()}
-          serviceInstance={serviceSession?.service_instance}
+          serviceSession={serviceSession}
         />
       ) : null}
       <NotificationToasts />

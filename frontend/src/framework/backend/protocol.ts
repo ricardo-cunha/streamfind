@@ -30,7 +30,13 @@ export type ServiceSession = {
     process_id?: number | null;
     endpoint?: string;
     state?: string;
+    protocol_version?: string;
+    executable?: string;
+    manager_process_id?: number | null;
+    manager_executable?: string;
+    started_at?: string;
   };
+  projects?: ProjectSession[];
 };
 
 export type ProjectSession = {
