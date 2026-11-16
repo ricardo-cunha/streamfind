@@ -176,23 +176,31 @@ sfdev build frontend
 Use `--config Release` with `configure` when you specifically need a Release
 build. The default is Debug. `--jobs N` controls native parallel build jobs.
 
-### Run the development app
+### Verify changes in the packaged app
+
+The package in `tmp/packaged_build/` is the single app verification target.
+Do not run a separate Vite app or build-tree service for UI or app checks.
+For a frontend-only change, rebuild the frontend and update the app assets in
+the existing package:
 
 ```powershell
-sfdev run app
+sfdev package --frontend-only
 ```
 
-This starts Vite and starts or reuses a development service at
-`http://127.0.0.1:8790`. Press Ctrl+C to stop processes started by this
-command. To run only one side:
+For backend, worker, packaging, or full app changes, build and refresh the
+whole package:
 
 ```powershell
-sfdev run backend
-sfdev run frontend --url http://127.0.0.1:8790
+sfdev package
 ```
 
-Build the service and worker before starting the backend. The frontend-only
-form connects to an already-ready service; it does not start one.
+Then open `tmp/packaged_build/bin/streamfind-app.exe` or use the package's
+`streamfind.exe service start` command. The app and service run from that
+package so the checked UI, backend, plugins, and runtime files all belong to
+one build. `sfdev test browser` runs its smoke check against the packaged app
+at `http://127.0.0.1:8787/`; pass `--url` when the package uses another port.
+On Linux, use a release package for manual app verification; `tmp/packaged_build`
+is reserved for the native Windows development machine.
 
 ### Run tests and checks
 
@@ -215,10 +223,10 @@ sfdev check frontend
 ```
 
 `check frontend` runs the frontend build, lint, and formatting check in order.
-For a browser smoke check, start the frontend first and provide its URL:
+For the browser smoke check, refresh and start the packaged app first:
 
 ```powershell
-sfdev test browser --url http://127.0.0.1:5173/
+sfdev test browser
 ```
 
 Large-data, mass-spectrometry, Raman, parser, and workflow checks are
@@ -428,10 +436,9 @@ sfdev clean --scope all-temp --dry-run
 | `sfdev build backend\|frontend\|all` | Build native code, UI, or both |
 | `sfdev test backend\|frontend\|browser` | Run CTest, frontend tests, or a browser smoke check |
 | `sfdev check frontend` | Build, lint, and format-check frontend code |
-| `sfdev run backend\|frontend\|app` | Start development service and/or Vite |
 | `sfdev script list\|info\|run` | Discover and run development-stage scripts |
 | `sfdev workflows nta\|impurities\|quantification` | Create validated editable workflow projects through MCP |
-| `sfdev package` | Build or refresh the unpacked Windows test package |
+| `sfdev package` | Build or refresh the unpacked Windows development-verification package |
 | `sfdev sdk build` / `sfdev plugin ...` | Build a plugin SDK or work on an external plugin |
 | `sfdev version show\|bump` | Inspect or advance the canonical version |
 | `sfdev release prepare\|verify\|publish` | Prepare, verify, or publish versioned release archives |

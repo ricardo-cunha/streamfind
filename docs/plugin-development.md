@@ -52,8 +52,8 @@ sfdev build frontend
 sfdev test frontend
 ```
 
-Use `sfdev run app` to work against the local service while developing the UI.
-See the [C++ guide](https://github.com/ricardo-cunha/streamfind/blob/main/cpp/README.md)
+Use the packaged app as the verification target while developing the UI. See
+the [C++ guide](https://github.com/ricardo-cunha/streamfind/blob/main/cpp/README.md)
 and [frontend guide](https://github.com/ricardo-cunha/streamfind/blob/main/frontend/README.md)
 for toolchain and application details.
 
@@ -115,28 +115,29 @@ frontend` and `sfdev test frontend` while developing. Keep frontend schemas
 derived from the shared catalogue contracts rather than duplicating backend
 table definitions.
 
-### Run the app during development
+### Verify app changes in the package
 
-From the repository root, start the app development environment with:
+The unpacked package is the single app verification target. After changing
+frontend or bundled UI plugin code, refresh its assets with:
 
 ```text
-sfdev run app
+sfdev package --frontend-only
 ```
 
-This starts Vite at `http://127.0.0.1:5173/` and starts or reuses the native
-development service at `http://127.0.0.1:8790`. It selects the native build
-tree for the current platform (`tmp/build/windows/core` or
-`tmp/build/linux/core`) and requires both `streamfind-server` and the matching
-`streamfind-worker` to be built. React and CSS edits use Vite hot module
-replacement. Press Ctrl+C to stop processes started by this command.
+After changing native code, worker code, package contents, or when a complete
+verification is needed, run:
 
-`sfdev run app` works on Windows and Linux when the checkout has its native
-build and frontend dependencies. The `npm start` launcher in `frontend/` also
-supports both platforms. If it reuses an already-ready service, that service
-continues running after the launcher exits; if it starts the service, Ctrl+C
-stops the service and Vite together. To start only Vite, use
-`sfdev run frontend --url http://127.0.0.1:8790`; this requires an already-ready
-service.
+```text
+sfdev package
+```
+
+The package command builds the frontend and native targets, runs the required
+native checks, and stages `tmp/packaged_build/`. Launch
+`tmp/packaged_build/bin/streamfind-app.exe` or the packaged CLI on Windows to
+inspect the result. Use the platform's release package for manual Linux app
+verification. Keep `sfdev build frontend`, `sfdev test frontend`, and
+`sfdev check frontend` for compilation, unit tests, lint, and formatting; they
+do not start an alternate app server.
 
 See the [frontend development guide](https://github.com/ricardo-cunha/streamfind/blob/main/frontend/README.md)
 and [sfdev guide](https://github.com/ricardo-cunha/streamfind/blob/main/scripts/README.md)

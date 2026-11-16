@@ -256,29 +256,17 @@ result stores, and logs. Never point a worktree test at another checkout's
 `tmp/` outputs, and never overwrite the main checkout's `tmp/packaged_build/`
 or release files from a worktree.
 
-- Assign each simultaneously tested worktree a unique service/Vite port pair.
-  Keep the primary checkout defaults (`8790` for the development service,
-  `5173` for Vite) and packaged service default (`8787`) reserved. Allocate
-  worktree slots from service ports `8791`–`8890` and Vite ports `5174`–`5273`
-  using the same slot number: slot 1 is service `8791` + Vite `5174`, slot 2
-  is `8792` + `5175`, and so on. Check that both ports are free and not assigned
-  to another active worktree before starting; never silently reuse another
-  worktree's pair.
-- For a development app, start it from the target worktree and pass both
-  assigned ports, for example:
-
-  ```powershell
-  sfdev run app --url http://127.0.0.1:8791 --vite-port 5174
-  ```
-
-  `sfdev run frontend` accepts the same options when connecting to an already
-  running service. The service URL selects the service port, and `--vite-port`
-  selects the Vite listener. Direct use of `frontend/tools/dev/start-dev.mjs`
-  can set `STREAMFIND_SERVICE_URL` and `STREAMFIND_VITE_PORT` instead.
-- Before browser testing, open the matching Vite URL (for example,
-  `http://127.0.0.1:5174/`) and verify both the Vite and service processes
-  belong to the intended worktree. Do not mistake another checkout's UI or
-  service for the worktree under test.
+- The packaged app is the only app verification target. Do not start a Vite
+  development server or a build-tree service to inspect UI changes. Refresh
+  frontend-only changes with `sfdev package --frontend-only`; use `sfdev
+  package` for native, worker, packaging, or full app changes.
+- Keep the primary packaged service port `8787` reserved. Allocate each
+  simultaneously tested worktree a unique service port from `8791`–`8890`.
+  Check that the port is free and not assigned to another active worktree
+  before starting; never silently reuse another worktree's port.
+- Build the package inside the target worktree, then start that package's CLI
+  service with its assigned port. Verify the app at that endpoint and confirm
+  the executable path belongs to the intended worktree/package.
 - For a packaged build or extracted release package, use that package's CLI
   to start its tray-owned service, preserving the normal app/MCP lifecycle and
   package resource resolution:
@@ -301,7 +289,7 @@ or release files from a worktree.
   tray, server, and MCP from one build/package therefore share one registry;
   another checkout or package cannot discover, attach to, or stop that service
   through its default registry. Ports remain machine-wide TCP resources, so
-  keep the allocated service/Vite pairs unique. An explicit
+  keep the allocated service ports unique. An explicit
   `STREAMFIND_RUNTIME_DIR` intentionally selects a shared/custom discovery
   scope. MCP can intentionally attach across scopes with
   `STREAMFIND_SERVICE_ENDPOINT`; when set, MCP does not auto-start its package's

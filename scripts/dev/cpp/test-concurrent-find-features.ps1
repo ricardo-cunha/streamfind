@@ -8,7 +8,7 @@ param(
     [string]$DatabasePath = '',
     [string]$LogPath = '',
     [string]$FixturePath = '',
-    [string]$ServiceEndpoint = 'http://127.0.0.1:8790'
+    [string]$ServiceEndpoint = 'http://127.0.0.1:8787'
 )
 
 Set-StrictMode -Version Latest

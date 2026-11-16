@@ -90,6 +90,7 @@ for the distribution notice and compatibility boundaries.
 The browser application is backed by the C++ service.
 Both native archives include the built static assets and launchers under `bin/`;
 `streamfind-app` opens the app and `streamfind` manages the shared service.
-For development, the app can be run from `frontend/` with the Vite launcher. It
-uses the C++ backend's public service boundary and does not contain a second
-persistence or domain-processing implementation. See [Web app](web-app.md).
+The app uses the C++ backend's public service boundary and does not contain a
+second persistence or domain-processing implementation. See [Web app](web-app.md)
+and [Plugin development](plugin-development.md) for package-based development
+verification.

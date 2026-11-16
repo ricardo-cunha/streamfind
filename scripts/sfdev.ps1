@@ -50,12 +50,9 @@ function Show-Help([string]$Topic) {
         'build all' = @('build all [--jobs N] [--dry-run]', 'Build the configured native build, then build frontend assets.', "Defaults to $platform. Requires both native configuration and frontend dependencies.")
         'test backend' = @('test backend [--list] [--filter REGEX] [--label REGEX] [--jobs N] [--dry-run]', 'List or run CTest tests in a native build.', "Defaults to $platform. Build the selected tests first. Use --list to inspect tests without running them.", "Example: sfdev test backend --filter '^streamfind_statistics_unit$'")
         'test frontend' = @('test frontend [--watch] [--dry-run] [-- ARGUMENTS]', 'Run Vitest once, or keep it running with --watch.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed.')
-        'test browser' = @('test browser --url URL [--dry-run]', 'Run the Playwright smoke check against a running frontend.', 'Install frontend dependencies and Playwright Chromium first.')
+        'test browser' = @('test browser [--url URL] [--dry-run]', 'Run the Playwright smoke check against the packaged app.', 'Build or refresh tmp/packaged_build first. Defaults to http://127.0.0.1:8787. Install frontend dependencies and Playwright Chromium first.')
         'check frontend' = @('check frontend [--dry-run]', 'Run the frontend build, lint, and formatting check in order.', 'Requires installed frontend dependencies. Stops at the first failed step.')
-        'run backend' = @('run backend [--url URL] [--dry-run]', 'Start a development service or use one that is already ready.', "Defaults to $platform and http://127.0.0.1:8790. Build the service and worker first.")
-        'run frontend' = @('run frontend [--url URL] [--vite-port PORT] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Defaults to service http://127.0.0.1:8790 and Vite port 5173.')
-        'run app' = @('run app [--url URL] [--vite-port PORT] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Defaults to service http://127.0.0.1:8790 and Vite port 5173. Press Ctrl+C to stop processes started by this command.')
-        'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked native-Windows test distribution under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
+        'package' = @('package [--frontend-only] [--dry-run]', 'Build or refresh the unpacked Windows app used for development verification under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only after UI changes to rebuild assets and update an existing package.')
         'clean' = @('clean --scope build|all-temp [--dry-run]', 'Remove the platform build tree or the contents of repository tmp/.', 'Use --dry-run to preview deletions. all-temp includes logs, test projects, packages, and release archives.')
         'script list' = @('script list [--json]', 'List public scripts under scripts/dev/ and show interpreter availability.', 'An available interpreter does not guarantee that the script has its required data or arguments.')
         'script info' = @('script info PATH', 'Show the interpreter, working directory, and invocation for a script.', 'Use a path from script list. Example: sfdev script info validate_native_dependencies.py')
@@ -102,7 +99,7 @@ try {
     $command = $args[0]
     $subject = ''
     $index = 1
-    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'run', 'sdk', 'release', 'plugin', 'workflows') {
+    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'sdk', 'release', 'plugin', 'workflows') {
         if ($args.Count -lt 2) { throw "Missing subcommand for $command" }
         $subject = $args[1]
         $index = 2
@@ -155,9 +152,6 @@ try {
         'test/browser' { 'url', 'dry-run' }
         'clean/' { 'scope', 'dry-run' }
         'check/frontend' { 'dry-run' }
-        'run/backend' { 'url', 'dry-run' }
-        'run/frontend' { 'url', 'vite-port', 'dry-run' }
-        'run/app' { 'url', 'vite-port', 'dry-run' }
         'package/' { 'frontend-only', 'dry-run' }
         'version/show' { }
         'version/bump' { 'dry-run' }
@@ -500,6 +494,7 @@ try {
         }
     }
     if ("$command/$subject" -eq 'test/browser') {
+        if (!$options.url) { $options.url = 'http://127.0.0.1:8787/' }
         $endpoint = $null
         if (![uri]::TryCreate($options.url, [UriKind]::Absolute, [ref]$endpoint) -or $endpoint.Scheme -notin 'http', 'https') {
             throw 'Specify an HTTP or HTTPS frontend URL with --url'
@@ -524,22 +519,6 @@ try {
         if ($options.url) { $workflowArguments += '-ServiceEndpoint', $options.url }
         if ($options.force) { $workflowArguments += '-Force' }
         $steps += New-Step $root $pwsh $workflowArguments
-    }
-    if ($command -eq 'run') {
-        $environment.STREAMFIND_DEV_BUILD_DIR = $tree
-        $environment.STREAMFIND_SERVICE_URL = $options.url ?? $env:STREAMFIND_SERVICE_URL ?? 'http://127.0.0.1:8790'
-        $environment.STREAMFIND_VITE_PORT = $env:STREAMFIND_VITE_PORT ?? '5173'
-        if ($options.ContainsKey('vite-port')) {
-            $vitePort = 0
-            if (![int]::TryParse([string]$options['vite-port'], [ref]$vitePort) -or $vitePort -lt 1 -or $vitePort -gt 65535) {
-                throw 'The --vite-port value must be an integer from 1 through 65535.'
-            }
-            $environment.STREAMFIND_VITE_PORT = [string]$vitePort
-        }
-        $arguments = @((Join-Path $frontend 'tools/dev/start-dev.mjs'))
-        if ($subject -eq 'backend') { $arguments += '--backend-only' }
-        if ($subject -eq 'frontend') { $arguments += '--frontend-only' }
-        $steps += New-Step $frontend $tools.node $arguments
     }
     if ($command -eq 'release' -and $subject -in 'verify', 'publish') {
         $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
