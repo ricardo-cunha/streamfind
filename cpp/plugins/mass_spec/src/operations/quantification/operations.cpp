@@ -5,9 +5,7 @@
 #include "utils/chromatograms.hpp"
 #include "utils/quantification.hpp"
 
-#include <chrono>
 #include <algorithm>
-#include <iomanip>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -21,21 +19,6 @@ namespace streamfind::mass_spec::quantification
 namespace detail
 {
 using Json = nlohmann::json;
-
-std::string utc_now()
-{
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-#ifdef _WIN32
-    gmtime_s(&tm, &time);
-#else
-    gmtime_r(&time, &tm);
-#endif
-    std::ostringstream out;
-    out << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-    return out.str();
-}
 
 void reject(const std::vector<utils::ValidationError> &errors)
 {
@@ -217,14 +200,13 @@ const std::vector<std::string> quantification_columns{
     "rt_error", "peak_area", "peak_height", "eic_size", "eic_rt", "eic_intensity", "qualifier_eic_size", "qualifier_eic_rt", "qualifier_eic_intensity", "response_metric", "response", "internal_standard_response", "response_ratio",
     "qualifier_response", "qualifier_ratio", "status", "quantifier_status", "internal_standard_status", "candidate_count",
     "qualifier_status", "included", "back_calculated_concentration", "residual", "relative_residual", "exclusion_reason",
-    "calculated_concentration", "final_concentration", "concentration_unit", "qualifier_ratio_pass", "accuracy_percent", "flags",
-    "created_at"};
+    "calculated_concentration", "final_concentration", "concentration_unit", "qualifier_ratio_pass", "accuracy_percent", "flags"};
 
 const std::vector<std::string> quantification_types{
     "string", "string", "string", "string", "integer", "real", "real", "boolean", "string", "string", "integer", "integer",
     "real", "real", "real", "real", "integer", "array", "array", "integer", "array", "array", "string", "real", "real", "real", "real", "real", "string", "string", "string",
-    "integer", "string", "boolean", "real", "real", "real", "string", "real", "real", "string", "boolean", "real", "string",
-    "timestamp"};
+    "integer", "string", "boolean", "real", "real", "real", "string", "real", "real", "string", "boolean", "real", "string"
+    };
 }
 
 Json set_quantification_plan(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -563,7 +545,6 @@ Json extract_response_rows(sdk::PluginProjectAccess &access, const Json &paramet
         }
         debug_line("Internal-standard response calculation completed");
         stage = "assembling quantificationTable";
-        for (auto &row : output) row["created_at"] = detail::utc_now();
         access.report_progress(0.90, "Quantification response rows assembled; continuing calibration");
     }
     catch (const std::exception &error)
@@ -774,20 +755,20 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method, cons
 const std::vector<std::string> calibration_model_columns{
     "target_id", "model", "weighting", "intercept_mode", "coefficient_0", "coefficient_1",
     "coefficient_2", "r_squared", "adjusted_r_squared", "rmse", "n_points", "range_min", "range_max",
-    "fit_status", "created_at"};
+    "fit_status"};
 
 const std::vector<std::string> calibration_model_types{
     "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "integer",
-    "real", "real", "string", "timestamp"};
+    "real", "real", "string"};
 
 const std::vector<std::string> calibration_point_columns{
     "target_id", "analysis", "peak_id", "calibration_level", "nominal_concentration", "response", "internal_standard_response",
     "response_ratio", "included", "back_calculated_concentration", "residual", "relative_residual",
-    "exclusion_reason", "created_at"};
+    "exclusion_reason"};
 
 const std::vector<std::string> calibration_point_types{
     "string", "string", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "real",
-    "real", "string", "timestamp"};
+    "real", "string"};
 }
 
 namespace detail
@@ -801,11 +782,9 @@ std::pair<Json, Json> fit_quantification_calibration(const std::map<std::string,
     {
         if (detail::text_value(method, "role") != "analyte") continue;
         auto fit = detail::fit_target(target_id, method, responses, minimum_points);
-        fit.model["created_at"] = detail::utc_now();
         models.push_back(fit.model);
         for (auto &point : fit.points)
         {
-            point["created_at"] = detail::utc_now();
             points.push_back(std::move(point));
         }
     }
@@ -889,7 +868,6 @@ Json quantify_samples(const std::map<std::string, Json> &methods, const Json &re
             for (std::size_t i = 0; i < flags.size(); ++i) { if (i != 0) joined << ','; joined << flags[i]; }
             result["flags"] = joined.str();
         }
-        result["created_at"] = detail::utc_now();
         output.push_back(std::move(result));
     }
     return output;
@@ -945,7 +923,6 @@ Json quantify(sdk::PluginProjectAccess &access, const Json &parameters)
         {
             for (const auto &column : detail::quantification_columns)
                 if (!row.contains(column)) row[column] = Json(nullptr);
-            row["created_at"] = detail::utc_now();
         }
         stage = "publishing quantification table";
         access.emit_table_rows("quantificationTable", detail::quantification_columns,

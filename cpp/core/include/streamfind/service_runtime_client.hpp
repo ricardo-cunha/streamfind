@@ -28,7 +28,8 @@ STREAMFIND_CORE_API ServiceProjectAttachment attach_project(
 
 STREAMFIND_CORE_API ServiceProjectAttachment create_project(
     const std::filesystem::path &database_path,
-    const data_proxy::Json &metadata = data_proxy::Json::object());
+    const data_proxy::Json &metadata = data_proxy::Json::object(),
+    const data_proxy::Json &workflow_metadata = data_proxy::Json::object());
 
 STREAMFIND_CORE_API data_proxy::Json get_workflow(const ServiceProjectAttachment &attachment);
 STREAMFIND_CORE_API data_proxy::Json resolve_workflow_inputs(

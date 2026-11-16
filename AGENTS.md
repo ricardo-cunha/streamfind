@@ -7,6 +7,54 @@
 - Do not modify third-party or vendored source under `cpp/vendor/` unless explicitly requested.
 - Run the narrowest relevant validation after each change and report concrete results.
 
+## `sfdev` Development Framework
+
+Use `sfdev` as the standard interface for repository setup, native and
+frontend builds, supported tests, app startup, package creation, and releases.
+The command implementation is `scripts/sfdev.ps1`; the detailed user and agent
+guide is [`scripts/README.md`](scripts/README.md). Read that guide when a task
+uses an unfamiliar workflow, and check `sfdev help <command>` before invoking
+commands with effects you have not used in the current checkout.
+
+- `sfdev` requires PowerShell 7 or later. Windows PowerShell 5.1 is not
+  supported. In automation or when the shell alias is unavailable, invoke it
+  with `pwsh -NoProfile -File scripts/sfdev.ps1 <arguments>` from the checkout
+  root. `sfdev env shell` defines a checkout-local alias for that shell only.
+- At the start of development, inspect `sfdev env show` and run the relevant
+  `sfdev doctor --workflow native|frontend|scripts`. Use
+  `sfdev setup --components ...` to provision supported prerequisites; do not
+  invent tool paths or use system Python for repository scripts.
+- Use the narrowest supported command (`sfdev build backend --target ...`, a
+  CTest filter, a frontend command, or a development script) that covers the
+  change. `sfdev --dry-run` is not a global flag: use it only in the position
+  shown by that command's help. Depending on the command, dry-run prints the
+  planned process steps and environment or the cleanup targets. It does not
+  execute those steps or deletions, and does not prove that a planned build,
+  test, or service operation will succeed.
+- Discover development checks with `sfdev script list`, inspect their
+  invocation with `sfdev script info PATH`, and run them with
+  `sfdev script run PATH -- ARGUMENTS`. Script IDs are relative to
+  `scripts/dev/`; `--dry-run` belongs before the argument separator `--`.
+  Python scripts run with the repository `.venv`.
+- `sfdev workflows nta|impurities|quantification` creates a validated,
+  editable workflow project through MCP in an already-running service. It
+  writes projects under `tmp/projects/` and does not execute their operations.
+  `--url` selects a service endpoint, `--project-name` selects the project
+  basename, and `--force` deletes the existing DuckDB, sibling `.data` store,
+  and workflow sidecar before replacement. Ensure the project is closed in the
+  app first. Do not assume a dry run has created a project or started a service.
+- Keep generated projects, logs, build trees, and packages in this checkout's
+  `tmp/`. For worktrees, follow the isolated paths and port allocation in
+  [Worktree sandbox testing](#worktree-sandbox-testing); never use another
+  checkout's `tmp/` outputs or mistake its running app for this worktree.
+- Use `sfdev clean` only when cleanup is part of the task. Preview destructive
+  cleanup with `sfdev clean --scope ... --dry-run`; `all-temp` removes all
+  contents of `tmp/`, including projects, logs, packages, and release archives.
+
+For command examples, setup details, logging, dry-run output, package and
+release flows, see [`scripts/README.md`](scripts/README.md). That guide and
+`sfdev help` should stay aligned with the implementation.
+
 ## C++ Project Rules
 
 - On Windows, build and package the C++ core and native plugins with the MSYS2 MinGW-w64 UCRT64 GCC stack: GCC/G++, CMake, Ninja, and Arrow development packages. Prefer an existing system MSYS2 installation; if unavailable, provision MSYS2 and its packages under `%USERPROFILE%\.streamfind\tools\msys2` (or `%STREAMFIND_HOME%\tools\msys2`). Resolve the root through `STREAMFIND_MSYS2_ROOT`; do not hard-code a machine-specific MSYS2 path. Do not use MSVC, Visual Studio environment initialization, `cl.exe`, or the MSVC linker for streamfind core/plugin builds or release distributions. Package matching MinGW runtime DLLs under the runtime vendor tree when required.
@@ -231,17 +279,33 @@ or release files from a worktree.
   `http://127.0.0.1:5174/`) and verify both the Vite and service processes
   belong to the intended worktree. Do not mistake another checkout's UI or
   service for the worktree under test.
-- For a packaged build or extracted release package, run that package's
-  `bin/streamfind-server[.exe]` with the worktree's assigned service port as
-  its port argument, from that package's `bin/` directory, then test that
-  endpoint (for example, `http://127.0.0.1:8791/`). The server accepts a port
-  override, so package-relative resource resolution is tested without changing
-  packaged configuration. Use the package built or extracted inside the
-  current worktree's `tmp/`.
-  To test the packaged app launcher on that same assigned port, first run
-  `bin/streamfind[.exe] service start --port <assigned-service-port>`, then
-  launch `bin/streamfind-app[.exe]`; the app attaches to the active service's
-  discovered endpoint. Stop that service when the test is finished.
+- For a packaged build or extracted release package, use that package's CLI
+  to start its tray-owned service, preserving the normal app/MCP lifecycle and
+  package resource resolution:
+
+  ```powershell
+  bin\streamfind.exe service start --port <assigned-service-port>
+  bin\streamfind.exe service status
+  ```
+
+  Then launch `bin\streamfind-app.exe` or that package's `bin\streamfind-mcp.exe`.
+  Both attach to the same service scope and published endpoint. On Linux, use
+  `bin/streamfind service start --port <assigned-service-port>` and
+  `bin/streamfind-app` / `bin/streamfind-mcp`. Stop the service through the
+  same package CLI when finished. Use the package built or extracted inside
+  the current worktree's `tmp/`. Running `streamfind-server` directly is for
+  server-specific development checks; it does not provide the tray-managed
+  packaged lifecycle.
+- Service discovery and tray-manager ownership are scoped automatically to
+  the directory containing the running StreamFind executables. The CLI, app,
+  tray, server, and MCP from one build/package therefore share one registry;
+  another checkout or package cannot discover, attach to, or stop that service
+  through its default registry. Ports remain machine-wide TCP resources, so
+  keep the allocated service/Vite pairs unique. An explicit
+  `STREAMFIND_RUNTIME_DIR` intentionally selects a shared/custom discovery
+  scope. MCP can intentionally attach across scopes with
+  `STREAMFIND_SERVICE_ENDPOINT`; when set, MCP does not auto-start its package's
+  service.
 - Keep any temporary project database and its sibling `.data` result store in
   the current worktree's `tmp/projects/`. Do not open a user's live project for
   routine worktree validation.

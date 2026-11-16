@@ -243,7 +243,11 @@ Json tools() {
         {"properties", Json{{"name", Json{{"type", "string"}, {"minLength", 1}}},
                              {"description", Json{{"type", "string"}, {"minLength", 1}}}}},
         {"description", "User-defined workflow metadata. Definition concurrency is tracked by definition_revision; workflow version tracks result provenance."}};
-    const Json create_schema = schema(Json{{"database_path", database_path}, {"workflow_metadata", workflow_metadata_schema}},
+    const Json project_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
+        {"description", "Project-owned metadata, including the project name shown in the workspace."}};
+    const Json create_schema = schema(Json{{"database_path", database_path},
+                                           {"metadata", project_metadata_schema},
+                                           {"workflow_metadata", workflow_metadata_schema}},
                                       Json::array({"database_path"}));
     const Json workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
                                         Json::array({"database_path"}));
@@ -604,7 +608,8 @@ Json Session::handle(const Json &request) {
             const auto database_path = arguments.at("database_path").get<std::string>();
             if (name == "create") {
                 const auto attachment = service::create_project(
-                    database_path, arguments.value("metadata", Json::object()));
+                    database_path, arguments.value("metadata", Json::object()),
+                    arguments.value("workflow_metadata", Json::object()));
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment))}};
             }
             const auto attachment = service::attach_project(database_path);

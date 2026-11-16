@@ -13,7 +13,6 @@
 #include "readers/reader.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <set>
 #include <cmath>
 #include <ctime>
@@ -287,20 +286,6 @@ namespace streamfind::mass_spec::nta::utils
     }
     float calculate_theoretical_plates(float rt, float width) { return width && rt ? 5.54f * std::pow(rt / width, 2) : 0; }
 
-    std::string utc_now()
-    {
-        const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        std::tm utc{};
-#ifdef _WIN32
-        gmtime_s(&utc, &now);
-#else
-        gmtime_r(&now, &utc);
-#endif
-        char buffer[20]{};
-        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &utc);
-        return buffer;
-    }
-
     std::string text(const nlohmann::json &row, const char *column)
     {
         const auto it = row.find(column);
@@ -374,7 +359,7 @@ namespace streamfind::mass_spec::nta::utils
             "annotation_bromine_to_carbon", "annotation_hydrogen_to_bromine", "annotation_bromine_mass_percent",
             "annotation_iodine_to_carbon", "annotation_hydrogen_to_iodine", "annotation_iodine_mass_percent", "annotation_halogenation_score",
             "component_size", "component_rt_center", "component_rt_spread", "component_density", "component_mean_correlation", "component_best_partner",
-            "component_max_correlation", "component_mean_correlation_to_component", "component_membership_score", "component_is_core", "component_bridge_flag", "created_at"};
+            "component_max_correlation", "component_mean_correlation_to_component", "component_membership_score", "component_is_core", "component_bridge_flag"};
         return columns;
     }
 
@@ -418,7 +403,7 @@ namespace streamfind::mass_spec::nta::utils
             {"component_size", r.component_size}, {"component_rt_center", r.component_rt_center}, {"component_rt_spread", r.component_rt_spread},
             {"component_density", r.component_density}, {"component_mean_correlation", r.component_mean_correlation}, {"component_best_partner", r.component_best_partner},
             {"component_max_correlation", r.component_max_correlation}, {"component_mean_correlation_to_component", r.component_mean_correlation_to_component},
-            {"component_membership_score", r.component_membership_score}, {"component_is_core", r.component_is_core}, {"component_bridge_flag", r.component_bridge_flag}, {"created_at", utc_now()}};
+            {"component_membership_score", r.component_membership_score}, {"component_is_core", r.component_is_core}, {"component_bridge_flag", r.component_bridge_flag}};
     }
 
     const std::vector<std::string> &suspects_columns()
@@ -432,7 +417,7 @@ namespace streamfind::mass_spec::nta::utils
     }
     const std::vector<std::string> &transformation_products_columns()
     {
-        static const std::vector<std::string> columns = {"analysis", "feature_group", "precursor_feature_group", "main_precursor_feature_group", "assignment_rank", "name", "formula", "mass", "smiles", "inchi", "inchikey", "xlogp", "transformation", "precursor_name", "precursor_formula", "precursor_mass", "precursor_smiles", "precursor_inchi", "precursor_inchikey", "precursor_xlogp", "main_precursor_name", "main_precursor_formula", "main_precursor_mass", "main_precursor_smiles", "main_precursor_inchi", "main_precursor_inchikey", "main_precursor_xlogp", "cosine_similarity", "main_precursor_cosine_similarity", "rt_plausibility", "main_precursor_rt_plausibility", "assignment_score", "network_level", "assignment_status", "created_at"};
+        static const std::vector<std::string> columns = {"analysis", "feature_group", "precursor_feature_group", "main_precursor_feature_group", "assignment_rank", "name", "formula", "mass", "smiles", "inchi", "inchikey", "xlogp", "transformation", "precursor_name", "precursor_formula", "precursor_mass", "precursor_smiles", "precursor_inchi", "precursor_inchikey", "precursor_xlogp", "main_precursor_name", "main_precursor_formula", "main_precursor_mass", "main_precursor_smiles", "main_precursor_inchi", "main_precursor_inchikey", "main_precursor_xlogp", "cosine_similarity", "main_precursor_cosine_similarity", "rt_plausibility", "main_precursor_rt_plausibility", "assignment_score", "network_level", "assignment_status"};
         return columns;
     }
 
@@ -1520,18 +1505,16 @@ namespace streamfind::mass_spec::nta::utils::detail
             const auto assigned = transformation_product_analysis_indices(data, products);
             const auto &names = data.analysis_names();
             Json rows = Json::array();
-            auto columns = transformation_products_columns();
-            columns.push_back("created_at");
+            const auto &columns = transformation_products_columns();
             for (int i = 0; i < products.size(); ++i)
             {
                 const auto cells = transformation_product_cells(names[static_cast<size_t>(assigned[static_cast<size_t>(i)])], products.get_transformation_product(i));
                 Json row = Json::object();
                 for (size_t c=0; c<cells.size(); ++c) if (cells[c]) row[columns[c]] = *cells[c];
-                row["created_at"] = ::streamfind::mass_spec::nta::utils::utc_now();
                 rows.push_back(std::move(row));
             }
             access.emit_table_rows("transformationProductsTable", columns,
-                                   {"string","string","string","string","integer","string","string","real","string","string","string","real","string","string","string","real","string","string","string","real","string","string","real","string","string","string","real","real","real","real","real","integer","string","timestamp"}, rows);
+                                   {"string","string","string","string","integer","string","string","real","string","string","string","real","string","string","string","real","string","string","string","real","string","string","real","string","string","string","real","real","real","real","real","integer","string"}, rows);
         }
 
         // Write the MetFrag LocalCSV database from the JSON `database` parameter rows

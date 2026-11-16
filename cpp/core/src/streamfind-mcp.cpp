@@ -18,6 +18,7 @@
 #include "streamfind/core_operations.hpp"
 #include "streamfind/mcp.hpp"
 #include "streamfind/plugin_configuration.hpp"
+#include "streamfind/service/service_discovery.hpp"
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
 #include "streamfind/vendor_runtime.hpp"
@@ -51,6 +52,8 @@ std::filesystem::path executable_path(int argc, char **argv) {
 }
 
 void ensure_local_service(const std::filesystem::path &mcp_executable) {
+    const auto *endpoint = std::getenv("STREAMFIND_SERVICE_ENDPOINT");
+    if (endpoint != nullptr && *endpoint != '\0') return;
 #ifdef _WIN32
     const auto cli = mcp_executable.parent_path() / "streamfind.exe";
     SECURITY_ATTRIBUTES security{};
@@ -284,6 +287,7 @@ int main(int argc, char **argv) {
     std::filesystem::path configuration_path;
     try {
         executable = streamfind::mcp::detail::executable_path(argc, argv);
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
         configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");

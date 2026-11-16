@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
@@ -131,7 +132,10 @@ public:
     }
 
     int run(HINSTANCE instance) {
-        mutex_ = CreateMutexW(nullptr, TRUE, L"Local\\StreamFindTrayManager");
+        const auto scope_hash = std::hash<std::wstring>{}(
+            streamfind::service::ServiceDiscovery::runtime_directory().wstring());
+        const auto mutex_name = L"Local\\StreamFindTrayManager-" + std::to_wstring(scope_hash);
+        mutex_ = CreateMutexW(nullptr, TRUE, mutex_name.c_str());
         if (mutex_ == nullptr || GetLastError() == ERROR_ALREADY_EXISTS) return 0;
         ensure_service();
         WNDCLASSW window_class{};
@@ -487,7 +491,10 @@ private:
 }  // namespace streamfind::tray::detail
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int) {
-    try { return streamfind::tray::detail::TrayApplication{}.run(instance); }
+    try {
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
+        return streamfind::tray::detail::TrayApplication{}.run(instance);
+    }
     catch (const std::exception &error) { MessageBoxA(nullptr, error.what(), "streamfind tray failed", MB_OK | MB_ICONERROR); return 1; }
 }
 
@@ -509,6 +516,7 @@ int supervise() {
     std::signal(SIGINT, request_stop);
     std::signal(SIGTERM, request_stop);
     const auto manager = manager_path();
+    streamfind::service::ServiceDiscovery::configure_runtime_scope();
     const auto server = manager.parent_path() / "streamfind-server";
     const auto configuration = streamfind::load_service_configuration(manager.parent_path() / "streamfind.json");
     const auto runtime_directory = streamfind::service::ServiceDiscovery::runtime_directory();

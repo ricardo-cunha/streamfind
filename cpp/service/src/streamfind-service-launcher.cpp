@@ -1,5 +1,6 @@
 #ifndef _WIN32
 #include <cstdlib>
+#include "streamfind/service/service_discovery.hpp"
 #include "streamfind/service_runtime_client.hpp"
 #include <filesystem>
 #include <iostream>
@@ -67,6 +68,7 @@ std::string running_service_endpoint() {
 
 int main(int argc, char **argv) {
     try {
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
         if (argc > 1 && std::string(argv[1]) == "service")
             return streamfind::service::launcher_detail::run_service_command(argc, argv);
         streamfind::service::launcher_detail::start_service(argv[0]);

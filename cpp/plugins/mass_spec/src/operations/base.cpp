@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <cmath>
@@ -50,20 +49,6 @@ namespace streamfind::mass_spec::base
             auto last = value.end();
             while (last != first && std::isspace(static_cast<unsigned char>(*(last - 1)))) --last;
             return std::string(first, last);
-        }
-
-        std::string utc_now()
-        {
-            const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            std::tm utc{};
-#ifdef _WIN32
-            gmtime_s(&utc, &now);
-#else
-            gmtime_r(&now, &utc);
-#endif
-            char buffer[20]{};
-            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &utc);
-            return buffer;
         }
 
         void harmonize_chromatogram_ids(::mass_spec::reader::MASS_SPEC_CHROMATOGRAMS_HEADERS &headers)
@@ -152,10 +137,10 @@ namespace streamfind::mass_spec::base
             "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
             "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
-            "start_rt", "end_rt", "has_ion_mobility", "concentration", "created_at"};
+            "start_rt", "end_rt", "has_ion_mobility", "concentration"};
         const std::vector<std::string> analysis_types = {
             "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
-            "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "timestamp"};
+            "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real"};
         const std::vector<std::string> spectra_columns = {
             "analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
             "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
@@ -197,7 +182,7 @@ namespace streamfind::mass_spec::base
                                          std::to_string(summary.number_spectra), std::to_string(summary.number_chromatograms),
                                          std::to_string(summary.number_spectra_binary_arrays), std::to_string(summary.min_mz),
                                          std::to_string(summary.max_mz), std::to_string(summary.start_rt), std::to_string(summary.end_rt),
-                                         summary.has_ion_mobility ? "true" : "false", std::nullopt, utc_now()});
+                                         summary.has_ion_mobility ? "true" : "false", std::nullopt});
                 Json added_analysis = {{"analysis", analysis}, {"file_path", path.string()},
                                        {"analysis_index", descriptor.analysis_index},
                                        {"source_analysis_number", descriptor.source_analysis_number},
@@ -331,10 +316,10 @@ namespace streamfind::mass_spec::base
             "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
             "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
-            "start_rt", "end_rt", "has_ion_mobility", "concentration", "created_at"};
+            "start_rt", "end_rt", "has_ion_mobility", "concentration"};
         const std::vector<std::string> types = {
             "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
-            "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "timestamp"};
+            "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real"};
         std::vector<std::regex> patterns;
         std::vector<std::string> literal_patterns;
         for (const auto &pattern_value : parameters.at("analysis_names"))
@@ -398,10 +383,10 @@ namespace streamfind::mass_spec::base
             "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
             "number_spectra", "number_chromatograms", "number_spectra_binary_arrays", "min_mz", "max_mz",
-            "start_rt", "end_rt", "has_ion_mobility", "concentration", "created_at"};
+            "start_rt", "end_rt", "has_ion_mobility", "concentration"};
         const std::vector<std::string> analysis_types = {
             "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
-            "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "timestamp"};
+            "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real"};
 
         Json emit_analysis_copy(sdk::PluginProjectAccess &access, const Json &parameters,
                                 const Json &source, const char *changed_key = nullptr,

@@ -5,13 +5,10 @@
 #include "utils/chromatograms.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <functional>
-#include <iomanip>
 #include <map>
 #include <regex>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -28,10 +25,10 @@ namespace streamfind::mass_spec::chromatograms
         const std::vector<std::string> point_columns = {
             "analysis", "index", "chromatogram_id", "polarity", "precursor_mz", "activation_ce",
             "product_mz", "signal_type", "chromatogram_type", "detector", "channel", "wavelength_nm", "units",
-            "rt", "raw_intensity", "baseline", "intensity", "created_at"};
+            "rt", "raw_intensity", "baseline", "intensity"};
         const std::vector<std::string> point_types = {
             "string", "integer", "string", "integer", "real", "real", "real", "string", "string", "string",
-            "string", "real", "string", "real", "real", "real", "real", "timestamp"};
+            "string", "real", "string", "real", "real", "real", "real"};
         const std::vector<std::string> peak_columns = {
             "analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end",
             "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm",
@@ -39,7 +36,7 @@ namespace streamfind::mass_spec::chromatograms
             "integration_status", "manual_override", "chromatogram_id", "polarity", "precursor_mz",
             "product_mz", "activation_ce", "signal_type", "chromatogram_type", "detector", "channel",
             "wavelength_nm", "units", "eic_size", "eic_rt", "eic_intensity", "eic_raw_intensity",
-            "eic_baseline", "created_at"};
+            "eic_baseline"};
         const std::vector<std::string> peak_types = {
             "string",  // analysis
             "integer", // chromatogram_index
@@ -78,8 +75,7 @@ namespace streamfind::mass_spec::chromatograms
             "array",   // eic_rt
             "array",   // eic_intensity
             "array",   // eic_raw_intensity
-            "array",   // eic_baseline
-            "timestamp"};
+            "array"};   // eic_baseline
 
         Json analysis_name_parameters(const Json &parameters, const Json &analyses)
         {
@@ -96,21 +92,6 @@ namespace streamfind::mass_spec::chromatograms
             return result;
         }
 
-        std::string utc_now()
-        {
-            const auto now = std::chrono::system_clock::now();
-            const auto time = std::chrono::system_clock::to_time_t(now);
-            std::tm tm{};
-#ifdef _WIN32
-            gmtime_s(&tm, &time);
-#else
-            gmtime_r(&time, &tm);
-#endif
-            std::ostringstream out;
-            out << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-            return out.str();
-        }
-
         bool selected(const Json &parameters, const Json &row)
         {
             if (!utils::selected_analysis(parameters, row))
@@ -125,8 +106,6 @@ namespace streamfind::mass_spec::chromatograms
 
         void emit_points(sdk::PluginProjectAccess &access, Json rows)
         {
-            for (auto &row : rows)
-                row["created_at"] = utc_now();
             access.emit_table_rows("chromatogramsTable", point_columns, point_types, rows);
         }
 
@@ -434,8 +413,6 @@ namespace streamfind::mass_spec::chromatograms
                 output.push_back(std::move(row));
             }
         }
-        for (auto &row : output)
-            row["created_at"] = utc_now();
         access.emit_table_rows("chromatogramPeaksTable", peak_columns, peak_types, output);
         return Json{{"status", "finished"}, {"peaks", output.size()}};
     }

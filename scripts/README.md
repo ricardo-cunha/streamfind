@@ -9,6 +9,35 @@ Run commands from the repository root unless a command says otherwise. The
 canonical version is in [`VERSION`](../VERSION), and the development rules and
 temporary-file policy are in [`AGENTS.md`](../AGENTS.md).
 
+`sfdev.ps1` resolves its checkout from the script's own location, not the
+terminal's current directory. You can invoke a worktree's script by a relative
+path while standing in the main checkout, for example
+`pwsh -NoProfile -File .worktrees/mass-spec-expansion/scripts/sfdev.ps1 env show`;
+its build trees, projects, packages, and logs remain under that worktree.
+
+## Quick start for AI agents
+
+Use this sequence at the beginning of a coding task:
+
+```powershell
+sfdev env show
+sfdev doctor --workflow scripts
+sfdev help <command>
+```
+
+Then run only the setup and validation needed for the task. For example,
+`sfdev doctor --workflow native` checks native build tools, while
+`sfdev doctor --workflow frontend` checks the frontend toolchain. If the
+`sfdev` shell function is unavailable, call the same framework directly:
+`pwsh -NoProfile -File scripts/sfdev.ps1 <command> ...`.
+
+Before a command that removes files, starts a service, replaces a package, or
+creates a release, inspect its `sfdev help` entry and use `--dry-run` when that
+command supports it. Depending on the command, dry-run prints planned process
+steps and environment or cleanup targets. It does not execute the planned
+steps or deletions, and it does not guarantee that a build, test, or service
+operation will succeed. Do not infer that `--dry-run` is accepted globally.
+
 ## 1. Install and start `sfdev`
 
 `sfdev` requires **PowerShell 7 or later** (`pwsh`) on both Windows and Linux.
@@ -229,6 +258,21 @@ sfdev test backend --filter '^streamfind_statistics_unit$' --dry-run
 
 Build, test, and script-run logs are written under `tmp/logs/`.
 
+For reusable editable test projects, use the purpose-built workflow builders:
+
+```powershell
+sfdev workflows nta
+sfdev workflows impurities
+sfdev workflows quantification
+```
+
+They call the native MCP interface and require an already-running StreamFind
+service. The commands validate and save a workflow in a new project under
+`tmp/projects/`; they do not execute operations. Use
+`sfdev help workflows` for `--project-name`, `--url`, and `--force` behavior,
+and see [`scripts/dev/README.md`](dev/README.md) for the data and template
+sources. These commands do not start or stop the service.
+
 ## 5. Package the app for manual testing
 
 The unpacked Windows test distribution is separate from the native build trees
@@ -303,29 +347,47 @@ only the unpacked Windows manual-test package and is never a release asset.
 
 ## 8. A repeatable workflow for AI agents and automation
 
-Agents should use `sfdev` as the shared interface rather than inventing
-toolchain paths or invoking an unrelated legacy script. This makes actions
-reproducible and lets a human inspect the same plan and logs.
+`sfdev` is the public orchestration layer over the repository's build, release,
+and development scripts. Use it instead of inventing tool paths or composing
+ad-hoc build commands. When a needed action is not exposed by `sfdev`, use the
+owning documented script, and keep new development scripts under
+`scripts/dev/`.
 
-1. Start at the repository root and inspect `sfdev env show` and the relevant
-   `sfdev doctor --workflow ...` result.
-2. Read `sfdev help <command>` before using an unfamiliar command. For a
-   development data script, use `sfdev script list` and `sfdev script info`
-   first to learn its arguments and interpreter.
-3. Preview consequential or destructive commands with `--dry-run`. Review the
-   resolved directory, executable, arguments, and environment before running.
-4. Choose the narrowest command that validates the change: a CMake target,
-   CTest filter/label, frontend check, or one development script.
-5. Keep generated builds, package outputs, test projects, and logs under
-   `tmp/`. Keep large-data checks out of CTest and official native test folders.
-6. Report the command run, whether it completed, and the relevant log path
-   under `tmp/logs/`. Do not report a test or release as successful unless its
-   command completed successfully.
+1. Confirm the checkout and its tool resolution with `sfdev env show`. Check
+   only the relevant workflows with `sfdev doctor --workflow native`,
+   `frontend`, or `scripts`. Do not install dependencies preemptively.
+2. Read `sfdev help <command>` for prerequisites, exact option names, and
+   destructive effects. For script work, discover the script ID with
+   `sfdev script list`, inspect it with `sfdev script info PATH`, and check
+   forwarded arguments with the script's own help.
+3. If supported, preview with `--dry-run`. Confirm the resolved checkout,
+   build tree, package/project destination, service endpoint, and port before
+   running. A dry run only previews the plan; it is not a build, test, or
+   service health check.
+4. Run the narrowest useful action: a native target, CTest filter or label,
+   frontend check, one development script, or one workflow builder. A workflow
+   builder creates a validated project; an explicit workflow-run command is
+   still needed to execute its operations.
+5. Keep generated builds, packages, projects, data-backed checks, and logs in
+   the current checkout's `tmp/`. Use only that checkout's outputs when
+   working in a worktree. Follow the port allocation and process-ownership
+   checks in `AGENTS.md` before browser or packaged-app validation.
+6. Report the exact command, completion status, and relevant `tmp/logs/` path.
+   Do not claim success if the command returned a nonzero exit code or only
+   completed a dry run.
 
 For orchestration, `--json` is available on supported inspection and
 execution commands. It provides structured status and log-path information;
-command output is sent to stderr in JSON mode. Check `sfdev help <command>` for
-the exact options of that command.
+child command output is sent to stderr in JSON mode so stdout remains a JSON
+status object. `--json` and `--dry-run` are command-specific; check
+`sfdev help <command>` for the exact options. Script arguments are passed only
+after `--`, while `sfdev` options such as `--dry-run` go before that separator.
+
+When extending `sfdev`, update the parser, its built-in help, and this guide in
+the same change. Keep build and release implementations in their owning
+`scripts/build/` or `scripts/release/` directories; `sfdev` should compose or
+invoke those implementations rather than duplicate them. Add a focused
+example to `scripts/dev/README.md` when a new development helper is introduced.
 
 ## 9. Build, package, release, and cleanup locations
 
@@ -368,6 +430,7 @@ sfdev clean --scope all-temp --dry-run
 | `sfdev check frontend` | Build, lint, and format-check frontend code |
 | `sfdev run backend\|frontend\|app` | Start development service and/or Vite |
 | `sfdev script list\|info\|run` | Discover and run development-stage scripts |
+| `sfdev workflows nta\|impurities\|quantification` | Create validated editable workflow projects through MCP |
 | `sfdev package` | Build or refresh the unpacked Windows test package |
 | `sfdev sdk build` / `sfdev plugin ...` | Build a plugin SDK or work on an external plugin |
 | `sfdev version show\|bump` | Inspect or advance the canonical version |

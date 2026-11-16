@@ -14,7 +14,6 @@ sfcore:projectTable
     sf:hasColumn
         sfcore:projectMetadataColumn,
         sfcore:projectWorkflowColumn,
-        sfcore:createdAtColumn,
         sfcore:schemaVersionColumn,
         sfcore:frameworkVersionColumn .
 
@@ -75,8 +74,7 @@ sfcore:auditTrailTable
     sf:hasColumn
         sfcore:operationTypeColumn,
         sfcore:objectTypeColumn,
-        sfcore:operationDetailsColumn,
-        sfcore:createdAtColumn .
+        sfcore:operationDetailsColumn .
 
 sfcore:workflowExecutionTable
     a sf:Table ;
@@ -97,7 +95,6 @@ sfcore:workflowExecutionTable
         sfcore:startedAtColumn,
         sfcore:completedAtColumn,
         sfcore:executionErrorColumn,
-        sfcore:createdAtColumn,
         sfcore:updatedAtColumn .
 
 sfcore:workflowExecutionStepTable

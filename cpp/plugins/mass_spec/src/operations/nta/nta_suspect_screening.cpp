@@ -395,7 +395,6 @@ namespace streamfind::mass_spec::nta
     api::NTA_INTERNAL_STANDARD_ROW suspect_to_internal_standard(const api::NTA_SUSPECT_ROW &suspect)
     {
       api::NTA_INTERNAL_STANDARD_ROW row;
-      row.created_at = suspect.created_at;
       row.analysis = suspect.analysis;
       row.feature = suspect.feature;
       row.feature_group = suspect.feature_group;

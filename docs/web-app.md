@@ -67,15 +67,20 @@ From a terminal, use:
 
 The packaged service prefers loopback port `8787`. If another application is
 using it, streamfind automatically selects an available port in the next 128
-ports and reports the selected endpoint in `service list`. The app launcher
-opens the endpoint published by the running service. To require a particular
-port, use `streamfind service start --port <port>`; this explicit choice fails
-with a clear error if the port is unavailable. The behavior can be configured
-with `server.automatic_port_fallback` in `bin/streamfind.json`.
+ports and reports the selected endpoint in `service list`. Service discovery
+and tray ownership are scoped to the directory containing the package
+executables, so the app and MCP launched from this package share its service
+without attaching to another checkout's service. To require a particular port,
+use `streamfind service start --port <port>`; this explicit choice fails with a
+clear error if the port is unavailable. The behavior can be configured with
+`server.automatic_port_fallback` in `bin/streamfind.json`.
 
-The MCP executable starts or attaches to this same manager when it starts. It
-does not stop the shared server when the MCP client disconnects or exits. The
-app and MCP therefore share projects and active runs through one server.
+The MCP executable starts or attaches to this same package-scoped manager when
+it starts. It does not stop the shared server when the MCP client disconnects
+or exits. The app and MCP therefore share projects and active runs through one
+server. To deliberately attach an MCP process to another service scope, set
+`STREAMFIND_SERVICE_ENDPOINT` to that service's endpoint; this suppresses local
+service auto-start.
 
 ## Linux release
 

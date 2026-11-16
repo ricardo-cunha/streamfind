@@ -87,8 +87,7 @@ sfms:analysesTable
         sfms:startRtColumn,
         sfms:endRtColumn,
         sfms:hasIonMobilityColumn,
-        sfms:concentrationColumn,
-        sfcore:createdAtColumn .
+        sfms:concentrationColumn .
 
 sfms:spectraHeadersTable
     a sf:Table ;
@@ -178,8 +177,7 @@ sfms:chromatogramsTable
         sfms:rtColumn,
         sfms:rawIntensityColumn,
         sfms:baselineColumn,
-        sfms:intensityColumn,
-        sfcore:createdAtColumn .
+        sfms:intensityColumn .
 
 sfms:chromatogramPeaksTable
     a sf:Table ;
@@ -228,8 +226,7 @@ sfms:chromatogramPeaksTable
         sfms:eicBaselineColumn,
         sfms:integrationAlgorithmColumn,
         sfms:integrationStatusColumn,
-        sfms:manualOverrideColumn,
-        sfcore:createdAtColumn .
+        sfms:manualOverrideColumn .
 
 sfms:quantificationMethodTable
     a sf:Table ;
@@ -343,8 +340,7 @@ sfms:quantificationTable
         sfms:concentrationUnitColumn,
         sfms:qualifierRatioPassColumn,
         sfms:accuracyPercentColumn,
-        sfms:flagsColumn,
-        sfcore:createdAtColumn .
+        sfms:flagsColumn .
 
 sfms:quantificationCalibrationModelsTable
     a sf:Table ;
@@ -369,8 +365,7 @@ sfms:quantificationCalibrationModelsTable
         sfms:nPointsColumn,
         sfms:rangeMinColumn,
         sfms:rangeMaxColumn,
-        sfms:fitStatusColumn,
-        sfcore:createdAtColumn .
+        sfms:fitStatusColumn .
 
 sfms:featuresTable
     a sf:Table ;
@@ -472,8 +467,7 @@ sfms:featuresTable
         sfms:componentMeanCorrelationToComponentColumn,
         sfms:componentMembershipScoreColumn,
         sfms:componentIsCoreColumn,
-        sfms:componentBridgeFlagColumn,
-        sfcore:createdAtColumn .
+        sfms:componentBridgeFlagColumn .
 
 sfms:suspectsTable
     a sf:Table ;
@@ -636,8 +630,7 @@ sfms:transformationProductsTable
         sfms:tpMainPrecursorRtPlausibilityColumn,
         sfms:tpAssignmentScoreColumn,
         sfms:tpNetworkLevelColumn,
-        sfms:tpAssignmentStatusColumn,
-        sfcore:createdAtColumn .
+        sfms:tpAssignmentStatusColumn .
 
 sfms:ticTable
     a sf:Table ;

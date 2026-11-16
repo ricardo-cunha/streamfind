@@ -55,6 +55,16 @@ An explicit `streamfind service start --port <port>` always uses that exact port
 and fails if it cannot bind. `streamfind service list` reports the endpoint
 actually selected.
 
+Each executable automatically scopes service discovery and tray ownership to
+its executable directory. The CLI, app, tray, server, and MCP from one build or
+package share a registry; other worktrees and package copies use separate
+registries, even when they run under the same user account. A custom
+`STREAMFIND_RUNTIME_DIR` intentionally overrides this scope. Set
+`STREAMFIND_SERVICE_ENDPOINT` in an MCP process to intentionally connect across
+scopes; this disables that MCP package's automatic service startup. Ports
+remain machine-wide, so concurrent instances still need distinct ports or the
+configured automatic fallback.
+
 `worker.memory_limit_mb` sets an optional memory budget for each worker process
 tree. `0` (the default) disables the budget. On Windows, streamfind applies the
 limit to the worker Job Object; on Linux, it monitors aggregate resident memory
@@ -494,6 +504,10 @@ For terminal service management, use the public CLI under `bin/`:
 .\\bin\\streamfind.exe service status
 .\\bin\\streamfind.exe service stop
 ```
+
+The packaged CLI, app launcher, and MCP executable share a per-package service
+scope. Start with the CLI when choosing a non-default port; launch the app or
+MCP from the same package afterward so both use the endpoint it published.
 
 For MCP integration, use the executable under `bin/` and communicate through newline-delimited JSON-RPC over standard input/output. Start with `initialize`, then discover operations with `tools/list`. Runtime plugin loading is allowlisted through the package configuration; merely placing a plugin under `plugins/` does not enable it.
 

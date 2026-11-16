@@ -279,7 +279,8 @@ ServiceProjectAttachment attach_project(const std::filesystem::path &database_pa
 }
 
 ServiceProjectAttachment create_project(const std::filesystem::path &database_path,
-                                        const data_proxy::Json &metadata) {
+                                        const data_proxy::Json &metadata,
+                                        const data_proxy::Json &workflow_metadata) {
     std::string last_error;
     struct Candidate { std::string instance_id; std::string endpoint; };
     std::vector<Candidate> candidates;
@@ -302,7 +303,8 @@ ServiceProjectAttachment create_project(const std::filesystem::path &database_pa
                 data_proxy::Json{{"mode", "create"},
                                  {"session_id", detail::create_session_id()},
                                  {"database_path", database_path.string()},
-                                 {"metadata", metadata}});
+                                 {"metadata", metadata},
+                                 {"workflow_metadata", workflow_metadata}});
             return {candidate.instance_id, candidate.endpoint, endpoint.port,
                     response.value("session_id", std::string{})};
         } catch (const std::exception &caught) { last_error = caught.what(); }

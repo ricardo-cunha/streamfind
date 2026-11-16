@@ -1,6 +1,7 @@
 #requires -Version 7.0
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+$scriptRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
+$root = (Resolve-Path -LiteralPath (Join-Path $scriptRoot '..')).Path
 $frontend = Join-Path $root 'frontend'
 $platform = if ($IsWindows) { 'windows-core' } else { 'linux-core' }
 $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
@@ -59,6 +60,7 @@ function Show-Help([string]$Topic) {
         'script list' = @('script list [--json]', 'List public scripts under scripts/dev/ and show interpreter availability.', 'An available interpreter does not guarantee that the script has its required data or arguments.')
         'script info' = @('script info PATH', 'Show the interpreter, working directory, and invocation for a script.', 'Use a path from script list. Example: sfdev script info validate_native_dependencies.py')
         'script run' = @('script run PATH [--dry-run] [-- ARGUMENTS]', 'Run a development script from the checkout root and log to tmp/logs/.', 'Pass the script arguments after --. Python scripts use the repository .venv.', 'Example: sfdev script run validate_native_dependencies.py -- --help')
+        'workflows' = @('workflows nta|impurities|quantification [--project-name NAME] [--url ENDPOINT] [--force] [--dry-run]', 'Create a validated, editable workflow project through MCP in a running service.', 'Creates under tmp/projects/ and does not execute operations. --url selects the service endpoint. --force deletes the named project DuckDB, sibling .data store, and workflow sidecar first; close that project in the app before replacing it.')
         'version show' = @('version show', 'Print the canonical streamfind version from VERSION.')
         'version bump' = @('version bump patch|minor|major [--dry-run]', 'Advance the canonical VERSION.', 'Resets lower components and prints the previous and next version.')
         'sdk build' = @('sdk build [--dry-run]', 'Build the Windows kit and, when Ubuntu/WSL is available, the Linux kit.', 'Uses the canonical VERSION and runs each platform package validation.')
@@ -100,7 +102,7 @@ try {
     $command = $args[0]
     $subject = ''
     $index = 1
-    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'run', 'sdk', 'release', 'plugin') {
+    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'run', 'sdk', 'release', 'plugin', 'workflows') {
         if ($args.Count -lt 2) { throw "Missing subcommand for $command" }
         $subject = $args[1]
         $index = 2
@@ -129,6 +131,9 @@ try {
         'script/list' { 'json' }
         'script/info' { }
         'script/run' { 'dry-run' }
+        'workflows/nta' { 'project-name', 'url', 'force', 'dry-run' }
+        'workflows/impurities' { 'project-name', 'url', 'force', 'dry-run' }
+        'workflows/quantification' { 'project-name', 'url', 'force', 'dry-run' }
         'doctor/' { 'json', 'workflow' }
         'setup/' { 'components', 'dry-run' }
         'sdk/build' { 'dry-run' }
@@ -161,6 +166,7 @@ try {
     $logExecution = $command -in 'configure', 'build', 'test', 'check', 'package', 'setup', 'sdk', 'release' -or
         ($command -eq 'plugin' -and $subject -ne 'list') -or
         "$command/$subject" -eq 'script/run'
+    if ($command -eq 'workflows') { $logExecution = $true }
     if ($logExecution) { $allowed = @($allowed) + 'json' }
     $options = @{}
     $forward = @()
@@ -174,7 +180,7 @@ try {
         if (!$argument.StartsWith('--') -or $name -notin $allowed -or $options.ContainsKey($name)) {
             throw "Unexpected option: $argument"
         }
-        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only') { $options[$name] = $true; continue }
+        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only', 'force') { $options[$name] = $true; continue }
         if (++$index -ge $args.Count -or ([string]$args[$index]).StartsWith('--')) { throw "Missing value for --$name" }
         $options[$name] = $args[$index]
     }
@@ -501,6 +507,23 @@ try {
         $environment.STREAMFIND_FRONTEND_URL = $endpoint.AbsoluteUri
         $environment.PLAYWRIGHT_BROWSERS_PATH = Join-Path $managedHome 'tools/playwright'
         $steps += New-Step $frontend $tools.npm @('run', 'browser:smoke')
+    }
+    if ($command -eq 'workflows') {
+        $workflowScripts = @{
+            nta = 'nta.ps1'
+            impurities = 'impurities.ps1'
+            quantification = 'quantification.ps1'
+        }
+        if (-not $workflowScripts.ContainsKey($subject)) {
+            throw 'Choose a workflow template: nta, impurities, or quantification.'
+        }
+        $workflowScript = Join-Path $PSScriptRoot "dev/workflows/$($workflowScripts[$subject])"
+        if (-not (Test-Path -LiteralPath $workflowScript -PathType Leaf)) { throw "Workflow helper is missing: $workflowScript" }
+        $workflowArguments = @('-NoProfile', '-File', $workflowScript)
+        if ($options['project-name']) { $workflowArguments += '-ProjectName', $options['project-name'] }
+        if ($options.url) { $workflowArguments += '-ServiceEndpoint', $options.url }
+        if ($options.force) { $workflowArguments += '-Force' }
+        $steps += New-Step $root $pwsh $workflowArguments
     }
     if ($command -eq 'run') {
         $environment.STREAMFIND_DEV_BUILD_DIR = $tree

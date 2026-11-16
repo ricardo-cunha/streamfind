@@ -35,14 +35,23 @@ It controls the enabled plugins and the preferred local service port:
 }
 ```
 
-The CLI, app host, tray, and MCP runtime use this same configuration. If the
-preferred port is busy, automatic fallback selects an available port from the
-next 128 ports and publishes the actual endpoint through local service
-discovery. The app opens that discovered endpoint; the MCP and CLI attach to the
-same running service. Set `automatic_port_fallback` to `false` to require the
+The CLI, app host, tray, and MCP runtime use this same configuration. Each
+installation or build automatically gets a service-discovery scope derived from
+the executable directory. Its CLI, app, tray, server, and MCP share that scope;
+another checkout/package cannot accidentally attach to or stop its service.
+The service publishes its actual endpoint in that scope, so app and MCP use the
+same port even when automatic fallback was needed.
+
+If the preferred port is busy, automatic fallback selects an available port
+from the next 128 ports. Set `automatic_port_fallback` to `false` to require the
 configured port. `streamfind service start --port <port>` is an explicit
-override and fails if that exact port is unavailable. Keep the service bound to
-loopback unless remote access is deliberately configured and secured.
+override and fails if that exact port is unavailable. Ports are still shared
+machine-wide, so use a distinct port for each simultaneously running package or
+worktree. Set `STREAMFIND_RUNTIME_DIR` to intentionally share a custom discovery
+scope. To connect an MCP process to a service in another scope, set
+`STREAMFIND_SERVICE_ENDPOINT`; MCP then uses that endpoint and skips starting
+its own package's service. Keep the service bound to loopback unless remote
+access is deliberately configured and secured.
 
 ## Create and run a project
 

@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "streamfind/service/service_discovery.hpp"
 #include "streamfind/service_runtime_client.hpp"
 
 #include <filesystem>
@@ -80,6 +81,7 @@ int main(int argc, char **argv) {
     if (WSAStartup(MAKEWORD(2, 2), &winsock) != 0) return 1;
 #endif
     try {
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
         if (argc > 1 && std::string(argv[1]) == "service")
         {
             const auto result = streamfind::service::host_detail::run_service_command(argc, argv);

@@ -148,7 +148,6 @@ namespace streamfind::mass_spec::nta::utils
   float calculate_asymmetry(const std::vector<float> &, const std::vector<float> &);
   int calculate_modality(const std::vector<float> &, float);
   float calculate_theoretical_plates(float, float);
-  std::string utc_now();
   std::string text(const nlohmann::json &, const char *);
   int integer(const nlohmann::json &, const char *);
   double real(const nlohmann::json &, const char *);
@@ -813,7 +812,6 @@ namespace streamfind::mass_spec::nta::api
     // MARK: NTA_SUSPECT_ROW
     struct NTA_SUSPECT_ROW
     {
-        std::string created_at;
         std::string analysis;
         std::string feature;
         std::string feature_group;
@@ -978,7 +976,6 @@ namespace streamfind::mass_spec::nta::api
     // MARK: NTA_TRANSFORMATION_PRODUCT_ROW
     struct NTA_TRANSFORMATION_PRODUCT_ROW
     {
-        std::string created_at;
         std::string name;
         std::string formula;
         double mass = 0.0;
@@ -1177,7 +1174,6 @@ namespace streamfind::mass_spec::nta::api
     // MARK: NTA_INTERNAL_STANDARD_ROW
     struct NTA_INTERNAL_STANDARD_ROW
     {
-        std::string created_at;
         std::string analysis;
         std::string replicate;
         std::string feature;
