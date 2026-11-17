@@ -36,7 +36,7 @@ For an overview of the system boundaries and data flow, see the
 | --- | --- |
 | C++ backend service | Project and workflow runtime, semantic catalogue, and domain processing |
 | MCP | JSON-RPC over stdio for applications and AI agents |
-| React web app | Browser application served by the packaged C++ service; also available from the Vite development server |
+| React web app | Browser application served by the packaged C++ service |
 
 The service is the single owner of project database access and result
 publication. Operation workers receive typed inputs and return typed outputs

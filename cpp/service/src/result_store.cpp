@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <limits>
+#include <map>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -16,8 +17,10 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <deque>
 #include <arrow/buffer.h>
@@ -41,6 +44,39 @@ void ResultStagingHandle::close() noexcept {
 }
 
 namespace detail {
+
+#ifdef _WIN32
+std::filesystem::path windows_extended_path(const std::filesystem::path &path) {
+    auto value = path.wstring();
+    std::replace(value.begin(), value.end(), L'/', L'\\');
+    if (value.rfind(L"\\\\?\\", 0) == 0) return path;
+    if (value.rfind(L"\\\\", 0) == 0)
+        return std::filesystem::path(L"\\\\?\\UNC\\" + value.substr(2));
+    return std::filesystem::path(L"\\\\?\\" + value);
+}
+#endif
+
+std::filesystem::path storage_path(const std::filesystem::path &path) {
+#ifdef _WIN32
+    // MinGW's filesystem implementation handles ordinary paths more
+    // consistently than the extended prefix for short paths.  Switch only
+    // before the path approaches the Win32 MAX_PATH boundary.
+    return path.wstring().size() >= 240 ? windows_extended_path(path) : path;
+#else
+    return path;
+#endif
+}
+
+std::filesystem::path enumeration_path(const std::filesystem::path &path) {
+#ifdef _WIN32
+    // The parent may be short while its result entries are long.  Starting
+    // an iterator from an ordinary parent makes MinGW emit ordinary child
+    // paths, which then fail once a published result crosses MAX_PATH.
+    return windows_extended_path(path);
+#else
+    return path;
+#endif
+}
 
 Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
                              const std::vector<std::string> &columns) {
@@ -71,9 +107,9 @@ Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
         case arrow::Type::DOUBLE:
             return std::static_pointer_cast<arrow::DoubleArray>(array)->Value(row);
         case arrow::Type::STRING:
-            return Json::parse(std::static_pointer_cast<arrow::StringArray>(array)->GetView(row));
+            return std::static_pointer_cast<arrow::StringArray>(array)->GetString(row);
         case arrow::Type::LARGE_STRING:
-            return Json::parse(std::static_pointer_cast<arrow::LargeStringArray>(array)->GetView(row));
+            return std::static_pointer_cast<arrow::LargeStringArray>(array)->GetString(row);
         case arrow::Type::LIST: {
             const auto list = std::static_pointer_cast<arrow::ListArray>(array);
             const auto begin = list->value_offset(row);
@@ -129,7 +165,7 @@ Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
 }
 
 std::string payload_digest(const std::filesystem::path &path, std::uintmax_t &size) {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(storage_path(path), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read result payload: " + path.string());
 
     // Keep the first implementation dependency-free and deterministic across
@@ -154,6 +190,29 @@ std::string payload_digest(const std::filesystem::path &path, std::uintmax_t &si
     std::ostringstream output;
     output << "fnv1a64:" << std::hex << std::setw(16) << std::setfill('0') << hash;
     return output.str();
+}
+
+std::uintmax_t payload_size(const std::filesystem::path &path) {
+    std::error_code error;
+    const auto fast_size = std::filesystem::file_size(storage_path(path), error);
+    if (!error) return fast_size;
+
+    // Keep a stream fallback for runtimes that cannot query a long path's
+    // metadata directly.  The separator-normalized extended path makes this
+    // fallback safe on Windows and remains correct for zero-length payloads.
+    std::ifstream input(storage_path(path), std::ios::binary);
+    if (!input) throw std::runtime_error("cannot inspect result payload: " + path.string());
+    constexpr std::size_t buffer_size = 64 * 1024;
+    std::array<char, buffer_size> buffer{};
+    std::uintmax_t size = 0;
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const auto count = input.gcount();
+        if (count <= 0) break;
+        size += static_cast<std::uintmax_t>(count);
+    }
+    if (!input.eof()) throw std::runtime_error("cannot inspect result payload: " + path.string());
+    return size;
 }
 
 std::string result_store_status_name(ResultStoreStatus status) {
@@ -189,19 +248,27 @@ Json validated_manifest(const std::filesystem::path &root,
         result_id.find(':') != std::string::npos)
         throw std::invalid_argument("result_id must be a single safe path component");
     const auto directory = root / "results" / result_id;
-    std::ifstream input(directory / "manifest.json", std::ios::binary);
+    std::ifstream input(storage_path(directory / "manifest.json"), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read result manifest: " + result_id);
     Json manifest;
     input >> manifest;
     const auto payload_value = manifest.value("payload", std::string{});
     const auto payload_path = root / std::filesystem::path(payload_value);
     std::error_code error;
-    const auto relative = std::filesystem::relative(payload_path, root, error);
-    if (error || relative.empty() || relative.begin()->string() == ".." ||
-        !std::filesystem::is_regular_file(payload_path))
+    // This is a containment check, not a canonicalization request.  The
+    // filesystem-based relative() implementation touches both paths and can
+    // fail at the Windows MAX_PATH boundary even when the payload exists.
+    const auto relative = payload_path.lexically_relative(root);
+    const auto native_payload_path = storage_path(payload_path);
+    if (error || relative.empty() || relative.begin()->string() == "..")
         throw std::runtime_error("result payload is unavailable: " + result_id);
-    const auto size = std::filesystem::file_size(payload_path, error);
-    if (error || manifest.value("state", std::string{}) != "published" ||
+    std::uintmax_t size = 0;
+    try {
+        size = payload_size(native_payload_path);
+    } catch (...) {
+        throw std::runtime_error("result payload is unavailable: " + result_id);
+    }
+    if (manifest.value("state", std::string{}) != "published" ||
         manifest.value("payload_size", std::uintmax_t{0}) != size ||
         manifest.value("payload_digest", std::string{}).empty())
         throw std::runtime_error("result payload metadata failed validation: " + result_id);
@@ -274,14 +341,14 @@ std::string ResultStore::normalize_extension(const std::string &extension) {
 }
 
 void ResultStore::write_json_file(const std::filesystem::path &path, const Json &value) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    std::ofstream output(detail::storage_path(path), std::ios::binary | std::ios::trunc);
     if (!output) throw std::runtime_error("cannot create result store metadata: " + path.string());
     output << value.dump(2) << '\n';
     if (!output) throw std::runtime_error("cannot write result store metadata: " + path.string());
 }
 
 Json ResultStore::read_json_file(const std::filesystem::path &path) {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(detail::storage_path(path), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read result store metadata: " + path.string());
     Json value;
     input >> value;
@@ -304,7 +371,7 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
         // concurrent delete instead of turning a healthy store into invalid.
         error.clear();
         for (std::filesystem::recursive_directory_iterator iterator(
-                 root_, std::filesystem::directory_options::skip_permission_denied, error), end;
+                 detail::enumeration_path(root_), std::filesystem::directory_options::skip_permission_denied, error), end;
              iterator != end;) {
             if (error) {
                 if (error == std::errc::no_such_file_or_directory ||
@@ -317,8 +384,12 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
             const auto path = iterator->path();
             error.clear();
             if (std::filesystem::is_regular_file(path, error) && !error) {
-                const auto bytes = std::filesystem::file_size(path, error);
-                if (!error) result.size_bytes += bytes;
+                try {
+                    result.size_bytes += detail::payload_size(path);
+                } catch (...) {
+                    // Size accounting is advisory; a transiently removed or
+                    // inaccessible entry must not invalidate the store.
+                }
             }
             error.clear();
             iterator.increment(error);
@@ -332,7 +403,13 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
             return result;
         }
         result.store_id = value.at("store_id").get<std::string>();
-        const auto results = root_ / "results";
+        // Enumerate through the same native path representation used for
+        // payload access.  A result directory can be valid even when its
+        // ordinary Win32 spelling is already beyond MAX_PATH; asking the
+        // filesystem iterator/status APIs to inspect that spelling makes a
+        // healthy store look invalid during project attach.
+        const auto results = detail::enumeration_path(root_ / "results");
+        std::vector<std::string> invalid_result_ids;
         error.clear();
         if (std::filesystem::exists(results, error) && !error) {
             for (std::filesystem::directory_iterator iterator(
@@ -360,19 +437,39 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     const auto manifest = read_json_file(manifest_path);
                     const auto payload_value = manifest.value("payload", std::string{});
                     const auto payload_path = root_ / std::filesystem::path(payload_value);
-                    const auto relative = std::filesystem::relative(payload_path, root_, error);
-                    const bool outside_root = error || relative.empty() || relative.begin()->string() == "..";
-                    const auto payload_exists = !outside_root && std::filesystem::is_regular_file(payload_path);
+                    const auto relative = payload_path.lexically_relative(root_);
+                    const bool outside_root = relative.empty() || relative.begin()->string() == "..";
+                    const auto native_payload_path = detail::storage_path(payload_path);
+                    bool payload_exists = !outside_root;
                     const auto declared_size = manifest.value("payload_size", std::uintmax_t{0});
-                    std::uintmax_t actual_size = payload_exists ? std::filesystem::file_size(payload_path) : 0;
+                    std::uintmax_t actual_size = 0;
+                    std::string payload_error;
+                    if (payload_exists) {
+                        try {
+                            actual_size = detail::payload_size(native_payload_path);
+                        } catch (const std::exception &exception) {
+                            payload_exists = false;
+                            payload_error = exception.what();
+                        }
+                    }
                     const auto digest = verify_payloads && payload_exists
-                        ? detail::payload_digest(payload_path, actual_size) : std::string{};
+                        ? detail::payload_digest(native_payload_path, actual_size) : std::string{};
                     const auto valid = manifest.value("state", std::string{}) == "published" && payload_exists &&
                         (verify_payloads
                             ? (declared_size == actual_size && manifest.value("payload_digest", std::string{}) == digest)
                             : (declared_size == 0 || declared_size == actual_size));
                     if (!valid) {
                         ++result.invalid_count;
+                        if (invalid_result_ids.size() < 3) {
+                            std::string reason;
+                            if (manifest.value("state", std::string{}) != "published") reason = "state";
+                            else if (outside_root) reason = "outside-root";
+                            else if (!payload_exists) reason = "payload-open:" + payload_error;
+                            else if (declared_size != actual_size) reason = "size";
+                            else if (verify_payloads && manifest.value("payload_digest", std::string{}) != digest)
+                                reason = "digest";
+                            invalid_result_ids.push_back(result_directory.filename().string() + "[" + reason + "]");
+                        }
                     } else {
                         ++result.published_count;
                     }
@@ -380,11 +477,13 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     error.clear();
                     if (std::filesystem::exists(result_directory, error) && !error)
                         ++result.invalid_count;
+                    if (invalid_result_ids.size() < 3)
+                        invalid_result_ids.push_back(result_directory.filename().string());
                     error.clear();
                 }
             }
         }
-        const auto runs = root_ / "runs";
+        const auto runs = detail::enumeration_path(root_ / "runs");
         error.clear();
         if (std::filesystem::exists(runs, error) && !error) {
             for (std::filesystem::directory_iterator iterator(
@@ -405,8 +504,16 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
             }
         }
         result.status = result.invalid_count == 0 ? ResultStoreStatus::ready : ResultStoreStatus::invalid;
-        if (result.invalid_count != 0)
+        if (result.invalid_count != 0) {
             result.error = "one or more published result payloads failed manifest validation";
+            if (!invalid_result_ids.empty()) {
+                result.error += ": ";
+                for (std::size_t index = 0; index < invalid_result_ids.size(); ++index) {
+                    if (index != 0) result.error += ", ";
+                    result.error += invalid_result_ids[index];
+                }
+            }
+        }
         return result;
     } catch (const std::exception &exception) {
         result.status = ResultStoreStatus::invalid;
@@ -423,9 +530,9 @@ ResultStoreInspection ResultStore::initialize(bool verify_payloads) {
     if (existing.status == ResultStoreStatus::invalid)
         throw std::runtime_error(existing.error);
 
-    std::filesystem::create_directories(root_ / "results", error);
+    std::filesystem::create_directories(detail::storage_path(root_ / "results"), error);
     if (error) throw std::runtime_error("cannot create result store: " + error.message());
-    std::filesystem::create_directories(root_ / "runs", error);
+    std::filesystem::create_directories(detail::storage_path(root_ / "runs"), error);
     if (error) throw std::runtime_error("cannot create result run store: " + error.message());
     const Json manifest{{"layout_version", kLayoutVersion},
                         {"database_filename", database_path_.filename().string()},
@@ -437,9 +544,10 @@ ResultStoreInspection ResultStore::initialize(bool verify_payloads) {
 void ResultStore::cleanup_empty_runs() const {
     const auto runs = root_ / "runs";
     std::error_code error;
-    if (!std::filesystem::is_directory(runs, error) || error) return;
+    const auto native_runs = detail::enumeration_path(runs);
+    if (!std::filesystem::is_directory(native_runs, error) || error) return;
     std::vector<std::filesystem::path> directories;
-    for (std::filesystem::recursive_directory_iterator iterator(runs, error), end;
+    for (std::filesystem::recursive_directory_iterator iterator(native_runs, error), end;
          iterator != end && !error; iterator.increment(error)) {
         if (iterator->is_directory(error) && !error) directories.push_back(iterator->path());
     }
@@ -454,7 +562,7 @@ void ResultStore::cleanup_empty_runs() const {
 Json ResultStore::published_results() const {
     Json results = Json::array();
     std::error_code error;
-    const auto directory = root_ / "results";
+    const auto directory = detail::enumeration_path(root_ / "results");
     if (!std::filesystem::exists(directory, error)) return results;
     for (const auto &entry : std::filesystem::directory_iterator(directory, error)) {
         if (error || !entry.is_directory()) continue;
@@ -490,7 +598,7 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
 
     Json matches = Json::array();
     std::error_code error;
-    const auto results_directory = root_ / "results";
+    const auto results_directory = detail::enumeration_path(root_ / "results");
     if (!std::filesystem::exists(results_directory, error)) return Json::array();
     for (const auto &entry : std::filesystem::directory_iterator(results_directory, error)) {
         if (error || !entry.is_directory()) continue;
@@ -501,9 +609,8 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
                 continue;
             const auto payload_value = manifest.value("payload", std::string{});
             const auto payload_path = root_ / std::filesystem::path(payload_value);
-            const auto relative = std::filesystem::relative(payload_path, root_, error);
-            if (error || relative.empty() || relative.begin()->string() == ".." ||
-                !std::filesystem::is_regular_file(payload_path)) continue;
+            const auto relative = payload_path.lexically_relative(root_);
+            if (error || relative.empty() || relative.begin()->string() == "..") continue;
             std::uintmax_t payload_size = 0;
             const auto digest = detail::payload_digest(payload_path, payload_size);
             if (manifest.value("payload_size", std::uintmax_t{0}) != payload_size ||
@@ -521,6 +628,39 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
         return left.value("result_id", std::string{}) < right.value("result_id", std::string{});
     });
     return matches;
+}
+
+std::size_t ResultStore::clear_cache() const {
+    const auto inspection = inspect(false);
+    if (inspection.status != ResultStoreStatus::ready)
+        throw std::runtime_error("cannot clear result cache: result store is not ready");
+
+    std::size_t invalidated = 0;
+    std::error_code error;
+    const auto results_directory = detail::enumeration_path(root_ / "results");
+    if (!std::filesystem::exists(results_directory, error)) {
+        if (error) throw std::runtime_error("cannot inspect result cache: " + error.message());
+        return invalidated;
+    }
+    for (const auto &entry : std::filesystem::directory_iterator(results_directory, error)) {
+        if (error) throw std::runtime_error("cannot enumerate result cache: " + error.message());
+        if (!entry.is_directory(error) || error) {
+            if (error) throw std::runtime_error("cannot inspect result cache entry: " + error.message());
+            continue;
+        }
+        const auto manifest_path = entry.path() / "manifest.json";
+        try {
+            auto manifest = read_json_file(manifest_path);
+            if (!manifest.value("cacheable", false)) continue;
+            manifest["cacheable"] = false;
+            write_json_file(manifest_path, manifest);
+            ++invalidated;
+        } catch (const std::exception &exception) {
+            throw std::runtime_error("cannot invalidate result cache entry " +
+                                     entry.path().filename().string() + ": " + exception.what());
+        }
+    }
+    return invalidated;
 }
 
 void ResultStore::remove_published_results(const std::vector<std::string> &result_ids) const {
@@ -554,71 +694,6 @@ Json ResultStore::describe_result(const std::string &result_id) const {
     return descriptor;
 }
 
-Json ResultStore::read_navigation_index(const std::string &result_id) const {
-    require_component(result_id, "result_id");
-    constexpr std::uintmax_t max_index_bytes = 32 * 1024 * 1024;
-    Json manifest;
-    try {
-        manifest = detail::validated_manifest(root_, result_id);
-    } catch (...) {
-        return nullptr;
-    }
-    const auto path = root_ / "results" / result_id / "navigation.json";
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(path, error) || error) return nullptr;
-    const auto size = std::filesystem::file_size(path, error);
-    if (error || size > max_index_bytes) return nullptr;
-    try {
-        auto index = read_json_file(path);
-        if (!index.is_object() || index.value("result_id", std::string{}) != result_id ||
-            index.value("payload_digest", std::string{}) != manifest.value("payload_digest", std::string{}) ||
-            !index.value("postings", Json{}).is_object()) return nullptr;
-        const auto declared = manifest.value("navigation_columns", Json::array());
-        const auto indexed = index.value("navigation_columns", Json::array());
-        if (!declared.is_array() || !indexed.is_array() || declared != indexed) return nullptr;
-        return index.at("postings");
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-void ResultStore::write_navigation_index(const std::string &result_id, const Json &index) const {
-    require_component(result_id, "result_id");
-    constexpr std::size_t max_index_bytes = 32 * 1024 * 1024;
-    if (!index.is_object()) throw std::invalid_argument("navigation index must be an object");
-    const auto manifest = detail::validated_manifest(root_, result_id);
-    const auto navigation_columns = manifest.value("navigation_columns", Json::array());
-    if (!navigation_columns.is_array() || navigation_columns.empty()) return;
-    for (const auto &[column, postings] : index.items()) {
-        if (std::none_of(navigation_columns.begin(), navigation_columns.end(), [&](const Json &name) {
-                return name.is_string() && name.get<std::string>() == column;
-            }) || !postings.is_object())
-            throw std::invalid_argument("navigation index contains an undeclared column or invalid postings");
-    }
-    Json payload{{"result_id", result_id},
-                 {"payload_digest", manifest.value("payload_digest", std::string{})},
-                 {"navigation_columns", navigation_columns},
-                 {"postings", index}};
-    const auto serialized = payload.dump();
-    if (serialized.size() > max_index_bytes) return;
-    const auto directory = root_ / "results" / result_id;
-    std::error_code error;
-    if (!std::filesystem::is_directory(directory, error) || error)
-        throw std::runtime_error("cannot locate published result directory for navigation index");
-    const auto path = directory / "navigation.json";
-    if (std::filesystem::exists(path, error)) return;
-    if (error) throw std::runtime_error("cannot inspect result navigation index: " + error.message());
-    const auto temporary = directory / ("navigation." + create_store_id() + ".tmp");
-    write_json_file(temporary, payload);
-    std::filesystem::rename(temporary, path, error);
-    if (error) {
-        std::error_code cleanup_error;
-        std::filesystem::remove(temporary, cleanup_error);
-        if (!std::filesystem::exists(path))
-            throw std::runtime_error("cannot publish result navigation index: " + error.message());
-    }
-}
-
 Json ResultStore::read_range_statistics(const std::string &result_id, const std::string &column) const {
     require_component(result_id, "result_id");
     Json manifest;
@@ -643,8 +718,13 @@ Json ResultStore::read_range_statistics(const std::string &result_id, const std:
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error) || error) return nullptr;
     constexpr std::uintmax_t max_range_index_bytes = 8 * 1024 * 1024;
-    const auto size = std::filesystem::file_size(path, error);
-    if (error || size > max_range_index_bytes) return nullptr;
+    std::uintmax_t size = 0;
+    try {
+        size = detail::payload_size(path);
+    } catch (...) {
+        return nullptr;
+    }
+    if (size > max_range_index_bytes) return nullptr;
     try {
         const auto index = read_json_file(path);
         if (index.value("result_id", std::string{}) != result_id ||
@@ -714,7 +794,7 @@ Json ResultStore::read_result_range(const std::string &result_id,
     if (offset > size) throw std::invalid_argument("result range offset is outside the payload");
     const auto available = size - offset;
     const auto actual_length = std::min(length, available);
-    std::ifstream input(payload_path, std::ios::binary);
+    std::ifstream input(detail::storage_path(payload_path), std::ios::binary);
     input.seekg(static_cast<std::streamoff>(offset));
     std::vector<unsigned char> bytes(static_cast<std::size_t>(actual_length));
     if (actual_length != 0)
@@ -737,7 +817,7 @@ Json ResultStore::read_json_payload(const std::string &result_id) const {
     if (size > max_json_payload)
         throw std::invalid_argument("JSON result payload is too large for inline reuse");
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
-    std::ifstream input(payload_path, std::ios::binary);
+    std::ifstream input(detail::storage_path(payload_path), std::ios::binary);
     if (!input) throw std::runtime_error("cannot read JSON result payload");
     std::string text(static_cast<std::size_t>(size), '\0');
     if (size != 0) input.read(text.data(), static_cast<std::streamsize>(size));
@@ -775,7 +855,7 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
         batch_row_counts.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         throw std::runtime_error("Arrow result row-batch directory does not match its manifest; regenerate this result");
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
-    auto file_result = arrow::io::ReadableFile::Open(payload_path.string());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
     if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
     const auto file = *file_result;
     auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
@@ -830,11 +910,75 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
                 {"has_more", offset + rows.size() < manifest.value("row_count", std::uint64_t{0})}};
 }
 
+Json ResultStore::distinct_arrow_values(const std::string &result_id,
+                                        const std::vector<std::string> &columns) const {
+    if (columns.empty()) throw std::invalid_argument("distinct Arrow scan requires columns");
+    const auto manifest = detail::validated_manifest(root_, result_id);
+    if (manifest.value("format", std::string{}) != "arrow-ipc-file")
+        throw std::invalid_argument("distinct Arrow scan requires an Arrow IPC table result");
+    const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
+    if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
+    const auto file = *file_result;
+    auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
+    if (!reader_result.ok()) throw std::runtime_error(reader_result.status().ToString());
+    auto reader = *reader_result;
+    auto options = arrow::ipc::IpcReadOptions::Defaults();
+    for (const auto &name : columns) {
+        const auto index = reader->schema()->GetFieldIndex(name);
+        if (index < 0) throw std::invalid_argument("distinct Arrow column not found: " + name);
+        if (std::find(options.included_fields.begin(), options.included_fields.end(), index) ==
+            options.included_fields.end()) options.included_fields.push_back(index);
+    }
+    auto projected_result = arrow::ipc::RecordBatchFileReader::Open(file, options);
+    if (!projected_result.ok()) throw std::runtime_error(projected_result.status().ToString());
+    reader = *projected_result;
+
+    std::unordered_map<std::string, std::unordered_set<std::string>> seen;
+    std::unordered_map<std::string, std::map<std::string, Json>> distinct;
+    for (const auto &name : columns) {
+        seen.try_emplace(name);
+        distinct.try_emplace(name);
+    }
+    for (int batch_index = 0; batch_index < reader->num_record_batches(); ++batch_index) {
+        auto batch_result = reader->ReadRecordBatch(batch_index);
+        if (!batch_result.ok()) throw std::runtime_error(batch_result.status().ToString());
+        const auto batch = *batch_result;
+        for (const auto &name : columns) {
+            const auto column_index = batch->schema()->GetFieldIndex(name);
+            if (column_index < 0) throw std::runtime_error("projected Arrow schema lost column: " + name);
+            const auto &array = batch->column(column_index);
+            auto &keys = seen.at(name);
+            for (std::int64_t row = 0; row < batch->num_rows(); ++row) {
+                if (array->IsNull(row)) continue;
+                auto scalar = array->GetScalar(row);
+                if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                const auto key = (*scalar)->ToString();
+                if (!keys.insert(key).second) continue;
+                const auto projected_row = detail::arrow_record_batch_rows(batch->Slice(row, 1), {name});
+                if (!projected_row.is_array() || projected_row.empty() || !projected_row.front().contains(name))
+                    throw std::runtime_error("could not materialize distinct Arrow scalar for column: " + name);
+                const auto value = projected_row.front().at(name);
+                distinct.at(name).emplace(value.dump(), value);
+            }
+        }
+    }
+    Json values = Json::object();
+    for (const auto &name : columns) {
+        auto &column_values = values[name] = Json::array();
+        for (const auto &[key, value] : distinct.at(name)) column_values.push_back(value);
+    }
+    return values;
+}
+
 Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
                                             const Json &filters,
                                             std::uintmax_t offset,
-                                            std::uintmax_t limit) const {
-    if (!filters.is_array() || filters.empty() || limit == 0) return nullptr;
+                                            std::uintmax_t limit,
+                                            const std::string &search,
+                                            const std::string &sort_column,
+                                            bool descending) const {
+    if (!filters.is_array() || (filters.empty() && search.empty() && sort_column.empty()) || limit == 0) return nullptr;
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("format", std::string{}) != "arrow-ipc-file") return nullptr;
     const auto batch_counts = manifest.value("batch_row_counts", Json::array());
@@ -855,14 +999,23 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
             filter_columns.push_back(name);
     }
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
-    auto file_result = arrow::io::ReadableFile::Open(payload_path.string());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
     if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
     const auto file = *file_result;
     auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
     if (!reader_result.ok()) throw std::runtime_error(reader_result.status().ToString());
     auto reader = *reader_result;
+    int sort_field_index = -1;
+    if (!sort_column.empty()) {
+        sort_field_index = reader->schema()->GetFieldIndex(sort_column);
+        if (sort_field_index < 0) throw std::invalid_argument("result sort column not found: " + sort_column);
+    }
     auto options = arrow::ipc::IpcReadOptions::Defaults();
     std::unordered_map<std::string, int> field_indexes;
+    if (!search.empty()) {
+        for (int index = 0; index < reader->schema()->num_fields(); ++index)
+            options.included_fields.push_back(index);
+    }
     for (const auto &name : filter_columns) {
         const auto index = reader->schema()->GetFieldIndex(name);
         if (index < 0) return nullptr;
@@ -872,8 +1025,12 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
             type != arrow::Type::INT64 && type != arrow::Type::UINT8 && type != arrow::Type::UINT16 &&
             type != arrow::Type::UINT32 && type != arrow::Type::UINT64 &&
             type != arrow::Type::FLOAT && type != arrow::Type::DOUBLE) return nullptr;
-        options.included_fields.push_back(index);
+        if (std::find(options.included_fields.begin(), options.included_fields.end(), index) ==
+            options.included_fields.end()) options.included_fields.push_back(index);
     }
+    if (sort_field_index >= 0 &&
+        std::find(options.included_fields.begin(), options.included_fields.end(), sort_field_index) ==
+            options.included_fields.end()) options.included_fields.push_back(sort_field_index);
     auto projected_result = arrow::ipc::RecordBatchFileReader::Open(file, options);
     if (!projected_result.ok()) throw std::runtime_error(projected_result.status().ToString());
     reader = *projected_result;
@@ -886,6 +1043,12 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
         const auto index = reader->schema()->GetFieldIndex(name);
         if (index < 0) return nullptr;
         field_indexes.emplace(name, index);
+    }
+    std::vector<int> search_field_indexes;
+    if (!search.empty()) {
+        search_field_indexes.reserve(static_cast<std::size_t>(reader->schema()->num_fields()));
+        for (int index = 0; index < reader->schema()->num_fields(); ++index)
+            search_field_indexes.push_back(index);
     }
     if (reader->num_record_batches() != static_cast<int>(batch_counts.size()))
         throw std::runtime_error("Arrow result footer does not match its row-batch directory");
@@ -901,6 +1064,13 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
                type == arrow::Type::UINT32 || type == arrow::Type::UINT64 ||
                type == arrow::Type::FLOAT || type == arrow::Type::DOUBLE;
     };
+    if (sort_field_index >= 0) {
+        sort_field_index = reader->schema()->GetFieldIndex(sort_column);
+        if (sort_field_index < 0) throw std::runtime_error("projected Arrow schema lost sort column");
+        const auto type = reader->schema()->field(sort_field_index)->type()->id();
+        if (type != arrow::Type::STRING && type != arrow::Type::BOOL && !is_numeric(type))
+            throw std::invalid_argument("result sort column must be a scalar string, boolean, or number");
+    }
     const auto navigation_columns = manifest.value("navigation_columns", Json::array());
     std::unordered_map<std::string, Json> range_batches;
     std::unordered_map<std::string, bool> collect_ranges;
@@ -976,7 +1146,8 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
         if (null_value) return false;
         const auto equals = [&](const Json &expected) {
             if (type == arrow::Type::STRING)
-                return std::static_pointer_cast<arrow::StringArray>(array)->GetView(row) == expected.dump();
+                return expected.is_string() &&
+                       std::static_pointer_cast<arrow::StringArray>(array)->GetView(row) == expected.get<std::string>();
             if (type == arrow::Type::BOOL)
                 return expected.is_boolean() && std::static_pointer_cast<arrow::BooleanArray>(array)->Value(row) == expected.get<bool>();
             return is_numeric(type) && expected.is_number() && numeric_value(array, row) == expected.get<long double>();
@@ -1009,6 +1180,11 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
     std::uintmax_t match_count = 0;
     std::uintmax_t batch_offset = 0;
     std::uintmax_t skipped_batches = 0;
+    struct SortKey {
+        std::uintmax_t row_offset;
+        std::shared_ptr<arrow::Scalar> value;
+    };
+    std::vector<SortKey> sorted_matches;
     const auto end = offset > std::numeric_limits<std::uintmax_t>::max() - limit
         ? std::numeric_limits<std::uintmax_t>::max() : offset + limit;
     for (int batch_index = 0; batch_index < reader->num_record_batches(); ++batch_index) {
@@ -1049,11 +1225,56 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
                 const auto column = field_indexes.at(filter.at("column").get<std::string>());
                 if (!scalar_matches(batch->column(column), row, filter)) { matches = false; break; }
             }
+            if (matches && !search.empty()) {
+                matches = false;
+                for (const auto column : search_field_indexes) {
+                    const auto array = batch->column(column);
+                    if (array->IsNull(row)) continue;
+                    const auto scalar = array->GetScalar(row);
+                    if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                    if ((*scalar)->ToString().find(search) != std::string::npos) {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
             if (!matches) continue;
-            if (match_count >= offset && match_count < end) selected_offsets.push_back(batch_offset + row);
+            if (sort_field_index >= 0) {
+                auto value = batch->column(sort_field_index)->GetScalar(row);
+                if (!value.ok()) throw std::runtime_error(value.status().ToString());
+                sorted_matches.push_back({batch_offset + static_cast<std::uint64_t>(row), *value});
+            } else if (match_count >= offset && match_count < end) {
+                selected_offsets.push_back(batch_offset + row);
+            }
             ++match_count;
         }
         batch_offset += static_cast<std::uint64_t>(batch->num_rows());
+    }
+    if (sort_field_index >= 0) {
+        const auto type = reader->schema()->field(sort_field_index)->type()->id();
+        const auto compare = [&](const SortKey &left, const SortKey &right) {
+            if (left.value->is_valid != right.value->is_valid) return left.value->is_valid;
+            if (!left.value->is_valid) return left.row_offset < right.row_offset;
+            int order = 0;
+            if (type == arrow::Type::STRING) {
+                const auto lhs = static_cast<const arrow::StringScalar &>(*left.value).view();
+                const auto rhs = static_cast<const arrow::StringScalar &>(*right.value).view();
+                order = lhs < rhs ? -1 : lhs > rhs ? 1 : 0;
+            } else if (type == arrow::Type::BOOL) {
+                const auto lhs = static_cast<const arrow::BooleanScalar &>(*left.value).value;
+                const auto rhs = static_cast<const arrow::BooleanScalar &>(*right.value).value;
+                order = lhs == rhs ? 0 : lhs ? 1 : -1;
+            } else {
+                const auto lhs = std::stold(left.value->ToString());
+                const auto rhs = std::stold(right.value->ToString());
+                order = lhs < rhs ? -1 : lhs > rhs ? 1 : 0;
+            }
+            if (order == 0) return left.row_offset < right.row_offset;
+            return descending ? order > 0 : order < 0;
+        };
+        std::stable_sort(sorted_matches.begin(), sorted_matches.end(), compare);
+        for (auto index = offset; index < sorted_matches.size() && index < end; ++index)
+            selected_offsets.push_back(sorted_matches[static_cast<std::size_t>(index)].row_offset);
     }
     for (const auto &[name, should_collect] : collect_ranges)
         if (should_collect && range_batches.at(name).size() == batch_counts.size())
@@ -1070,7 +1291,7 @@ std::shared_ptr<ResultStagingHandle> ResultStore::open_published_result(
         throw std::invalid_argument("worker input must reference a published Arrow table result");
     const auto payload = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
 #ifdef _WIN32
-    const auto handle = CreateFileW(payload.c_str(), GENERIC_READ,
+    const auto handle = CreateFileW(detail::storage_path(payload).c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
     if (handle == INVALID_HANDLE_VALUE)
@@ -1102,16 +1323,30 @@ ResultLease ResultStore::allocate(const std::string &run_id,
     if (std::filesystem::exists(staging_directory, error) ||
         std::filesystem::exists(published_directory, error))
         throw std::runtime_error("result allocation already exists: " + result_id);
-    if (!std::filesystem::create_directories(staging_directory, error) && error)
+    if (!std::filesystem::create_directories(
+#ifdef _WIN32
+            detail::windows_extended_path(staging_directory), error
+#else
+            staging_directory, error
+#endif
+        ) && error)
         throw std::runtime_error("cannot create result staging directory: " + error.message());
     const auto normalized_extension = normalize_extension(extension);
     const auto staging_payload = staging_directory / ("payload." + normalized_extension);
 #ifdef _WIN32
-    const auto native = CreateFileW(staging_payload.c_str(), GENERIC_WRITE,
+    const auto native = CreateFileW(detail::windows_extended_path(staging_payload).c_str(), GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-    if (native == INVALID_HANDLE_VALUE)
-        throw std::runtime_error("cannot create result staging payload");
+    if (native == INVALID_HANDLE_VALUE) {
+        const auto native_error = GetLastError();
+        std::error_code cleanup_error;
+        std::filesystem::remove_all(detail::windows_extended_path(staging_directory), cleanup_error);
+        cleanup_empty_runs();
+        const auto message = std::system_category().message(static_cast<int>(native_error));
+        throw std::runtime_error("cannot create result staging payload at " +
+            staging_payload.string() + ": " + message + " (Win32 error " +
+            std::to_string(native_error) + ")");
+    }
     const auto writer = std::make_shared<ResultStagingHandle>(reinterpret_cast<std::intptr_t>(native));
 #else
     const auto native = ::open(staging_payload.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
@@ -1132,13 +1367,20 @@ ResultLease ResultStore::allocate(const std::string &run_id,
 
 Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     if (lease.writer) lease.writer->close();
-    if (!std::filesystem::is_regular_file(lease.staging_payload))
-        throw std::runtime_error("result payload is missing or is not a regular file");
+    const auto native_staging_payload = detail::storage_path(lease.staging_payload);
+    std::error_code payload_error;
+    const auto payload_is_file = std::filesystem::is_regular_file(native_staging_payload, payload_error);
+    if (!payload_is_file) {
+        const auto payload_exists = std::filesystem::exists(native_staging_payload, payload_error);
+        throw std::runtime_error("result payload is missing or is not a regular file: " +
+            lease.staging_payload.string() + " (exists=" + (payload_exists ? "true" : "false") +
+            ", error=" + payload_error.message() + ")");
+    }
     Json batch_row_counts = Json::array();
     if (lease.format == "arrow-ipc-file") {
         if (metadata.value("kind", std::string{}) != "table")
             throw std::invalid_argument("Arrow IPC file publication requires a table result");
-        auto file_result = arrow::io::ReadableFile::Open(lease.staging_payload.string());
+        auto file_result = arrow::io::ReadableFile::Open(native_staging_payload.string());
         if (!file_result.ok()) throw std::runtime_error("cannot validate Arrow result: " + file_result.status().ToString());
         auto reader_result = arrow::ipc::RecordBatchFileReader::Open(*file_result);
         if (!reader_result.ok()) throw std::runtime_error("Arrow result has no valid IPC file footer: " + reader_result.status().ToString());
@@ -1168,9 +1410,10 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
         }
     }
     std::uintmax_t payload_size = 0;
-    const auto payload_digest_value = detail::payload_digest(lease.staging_payload, payload_size);
+    const auto payload_digest_value = detail::payload_digest(native_staging_payload, payload_size);
     std::error_code error;
-    if (std::filesystem::exists(lease.published_directory, error))
+    const auto native_published_directory = detail::storage_path(lease.published_directory);
+    if (std::filesystem::exists(native_published_directory, error))
         throw std::runtime_error("result has already been published: " + lease.result_id);
     Json manifest = metadata;
     if (lease.format == "arrow-ipc-file") {
@@ -1181,7 +1424,7 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     manifest["run_id"] = lease.run_id;
     manifest["format"] = lease.format;
     manifest["state"] = "published";
-    manifest["payload"] = std::filesystem::relative(lease.published_payload, root_).generic_string();
+    manifest["payload"] = lease.published_payload.lexically_relative(root_).generic_string();
     manifest["payload_size"] = payload_size;
     manifest["payload_digest"] = payload_digest_value;
     manifest["digest_algorithm"] = "fnv1a64";
@@ -1195,8 +1438,8 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     // Prepare the complete publication unit while it is still private. A
     // process crash must never expose a promoted payload directory without its
     // manifest; the directory rename is the single visibility boundary.
-    write_json_file(lease.staging_directory / "manifest.json", manifest);
-    std::filesystem::rename(lease.staging_directory, lease.published_directory, error);
+    write_json_file(detail::storage_path(lease.staging_directory / "manifest.json"), manifest);
+    std::filesystem::rename(detail::storage_path(lease.staging_directory), native_published_directory, error);
     if (error) throw std::runtime_error("cannot publish result payload: " + error.message());
     cleanup_empty_runs();
     return manifest;
@@ -1205,9 +1448,22 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
 void ResultStore::abort(const ResultLease &lease) const {
     if (lease.writer) lease.writer->close();
     std::error_code error;
-    if (std::filesystem::exists(lease.staging_directory, error))
-        std::filesystem::remove_all(lease.staging_directory, error);
-    if (error) throw std::runtime_error("cannot remove aborted result staging payload: " + error.message());
+    // A staging result has a fixed, shallow layout (payload plus optional
+    // manifest).  Do not use recursive remove_all here: on Windows a failed
+    // output can leave a leased handle or a transient filesystem entry and
+    // remove_all may spend an unbounded time walking the directory.  Cleanup
+    // the known files explicitly and fail fast if an unexpected entry remains.
+    for (const auto &path : {detail::storage_path(lease.staging_payload),
+                             detail::storage_path(lease.staging_directory / "manifest.json")}) {
+        error.clear();
+        static_cast<void>(std::filesystem::remove(path, error));
+        if (error)
+            throw std::runtime_error("cannot remove aborted result staging payload: " + error.message());
+    }
+    error.clear();
+    static_cast<void>(std::filesystem::remove(detail::storage_path(lease.staging_directory), error));
+    if (error)
+        throw std::runtime_error("cannot remove aborted result staging directory: " + error.message());
     cleanup_empty_runs();
 }
 

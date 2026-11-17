@@ -61,7 +61,7 @@ describe('frontend plugin registry', () => {
           api.registerViewer({
             id: 'test.visualization',
             label: 'Wrong viewer',
-            accepts: ['visualizationSpecResult'],
+            accepts: ['unknownResult'],
             component: () => null,
           });
         }),

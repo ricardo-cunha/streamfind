@@ -1,6 +1,7 @@
 #include "operations/fragmentation/fragment_suspect_targets.hpp"
 #include "operations/fragmentation/fragmenter_limits.hpp"
 #include "utils/tools_resolver.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -379,16 +380,48 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency.");
 
     const auto physical_table = table_input->at("physical_table").get<std::string>();
-    const auto targets = access.read(physical_table, {"name", "SMILES"}, "name");
+    struct Target { std::string name; std::string smiles; };
+    std::vector<Target> targets;
+    access.read_typed_batches(physical_table, {"name", "SMILES"}, "name",
+        [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            const auto name_column = batch.column_index("name");
+            const auto smiles_column = batch.column_index("SMILES");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row)
+                targets.push_back({batch.is_null(name_column, row) ? std::string{} : std::string(batch.text(name_column, row)),
+                                   batch.is_null(smiles_column, row) ? std::string{} : std::string(batch.text(smiles_column, row))});
+        });
     if (targets.empty()) throw std::invalid_argument("suspectTargetsTable contains no target rows.");
 
-    const std::vector<std::string> columns = {
-        "name", "fragment_id", "parent_id", "SMILES",
-        "formula", "mass", "depth", "atom_indices", "broken_bond_indices", "neutral_losses", "fragment_data"};
-    const std::vector<std::string> types = {
-        "string", "string", "string", "string", "string", "real", "integer",
-        "array", "array", "array", "object"};
-    Json rows = Json::array();
+    std::vector<sdk::TableBatchBuilder::Column> schema{
+        {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"fragment_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"parent_id", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"SMILES", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"formula", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"depth", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"atom_indices", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"broken_bond_indices", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"neutral_losses", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"fragment_data", STREAMFIND_PLUGIN_COLUMN_UTF8}};
+    sdk::TableBatchBuilder output(std::move(schema));
+    const auto int_list = [](const Json &values) {
+        std::vector<sdk::TableBatchBuilder::ListCell> result;
+        if (!values.is_array()) return result;
+        result.reserve(values.size());
+        for (const auto &value : values)
+            result.emplace_back(value.is_number_integer()
+                ? sdk::TableBatchBuilder::ListCell(static_cast<std::int64_t>(value.get<std::int64_t>()))
+                : sdk::TableBatchBuilder::ListCell(std::monostate{}));
+        return result;
+    };
+    const auto string_list = [](const Json &values) {
+        std::vector<sdk::TableBatchBuilder::ListCell> result;
+        if (!values.is_array()) return result;
+        result.reserve(values.size());
+        for (const auto &value : values)
+            result.emplace_back(value.is_string() ? sdk::TableBatchBuilder::ListCell(value.get<std::string>())
+                                                  : sdk::TableBatchBuilder::ListCell(std::monostate{}));
+        return result;
+    };
+    std::size_t fragment_rows = 0;
     Json errors = Json::array();
     std::size_t skipped = 0;
     std::size_t fragmented = 0;
@@ -397,12 +430,9 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     std::size_t failed_components = 0;
     for (const auto &target : targets)
     {
-        const auto smiles_value = target.find("SMILES");
-        const std::string smiles = smiles_value == target.end() || smiles_value->is_null()
-            ? std::string{} : smiles_value->get<std::string>();
+        const std::string &smiles = target.smiles;
         if (smiles.empty()) { ++skipped; continue; }
-        const auto name_value = target.find("name");
-        const std::string name = name_value == target.end() || name_value->is_null() ? std::string{} : name_value->get<std::string>();
+        const std::string &name = target.name;
         const auto components = streamfind::mass_spec::fragmentation::detail::split_connected_smiles(smiles);
         if (components.empty()) { ++skipped; continue; }
         total_components += components.size();
@@ -445,7 +475,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
             ++fragmented_components;
             for (const auto &fragment : document.at("fragments"))
             {
-                if (rows.size() >= limits.maximum_fragment_rows)
+                if (fragment_rows >= limits.maximum_fragment_rows)
                     throw std::runtime_error("MetFrag Fragmenter exceeded maximum_fragment_rows (" +
                         std::to_string(limits.maximum_fragment_rows) + "); no partial result was published.");
                 const auto atom_indices = fragment.value("atom_indices", Json::array());
@@ -463,13 +493,14 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
                 const std::string fragment_id = std::to_string(component_index) + ":" + raw_id;
                 const Json parent_id = raw_parent_id.empty() ? Json(nullptr) : Json(std::to_string(component_index) + ":" + raw_parent_id);
                 const int fragment_depth = fragment.value("depth", 0);
-                rows.push_back({
-                    {"name", name}, {"fragment_id", fragment_id}, {"parent_id", parent_id},
-                    {"SMILES", fragment_depth == 0 ? components[component_index] : fragment.value("smiles", std::string{})},
-                    {"formula", fragment.value("formula", std::string{})}, {"mass", fragment.value("exact_mass", 0.0)},
-                    {"depth", fragment_depth}, {"atom_indices", atom_indices},
-                    {"broken_bond_indices", broken_bond_indices}, {"neutral_losses", neutral_losses},
-                    {"fragment_data", fragment_data}});
+                output.append_row({name, fragment_id,
+                    parent_id.is_null() ? sdk::TableBatchBuilder::Cell(std::monostate{})
+                                        : sdk::TableBatchBuilder::Cell(parent_id.get<std::string>()),
+                    fragment_depth == 0 ? components[component_index] : fragment.value("smiles", std::string{}),
+                    fragment.value("formula", std::string{}), fragment.value("exact_mass", 0.0),
+                    static_cast<std::int64_t>(fragment_depth), int_list(atom_indices), int_list(broken_bond_indices),
+                    string_list(neutral_losses), fragment_data.dump()});
+                ++fragment_rows;
             }
             access.report_progress(
                 static_cast<double>(component_index + 1) / static_cast<double>(components.size()),
@@ -480,13 +511,13 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     if (fragmented_components == 0 && failed_components > 0)
         throw std::runtime_error("MetFrag Fragmenter failed for every structure component; no fragmentation result was published. First error: " +
             errors.front().value("message", std::string("unknown fragmenter failure")));
-    access.emit_table_rows("fragmentationTreeTable", columns, types, rows);
+    output.emit(access, "fragmentationTreeTable");
     return {{"status", errors.empty() ? "finished" : "partial"},
             {"target_rows", targets.size()}, {"fragmented_targets", fragmented},
             {"skipped_without_smiles", skipped}, {"failed_targets", errors.size()},
             {"total_components", total_components}, {"fragmented_components", fragmented_components},
             {"failed_components", failed_components},
-            {"fragment_rows", rows.size()}, {"depth", limits.depth},
+            {"fragment_rows", fragment_rows}, {"depth", limits.depth},
             {"timeout_seconds", limits.timeout_seconds},
             {"output_limit_bytes", limits.output_limit_bytes},
             {"maximum_fragment_rows", limits.maximum_fragment_rows},

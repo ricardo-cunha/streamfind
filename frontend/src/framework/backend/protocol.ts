@@ -30,7 +30,13 @@ export type ServiceSession = {
     process_id?: number | null;
     endpoint?: string;
     state?: string;
+    protocol_version?: string;
+    executable?: string;
+    manager_process_id?: number | null;
+    manager_executable?: string;
+    started_at?: string;
   };
+  projects?: ProjectSession[];
 };
 
 export type ProjectSession = {
@@ -44,6 +50,11 @@ export type ProjectSession = {
     published_count?: number;
     size_bytes?: number;
   };
+  diagnostics?: Array<{
+    severity: string;
+    code: string;
+    message: string;
+  }>;
   initialization?: ProjectInitialization;
 };
 

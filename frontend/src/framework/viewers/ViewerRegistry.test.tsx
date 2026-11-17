@@ -6,7 +6,7 @@ import { ViewerRegistry, type ViewerContext } from './viewerTypes';
 const context: ViewerContext = {
   sessionId: 'session-a',
   resultId: 'result-a',
-  semanticType: 'sfvis:visualizationSpecResult',
+  semanticType: 'sf:customResult',
 };
 
 afterEach(() => cleanup());
@@ -17,7 +17,7 @@ describe('viewer registry', () => {
     registry.register({
       id: 'test.viewer',
       label: 'Test viewer',
-      accepts: ['visualizationSpecResult'],
+      accepts: ['customResult'],
       component: ({ context: viewerContext }) => <div>Viewing {viewerContext.resultId}</div>,
     });
 

@@ -256,7 +256,7 @@ void set_service_port_override(std::uint16_t port) {
 }
 
 std::vector<Json> wait_for_service(const char *executable, std::uint16_t port) {
-    for (int attempt = 0; attempt < 100; ++attempt) {
+    for (int attempt = 0; attempt < 300; ++attempt) {
         try {
             const auto session = Json::parse(request(
                 parse_endpoint("http://127.0.0.1:" + std::to_string(port)), "GET", "/session"));
@@ -304,6 +304,7 @@ int main(int argc, char **argv) {
         return code;
     };
     try {
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
         if (argc < 3 || std::string(argv[1]) != "service") {
             std::cout << "Usage: streamfind service start [--port <port>] [--json]\n"
                          "       streamfind service list|status [--json]\n"
@@ -443,16 +444,39 @@ int main(int argc, char **argv) {
                     : "multiple streamfind services are running; use --instance <id>");
                 instance = values.front().value("service_instance_id", "");
             }
+            std::uint64_t manager_process_id = 0;
+            bool found = false;
             for (const auto &value : values) {
                 if (value.value("service_instance_id", "") != instance) continue;
                 port = streamfind::service_cli::detail::parse_endpoint(
                     value.value("endpoint", "")).port;
+                manager_process_id = value.value("manager_process_id", std::uint64_t{0});
+                found = true;
                 break;
             }
+            if (!found) throw std::runtime_error("service instance not found");
             streamfind::service_cli::detail::set_service_port_override(port);
             streamfind::service::stop_service(instance);
-            for (int attempt = 0; attempt < 50 && !streamfind::service::ServiceDiscovery::record_paths().empty(); ++attempt)
+            bool stopped = false;
+            for (int attempt = 0; attempt < 200; ++attempt) {
+                const auto current_paths = streamfind::service::ServiceDiscovery::record_paths();
+                const auto still_registered = std::any_of(current_paths.begin(), current_paths.end(),
+                    [&](const auto &path) {
+                        try {
+                            return streamfind::service::ServiceDiscovery::read(path).service_instance_id == instance;
+                        } catch (...) { return false; }
+                    });
+                if (!still_registered) { stopped = true; break; }
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            if (!stopped) throw std::runtime_error("streamfind service did not stop within 20 seconds");
+            for (int attempt = 0; manager_process_id != 0 && attempt < 100; ++attempt) {
+                if (!streamfind::service_cli::detail::process_is_running(manager_process_id)) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            if (manager_process_id != 0 &&
+                streamfind::service_cli::detail::process_is_running(manager_process_id))
+                throw std::runtime_error("streamfind tray manager did not exit after service shutdown");
             streamfind::service_cli::detail::start_tray_process(argv[0]);
             const auto ready = streamfind::service_cli::detail::wait_for_service(argv[0], port);
             streamfind::service_cli::detail::print_services(ready, json);

@@ -114,13 +114,6 @@ private:
     std::filesystem::path configuration_path_;
     std::uint16_t service_port_{0};
     mutable std::unordered_map<std::string, ResultLease> data_proxy_leases_;
-    // Row-key offsets are prepared while the service reads a sampled/detail
-    // result. Subsequent app and MCP detail requests can jump directly to the
-    // Arrow frame containing the requested rows instead of rescanning the
-    // complete immutable result file.
-    mutable std::unordered_map<std::string, std::shared_ptr<const std::unordered_map<std::string, std::uintmax_t>>> result_row_key_cache_;
-    using NavigationIndex = std::unordered_map<std::string, std::unordered_map<std::string, std::vector<std::uintmax_t>>>;
-    mutable std::unordered_map<std::string, std::shared_ptr<const NavigationIndex>> result_navigation_index_cache_;
     mutable std::unordered_map<std::string, Json> decoded_trace_cache_;
     mutable std::deque<std::string> decoded_trace_cache_order_;
     mutable std::size_t decoded_trace_cache_bytes_{0};

@@ -575,6 +575,7 @@ if(WIN32)
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind-app.rc")
     add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE streamfind::cpp_core ws2_32 shell32)
+    target_include_directories(streamfind_service_host PRIVATE service/include)
     set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind-app)
     streamfind_add_windows_version_resource(streamfind_service_host "streamfind-app.exe" "streamfind app launcher")
     streamfind_static_mingw_executable(streamfind_service_host)
@@ -583,6 +584,7 @@ else()
         service/src/streamfind-service-launcher.cpp)
     add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE streamfind::cpp_core)
+    target_include_directories(streamfind_service_host PRIVATE service/include)
     set_target_properties(streamfind_service_host PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON

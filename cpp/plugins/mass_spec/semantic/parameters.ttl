@@ -49,75 +49,6 @@ sfms:levelsParameter
     sf:items sfcore:integerItemParameter ;
     sf:example "[1,2]" .
 
-sfms:plotDownsizeParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot downsize" ;
-    skos:definition "Optional retention-time bin width used to average TIC points before plotting." ;
-    sf:type "real" ;
-    sf:required false ;
-    sf:default 0.0 ;
-    sf:units "seconds" ;
-    sf:example 5.0 .
-
-sfms:plotMaxPointsParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Maximum TIC points per trace" ;
-    skos:definition "Maximum number of averaged retention-time points emitted for each plotted trace when Plot downsize is zero. The backend chooses an adaptive bin width to keep large multi-sample TIC visualizations responsive; zero disables the automatic cap." ;
-    sf:type "integer" ;
-    sf:required false ;
-    sf:default 5000 ;
-    sf:units "points per trace" ;
-    sf:example 5000 .
-
-sfms:plotGroupByParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot group" ;
-    skos:definition "TIC trace grouping key." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "analysis" ;
-    sf:enum "analysis,replicate,polarity,level" ;
-    sf:example "analysis" .
-
-sfms:plotTitleParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot title" ;
-    skos:definition "Optional visualization title." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "Total Ion Chromatograms (TICs)" ;
-    sf:example "Total Ion Chromatograms (TICs)" .
-
-sfms:plotXLabelParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot x-axis label" ;
-    skos:definition "Optional x-axis label." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "Retention time / seconds" ;
-    sf:example "Retention time / seconds" .
-
-sfms:plotYLabelParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot y-axis label" ;
-    skos:definition "Optional y-axis label." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "Intensity / counts" ;
-    sf:example "Intensity / counts" .
-
 sfms:rtMinParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -316,6 +247,66 @@ sfms:targetsParameter
     sf:required false ;
     sf:default "[]" ;
     sf:example "[{\"name\":\"caffeine\",\"mass\":194.0804},{\"name\":\"acetaminophen\",\"mass\":151.0633}]" .
+
+sfms:quantificationMethodParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification method" ;
+    skos:definition "Editable horizontal method rows for the quantification plan, with one analyte or internal standard per row, retention-time selection settings, calibration settings, and quantifier plus optional qualifier transition matching columns. The Set quantification plan operation publishes this table together with the project-specific analysis assignments. Output contains only fields consumed by quantification; activation energy and audit timestamps remain in raw chromatogram metadata rather than being duplicated here. If rt is omitted or null, response extraction selects the strongest matching peak by the row's response_metric (area by default, or height)." ;
+    sf:type "table" ;
+    sf:tableContract sfms:quantificationMethodTable ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[{\"target_id\":\"caffeine\",\"role\":\"analyte\",\"internal_standard_id\":\"caffeine_d9\",\"rt\":1020.0,\"rt_tolerance\":30.0,\"response_metric\":\"area\",\"normalization\":\"internal_standard\",\"quantifier_signal_type\":\"MS\",\"quantifier_precursor_mz\":195.1,\"quantifier_product_mz\":138.1,\"qualifier_signal_type\":\"MS\",\"qualifier_precursor_mz\":195.1,\"qualifier_product_mz\":110.1},{\"target_id\":\"caffeine_d9\",\"role\":\"internal_standard\",\"rt\":1018.0,\"rt_tolerance\":30.0,\"response_metric\":\"area\",\"normalization\":\"none\",\"quantifier_signal_type\":\"MS\",\"quantifier_precursor_mz\":204.1,\"quantifier_product_mz\":144.1}]" .
+
+sfms:quantSampleAssignmentsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification sample assignments" ;
+    skos:definition "Editable project-specific rows for the quantification plan, identifying blanks, calibrators, QCs, and unknowns with concentration, dilution, and exclusion context. The Set quantification plan operation publishes these assignments together with the method table; transition and calibration settings remain in the method rows." ;
+    sf:type "table" ;
+    sf:tableContract sfms:quantificationAnalysesTable ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine\",\"sample_type\":\"calibrator\",\"calibration_level\":5,\"nominal_concentration\":5.0,\"dilution_factor\":1.0}]" .
+
+sfms:minimumCalibrationPointsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum calibration points" ;
+    skos:definition "Minimum number of valid calibrator observations required for a calibration model." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 3 ;
+    sf:example 3 .
+
+sfms:requireQualifierParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Require qualifier" ;
+    skos:definition "When enabled, a result with a missing or failing qualifier is not accepted as quantified." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default false ;
+    sf:example false .
+
+sfms:qcMaxRelativeErrorParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "QC maximum relative error percent" ;
+    skos:definition "Maximum absolute deviation from 100 percent allowed for QC accuracy." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 20.0 ;
+    sf:example 20.0 .
 
 sfms:targetsCsvPathParameter
     a sf:Parameter ;
@@ -1595,6 +1586,17 @@ sfms:minPeakWidthParameter
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum peak width" ;
     skos:definition "Minimum chromatographic peak width in retention-time units." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 0.0 ;
+    sf:example 5.0 .
+
+sfms:peakTracePaddingSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak trace padding" ;
+    skos:definition "Retention-time padding added on both sides of each detected peak when storing its EIC arrays." ;
     sf:type "real" ;
     sf:required false ;
     sf:default 0.0 ;

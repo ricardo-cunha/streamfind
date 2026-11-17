@@ -1,16 +1,19 @@
 #include "streamfind/core_operations.hpp"
 
 #include "streamfind/catalogue_binding.hpp"
+#include "streamfind/data_proxy_protocol.hpp"
 #include "streamfind/operation_execution_context.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <arrow/api.h>
 
 namespace streamfind::core_operations {
 namespace detail {
@@ -75,14 +78,86 @@ Json write_table_csv(OperationExecutionContext &context, const Json &parameters,
     const auto input = inputs.find("anyTable");
     if (input == inputs.end() || !input->is_object())
         throw std::invalid_argument("Connect a table input.");
-    const auto physical_table = input->value("physical_table", std::string{});
-    if (physical_table.empty())
-        throw std::invalid_argument("The connected table artifact has no physical table.");
-
     const auto csv_path = parameters.at("csv_path").get<std::string>();
-    const auto sql = "COPY (SELECT * FROM " + quote_identifier(physical_table) + ") TO " +
-                     quote_sql_string(csv_path) + " (HEADER, DELIMITER ',')";
-    context.query(sql);
+    std::string result_id;
+    const auto result_ref = input->find("$result_ref");
+    if (result_ref != input->end() && result_ref->is_string())
+        result_id = result_ref->get<std::string>();
+    if (result_id.empty()) {
+        const auto descriptor_id = input->find("result_id");
+        if (descriptor_id != input->end() && descriptor_id->is_string())
+            result_id = descriptor_id->get<std::string>();
+    }
+    if (result_id.empty())
+        throw std::invalid_argument("The connected table input must reference a published result.");
+    if (context.data_proxy_session_id().empty() || context.data_proxy_run_id().empty())
+        throw std::runtime_error("CSV result export requires an active service worker session.");
+
+    static std::atomic_uint64_t request_sequence{0};
+    const auto request_id = "csv-export-" + std::to_string(request_sequence.fetch_add(1));
+    const auto grant_request = data_proxy::request(
+        request_id, context.data_proxy_session_id(), context.data_proxy_run_id(), {},
+        operation_instance, {}, Json{{"method", "lease_result_input"}, {"result_id", result_id}});
+    const auto grant_response = data_proxy::Envelope::from_json(context.request_data(grant_request));
+    if (!grant_response.error_code.empty())
+        throw std::runtime_error(grant_response.error_code + ": " + grant_response.error_message);
+
+    const auto schema_request = data_proxy::request(
+        request_id + "-describe", context.data_proxy_session_id(), context.data_proxy_run_id(), {},
+        operation_instance, {}, Json{{"method", "describe_result"}, {"result_id", result_id}});
+    const auto schema_response = data_proxy::Envelope::from_json(context.request_data(schema_request));
+    if (!schema_response.error_code.empty())
+        throw std::runtime_error(schema_response.error_code + ": " + schema_response.error_message);
+    const auto schema = schema_response.payload.value("schema", Json::array());
+    if (!schema.is_array()) throw std::runtime_error("Published table result has an invalid schema.");
+
+    std::ofstream output(csv_path, std::ios::out | std::ios::trunc);
+    if (!output) throw std::invalid_argument("csv_path is not writable");
+    const auto csv_cell = [](const Json &value) {
+        if (value.is_null()) return std::string{};
+        const auto text = value.is_string() ? value.get<std::string>() : value.dump();
+        if (text.find_first_of(",\"\r\n") == std::string::npos) return text;
+        std::string escaped = "\"";
+        for (const auto character : text) escaped += character == '"' ? "\"\"" : std::string(1, character);
+        return escaped + "\"";
+    };
+    std::vector<std::string> columns;
+    columns.reserve(schema.size());
+    for (const auto &column : schema) {
+        if (!column.is_object() || !column.value("name", Json{}).is_string())
+            throw std::runtime_error("Published table result has an invalid column definition.");
+        columns.push_back(column.at("name").get<std::string>());
+    }
+    for (std::size_t index = 0; index < columns.size(); ++index) {
+        if (index != 0) output << ',';
+        output << csv_cell(columns[index]);
+    }
+    output << "\r\n";
+
+    const auto lease_id = grant_response.payload.value("lease_id", std::string{});
+    if (lease_id.empty()) throw std::runtime_error("Service did not grant a result read handle.");
+    const auto native_handle = context.receive_result_input_handle();
+    data_proxy::ArrowFileBatchReader reader(native_handle);
+    std::uint64_t offset = 0;
+    for (;;) {
+        const auto batch = reader.read_typed(offset, 4096, columns);
+        if (!batch) break;
+        for (std::int64_t row = 0; row < batch->num_rows(); ++row) {
+            for (std::size_t index = 0; index < columns.size(); ++index) {
+                if (index != 0) output << ',';
+                const auto array = batch->column(static_cast<int>(index));
+                if (array->IsNull(row)) continue;
+                const auto scalar = array->GetScalar(row);
+                if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                const auto string_scalar = std::dynamic_pointer_cast<arrow::StringScalar>(*scalar);
+                output << csv_cell(string_scalar ? Json(std::string(string_scalar->view()))
+                                                 : Json((*scalar)->ToString()));
+            }
+            output << "\r\n";
+        }
+        offset += static_cast<std::uint64_t>(batch->num_rows());
+    }
+    if (!output) throw std::runtime_error("Failed while writing CSV output");
     (void)operation_instance;
     return Json{{"status", "finished"}, {"csvPath", csv_path}};
 }
@@ -135,7 +210,7 @@ Json read_csv(OperationExecutionContext &context, const Json &parameters,
         if (index != 0) target_columns += ", ";
         target_columns += quote_identifier(columns.at(index).at("name").get<std::string>());
     }
-    const auto rows = context.query("SELECT " + target_columns + " FROM " + source);
+    const auto select_sql = "SELECT " + target_columns + " FROM " + source;
     const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"},
                                  {"format", "arrow-ipc-file"}, {"schema", columns},
                                  {"producer_operation", "streamfind.read_csv"},
@@ -145,7 +220,7 @@ Json read_csv(OperationExecutionContext &context, const Json &parameters,
     const auto handle = allocation.value("output_handle", std::string{});
     if (handle.empty()) throw std::runtime_error("runtime did not allocate CSV output");
     try {
-        context.outputs().write_rows(handle, 0, rows);
+        context.outputs().write_query_result(handle, 0, select_sql);
         const auto reference = context.outputs().finish(handle);
         return {{"status", "finished"}, {"emitted_results", {{"anyTable", reference}}}};
     } catch (...) {
@@ -272,8 +347,8 @@ Json bind_table_rows(OperationExecutionContext &context, const Json &, const std
         if (index != 0) select_columns += ", ";
         select_columns += quote_identifier(left.columns().at(index).name);
     }
-    const auto rows = context.query("SELECT " + select_columns + " FROM " + quote_identifier(left_name) +
-                                   " UNION ALL SELECT " + select_columns + " FROM " + quote_identifier(right_name));
+    const auto select_sql = "SELECT " + select_columns + " FROM " + quote_identifier(left_name) +
+                            " UNION ALL SELECT " + select_columns + " FROM " + quote_identifier(right_name);
     const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-file"},
                                  {"schema", columns}, {"producer_operation", "streamfind.bind_table_rows"},
                                  {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
@@ -283,7 +358,7 @@ Json bind_table_rows(OperationExecutionContext &context, const Json &, const std
                                  }} }}};
     const auto allocation = context.outputs().begin(descriptor);
     const auto handle = allocation.value("output_handle", std::string{});
-    try { context.outputs().write_rows(handle, 0, rows); return {{"status", "finished"}, {"emitted_results", {{"anyTable", context.outputs().finish(handle)}}}}; }
+    try { context.outputs().write_query_result(handle, 0, select_sql); return {{"status", "finished"}, {"emitted_results", {{"anyTable", context.outputs().finish(handle)}}}}; }
     catch (...) { context.outputs().abort(handle, "row binding failed"); throw; }
 }
 
@@ -328,9 +403,9 @@ Json bind_table_columns(OperationExecutionContext &context, const Json &paramete
         left_select += "l." + quote_identifier(column.name);
     }
     if (right_select.empty()) throw std::invalid_argument("The right table has no non-key columns to bind.");
-    const auto rows = context.query("SELECT " + left_select + ", " + right_select +
-                                   " FROM " + quote_identifier(left_name) + " l INNER JOIN " +
-                                   quote_identifier(right_name) + " r ON " + join);
+    const auto select_sql = "SELECT " + left_select + ", " + right_select +
+                            " FROM " + quote_identifier(left_name) + " l INNER JOIN " +
+                            quote_identifier(right_name) + " r ON " + join;
     const auto descriptor = Json{{"contract_id", "anyTable"}, {"kind", "table"}, {"format", "arrow-ipc-file"},
                                  {"schema", columns}, {"producer_operation", "streamfind.bind_table_columns"},
                                  {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
@@ -340,7 +415,7 @@ Json bind_table_columns(OperationExecutionContext &context, const Json &paramete
                                  }} }}};
     const auto allocation = context.outputs().begin(descriptor);
     const auto handle = allocation.value("output_handle", std::string{});
-    try { context.outputs().write_rows(handle, 0, rows); return {{"status", "finished"}, {"emitted_results", {{"anyTable", context.outputs().finish(handle)}}}}; }
+    try { context.outputs().write_query_result(handle, 0, select_sql); return {{"status", "finished"}, {"emitted_results", {{"anyTable", context.outputs().finish(handle)}}}}; }
     catch (...) { context.outputs().abort(handle, "column binding failed"); throw; }
 }
 

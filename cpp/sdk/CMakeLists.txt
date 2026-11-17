@@ -7,6 +7,7 @@ add_library(streamfind_cpp_sdk ${STREAMFIND_CPP_LIBRARY_TYPE}
     src/plugin_manifest.cpp
     src/dynamic_plugin_manager.cpp
     src/plugin_data_service.cpp
+    src/table_batch_builder.cpp
     src/debug_session.cpp)
 target_sources(streamfind_cpp_sdk PRIVATE src/plugin_host_access.cpp)
 add_library(streamfind::cpp_sdk ALIAS streamfind_cpp_sdk)

@@ -27,6 +27,9 @@ struct ServiceDiscoveryRecord {
 
 class ServiceDiscovery {
 public:
+    // Isolate service discovery to the current installation/build directory.
+    // STREAMFIND_RUNTIME_DIR can be set explicitly to share a scope on purpose.
+    static void configure_runtime_scope();
     static std::filesystem::path runtime_directory();
     static std::vector<std::filesystem::path> record_paths();
     static ServiceDiscoveryRecord read(const std::filesystem::path &path);

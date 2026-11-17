@@ -121,7 +121,8 @@ export type ResultQueryFilter = {
 };
 export type ResultQueryRequest = {
   result_id: string;
-  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
+  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
+  distinct_columns?: string[];
   columns?: string[];
   filters?: ResultQueryFilter[];
   offset?: number;
@@ -143,8 +144,9 @@ export type ResultQueryRequest = {
 };
 export type ResultQueryResponse = ResultDataResponse & {
   returned_rows: number;
-  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
+  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
   has_more: boolean;
+  distinct?: Record<string, JsonValue[]>;
 };
 export type ResultTraceRequest = {
   result_id: string;
@@ -211,9 +213,7 @@ export type IsotopePatternResponse = {
 
 type EventHandler = (event: StreamFindEvent) => void;
 
-const defaultBaseUrl = import.meta.env.DEV
-  ? import.meta.env.VITE_STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790'
-  : window.location.origin;
+const defaultBaseUrl = window.location.origin;
 
 export class StreamFindApiClient {
   private socket: WebSocket | null = null;
@@ -473,6 +473,7 @@ export class StreamFindApiClient {
         returned_rows: typeof raw.returned_rows === 'number' ? raw.returned_rows : result.rows.length,
         mode: raw.mode ?? 'page',
         has_more: Boolean(raw.has_more),
+        distinct: raw.distinct,
       };
     })();
     const remembered = rememberResultQuery(key, pending);

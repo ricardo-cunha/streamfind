@@ -38,6 +38,39 @@ std::string environment_value(const char *name) {
     return value == nullptr ? std::string{} : std::string(value);
 }
 
+std::filesystem::path current_executable_path() {
+#ifdef _WIN32
+    std::vector<wchar_t> path(32768);
+    const auto length = GetModuleFileNameW(nullptr, path.data(),
+                                           static_cast<DWORD>(path.size()));
+    if (length == 0 || length >= path.size()) return {};
+    return std::filesystem::path(std::wstring(path.data(), length));
+#else
+    std::error_code error;
+    const auto path = std::filesystem::read_symlink("/proc/self/exe", error);
+    return error ? std::filesystem::path{} : path;
+#endif
+}
+
+std::string scope_hash(const std::filesystem::path &path) {
+    std::string value;
+    const auto utf8 = path.generic_u8string();
+    value.assign(reinterpret_cast<const char *>(utf8.data()), utf8.size());
+#ifdef _WIN32
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+#endif
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const auto character : value) {
+        hash ^= static_cast<unsigned char>(character);
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream output;
+    output << std::hex << std::setfill('0') << std::setw(16) << hash;
+    return output.str();
+}
+
 bool process_alive(std::uint64_t process_id) {
     if (process_id == 0) return false;
 #ifdef _WIN32
@@ -101,6 +134,8 @@ Json ServiceDiscoveryRecord::to_json() const {
 }
 
 std::filesystem::path ServiceDiscovery::runtime_directory() {
+    const auto configured = detail::environment_value("STREAMFIND_RUNTIME_DIR");
+    if (!configured.empty()) return std::filesystem::path(configured);
 #ifdef _WIN32
     auto base = detail::environment_value("LOCALAPPDATA");
     if (base.empty()) base = detail::environment_value("TEMP");
@@ -112,6 +147,24 @@ std::filesystem::path ServiceDiscovery::runtime_directory() {
     if (base.empty()) base = std::filesystem::temp_directory_path().string();
     return std::filesystem::path(base) /
            (detail::environment_value("XDG_RUNTIME_DIR").empty() ? ".cache/streamfind/runtime" : "streamfind");
+#endif
+}
+
+void ServiceDiscovery::configure_runtime_scope() {
+    if (!detail::environment_value("STREAMFIND_RUNTIME_DIR").empty()) return;
+    std::error_code error;
+    auto executable = detail::current_executable_path();
+    if (executable.empty())
+        throw std::runtime_error("unable to determine executable path for service runtime scope");
+    executable = std::filesystem::weakly_canonical(executable, error);
+    if (error) throw std::runtime_error("unable to normalize executable path for service runtime scope");
+    auto directory = runtime_directory() / "scopes" / detail::scope_hash(executable.parent_path());
+#ifdef _WIN32
+    if (_wputenv_s(L"STREAMFIND_RUNTIME_DIR", directory.c_str()) != 0)
+        throw std::runtime_error("unable to configure streamfind service runtime scope");
+#else
+    if (setenv("STREAMFIND_RUNTIME_DIR", directory.c_str(), 1) != 0)
+        throw std::runtime_error("unable to configure streamfind service runtime scope");
 #endif
 }
 
@@ -219,18 +272,6 @@ std::uint64_t ServiceDiscovery::current_process_id() {
 #endif
 }
 
-std::filesystem::path current_executable_path() {
-#ifdef _WIN32
-    char path[MAX_PATH]{};
-    const auto length = GetModuleFileNameA(nullptr, path, MAX_PATH);
-    return length == 0 || length >= MAX_PATH ? std::filesystem::path{} : std::filesystem::path(path);
-#else
-    std::error_code error;
-    const auto path = std::filesystem::read_symlink("/proc/self/exe", error);
-    return error ? std::filesystem::path{} : path;
-#endif
-}
-
 void ServiceDiscovery::write_record(const ServiceDiscoveryRecord &record) {
     std::error_code error;
     std::filesystem::create_directories(record.record_path.parent_path(), error);
@@ -261,7 +302,7 @@ ServiceDiscoveryRecord ServiceDiscovery::publish(
     record_.protocol_version = protocol_version;
     record_.state = "ready";
     record_.token = create_token();
-    record_.executable = current_executable_path().string();
+    record_.executable = detail::current_executable_path().string();
     record_.process_id = current_process_id();
     record_.manager_process_id = manager_process_id;
     record_.manager_executable = manager_executable.string();

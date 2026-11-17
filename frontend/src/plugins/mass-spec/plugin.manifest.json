@@ -6,5 +6,17 @@
   "activation": "optional",
   "source": "src/plugins/mass-spec/index.ts",
   "domains": ["mass_spec"],
-  "artifactContracts": ["featuresTable", "eicTable", "suspectTargetsTable", "suspectsTable"]
+  "artifactContracts": [
+    "featuresTable",
+    "eicTable",
+    "ticTable",
+    "chromatogramsTable",
+    "chromatogramPeaksTable",
+    "suspectTargetsTable",
+    "suspectsTable",
+    "internalStandardsTable",
+    "findFeaturesDebugResult",
+    "quantificationTable",
+    "quantificationCalibrationModelsTable"
+  ]
 }

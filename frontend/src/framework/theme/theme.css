@@ -1477,8 +1477,9 @@ h2 {
   background: color-mix(in srgb, var(--sf-overlay) 22%, transparent);
 }
 .sf-backend-pane {
-  width: min(390px, 100vw);
+  width: min(520px, 100vw);
   height: 100%;
+  overflow-y: auto;
   padding: 15px;
   border-left: 1px solid var(--sf-border);
   background: var(--sf-surface-raised);
@@ -1491,13 +1492,6 @@ h2 {
   gap: 10px;
   padding-bottom: 15px;
   border-bottom: 1px solid var(--sf-border);
-}
-.sf-backend-state {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 20px;
-  text-transform: capitalize;
 }
 .sf-backend-pane p {
   margin-top: 10px;
@@ -1524,7 +1518,7 @@ h2 {
 .sf-backend-pane dl {
   display: grid;
   gap: 10px;
-  margin: 24px 0 0;
+  margin: 14px 0 0;
 }
 .sf-backend-pane dl div {
   display: flex;
@@ -1540,6 +1534,40 @@ h2 {
   margin: 0;
   color: var(--sf-text);
   text-align: right;
+  overflow-wrap: anywhere;
+}
+.sf-backend-section {
+  margin-top: 22px;
+  padding-top: 2px;
+}
+.sf-backend-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sf-backend-section-heading h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.sf-backend-section-heading p {
+  max-width: 330px;
+  margin: 5px 0 0;
+  color: var(--sf-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.sf-backend-section-heading .sf-health-check {
+  flex: 0 0 auto;
+  padding-top: 1px;
+}
+.sf-backend-section dl div {
+  align-items: flex-start;
+}
+.sf-backend-section dd {
+  max-width: 68%;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 :root[data-style='chrome'] .sf-shell {
   grid-template-columns: minmax(0, 1fr) !important;

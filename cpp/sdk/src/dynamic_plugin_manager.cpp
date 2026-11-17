@@ -17,6 +17,8 @@
 #include "streamfind/catalogue.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
 
+#include <arrow/c/bridge.h>
+
 namespace streamfind::sdk::detail {
 
 class OperationLogStreambuf final : public std::streambuf {
@@ -91,86 +93,12 @@ namespace streamfind::sdk {
 
 namespace detail {
 
-streamfind_plugin_column_type dynamic_column_type(const std::string &duckdb_type) {
-    std::string type;
-    type.reserve(duckdb_type.size());
-    for (const auto character : duckdb_type)
-        type.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
-    if (type == "BOOLEAN") return STREAMFIND_PLUGIN_COLUMN_BOOL;
-    if (type.find("INT") != std::string::npos || type == "HUGEINT" || type == "UBIGINT")
-        return STREAMFIND_PLUGIN_COLUMN_INT64;
-    if (type.find("DOUBLE") != std::string::npos || type.find("FLOAT") != std::string::npos ||
-        type.find("DECIMAL") != std::string::npos || type == "REAL")
-        return STREAMFIND_PLUGIN_COLUMN_FLOAT64;
-    if (type.find("TIMESTAMP") != std::string::npos || type == "DATE" || type == "TIME")
-        return STREAMFIND_PLUGIN_COLUMN_TIMESTAMP;
-    return STREAMFIND_PLUGIN_COLUMN_UTF8;
-}
-
 std::string quoted_identifier(const std::string &value) {
     std::string result = "\"";
     for (const auto character : value)
         result += character == '"' ? "\"\"" : std::string(1, character);
     result += '"';
     return result;
-}
-
-Json table_batch_rows(const streamfind_plugin_batch_column *columns,
-                      uint32_t column_count, uint64_t row_count) {
-    Json rows = Json::array();
-    for (uint64_t row = 0; row < row_count; ++row) {
-        Json value = Json::object();
-        for (uint32_t column_index = 0; column_index < column_count; ++column_index) {
-            const auto &column = columns[column_index];
-            if (column.name == nullptr || column.name_size == 0 || column.data == nullptr ||
-                column.element_size == 0)
-                throw std::invalid_argument("table output contains an invalid column");
-            const auto valid = column.validity_bitmap == nullptr ||
-                (column.validity_bitmap[row / 8] & static_cast<uint8_t>(1u << (row % 8))) != 0;
-            const std::string name(column.name, column.name_size);
-            if (!valid) {
-                value[name] = nullptr;
-                continue;
-            }
-            switch (column.type) {
-            case STREAMFIND_PLUGIN_COLUMN_UTF8:
-            case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
-            case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
-            case STREAMFIND_PLUGIN_COLUMN_BINARY: {
-                if (column.element_size != sizeof(streamfind_plugin_string_view))
-                    throw std::invalid_argument("table output string column has invalid element size");
-                const auto &item = static_cast<const streamfind_plugin_string_view *>(column.data)[row];
-                const std::string text(item.data == nullptr ? "" : item.data, item.size);
-                if ((column.flags & STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY) != 0) {
-                    const auto array = Json::parse(text, nullptr, false);
-                    if (array.is_discarded() || !array.is_array())
-                        throw std::invalid_argument("table output array column is not valid JSON");
-                    value[name] = array;
-                } else value[name] = text;
-                break;
-            }
-            case STREAMFIND_PLUGIN_COLUMN_INT64:
-                if (column.element_size != sizeof(int64_t))
-                    throw std::invalid_argument("table output integer column has invalid element size");
-                value[name] = static_cast<const int64_t *>(column.data)[row];
-                break;
-            case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
-                if (column.element_size != sizeof(double))
-                    throw std::invalid_argument("table output real column has invalid element size");
-                value[name] = static_cast<const double *>(column.data)[row];
-                break;
-            case STREAMFIND_PLUGIN_COLUMN_BOOL:
-                if (column.element_size != sizeof(uint8_t))
-                    throw std::invalid_argument("table output boolean column has invalid element size");
-                value[name] = static_cast<const uint8_t *>(column.data)[row] != 0;
-                break;
-            default:
-                throw std::invalid_argument("table output column type is unsupported");
-            }
-        }
-        rows.push_back(std::move(value));
-    }
-    return rows;
 }
 
 Json invoke_dynamic(
@@ -255,19 +183,6 @@ Json invoke_dynamic(
                     if (column_name.empty()) continue;
                     context.readable_columns[table_name].insert(column_name);
                     context.writable_columns[table_name].insert(column_name);
-                    const auto semantic_type = column.value("type", std::string{"string"});
-                    const auto type = semantic_type == "integer"
-                        ? STREAMFIND_PLUGIN_COLUMN_INT64
-                        : semantic_type == "boolean"
-                        ? STREAMFIND_PLUGIN_COLUMN_BOOL
-                        : semantic_type == "real"
-                        ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
-                        : semantic_type == "timestamp"
-                        ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
-                        : STREAMFIND_PLUGIN_COLUMN_UTF8;
-                    context.column_types[table_name][column_name] = type;
-                    if (semantic_type == "array")
-                        context.array_columns[table_name].insert(column_name);
                 }
             }
         }
@@ -288,15 +203,6 @@ Json invoke_dynamic(
                         const auto name = column.value("name", std::string{});
                         if (name.empty()) continue;
                         context.readable_columns[physical_table].insert(name);
-                        const auto semantic_type = column.value("type", std::string{});
-                        context.column_types[physical_table][name] = semantic_type == "integer"
-                            ? STREAMFIND_PLUGIN_COLUMN_INT64
-                            : semantic_type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
-                            : semantic_type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
-                            : semantic_type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
-                            : STREAMFIND_PLUGIN_COLUMN_UTF8;
-                        if (semantic_type == "array")
-                            context.array_columns[physical_table].insert(name);
                     }
                     break;
                 }
@@ -314,10 +220,6 @@ Json invoke_dynamic(
                         const auto name = column.value("name", std::string{});
                         if (name.empty()) continue;
                         context.readable_columns[physical_table].insert(name);
-                        context.column_types[physical_table][name] = detail::dynamic_column_type(
-                            column.value("type", std::string{}));
-                        if (column.value("type", std::string{}) == "array")
-                            context.array_columns[physical_table].insert(name);
                     }
                 }
             }
@@ -348,8 +250,6 @@ Json invoke_dynamic(
                     const auto name = column.value("column_name", std::string{});
                     if (name.empty()) continue;
                     context.readable_columns[physical_table].insert(name);
-                    context.column_types[physical_table][name] = detail::dynamic_column_type(
-                        column.value("column_type", std::string{}));
                 }
             }
         }
@@ -387,13 +287,6 @@ Json invoke_dynamic(
                     const auto name = column.value("name", std::string{});
                     if (name.empty()) continue;
                     context.writable_columns[output_table_key].insert(name);
-                    const auto type = column.value("type", std::string{"string"});
-                    context.column_types[output_table_key][name] = type == "integer"
-                        ? STREAMFIND_PLUGIN_COLUMN_INT64
-                        : type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
-                        : type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
-                        : type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
-                        : STREAMFIND_PLUGIN_COLUMN_UTF8;
                 }
                 break;
             }
@@ -401,8 +294,8 @@ Json invoke_dynamic(
         context.emit_table_batch = [&context, &table_output_handles, &table_output_sequences,
                                     operation_output_sink](
             void *execution_context, const char *contract, uint32_t contract_size,
-            const streamfind_plugin_batch_column *columns, uint32_t column_count,
-            uint64_t row_count, void *user_data) -> streamfind_plugin_status {
+            struct ArrowArray *array, struct ArrowSchema *schema,
+            void *user_data) -> streamfind_plugin_status {
             if (contract == nullptr || contract_size == 0)
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             const std::string contract_id(contract, contract_size);
@@ -413,9 +306,11 @@ Json invoke_dynamic(
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             }
             try {
-                const auto rows = table_batch_rows(columns, column_count, row_count);
-                operation_output_sink->write_rows(output->second,
-                                                  table_output_sequences[contract_id]++, rows);
+                auto batch = arrow::ImportRecordBatch(array, schema);
+                if (!batch.ok()) throw std::runtime_error(batch.status().ToString());
+                operation_output_sink->write_table_batch(
+                    output->second, table_output_sequences[contract_id]++,
+                    *batch);
                 return STREAMFIND_PLUGIN_OK;
             } catch (const std::exception &error) {
                 if (context.report_error) context.report_error(error.what());
@@ -514,11 +409,7 @@ Json invoke_dynamic(
                     const auto name = column.value("name", std::string{});
                     if (name.empty()) throw Error(ErrorCode::MethodExecution,
                         "table parameter result schema contains an empty column name");
-                    const auto type = column.value("type", std::string{"string"});
                     context.readable_columns[physical_table].insert(name);
-                    context.column_types[physical_table][name] = detail::dynamic_column_type(type);
-                    if (type == "array")
-                        context.array_columns[physical_table].insert(name);
                 }
                 context.allowed_tables.push_back(physical_table);
             }

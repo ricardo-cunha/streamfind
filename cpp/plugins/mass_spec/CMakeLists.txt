@@ -17,6 +17,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/fragmentation/expand_fragmentation_tree.cpp
     src/operations/fragmentation/filter_fragmentation_tree.cpp
     src/operations/chromatograms/operations.cpp
+    src/operations/quantification/operations.cpp
     src/operations/nta/operations.cpp
     src/operations/nta/nta_deconvolution.cpp
     src/operations/nta/nta_noise_estimation.cpp
@@ -39,6 +40,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/utils/base.cpp
     src/utils/target_csv.cpp
     src/utils/chromatograms.cpp
+    src/utils/quantification.cpp
     src/utils/nta.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"
     src/plugin_entrypoint.cpp)

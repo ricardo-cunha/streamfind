@@ -31,9 +31,12 @@ public:
     void write(const std::string &output_handle,
                std::uint64_t sequence,
                const std::vector<unsigned char> &batch) override;
-    void write_rows(const std::string &output_handle,
-                    std::uint64_t sequence,
-                    const Json &rows) override;
+    void write_table_batch(const std::string &output_handle,
+                           std::uint64_t sequence,
+                           const std::shared_ptr<arrow::RecordBatch> &batch) override;
+    std::uint64_t write_query_result(const std::string &output_handle,
+                                     std::uint64_t sequence,
+                                     std::string_view sql) override;
     Json finish(const std::string &output_handle,
                 const Json &metadata = Json::object()) override;
     void abort(const std::string &output_handle,
@@ -55,6 +58,7 @@ private:
         std::string contract_id;
         std::string output_port;
         std::string result_name;
+        bool written_by_service{false};
     };
 
     Json request(const std::string &method,

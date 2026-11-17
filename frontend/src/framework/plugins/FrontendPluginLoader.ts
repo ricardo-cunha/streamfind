@@ -94,7 +94,7 @@ function validateManifest(manifest: RuntimeFrontendPluginManifest, allowedOrigin
   ) {
     throw new Error(`Frontend plugin css must be a string array: ${manifest.id}.css`);
   }
-  for (const field of ['domains', 'artifactContracts', 'artifactRepresentations', 'visualizationTypes']) {
+  for (const field of ['domains', 'artifactContracts', 'artifactRepresentations']) {
     const value = manifest[field as keyof RuntimeFrontendPluginManifest];
     if (value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
       throw new Error(`Frontend plugin manifest field must be a string array: ${manifest.id}.${field}`);

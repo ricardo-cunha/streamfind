@@ -1,6 +1,7 @@
 #requires -Version 7.0
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+$scriptRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
+$root = (Resolve-Path -LiteralPath (Join-Path $scriptRoot '..')).Path
 $frontend = Join-Path $root 'frontend'
 $platform = if ($IsWindows) { 'windows-core' } else { 'linux-core' }
 $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
@@ -49,16 +50,14 @@ function Show-Help([string]$Topic) {
         'build all' = @('build all [--jobs N] [--dry-run]', 'Build the configured native build, then build frontend assets.', "Defaults to $platform. Requires both native configuration and frontend dependencies.")
         'test backend' = @('test backend [--list] [--filter REGEX] [--label REGEX] [--jobs N] [--dry-run]', 'List or run CTest tests in a native build.', "Defaults to $platform. Build the selected tests first. Use --list to inspect tests without running them.", "Example: sfdev test backend --filter '^streamfind_statistics_unit$'")
         'test frontend' = @('test frontend [--watch] [--dry-run] [-- ARGUMENTS]', 'Run Vitest once, or keep it running with --watch.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed.')
-        'test browser' = @('test browser --url URL [--dry-run]', 'Run the Playwright smoke check against a running frontend.', 'Install frontend dependencies and Playwright Chromium first.')
+        'test browser' = @('test browser [--url URL] [--dry-run]', 'Run the Playwright smoke check against the packaged app.', 'Build or refresh tmp/packaged_build first. Defaults to http://127.0.0.1:8787. Install frontend dependencies and Playwright Chromium first.')
         'check frontend' = @('check frontend [--dry-run]', 'Run the frontend build, lint, and formatting check in order.', 'Requires installed frontend dependencies. Stops at the first failed step.')
-        'run backend' = @('run backend [--url URL] [--dry-run]', 'Start a development service or use one that is already ready.', "Defaults to $platform and http://127.0.0.1:8790. Build the service and worker first.")
-        'run frontend' = @('run frontend [--url URL] [--vite-port PORT] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Defaults to service http://127.0.0.1:8790 and Vite port 5173.')
-        'run app' = @('run app [--url URL] [--vite-port PORT] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Defaults to service http://127.0.0.1:8790 and Vite port 5173. Press Ctrl+C to stop processes started by this command.')
-        'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked native-Windows test distribution under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
+        'package' = @('package [--frontend-only] [--dry-run]', 'Build or refresh the unpacked Windows app used for development verification under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only after UI changes to rebuild assets and update an existing package.')
         'clean' = @('clean --scope build|all-temp [--dry-run]', 'Remove the platform build tree or the contents of repository tmp/.', 'Use --dry-run to preview deletions. all-temp includes logs, test projects, packages, and release archives.')
         'script list' = @('script list [--json]', 'List public scripts under scripts/dev/ and show interpreter availability.', 'An available interpreter does not guarantee that the script has its required data or arguments.')
         'script info' = @('script info PATH', 'Show the interpreter, working directory, and invocation for a script.', 'Use a path from script list. Example: sfdev script info validate_native_dependencies.py')
         'script run' = @('script run PATH [--dry-run] [-- ARGUMENTS]', 'Run a development script from the checkout root and log to tmp/logs/.', 'Pass the script arguments after --. Python scripts use the repository .venv.', 'Example: sfdev script run validate_native_dependencies.py -- --help')
+        'workflows' = @('workflows nta|impurities|quantification [--project-name NAME] [--url ENDPOINT] [--force] [--dry-run]', 'Create a validated, editable workflow project through MCP in a running service.', 'Creates under tmp/projects/ and does not execute operations. --url selects the service endpoint. --force deletes the named project DuckDB, sibling .data store, and workflow sidecar first; close that project in the app before replacing it.')
         'version show' = @('version show', 'Print the canonical streamfind version from VERSION.')
         'version bump' = @('version bump patch|minor|major [--dry-run]', 'Advance the canonical VERSION.', 'Resets lower components and prints the previous and next version.')
         'sdk build' = @('sdk build [--dry-run]', 'Build the Windows kit and, when Ubuntu/WSL is available, the Linux kit.', 'Uses the canonical VERSION and runs each platform package validation.')
@@ -100,7 +99,7 @@ try {
     $command = $args[0]
     $subject = ''
     $index = 1
-    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'run', 'sdk', 'release', 'plugin') {
+    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'sdk', 'release', 'plugin', 'workflows') {
         if ($args.Count -lt 2) { throw "Missing subcommand for $command" }
         $subject = $args[1]
         $index = 2
@@ -129,6 +128,9 @@ try {
         'script/list' { 'json' }
         'script/info' { }
         'script/run' { 'dry-run' }
+        'workflows/nta' { 'project-name', 'url', 'force', 'dry-run' }
+        'workflows/impurities' { 'project-name', 'url', 'force', 'dry-run' }
+        'workflows/quantification' { 'project-name', 'url', 'force', 'dry-run' }
         'doctor/' { 'json', 'workflow' }
         'setup/' { 'components', 'dry-run' }
         'sdk/build' { 'dry-run' }
@@ -150,9 +152,6 @@ try {
         'test/browser' { 'url', 'dry-run' }
         'clean/' { 'scope', 'dry-run' }
         'check/frontend' { 'dry-run' }
-        'run/backend' { 'url', 'dry-run' }
-        'run/frontend' { 'url', 'vite-port', 'dry-run' }
-        'run/app' { 'url', 'vite-port', 'dry-run' }
         'package/' { 'frontend-only', 'dry-run' }
         'version/show' { }
         'version/bump' { 'dry-run' }
@@ -161,6 +160,7 @@ try {
     $logExecution = $command -in 'configure', 'build', 'test', 'check', 'package', 'setup', 'sdk', 'release' -or
         ($command -eq 'plugin' -and $subject -ne 'list') -or
         "$command/$subject" -eq 'script/run'
+    if ($command -eq 'workflows') { $logExecution = $true }
     if ($logExecution) { $allowed = @($allowed) + 'json' }
     $options = @{}
     $forward = @()
@@ -174,7 +174,7 @@ try {
         if (!$argument.StartsWith('--') -or $name -notin $allowed -or $options.ContainsKey($name)) {
             throw "Unexpected option: $argument"
         }
-        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only') { $options[$name] = $true; continue }
+        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only', 'force') { $options[$name] = $true; continue }
         if (++$index -ge $args.Count -or ([string]$args[$index]).StartsWith('--')) { throw "Missing value for --$name" }
         $options[$name] = $args[$index]
     }
@@ -186,28 +186,11 @@ try {
     $managedNodeDir = Join-Path $managedHome "tools/node/v$nodeVersion/$(if ($IsWindows) { 'win-x64' } else { 'linux-x64' })"
     $managedNodeBin = Join-Path $managedNodeDir 'bin'
     if ($IsWindows) { $managedNodeBin = $managedNodeDir }
-    $nodeGlobal = Resolve-Tool node
-    $npmGlobal = Resolve-Tool $npmName
-    $nodeGlobalVersion = $null
-    $globalNodeCompatible = $false
-    if ($nodeGlobal -and $npmGlobal) {
-        try {
-            $nodeGlobalVersion = ((& $nodeGlobal --version 2>$null) -join '').Trim()
-            if ($LASTEXITCODE -eq 0 -and $nodeGlobalVersion -match '^v(\d+)\.(\d+)\.(\d+)') {
-                $nodeMajor = [int]$Matches[1]
-                $nodeMinor = [int]$Matches[2]
-                $globalNodeCompatible = ($nodeMajor -eq 22 -and $nodeMinor -ge 12) -or
-                    $nodeMajor -eq 24 -or $nodeMajor -ge 26
-            }
-        } catch { $globalNodeCompatible = $false }
-    }
     $nodeManaged = Join-Path $managedNodeBin $(if ($IsWindows) { 'node.exe' } else { 'node' })
     $npmManaged = Join-Path $managedNodeBin $npmName
-    $useManagedNode = !$globalNodeCompatible
-    $selectedNode = if ($useManagedNode -and (Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and (Test-Path -LiteralPath $npmManaged -PathType Leaf)) {
-        $nodeManaged
-    } elseif (!$useManagedNode) { $nodeGlobal } else { $null }
-    $selectedNpm = if ($selectedNode -eq $nodeManaged) { $npmManaged } elseif (!$useManagedNode) { $npmGlobal } else { $null }
+    $selectedNode = if ((Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and
+        (Test-Path -LiteralPath $npmManaged -PathType Leaf)) { $nodeManaged } else { $null }
+    $selectedNpm = if ($selectedNode) { $npmManaged } else { $null }
     $tools = [ordered]@{
         pwsh = $pwsh
         git = Resolve-Tool git
@@ -220,7 +203,7 @@ try {
         ninja = if ($IsWindows) { Join-Path $bin 'ninja.exe' } else { Resolve-Tool ninja }
         python = Join-Path $root $(if ($IsWindows) { '.venv/Scripts/python.exe' } else { '.venv/bin/python' })
     }
-    $basePython = Get-StreamFindBasePython
+    $basePython = Get-StreamFindManagedPython -ManagedHome $managedHome
     $environment = [ordered]@{}
     if ($IsWindows) {
         $environment.STREAMFIND_MSYS2_ROOT = $ucrt
@@ -256,8 +239,7 @@ try {
                     else { 'MSYS2 UCRT64 found on PATH' }
                 }
                 { $_ -in 'node', 'npm' } {
-                    if ($entry.Value -and $entry.Value.StartsWith($managedNodeDir, [StringComparison]::OrdinalIgnoreCase)) { 'managed .streamfind tools' }
-                    else { 'PATH' }
+                    'managed .streamfind tools'
                 }
                 default { 'PATH' }
             }
@@ -273,13 +255,12 @@ try {
             } else {
                 $diagnostic = switch ($entry.Key) {
                     python {
-                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with Python $($basePython.Version)." }
+                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with managed Python $($basePython.Version)." }
                         else { 'Run sfdev setup --components python to install the pinned Python under .streamfind/tools and create the repository .venv.' }
                     }
                     { $IsWindows -and $_ -in 'cmake', 'ctest', 'gcc', 'gxx', 'ninja' } { 'Run sfdev setup --components native. Missing MSYS2 and UCRT64 packages are installed under .streamfind/tools.' }
                     { $_ -in 'node', 'npm' } {
-                        if ($nodeGlobal -and !$globalNodeCompatible) { "PATH Node.js $nodeGlobalVersion is incompatible with the frontend dependencies; setup installs the pinned compatible version under .streamfind/tools." }
-                        else { 'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.' }
+                        'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.'
                     }
                     default { "Install $($entry.Key) and make it available on PATH." }
                 }
@@ -494,6 +475,7 @@ try {
         }
     }
     if ("$command/$subject" -eq 'test/browser') {
+        if (!$options.url) { $options.url = 'http://127.0.0.1:8787/' }
         $endpoint = $null
         if (![uri]::TryCreate($options.url, [UriKind]::Absolute, [ref]$endpoint) -or $endpoint.Scheme -notin 'http', 'https') {
             throw 'Specify an HTTP or HTTPS frontend URL with --url'
@@ -502,21 +484,22 @@ try {
         $environment.PLAYWRIGHT_BROWSERS_PATH = Join-Path $managedHome 'tools/playwright'
         $steps += New-Step $frontend $tools.npm @('run', 'browser:smoke')
     }
-    if ($command -eq 'run') {
-        $environment.STREAMFIND_DEV_BUILD_DIR = $tree
-        $environment.STREAMFIND_SERVICE_URL = $options.url ?? $env:STREAMFIND_SERVICE_URL ?? 'http://127.0.0.1:8790'
-        $environment.STREAMFIND_VITE_PORT = $env:STREAMFIND_VITE_PORT ?? '5173'
-        if ($options.ContainsKey('vite-port')) {
-            $vitePort = 0
-            if (![int]::TryParse([string]$options['vite-port'], [ref]$vitePort) -or $vitePort -lt 1 -or $vitePort -gt 65535) {
-                throw 'The --vite-port value must be an integer from 1 through 65535.'
-            }
-            $environment.STREAMFIND_VITE_PORT = [string]$vitePort
+    if ($command -eq 'workflows') {
+        $workflowScripts = @{
+            nta = 'nta.ps1'
+            impurities = 'impurities.ps1'
+            quantification = 'quantification.ps1'
         }
-        $arguments = @((Join-Path $frontend 'tools/dev/start-dev.mjs'))
-        if ($subject -eq 'backend') { $arguments += '--backend-only' }
-        if ($subject -eq 'frontend') { $arguments += '--frontend-only' }
-        $steps += New-Step $frontend $tools.node $arguments
+        if (-not $workflowScripts.ContainsKey($subject)) {
+            throw 'Choose a workflow template: nta, impurities, or quantification.'
+        }
+        $workflowScript = Join-Path $PSScriptRoot "dev/workflows/$($workflowScripts[$subject])"
+        if (-not (Test-Path -LiteralPath $workflowScript -PathType Leaf)) { throw "Workflow helper is missing: $workflowScript" }
+        $workflowArguments = @('-NoProfile', '-File', $workflowScript)
+        if ($options['project-name']) { $workflowArguments += '-ProjectName', $options['project-name'] }
+        if ($options.url) { $workflowArguments += '-ServiceEndpoint', $options.url }
+        if ($options.force) { $workflowArguments += '-Force' }
+        $steps += New-Step $root $pwsh $workflowArguments
     }
     if ($command -eq 'release' -and $subject -in 'verify', 'publish') {
         $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()

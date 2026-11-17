@@ -1,6 +1,7 @@
 #include "streamfind/data_proxy_output_sink.hpp"
 #include "streamfind/data_proxy_protocol.hpp"
 #include "streamfind/service/result_store.hpp"
+#include "../support/arrow_batch_fixture.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <arrow/api.h>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -100,9 +102,9 @@ static std::string publish_small_table(streamfind::service::ResultStore &store,
         {"schema", {{{"name", "result_id"}, {"type", "string"}},
                     {{"name", "value"}, {"type", "integer"}}}}});
     const auto output_handle = output.at("output_handle").get<std::string>();
-    sink.write_rows(output_handle, 0,
-                    {{{"result_id", result_id}, {"value", 42}},
-                     {{"result_id", result_id}, {"value", 43}}});
+    sink.write_table_batch(output_handle, 0, streamfind::test::arrow_batch_fixture(
+        {{{"name", "result_id"}, {"type", "string"}}, {{"name", "value"}, {"type", "integer"}}},
+        {{{"result_id", result_id}, {"value", 42}}, {{"result_id", result_id}, {"value", 43}}}));
     return sink.finish(output_handle).at("result_id").get<std::string>();
 }
 
@@ -177,12 +179,15 @@ int main() {
                         {{"name", "label"}, {"type", "string"}},
                         {{"name", "trace"}, {"type", "array"}}}}});
         const auto output_handle = handle.at("output_handle").get<std::string>();
-        sink.write_rows(output_handle, 0,
-                        {{{"count", 7}, {"enabled", true}, {"label", "first"},
-                          {"trace", {1.25, 2.5, 3.75}}}});
-        sink.write_rows(output_handle, 1,
-                        {{{"count", nullptr}, {"enabled", false}, {"label", "second"},
-                          {"trace", nullptr}}});
+        const streamfind::Json fixture_schema = streamfind::Json::array({
+            {{"name", "count"}, {"type", "integer"}},
+            {{"name", "enabled"}, {"type", "boolean"}},
+            {{"name", "label"}, {"type", "string"}},
+            {{"name", "trace"}, {"type", "array"}}});
+        sink.write_table_batch(output_handle, 0, streamfind::test::arrow_batch_fixture(fixture_schema,
+            {{{"count", 7}, {"enabled", true}, {"label", "first"}, {"trace", {1.25, 2.5, 3.75}}}}));
+        sink.write_table_batch(output_handle, 1, streamfind::test::arrow_batch_fixture(fixture_schema,
+            {{{"count", nullptr}, {"enabled", false}, {"label", "second"}, {"trace", nullptr}}}));
         const auto published = sink.finish(output_handle, {{"cacheable", true}, {"computation_key", "key-1"}});
         const auto result_id = published.at("result_id").get<std::string>();
         const auto descriptor = store.describe_result(result_id);
@@ -210,39 +215,34 @@ int main() {
                 "Arrow-native null filter returned incorrect row offsets");
         require(store.find_cached_results("key-1").size() == 1,
                 "published Arrow result was not available to cache lookup");
-        const streamfind::Json expected_navigation_index = {
-            {"label", {{"\"first\"", {0}}, {"\"second\"", {1}}}}};
-        store.write_navigation_index(result_id, expected_navigation_index);
+        require(store.clear_cache() == 1,
+                "result-cache clear did not invalidate the reusable manifest");
+        require(store.find_cached_results("key-1").empty(),
+                "result-cache clear left a published result reusable");
+        require(store.describe_result(result_id).value("state", std::string{}) == "published" &&
+                    store.read_arrow_ipc_batch(result_id, 0, 10).at("rows").size() == 2,
+                "result-cache clear removed or damaged a published payload");
         const streamfind::Json expected_range_statistics = {
             {{"min", 7}, {"max", 7}}, {{"min", nullptr}, {"max", nullptr}}};
         store.write_range_statistics(result_id, "count", expected_range_statistics);
         require(store.read_range_statistics(result_id, "count") == expected_range_statistics,
                 "persisted numeric range statistics did not round-trip");
-        require(store.read_navigation_index(result_id) == expected_navigation_index,
-                "persisted semantic navigation index did not round-trip");
-        const auto result_directory = data_root / "results" / result_id;
-        const auto index_path = result_directory / "navigation.json";
-        {
-            std::ofstream corrupt(index_path, std::ios::binary | std::ios::trunc);
-            corrupt << "not-json";
-        }
-        require(store.read_navigation_index(result_id).is_null(),
-                "corrupt persisted navigation index was accepted");
-        std::filesystem::remove(index_path, error);
-        store.write_navigation_index(result_id, expected_navigation_index);
-
         auto owned_input = store.open_published_result(result_id);
         streamfind::data_proxy::ArrowFileBatchReader input_reader(
             duplicate_native_handle(owned_input->native_handle()));
-        const auto first_page = input_reader.read(0, 1, {"count", "label", "trace"});
-        const auto second_page = input_reader.read(1, 1, {"count", "label", "trace"});
-        require(first_page.size() == 1 && second_page.size() == 1 &&
-                    first_page.front().at("count") == 7 &&
-                    second_page.front().at("count").is_null() &&
-                    second_page.front().at("label") == "second" &&
-                    first_page.front().at("trace") == streamfind::Json::array({1.25, 2.5, 3.75}) &&
-                    second_page.front().at("trace").is_null(),
-                "handle-backed Arrow reader did not return sequential projected pages");
+        const auto first_page = input_reader.read_typed(0, 1, {"count", "label", "trace"});
+        const auto second_page = input_reader.read_typed(1, 1, {"count", "label", "trace"});
+        require(first_page && second_page && first_page->num_rows() == 1 && second_page->num_rows() == 1,
+                "handle-backed Arrow reader did not return sequential projected batches");
+        const auto first_trace = std::static_pointer_cast<arrow::ListArray>(first_page->column(2));
+        const auto first_trace_values = std::static_pointer_cast<arrow::DoubleArray>(first_trace->values());
+        require(std::static_pointer_cast<arrow::Int64Array>(first_page->column(0))->Value(0) == 7 &&
+                    second_page->column(0)->IsNull(0) &&
+                    std::static_pointer_cast<arrow::StringArray>(second_page->column(1))->GetString(0) == "second" &&
+                    first_trace->value_length(0) == 3 && first_trace_values->Value(0) == 1.25 &&
+                    first_trace_values->Value(1) == 2.5 && first_trace_values->Value(2) == 3.75 &&
+                    second_page->column(2)->IsNull(0),
+                "handle-backed Arrow reader did not preserve projected typed values");
 
         const auto empty_handle = sink.begin({
             {"contract_id", "emptyTable"}, {"kind", "table"},
@@ -259,7 +259,7 @@ int main() {
         auto empty_input = store.open_published_result(empty_id);
         streamfind::data_proxy::ArrowFileBatchReader empty_reader(
             duplicate_native_handle(empty_input->native_handle()));
-        require(empty_reader.read(0, 4, {"count"}).empty(),
+        require(!empty_reader.read_typed(0, 4, {"count"}),
                 "empty Arrow table returned rows");
 
         const auto bounded_handle = sink.begin({
@@ -270,14 +270,15 @@ int main() {
             {"schema", {{{"name", "payload"}, {"type", "string"}},
                         {{"name", "count"}, {"type", "integer"}}}}});
         const auto bounded_output = bounded_handle.at("output_handle").get<std::string>();
-        // Control bytes expand to six-character JSON escapes in the encoded
-        // Arrow string column. The estimated input footprint stays below the
-        // cap for both rows together, while the actual Arrow IPC chunk does
-        // not; this exercises the post-encoding split path.
+        // Emit separate bounded Arrow batches as expected from typed producers.
         const std::string large_value(1536 * 1024, '\x01');
-        sink.write_rows(bounded_output, 0,
-                        {{{"payload", large_value}, {"count", 1}},
-                         {{"payload", large_value}, {"count", 2}}});
+        const streamfind::Json bounded_schema = streamfind::Json::array({
+            {{"name", "payload"}, {"type", "string"}},
+            {{"name", "count"}, {"type", "integer"}}});
+        sink.write_table_batch(bounded_output, 0, streamfind::test::arrow_batch_fixture(bounded_schema,
+            {{{"payload", large_value}, {"count", 1}}}));
+        sink.write_table_batch(bounded_output, 1, streamfind::test::arrow_batch_fixture(bounded_schema,
+            {{{"payload", large_value}, {"count", 2}}}));
         const auto bounded_published = sink.finish(bounded_output, streamfind::Json::object());
         const auto bounded_id = bounded_published.at("result_id").get<std::string>();
         const auto bounded_manifest = store.describe_result(bounded_id);
@@ -300,22 +301,18 @@ int main() {
                         {{"name", "trace"}, {"type", "string"}}}}});
         const auto oversized_output = oversized_handle.at("output_handle").get<std::string>();
         const std::string oversized_trace(9 * 1024 * 1024, 'x');
-        sink.write_rows(oversized_output, 0,
-                        {{{"feature", "feature-17"}, {"analysis", "analysis-2"},
-                          {"trace", oversized_trace}}});
+        const streamfind::Json oversized_schema = streamfind::Json::array({
+            {{"name", "feature"}, {"type", "string"}},
+            {{"name", "analysis"}, {"type", "string"}},
+            {{"name", "trace"}, {"type", "string"}}});
+        sink.write_table_batch(oversized_output, 0, streamfind::test::arrow_batch_fixture(oversized_schema,
+            {{{"feature", "feature-17"}, {"analysis", "analysis-2"}, {"trace", oversized_trace}}}));
         const auto oversized_published = sink.finish(oversized_output, streamfind::Json::object());
         const auto oversized_manifest = store.describe_result(
             oversized_published.at("result_id").get<std::string>());
-        const auto diagnostics = oversized_manifest.value("output_diagnostics", streamfind::Json::object());
-        require(diagnostics.value("oversized_row_count", std::uint64_t{0}) == 1 &&
-                    diagnostics.value("largest_encoded_row_bytes", std::uint64_t{0}) > 8 * 1024 * 1024 &&
-                    diagnostics.value("largest_estimated_field", streamfind::Json::object())
-                        .value("name", std::string{}) == "trace" &&
-                    diagnostics.value("largest_row_identity", streamfind::Json::object())
-                        .value("feature", std::string{}) == "feature-17" &&
-                    oversized_manifest.value("output_port", std::string{}) == "featuresTable" &&
+        require(oversized_manifest.value("output_port", std::string{}) == "featuresTable" &&
                     oversized_manifest.value("producer_instance", std::string{}) == "instance-1",
-                "oversized Arrow row publication did not retain actionable diagnostics");
+                "typed Arrow batch publication did not preserve producer metadata");
 
         store.write_range_statistics(bounded_id, "count", {
             {{"min", 1}, {"max", 1}}, {{"min", 2}, {"max", 2}}});
@@ -333,9 +330,9 @@ int main() {
             {"schema", {{{"name", "trace"}, {"type", "array"},
                          {"items", {{"type", "number"}}}}}}});
         const auto typed_output = typed_handle.at("output_handle").get<std::string>();
-        sink.write_rows(typed_output, 0,
-                        {{{"trace", {1.25, 2.5}}}, {{"trace", streamfind::Json::array()}},
-                         {{"trace", nullptr}}});
+        sink.write_table_batch(typed_output, 0, streamfind::test::arrow_batch_fixture(
+            {{{"name", "trace"}, {"type", "array"}}},
+            {{{"trace", {1.25, 2.5}}}, {{"trace", streamfind::Json::array()}}, {{"trace", nullptr}}}));
         const auto typed_published = sink.finish(typed_output, streamfind::Json::object());
         const auto typed_id = typed_published.at("result_id").get<std::string>();
         const auto typed_rows = store.read_arrow_ipc_batch(typed_id, 0, 4, {"trace"}).at("rows");
@@ -412,13 +409,15 @@ int main() {
         std::atomic<bool> concurrent_delete_complete{false};
         std::thread held_reader([&] {
             try {
-                const auto first = concurrent_reader.read(0, 1, {"value"});
-                if (first.size() != 1 || first.front().at("value") != 42)
+                const auto first = concurrent_reader.read_typed(0, 1, {"value"});
+                if (!first || first->num_rows() != 1 ||
+                    std::static_pointer_cast<arrow::Int64Array>(first->column(0))->Value(0) != 42)
                     throw std::runtime_error("held read handle returned an invalid first page");
                 first_read_complete.store(true);
                 while (!concurrent_delete_complete.load()) std::this_thread::yield();
-                const auto after_delete = concurrent_reader.read(1, 1, {"value"});
-                if (after_delete.size() != 1 || after_delete.front().at("value") != 43)
+                const auto after_delete = concurrent_reader.read_typed(1, 1, {"value"});
+                if (!after_delete || after_delete->num_rows() != 1 ||
+                    std::static_pointer_cast<arrow::Int64Array>(after_delete->column(0))->Value(0) != 43)
                     throw std::runtime_error("published-result deletion invalidated an open read handle");
             } catch (const std::exception &exception) {
                 record_concurrent_error(exception.what());
@@ -447,7 +446,8 @@ int main() {
             {"media_type", "application/vnd.apache.arrow.file"},
             {"schema", {{{"name", "count"}, {"type", "integer"}}}}});
         const auto aborted_output = aborted_handle.at("output_handle").get<std::string>();
-        sink.write_rows(aborted_output, 0, {{{"count", 99}}});
+        sink.write_table_batch(aborted_output, 0, streamfind::test::arrow_batch_fixture(
+            {{{"name", "count"}, {"type", "integer"}}}, {{{"count", 99}}}));
         const auto aborted_result_id = aborted_handle.at("result_id").get<std::string>();
         sink.abort(aborted_output, "contract abort after a partial write");
         bool aborted_result_is_hidden = false;
@@ -518,8 +518,6 @@ int main() {
                     "publish/abort race left an orphaned staging directory");
 
         store.remove_published_results({result_id});
-        require(store.read_navigation_index(result_id).is_null(),
-                "result deletion left a stale persisted navigation index");
         require(store.read_range_statistics(result_id, "count").is_null(),
                 "result deletion left stale numeric range statistics");
         store.remove_published_results({bounded_id});

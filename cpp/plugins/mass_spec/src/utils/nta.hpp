@@ -14,6 +14,7 @@
 #include "readers/reader.hpp"
 
 namespace streamfind::sdk { class DebugSession; }
+namespace streamfind::sdk { class TableBatchBuilder; }
 
 namespace streamfind::mass_spec::nta::utils
 {
@@ -148,7 +149,6 @@ namespace streamfind::mass_spec::nta::utils
   float calculate_asymmetry(const std::vector<float> &, const std::vector<float> &);
   int calculate_modality(const std::vector<float> &, float);
   float calculate_theoretical_plates(float, float);
-  std::string utc_now();
   std::string text(const nlohmann::json &, const char *);
   int integer(const nlohmann::json &, const char *);
   double real(const nlohmann::json &, const char *);
@@ -158,6 +158,8 @@ namespace streamfind::mass_spec::nta::utils
   const std::vector<std::string> &internal_standards_columns();
   const std::vector<std::string> &transformation_products_columns();
   nlohmann::json feature_row(const NTA_FEATURE_ROW &);
+  ::streamfind::sdk::TableBatchBuilder make_feature_batch_builder();
+  void append_feature_batch_row(::streamfind::sdk::TableBatchBuilder &, const NTA_FEATURE_ROW &);
   }
 
 
@@ -813,7 +815,6 @@ namespace streamfind::mass_spec::nta::api
     // MARK: NTA_SUSPECT_ROW
     struct NTA_SUSPECT_ROW
     {
-        std::string created_at;
         std::string analysis;
         std::string feature;
         std::string feature_group;
@@ -978,7 +979,6 @@ namespace streamfind::mass_spec::nta::api
     // MARK: NTA_TRANSFORMATION_PRODUCT_ROW
     struct NTA_TRANSFORMATION_PRODUCT_ROW
     {
-        std::string created_at;
         std::string name;
         std::string formula;
         double mass = 0.0;
@@ -1177,7 +1177,6 @@ namespace streamfind::mass_spec::nta::api
     // MARK: NTA_INTERNAL_STANDARD_ROW
     struct NTA_INTERNAL_STANDARD_ROW
     {
-        std::string created_at;
         std::string analysis;
         std::string replicate;
         std::string feature;
@@ -1491,6 +1490,7 @@ namespace streamfind::mass_spec::nta::utils::detail
 {
 struct MZ_INTENSITY { std::vector<float> mz; std::vector<float> intensity; };
 std::string sql(const std::string &);
+std::vector<std::string> suspects_types();
 MZ_INTENSITY merge_nta_feature_spectra(const ::mass_spec::spectra::MASS_SPEC_TARGETS_SPECTRA &, float, float);
 ::streamfind::mass_spec::nta::NtaProjectData load_analysis_features(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);
 ::streamfind::mass_spec::nta::NtaProjectData load_internal_standards_only(streamfind::sdk::PluginProjectAccess &, const nlohmann::json &);

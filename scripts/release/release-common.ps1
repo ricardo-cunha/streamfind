@@ -25,6 +25,12 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
 
 function Assert-CppDistributionPayload([string]$PackageRoot) {
     Assert-DistributionPayload $PackageRoot
+    $abiHeaderPath = Join-Path $Script:REPO_ROOT 'cpp/sdk/include/streamfind/plugin_abi.h'
+    $abiHeader = Get-Content -Raw $abiHeaderPath
+    if ($abiHeader -notmatch 'STREAMFIND_PLUGIN_ABI_MAJOR\s*=\s*(\d+)') {
+        throw "Unable to read plugin ABI major version from $abiHeaderPath"
+    }
+    $expectedPluginAbiMajor = [int]$Matches[1]
     $required = @(
         'bin/streamfind.exe',
         'bin/streamfind-app.exe',
@@ -91,7 +97,9 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
             throw "Plugin manifest version mismatch: $manifestPath"
         }
         if ($manifest.static_composition) { throw "Plugin manifest must declare static_composition=false: $manifestPath" }
-        if ($manifest.abi_version.major -ne 1) { throw "Plugin manifest ABI major mismatch: $manifestPath" }
+        if ($manifest.abi_version.major -ne $expectedPluginAbiMajor) {
+            throw "Plugin manifest ABI major mismatch: expected $expectedPluginAbiMajor, got $($manifest.abi_version.major): $manifestPath"
+        }
         if ($manifest.abi_version.minor -lt 0) { throw "Plugin manifest ABI minor is invalid: $manifestPath" }
         if ($manifest.semantic_catalogue -ne 'catalogue.duckdb') { throw "Plugin manifest catalogue mismatch: $manifestPath" }
         $libraryName = $manifest.library.'windows-x86_64'

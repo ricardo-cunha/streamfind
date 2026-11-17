@@ -1,5 +1,6 @@
 #include "operations.hpp"
 #include "streamfind/sdk/plugin_project_access.hpp"
+#include <arrow/api.h>
 
 #include <cmath>
 #include <filesystem>
@@ -20,37 +21,99 @@ class MemoryProjectAccess final : public sdk::PluginProjectAccess {
     std::map<std::string, Json> results;
     std::string_view operation_instance() const noexcept override { return "statistics-test"; }
     bool is_cancelled() const noexcept override { return false; }
-    Json query(const std::string &) override { throw std::runtime_error("query not expected"); }
     void require_table(const std::string &) override {}
-    Json read(const std::string &, const std::vector<std::string> &, const std::string &) override {
-        throw std::runtime_error("read not expected");
-    }
-    void read_batches(const std::string &table, const std::vector<std::string> &,
-                      const std::string &, const JsonBatchCallback &callback) override {
-        callback(tables.at(table));
+    void read_typed_batches(const std::string &table, const std::vector<std::string> &names,
+                            const std::string &, const BatchCallback &callback) override {
+        const auto &rows = tables.at(table);
+        std::vector<std::shared_ptr<arrow::Field>> fields;
+        std::vector<std::shared_ptr<arrow::Array>> arrays;
+        for (const auto &name : names) {
+            const Json *sample = nullptr;
+            bool contains_text = false;
+            for (const auto &row : rows) {
+                if (!row.contains(name) || row.at(name).is_null()) continue;
+                if (row.at(name).is_string()) contains_text = true;
+                if (sample == nullptr) sample = &row.at(name);
+            }
+            std::shared_ptr<arrow::DataType> type = arrow::utf8();
+            if (contains_text) type = arrow::utf8();
+            else if (sample && sample->is_boolean()) type = arrow::boolean();
+            else if (sample && sample->is_number_integer()) type = arrow::int64();
+            else if (sample && sample->is_number()) type = arrow::float64();
+            fields.push_back(arrow::field(name, type, true));
+            std::shared_ptr<arrow::Array> array;
+            if (type->id() == arrow::Type::BOOL) {
+                arrow::BooleanBuilder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<bool>());
+                }
+                builder.Finish(&array);
+            } else if (type->id() == arrow::Type::INT64) {
+                arrow::Int64Builder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<std::int64_t>());
+                }
+                builder.Finish(&array);
+            } else if (type->id() == arrow::Type::DOUBLE) {
+                arrow::DoubleBuilder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<double>());
+                }
+                builder.Finish(&array);
+            } else {
+                arrow::StringBuilder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->is_string() ? value->get<std::string>() : value->dump());
+                }
+                builder.Finish(&array);
+            }
+            arrays.push_back(std::move(array));
+        }
+        callback(BatchView(arrow::RecordBatch::Make(arrow::schema(std::move(fields)),
+            static_cast<std::int64_t>(rows.size()), std::move(arrays))));
     }
     std::uint64_t count_rows(const std::string &table) override {
         return tables.at(table).size();
     }
-    void clear_table(const std::string &) override {}
-    void append(const std::string &, const std::vector<std::string> &,
-                const std::vector<std::vector<std::optional<std::string>>> &) override {}
-    void emit_table_rows(const std::string &contract, const std::vector<std::string> &,
-                         const std::vector<std::string> &, const Json &rows) override {
-        for (const auto &row : rows) emitted[contract].push_back(row);
-    }
-    void emit_table_batch(const std::string &, const std::vector<streamfind_plugin_batch_column> &,
-                          std::uint64_t) override {
-        throw std::runtime_error("typed batch emission not expected");
+    void emit_table_batch(const std::string &contract,
+                          const std::shared_ptr<arrow::RecordBatch> &batch) override {
+        auto &rows = emitted[contract];
+        if (!rows.is_array()) rows = Json::array();
+        for (std::int64_t row = 0; row < batch->num_rows(); ++row) {
+            Json values = Json::object();
+            for (int column = 0; column < batch->num_columns(); ++column) {
+                const auto &array = batch->column(column);
+                const auto &name = batch->schema()->field(column)->name();
+                if (array->IsNull(row)) {
+                    values[name] = nullptr;
+                } else if (array->type_id() == arrow::Type::STRING) {
+                    values[name] = std::static_pointer_cast<arrow::StringArray>(array)->GetString(row);
+                } else if (array->type_id() == arrow::Type::BOOL) {
+                    values[name] = std::static_pointer_cast<arrow::BooleanArray>(array)->Value(row);
+                } else if (array->type_id() == arrow::Type::INT64) {
+                    values[name] = std::static_pointer_cast<arrow::Int64Array>(array)->Value(row);
+                } else if (array->type_id() == arrow::Type::DOUBLE) {
+                    values[name] = std::static_pointer_cast<arrow::DoubleArray>(array)->Value(row);
+                } else {
+                    auto scalar = array->GetScalar(row);
+                    if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                    values[name] = (*scalar)->ToString();
+                }
+            }
+            rows.push_back(std::move(values));
+        }
     }
     void emit_result(const std::string &contract, const std::string &payload) override {
         results[contract] = Json::parse(payload);
     }
-    void update_composite(const std::string &, const std::vector<std::string> &,
-                          const std::vector<std::string> &,
-                          const std::vector<std::vector<std::optional<std::string>>> &) override {}
-    void delete_rows(const std::string &, const std::string &,
-                     const std::vector<std::vector<std::optional<std::string>>> &) override {}
     void report_progress(double, std::string_view) override {}
 };
 

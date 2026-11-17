@@ -9,19 +9,54 @@ Run commands from the repository root unless a command says otherwise. The
 canonical version is in [`VERSION`](../VERSION), and the development rules and
 temporary-file policy are in [`AGENTS.md`](../AGENTS.md).
 
+`sfdev.ps1` resolves its checkout from the script's own location, not the
+terminal's current directory. You can invoke a worktree's script by a relative
+path while standing in the main checkout, for example
+`pwsh -NoProfile -File .worktrees/mass-spec-expansion/scripts/sfdev.ps1 env show`;
+its build trees, projects, packages, and logs remain under that worktree.
+
+## Quick start for AI agents
+
+Use this sequence at the beginning of a coding task:
+
+```powershell
+sfdev env show
+sfdev doctor --workflow scripts
+sfdev help <command>
+```
+
+Then run only the setup and validation needed for the task. For example,
+`sfdev doctor --workflow native` checks native build tools, while
+`sfdev doctor --workflow frontend` checks the frontend toolchain. If the
+`sfdev` shell function is unavailable, call the same framework directly:
+`pwsh -NoProfile -File scripts/sfdev.ps1 <command> ...`.
+
+Before a command that removes files, starts a service, replaces a package, or
+creates a release, inspect its `sfdev help` entry and use `--dry-run` when that
+command supports it. Depending on the command, dry-run prints planned process
+steps and environment or cleanup targets. It does not execute the planned
+steps or deletions, and it does not guarantee that a build, test, or service
+operation will succeed. Do not infer that `--dry-run` is accepted globally.
+
 ## 1. Install and start `sfdev`
 
 `sfdev` requires **PowerShell 7 or later** (`pwsh`) on both Windows and Linux.
-Windows PowerShell 5.1 cannot run it. On Windows, install PowerShell 7 with:
+Windows PowerShell 5.1 cannot run it. Install PowerShell 7 through the
+platform's normal package manager; it is a system prerequisite, not a pinned
+StreamFind tool, and is not installed under `.streamfind/tools`.
+
+On Windows, install it with WinGet:
 
 ```powershell
-winget install --id Microsoft.PowerShell --exact --source winget
+winget install --id Microsoft.PowerShell --source winget
 ```
 
-Then open a new terminal and check `pwsh --version`. In VS Code, choose
-**Terminal: Select Default Profile**, select the PowerShell 7 profile, and
-open a new integrated terminal. The terminal must actually be running PowerShell
-7; installing it does not change already-open Windows PowerShell 5.1 sessions.
+Then open a new terminal and check `pwsh --version`. WinGet installs the
+PowerShell package for the Windows user; StreamFind does not need an
+administrator-managed copy. In VS Code, choose **Terminal: Select Default
+Profile**, select the PowerShell 7 profile, and open a new integrated terminal.
+The terminal must actually be running PowerShell 7; installing it does not
+change already-open Windows PowerShell 5.1 sessions.
 
 From a PowerShell 7 terminal at the repository root, the direct invocation is:
 
@@ -38,10 +73,14 @@ sfdev help
 ```
 
 Type `exit` to leave that shell. `env shell` does not install a global command
-or change the machine's PATH. On Linux or WSL, use the same script from a
-PowerShell 7 session, with the repository checked out in the Linux filesystem
-for native Linux builds. The direct `pwsh -File` form works when you do not
-want to enter the development shell.
+or change the machine's PATH. On Linux or WSL, install PowerShell 7 using the
+package manager for that distribution, following Microsoft's
+[PowerShell on Linux installation guide](https://learn.microsoft.com/en-us/powershell/scripting/install/linux-overview).
+For Ubuntu, Microsoft's instructions configure the package source before
+installing the `powershell` package. Then use the same script from a PowerShell
+7 session, with the repository checked out in the Linux filesystem for native
+Linux builds. The direct `pwsh -File` form works when you do not want to enter
+the development shell.
 
 ## 2. Understand the environment before working
 
@@ -87,14 +126,22 @@ package manager and needs an APT source that provides `libarrow-dev`; package
 installation uses `sudo`.
 
 Python scripts always run with the repository `.venv`. `sfdev setup
---components python` uses an installed Python 3.11–3.14 that supports `venv`
-when available. Otherwise it installs the pinned Python 3.11 runtime under
+--components python` installs and uses the pinned Python 3.11 runtime under
 `%USERPROFILE%\.streamfind\tools\python` on Windows or
 `~/.streamfind/tools/python` on Linux, then creates `.venv` in the checkout.
+System Python installations and the Windows `py.exe` launcher are never used
+for repository development. Re-running setup reuses a healthy managed `.venv`,
+replaces a healthy `.venv` created from another Python installation, and gives
+an actionable recovery command when the environment is incomplete.
 The pin and platform archive checksums are maintained in
 `scripts/build/python-version.txt` and `scripts/build/setup-python.ps1`.
 `STREAMFIND_HOME` also relocates this managed Python. Project Python packages
 remain in `.venv` and are never shared from the user tools directory.
+
+`sfdev` also uses the pinned Node.js/npm installation under the same
+`.streamfind` tools root for frontend commands. This keeps Node selection
+aligned with the complete locked dependency tree rather than a broad major
+version check against the system Node installation.
 
 ### Supported native toolchains
 
@@ -103,7 +150,9 @@ Arrow development packages**. `sfdev` first uses an existing UCRT64 MSYS2
 installation found through `PATH` or at `C:\msys64`; if unavailable, it uses
 `%USERPROFILE%\.streamfind\tools\msys2`.
 `STREAMFIND_MSYS2_ROOT` selects an explicit root, and `STREAMFIND_HOME` changes
-the managed tools root. Run `sfdev setup --components native` to install
+the managed tools root. When no system installation is available, the
+user-local `.streamfind/tools/msys2` installation does not require
+administrator rights. Run `sfdev setup --components native` to install
 MSYS2 and the required UCRT64 packages when missing. The installer version is
 pinned in `scripts/build/msys2-version.txt`; package selection is defined in
 `scripts/build/setup-msys2.ps1`. Setup persists the selected root for the
@@ -147,23 +196,31 @@ sfdev build frontend
 Use `--config Release` with `configure` when you specifically need a Release
 build. The default is Debug. `--jobs N` controls native parallel build jobs.
 
-### Run the development app
+### Verify changes in the packaged app
+
+The package in `tmp/packaged_build/` is the single app verification target.
+Do not run a separate Vite app or build-tree service for UI or app checks.
+For a frontend-only change, rebuild the frontend and update the app assets in
+the existing package:
 
 ```powershell
-sfdev run app
+sfdev package --frontend-only
 ```
 
-This starts Vite and starts or reuses a development service at
-`http://127.0.0.1:8790`. Press Ctrl+C to stop processes started by this
-command. To run only one side:
+For backend, worker, packaging, or full app changes, build and refresh the
+whole package:
 
 ```powershell
-sfdev run backend
-sfdev run frontend --url http://127.0.0.1:8790
+sfdev package
 ```
 
-Build the service and worker before starting the backend. The frontend-only
-form connects to an already-ready service; it does not start one.
+Then open `tmp/packaged_build/bin/streamfind-app.exe` or use the package's
+`streamfind.exe service start` command. The app and service run from that
+package so the checked UI, backend, plugins, and runtime files all belong to
+one build. `sfdev test browser` runs its smoke check against the packaged app
+at `http://127.0.0.1:8787/`; pass `--url` when the package uses another port.
+On Linux, use a release package for manual app verification; `tmp/packaged_build`
+is reserved for the native Windows development machine.
 
 ### Run tests and checks
 
@@ -186,10 +243,10 @@ sfdev check frontend
 ```
 
 `check frontend` runs the frontend build, lint, and formatting check in order.
-For a browser smoke check, start the frontend first and provide its URL:
+For the browser smoke check, refresh and start the packaged app first:
 
 ```powershell
-sfdev test browser --url http://127.0.0.1:5173/
+sfdev test browser
 ```
 
 Large-data, mass-spectrometry, Raman, parser, and workflow checks are
@@ -228,6 +285,21 @@ sfdev test backend --filter '^streamfind_statistics_unit$' --dry-run
 ```
 
 Build, test, and script-run logs are written under `tmp/logs/`.
+
+For reusable editable test projects, use the purpose-built workflow builders:
+
+```powershell
+sfdev workflows nta
+sfdev workflows impurities
+sfdev workflows quantification
+```
+
+They call the native MCP interface and require an already-running StreamFind
+service. The commands validate and save a workflow in a new project under
+`tmp/projects/`; they do not execute operations. Use
+`sfdev help workflows` for `--project-name`, `--url`, and `--force` behavior,
+and see [`scripts/dev/README.md`](dev/README.md) for the data and template
+sources. These commands do not start or stop the service.
 
 ## 5. Package the app for manual testing
 
@@ -303,29 +375,47 @@ only the unpacked Windows manual-test package and is never a release asset.
 
 ## 8. A repeatable workflow for AI agents and automation
 
-Agents should use `sfdev` as the shared interface rather than inventing
-toolchain paths or invoking an unrelated legacy script. This makes actions
-reproducible and lets a human inspect the same plan and logs.
+`sfdev` is the public orchestration layer over the repository's build, release,
+and development scripts. Use it instead of inventing tool paths or composing
+ad-hoc build commands. When a needed action is not exposed by `sfdev`, use the
+owning documented script, and keep new development scripts under
+`scripts/dev/`.
 
-1. Start at the repository root and inspect `sfdev env show` and the relevant
-   `sfdev doctor --workflow ...` result.
-2. Read `sfdev help <command>` before using an unfamiliar command. For a
-   development data script, use `sfdev script list` and `sfdev script info`
-   first to learn its arguments and interpreter.
-3. Preview consequential or destructive commands with `--dry-run`. Review the
-   resolved directory, executable, arguments, and environment before running.
-4. Choose the narrowest command that validates the change: a CMake target,
-   CTest filter/label, frontend check, or one development script.
-5. Keep generated builds, package outputs, test projects, and logs under
-   `tmp/`. Keep large-data checks out of CTest and official native test folders.
-6. Report the command run, whether it completed, and the relevant log path
-   under `tmp/logs/`. Do not report a test or release as successful unless its
-   command completed successfully.
+1. Confirm the checkout and its tool resolution with `sfdev env show`. Check
+   only the relevant workflows with `sfdev doctor --workflow native`,
+   `frontend`, or `scripts`. Do not install dependencies preemptively.
+2. Read `sfdev help <command>` for prerequisites, exact option names, and
+   destructive effects. For script work, discover the script ID with
+   `sfdev script list`, inspect it with `sfdev script info PATH`, and check
+   forwarded arguments with the script's own help.
+3. If supported, preview with `--dry-run`. Confirm the resolved checkout,
+   build tree, package/project destination, service endpoint, and port before
+   running. A dry run only previews the plan; it is not a build, test, or
+   service health check.
+4. Run the narrowest useful action: a native target, CTest filter or label,
+   frontend check, one development script, or one workflow builder. A workflow
+   builder creates a validated project; an explicit workflow-run command is
+   still needed to execute its operations.
+5. Keep generated builds, packages, projects, data-backed checks, and logs in
+   the current checkout's `tmp/`. Use only that checkout's outputs when
+   working in a worktree. Follow the port allocation and process-ownership
+   checks in `AGENTS.md` before browser or packaged-app validation.
+6. Report the exact command, completion status, and relevant `tmp/logs/` path.
+   Do not claim success if the command returned a nonzero exit code or only
+   completed a dry run.
 
 For orchestration, `--json` is available on supported inspection and
 execution commands. It provides structured status and log-path information;
-command output is sent to stderr in JSON mode. Check `sfdev help <command>` for
-the exact options of that command.
+child command output is sent to stderr in JSON mode so stdout remains a JSON
+status object. `--json` and `--dry-run` are command-specific; check
+`sfdev help <command>` for the exact options. Script arguments are passed only
+after `--`, while `sfdev` options such as `--dry-run` go before that separator.
+
+When extending `sfdev`, update the parser, its built-in help, and this guide in
+the same change. Keep build and release implementations in their owning
+`scripts/build/` or `scripts/release/` directories; `sfdev` should compose or
+invoke those implementations rather than duplicate them. Add a focused
+example to `scripts/dev/README.md` when a new development helper is introduced.
 
 ## 9. Build, package, release, and cleanup locations
 
@@ -366,9 +456,9 @@ sfdev clean --scope all-temp --dry-run
 | `sfdev build backend\|frontend\|all` | Build native code, UI, or both |
 | `sfdev test backend\|frontend\|browser` | Run CTest, frontend tests, or a browser smoke check |
 | `sfdev check frontend` | Build, lint, and format-check frontend code |
-| `sfdev run backend\|frontend\|app` | Start development service and/or Vite |
 | `sfdev script list\|info\|run` | Discover and run development-stage scripts |
-| `sfdev package` | Build or refresh the unpacked Windows test package |
+| `sfdev workflows nta\|impurities\|quantification` | Create validated editable workflow projects through MCP |
+| `sfdev package` | Build or refresh the unpacked Windows development-verification package |
 | `sfdev sdk build` / `sfdev plugin ...` | Build a plugin SDK or work on an external plugin |
 | `sfdev version show\|bump` | Inspect or advance the canonical version |
 | `sfdev release prepare\|verify\|publish` | Prepare, verify, or publish versioned release archives |

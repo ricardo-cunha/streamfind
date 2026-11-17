@@ -3,6 +3,7 @@
 // This file contains spectral processing, peak detection, and quality metrics functions
 
 #include "operations/nta/nta_deconvolution.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 #include "readers/reader.hpp"
 #include "utils/nta.hpp"
 #include <algorithm>
@@ -2326,88 +2327,100 @@ namespace streamfind::mass_spec::nta::deconvolution
   Json find_features(sdk::PluginProjectAccess &access, const Json &parameters)
   {
     const auto physical_table = parameters.at("_inputs").at("analysesTable").at("physical_table").get<std::string>();
-    const auto rows = access.read(physical_table, {"analysis", "file_path", "analysis_index", "replicate", "blank"}, "analysis");
     std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_headers;
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto spectra_input = inputs.find("spectraHeadersTable");
     if (spectra_input != inputs.end() && spectra_input->is_object())
     {
-      const auto header_rows = access.read(
-          spectra_input->at("physical_table").get<std::string>(),
-          {"analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
-           "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
-           "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"},
-          "analysis,index");
-      for (const auto &row : header_rows)
-      {
-        auto &header = persisted_headers[::streamfind::mass_spec::nta::utils::text(row, "analysis")];
-        header.index.push_back(::streamfind::mass_spec::nta::utils::integer(row, "index"));
-        header.scan.push_back(::streamfind::mass_spec::nta::utils::integer(row, "scan"));
-        header.array_length.push_back(::streamfind::mass_spec::nta::utils::integer(row, "array_length"));
-        header.level.push_back(::streamfind::mass_spec::nta::utils::integer(row, "level"));
-        header.mode.push_back(::streamfind::mass_spec::nta::utils::integer(row, "mode"));
-        header.polarity.push_back(::streamfind::mass_spec::nta::utils::integer(row, "polarity"));
-        header.configuration.push_back(::streamfind::mass_spec::nta::utils::integer(row, "configuration"));
-        header.lowmz.push_back(::streamfind::mass_spec::nta::utils::real(row, "lowmz"));
-        header.highmz.push_back(::streamfind::mass_spec::nta::utils::real(row, "highmz"));
-        header.bpmz.push_back(::streamfind::mass_spec::nta::utils::real(row, "bpmz"));
-        header.bpint.push_back(::streamfind::mass_spec::nta::utils::real(row, "bpint"));
-        header.tic.push_back(::streamfind::mass_spec::nta::utils::real(row, "tic"));
-        header.rt.push_back(::streamfind::mass_spec::nta::utils::real(row, "rt"));
-        header.mobility.push_back(::streamfind::mass_spec::nta::utils::real(row, "mobility"));
-        header.window_mz.push_back(::streamfind::mass_spec::nta::utils::real(row, "window_mz"));
-        header.window_mzlow.push_back(::streamfind::mass_spec::nta::utils::real(row, "window_mzlow"));
-        header.window_mzhigh.push_back(::streamfind::mass_spec::nta::utils::real(row, "window_mzhigh"));
-        header.precursor_mz.push_back(::streamfind::mass_spec::nta::utils::real(row, "precursor_mz"));
-        header.precursor_intensity.push_back(::streamfind::mass_spec::nta::utils::real(row, "precursor_intensity"));
-        header.precursor_charge.push_back(::streamfind::mass_spec::nta::utils::integer(row, "precursor_charge"));
-        header.activation_ce.push_back(::streamfind::mass_spec::nta::utils::real(row, "activation_ce"));
-      }
+      const std::vector<std::string> header_columns{
+          "analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
+          "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
+          "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"};
+      access.read_typed_batches(spectra_input->at("physical_table").get<std::string>(), header_columns,
+          "analysis,index", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            const auto ci = [&](const char *name) { return batch.column_index(name); };
+            const auto analysis = ci("analysis");
+            const auto index = ci("index"); const auto scan = ci("scan"); const auto length = ci("array_length");
+            const auto level = ci("level"); const auto mode = ci("mode"); const auto polarity = ci("polarity");
+            const auto configuration = ci("configuration"); const auto lowmz = ci("lowmz");
+            const auto highmz = ci("highmz"); const auto bpmz = ci("bpmz"); const auto bpint = ci("bpint");
+            const auto tic = ci("tic"); const auto rt = ci("rt"); const auto mobility = ci("mobility");
+            const auto window_mz = ci("window_mz"); const auto window_low = ci("window_mzlow");
+            const auto window_high = ci("window_mzhigh"); const auto precursor_mz = ci("precursor_mz");
+            const auto precursor_intensity = ci("precursor_intensity"); const auto charge = ci("precursor_charge");
+            const auto activation = ci("activation_ce");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+              const auto key = std::string(batch.text(analysis, row));
+              auto &header = persisted_headers[key];
+              const auto integer = [&](std::uint32_t column) { return batch.is_null(column, row) ? 0 : static_cast<int>(batch.integer(column, row)); };
+              const auto real = [&](std::uint32_t column) { return batch.is_null(column, row) ? 0.0f : static_cast<float>(batch.real(column, row)); };
+              header.index.push_back(integer(index)); header.scan.push_back(integer(scan));
+              header.array_length.push_back(integer(length)); header.level.push_back(integer(level));
+              header.mode.push_back(integer(mode)); header.polarity.push_back(integer(polarity));
+              header.configuration.push_back(integer(configuration)); header.lowmz.push_back(real(lowmz));
+              header.highmz.push_back(real(highmz)); header.bpmz.push_back(real(bpmz));
+              header.bpint.push_back(real(bpint)); header.tic.push_back(real(tic)); header.rt.push_back(real(rt));
+              header.mobility.push_back(real(mobility)); header.window_mz.push_back(real(window_mz));
+              header.window_mzlow.push_back(real(window_low)); header.window_mzhigh.push_back(real(window_high));
+              header.precursor_mz.push_back(real(precursor_mz));
+              header.precursor_intensity.push_back(real(precursor_intensity));
+              header.precursor_charge.push_back(integer(charge)); header.activation_ce.push_back(real(activation));
+            }
+          });
     }
     FeatureInput input;
     input.log = [&access](std::string_view message) { access.report_progress(0.0, message); };
     input.progress = [&access](double fraction, std::string_view message) {
       access.report_progress(fraction, message);
     };
-    for (const auto &row : rows)
-    {
-      const auto name = ::streamfind::mass_spec::nta::utils::text(row, "analysis");
-      ::mass_spec::reader::MASS_SPEC_FILE file(::streamfind::mass_spec::nta::utils::text(row, "file_path"));
-      const int index = ::streamfind::mass_spec::nta::utils::integer(row, "analysis_index");
-      file.select_analysis(index);
-      input.names.push_back(name);
-      input.paths.push_back(::streamfind::mass_spec::nta::utils::text(row, "file_path"));
-      input.analysis_indices.push_back(index);
-      input.replicate_names.push_back(::streamfind::mass_spec::nta::utils::text(row, "replicate"));
-      input.blank_names.push_back(::streamfind::mass_spec::nta::utils::text(row, "blank"));
-
-      const auto persisted = persisted_headers.find(name);
-      // Persisted headers are keyed by analysis name. An empty or stale persisted
-      // entry must not suppress the native-reader fallback for that analysis.
-      input.headers.push_back(
-          persisted == persisted_headers.end() || persisted->second.index.empty()
-              ? file.get_spectra_headers()
-              : persisted->second);
-    }
+    access.read_typed_batches(physical_table,
+        {"analysis", "file_path", "analysis_index", "replicate", "blank"}, "analysis",
+        [&](const sdk::PluginProjectAccess::BatchView &batch) {
+          const auto analysis = batch.column_index("analysis");
+          const auto file_path = batch.column_index("file_path");
+          const auto analysis_index = batch.column_index("analysis_index");
+          const auto replicate = batch.column_index("replicate");
+          const auto blank = batch.column_index("blank");
+          for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+            const auto name = std::string(batch.text(analysis, row));
+            const auto path = std::string(batch.text(file_path, row));
+            const int index = static_cast<int>(batch.integer(analysis_index, row));
+            ::mass_spec::reader::MASS_SPEC_FILE file(path);
+            file.select_analysis(index);
+            input.names.push_back(name); input.paths.push_back(path); input.analysis_indices.push_back(index);
+            input.replicate_names.push_back(batch.is_null(replicate, row) ? std::string{} : std::string(batch.text(replicate, row)));
+            input.blank_names.push_back(batch.is_null(blank, row) ? std::string{} : std::string(batch.text(blank, row)));
+            const auto persisted = persisted_headers.find(name);
+            input.headers.push_back(persisted == persisted_headers.end() || persisted->second.index.empty()
+                ? file.get_spectra_headers() : persisted->second);
+          }
+        });
     input.buffers.resize(input.names.size());
 
     std::vector<float> mins, maxs;
-    const auto append_rt_windows = [&](const Json &rows) {
-      for (const auto &row : rows) {
+    const auto rt_windows = parameters.value("rt_windows", Json::array());
+    if (rt_windows.is_object() && rt_windows.contains("$result_ref")) {
+      const auto result_id = rt_windows.at("$result_ref").get<std::string>();
+      if (result_id.empty()) throw std::invalid_argument("rt_windows result reference is empty");
+      access.read_typed_batches("result:" + result_id, {"rtmin", "rtmax"}, "rtmin",
+          [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            const auto rtmin = batch.column_index("rtmin");
+            const auto rtmax = batch.column_index("rtmax");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+              if (batch.is_null(rtmin, row) || batch.is_null(rtmax, row))
+                throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
+              mins.push_back(static_cast<float>(batch.real(rtmin, row)));
+              maxs.push_back(static_cast<float>(batch.real(rtmax, row)));
+            }
+          });
+    } else {
+      if (!rt_windows.is_array()) throw std::invalid_argument("rt_windows must be an array or table result reference");
+      for (const auto &row : rt_windows) {
         if (!row.is_object() || !row.contains("rtmin") || !row.contains("rtmax"))
           throw std::invalid_argument("rt_windows rows must contain rtmin and rtmax");
         mins.push_back(row.at("rtmin").get<float>());
         maxs.push_back(row.at("rtmax").get<float>());
       }
-    };
-    const auto rt_windows = parameters.value("rt_windows", Json::array());
-    if (rt_windows.is_object() && rt_windows.contains("$result_ref")) {
-      const auto result_id = rt_windows.at("$result_ref").get<std::string>();
-      if (result_id.empty()) throw std::invalid_argument("rt_windows result reference is empty");
-      access.read_batches("result:" + result_id, {"rtmin", "rtmax"}, "rtmin", append_rt_windows);
-    } else {
-      if (!rt_windows.is_array()) throw std::invalid_argument("rt_windows must be an array or table result reference");
-      append_rt_windows(rt_windows);
     }
     const auto debug_analysis = parameters.contains("debug_analysis") && parameters.at("debug_analysis").is_string()
         ? parameters.at("debug_analysis").get<std::string>() : std::string{};
@@ -2442,12 +2455,19 @@ namespace streamfind::mass_spec::nta::deconvolution
     if (debug.enabled())
       debug.write_line("Feature detection completed");
 
-    Json output = Json::array();
+    auto output = ::streamfind::mass_spec::nta::utils::make_feature_batch_builder();
+    std::size_t feature_count = 0;
     for (const auto &buffer : input.buffers)
-      for (int index = 0; index < buffer.size(); ++index)
-        output.push_back(::streamfind::mass_spec::nta::utils::feature_row(buffer.get_feature(index)));
-    access.emit_table_rows("featuresTable", ::streamfind::mass_spec::nta::utils::feature_columns(), ::streamfind::mass_spec::nta::utils::feature_types(), output);
-    Json result = {{"status", "finished"}, {"features", output.size()}};
+      for (int index = 0; index < buffer.size(); ++index) {
+        ::streamfind::mass_spec::nta::utils::append_feature_batch_row(output, buffer.get_feature(index));
+        ++feature_count;
+        if (output.row_count() >= 512) {
+          output.emit(access, "featuresTable");
+          output.clear();
+        }
+      }
+    if (output.row_count() > 0 || feature_count == 0) output.emit(access, "featuresTable");
+    Json result = {{"status", "finished"}, {"features", feature_count}};
     if (debug.enabled())
     {
       Json debug_result = {

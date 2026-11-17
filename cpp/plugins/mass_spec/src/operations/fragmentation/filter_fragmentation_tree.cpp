@@ -1,4 +1,5 @@
 #include "operations/fragmentation/filter_fragmentation_tree.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -38,50 +39,57 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     const std::vector<std::string> columns = {
         "name", "fragment_id", "parent_id", "SMILES", "formula", "mass", "depth",
         "atom_indices", "broken_bond_indices", "neutral_losses", "fragment_data"};
-    const std::vector<std::string> types = {
-        "string", "string", "string", "string", "string", "real", "integer",
-        "array", "array", "array", "object"};
-    const auto source_rows = access.read(table, columns, "depth");
-    Json rows = Json::array();
+    sdk::TableBatchBuilder output({
+        {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"fragment_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"parent_id", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"SMILES", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"formula", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"depth", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"atom_indices", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"broken_bond_indices", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"neutral_losses", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"fragment_data", STREAMFIND_PLUGIN_COLUMN_UTF8}});
     std::unordered_map<std::string, std::size_t> formula_counts;
     std::size_t skipped_mass = 0;
     std::size_t skipped_duplicate = 0;
-    for (const auto &source : source_rows)
-    {
-        const auto mass_value = source.find("mass");
-        if (mass_value == source.end() || mass_value->is_null() || !mass_value->is_number())
-        {
-            ++skipped_mass;
-            continue;
-        }
-        const double mass = mass_value->get<double>();
-        if (mass < minimum_mass || mass > maximum_mass)
-        {
-            ++skipped_mass;
-            continue;
-        }
-        const auto formula_value = source.find("formula");
-        const std::string formula = formula_value != source.end() && formula_value->is_string()
-                                        ? formula_value->get<std::string>()
-                                        : std::string{};
-        if (duplicate_limit > 0 && !formula.empty())
-        {
-            auto &count = formula_counts[formula];
-            if (count >= duplicate_limit)
+    std::size_t input_rows = 0;
+    std::size_t output_rows = 0;
+    access.read_typed_batches(table, columns, "depth",
+        [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            const auto mass_column = batch.column_index("mass");
+            const auto formula_column = batch.column_index("formula");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row)
             {
-                ++skipped_duplicate;
-                continue;
+                ++input_rows;
+                if (batch.is_null(mass_column, row))
+                {
+                    ++skipped_mass;
+                    continue;
+                }
+                const double mass = batch.real(mass_column, row);
+                if (mass < minimum_mass || mass > maximum_mass)
+                {
+                    ++skipped_mass;
+                    continue;
+                }
+                const std::string formula = batch.is_null(formula_column, row)
+                    ? std::string{} : std::string(batch.text(formula_column, row));
+                if (duplicate_limit > 0 && !formula.empty())
+                {
+                    auto &count = formula_counts[formula];
+                    if (count >= duplicate_limit)
+                    {
+                        ++skipped_duplicate;
+                        continue;
+                    }
+                    ++count;
+                }
+                output.append_row(batch, row);
+                ++output_rows;
             }
-            ++count;
-        }
-        Json row = Json::object();
-        for (const auto &column : columns)
-            row[column] = source.contains(column) ? source.at(column) : Json(nullptr);
-        rows.push_back(std::move(row));
-    }
-    access.emit_table_rows("fragmentationTreeTable", columns, types, rows);
-    return {{"status", "finished"}, {"input_rows", source_rows.size()},
-            {"output_rows", rows.size()}, {"skipped_mass", skipped_mass},
+        });
+    output.emit(access, "fragmentationTreeTable");
+    return {{"status", "finished"}, {"input_rows", input_rows},
+            {"output_rows", output_rows}, {"skipped_mass", skipped_mass},
             {"skipped_duplicate_formulas", skipped_duplicate},
             {"artifact", "fragmentationTreeTable"}};
 }

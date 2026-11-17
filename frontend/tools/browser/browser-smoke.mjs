@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const url = process.env.STREAMFIND_FRONTEND_URL || 'http://127.0.0.1:5173/';
+const url = process.env.STREAMFIND_FRONTEND_URL || 'http://127.0.0.1:8787/';
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 const errors = [];

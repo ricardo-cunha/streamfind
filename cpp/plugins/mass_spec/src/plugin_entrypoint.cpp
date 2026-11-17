@@ -6,6 +6,7 @@
 #include "operations/fragmentation/expand_fragmentation_tree.hpp"
 #include "operations/fragmentation/filter_fragmentation_tree.hpp"
 #include "operations/chromatograms/operations.hpp"
+#include "operations/quantification/operations.hpp"
 #include "operations/nta/nta_deconvolution.hpp"
 #include "operations/nta/operations.hpp"
 #include "streamfind/plugin_abi.h"
@@ -54,7 +55,6 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.get_spectra_headers", sdk::CapabilityKind::Operation, &base::get_spectra_headers},
         {"mass_spec.get_chromatograms_headers", sdk::CapabilityKind::Operation, &base::get_chromatograms_headers},
         {"mass_spec.get_spectra_tic", sdk::CapabilityKind::Operation, &base::get_spectra_tic},
-        {"mass_spec.plot_spectra_tic", sdk::CapabilityKind::Operation, &base::plot_spectra_tic},
         {"mass_spec.get_raw_spectra", sdk::CapabilityKind::Operation, &base::get_raw_spectra},
         {"mass_spec.get_raw_spectra_eic", sdk::CapabilityKind::Operation, &base::get_raw_spectra_eic},
         {"mass_spec.get_raw_spectra_ms1", sdk::CapabilityKind::Operation, &base::get_raw_spectra_ms1},
@@ -67,6 +67,8 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Operation, &chromatograms::find_chromatogram_peaks},
         {"mass_spec.correct_chromatogram_baseline", sdk::CapabilityKind::Operation, &chromatograms::correct_chromatogram_baseline},
         {"mass_spec.smooth_chromatograms", sdk::CapabilityKind::Operation, &chromatograms::smooth_chromatograms},
+        {"mass_spec.set_quantification_plan", sdk::CapabilityKind::Operation, &quantification::set_quantification_plan},
+        {"mass_spec.quantify", sdk::CapabilityKind::Operation, &quantification::quantify},
         {"mass_spec.find_features", sdk::CapabilityKind::Operation, &nta::deconvolution::find_features},
         {"mass_spec.load_features_ms1", sdk::CapabilityKind::Operation, &nta::load_features_ms1::run},
         {"mass_spec.load_features_ms2", sdk::CapabilityKind::Operation, &nta::load_features_ms2::run},

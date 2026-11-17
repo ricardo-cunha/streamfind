@@ -18,6 +18,7 @@
 #include "streamfind/core_operations.hpp"
 #include "streamfind/mcp.hpp"
 #include "streamfind/plugin_configuration.hpp"
+#include "streamfind/service/service_discovery.hpp"
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
 #include "streamfind/vendor_runtime.hpp"
@@ -51,6 +52,8 @@ std::filesystem::path executable_path(int argc, char **argv) {
 }
 
 void ensure_local_service(const std::filesystem::path &mcp_executable) {
+    const auto *endpoint = std::getenv("STREAMFIND_SERVICE_ENDPOINT");
+    if (endpoint != nullptr && *endpoint != '\0') return;
 #ifdef _WIN32
     const auto cli = mcp_executable.parent_path() / "streamfind.exe";
     SECURITY_ATTRIBUTES security{};
@@ -170,15 +173,10 @@ public:
             loaded->host.allocate = &host_callbacks::allocate;
             loaded->host.deallocate = &host_callbacks::deallocate;
             loaded->host.has_table = &sdk::plugin_has_table;
-            loaded->host.clear_table = &sdk::plugin_clear_table;
             loaded->host.read_batch = &sdk::plugin_read_batch;
             loaded->host.count_rows = &sdk::plugin_count_rows;
-            loaded->host.append_batch = &sdk::plugin_append_batch;
             loaded->host.emit_table_batch = &sdk::plugin_emit_table_batch;
             loaded->host.emit_result = &sdk::plugin_emit_result;
-            loaded->host.update_batch = &sdk::plugin_update_batch;
-            loaded->host.update_composite_batch = &sdk::plugin_update_composite_batch;
-            loaded->host.delete_batch = &sdk::plugin_delete_batch;
             loaded->host.report_progress = &sdk::plugin_report_progress;
             loaded->host.is_cancelled = &sdk::plugin_is_cancelled;
             if (sdk::register_dynamic_plugin(loaded->plugin, loaded->host) != STREAMFIND_PLUGIN_OK) {
@@ -284,6 +282,7 @@ int main(int argc, char **argv) {
     std::filesystem::path configuration_path;
     try {
         executable = streamfind::mcp::detail::executable_path(argc, argv);
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
         configuration_path = executable.parent_path() / "streamfind.json";
         if (!std::filesystem::exists(configuration_path))
             throw std::runtime_error("streamfind.json is required for dynamic plugin loading");

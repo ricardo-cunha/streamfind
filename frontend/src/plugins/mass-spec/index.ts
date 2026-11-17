@@ -7,7 +7,15 @@ import { SuspectsExplorer } from './SuspectsExplorer';
 import './SuspectsExplorer.css';
 import { EicTableViewer } from './EicTableViewer';
 import './EicTableViewer.css';
+import { TicTableViewer } from './TicTableViewer';
+import './TicTableViewer.css';
+import { ChromatogramPeaksViewer } from './ChromatogramPeaksViewer';
+import './ChromatogramPeaksViewer.css';
+import { ChromatogramsTableViewer } from './ChromatogramsTableViewer';
+import './ChromatogramsTableViewer.css';
+import './MassSpecFilterToolbar.css';
 import { FindFeaturesDebugViewer } from './FindFeaturesDebugViewer';
+import { QuantifySamplesViewer } from './QuantifySamplesViewer';
 
 export const massSpecFrontendPlugin: FrontendPlugin = {
   manifest: {
@@ -19,17 +27,24 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     artifactContracts: [
       'featuresTable',
       'eicTable',
+      'ticTable',
+      'chromatogramsTable',
+      'chromatogramPeaksTable',
       'suspectTargetsTable',
       'suspectsTable',
       'internalStandardsTable',
       'findFeaturesDebugResult',
+      'quantificationTable',
+      'quantificationCalibrationModelsTable',
     ],
     capabilities: [
       'feature-inspector',
       'eic-viewer',
+      'tic-viewer',
       'suspect-targets-viewer',
       'suspects-explorer',
       'find-features-debug-viewer',
+      'quantification-viewer',
     ],
   },
   setup(api) {
@@ -52,6 +67,24 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       component: EicTableViewer,
     });
     api.registerViewer({
+      id: 'mass-spec.tic-viewer',
+      label: 'TIC viewer',
+      accepts: ['ticTable'],
+      component: TicTableViewer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.chromatogram-peaks-viewer',
+      label: 'Chromatogram peak viewer',
+      accepts: ['chromatogramPeaksTable'],
+      component: ChromatogramPeaksViewer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.chromatograms-table-viewer',
+      label: 'Raw chromatograms viewer',
+      accepts: ['chromatogramsTable'],
+      component: ChromatogramsTableViewer,
+    });
+    api.registerViewer({
       id: 'mass-spec.suspects-explorer',
       label: 'Suspects explorer',
       accepts: ['suspectsTable', 'internalStandardsTable'],
@@ -62,6 +95,12 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       label: 'Find features diagnostics',
       accepts: ['findFeaturesDebugResult'],
       component: FindFeaturesDebugViewer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.quantification-viewer',
+      label: 'Quantification curves and results',
+      accepts: ['quantificationTable', 'quantificationCalibrationModelsTable'],
+      component: QuantifySamplesViewer,
     });
   },
 };

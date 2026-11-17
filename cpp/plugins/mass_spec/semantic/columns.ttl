@@ -925,8 +925,51 @@ sfms:eicIntensityColumn
     a sf:Column ;
     sf:availableInDomain sfms:mass_spec ;
     skos:prefLabel "Eic Intensity" ;
-    skos:definition "Raw EIC intensities, as a typed numeric array paired with eic_rt." ;
+    skos:definition "Processed chromatogram intensities, as a typed numeric array paired with eic_rt." ;
     sf:columnName "eic_intensity" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:qualifierEicSizeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier Eic Size" ;
+    skos:definition "Number of points in the qualifier transition EIC attached to a quantification row." ;
+    sf:columnName "qualifier_eic_size" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierEicRtColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier Eic Rt" ;
+    skos:definition "Retention-time axis for the qualifier transition EIC attached to a quantification row." ;
+    sf:columnName "qualifier_eic_rt" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:qualifierEicIntensityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier Eic Intensity" ;
+    skos:definition "Intensity values for the qualifier transition EIC attached to a quantification row." ;
+    sf:columnName "qualifier_eic_intensity" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:eicRawIntensityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Eic Raw Intensity" ;
+    skos:definition "Raw chromatogram intensities paired with eic_rt for a detected peak window." ;
+    sf:columnName "eic_raw_intensity" ;
     sf:type "array" ;
     sf:storageType "JSON" ;
     sf:items sfcore:realItemParameter .
@@ -1682,6 +1725,703 @@ sfms:peakIdColumn
     sf:columnName "peak_id" ;
     sf:type "integer" ;
     sf:storageType "INTEGER" .
+
+sfms:quantTargetIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification target ID" ;
+    skos:definition "Stable identifier for an analyte or internal standard in a targeted quantification method." ;
+    sf:columnName "target_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:quantRoleColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification target role" ;
+    skos:definition "Whether the target is an analyte or an internal standard." ;
+    sf:columnName "role" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:internalStandardIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal standard ID" ;
+    skos:definition "Target ID of the internal standard assigned to an analyte." ;
+    sf:columnName "internal_standard_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:rtToleranceColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Retention-time tolerance" ;
+    skos:definition "Allowed deviation from the expected target retention time in seconds." ;
+    sf:columnName "rt_tolerance" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:responseMetricColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response metric" ;
+    skos:definition "Peak response used for quantification: area or height." ;
+    sf:columnName "response_metric" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:normalizationColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response normalization" ;
+    skos:definition "Whether the target response is unnormalized or divided by an assigned internal-standard response." ;
+    sf:columnName "normalization" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:concentrationUnitColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Concentration unit" ;
+    skos:definition "Unit used for nominal and calculated concentrations." ;
+    sf:columnName "concentration_unit" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:regressionModelColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Regression model" ;
+    skos:definition "Calibration model selected for the target." ;
+    sf:columnName "regression_model" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:weightingColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration weighting" ;
+    skos:definition "Weighting applied to calibration points." ;
+    sf:columnName "weighting" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:interceptModeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration intercept mode" ;
+    skos:definition "Whether calibration uses a free or forced-zero intercept." ;
+    sf:columnName "intercept_mode" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationModelColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration model" ;
+    skos:definition "Model family used to fit the quantification calibration." ;
+    sf:columnName "model" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:coefficient0Column
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 0" ;
+    skos:definition "Intercept coefficient of the fitted calibration model." ;
+    sf:columnName "coefficient_0" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:coefficient1Column
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 1" ;
+    skos:definition "Linear slope coefficient of the fitted calibration model." ;
+    sf:columnName "coefficient_1" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:coefficient2Column
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 2" ;
+    skos:definition "Quadratic coefficient reserved for future calibration models." ;
+    sf:columnName "coefficient_2" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rSquaredColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "R squared" ;
+    skos:definition "Coefficient of determination for the calibration fit." ;
+    sf:columnName "r_squared" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:adjustedRSquaredColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Adjusted R squared" ;
+    skos:definition "Adjusted coefficient of determination for the calibration fit." ;
+    sf:columnName "adjusted_r_squared" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rmseColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration RMSE" ;
+    skos:definition "Root mean square response residual of the calibration fit." ;
+    sf:columnName "rmse" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:nPointsColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration point count" ;
+    skos:definition "Number of calibrator points included in the fitted model." ;
+    sf:columnName "n_points" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:rangeMinColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration range minimum" ;
+    skos:definition "Lowest nominal concentration included in the calibration fit." ;
+    sf:columnName "range_min" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rangeMaxColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration range maximum" ;
+    skos:definition "Highest nominal concentration included in the calibration fit." ;
+    sf:columnName "range_max" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:fitStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration fit status" ;
+    skos:definition "Whether the calibration model is valid, insufficient, or failed." ;
+    sf:columnName "fit_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:includedColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Included in calibration" ;
+    skos:definition "Whether this calibration observation was included in the fit." ;
+    sf:columnName "included" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfms:backCalculatedConcentrationColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Back-calculated concentration" ;
+    skos:definition "Concentration calculated by inverting the fitted calibration model for a calibration point." ;
+    sf:columnName "back_calculated_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:residualColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration residual" ;
+    skos:definition "Observed minus fitted response for a calibration point." ;
+    sf:columnName "residual" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:relativeResidualColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Relative calibration residual" ;
+    skos:definition "Back-calculated concentration residual as a percentage of nominal concentration." ;
+    sf:columnName "relative_residual" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:exclusionReasonColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration exclusion reason" ;
+    skos:definition "Reason a calibration observation was not included in the fit." ;
+    sf:columnName "exclusion_reason" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calculatedConcentrationColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calculated concentration" ;
+    skos:definition "Concentration obtained by inverting the calibration model before dilution correction." ;
+    sf:columnName "calculated_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:finalConcentrationColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Final concentration" ;
+    skos:definition "Calculated concentration after applying the assigned dilution factor." ;
+    sf:columnName "final_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierRatioPassColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier ratio pass" ;
+    skos:definition "Whether the observed qualifier ratio passed the configured method check." ;
+    sf:columnName "qualifier_ratio_pass" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfms:accuracyPercentColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification accuracy percent" ;
+    skos:definition "Calculated final concentration divided by nominal concentration as a percentage." ;
+    sf:columnName "accuracy_percent" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:flagsColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification flags" ;
+    skos:definition "Comma-separated diagnostic and QC flags attached to a final result." ;
+    sf:columnName "flags" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:enabledColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Enabled" ;
+    skos:definition "Whether a quantification target or channel participates in the method." ;
+    sf:columnName "enabled" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" ;
+    sf:required true .
+
+sfms:expectedRatioColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Expected qualifier ratio" ;
+    skos:definition "Expected qualifier-to-quantifier response ratio." ;
+    sf:columnName "expected_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:ratioToleranceColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier ratio tolerance" ;
+    skos:definition "Allowed deviation of the observed qualifier-to-quantifier ratio." ;
+    sf:columnName "ratio_tolerance" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakRtColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak retention time" ;
+    skos:definition "Retention time of the peak selected for a quantification response." ;
+    sf:columnName "peak_rt" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakAreaColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak area" ;
+    skos:definition "Integrated area of the selected quantification peak." ;
+    sf:columnName "peak_area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakHeightColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak height" ;
+    skos:definition "Height of the selected quantification peak." ;
+    sf:columnName "peak_height" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rtErrorColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Retention-time error" ;
+    skos:definition "Observed selected-peak retention time minus the configured target retention time." ;
+    sf:columnName "rt_error" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:responseColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Extracted response" ;
+    skos:definition "Configured area or height response extracted from a selected peak." ;
+    sf:columnName "response" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardResponseColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard response" ;
+    skos:definition "Extracted response of the assigned internal standard in the same analysis." ;
+    sf:columnName "internal_standard_response" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:responseRatioColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response ratio" ;
+    skos:definition "Analyte response divided by the assigned internal-standard response." ;
+    sf:columnName "response_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierResponseColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier response" ;
+    skos:definition "Response extracted from the optional qualifier transition." ;
+    sf:columnName "qualifier_response" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierRatioColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier ratio" ;
+    skos:definition "Observed qualifier response divided by quantifier response." ;
+    sf:columnName "qualifier_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantificationStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification response status" ;
+    skos:definition "Overall response status after quantifier, qualifier, and internal-standard evaluation." ;
+    sf:columnName "status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:quantifierStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier status" ;
+    skos:definition "Primary quantifier peak-assignment status before internal-standard normalization is applied." ;
+    sf:columnName "quantifier_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:internalStandardStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard status" ;
+    skos:definition "Status of the internal-standard assignment for an analyte response, or an explicit not-applicable value for internal-standard rows." ;
+    sf:columnName "internal_standard_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:candidateCountColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Candidate peak count" ;
+    skos:definition "Number of peaks inside the configured target window and channel match." ;
+    sf:columnName "candidate_count" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierStatusColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier status" ;
+    skos:definition "Status of optional qualifier matching and ratio evaluation." ;
+    sf:columnName "qualifier_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:sampleTypeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification sample type" ;
+    skos:definition "Sample role used for quantification: blank, zero, calibrator, QC, or unknown." ;
+    sf:columnName "sample_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:calibrationLevelColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration level" ;
+    skos:definition "Ordered calibration level for a calibrator sample." ;
+    sf:columnName "calibration_level" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:nominalConcentrationColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Nominal concentration" ;
+    skos:definition "Known concentration assigned to a calibrator or QC sample." ;
+    sf:columnName "nominal_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:dilutionFactorColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Dilution factor" ;
+    skos:definition "Positive factor applied to the calculated concentration." ;
+    sf:columnName "dilution_factor" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:excludeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Exclude from calibration" ;
+    skos:definition "Whether the sample assignment is excluded from calibration fitting." ;
+    sf:columnName "exclude" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfms:quantifierSignalTypeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier signal type" ;
+    skos:definition "Signal family used by the quantifier transition." ;
+    sf:columnName "quantifier_signal_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:quantifierChromatogramTypeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier chromatogram type" ;
+    skos:definition "Chromatogram type used by the quantifier transition." ;
+    sf:columnName "quantifier_chromatogram_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:quantifierPolarityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier polarity" ;
+    skos:definition "Ion polarity used by the quantifier transition." ;
+    sf:columnName "quantifier_polarity" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:quantifierPrecursorMzColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier precursor m/z" ;
+    skos:definition "Precursor mass-to-charge value of the quantifier transition." ;
+    sf:columnName "quantifier_precursor_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierProductMzColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier product m/z" ;
+    skos:definition "Product mass-to-charge value of the quantifier transition." ;
+    sf:columnName "quantifier_product_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierDetectorColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier detector" ;
+    skos:definition "Detector identifier of the quantifier channel." ;
+    sf:columnName "quantifier_detector" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:quantifierWavelengthNmColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier wavelength" ;
+    skos:definition "Wavelength in nanometres for a UV quantifier." ;
+    sf:columnName "quantifier_wavelength_nm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierMzTolerancePpmColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier m/z tolerance" ;
+    skos:definition "m/z tolerance in parts per million for the quantifier." ;
+    sf:columnName "quantifier_mz_tolerance_ppm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierSignalTypeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier signal type" ;
+    skos:definition "Signal family used by the optional qualifier transition." ;
+    sf:columnName "qualifier_signal_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierChromatogramTypeColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier chromatogram type" ;
+    skos:definition "Chromatogram type used by the optional qualifier transition." ;
+    sf:columnName "qualifier_chromatogram_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierPolarityColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier polarity" ;
+    skos:definition "Ion polarity used by the optional qualifier transition." ;
+    sf:columnName "qualifier_polarity" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierPrecursorMzColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier precursor m/z" ;
+    skos:definition "Precursor mass-to-charge value of the qualifier transition." ;
+    sf:columnName "qualifier_precursor_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierProductMzColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier product m/z" ;
+    skos:definition "Product mass-to-charge value of the qualifier transition." ;
+    sf:columnName "qualifier_product_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierDetectorColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier detector" ;
+    skos:definition "Detector identifier of the optional qualifier channel." ;
+    sf:columnName "qualifier_detector" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierWavelengthNmColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier wavelength" ;
+    skos:definition "Wavelength in nanometres for an optional UV qualifier." ;
+    sf:columnName "qualifier_wavelength_nm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierMzTolerancePpmColumn
+    a sf:Column ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier m/z tolerance" ;
+    skos:definition "m/z tolerance in parts per million for the qualifier." ;
+    sf:columnName "qualifier_mz_tolerance_ppm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
 
 sfms:rtStartColumn
     a sf:Column ;

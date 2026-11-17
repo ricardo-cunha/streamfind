@@ -29,14 +29,14 @@ Operation make_table_operation(const std::string &operation_id,
                                  inputs.begin().value().value("result_id", ""));
                          const auto producer = instance == "1" ? "domain_a.make_table" : "domain_b.make_table";
                          const Json descriptor = {{"contract_id", contract}, {"kind", "table"},
-                             {"format", "json-lines"}, {"producer_operation", producer},
+                             {"format", "arrow-ipc-file"}, {"producer_operation", producer},
                              {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
                              {"schema", Json::array({{{"name", "value"}, {"type", "string"}}})}};
                          const auto allocation = context.outputs().begin(descriptor);
                          const auto handle = allocation.value("output_handle", "");
                          if (handle.empty()) throw std::runtime_error("table output lease was not created");
-                         context.outputs().write_rows(handle, 0,
-                             Json::array({{{"value", instance == "1" ? "domain-a" : "domain-b"}}}));
+                         context.outputs().write_query_result(handle, 0,
+                             instance == "1" ? "SELECT 'domain-a' AS value" : "SELECT 'domain-b' AS value");
                          Json lineage = Json::array();
                          if (!source_result.empty())
                              lineage.push_back({{"result_id", source_result}, {"source_port", "table"},
@@ -70,13 +70,12 @@ void run() {
                 const auto source_result = inputs.at("input").value("result_id",
                     inputs.at("input").value("result_id", ""));
                 const Json descriptor = {{"contract_id", "anyTable"}, {"kind", "table"},
-                    {"format", "json-lines"}, {"producer_operation", "domain_b.make_table"},
+                    {"format", "arrow-ipc-file"}, {"producer_operation", "domain_b.make_table"},
                     {"producer_instance", instance}, {"workflow_revision", context.workflow_revision()},
                     {"schema", Json::array({{{"name", "value"}, {"type", "string"}}})}};
                 const auto allocation = context.outputs().begin(descriptor);
                 const auto handle = allocation.value("output_handle", "");
-                context.outputs().write_rows(handle, 0,
-                    Json::array({{{"value", "domain-b"}}}));
+                context.outputs().write_query_result(handle, 0, "SELECT 'domain-b' AS value");
                 Json lineage = Json::array({{{"result_id", source_result},
                     {"source_port", "table"}, {"target_port", "input"}}});
                 const auto published = context.outputs().finish(

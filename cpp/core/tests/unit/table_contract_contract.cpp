@@ -65,13 +65,24 @@ int main()
 
         const auto csv_path = streamfind::test::tmp_projects_dir() / "table_contract_export.csv";
         std::filesystem::remove(csv_path, error);
-        writer->run_workflow(project, {{"csv_path", csv_path.string()}}, "csv-writer", {
-            {"anyTable", {{"contract_id", "anyTable"}, {"physical_table", "RUNTIME_TABLE"}}}
-        });
+        bool physical_table_rejected = false;
+        try {
+            writer->run_workflow(project, {{"csv_path", csv_path.string()}}, "csv-writer", {
+                {"anyTable", {{"contract_id", "anyTable"}, {"physical_table", "RUNTIME_TABLE"}}}
+            });
+        } catch (const std::exception &exception) {
+            physical_table_rejected = std::string(exception.what()).find("published result") != std::string::npos;
+        }
+        if (!physical_table_rejected)
+            throw std::runtime_error("CSV writer accepted a legacy physical-table input");
+        {
+            std::ofstream fixture(csv_path, std::ios::out | std::ios::trunc);
+            fixture << "id,signal,label\n1,1.25,first\n";
+        }
         std::ifstream csv(csv_path);
         std::string contents((std::istreambuf_iterator<char>(csv)), std::istreambuf_iterator<char>());
         if (contents.find("id,signal,label") == std::string::npos)
-            throw std::runtime_error("CSV writer did not emit the table header");
+            throw std::runtime_error("CSV fixture is missing its table header");
         const auto *reader = operations.find("streamfind.read_csv");
         if (!reader || reader->definition().output_ports.empty())
             throw std::runtime_error("CSV reader does not expose an AnyTable output");
