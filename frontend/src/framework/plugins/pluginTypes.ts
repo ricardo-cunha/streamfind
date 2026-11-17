@@ -12,7 +12,6 @@ export type FrontendPluginManifest = {
   apiVersion: typeof FRONTEND_PLUGIN_API_VERSION;
   artifactContracts?: string[];
   artifactRepresentations?: string[];
-  visualizationTypes?: string[];
   domains?: string[];
   capabilities?: string[];
 };

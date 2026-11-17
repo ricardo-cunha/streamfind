@@ -2,12 +2,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "streamfind/export.hpp"
+#include "streamfind/plugin_abi.h"
+#include <arrow/record_batch.h>
 
 namespace streamfind {
 
@@ -32,10 +36,26 @@ public:
                        std::uint64_t sequence,
                        const std::vector<unsigned char> &batch) = 0;
 
-    /** Submit typed table rows; the runtime chooses the transport encoding. */
-    virtual void write_rows(const std::string &output_handle,
-                            std::uint64_t sequence,
-                            const Json &rows) = 0;
+    /** Submit a callback-scoped typed batch without materializing row JSON. */
+    virtual void write_table_batch(
+        const std::string &output_handle,
+        std::uint64_t sequence,
+        const std::shared_ptr<arrow::RecordBatch> &batch) {
+        (void)output_handle;
+        (void)sequence;
+        (void)batch;
+        throw std::logic_error("this output sink does not accept typed table batches");
+    }
+
+    /** Execute a runtime-owned SELECT directly into this table output. */
+    virtual std::uint64_t write_query_result(const std::string &output_handle,
+                                             std::uint64_t sequence,
+                                             std::string_view sql) {
+        (void)output_handle;
+        (void)sequence;
+        (void)sql;
+        throw std::logic_error("this output sink does not support direct SQL-to-Arrow output");
+    }
 
     /** Seal the output and return its runtime-owned reference. */
     virtual Json finish(const std::string &output_handle,

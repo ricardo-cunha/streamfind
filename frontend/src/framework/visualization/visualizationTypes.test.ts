@@ -4,7 +4,7 @@ import { isVisualizationSpec, parseVisualizationSpec, VISUALIZATION_SPEC_VERSION
 
 const spec = {
   schema: VISUALIZATION_SPEC_VERSION,
-  visualization_id: 'mass_spec.plot_spectra_tic',
+  visualization_id: 'mass_spec.tic_table_viewer',
   semantic_type: 'mass_spec.spectra_tic',
   data_mode: 'inline' as const,
   title: 'TIC',
@@ -12,7 +12,7 @@ const spec = {
   payload: { data: [{ type: 'scatter', x: [1, 2], y: [3, 4] }] },
   provenance: {
     source_result_ids: ['spectra-1'],
-    producer_operation_id: 'mass_spec.plot_spectra_tic',
+    producer_operation_id: 'mass_spec.get_spectra_tic',
     producer_node_id: 'tic-1',
   },
   fallback: { description: 'TIC visualization unavailable.' },

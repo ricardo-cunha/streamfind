@@ -9,6 +9,7 @@
   "artifactContracts": [
     "featuresTable",
     "eicTable",
+    "ticTable",
     "chromatogramsTable",
     "chromatogramPeaksTable",
     "suspectTargetsTable",

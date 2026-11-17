@@ -5,7 +5,7 @@ import type { VisualizationSpec } from '../../../framework/visualization/visuali
 
 const spec: VisualizationSpec = {
   schema: 'streamfind.visualization/v1',
-  visualization_id: 'mass_spec.plot_spectra_tic',
+  visualization_id: 'mass_spec.tic_table_viewer',
   semantic_type: 'mass_spec.spectra_tic',
   title: 'TIC',
   data_mode: 'inline',

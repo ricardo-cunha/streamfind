@@ -40,61 +40,6 @@ static bool neutral_mass_overlaps(const TargetRange &target, int polarity, doubl
     return overlaps(proton_mass) || overlaps(-proton_mass);
 }
 
-nlohmann::json summarize_eic(const nlohmann::json &rows)
-{
-    std::map<std::tuple<std::string, int, std::string, double>, nlohmann::json> grouped;
-    for (const auto &row : rows)
-    {
-        const auto key = std::make_tuple(row.value("analysis", std::string{}), row.value("polarity", 0),
-                                         row.value("name", std::string{}), row.value("rt", 0.0));
-        auto &output = grouped[key];
-        if (output.empty()) output = row;
-        output["intensity"] = std::max(output.value("intensity", 0.0), row.value("intensity", 0.0));
-    }
-    nlohmann::json result = nlohmann::json::array();
-    for (auto &[key, row] : grouped) result.push_back(std::move(row));
-    return result;
-}
-
-nlohmann::json merge_ms_rows(const nlohmann::json &rows, double mz_cluster, double presence)
-{
-    std::map<std::tuple<std::string, std::string, int, int, double, double>, std::vector<nlohmann::json>> groups;
-    for (const auto &row : rows)
-    groups[{row.value("analysis", std::string{}), row.value("name", std::string{}), row.value("polarity", 0),
-            row.value("level", 0), row.value("rt", 0.0), row.value("precursor_mz", 0.0)}]
-        .push_back(row);
-    nlohmann::json result = nlohmann::json::array();
-    for (auto &[key, values] : groups)
-    {
-        std::sort(values.begin(), values.end(), [](const auto &left, const auto &right) { return left.value("mz", 0.0) < right.value("mz", 0.0); });
-        std::set<double> all_rt;
-        for (const auto &row : values) all_rt.insert(row.value("rt", 0.0));
-        for (std::size_t start = 0; start < values.size();)
-        {
-            std::size_t end = start + 1;
-            while (end < values.size() && values[end].value("mz", 0.0) - values[end - 1].value("mz", 0.0) <= mz_cluster) ++end;
-            std::set<double> cluster_rt;
-            for (std::size_t i = start; i < end; ++i) cluster_rt.insert(values[i].value("rt", 0.0));
-            if (presence > 0.0 && static_cast<double>(cluster_rt.size()) < presence * static_cast<double>(all_rt.size())) { start = end; continue; }
-            nlohmann::json row = values[start];
-            double intensity = 0.0, weighted_mz = 0.0, rt = 0.0;
-            for (std::size_t i = start; i < end; ++i)
-            {
-                const double value = values[i].value("intensity", 0.0);
-                intensity = std::max(intensity, value);
-                weighted_mz += values[i].value("mz", 0.0) * value;
-                rt += values[i].value("rt", 0.0);
-            }
-            row["mz"] = weighted_mz == 0.0 ? row.value("mz", 0.0) : weighted_mz / std::max(intensity, 1e-12);
-            row["intensity"] = intensity;
-            row["rt"] = rt / static_cast<double>(end - start);
-            result.push_back(std::move(row));
-            start = end;
-        }
-    }
-    return result;
-}
-
 static double row_real_or(const nlohmann::json &row, const char *column, double fallback);
 static bool row_has_value(const nlohmann::json &row, const char *column);
 static double row_real_or_any(const nlohmann::json &row, const char *primary,
@@ -108,15 +53,74 @@ std::vector<TargetRange> normalize_targets(sdk::PluginProjectAccess &access, con
     {
         const auto result_id = sources.at("$result_ref").get<std::string>();
         if (result_id.empty()) throw std::invalid_argument("targets result reference is empty");
-        auto batch_parameters = parameters;
-        access.read_batches("result:" + result_id,
-            {"name", "analysis", "polarity", "level", "mass", "mass_min", "mass_max",
-             "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"}, "name",
-            [&](const nlohmann::json &batch) {
-                batch_parameters["targets"] = batch;
-                auto parsed = normalize_targets(access, batch_parameters);
-                result.insert(result.end(), std::make_move_iterator(parsed.begin()),
-                              std::make_move_iterator(parsed.end()));
+        const std::vector<std::string> columns = {"name", "analysis", "polarity", "level", "mass", "mass_min", "mass_max",
+            "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"};
+        const double ppm = parameters.value("ppm", 20.0);
+        const double rt_tolerance = parameters.value("rt_tolerance", 60.0);
+        access.read_typed_batches("result:" + result_id, columns, "name",
+            [&](const sdk::PluginProjectAccess::BatchView &batch) {
+                const auto optional_number = [&](const char *column, std::uint64_t row) -> std::optional<double> {
+                    const auto index = batch.column_index(column);
+                    if (batch.is_null(index, row)) return std::nullopt;
+                    switch (batch.type(index)) {
+                    case STREAMFIND_PLUGIN_COLUMN_INT64: return static_cast<double>(batch.integer(index, row));
+                    case STREAMFIND_PLUGIN_COLUMN_FLOAT64: return batch.real(index, row);
+                    default: throw std::invalid_argument(std::string("target column '") + column + "' must be numeric");
+                    }
+                };
+                const auto number_or = [&](const char *column, std::uint64_t row, double fallback) {
+                    return optional_number(column, row).value_or(fallback);
+                };
+                const auto text_or = [&](const char *column, std::uint64_t row, std::string fallback = {}) {
+                    const auto index = batch.column_index(column);
+                    return batch.is_null(index, row) ? std::move(fallback) : std::string(batch.text(index, row));
+                };
+                for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+                    TargetRange target;
+                    target.id = text_or("name", row, "target" + std::to_string(result.size()));
+                    const auto analysis_index = batch.column_index("analysis");
+                    if (!batch.is_null(analysis_index, row)) {
+                        const auto value = batch.text(analysis_index, row);
+                        if (!value.empty()) target.analyses.emplace_back(value);
+                    } else {
+                        const auto analyses = parameters.value("analysis_names", nlohmann::json::array());
+                        if (analyses.is_array()) for (const auto &value : analyses)
+                            if (value.is_string() && !value.get<std::string>().empty()) target.analyses.push_back(value.get<std::string>());
+                    }
+                    if (const auto polarity = optional_number("polarity", row)) target.polarities.push_back(static_cast<int>(*polarity));
+                    else if (parameters.value("polarity", 0) != 0) target.polarities.push_back(parameters.value("polarity", 0));
+                    if (const auto level = optional_number("level", row)) target.levels.push_back(static_cast<int>(*level));
+                    else {
+                        const auto levels = parameters.value("levels", nlohmann::json::array());
+                        if (levels.is_number_integer()) target.levels.push_back(levels.get<int>());
+                        else if (levels.is_array()) for (const auto &level : levels)
+                            if (level.is_number_integer()) target.levels.push_back(level.get<int>());
+                    }
+                    const auto mass = number_or("mass", row, 0.0);
+                    const auto mz = number_or("mz", row, 0.0);
+                    const auto rt = number_or("rt", row, 0.0);
+                    const auto mass_min = optional_number("mass_min", row);
+                    const auto mass_max = optional_number("mass_max", row);
+                    target.has_mass = optional_number("mass", row).has_value() || mass_min.has_value() || mass_max.has_value();
+                    target.mass_min = mass_min.value_or(mass == 0.0 ? -std::numeric_limits<double>::infinity() : mass - mass * ppm / 1e6);
+                    target.mass_max = mass_max.value_or(mass == 0.0 ? std::numeric_limits<double>::infinity() : mass + mass * ppm / 1e6);
+                    const auto mz_min = optional_number("mzmin", row).value_or(
+                        mz == 0.0 ? -std::numeric_limits<double>::infinity() : mz - mz * ppm / 1e6);
+                    const auto mz_max = optional_number("mzmax", row).value_or(
+                        mz == 0.0 ? std::numeric_limits<double>::infinity() : mz + mz * ppm / 1e6);
+                    target.mz_min = mz_min;
+                    target.mz_max = mz_max;
+                    target.has_mz = mz != 0.0 || optional_number("mzmin", row).has_value() || optional_number("mzmax", row).has_value();
+                    if (target.mass_min > target.mass_max) std::swap(target.mass_min, target.mass_max);
+                    if (target.mz_min > target.mz_max) std::swap(target.mz_min, target.mz_max);
+                    target.rt_min = optional_number("rtmin", row).value_or(
+                        rt == 0.0 ? -std::numeric_limits<double>::infinity() : rt - rt_tolerance);
+                    target.rt_max = optional_number("rtmax", row).value_or(
+                        rt == 0.0 ? std::numeric_limits<double>::infinity() : rt + rt_tolerance);
+                    target.charge = std::max(1, parameters.value("charge", 1));
+                    if (!target.has_mass && !std::isfinite(target.mz_min) && !std::isfinite(target.mz_max)) continue;
+                    result.push_back(std::move(target));
+                }
             });
         return result;
     }
@@ -317,9 +321,59 @@ const std::string &input_table(const nlohmann::json &parameters, const char *por
     return parameters.at("_inputs").at(port).at("physical_table").get_ref<const std::string &>();
 }
 
-nlohmann::json input_rows(sdk::PluginProjectAccess &access, const nlohmann::json &parameters, const char *port,
+nlohmann::json read_control_rows(sdk::PluginProjectAccess &access, const nlohmann::json &parameters, const char *port,
                           const std::vector<std::string> &columns, const char *order)
 {
-    return access.read(input_table(parameters, port), columns, order == nullptr ? std::string{} : std::string(order));
+    nlohmann::json rows = nlohmann::json::array();
+    access.read_typed_batches(input_table(parameters, port), columns,
+        order == nullptr ? std::string{} : std::string(order),
+        [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            for (std::uint64_t row_index = 0; row_index < batch.row_count(); ++row_index)
+            {
+                auto row = nlohmann::json::object();
+                for (std::uint32_t column = 0; column < batch.column_count(); ++column)
+                {
+                    const auto name = columns.at(column);
+                    if (batch.is_null(column, row_index)) { row[name] = nullptr; continue; }
+                    if (batch.is_list(column))
+                    {
+                        auto values = nlohmann::json::array();
+                        for (std::uint64_t item = 0; item < batch.list_size(column, row_index); ++item)
+                        {
+                            if (batch.list_is_null(column, row_index, item)) { values.push_back(nullptr); continue; }
+                            switch (batch.list_child_type(column))
+                            {
+                            case STREAMFIND_PLUGIN_COLUMN_UTF8:
+                                values.emplace_back(batch.list_text(column, row_index, item)); break;
+                            case STREAMFIND_PLUGIN_COLUMN_INT64:
+                                values.push_back(batch.list_integer(column, row_index, item)); break;
+                            case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+                                values.push_back(batch.list_real(column, row_index, item)); break;
+                            default: throw std::runtime_error("unsupported typed list child in query result");
+                            }
+                        }
+                        row[name] = std::move(values);
+                        continue;
+                    }
+                    switch (batch.type(column))
+                    {
+                    case STREAMFIND_PLUGIN_COLUMN_UTF8:
+                    case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
+                    case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
+                    case STREAMFIND_PLUGIN_COLUMN_BINARY:
+                        row[name] = std::string(batch.text(column, row_index)); break;
+                    case STREAMFIND_PLUGIN_COLUMN_INT64:
+                        row[name] = batch.integer(column, row_index); break;
+                    case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+                        row[name] = batch.real(column, row_index); break;
+                    case STREAMFIND_PLUGIN_COLUMN_BOOL:
+                        row[name] = batch.boolean(column, row_index); break;
+                    default: throw std::runtime_error("unsupported typed scalar in query result");
+                    }
+                }
+                rows.push_back(std::move(row));
+            }
+        });
+    return rows;
 }
 }

@@ -1,6 +1,7 @@
 #include "operations/nta/operations.hpp"
 
 #include "utils/target_csv.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -13,26 +14,51 @@ namespace streamfind::mass_spec::nta::read_csv_suspect_targets
         const auto path = parameters.value("suspect_targets_csv_path", std::string{});
         if (path.empty()) throw std::invalid_argument("suspect_targets_csv_path must be a non-empty CSV file path");
         const auto parsed = target_csv::read_targets_csv(path, true);
-        const std::vector<std::string> columns = {
-            "name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-            "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
-        const std::vector<std::string> types = {
-            "string", "real", "integer", "real", "real", "string", "string", "string", "string", "real",
-            "array", "array", "array", "array"};
-        Json rows = Json::array();
+        std::vector<sdk::TableBatchBuilder::Column> schema = {
+            {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"polarity", STREAMFIND_PLUGIN_COLUMN_INT64}, {"mz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"rt", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"formula", STREAMFIND_PLUGIN_COLUMN_UTF8},
+            {"SMILES", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"InChI", STREAMFIND_PLUGIN_COLUMN_UTF8},
+            {"InChIKey", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"xLogP", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_mz_pos", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_intensity_pos", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_mz_neg", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_intensity_neg", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64}};
+        sdk::TableBatchBuilder output(std::move(schema));
         for (const auto &source : parsed)
         {
-            Json row = Json::object();
-            for (const auto &column : columns) row[column] = nullptr;
-            for (const auto &key : {"name", "formula", "SMILES", "InChI", "InChIKey"})
-                if (source.contains(key)) row[key] = source.at(key);
-            for (const auto &key : {"mass", "polarity", "mz", "rt", "xLogP"})
-                if (source.contains(key)) row[key] = source.at(key);
-            for (const auto &key : {"fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"})
-                if (source.contains(key)) row[key] = source.at(key);
-            rows.push_back(std::move(row));
+            const auto text = [&source](const char *key) -> sdk::TableBatchBuilder::Cell {
+                const auto it = source.find(key);
+                if (it == source.end() || !it->is_string()) return std::monostate{};
+                return it->get<std::string>();
+            };
+            const auto real = [&source](const char *key) -> sdk::TableBatchBuilder::Cell {
+                const auto it = source.find(key);
+                if (it == source.end() || !it->is_number()) return std::monostate{};
+                return it->get<double>();
+            };
+            const auto integer = [&source](const char *key) -> sdk::TableBatchBuilder::Cell {
+                const auto it = source.find(key);
+                if (it == source.end() || !it->is_number_integer()) return std::monostate{};
+                return it->get<std::int64_t>();
+            };
+            const auto list = [&source](const char *key) -> sdk::TableBatchBuilder::Cell {
+                const auto it = source.find(key);
+                if (it == source.end() || !it->is_array()) return std::monostate{};
+                std::vector<sdk::TableBatchBuilder::ListCell> values;
+                values.reserve(it->size());
+                for (const auto &value : *it) {
+                    if (!value.is_number()) values.emplace_back(std::monostate{});
+                    else values.emplace_back(value.get<double>());
+                }
+                return values;
+            };
+            output.append_row({text("name"), real("mass"), integer("polarity"), real("mz"), real("rt"),
+                               text("formula"), text("SMILES"), text("InChI"), text("InChIKey"), real("xLogP"),
+                               list("fragments_mz_pos"), list("fragments_intensity_pos"),
+                               list("fragments_mz_neg"), list("fragments_intensity_neg")});
         }
-        access.emit_table_rows("suspectTargetsTable", columns, types, rows);
-        return {{"rows", rows.size()}, {"path", path}};
+        output.emit(access, "suspectTargetsTable");
+        return {{"rows", parsed.size()}, {"path", path}};
     }
 }

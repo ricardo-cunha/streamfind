@@ -4,7 +4,7 @@ import { ViewerRegistry } from '../../framework/viewers/viewerTypes';
 import { registerCoreFrontendPlugin } from './index';
 
 describe('core frontend plugin', () => {
-  it('registers generic table and visualization artifact viewers', () => {
+  it('registers the generic table viewer', () => {
     const viewers = new ViewerRegistry();
     const registry = new FrontendPluginRegistry(viewers);
 
@@ -13,6 +13,5 @@ describe('core frontend plugin', () => {
     expect(registry.ids()).toEqual(['streamfind.core']);
     expect(viewers.get('core.table')?.label).toBe('Table renderer');
     expect(viewers.resolve({ semanticType: 'sf:featuresTable', representation: 'table' })?.id).toBe('core.table');
-    expect(viewers.resolve('sfvis:visualizationSpecResult')?.id).toBe('core.visualization');
   });
 });

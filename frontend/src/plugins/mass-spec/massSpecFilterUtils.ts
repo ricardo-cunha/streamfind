@@ -1,7 +1,7 @@
 import type { ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
 
 const MZ_FILTER_COLUMNS = new Set(['precursor_mz', 'product_mz']);
-const NUMERIC_FILTER_COLUMNS = new Set(['precursor_mz', 'product_mz', 'wavelength_nm', 'polarity']);
+const NUMERIC_FILTER_COLUMNS = new Set(['precursor_mz', 'product_mz', 'wavelength_nm', 'polarity', 'level']);
 const MZ_FILTER_TOLERANCE_PPM = 2;
 const MIN_MZ_FILTER_TOLERANCE = 0.0001;
 

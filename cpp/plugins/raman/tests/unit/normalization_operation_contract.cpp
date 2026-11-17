@@ -1,5 +1,6 @@
 #include "operations/operations.hpp"
 #include "streamfind/sdk/plugin_project_access.hpp"
+#include <arrow/api.h>
 
 #include <algorithm>
 #include <cmath>
@@ -18,62 +19,84 @@ class MemoryProjectAccess final : public sdk::PluginProjectAccess {
     std::map<std::string, Json> emitted;
     std::string_view operation_instance() const noexcept override { return "normalize-test"; }
     bool is_cancelled() const noexcept override { return false; }
-    Json query(const std::string &) override { throw std::runtime_error("query not expected"); }
     void require_table(const std::string &) override {}
-    Json read(const std::string &, const std::vector<std::string> &, const std::string &) override {
-        throw std::runtime_error("read not expected");
-    }
-    void read_batches(const std::string &table, const std::vector<std::string> &,
-                      const std::string &, const JsonBatchCallback &callback) override {
-        auto rows = tables.at(table);
-        callback(rows);
+    void read_typed_batches(const std::string &table, const std::vector<std::string> &names,
+                            const std::string &, const BatchCallback &callback) override {
+        const auto &rows = tables.at(table);
+        std::vector<std::shared_ptr<arrow::Field>> fields;
+        std::vector<std::shared_ptr<arrow::Array>> arrays;
+        for (const auto &name : names) {
+            const Json *sample = nullptr;
+            for (const auto &row : rows)
+                if (row.contains(name) && !row.at(name).is_null()) { sample = &row.at(name); break; }
+            std::shared_ptr<arrow::DataType> type = arrow::utf8();
+            if (sample && sample->is_boolean()) type = arrow::boolean();
+            else if (sample && sample->is_number_integer()) type = arrow::int64();
+            else if (sample && sample->is_number()) type = arrow::float64();
+            fields.push_back(arrow::field(name, type, true));
+            std::shared_ptr<arrow::Array> array;
+            if (type->id() == arrow::Type::BOOL) {
+                arrow::BooleanBuilder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<bool>());
+                }
+                builder.Finish(&array);
+            } else if (type->id() == arrow::Type::INT64) {
+                arrow::Int64Builder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<std::int64_t>());
+                }
+                builder.Finish(&array);
+            } else if (type->id() == arrow::Type::DOUBLE) {
+                arrow::DoubleBuilder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<double>());
+                }
+                builder.Finish(&array);
+            } else {
+                arrow::StringBuilder builder;
+                for (const auto &row : rows) {
+                    const auto value = row.find(name);
+                    if (value == row.end() || value->is_null()) builder.AppendNull();
+                    else builder.Append(value->get<std::string>());
+                }
+                builder.Finish(&array);
+            }
+            fields.back()->type()->id();
+            arrays.push_back(std::move(array));
+        }
+        callback(BatchView(arrow::RecordBatch::Make(arrow::schema(std::move(fields)),
+            static_cast<std::int64_t>(rows.size()), std::move(arrays))));
     }
     std::uint64_t count_rows(const std::string &table) override {
         return tables.at(table).size();
     }
-    void clear_table(const std::string &) override {}
-    void append(const std::string &, const std::vector<std::string> &,
-                const std::vector<std::vector<std::optional<std::string>>> &) override {}
-    void emit_table_rows(const std::string &contract, const std::vector<std::string> &,
-                         const std::vector<std::string> &, const Json &rows) override {
-        for (const auto &row : rows) emitted[contract].push_back(row);
-    }
     void emit_table_batch(const std::string &contract,
-                          const std::vector<streamfind_plugin_batch_column> &columns,
-                          std::uint64_t row_count) override {
-        for (std::uint64_t row_index = 0; row_index < row_count; ++row_index) {
+                          const std::shared_ptr<arrow::RecordBatch> &batch) override {
+        for (std::int64_t row_index = 0; row_index < batch->num_rows(); ++row_index) {
             Json row = Json::object();
-            for (const auto &column : columns) {
-                const bool valid = column.validity_bitmap == nullptr ||
-                    (column.validity_bitmap[row_index / 8] & (1u << (row_index % 8))) != 0;
-                if (!valid) {
-                    row[std::string(column.name, column.name_size)] = nullptr;
-                    continue;
-                }
-                if (column.type == STREAMFIND_PLUGIN_COLUMN_UTF8) {
-                    const auto *values = static_cast<const streamfind_plugin_string_view *>(column.data);
-                    row[std::string(column.name, column.name_size)] =
-                        std::string(values[row_index].data, values[row_index].size);
-                } else if (column.type == STREAMFIND_PLUGIN_COLUMN_INT64) {
-                    const auto *values = static_cast<const std::int64_t *>(column.data);
-                    row[std::string(column.name, column.name_size)] = values[row_index];
-                } else if (column.type == STREAMFIND_PLUGIN_COLUMN_FLOAT64) {
-                    const auto *values = static_cast<const double *>(column.data);
-                    row[std::string(column.name, column.name_size)] = values[row_index];
-                } else if (column.type == STREAMFIND_PLUGIN_COLUMN_BOOL) {
-                    const auto *values = static_cast<const std::uint8_t *>(column.data);
-                    row[std::string(column.name, column.name_size)] = values[row_index] != 0;
-                }
+            for (int column = 0; column < batch->num_columns(); ++column) {
+                const auto &array = batch->column(column);
+                const auto name = batch->schema()->field(column)->name();
+                if (array->IsNull(row_index)) row[name] = nullptr;
+                else if (array->type_id() == arrow::Type::STRING)
+                    row[name] = std::static_pointer_cast<arrow::StringArray>(array)->GetString(row_index);
+                else if (array->type_id() == arrow::Type::INT64)
+                    row[name] = std::static_pointer_cast<arrow::Int64Array>(array)->Value(row_index);
+                else if (array->type_id() == arrow::Type::DOUBLE)
+                    row[name] = std::static_pointer_cast<arrow::DoubleArray>(array)->Value(row_index);
+                else if (array->type_id() == arrow::Type::BOOL)
+                    row[name] = std::static_pointer_cast<arrow::BooleanArray>(array)->Value(row_index);
             }
             emitted[contract].push_back(std::move(row));
         }
-    }
-    void emit_result(const std::string &, const std::string &) override {}
-    void update_composite(const std::string &, const std::vector<std::string> &,
-                          const std::vector<std::string> &,
-                          const std::vector<std::vector<std::optional<std::string>>> &) override {}
-    void delete_rows(const std::string &, const std::string &,
-                     const std::vector<std::vector<std::optional<std::string>>> &) override {}
+    }    void emit_result(const std::string &, const std::string &) override {}
     void report_progress(double, std::string_view) override {}
 };
 

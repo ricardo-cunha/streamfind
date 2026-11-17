@@ -17,8 +17,7 @@ namespace streamfind::sdk {
 
 struct STREAMFIND_SDK_API PluginDataServiceContext {
     using TableBatchEmitter = std::function<streamfind_plugin_status(
-        void *, const char *, uint32_t, const streamfind_plugin_batch_column *,
-        uint32_t, uint64_t, void *)>;
+        void *, const char *, uint32_t, struct ArrowArray *, struct ArrowSchema *, void *)>;
     using ResultEmitter = std::function<streamfind_plugin_status(
         void *, const char *, uint32_t, const char *, uint64_t, void *)>;
     std::string operation_instance;
@@ -37,23 +36,16 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     std::vector<std::string> allowed_tables;
     std::unordered_map<std::string, std::unordered_set<std::string>> readable_columns;
     std::unordered_map<std::string, std::unordered_set<std::string>> writable_columns;
-    std::unordered_map<std::string, std::unordered_set<std::string>> array_columns;
-    std::unordered_map<std::string, std::unordered_map<std::string, streamfind_plugin_column_type>> column_types;
     std::unordered_map<std::string, std::string> output_tables;
     TableBatchEmitter emit_table_batch;
     ResultEmitter emit_result;
 };
 
 STREAMFIND_SDK_API streamfind_plugin_status plugin_has_table(void *, const char *, uint32_t, uint8_t *, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_clear_table(void *, const char *, uint32_t, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_read_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, uint64_t, streamfind_plugin_consume_batch_fn, void *, void *);
+STREAMFIND_SDK_API streamfind_plugin_status plugin_read_batch(void *, const char *, uint32_t, const char *const *, uint32_t, uint64_t, uint64_t, streamfind_plugin_consume_batch_fn, void *, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_count_rows(void *, const char *, uint32_t, uint64_t *, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_append_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_emit_table_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, void *);
+STREAMFIND_SDK_API streamfind_plugin_status plugin_emit_table_batch(void *, const char *, uint32_t, struct ArrowArray *, struct ArrowSchema *, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_emit_result(void *, const char *, uint32_t, const char *, uint64_t, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_update_batch(void *, const char *, uint32_t, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, uint64_t *, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_update_composite_batch(void *, const char *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, const streamfind_plugin_batch_column *, uint32_t, uint64_t, uint64_t *, void *);
-STREAMFIND_SDK_API streamfind_plugin_status plugin_delete_batch(void *, const char *, uint32_t, const char *, uint32_t, const streamfind_plugin_batch_column *, uint64_t, uint64_t *, void *);
 STREAMFIND_SDK_API streamfind_plugin_status plugin_report_progress(void *, double, const char *, uint32_t, void *);
 STREAMFIND_SDK_API uint8_t plugin_is_cancelled(void *, void *);
 

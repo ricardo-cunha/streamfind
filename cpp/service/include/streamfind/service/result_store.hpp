@@ -36,6 +36,7 @@ struct ResultLease {
     std::string owner_session_id;
     std::string owner_operation_id;
     std::string owner_worker_id;
+    Json schema{Json::array()};
     std::filesystem::path staging_directory;
     std::filesystem::path staging_payload;
     std::filesystem::path published_directory;
@@ -92,9 +93,6 @@ public:
     /** Return a format-neutral descriptor without exposing the payload path. */
     Json describe_result(const std::string &result_id) const;
 
-    /** Load/store a derived equality index for semantics-declared navigation columns. */
-    Json read_navigation_index(const std::string &result_id) const;
-    void write_navigation_index(const std::string &result_id, const Json &index) const;
     /** Read/write one digest-bound per-batch numeric range index for a declared navigation column. */
     Json read_range_statistics(const std::string &result_id, const std::string &column) const;
     void write_range_statistics(const std::string &result_id,
@@ -111,11 +109,17 @@ public:
                               std::uintmax_t offset,
                               std::uintmax_t limit,
                               const std::vector<std::string> &columns = {}) const;
+    /** Scan Arrow columns natively and serialize only unique values for a distinct query. */
+    Json distinct_arrow_values(const std::string &result_id,
+                               const std::vector<std::string> &columns) const;
     /** Evaluate supported scalar predicates against Arrow arrays and return matching row offsets. */
     Json scan_arrow_scalar_filters(const std::string &result_id,
                                    const Json &filters,
                                    std::uintmax_t offset,
-                                   std::uintmax_t limit) const;
+                                   std::uintmax_t limit,
+                                   const std::string &search = {},
+                                   const std::string &sort_column = {},
+                                   bool descending = false) const;
     /** Open an immutable published payload for a scoped worker read grant. */
     std::shared_ptr<ResultStagingHandle> open_published_result(const std::string &result_id) const;
 

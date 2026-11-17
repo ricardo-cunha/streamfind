@@ -4,6 +4,7 @@
 #include "operations/spectral_savgol.hpp"
 #include "operations/spectral_normalization.hpp"
 #include "streamfind/sdk/plugin_project_access.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 
 #include <algorithm>
 #include <array>
@@ -27,7 +28,6 @@ namespace streamfind::raman::operations {
 namespace detail {
 
 using Json = nlohmann::json;
-using RowBuffer = std::vector<Json>;
 
 struct SpectrumFrameText {
     std::string spectrum_id;
@@ -41,6 +41,7 @@ struct SpectrumFrameText {
 };
 
 extern const std::vector<std::string> point_columns;
+extern const std::vector<std::string> point_types;
 
 class SpectrumPointBatch {
   public:
@@ -93,34 +94,36 @@ class SpectrumPointBatch {
 
     void emit(sdk::PluginProjectAccess &access) {
         if (empty()) return;
-        std::array<streamfind_plugin_batch_column, 21> columns{};
-        for (std::size_t column = 0; column < columns.size(); ++column) {
-            auto &descriptor = columns[column];
-            descriptor.name = point_columns[column].data();
-            descriptor.name_size = static_cast<std::uint32_t>(point_columns[column].size());
-            descriptor.flags = 0;
-            descriptor.row_count = row_count_;
-            if (is_string_column(column)) {
-                descriptor.type = STREAMFIND_PLUGIN_COLUMN_UTF8;
-                descriptor.data = strings_[column].data();
-                descriptor.element_size = sizeof(streamfind_plugin_string_view);
-            } else if (is_integer_column(column)) {
-                descriptor.type = STREAMFIND_PLUGIN_COLUMN_INT64;
-                descriptor.data = integers_[column].data();
-                descriptor.element_size = sizeof(std::int64_t);
-            } else {
-                descriptor.type = STREAMFIND_PLUGIN_COLUMN_FLOAT64;
-                descriptor.data = reals_[column].data();
-                descriptor.element_size = sizeof(double);
-            }
-            if (column == 7) descriptor.validity_bitmap = frame_time_validity_.data();
-            else if (column == 9) descriptor.validity_bitmap = time_validity_.data();
-            else if (column == 20) descriptor.validity_bitmap = intensity_validity_.data();
-            else descriptor.validity_bitmap = nullptr;
+        std::vector<sdk::TableBatchBuilder::Column> schema;
+        schema.reserve(point_columns.size());
+        for (std::size_t column = 0; column < point_columns.size(); ++column) {
+            const auto type = point_types.at(column) == "integer" ? STREAMFIND_PLUGIN_COLUMN_INT64
+                : point_types.at(column) == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
+                : STREAMFIND_PLUGIN_COLUMN_UTF8;
+            schema.push_back({point_columns[column], type});
         }
-        access.emit_table_batch("spectraTable", std::vector<streamfind_plugin_batch_column>(
-                                                     columns.begin(), columns.end()),
-                                row_count_);
+        sdk::TableBatchBuilder output(std::move(schema));
+        for (std::size_t row = 0; row < row_count_; ++row) {
+            std::vector<sdk::TableBatchBuilder::Cell> values;
+            values.reserve(point_columns.size());
+            for (std::size_t column = 0; column < point_columns.size(); ++column) {
+                if (is_string_column(column)) {
+                    values.emplace_back(strings_[column][row]);
+                } else if (is_integer_column(column)) {
+                    values.emplace_back(integers_[column][row]);
+                } else {
+                    const auto *validity = column == 7 ? &frame_time_validity_
+                        : column == 9 ? &time_validity_
+                        : column == 20 ? &intensity_validity_ : nullptr;
+                    const bool valid = validity == nullptr ||
+                        ((*validity)[row / 8] & static_cast<std::uint8_t>(1u << (row % 8))) != 0;
+                    if (valid) values.emplace_back(reals_[column][row]);
+                    else values.emplace_back(std::monostate{});
+                }
+            }
+            output.append_row(values);
+        }
+        output.emit(access, "spectraTable");
         clear();
     }
 
@@ -135,7 +138,7 @@ class SpectrumPointBatch {
     }
 
     void append_string(std::size_t column, const std::string &value) {
-        strings_[column].push_back({value.data(), static_cast<std::uint32_t>(value.size())});
+        strings_[column].push_back(value);
     }
 
     void append_integer(std::size_t column, std::int64_t value) {
@@ -176,7 +179,7 @@ class SpectrumPointBatch {
         row_count_ = 0;
     }
 
-    std::array<std::vector<streamfind_plugin_string_view>, 21> strings_;
+    std::array<std::vector<std::string>, 21> strings_;
     std::array<std::vector<std::int64_t>, 21> integers_;
     std::array<std::vector<double>, 21> reals_;
     std::vector<std::uint8_t> frame_time_validity_;
@@ -247,6 +250,43 @@ std::string lower_copy(std::string value) {
     return value;
 }
 
+std::vector<sdk::TableBatchBuilder::Column> typed_schema(
+    const std::vector<std::string> &columns, const std::vector<std::string> &types) {
+    if (columns.size() != types.size())
+        throw std::invalid_argument("Raman table column names and types have different lengths");
+    std::vector<sdk::TableBatchBuilder::Column> schema;
+    schema.reserve(columns.size());
+    for (std::size_t index = 0; index < columns.size(); ++index) {
+        const auto &type = types[index];
+        const auto abi_type = type == "integer" ? STREAMFIND_PLUGIN_COLUMN_INT64
+            : type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
+            : type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
+            : STREAMFIND_PLUGIN_COLUMN_UTF8;
+        schema.push_back({columns[index], abi_type});
+    }
+    return schema;
+}
+
+sdk::TableBatchBuilder::Cell copy_batch_cell(
+    const sdk::PluginProjectAccess::BatchView &batch, std::uint32_t column,
+    std::uint64_t row) {
+    if (batch.is_null(column, row)) return std::monostate{};
+    switch (batch.type(column)) {
+    case STREAMFIND_PLUGIN_COLUMN_UTF8:
+    case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
+    case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
+        return std::string(batch.text(column, row));
+    case STREAMFIND_PLUGIN_COLUMN_INT64:
+        return batch.integer(column, row);
+    case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+        return batch.real(column, row);
+    case STREAMFIND_PLUGIN_COLUMN_BOOL:
+        return batch.boolean(column, row);
+    default:
+        throw std::invalid_argument("Raman operation received an unsupported scalar column type");
+    }
+}
+
 std::string infer_technique(const reader::SpectrumFile &source) {
     const auto format = lower_copy(source.format);
     if (format.find("smf") != std::string::npos ||
@@ -291,20 +331,6 @@ std::string infer_axis_kind(const reader::SpectrumFile &source,
     return "unknown";
 }
 
-void emit_batches(sdk::PluginProjectAccess &access,
-                  const std::string &contract,
-                  const std::vector<std::string> &columns,
-                  const std::vector<std::string> &types,
-                  const RowBuffer &rows,
-                  std::size_t begin,
-                  std::size_t count) {
-    if (count == 0) return;
-    Json batch = Json::array();
-    for (std::size_t index = begin; index < begin + count; ++index)
-        batch.push_back(rows[index]);
-    access.emit_table_rows(contract, columns, types, batch);
-}
-
 Json read_raman_files(sdk::PluginProjectAccess &access, const Json &parameters) {
     const auto source_paths = parameters.find("source_paths");
     if (source_paths == parameters.end() || !source_paths->is_array() || source_paths->empty())
@@ -330,8 +356,8 @@ Json read_raman_files(sdk::PluginProjectAccess &access, const Json &parameters) 
         paths.push_back(std::move(path));
     }
 
-    RowBuffer analyses;
-    RowBuffer metadata_rows;
+    sdk::TableBatchBuilder analyses(typed_schema(analysis_columns, analysis_types));
+    sdk::TableBatchBuilder metadata_rows(typed_schema(metadata_columns, metadata_types));
     SpectrumPointBatch points;
     std::size_t total_spectra = 0;
     std::size_t total_points = 0;
@@ -425,34 +451,26 @@ Json read_raman_files(sdk::PluginProjectAccess &access, const Json &parameters) 
             if (!metadata.contains(field.key)) metadata[field.key] = field.value;
             else if (metadata[field.key].is_array()) metadata[field.key].push_back(field.value);
             else metadata[field.key] = Json::array({metadata[field.key], field.value});
-            metadata_rows.push_back({{"analysis_id", analysis_id},
-                                     {"source_path", path.generic_string()},
-                                     {"metadata_key", field.key},
-                                     {"occurrence", field.occurrence},
-                                     {"metadata_value", field.value}});
+            metadata_rows.append_row({analysis_id, path.generic_string(), field.key,
+                static_cast<std::int64_t>(field.occurrence), field.value});
         }
         const auto acquisition_kind = file.has_frame_time
                                           ? (file.kinetic_cycle_seconds ? "kinetic_sequence" : "timed_sequence_unknown_units")
                                           : "single_spectrum";
-        analyses.push_back({
-            {"analysis_id", analysis_id}, {"analysis", analysis_name},
-            {"file_path", path.generic_string()}, {"file_name", path.filename().string()},
-            {"format", file.format}, {"technique", infer_technique(file)},
-            {"acquisition_kind", acquisition_kind}, {"number_spectra", file.spectrum_count},
-            {"number_points", file.point_count}, {"has_time", file.has_frame_time},
-            {"time_kind", file.has_frame_time ? resolved_time_kind : "none"},
-            {"axis_kind", file_axis_kind}, {"axis_unit", file_axis_unit},
-            {"signal_kind", file.signal_kind.empty()
-                                ? (reader::metadata_value(file.metadata, "Data Type").empty()
-                                       ? "unknown" : reader::metadata_value(file.metadata, "Data Type"))
-                                : file.signal_kind},
-            {"signal_unit", file.signal_unit.empty()
-                                ? (reader::metadata_value(file.metadata, "Data Type").empty()
-                                       ? "unknown" : reader::metadata_value(file.metadata, "Data Type"))
-                                : file.signal_unit},
-            {"start_time_seconds", first_time_seconds ? Json(*first_time_seconds) : Json(nullptr)},
-            {"end_time_seconds", last_time_seconds ? Json(*last_time_seconds) : Json(nullptr)},
-            {"metadata_json", metadata}});
+        const auto data_type = reader::metadata_value(file.metadata, "Data Type");
+        const auto signal_kind = file.signal_kind.empty()
+            ? (data_type.empty() ? std::string("unknown") : data_type) : file.signal_kind;
+        const auto signal_unit = file.signal_unit.empty()
+            ? (data_type.empty() ? std::string("unknown") : data_type) : file.signal_unit;
+        analyses.append_row({analysis_id, analysis_name, path.generic_string(),
+            path.filename().string(), file.format, infer_technique(file), acquisition_kind,
+            static_cast<std::int64_t>(file.spectrum_count), static_cast<std::int64_t>(file.point_count),
+            file.has_frame_time, file.has_frame_time ? resolved_time_kind : std::string("none"),
+            file_axis_kind, file_axis_unit, signal_kind, signal_unit,
+            first_time_seconds ? sdk::TableBatchBuilder::Cell(*first_time_seconds)
+                : sdk::TableBatchBuilder::Cell(std::monostate{}),
+            last_time_seconds ? sdk::TableBatchBuilder::Cell(*last_time_seconds)
+                : sdk::TableBatchBuilder::Cell(std::monostate{}), metadata.dump()});
 
         total_spectra += file.spectrum_count;
         total_points += file.point_count;
@@ -461,9 +479,8 @@ Json read_raman_files(sdk::PluginProjectAccess &access, const Json &parameters) 
             emitted_points += points.size();
             points.emit(access);
         }
-        if (!metadata_rows.empty()) {
-            emit_batches(access, "sourceMetadataTable", metadata_columns, metadata_types,
-                         metadata_rows, 0, metadata_rows.size());
+        if (metadata_rows.row_count() >= 4096) {
+            metadata_rows.emit(access, "sourceMetadataTable");
             metadata_rows.clear();
         }
         if (access.is_cancelled()) throw std::runtime_error("Raman file import cancelled");
@@ -471,8 +488,8 @@ Json read_raman_files(sdk::PluginProjectAccess &access, const Json &parameters) 
                                "Imported Raman spectra from " + path.filename().string());
     }
 
-    if (!analyses.empty())
-        access.emit_table_rows("analysesTable", analysis_columns, analysis_types, analyses);
+    if (analyses.row_count() != 0) analyses.emit(access, "analysesTable");
+    if (metadata_rows.row_count() != 0) metadata_rows.emit(access, "sourceMetadataTable");
     if (emitted_points != total_points)
         throw std::runtime_error("Raman point batch count does not match parsed point count");
     return {{"sources", paths.size()}, {"spectra", total_spectra},
@@ -486,20 +503,31 @@ void filter_analysis_artifact(sdk::PluginProjectAccess &access, const Json &inpu
                               const std::unordered_set<std::string> &removed_ids) {
     const auto &input = inputs.at(port);
     const auto physical_table = input.at("physical_table").get<std::string>();
-    RowBuffer retained;
+    sdk::TableBatchBuilder retained(typed_schema(columns, types));
     constexpr std::size_t batch_size = 8192;
-    access.read_batches(physical_table, columns, "analysis_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
-            const auto id = row.at("analysis_id").get<std::string>();
+    access.read_typed_batches(physical_table, columns, "analysis_id", [&](const auto &batch) {
+        const auto analysis_id_column = batch.column_index("analysis_id");
+        std::vector<std::uint32_t> indices;
+        indices.reserve(columns.size());
+        for (const auto &name : columns) indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+            if (batch.is_null(analysis_id_column, row))
+                throw std::invalid_argument("Raman table row has a null analysis_id");
+            const auto id = std::string(batch.text(analysis_id_column, row));
             if (removed_ids.contains(id)) continue;
-            retained.push_back(row);
-            if (retained.size() == batch_size) {
-                access.emit_table_rows(output, columns, types, retained);
+            std::vector<sdk::TableBatchBuilder::Cell> values;
+            values.reserve(indices.size());
+            for (std::size_t column = 0; column < indices.size(); ++column) {
+                values.emplace_back(copy_batch_cell(batch, indices[column], row));
+            }
+            retained.append_row(values);
+            if (retained.row_count() == batch_size) {
+                retained.emit(access, output);
                 retained.clear();
             }
         }
     });
-    if (!retained.empty()) access.emit_table_rows(output, columns, types, retained);
+    if (retained.row_count() != 0) retained.emit(access, output);
 }
 
 Json remove_analyses(sdk::PluginProjectAccess &access, const Json &parameters) {
@@ -529,15 +557,19 @@ Json remove_analyses(sdk::PluginProjectAccess &access, const Json &parameters) {
     const auto analyses_table = analyses_input.at("physical_table").get<std::string>();
     std::unordered_set<std::string> removed_ids;
     Json removed_names = Json::array();
-    access.read_batches(analyses_table, names_columns, "analysis", [&](const Json &rows) {
-        for (const auto &row : rows) {
-            const auto name = row.at("analysis").get<std::string>();
+    access.read_typed_batches(analyses_table, names_columns, "analysis", [&](const auto &batch) {
+        const auto analysis_index = batch.column_index("analysis");
+        const auto id_index = batch.column_index("analysis_id");
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+            if (batch.is_null(analysis_index, row) || batch.is_null(id_index, row))
+                throw std::invalid_argument("Raman analyses table contains a null name or id");
+            const auto name = std::string(batch.text(analysis_index, row));
             const bool match = std::find(exact_names.begin(), exact_names.end(), name) != exact_names.end() ||
                 std::any_of(patterns.begin(), patterns.end(), [&](const auto &pattern) {
                     return std::regex_search(name, pattern);
                 });
             if (!match) continue;
-            removed_ids.insert(row.at("analysis_id").get<std::string>());
+            removed_ids.emplace(batch.text(id_index, row));
             removed_names.push_back(name);
         }
     });
@@ -688,32 +720,38 @@ Json normalize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
     if (point_count == 0)
         throw std::invalid_argument("normalize_spectra requires non-empty spectral points");
 
-    RowBuffer output_rows;
-    output_rows.reserve(output_batch_size);
-    std::vector<Json> spectrum_rows;
+    sdk::TableBatchBuilder output_rows(typed_schema(point_columns, point_types));
+    using TypedRow = std::vector<sdk::TableBatchBuilder::Cell>;
+    std::vector<TypedRow> spectrum_rows;
     std::unordered_set<std::string> completed_spectra;
     std::string current_spectrum_id;
     std::uint64_t transformed_spectra = 0;
     std::uint64_t transformed_points = 0;
+    const auto spectrum_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "spectrum_id") - point_columns.begin());
+    const auto point_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "point_index") - point_columns.begin());
+    const auto intensity_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "intensity") - point_columns.begin());
     const auto flush_spectrum = [&]() {
         if (spectrum_rows.empty()) return;
-        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [](const Json &left, const Json &right) {
-            return left.at("point_index").get<std::size_t>() < right.at("point_index").get<std::size_t>();
+        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [&](const auto &left, const auto &right) {
+            return std::get<std::int64_t>(left[point_column]) < std::get<std::int64_t>(right[point_column]);
         });
         std::vector<std::optional<double>> intensities;
         intensities.reserve(spectrum_rows.size());
         for (const auto &row : spectrum_rows) {
-            const auto &value = row.at("intensity");
-            intensities.push_back(value.is_null()
-                ? std::nullopt : std::optional<double>(json_number(value, "intensity")));
+            intensities.push_back(std::holds_alternative<std::monostate>(row[intensity_column])
+                ? std::nullopt : std::optional<double>(std::get<double>(row[intensity_column])));
         }
         const auto normalized = operations::normalize_spectrum(intensities, method, lift_to_zero);
         for (std::size_t index = 0; index < spectrum_rows.size(); ++index) {
-            spectrum_rows[index]["intensity"] = normalized[index] ? Json(*normalized[index]) : Json(nullptr);
-            output_rows.push_back(std::move(spectrum_rows[index]));
-            if (output_rows.size() == output_batch_size) {
-                emit_batches(access, "spectraTable", point_columns, point_types,
-                             output_rows, 0, output_rows.size());
+            spectrum_rows[index][intensity_column] = normalized[index]
+                ? sdk::TableBatchBuilder::Cell(*normalized[index])
+                : sdk::TableBatchBuilder::Cell(std::monostate{});
+            output_rows.append_row(spectrum_rows[index]);
+            if (output_rows.row_count() == output_batch_size) {
+                output_rows.emit(access, "spectraTable");
                 output_rows.clear();
             }
         }
@@ -723,10 +761,15 @@ Json normalize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
         spectrum_rows.clear();
     };
 
-    access.read_batches(points_table, point_columns, "spectrum_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
+    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+        std::vector<std::uint32_t> column_indices;
+        column_indices.reserve(point_columns.size());
+        for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             if (access.is_cancelled()) throw std::runtime_error("normalize_spectra cancelled");
-            const auto spectrum_id = row.at("spectrum_id").get<std::string>();
+            if (batch.is_null(static_cast<std::uint32_t>(spectrum_column), row))
+                throw std::invalid_argument("normalize_spectra requires a non-null spectrum_id");
+            const auto spectrum_id = std::string(batch.text(static_cast<std::uint32_t>(spectrum_column), row));
             if (current_spectrum_id.empty()) current_spectrum_id = spectrum_id;
             if (spectrum_id != current_spectrum_id) {
                 flush_spectrum();
@@ -734,13 +777,15 @@ Json normalize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
                     throw std::runtime_error("spectraTable rows are not grouped by spectrum_id");
                 current_spectrum_id = spectrum_id;
             }
-            spectrum_rows.push_back(row);
+            TypedRow values;
+            values.reserve(column_indices.size());
+            for (const auto column : column_indices)
+                values.emplace_back(copy_batch_cell(batch, column, row));
+            spectrum_rows.push_back(std::move(values));
         }
     });
     flush_spectrum();
-    if (!output_rows.empty())
-        emit_batches(access, "spectraTable", point_columns, point_types,
-                     output_rows, 0, output_rows.size());
+    if (output_rows.row_count() != 0) output_rows.emit(access, "spectraTable");
     if (transformed_points != point_count)
         throw std::runtime_error("normalize_spectra emitted a different number of points than it read");
     access.report_progress(1.0, "Normalized " + std::to_string(transformed_spectra) + " Raman/IR spectra.");
@@ -775,47 +820,50 @@ Json correct_spectra_baseline(sdk::PluginProjectAccess &access, const Json &para
         throw std::invalid_argument("correct_spectra_baseline requires non-empty spectral points");
     constexpr std::size_t batch_size = 4096;
 
-    RowBuffer corrected_rows;
-    RowBuffer baseline_rows;
-    corrected_rows.reserve(batch_size);
-    baseline_rows.reserve(batch_size);
-    std::vector<Json> spectrum_rows;
+    sdk::TableBatchBuilder corrected_rows(typed_schema(point_columns, point_types));
+    sdk::TableBatchBuilder baseline_rows(typed_schema(baseline_columns, baseline_types));
+    using TypedRow = std::vector<sdk::TableBatchBuilder::Cell>;
+    std::vector<TypedRow> spectrum_rows;
     std::unordered_set<std::string> completed;
     std::string current_spectrum;
     std::uint64_t spectra = 0;
     std::uint64_t points = 0;
+    const auto spectrum_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "spectrum_id") - point_columns.begin());
+    const auto analysis_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "analysis_id") - point_columns.begin());
+    const auto point_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "point_index") - point_columns.begin());
+    const auto intensity_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "intensity") - point_columns.begin());
     const auto flush = [&]() {
         if (spectrum_rows.empty()) return;
-        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [](const Json &left, const Json &right) {
-            return left.at("point_index").get<std::size_t>() < right.at("point_index").get<std::size_t>();
+        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [&](const auto &left, const auto &right) {
+            return std::get<std::int64_t>(left[point_column]) < std::get<std::int64_t>(right[point_column]);
         });
         std::vector<double> signal;
         signal.reserve(spectrum_rows.size());
         for (const auto &row : spectrum_rows) {
-            const auto &value = row.at("intensity");
-            if (value.is_null()) throw std::invalid_argument("airpls does not accept missing intensity values");
-            const auto intensity = json_number(value, "intensity");
+            if (std::holds_alternative<std::monostate>(row[intensity_column]))
+                throw std::invalid_argument("airpls does not accept missing intensity values");
+            const auto intensity = std::get<double>(row[intensity_column]);
             if (!std::isfinite(intensity)) throw std::invalid_argument("airpls requires finite intensity values");
             signal.push_back(intensity);
         }
         const auto baseline = airpls_baseline(signal, lambda,
             static_cast<std::size_t>(differences), static_cast<std::size_t>(itermax));
         for (std::size_t index = 0; index < spectrum_rows.size(); ++index) {
-            auto baseline_row = Json{{"analysis_id", spectrum_rows[index].at("analysis_id")},
-                {"spectrum_id", current_spectrum}, {"point_index", spectrum_rows[index].at("point_index")},
-                {"baseline_intensity", baseline[index]}};
-            baseline_rows.push_back(std::move(baseline_row));
+            baseline_rows.append_row({spectrum_rows[index][analysis_column],
+                spectrum_rows[index][spectrum_column], spectrum_rows[index][point_column], baseline[index]});
             const auto clipped_baseline = std::min(baseline[index], signal[index]);
-            spectrum_rows[index]["intensity"] = signal[index] - clipped_baseline;
-            corrected_rows.push_back(std::move(spectrum_rows[index]));
-            if (baseline_rows.size() == batch_size) {
-                emit_batches(access, "baselineTable", baseline_columns, baseline_types,
-                             baseline_rows, 0, baseline_rows.size());
+            spectrum_rows[index][intensity_column] = signal[index] - clipped_baseline;
+            corrected_rows.append_row(spectrum_rows[index]);
+            if (baseline_rows.row_count() == batch_size) {
+                baseline_rows.emit(access, "baselineTable");
                 baseline_rows.clear();
             }
-            if (corrected_rows.size() == batch_size) {
-                emit_batches(access, "spectraTable", point_columns, point_types,
-                             corrected_rows, 0, corrected_rows.size());
+            if (corrected_rows.row_count() == batch_size) {
+                corrected_rows.emit(access, "spectraTable");
                 corrected_rows.clear();
             }
         }
@@ -824,10 +872,15 @@ Json correct_spectra_baseline(sdk::PluginProjectAccess &access, const Json &para
         completed.insert(current_spectrum);
         spectrum_rows.clear();
     };
-    access.read_batches(points_table, point_columns, "spectrum_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
+    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+        std::vector<std::uint32_t> column_indices;
+        column_indices.reserve(point_columns.size());
+        for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             if (access.is_cancelled()) throw std::runtime_error("correct_spectra_baseline cancelled");
-            const auto spectrum_id = row.at("spectrum_id").get<std::string>();
+            if (batch.is_null(static_cast<std::uint32_t>(spectrum_column), row))
+                throw std::invalid_argument("correct_spectra_baseline requires a non-null spectrum_id");
+            const auto spectrum_id = std::string(batch.text(static_cast<std::uint32_t>(spectrum_column), row));
             if (current_spectrum.empty()) current_spectrum = spectrum_id;
             if (spectrum_id != current_spectrum) {
                 flush();
@@ -835,16 +888,16 @@ Json correct_spectra_baseline(sdk::PluginProjectAccess &access, const Json &para
                     throw std::runtime_error("spectraTable rows are not grouped by spectrum_id");
                 current_spectrum = spectrum_id;
             }
-            spectrum_rows.push_back(row);
+            TypedRow values;
+            values.reserve(column_indices.size());
+            for (const auto column : column_indices)
+                values.emplace_back(copy_batch_cell(batch, column, row));
+            spectrum_rows.push_back(std::move(values));
         }
     });
     flush();
-    if (!baseline_rows.empty())
-        emit_batches(access, "baselineTable", baseline_columns, baseline_types,
-                     baseline_rows, 0, baseline_rows.size());
-    if (!corrected_rows.empty())
-        emit_batches(access, "spectraTable", point_columns, point_types,
-                     corrected_rows, 0, corrected_rows.size());
+    if (baseline_rows.row_count() != 0) baseline_rows.emit(access, "baselineTable");
+    if (corrected_rows.row_count() != 0) corrected_rows.emit(access, "spectraTable");
     if (points != point_count)
         throw std::runtime_error("correct_spectra_baseline emitted a different number of points than it read");
     access.report_progress(1.0, "Baseline-corrected " + std::to_string(spectra) + " Raman/IR spectra.");
@@ -877,40 +930,46 @@ Json filter_spectral_range(sdk::PluginProjectAccess &access, const Json &paramet
     const auto expected_points = access.count_rows(points_table);
 
     constexpr std::size_t batch_size = 4096;
-    RowBuffer output_rows;
-    output_rows.reserve(batch_size);
+    sdk::TableBatchBuilder output_rows(typed_schema(point_columns, point_types));
     std::unordered_set<std::string> spectra;
     std::uint64_t input_points = 0;
     std::uint64_t kept_points = 0;
-    access.read_batches(points_table, point_columns, "spectrum_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
+    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+        const auto spectrum_index = batch.column_index("spectrum_id");
+        const auto coordinate_index = batch.column_index("spectral_coordinate");
+        std::vector<std::uint32_t> column_indices;
+        column_indices.reserve(point_columns.size());
+        for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             if (access.is_cancelled()) throw std::runtime_error("filter_spectral_range cancelled");
             ++input_points;
-            const auto spectrum_id = row.at("spectrum_id").get<std::string>();
+            if (batch.is_null(spectrum_index, row))
+                throw std::invalid_argument("filter_spectral_range requires a non-null spectrum_id");
+            const auto spectrum_id = std::string(batch.text(spectrum_index, row));
             spectra.insert(spectrum_id);
-            const auto &coordinate_value = row.at("spectral_coordinate");
-            if (coordinate_value.is_null())
+            if (batch.is_null(coordinate_index, row))
                 throw std::invalid_argument("filter_spectral_range requires non-null spectral coordinates");
-            const auto coordinate = json_number(coordinate_value, "spectral_coordinate");
+            const auto coordinate = batch.real(coordinate_index, row);
             if (!std::isfinite(coordinate))
                 throw std::invalid_argument("filter_spectral_range requires finite spectral coordinates");
             const bool within = (!minimum || coordinate >= *minimum) &&
                 (!maximum || coordinate <= *maximum);
             if ((mode == "include" && !within) || (mode == "exclude" && within)) continue;
-            output_rows.push_back(row);
+            std::vector<sdk::TableBatchBuilder::Cell> values;
+            values.reserve(column_indices.size());
+            for (const auto column : column_indices)
+                values.emplace_back(copy_batch_cell(batch, column, row));
+            output_rows.append_row(values);
             ++kept_points;
-            if (output_rows.size() == batch_size) {
-                emit_batches(access, "spectraTable", point_columns, point_types,
-                             output_rows, 0, output_rows.size());
+            if (output_rows.row_count() == batch_size) {
+                output_rows.emit(access, "spectraTable");
                 output_rows.clear();
             }
         }
     });
     if (input_points != expected_points)
         throw std::runtime_error("filter_spectral_range read an inconsistent number of spectral points");
-    if (!output_rows.empty())
-        emit_batches(access, "spectraTable", point_columns, point_types,
-                     output_rows, 0, output_rows.size());
+    if (output_rows.row_count() != 0) output_rows.emit(access, "spectraTable");
 
     access.report_progress(1.0, "Retained " + std::to_string(kept_points) +
         " of " + std::to_string(input_points) + " spectral points.");
@@ -922,9 +981,8 @@ Json summarize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
     const auto &inputs = parameters.at("_inputs");
     const auto points_table = required_table_name(inputs, "spectraTable");
     constexpr std::size_t batch_size = 4096;
-    RowBuffer summaries;
-    summaries.reserve(batch_size);
-    Json current_summary;
+    sdk::TableBatchBuilder summaries(typed_schema(summary_columns, summary_types));
+    std::vector<sdk::TableBatchBuilder::Cell> current_metadata;
     std::string current_spectrum_id;
     std::uint64_t point_count = 0;
     std::uint64_t spectra_count = 0;
@@ -935,29 +993,48 @@ Json summarize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
         "signal_unit"};
     const auto emit_current = [&]() {
         if (current_spectrum_id.empty()) return;
-        current_summary["point_count"] = point_count;
-        summaries.push_back(std::move(current_summary));
+        std::vector<sdk::TableBatchBuilder::Cell> values;
+        values.reserve(summary_columns.size());
+        for (const auto &column : summary_columns) {
+            if (column == "point_count") {
+                values.emplace_back(static_cast<std::int64_t>(point_count));
+                continue;
+            }
+            const auto source = std::find(summary_source_columns.begin(), summary_source_columns.end(), column);
+            if (source == summary_source_columns.end())
+                throw std::logic_error("Raman summary schema contains an unknown source column");
+            values.push_back(current_metadata[static_cast<std::size_t>(source - summary_source_columns.begin())]);
+        }
+        summaries.append_row(values);
         ++spectra_count;
         point_count = 0;
-        if (summaries.size() == batch_size) {
-            emit_batches(access, "spectraSummaryTable", summary_columns, summary_types,
-                         summaries, 0, summaries.size());
+        if (summaries.row_count() == batch_size) {
+            summaries.emit(access, "spectraSummaryTable");
             summaries.clear();
         }
     };
-    access.read_batches(points_table, point_columns, "spectrum_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
+    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+        const auto spectrum_index = batch.column_index("spectrum_id");
+        std::vector<std::uint32_t> metadata_indices;
+        metadata_indices.reserve(summary_source_columns.size());
+        for (const auto &column : summary_source_columns)
+            metadata_indices.push_back(batch.column_index(column));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             if (access.is_cancelled()) throw std::runtime_error("summarize_spectra cancelled");
-            const auto spectrum_id = row.at("spectrum_id").get<std::string>();
+            if (batch.is_null(spectrum_index, row))
+                throw std::invalid_argument("spectraTable contains a null spectrum_id");
+            const auto spectrum_id = std::string(batch.text(spectrum_index, row));
+            std::vector<sdk::TableBatchBuilder::Cell> metadata;
+            metadata.reserve(metadata_indices.size());
+            for (const auto index : metadata_indices)
+                metadata.push_back(copy_batch_cell(batch, index, row));
             if (current_spectrum_id.empty() || spectrum_id != current_spectrum_id) {
                 emit_current();
                 current_spectrum_id = spectrum_id;
-                current_summary = Json::object();
-                for (const auto &column : summary_source_columns)
-                    current_summary[column] = row.at(column);
+                current_metadata = std::move(metadata);
             } else {
-                for (const auto &column : summary_source_columns) {
-                    if (row.at(column) != current_summary.at(column))
+                for (std::size_t column = 0; column < metadata.size(); ++column) {
+                    if (metadata[column] != current_metadata[column])
                         throw std::runtime_error("spectraTable contains inconsistent per-spectrum metadata");
                 }
             }
@@ -965,9 +1042,7 @@ Json summarize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
         }
     });
     emit_current();
-    if (!summaries.empty())
-        emit_batches(access, "spectraSummaryTable", summary_columns, summary_types,
-                     summaries, 0, summaries.size());
+    if (summaries.row_count() != 0) summaries.emit(access, "spectraSummaryTable");
     access.report_progress(1.0, "Summarized " + std::to_string(spectra_count) + " spectra.");
     return {{"spectra", spectra_count}};
 }
@@ -993,25 +1068,27 @@ Json smooth_spectra(sdk::PluginProjectAccess &access, const Json &parameters) {
         throw std::invalid_argument("smooth_spectra requires non-empty spectral points");
 
     constexpr std::size_t batch_size = 4096;
-    RowBuffer output_rows;
-    output_rows.reserve(batch_size);
-    std::vector<Json> spectrum_rows;
+    sdk::TableBatchBuilder output_rows(typed_schema(point_columns, point_types));
+    using TypedRow = std::vector<sdk::TableBatchBuilder::Cell>;
+    std::vector<TypedRow> spectrum_rows;
     std::unordered_set<std::string> completed_spectra;
     std::string current_spectrum;
     std::uint64_t spectra = 0;
     std::uint64_t points = 0;
+    const auto spectrum_column = std::find(point_columns.begin(), point_columns.end(), "spectrum_id") - point_columns.begin();
+    const auto point_column = std::find(point_columns.begin(), point_columns.end(), "point_index") - point_columns.begin();
+    const auto intensity_column = std::find(point_columns.begin(), point_columns.end(), "intensity") - point_columns.begin();
     const auto flush_spectrum = [&]() {
         if (spectrum_rows.empty()) return;
-        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [](const Json &left, const Json &right) {
-            return left.at("point_index").get<std::size_t>() < right.at("point_index").get<std::size_t>();
+        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [&](const auto &left, const auto &right) {
+            return std::get<std::int64_t>(left[point_column]) < std::get<std::int64_t>(right[point_column]);
         });
         std::vector<double> intensities;
         intensities.reserve(spectrum_rows.size());
         for (const auto &row : spectrum_rows) {
-            const auto &value = row.at("intensity");
-            if (value.is_null())
+            if (std::holds_alternative<std::monostate>(row[intensity_column]))
                 throw std::invalid_argument("moving-average smoothing does not accept missing intensity values");
-            const auto intensity = json_number(value, "intensity");
+            const auto intensity = std::get<double>(row[intensity_column]);
             if (!std::isfinite(intensity))
                 throw std::invalid_argument("moving-average smoothing requires finite intensity values");
             intensities.push_back(intensity);
@@ -1022,11 +1099,10 @@ Json smooth_spectra(sdk::PluginProjectAccess &access, const Json &parameters) {
             const auto end = std::min(spectrum_rows.size(), index + radius + 1);
             double sum = 0.0;
             for (auto neighbor = begin; neighbor < end; ++neighbor) sum += intensities[neighbor];
-            spectrum_rows[index]["intensity"] = sum / static_cast<double>(end - begin);
-            output_rows.push_back(std::move(spectrum_rows[index]));
-            if (output_rows.size() == batch_size) {
-                emit_batches(access, "spectraTable", point_columns, point_types,
-                             output_rows, 0, output_rows.size());
+            spectrum_rows[index][intensity_column] = sum / static_cast<double>(end - begin);
+            output_rows.append_row(spectrum_rows[index]);
+            if (output_rows.row_count() == batch_size) {
+                output_rows.emit(access, "spectraTable");
                 output_rows.clear();
             }
         }
@@ -1035,10 +1111,15 @@ Json smooth_spectra(sdk::PluginProjectAccess &access, const Json &parameters) {
         completed_spectra.insert(current_spectrum);
         spectrum_rows.clear();
     };
-    access.read_batches(points_table, point_columns, "spectrum_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
+    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+        std::vector<std::uint32_t> column_indices;
+        column_indices.reserve(point_columns.size());
+        for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             if (access.is_cancelled()) throw std::runtime_error("smooth_spectra cancelled");
-            const auto spectrum_id = row.at("spectrum_id").get<std::string>();
+            if (batch.is_null(static_cast<std::uint32_t>(spectrum_column), row))
+                throw std::invalid_argument("smooth_spectra requires a non-null spectrum_id");
+            const auto spectrum_id = std::string(batch.text(static_cast<std::uint32_t>(spectrum_column), row));
             if (current_spectrum.empty()) current_spectrum = spectrum_id;
             if (spectrum_id != current_spectrum) {
                 flush_spectrum();
@@ -1046,13 +1127,15 @@ Json smooth_spectra(sdk::PluginProjectAccess &access, const Json &parameters) {
                     throw std::runtime_error("spectraTable rows are not grouped by spectrum_id");
                 current_spectrum = spectrum_id;
             }
-            spectrum_rows.push_back(row);
+            TypedRow values;
+            values.reserve(column_indices.size());
+            for (const auto column : column_indices)
+                values.emplace_back(copy_batch_cell(batch, column, row));
+            spectrum_rows.push_back(std::move(values));
         }
     });
     flush_spectrum();
-    if (!output_rows.empty())
-        emit_batches(access, "spectraTable", point_columns, point_types,
-                     output_rows, 0, output_rows.size());
+    if (output_rows.row_count() != 0) output_rows.emit(access, "spectraTable");
     if (points != expected_points)
         throw std::runtime_error("smooth_spectra emitted a different number of points than it read");
     access.report_progress(1.0, "Smoothed " + std::to_string(spectra) + " Raman/IR spectra.");
@@ -1082,39 +1165,45 @@ Json smooth_spectra_savgol(sdk::PluginProjectAccess &access, const Json &paramet
         throw std::invalid_argument("smooth_spectra_savgol requires non-empty spectral points");
 
     constexpr std::size_t batch_size = 4096;
-    RowBuffer output_rows;
-    output_rows.reserve(batch_size);
-    std::vector<Json> spectrum_rows;
+    sdk::TableBatchBuilder output_rows(typed_schema(point_columns, point_types));
+    using TypedRow = std::vector<sdk::TableBatchBuilder::Cell>;
+    std::vector<TypedRow> spectrum_rows;
     std::unordered_set<std::string> completed_spectra;
     std::string current_spectrum;
     std::uint64_t spectra = 0;
     std::uint64_t points = 0;
+    const auto spectrum_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "spectrum_id") - point_columns.begin());
+    const auto point_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "point_index") - point_columns.begin());
+    const auto intensity_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "intensity") - point_columns.begin());
+    const auto coordinate_column = static_cast<std::size_t>(
+        std::find(point_columns.begin(), point_columns.end(), "spectral_coordinate") - point_columns.begin());
     const auto flush_spectrum = [&]() {
         if (spectrum_rows.empty()) return;
-        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [](const Json &left, const Json &right) {
-            return left.at("point_index").get<std::size_t>() < right.at("point_index").get<std::size_t>();
+        std::sort(spectrum_rows.begin(), spectrum_rows.end(), [&](const auto &left, const auto &right) {
+            return std::get<std::int64_t>(left[point_column]) < std::get<std::int64_t>(right[point_column]);
         });
         std::vector<double> intensities;
         std::vector<double> coordinates;
         intensities.reserve(spectrum_rows.size());
         coordinates.reserve(spectrum_rows.size());
         for (const auto &row : spectrum_rows) {
-            const auto &intensity = row.at("intensity");
-            const auto &coordinate = row.at("spectral_coordinate");
-            if (intensity.is_null() || coordinate.is_null())
+            if (std::holds_alternative<std::monostate>(row[intensity_column]) ||
+                std::holds_alternative<std::monostate>(row[coordinate_column]))
                 throw std::invalid_argument("Savitzky-Golay smoothing does not accept missing signal or coordinates");
-            intensities.push_back(json_number(intensity, "intensity"));
-            coordinates.push_back(json_number(coordinate, "spectral_coordinate"));
+            intensities.push_back(std::get<double>(row[intensity_column]));
+            coordinates.push_back(std::get<double>(row[coordinate_column]));
         }
         const auto smoothed = operations::savitzky_golay_smooth(
             intensities, coordinates, static_cast<std::size_t>(window_length),
             static_cast<std::size_t>(polynomial_order));
         for (std::size_t index = 0; index < spectrum_rows.size(); ++index) {
-            spectrum_rows[index]["intensity"] = smoothed[index];
-            output_rows.push_back(std::move(spectrum_rows[index]));
-            if (output_rows.size() == batch_size) {
-                emit_batches(access, "spectraTable", point_columns, point_types,
-                             output_rows, 0, output_rows.size());
+            spectrum_rows[index][intensity_column] = smoothed[index];
+            output_rows.append_row(spectrum_rows[index]);
+            if (output_rows.row_count() == batch_size) {
+                output_rows.emit(access, "spectraTable");
                 output_rows.clear();
             }
         }
@@ -1123,10 +1212,15 @@ Json smooth_spectra_savgol(sdk::PluginProjectAccess &access, const Json &paramet
         completed_spectra.insert(current_spectrum);
         spectrum_rows.clear();
     };
-    access.read_batches(points_table, point_columns, "spectrum_id", [&](const Json &rows) {
-        for (const auto &row : rows) {
+    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+        std::vector<std::uint32_t> column_indices;
+        column_indices.reserve(point_columns.size());
+        for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             if (access.is_cancelled()) throw std::runtime_error("smooth_spectra_savgol cancelled");
-            const auto spectrum_id = row.at("spectrum_id").get<std::string>();
+            if (batch.is_null(static_cast<std::uint32_t>(spectrum_column), row))
+                throw std::invalid_argument("smooth_spectra_savgol requires a non-null spectrum_id");
+            const auto spectrum_id = std::string(batch.text(static_cast<std::uint32_t>(spectrum_column), row));
             if (current_spectrum.empty()) current_spectrum = spectrum_id;
             if (spectrum_id != current_spectrum) {
                 flush_spectrum();
@@ -1134,13 +1228,15 @@ Json smooth_spectra_savgol(sdk::PluginProjectAccess &access, const Json &paramet
                     throw std::runtime_error("spectraTable rows are not grouped by spectrum_id");
                 current_spectrum = spectrum_id;
             }
-            spectrum_rows.push_back(row);
+            TypedRow values;
+            values.reserve(column_indices.size());
+            for (const auto column : column_indices)
+                values.emplace_back(copy_batch_cell(batch, column, row));
+            spectrum_rows.push_back(std::move(values));
         }
     });
     flush_spectrum();
-    if (!output_rows.empty())
-        emit_batches(access, "spectraTable", point_columns, point_types,
-                     output_rows, 0, output_rows.size());
+    if (output_rows.row_count() != 0) output_rows.emit(access, "spectraTable");
     if (points != expected_points)
         throw std::runtime_error("smooth_spectra_savgol emitted a different number of points than it read");
     access.report_progress(1.0, "Savitzky-Golay-smoothed " + std::to_string(spectra) + " Raman/IR spectra.");

@@ -547,6 +547,11 @@ public:
     void execute_sql(const std::string &sql) const;
     /** @brief Execute a query and return rows as JSON objects keyed by column name. */
     Json query_json(const std::string &sql) const;
+    /** @brief Stream a SQL result directly as Arrow batches, without materializing row JSON. */
+    void query_arrow_batches(
+        const std::string &sql,
+        const std::function<void(const std::shared_ptr<arrow::Schema> &)> &on_schema,
+        const std::function<void(const std::shared_ptr<arrow::RecordBatch> &)> &on_batch) const;
 
     /** @internal Run a table-store transaction on this project's connection. */
     void table_transaction(const std::vector<std::string> &owned_tables,

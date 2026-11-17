@@ -1,6 +1,7 @@
 #include "operations/base.hpp"
 #include "readers/reader.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 #include "utils/base.hpp"
 #include "utils/chromatograms.hpp"
 #include "utils/target_csv.hpp"
@@ -34,6 +35,91 @@ namespace streamfind::mass_spec::base
         using Json = nlohmann::json;
         using StringRow = std::vector<std::optional<std::string>>;
 
+        struct SpectrumPoint
+        {
+            std::string analysis, replicate, name;
+            std::int64_t polarity = 0, level = 0;
+            double precursor_mz = 0.0, precursor_mz_low = 0.0, precursor_mz_high = 0.0;
+            double collision_energy = 0.0, rt = 0.0, mobility = 0.0, mz = 0.0, intensity = 0.0;
+        };
+
+        const std::vector<std::string> spectrum_point_columns = {
+            "analysis", "replicate", "name", "polarity", "level", "pre_mz", "pre_mzlow", "pre_mzhigh",
+            "pre_ce", "rt", "mobility", "mz", "intensity"};
+
+        sdk::TableBatchBuilder spectrum_point_builder()
+        {
+            return sdk::TableBatchBuilder({
+                {"analysis", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"replicate", STREAMFIND_PLUGIN_COLUMN_UTF8},
+                {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"polarity", STREAMFIND_PLUGIN_COLUMN_INT64},
+                {"level", STREAMFIND_PLUGIN_COLUMN_INT64}, {"pre_mz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+                {"pre_mzlow", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"pre_mzhigh", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+                {"pre_ce", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"rt", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+                {"mobility", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"mz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+                {"intensity", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
+        }
+
+        void append_spectrum_point(sdk::TableBatchBuilder &builder, const SpectrumPoint &point)
+        {
+            builder.append_row({point.analysis, point.replicate, point.name, point.polarity, point.level,
+                point.precursor_mz, point.precursor_mz_low, point.precursor_mz_high, point.collision_energy,
+                point.rt, point.mobility, point.mz, point.intensity});
+        }
+
+        void emit_spectrum_points(sdk::PluginProjectAccess &access, const char *port,
+                                  const std::vector<SpectrumPoint> &points)
+        {
+            auto output = spectrum_point_builder();
+            for (const auto &point : points) {
+                append_spectrum_point(output, point);
+                if (output.row_count() >= 2048) {
+                    output.emit(access, port);
+                    output.clear();
+                }
+            }
+            if (output.row_count() > 0 || points.empty()) output.emit(access, port);
+        }
+
+        std::vector<SpectrumPoint> merge_spectrum_points(const std::vector<SpectrumPoint> &points,
+                                                         double mz_cluster, double presence)
+        {
+            using GroupKey = std::tuple<std::string, std::string, int, int, double, double>;
+            std::map<GroupKey, std::vector<SpectrumPoint>> groups;
+            for (const auto &point : points)
+                groups[{point.analysis, point.name, static_cast<int>(point.polarity),
+                        static_cast<int>(point.level), point.rt, point.precursor_mz}].push_back(point);
+            std::vector<SpectrumPoint> result;
+            for (auto &[key, values] : groups) {
+                std::sort(values.begin(), values.end(), [](const auto &left, const auto &right) { return left.mz < right.mz; });
+                std::set<double> all_rt;
+                for (const auto &point : values) all_rt.insert(point.rt);
+                for (std::size_t start = 0; start < values.size();) {
+                    std::size_t end = start + 1;
+                    while (end < values.size() && values[end].mz - values[end - 1].mz <= mz_cluster) ++end;
+                    std::set<double> cluster_rt;
+                    for (std::size_t index = start; index < end; ++index) cluster_rt.insert(values[index].rt);
+                    if (presence > 0.0 && static_cast<double>(cluster_rt.size()) < presence * static_cast<double>(all_rt.size())) {
+                        start = end;
+                        continue;
+                    }
+                    auto merged = values[start];
+                    double maximum_intensity = 0.0, weighted_mz = 0.0, rt_sum = 0.0;
+                    for (std::size_t index = start; index < end; ++index) {
+                        const auto &point = values[index];
+                        maximum_intensity = std::max(maximum_intensity, point.intensity);
+                        weighted_mz += point.mz * point.intensity;
+                        rt_sum += point.rt;
+                    }
+                    merged.mz = weighted_mz == 0.0 ? merged.mz : weighted_mz / std::max(maximum_intensity, 1e-12);
+                    merged.intensity = maximum_intensity;
+                    merged.rt = rt_sum / static_cast<double>(end - start);
+                    result.push_back(std::move(merged));
+                    start = end;
+                }
+            }
+            return result;
+        }
+
         std::string lower(std::string value)
         {
             std::transform(value.begin(), value.end(), value.begin(),
@@ -60,34 +146,48 @@ namespace streamfind::mass_spec::base
             }
         }
 
-        Json typed_rows(const std::vector<StringRow> &source,
-                        const std::vector<std::string> &names,
-                        const std::vector<std::string> &types)
+        void emit_typed_rows(sdk::PluginProjectAccess &access, const std::string &contract,
+                             const std::vector<StringRow> &source,
+                             const std::vector<std::string> &names,
+                             const std::vector<std::string> &types)
         {
-            Json result = Json::array();
+            if (names.size() != types.size())
+                throw std::invalid_argument("reader output column names and types differ in length");
+            std::vector<sdk::TableBatchBuilder::Column> schema;
+            schema.reserve(names.size());
+            for (std::size_t index = 0; index < names.size(); ++index) {
+                const auto type = types[index] == "integer" ? STREAMFIND_PLUGIN_COLUMN_INT64 :
+                    types[index] == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64 :
+                    types[index] == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL : STREAMFIND_PLUGIN_COLUMN_UTF8;
+                schema.push_back({names[index], type});
+            }
+            sdk::TableBatchBuilder output(std::move(schema));
             for (const auto &source_row : source)
             {
-                Json row = Json::object();
+                if (source_row.size() != names.size())
+                    throw std::invalid_argument("reader output row does not match its declared schema");
+                std::vector<sdk::TableBatchBuilder::Cell> row;
+                row.reserve(names.size());
                 for (std::size_t index = 0; index < names.size(); ++index)
                 {
                     if (!source_row[index].has_value())
                     {
-                        row[names[index]] = nullptr;
+                        row.emplace_back(std::monostate{});
                         continue;
                     }
                     const auto &value = *source_row[index];
                     if (types[index] == "integer")
-                        row[names[index]] = std::stoll(value);
+                        row.emplace_back(static_cast<std::int64_t>(std::stoll(value)));
                     else if (types[index] == "real")
-                        row[names[index]] = std::stod(value);
+                        row.emplace_back(std::stod(value));
                     else if (types[index] == "boolean")
-                        row[names[index]] = value == "true";
+                        row.emplace_back(value == "true");
                     else
-                        row[names[index]] = value;
+                        row.emplace_back(value);
                 }
-                result.push_back(std::move(row));
+                output.append_row(row);
             }
-            return result;
+            output.emit(access, contract);
         }
 
     } // namespace
@@ -220,15 +320,9 @@ namespace streamfind::mass_spec::base
             }
         }
 
-        if (!analysis_rows.empty())
-            access.emit_table_rows("analysesTable", analysis_columns, analysis_types,
-                                   typed_rows(analysis_rows, analysis_columns, analysis_types));
-        if (!spectra_rows.empty())
-            access.emit_table_rows("spectraHeadersTable", spectra_columns, spectra_types,
-                                   typed_rows(spectra_rows, spectra_columns, spectra_types));
-        if (!chromatogram_rows.empty())
-            access.emit_table_rows("chromatogramsHeadersTable", chromatogram_columns, chromatogram_types,
-                                   typed_rows(chromatogram_rows, chromatogram_columns, chromatogram_types));
+        if (!analysis_rows.empty()) emit_typed_rows(access, "analysesTable", analysis_rows, analysis_columns, analysis_types);
+        if (!spectra_rows.empty()) emit_typed_rows(access, "spectraHeadersTable", spectra_rows, spectra_columns, spectra_types);
+        if (!chromatogram_rows.empty()) emit_typed_rows(access, "chromatogramsHeadersTable", chromatogram_rows, chromatogram_columns, chromatogram_types);
         return added;
     }
 
@@ -237,32 +331,46 @@ namespace streamfind::mass_spec::base
         const auto path = parameters.value("targets_csv_path", std::string{});
         if (path.empty()) throw std::invalid_argument("targets_csv_path must be a non-empty CSV file path");
         const auto parsed = target_csv::read_targets_csv(path, false);
-        const std::vector<std::string> columns = {
-            "name", "analysis", "polarity", "level", "mass", "mass_min", "mass_max",
-            "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"};
-        const std::vector<std::string> types = {
-            "string", "string", "integer", "integer", "real", "real", "real", "real", "real",
-            "real", "real", "real", "real"};
-        Json rows = Json::array();
+        streamfind::sdk::TableBatchBuilder output({
+            {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"analysis", STREAMFIND_PLUGIN_COLUMN_UTF8},
+            {"polarity", STREAMFIND_PLUGIN_COLUMN_INT64}, {"level", STREAMFIND_PLUGIN_COLUMN_INT64},
+            {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"mass_min", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"mass_max", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"mz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"mzmin", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"mzmax", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"rt", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"rtmin", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"rtmax", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
         for (const auto &source : parsed)
         {
-            Json row = Json::object();
-            for (const auto &column : columns) row[column] = nullptr;
-            for (const auto &key : {"name", "analysis"})
-                if (source.contains(key)) row[key] = source.at(key);
-            for (const auto &key : {"polarity", "level", "mass", "mass_min", "mass_max", "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"})
-            {
-                const auto alternate = std::string(key) == "mzmin" ? "mz_min" :
-                                       std::string(key) == "mzmax" ? "mz_max" :
-                                       std::string(key) == "rtmin" ? "rt_min" :
-                                       std::string(key) == "rtmax" ? "rt_max" : std::string(key);
-                if (source.contains(key)) row[key] = source.at(key);
-                else if (source.contains(alternate)) row[key] = source.at(alternate);
-            }
-            rows.push_back(std::move(row));
+            const auto string_value = [&source](const char *key) -> streamfind::sdk::TableBatchBuilder::Cell {
+                const auto value = source.find(key);
+                if (value == source.end() || value->is_null()) return std::monostate{};
+                if (value->is_string()) return value->get<std::string>();
+                return value->dump();
+            };
+            const auto number_value = [&source](const char *key, const char *alternate,
+                                                 bool integer) -> streamfind::sdk::TableBatchBuilder::Cell {
+                auto value = source.find(key);
+                if (value == source.end() && alternate != nullptr) value = source.find(alternate);
+                if (value == source.end() || value->is_null()) return std::monostate{};
+                if (integer) {
+                    if (value->is_number_integer()) return value->get<std::int64_t>();
+                    if (value->is_string()) return static_cast<std::int64_t>(std::stoll(value->get<std::string>()));
+                    return std::monostate{};
+                }
+                if (value->is_number()) return value->get<double>();
+                if (value->is_string()) return std::stod(value->get<std::string>());
+                return std::monostate{};
+            };
+            output.append_row({string_value("name"), string_value("analysis"),
+                number_value("polarity", nullptr, true), number_value("level", nullptr, true),
+                number_value("mass", nullptr, false), number_value("mass_min", nullptr, false),
+                number_value("mass_max", nullptr, false), number_value("mz", nullptr, false),
+                number_value("mzmin", "mz_min", false), number_value("mzmax", "mz_max", false),
+                number_value("rt", nullptr, false), number_value("rtmin", "rt_min", false),
+                number_value("rtmax", "rt_max", false)});
         }
-        access.emit_table_rows("targetsTable", columns, types, rows);
-        return {{"rows", rows.size()}, {"path", path}};
+        output.emit(access, "targetsTable");
+        return {{"rows", parsed.size()}, {"path", path}};
     }
 
     Json read_mol_suspect_target(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -285,24 +393,22 @@ namespace streamfind::mass_spec::base
         if (!structure.ok)
             throw std::invalid_argument("Could not normalize MOL structure: " + structure.error);
 
-        const std::vector<std::string> columns = {
-            "name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-            "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
-        const std::vector<std::string> types = {
-            "string", "real", "integer", "real", "real", "string", "string", "string", "string", "real",
-            "array", "array", "array", "array"};
-        Json row = Json::object();
-        for (const auto &column : columns) row[column] = nullptr;
-        row["name"] = name;
-        row["mass"] = structure.exact_mass;
-        row["formula"] = structure.formula;
-        row["SMILES"] = structure.canonical_smiles;
-        row["InChI"] = structure.inchi;
-        row["InChIKey"] = structure.inchikey;
-        if (structure.has_xlogp) row["xLogP"] = structure.xlogp;
-
-        const Json rows = Json::array({row});
-        access.emit_table_rows("suspectTargetsTable", columns, types, rows);
+        streamfind::sdk::TableBatchBuilder output({
+            {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"polarity", STREAMFIND_PLUGIN_COLUMN_INT64}, {"mz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"rt", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"formula", STREAMFIND_PLUGIN_COLUMN_UTF8},
+            {"SMILES", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"InChI", STREAMFIND_PLUGIN_COLUMN_UTF8},
+            {"InChIKey", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"xLogP", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_mz_pos", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_intensity_pos", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_mz_neg", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"fragments_intensity_neg", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
+        output.append_row({name, structure.exact_mass, std::monostate{}, std::monostate{}, std::monostate{},
+            structure.formula, structure.canonical_smiles, structure.inchi, structure.inchikey,
+            structure.has_xlogp ? streamfind::sdk::TableBatchBuilder::Cell{structure.xlogp}
+                                : streamfind::sdk::TableBatchBuilder::Cell{std::monostate{}},
+            std::monostate{}, std::monostate{}, std::monostate{}, std::monostate{}});
+        output.emit(access, "suspectTargetsTable");
         return {{"rows", 1}, {"path", path}};
     }
 
@@ -342,36 +448,36 @@ namespace streamfind::mass_spec::base
             }
         }
 
-        const auto source_rows = access.read(physical_table, columns, "analysis");
-        std::vector<StringRow> retained_rows;
-        Json removed = Json::array();
-        for (const auto &source_row : source_rows)
+        std::vector<streamfind::sdk::TableBatchBuilder::Column> output_schema;
+        output_schema.reserve(columns.size());
+        for (std::size_t index = 0; index < columns.size(); ++index)
         {
-            const auto analysis = source_row.value("analysis", std::string{});
-            const bool matches_literal = std::find(literal_patterns.begin(), literal_patterns.end(), analysis) != literal_patterns.end();
-            const bool matches_regex = std::any_of(patterns.begin(), patterns.end(), [&](const auto &pattern) {
-                return std::regex_search(analysis, pattern);
-            });
-            if (matches_literal || matches_regex)
-            {
-                removed.push_back(analysis);
-                continue;
-            }
-            StringRow row;
-            row.reserve(columns.size());
-            for (const auto &column : columns)
-            {
-                if (source_row.at(column).is_null())
-                    row.push_back(std::nullopt);
-                else if (source_row.at(column).is_string())
-                    row.push_back(source_row.at(column).get<std::string>());
-                else
-                    row.push_back(source_row.at(column).dump());
-            }
-            retained_rows.push_back(std::move(row));
+            const auto &type = types[index];
+            if (type == "integer") output_schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_INT64});
+            else if (type == "real") output_schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_FLOAT64});
+            else if (type == "boolean") output_schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_BOOL});
+            else if (type == "timestamp") output_schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_TIMESTAMP});
+            else if (type == "decimal") output_schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_DECIMAL});
+            else output_schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_UTF8});
         }
-        access.emit_table_rows("analysesTable", columns, types,
-                               typed_rows(retained_rows, columns, types));
+        streamfind::sdk::TableBatchBuilder output(std::move(output_schema));
+        Json removed = Json::array();
+        access.read_typed_batches(physical_table, columns, "analysis",
+            [&](const streamfind::sdk::PluginProjectAccess::BatchView &batch) {
+                const auto analysis_column = batch.column_index("analysis");
+                for (std::uint64_t row = 0; row < batch.row_count(); ++row)
+                {
+                    const auto analysis = batch.is_null(analysis_column, row)
+                        ? std::string{} : std::string(batch.text(analysis_column, row));
+                    const bool matches_literal = std::find(literal_patterns.begin(), literal_patterns.end(), analysis) != literal_patterns.end();
+                    const bool matches_regex = std::any_of(patterns.begin(), patterns.end(), [&](const auto &pattern) {
+                        return std::regex_search(analysis, pattern);
+                    });
+                    if (matches_literal || matches_regex) removed.push_back(analysis);
+                    else output.append_row(batch, row);
+                }
+            });
+        output.emit(access, "analysesTable");
         return removed;
     }
 
@@ -387,37 +493,6 @@ namespace streamfind::mass_spec::base
         const std::vector<std::string> analysis_types = {
             "string", "integer", "integer", "string", "string", "string", "string", "string", "string",
             "string", "string", "string", "integer", "integer", "integer", "real", "real", "real", "real", "boolean", "real"};
-
-        Json emit_analysis_copy(sdk::PluginProjectAccess &access, const Json &parameters,
-                                const Json &source, const char *changed_key = nullptr,
-                                const Json *changed_values = nullptr)
-        {
-            if (changed_values != nullptr && changed_values->size() != source.size())
-                throw std::invalid_argument(std::string(changed_key) + " length must match analyses");
-            Json output = Json::array();
-            for (std::size_t row_index = 0; row_index < source.size(); ++row_index)
-            {
-                auto row = source[row_index];
-                if (changed_key != nullptr)
-                    row[changed_key] = (*changed_values)[row_index];
-                for (std::size_t column_index = 0; column_index < analysis_columns.size(); ++column_index)
-                {
-                    const auto &column = analysis_columns[column_index];
-                    if (!row.contains(column) || row[column].is_null() || !row[column].is_string())
-                        continue;
-                    const auto value = row[column].get<std::string>();
-                    if (analysis_types[column_index] == "integer")
-                        row[column] = std::stoll(value);
-                    else if (analysis_types[column_index] == "real")
-                        row[column] = std::stod(value);
-                    else if (analysis_types[column_index] == "boolean")
-                        row[column] = value == "true";
-                }
-                output.push_back(std::move(row));
-            }
-            access.emit_table_rows("analysesTable", analysis_columns, analysis_types, output);
-            return Json{{"updated", output.size()}};
-        }
 
         bool selected(const Json &wanted, const std::string &name, int index = 0);
 
@@ -441,7 +516,7 @@ namespace streamfind::mass_spec::base
         Json selected_analysis_rows(sdk::PluginProjectAccess &access, const Json &parameters,
                                     const std::vector<std::string> &columns, bool filter_indices)
         {
-            const auto rows = base::utils::input_rows(access, parameters, "analysesTable", columns, "analysis");
+            const auto rows = base::utils::read_control_rows(access, parameters, "analysesTable", columns, "analysis");
             const auto wanted_names = parameters.value("analysis_names", Json::array());
             const auto wanted_indices = filter_indices ? parameters.value("indices", Json::array()) : Json::array();
 
@@ -502,6 +577,52 @@ namespace streamfind::mass_spec::base
             return selected_rows;
         }
 
+        Json set_analysis_values(sdk::PluginProjectAccess &access, const Json &parameters,
+                                 const char *column_name, const Json &replacement_values)
+        {
+            if (!replacement_values.is_array())
+                throw std::invalid_argument(std::string(column_name) + " values must be an array");
+            const auto wanted_names = parameters.value("analysis_names", Json::array());
+            const auto wanted_indices = parameters.value("indices", Json::array());
+            auto make_builder = [] {
+                std::vector<sdk::TableBatchBuilder::Column> schema;
+                schema.reserve(analysis_columns.size());
+                for (std::size_t index = 0; index < analysis_columns.size(); ++index) {
+                    auto type = STREAMFIND_PLUGIN_COLUMN_UTF8;
+                    if (analysis_types[index] == "integer") type = STREAMFIND_PLUGIN_COLUMN_INT64;
+                    else if (analysis_types[index] == "real") type = STREAMFIND_PLUGIN_COLUMN_FLOAT64;
+                    else if (analysis_types[index] == "boolean") type = STREAMFIND_PLUGIN_COLUMN_BOOL;
+                    schema.push_back({analysis_columns[index], type});
+                }
+                return sdk::TableBatchBuilder(std::move(schema));
+            };
+            auto output = make_builder();
+            std::size_t selected_count = 0;
+            std::size_t source_index = 0;
+            access.read_typed_batches(base::utils::input_table(parameters, "analysesTable"),
+                analysis_columns, "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+                    const auto analysis_column = batch.column_index("analysis");
+                    for (std::uint64_t row = 0; row < batch.row_count(); ++row, ++source_index) {
+                        const auto name = batch.is_null(analysis_column, row)
+                            ? std::string{} : std::string(batch.text(analysis_column, row));
+                        if (!selected(wanted_names, name, static_cast<int>(source_index))) continue;
+                        if (!wanted_indices.empty() &&
+                            std::find(wanted_indices.begin(), wanted_indices.end(), static_cast<int>(source_index)) == wanted_indices.end())
+                            continue;
+                        if (selected_count >= replacement_values.size())
+                            throw std::invalid_argument(std::string(column_name) + " length must match selected analyses");
+                        const auto &replacement = replacement_values.at(selected_count++);
+                        if (!replacement.is_string())
+                            throw std::invalid_argument(std::string(column_name) + " values must be strings");
+                        output.append_row(batch, row, {{column_name, replacement.get<std::string>()}});
+                    }
+                });
+            if (selected_count != replacement_values.size())
+                throw std::invalid_argument(std::string(column_name) + " length must match selected analyses");
+            output.emit(access, "analysesTable");
+            return Json{{"updated", selected_count}};
+        }
+
         Json analysis_names(const Json &parameters)
         {
             return parameters.value("analysis_names", Json::array());
@@ -509,7 +630,7 @@ namespace streamfind::mass_spec::base
 
         std::map<std::string, int> analysis_row_indices(sdk::PluginProjectAccess &access, const Json &parameters)
         {
-            const auto rows = base::utils::input_rows(access, parameters, "analysesTable", {"analysis"}, "analysis");
+            const auto rows = base::utils::read_control_rows(access, parameters, "analysesTable", {"analysis"}, "analysis");
             std::map<std::string, int> result;
             for (std::size_t index = 0; index < rows.size(); ++index)
                 result[rows[index].value("analysis", std::string{})] = static_cast<int>(index);
@@ -561,180 +682,207 @@ namespace streamfind::mass_spec::base
 
     Json set_replicate_names(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto rows = selected_analysis_rows(access, parameters);
-        return emit_analysis_copy(access, parameters, rows, "replicate", &parameters.at("replicate_names"));
+        return set_analysis_values(access, parameters, "replicate", parameters.at("replicate_names"));
     }
 
     Json set_blank_names(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto rows = selected_analysis_rows(access, parameters);
-        return emit_analysis_copy(access, parameters, rows, "blank", &parameters.at("blank_names"));
+        return set_analysis_values(access, parameters, "blank", parameters.at("blank_names"));
     }
 
     Json set_concentrations(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto rows = selected_analysis_rows(access, parameters);
-        return emit_analysis_copy(access, parameters, rows, "concentration", &parameters.at("concentrations"));
+        return set_analysis_values(access, parameters, "concentration", parameters.at("concentrations"));
     }
 
     Json get_spectra_headers(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto rows = base::utils::input_rows(access, parameters, "spectraHeadersTable",
-                                     {"analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
-                                      "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
-                                      "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"},
-                                     "analysis");
+        const std::vector<std::string> columns = {
+            "analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
+            "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
+            "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"};
         const auto wanted = analysis_names(parameters);
         const auto analysis_indices = analysis_row_indices(access, parameters);
         const auto indices = parameters.value("indices", Json::array());
-        Json result = Json::array();
-        for (auto row : rows)
-            if (selected(wanted, row.value("analysis", std::string{}), analysis_indices.at(row.value("analysis", std::string{}))) &&
-                (indices.empty() || std::find(indices.begin(), indices.end(), json_integer(row, "index")) != indices.end()))
-                result.push_back(std::move(row));
-        return result;
+        const auto table = base::utils::input_table(parameters, "spectraHeadersTable");
+        std::size_t emitted = 0;
+        access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+            std::vector<sdk::TableBatchBuilder::Column> schema;
+            schema.reserve(columns.size());
+            for (std::uint32_t column = 0; column < batch.column_count(); ++column)
+                schema.push_back({columns.at(column), batch.type(column), batch.is_list(column),
+                    batch.is_list(column) ? batch.list_child_type(column) : STREAMFIND_PLUGIN_COLUMN_UTF8});
+            sdk::TableBatchBuilder output(std::move(schema));
+            const auto analysis_col = batch.column_index("analysis");
+            const auto index_col = batch.column_index("index");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+                const auto analysis = batch.is_null(analysis_col, row)
+                    ? std::string{} : std::string(batch.text(analysis_col, row));
+                const auto analysis_it = analysis_indices.find(analysis);
+                if (analysis_it == analysis_indices.end() || !selected(wanted, analysis, analysis_it->second)) continue;
+                const auto index = batch.is_null(index_col, row) ? 0 : static_cast<int>(batch.integer(index_col, row));
+                if (!indices.empty() && std::find(indices.begin(), indices.end(), index) == indices.end()) continue;
+                output.append_row(batch, row);
+                if (output.row_count() >= 1024) {
+                    emitted += static_cast<std::size_t>(output.row_count());
+                    output.emit(access, "spectraHeadersTable");
+                    output.clear();
+                }
+            }
+            if (output.row_count() != 0) {
+                emitted += static_cast<std::size_t>(output.row_count());
+                output.emit(access, "spectraHeadersTable");
+            }
+        });
+        return {{"status", "finished"}, {"rows", emitted}};
     }
 
     Json get_chromatograms_headers(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        const auto rows = base::utils::input_rows(access, parameters, "chromatogramsHeadersTable",
-                                     {"analysis", "index", "chromatogram_id", "array_length", "polarity", "precursor_mz", "activation_ce", "product_mz",
-                                      "signal_type", "chromatogram_type", "detector", "channel", "units", "wavelength_nm", "interval_ms", "start_time", "end_time", "intensity_multiplier"},
-                                     "analysis");
+        const std::vector<std::string> columns = {
+            "analysis", "index", "chromatogram_id", "array_length", "polarity", "precursor_mz", "activation_ce", "product_mz",
+            "signal_type", "chromatogram_type", "detector", "channel", "units", "wavelength_nm", "interval_ms", "start_time", "end_time", "intensity_multiplier"};
         const auto wanted = analysis_names(parameters);
         const auto analysis_indices = analysis_row_indices(access, parameters);
         const auto indices = parameters.value("indices", Json::array());
-        Json result = Json::array();
-        for (auto row : rows)
-            if (selected(wanted, row.value("analysis", std::string{}), analysis_indices.at(row.value("analysis", std::string{}))) &&
-                (indices.empty() || std::find(indices.begin(), indices.end(), json_integer(row, "index")) != indices.end()))
-                result.push_back(std::move(row));
-        return result;
+        const auto table = base::utils::input_table(parameters, "chromatogramsHeadersTable");
+        std::size_t emitted = 0;
+        access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+            std::vector<sdk::TableBatchBuilder::Column> schema;
+            schema.reserve(columns.size());
+            for (std::uint32_t column = 0; column < batch.column_count(); ++column)
+                schema.push_back({columns.at(column), batch.type(column), batch.is_list(column),
+                    batch.is_list(column) ? batch.list_child_type(column) : STREAMFIND_PLUGIN_COLUMN_UTF8});
+            sdk::TableBatchBuilder output(std::move(schema));
+            const auto analysis_col = batch.column_index("analysis");
+            const auto index_col = batch.column_index("index");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+                const auto analysis = batch.is_null(analysis_col, row)
+                    ? std::string{} : std::string(batch.text(analysis_col, row));
+                const auto analysis_it = analysis_indices.find(analysis);
+                if (analysis_it == analysis_indices.end() || !selected(wanted, analysis, analysis_it->second)) continue;
+                const auto index = batch.is_null(index_col, row) ? 0 : static_cast<int>(batch.integer(index_col, row));
+                if (!indices.empty() && std::find(indices.begin(), indices.end(), index) == indices.end()) continue;
+                output.append_row(batch, row);
+                if (output.row_count() >= 1024) {
+                    emitted += static_cast<std::size_t>(output.row_count());
+                    output.emit(access, "chromatogramsHeadersTable");
+                    output.clear();
+                }
+            }
+            if (output.row_count() != 0) {
+                emitted += static_cast<std::size_t>(output.row_count());
+                output.emit(access, "chromatogramsHeadersTable");
+            }
+        });
+        return {{"status", "finished"}, {"rows", emitted}};
     }
 
-    Json get_spectra_tic(sdk::PluginProjectAccess &access, const Json &parameters)
+    namespace detail {
+
+    struct SpectraTicRow {
+        std::string analysis;
+        std::string replicate;
+        std::optional<std::int64_t> polarity;
+        std::optional<std::int64_t> level;
+        std::optional<double> rt;
+        std::optional<double> mobility;
+        std::optional<double> tic;
+        std::optional<double> bpmz;
+        std::optional<double> bpint;
+    };
+
+    template <typename Callback>
+    void visit_spectra_tic_rows(sdk::PluginProjectAccess &access,
+                                const Json &parameters,
+                                Callback &&callback)
     {
-        const auto headers = get_spectra_headers(access, parameters);
         const auto analyses = selected_analysis_rows(access, parameters);
         std::map<std::string, std::string> replicates;
         for (const auto &row : analyses)
             replicates[row.value("analysis", std::string{})] = row.value("replicate", std::string{});
         const auto levels = parameters.value("levels", Json::array());
-        Json result = Json::array();
-        for (const auto &header : headers)
-        {
-            const auto level = json_integer(header, "level");
-            const auto rt = json_real(header, "rt");
-            if ((!levels.empty() && std::find(levels.begin(), levels.end(), level) == levels.end()) ||
-                (parameters.contains("rt_min") && rt < parameters.at("rt_min").get<double>()) ||
-                (parameters.contains("rt_max") && rt > parameters.at("rt_max").get<double>()))
-                continue;
-            const auto analysis = header.value("analysis", std::string{});
-            result.push_back({{"analysis", analysis}, {"replicate", replicates[analysis]}, {"polarity", json_value_or_zero(header, "polarity")}, {"level", level}, {"rt", rt}, {"mobility", json_value_or_zero(header, "mobility")}, {"tic", json_value_or_zero(header, "tic")}, {"bpmz", json_value_or_zero(header, "bpmz")}, {"bpint", json_value_or_zero(header, "bpint")}});
-        }
-        return result;
+        const auto wanted = analysis_names(parameters);
+        const auto analysis_indices = analysis_row_indices(access, parameters);
+        const auto indices = parameters.value("indices", Json::array());
+        const std::vector<std::string> columns = {
+            "analysis", "index", "level", "polarity", "rt", "mobility", "tic", "bpmz", "bpint"};
+        const auto table = base::utils::input_table(parameters, "spectraHeadersTable");
+        access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+            const auto analysis_col = batch.column_index("analysis");
+            const auto index_col = batch.column_index("index");
+            const auto level_col = batch.column_index("level");
+            const auto polarity_col = batch.column_index("polarity");
+            const auto rt_col = batch.column_index("rt");
+            const auto mobility_col = batch.column_index("mobility");
+            const auto tic_col = batch.column_index("tic");
+            const auto bpmz_col = batch.column_index("bpmz");
+            const auto bpint_col = batch.column_index("bpint");
+            for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
+                const auto analysis = batch.is_null(analysis_col, row)
+                    ? std::string{} : std::string(batch.text(analysis_col, row));
+                const auto analysis_it = analysis_indices.find(analysis);
+                if (analysis_it == analysis_indices.end() || !selected(wanted, analysis, analysis_it->second)) continue;
+                if (!indices.empty() && !batch.is_null(index_col, row) &&
+                    std::find(indices.begin(), indices.end(), batch.integer(index_col, row)) == indices.end()) continue;
+                const auto level = batch.is_null(level_col, row) ? 0 : static_cast<int>(batch.integer(level_col, row));
+                const auto rt = batch.is_null(rt_col, row) ? 0.0 : batch.real(rt_col, row);
+                const auto rt_min = parameters.value("rt_min", 0.0);
+                const auto rt_max = parameters.value("rt_max", 0.0);
+                if ((!levels.empty() && std::find(levels.begin(), levels.end(), level) == levels.end()) ||
+                    (rt_min > 0.0 && rt < rt_min) ||
+                    (rt_max > 0.0 && rt > rt_max)) continue;
+                const auto optional_integer = [&](std::uint32_t column) -> std::optional<std::int64_t> {
+                    if (batch.is_null(column, row)) return std::nullopt;
+                    return batch.integer(column, row);
+                };
+                callback(SpectraTicRow{
+                    analysis, replicates[analysis], optional_integer(polarity_col),
+                    optional_integer(level_col),
+                    batch.is_null(rt_col, row) ? std::nullopt : std::optional<double>(rt),
+                    batch.is_null(mobility_col, row) ? std::nullopt : std::optional<double>(batch.real(mobility_col, row)),
+                    batch.is_null(tic_col, row) ? std::nullopt : std::optional<double>(batch.real(tic_col, row)),
+                    batch.is_null(bpmz_col, row) ? std::nullopt : std::optional<double>(batch.real(bpmz_col, row)),
+                    batch.is_null(bpint_col, row) ? std::nullopt : std::optional<double>(batch.real(bpint_col, row))});
+            }
+        });
     }
 
-    Json plot_spectra_tic(sdk::PluginProjectAccess &access, const Json &parameters)
+    } // namespace detail
+
+    Json get_spectra_tic(sdk::PluginProjectAccess &access, const Json &parameters)
     {
-        auto query_parameters = parameters;
-        if (query_parameters.value("rt_min", 0.0) == 0.0) query_parameters.erase("rt_min");
-        if (query_parameters.value("rt_max", 0.0) == 0.0) query_parameters.erase("rt_max");
-        const auto rows = get_spectra_tic(access, query_parameters);
-        if (!rows.is_array() || rows.empty())
-            throw std::invalid_argument("No TIC data found for the selected analyses");
-        const auto downsize = parameters.value("plot_downsize", 0.0);
-        const auto group_by = parameters.value("plot_group_by", std::string("analysis"));
-        const auto x_label = parameters.value("plot_x_label", std::string("Retention time / seconds"));
-        const auto y_label = parameters.value("plot_y_label", std::string("Intensity / counts"));
-        const auto title = parameters.value("plot_title", std::string("Total Ion Chromatograms (TICs)"));
-        if (downsize < 0.0)
-            throw std::invalid_argument("downsize must be non-negative");
-        if (group_by != "analysis" && group_by != "replicate" && group_by != "polarity" && group_by != "level")
-            throw std::invalid_argument("group_by must be analysis, replicate, polarity, or level");
-
-        const auto max_points = parameters.value("plot_max_points", 5000);
-        if (max_points < 0)
-            throw std::invalid_argument("plot_max_points must be non-negative");
-
-        struct TicPoint { std::string group; double rt{}; double tic{}; };
-        std::vector<TicPoint> tic_points;
-        tic_points.reserve(rows.size());
-        std::map<std::string, std::pair<double, double>> ranges;
-        for (const auto &row : rows)
-        {
-            const auto group = group_by == "analysis" ? row.value("analysis", std::string{}) :
-                               group_by == "replicate" ? row.value("replicate", std::string{}) :
-                               group_by == "polarity" ? std::to_string(json_integer(row, "polarity")) :
-                                                         std::to_string(json_integer(row, "level"));
-            const auto rt = json_real(row, "rt");
-            tic_points.push_back({group, rt, json_real(row, "tic")});
-            auto range = ranges.find(group);
-            if (range == ranges.end())
-                ranges.emplace(group, std::make_pair(rt, rt));
-            else
-            {
-                range->second.first = std::min(range->second.first, rt);
-                range->second.second = std::max(range->second.second, rt);
-            }
-        }
-
-        struct Aggregate { double rt{}; double tic{}; std::size_t count{}; };
-        std::map<std::string, std::map<double, Aggregate>> groups;
-        for (const auto &point : tic_points)
-        {
-            auto bin_width = downsize;
-            double bin_origin = 0.0;
-            if (bin_width == 0.0 && max_points > 1)
-            {
-                const auto range = ranges.at(point.group);
-                const auto span = range.second - range.first;
-                if (span > 0.0)
-                {
-                    bin_width = span / static_cast<double>(max_points - 1);
-                    bin_origin = range.first;
-                }
-            }
-            auto rt = point.rt;
-            if (bin_width > 0.0)
-                rt = bin_origin + std::floor((rt - bin_origin) / bin_width) * bin_width;
-            auto &aggregate = groups[point.group][rt];
-            aggregate.rt = rt;
-            aggregate.tic += point.tic;
-            ++aggregate.count;
-        }
-
-        Json traces = Json::array();
-        for (const auto &[group, points] : groups)
-        {
-            Json x = Json::array();
-            Json y = Json::array();
-            for (const auto &[_, point] : points)
-            {
-                x.push_back(point.rt);
-                y.push_back(point.count == 0 ? 0.0 : point.tic / static_cast<double>(point.count));
-            }
-            traces.push_back({{"type", "scatter"}, {"mode", "lines"}, {"name", group}, {"x", x}, {"y", y}});
-        }
-
-        Json source_ids = Json::array();
-        for (const auto &[_, input] : parameters.value("_inputs", Json::object()).items())
-            if (input.is_object() && input.contains("result_id")) source_ids.push_back(input.at("result_id"));
-        if (source_ids.empty()) source_ids.push_back("spectraHeadersTable");
-        return {
-            {"schema", "streamfind.visualization/v1"},
-            {"visualization_id", "mass_spec.plot_spectra_tic"},
-            {"semantic_type", "mass_spec.spectra_tic"},
-            {"title", title},
-            {"data_mode", "inline"},
-            {"renderer", {{"engine", "plotly"}, {"renderer_id", "core.plotly"}, {"spec_version", "1"}}},
-            {"payload", {{"data", traces}, {"layout", {{"title", title}, {"xaxis", {{"title", x_label}}}, {"yaxis", {{"title", y_label}}}, {"hovermode", "x unified"}}}, {"config", {{"responsive", true}, {"displaylogo", false}}}}},
-            {"provenance", {{"source_result_ids", source_ids}, {"producer_operation_id", "mass_spec.plot_spectra_tic"}, {"producer_node_id", parameters.value("_operation_instance", std::string("mass_spec.plot_spectra_tic"))}}},
-            {"fallback", {{"description", "TIC visualization unavailable for the selected analyses."}}}
+        sdk::TableBatchBuilder output({
+            {"analysis", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"replicate", STREAMFIND_PLUGIN_COLUMN_UTF8},
+            {"polarity", STREAMFIND_PLUGIN_COLUMN_INT64}, {"level", STREAMFIND_PLUGIN_COLUMN_INT64},
+            {"rt", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"mobility", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"tic", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"bpmz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+            {"bpint", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
+        std::size_t emitted = 0;
+        const auto integer_cell = [](const std::optional<std::int64_t> &value) -> sdk::TableBatchBuilder::Cell {
+            return value ? sdk::TableBatchBuilder::Cell(*value) : sdk::TableBatchBuilder::Cell(std::monostate{});
         };
+        const auto real_cell = [](const std::optional<double> &value) -> sdk::TableBatchBuilder::Cell {
+            return value ? sdk::TableBatchBuilder::Cell(*value) : sdk::TableBatchBuilder::Cell(std::monostate{});
+        };
+        detail::visit_spectra_tic_rows(access, parameters, [&](const detail::SpectraTicRow &row) {
+            output.append_row({row.analysis, row.replicate, integer_cell(row.polarity), integer_cell(row.level),
+                real_cell(row.rt), real_cell(row.mobility), real_cell(row.tic), real_cell(row.bpmz),
+                real_cell(row.bpint)});
+            if (output.row_count() >= 1024) {
+                emitted += static_cast<std::size_t>(output.row_count());
+                output.emit(access, "ticTable");
+                output.clear();
+            }
+        });
+        if (output.row_count() != 0) {
+            emitted += static_cast<std::size_t>(output.row_count());
+            output.emit(access, "ticTable");
+        }
+        return {{"status", "finished"}, {"rows", emitted}};
     }
 
-    Json get_raw_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
+    static std::vector<SpectrumPoint> extract_raw_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
     {
         const auto &effective_parameters = parameters;
         const auto analyses = selected_analysis_rows(access, effective_parameters);
@@ -742,7 +890,7 @@ namespace streamfind::mass_spec::base
         const auto indices = parameters.value("indices", Json::array());
         const bool indexed = !indices.empty();
         const bool eic_logging = parameters.value("_eic_logging", false);
-        Json result = Json::array();
+        std::vector<SpectrumPoint> result;
         for (std::size_t analysis_number = 0; analysis_number < analyses.size(); ++analysis_number)
         {
             const auto &row = analyses[analysis_number];
@@ -844,7 +992,10 @@ namespace streamfind::mass_spec::base
                         if ((!requested_levels.empty() && std::find(requested_levels.begin(), requested_levels.end(), level) == requested_levels.end()) ||
                             spectra[batch_offset][1][j] < minimum_intensity)
                             continue;
-                        Json point = {{"analysis", analysis}, {"replicate", row.value("replicate", std::string{})}, {"name", std::string{}}, {"polarity", headers.polarity[source]}, {"level", headers.level[source]}, {"pre_mz", headers.precursor_mz[source]}, {"pre_mzlow", headers.window_mzlow[source]}, {"pre_mzhigh", headers.window_mzhigh[source]}, {"pre_ce", headers.activation_ce[source]}, {"rt", headers.rt[source]}, {"mobility", headers.mobility[source]}, {"mz", mz}, {"intensity", spectra[batch_offset][1][j]}};
+                        SpectrumPoint point{analysis, row.value("replicate", std::string{}), {},
+                            headers.polarity[source], headers.level[source], headers.precursor_mz[source],
+                            headers.window_mzlow[source], headers.window_mzhigh[source], headers.activation_ce[source],
+                            headers.rt[source], headers.mobility[source], mz, spectra[batch_offset][1][j]};
                         if (indexed)
                             result.push_back(std::move(point));
                         else
@@ -856,8 +1007,9 @@ namespace streamfind::mass_spec::base
                                     // matched target is therefore the source
                                     // of truth for the trace name, regardless
                                     // of the original parameter encoding.
-                                    point["name"] = target->id;
-                                    result.push_back(point);
+                                    auto match = point;
+                                    match.name = target->id;
+                                    result.push_back(std::move(match));
                                 }
                     }
                 }
@@ -875,16 +1027,15 @@ namespace streamfind::mass_spec::base
                 }
             }
         }
-        const std::vector<std::string> columns = {
-            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
-            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
-            "mz", "intensity"};
-        const std::vector<std::string> types = {
-            "string", "string", "string", "integer", "integer", "real", "real",
-            "real", "real", "real", "real", "real", "real"};
         if (!parameters.value("_suppress_raw_table", false))
-            access.emit_table_rows("spectraTable", columns, types, result);
+            emit_spectrum_points(access, "spectraTable", result);
         return result;
+    }
+
+    Json get_raw_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
+    {
+        const auto points = extract_raw_spectra(access, parameters);
+        return Json{{"status", "finished"}, {"spectra_points", points.size()}};
     }
 
     Json get_raw_spectra_eic(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -897,17 +1048,20 @@ namespace streamfind::mass_spec::base
         const auto targets = base::utils::normalize_targets(access, parameters);
         access.report_progress(0.0, "EIC: preparing " + std::to_string(analyses.size()) +
             " analyses and " + std::to_string(targets.size()) + " targets.");
-        const auto result = base::utils::summarize_eic(get_raw_spectra(access, copy));
-        const std::vector<std::string> columns = {
-            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
-            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
-            "mz", "intensity"};
-        const std::vector<std::string> types = {
-            "string", "string", "string", "integer", "integer", "real", "real",
-            "real", "real", "real", "real", "real", "real"};
-        access.emit_table_rows("eicTable", columns, types, result);
+        auto extracted = extract_raw_spectra(access, copy);
+        using EicKey = std::tuple<std::string, std::int64_t, std::string, double>;
+        std::map<EicKey, SpectrumPoint> summarized;
+        for (const auto &point : extracted) {
+            const EicKey key{point.analysis, point.polarity, point.name, point.rt};
+            auto [it, inserted] = summarized.emplace(key, point);
+            if (!inserted) it->second.intensity = std::max(it->second.intensity, point.intensity);
+        }
+        std::vector<SpectrumPoint> result;
+        result.reserve(summarized.size());
+        for (auto &[_, point] : summarized) result.push_back(std::move(point));
+        emit_spectrum_points(access, "eicTable", result);
         access.report_progress(1.0, "EIC extraction complete: " + std::to_string(result.size()) + " summarized rows.");
-        return result;
+        return Json{{"status", "finished"}, {"spectra_points", extracted.size()}, {"eic_points", result.size()}};
     }
 
     Json get_raw_spectra_ms1(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -915,19 +1069,10 @@ namespace streamfind::mass_spec::base
         auto copy = parameters;
         copy["levels"] = Json::array({1});
         copy["_suppress_raw_table"] = true;
-        auto result = base::utils::merge_ms_rows(
-            get_raw_spectra(access, copy),
-            copy.value("mz_clust", 0.003),
-            copy.value("presence", 0.8));
-        const std::vector<std::string> columns = {
-            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
-            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
-            "mz", "intensity"};
-        const std::vector<std::string> types = {
-            "string", "string", "string", "integer", "integer", "real", "real",
-            "real", "real", "real", "real", "real", "real"};
-        access.emit_table_rows("ms1Table", columns, types, result);
-        return result;
+        const auto points = extract_raw_spectra(access, copy);
+        auto result = merge_spectrum_points(points, copy.value("mz_clust", 0.003), copy.value("presence", 0.8));
+        emit_spectrum_points(access, "ms1Table", result);
+        return Json{{"status", "finished"}, {"spectra_points", points.size()}, {"merged_peaks", result.size()}};
     }
 
     Json get_raw_spectra_ms2(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -935,19 +1080,10 @@ namespace streamfind::mass_spec::base
         auto copy = parameters;
         copy["levels"] = Json::array({2});
         copy["_suppress_raw_table"] = true;
-        auto result = base::utils::merge_ms_rows(
-            get_raw_spectra(access, copy),
-            copy.value("mz_clust", 0.005),
-            copy.value("presence", 0.0));
-        const std::vector<std::string> columns = {
-            "analysis", "replicate", "name", "polarity", "level", "pre_mz",
-            "pre_mzlow", "pre_mzhigh", "pre_ce", "rt", "mobility",
-            "mz", "intensity"};
-        const std::vector<std::string> types = {
-            "string", "string", "string", "integer", "integer", "real", "real",
-            "real", "real", "real", "real", "real", "real"};
-        access.emit_table_rows("ms2Table", columns, types, result);
-        return result;
+        const auto points = extract_raw_spectra(access, copy);
+        auto result = merge_spectrum_points(points, copy.value("mz_clust", 0.005), copy.value("presence", 0.0));
+        emit_spectrum_points(access, "ms2Table", result);
+        return Json{{"status", "finished"}, {"spectra_points", points.size()}, {"merged_peaks", result.size()}};
     }
 
     Json get_raw_chromatograms(sdk::PluginProjectAccess &access, const Json &parameters)

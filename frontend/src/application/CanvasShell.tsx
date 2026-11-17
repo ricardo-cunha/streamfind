@@ -87,7 +87,6 @@ import {
   artifactContractMatches,
   artifactSummary,
   isJsonArtifact,
-  isVisualizationArtifact,
   prettyArtifactPayload,
 } from './results/artifactDisplay';
 import type {
@@ -3720,7 +3719,7 @@ export default function CanvasShell({
           mode={artifactViewerMode}
           pluginApi={pluginApi}
           variant={
-            artifactViewerId !== null || isVisualizationArtifact(artifactViewer)
+            artifactViewerId !== null
               ? 'visualization'
               : artifactViewer.representation === 'table' || artifactViewerMode === 'table'
                 ? 'wide'

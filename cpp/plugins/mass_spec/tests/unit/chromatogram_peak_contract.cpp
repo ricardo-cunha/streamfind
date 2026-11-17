@@ -32,6 +32,16 @@ int main()
         if (std::find(point_columns.begin(), point_columns.end(), column) == point_columns.end())
             throw std::runtime_error("chromatogram point metadata is not part of the table contract.");
 
+    const std::vector<std::string> expected_peak_columns = {
+        "analysis", "chromatogram_index", "peak_id", "chromatogram_id", "polarity", "precursor_mz",
+        "product_mz", "activation_ce", "signal_type", "chromatogram_type", "detector", "channel",
+        "wavelength_nm", "units", "rt", "rt_start", "rt_end", "height", "raw_height", "area",
+        "raw_area", "baseline_area", "width", "fwhm", "noise", "snr", "asymmetry", "sharpness",
+        "plates", "number_points", "eic_size", "eic_rt", "eic_intensity", "eic_raw_intensity",
+        "eic_baseline", "integration_algorithm", "integration_status", "manual_override"};
+    if (peak_columns() != expected_peak_columns)
+        throw std::runtime_error("chromatogram peak columns do not match their declared result schema.");
+
     const double snr = calculate_snr(signal, 10, 20, 1500.0);
     if (!(snr > 10.0))
         throw std::runtime_error("flank-based S/N was not calculated from persisted noise.");

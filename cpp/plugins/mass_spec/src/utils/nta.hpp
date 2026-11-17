@@ -14,6 +14,7 @@
 #include "readers/reader.hpp"
 
 namespace streamfind::sdk { class DebugSession; }
+namespace streamfind::sdk { class TableBatchBuilder; }
 
 namespace streamfind::mass_spec::nta::utils
 {
@@ -157,6 +158,8 @@ namespace streamfind::mass_spec::nta::utils
   const std::vector<std::string> &internal_standards_columns();
   const std::vector<std::string> &transformation_products_columns();
   nlohmann::json feature_row(const NTA_FEATURE_ROW &);
+  ::streamfind::sdk::TableBatchBuilder make_feature_batch_builder();
+  void append_feature_batch_row(::streamfind::sdk::TableBatchBuilder &, const NTA_FEATURE_ROW &);
   }
 
 

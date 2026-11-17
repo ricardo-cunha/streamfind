@@ -7,6 +7,8 @@ import { SuspectsExplorer } from './SuspectsExplorer';
 import './SuspectsExplorer.css';
 import { EicTableViewer } from './EicTableViewer';
 import './EicTableViewer.css';
+import { TicTableViewer } from './TicTableViewer';
+import './TicTableViewer.css';
 import { ChromatogramPeaksViewer } from './ChromatogramPeaksViewer';
 import './ChromatogramPeaksViewer.css';
 import { ChromatogramsTableViewer } from './ChromatogramsTableViewer';
@@ -25,18 +27,20 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     artifactContracts: [
       'featuresTable',
       'eicTable',
+      'ticTable',
       'chromatogramsTable',
       'chromatogramPeaksTable',
       'suspectTargetsTable',
       'suspectsTable',
       'internalStandardsTable',
       'findFeaturesDebugResult',
-    'quantificationTable',
-    'quantificationCalibrationModelsTable',
+      'quantificationTable',
+      'quantificationCalibrationModelsTable',
     ],
     capabilities: [
       'feature-inspector',
       'eic-viewer',
+      'tic-viewer',
       'suspect-targets-viewer',
       'suspects-explorer',
       'find-features-debug-viewer',
@@ -61,6 +65,12 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
       label: 'EIC viewer',
       accepts: ['eicTable'],
       component: EicTableViewer,
+    });
+    api.registerViewer({
+      id: 'mass-spec.tic-viewer',
+      label: 'TIC viewer',
+      accepts: ['ticTable'],
+      component: TicTableViewer,
     });
     api.registerViewer({
       id: 'mass-spec.chromatogram-peaks-viewer',
@@ -89,10 +99,7 @@ export const massSpecFrontendPlugin: FrontendPlugin = {
     api.registerViewer({
       id: 'mass-spec.quantification-viewer',
       label: 'Quantification curves and results',
-      accepts: [
-        'quantificationTable',
-        'quantificationCalibrationModelsTable',
-      ],
+      accepts: ['quantificationTable', 'quantificationCalibrationModelsTable'],
       component: QuantifySamplesViewer,
     });
   },

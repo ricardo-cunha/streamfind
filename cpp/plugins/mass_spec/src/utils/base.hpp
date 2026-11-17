@@ -27,13 +27,14 @@ struct TargetRange
     double rt_max = 0.0;
 };
 
-nlohmann::json summarize_eic(const nlohmann::json &);
-nlohmann::json merge_ms_rows(const nlohmann::json &, double, double);
 std::vector<TargetRange> normalize_targets(sdk::PluginProjectAccess &, const nlohmann::json &);
 bool target_matches(const TargetRange &, const std::string &, int, int, float, float);
 bool target_may_match_spectrum(const TargetRange &, const std::string &, int, int, float, float, float);
 nlohmann::json filter_target_rows(sdk::PluginProjectAccess &, const nlohmann::json &, const nlohmann::json &, const char *, const char *, const char *, const char *);
 const std::string &input_table(const nlohmann::json &, const char *);
 
-nlohmann::json input_rows(sdk::PluginProjectAccess &, const nlohmann::json &, const char *, const std::vector<std::string> &, const char * = nullptr);
+// Materialize only small control/configuration tables (analysis/header setup,
+// quantification method and assignment metadata). Result-table processing
+// must use read_typed_batches directly and must not pass through JSON rows.
+nlohmann::json read_control_rows(sdk::PluginProjectAccess &, const nlohmann::json &, const char *, const std::vector<std::string> &, const char * = nullptr);
 }

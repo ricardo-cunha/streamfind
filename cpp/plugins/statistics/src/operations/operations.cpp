@@ -2,6 +2,7 @@
 
 #include "statistics.hpp"
 #include "streamfind/sdk/plugin_project_access.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -78,19 +79,6 @@ std::vector<std::string> string_array(const Json &parameters, const char *name,
     return values;
 }
 
-std::string scalar_text(const Json &value, const std::string &column,
-                        std::size_t source_row) {
-    if (value.is_null())
-        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + column + " is missing");
-    if (value.is_string()) {
-        const auto text = value.get<std::string>();
-        if (text.empty()) throw std::invalid_argument("row " + std::to_string(source_row) + " column " + column + " is empty");
-        return text;
-    }
-    if (value.is_number()) return value.dump();
-    throw std::invalid_argument("row " + std::to_string(source_row) + " column " + column + " must be a string or number");
-}
-
 double numeric_value(const Json &value, const std::string &column,
                      std::size_t source_row) {
     double number = 0.0;
@@ -108,6 +96,57 @@ double numeric_value(const Json &value, const std::string &column,
     }
     if (!std::isfinite(number))
         throw std::invalid_argument("row " + std::to_string(source_row) + " column " + column + " must be finite");
+    return number;
+}
+
+std::string batch_scalar_text(const sdk::PluginProjectAccess::BatchView &batch,
+                              std::uint32_t column, std::uint64_t row,
+                              const std::string &name, std::size_t source_row) {
+    if (batch.is_null(column, row))
+        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + name + " is missing");
+    switch (batch.type(column)) {
+    case STREAMFIND_PLUGIN_COLUMN_UTF8:
+    case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
+    case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
+        return std::string(batch.text(column, row));
+    case STREAMFIND_PLUGIN_COLUMN_INT64:
+        return std::to_string(batch.integer(column, row));
+    case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+        return std::to_string(batch.real(column, row));
+    default:
+        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + name +
+                                    " must be a string or number");
+    }
+}
+
+double batch_numeric_value(const sdk::PluginProjectAccess::BatchView &batch,
+                           std::uint32_t column, std::uint64_t row,
+                           const std::string &name, std::size_t source_row) {
+    if (batch.is_null(column, row))
+        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + name + " is not numeric");
+    double number = 0.0;
+    switch (batch.type(column)) {
+    case STREAMFIND_PLUGIN_COLUMN_INT64:
+        number = static_cast<double>(batch.integer(column, row));
+        break;
+    case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
+        number = batch.real(column, row);
+        break;
+    case STREAMFIND_PLUGIN_COLUMN_UTF8:
+    case STREAMFIND_PLUGIN_COLUMN_DECIMAL: {
+        const auto value = std::string(batch.text(column, row));
+        char *end = nullptr;
+        errno = 0;
+        number = std::strtod(value.c_str(), &end);
+        if (errno == ERANGE || end == value.c_str() || end == nullptr || *end != '\0')
+            throw std::invalid_argument("row " + std::to_string(source_row) + " column " + name + " is not numeric");
+        break;
+    }
+    default:
+        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + name + " is not numeric");
+    }
+    if (!std::isfinite(number))
+        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + name + " must be finite");
     return number;
 }
 
@@ -169,14 +208,24 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     std::unordered_map<std::string, std::size_t> sample_indices;
     std::unordered_map<std::string, std::size_t> variable_indices;
     std::size_t source_row = 0;
-    access.read_batches(physical_table, columns, sample_column, [&](const Json &batch) {
-        if (!batch.is_array()) throw std::runtime_error("table reader returned a malformed batch");
-        for (const auto &row : batch) {
+    access.read_typed_batches(physical_table, columns, sample_column, [&](const auto &batch) {
+        const auto sample_column_index = batch.column_index(sample_column);
+        const auto variable_column_index = layout == "long" ? batch.column_index(variable_column) : 0;
+        const auto value_column_index = layout == "long" ? batch.column_index(value_column) : 0;
+        const auto group_column_index = group_column.empty() ? 0 : batch.column_index(group_column);
+        std::vector<std::uint32_t> response_column_indices;
+        response_column_indices.reserve(responses.size());
+        for (const auto &response : responses)
+            response_column_indices.push_back(batch.column_index(response));
+        std::vector<std::uint32_t> wide_column_indices;
+        wide_column_indices.reserve(wide_variables.size());
+        for (const auto &name : wide_variables)
+            wide_column_indices.push_back(batch.column_index(name));
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
             ++source_row;
-            if (!row.is_object())
-                throw std::invalid_argument("row " + std::to_string(source_row) + " is not an object");
             if (access.is_cancelled()) throw std::runtime_error("statistics operation cancelled");
-            const auto sample_id = scalar_text(row.value(sample_column, Json(nullptr)), sample_column, source_row);
+            const auto sample_id = batch_scalar_text(batch, sample_column_index, row, sample_column, source_row);
+            if (sample_id.empty()) throw std::invalid_argument("row " + std::to_string(source_row) + " column " + sample_column + " is empty");
             std::size_t sample_index = 0;
             const auto sample_found = sample_indices.find(sample_id);
             if (sample_found == sample_indices.end()) {
@@ -196,21 +245,23 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
                     throw std::invalid_argument("row " + std::to_string(source_row) + " duplicates sample ID " + sample_id + " in wide layout");
             }
             if (!group_column.empty()) {
-                const auto &group_value = row.value(group_column, Json(nullptr));
                 // Long tables may repeat sample-level metadata only on some
                 // rows. Missing group cells are therefore ignored; a group is
                 // still required once all rows for the sample have been read.
-                if (!group_value.is_null() && !(group_value.is_string() && group_value.get<std::string>().empty())) {
-                    const auto group = scalar_text(group_value, group_column, source_row);
-                    if (dataset.has_group[sample_index] && dataset.groups[sample_index] != group)
-                        throw std::invalid_argument("row " + std::to_string(source_row) + " column " + group_column +
-                                                    " changes within sample " + sample_id);
-                    dataset.groups[sample_index] = group;
-                    dataset.has_group[sample_index] = true;
+                if (!batch.is_null(group_column_index, row)) {
+                    const auto group = batch_scalar_text(batch, group_column_index, row, group_column, source_row);
+                    if (!group.empty()) {
+                        if (dataset.has_group[sample_index] && dataset.groups[sample_index] != group)
+                            throw std::invalid_argument("row " + std::to_string(source_row) + " column " + group_column +
+                                                        " changes within sample " + sample_id);
+                        dataset.groups[sample_index] = group;
+                        dataset.has_group[sample_index] = true;
+                    }
                 }
             }
             for (std::size_t response_index = 0; response_index < responses.size(); ++response_index) {
-                const auto response = numeric_value(row.value(responses[response_index], Json(nullptr)), responses[response_index], source_row);
+                const auto response = batch_numeric_value(batch, response_column_indices[response_index], row,
+                                                          responses[response_index], source_row);
                 if (response_seen[sample_index][response_index] &&
                     dataset.response_values[sample_index][response_index] != response)
                     throw std::invalid_argument("row " + std::to_string(source_row) + " response column " + responses[response_index] +
@@ -219,20 +270,21 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
                 response_seen[sample_index][response_index] = true;
             }
             if (layout == "wide") {
-                for (const auto &name : wide_variables) {
+                for (std::size_t variable_index = 0; variable_index < wide_variables.size(); ++variable_index) {
+                    const auto &name = wide_variables[variable_index];
                     const auto variable = variable_indices.emplace(name, dataset.variable_ids.size());
                     if (variable.second) dataset.variable_ids.push_back(name);
-                    const auto raw = row.value(name, Json(nullptr));
-                    if (!raw.is_null())
-                        row_values[sample_index][variable.first->second] = numeric_value(raw, name, source_row);
+                    if (!batch.is_null(wide_column_indices[variable_index], row))
+                        row_values[sample_index][variable.first->second] = batch_numeric_value(
+                            batch, wide_column_indices[variable_index], row, name, source_row);
                 }
             } else {
-                const auto variable_id = scalar_text(row.value(variable_column, Json(nullptr)), variable_column, source_row);
+                const auto variable_id = batch_scalar_text(batch, variable_column_index, row, variable_column, source_row);
+                if (variable_id.empty()) throw std::invalid_argument("row " + std::to_string(source_row) + " column " + variable_column + " is empty");
                 const auto variable = variable_indices.emplace(variable_id, dataset.variable_ids.size());
                 if (variable.second) dataset.variable_ids.push_back(variable_id);
-                const auto raw = row.value(value_column, Json(nullptr));
-                if (raw.is_null()) continue;
-                const auto value = numeric_value(raw, value_column, source_row);
+                if (batch.is_null(value_column_index, row)) continue;
+                const auto value = batch_numeric_value(batch, value_column_index, row, value_column, source_row);
                 const auto variable_index = variable.first->second;
                 const auto existing = row_values[sample_index].find(variable_index);
                 if (existing != row_values[sample_index].end()) {
@@ -298,16 +350,11 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     return dataset;
 }
 
-void emit_rows(sdk::PluginProjectAccess &access, const std::string &contract,
-               const std::vector<std::string> &columns,
-               const std::vector<std::string> &types, const Json &rows) {
-    constexpr std::size_t batch_size = 2048;
-    for (std::size_t begin = 0; begin < rows.size(); begin += batch_size) {
-        Json batch = Json::array();
-        const auto end = std::min(rows.size(), begin + batch_size);
-        for (std::size_t row = begin; row < end; ++row) batch.push_back(rows[row]);
-        access.emit_table_rows(contract, columns, types, batch);
-    }
+void flush_batch(sdk::PluginProjectAccess &access, sdk::TableBatchBuilder &batch,
+                 const char *contract) {
+    if (batch.row_count() == 0) return;
+    batch.emit(access, contract);
+    batch.clear();
 }
 
 std::size_t validate_components(const Json &parameters, std::size_t samples,
@@ -325,28 +372,35 @@ Json run_pca(sdk::PluginProjectAccess &access, const Json &parameters) {
     const auto preprocessing = string_parameter(parameters, "preprocessing", "center");
     const auto components = validate_components(parameters, dataset.sample_ids.size(), dataset.variable_ids.size());
     const auto result = compute_pca(dataset.values, preprocessing, components);
-    Json score_rows = Json::array();
+    sdk::TableBatchBuilder score_rows({{"sample_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"component", STREAMFIND_PLUGIN_COLUMN_INT64}, {"score", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"group_label", STREAMFIND_PLUGIN_COLUMN_UTF8}});
     for (std::size_t sample = 0; sample < dataset.sample_ids.size(); ++sample)
-        for (std::size_t component = 0; component < components; ++component)
-            score_rows.push_back({{"sample_id", dataset.sample_ids[sample]}, {"component", component + 1},
-                                  {"score", result.scores[sample][component]},
-                                  {"group_label", dataset.has_group[sample] ? Json(dataset.groups[sample]) : Json(nullptr)}});
-    Json loading_rows = Json::array();
+        for (std::size_t component = 0; component < components; ++component) {
+            score_rows.append_row({dataset.sample_ids[sample], static_cast<std::int64_t>(component + 1),
+                result.scores[sample][component], dataset.has_group[sample]
+                    ? sdk::TableBatchBuilder::Cell(dataset.groups[sample])
+                    : sdk::TableBatchBuilder::Cell(std::monostate{})});
+            if (score_rows.row_count() == 2048) flush_batch(access, score_rows, "pcaScoresTable");
+        }
+    flush_batch(access, score_rows, "pcaScoresTable");
+    sdk::TableBatchBuilder loading_rows({{"variable_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"component", STREAMFIND_PLUGIN_COLUMN_INT64}, {"loading", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
     for (std::size_t variable = 0; variable < dataset.variable_ids.size(); ++variable)
-        for (std::size_t component = 0; component < components; ++component)
-            loading_rows.push_back({{"variable_id", dataset.variable_ids[variable]}, {"component", component + 1},
-                                   {"loading", result.loadings[variable][component]}});
-    Json variance_rows = Json::array();
+        for (std::size_t component = 0; component < components; ++component) {
+            loading_rows.append_row({dataset.variable_ids[variable], static_cast<std::int64_t>(component + 1),
+                                     result.loadings[variable][component]});
+            if (loading_rows.row_count() == 2048) flush_batch(access, loading_rows, "pcaLoadingsTable");
+        }
+    flush_batch(access, loading_rows, "pcaLoadingsTable");
+    sdk::TableBatchBuilder variance_rows({{"component", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"eigenvalue", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"explained_variance_ratio", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"cumulative_explained_variance", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
     for (std::size_t component = 0; component < components; ++component)
-        variance_rows.push_back({{"component", component + 1}, {"eigenvalue", result.eigenvalues[component]},
-                                 {"explained_variance_ratio", result.explained_variance[component]},
-                                 {"cumulative_explained_variance", result.cumulative_variance[component]}});
-    emit_rows(access, "pcaScoresTable", {"sample_id", "component", "score", "group_label"},
-              {"string", "integer", "real", "string"}, score_rows);
-    emit_rows(access, "pcaLoadingsTable", {"variable_id", "component", "loading"},
-              {"string", "integer", "real"}, loading_rows);
-    emit_rows(access, "pcaVarianceTable", {"component", "eigenvalue", "explained_variance_ratio", "cumulative_explained_variance"},
-              {"integer", "real", "real", "real"}, variance_rows);
+        variance_rows.append_row({static_cast<std::int64_t>(component + 1), result.eigenvalues[component],
+            result.explained_variance[component], result.cumulative_variance[component]});
+    flush_batch(access, variance_rows, "pcaVarianceTable");
     const Json diagnostics{{"method", "symmetric_covariance_eigendecomposition"},
                           {"samples", dataset.sample_ids.size()}, {"variables", dataset.variable_ids.size()},
                           {"components", components}, {"preprocessing", preprocessing},
@@ -394,55 +448,66 @@ Json run_pls(sdk::PluginProjectAccess &access, const Json &parameters) {
     }
     const auto result = compute_pls(dataset.values, responses, preprocessing, components);
     const auto computed = result.x_scores.front().size();
-    Json score_rows = Json::array();
+    sdk::TableBatchBuilder score_rows({{"sample_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"component", STREAMFIND_PLUGIN_COLUMN_INT64}, {"x_score", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"y_score", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"group_label", STREAMFIND_PLUGIN_COLUMN_UTF8}});
     for (std::size_t sample = 0; sample < dataset.sample_ids.size(); ++sample)
-        for (std::size_t component = 0; component < computed; ++component)
-            score_rows.push_back({{"sample_id", dataset.sample_ids[sample]}, {"component", component + 1},
-                                  {"x_score", result.x_scores[sample][component]},
-                                  {"y_score", result.y_scores[sample][component]},
-                                  {"group_label", dataset.has_group[sample] ? Json(dataset.groups[sample]) : Json(nullptr)}});
-    Json loading_rows = Json::array();
+        for (std::size_t component = 0; component < computed; ++component) {
+            score_rows.append_row({dataset.sample_ids[sample], static_cast<std::int64_t>(component + 1),
+                result.x_scores[sample][component], result.y_scores[sample][component],
+                dataset.has_group[sample] ? sdk::TableBatchBuilder::Cell(dataset.groups[sample])
+                    : sdk::TableBatchBuilder::Cell(std::monostate{})});
+            if (score_rows.row_count() == 2048) flush_batch(access, score_rows, "plsScoresTable");
+        }
+    flush_batch(access, score_rows, "plsScoresTable");
+    sdk::TableBatchBuilder loading_rows({{"block", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"item_id", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"component", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"loading", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
     for (std::size_t variable = 0; variable < dataset.variable_ids.size(); ++variable)
-        for (std::size_t component = 0; component < computed; ++component)
-            loading_rows.push_back({{"block", "x"}, {"item_id", dataset.variable_ids[variable]},
-                                   {"component", component + 1}, {"loading", result.x_loadings[variable][component]}});
+        for (std::size_t component = 0; component < computed; ++component) {
+            loading_rows.append_row({std::string("x"), dataset.variable_ids[variable],
+                static_cast<std::int64_t>(component + 1), result.x_loadings[variable][component]});
+            if (loading_rows.row_count() == 2048) flush_batch(access, loading_rows, "plsLoadingsTable");
+        }
     for (std::size_t response = 0; response < response_ids.size(); ++response)
-        for (std::size_t component = 0; component < computed; ++component)
-            loading_rows.push_back({{"block", "y"}, {"item_id", response_ids[response]},
-                                   {"component", component + 1}, {"loading", result.y_loadings[response][component]}});
-    Json coefficient_rows = Json::array();
+        for (std::size_t component = 0; component < computed; ++component) {
+            loading_rows.append_row({std::string("y"), response_ids[response],
+                static_cast<std::int64_t>(component + 1), result.y_loadings[response][component]});
+            if (loading_rows.row_count() == 2048) flush_batch(access, loading_rows, "plsLoadingsTable");
+        }
+    flush_batch(access, loading_rows, "plsLoadingsTable");
+    sdk::TableBatchBuilder coefficient_rows({{"predictor_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"response_id", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"coefficient", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"intercept", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
     for (std::size_t variable = 0; variable < dataset.variable_ids.size(); ++variable)
-        for (std::size_t response = 0; response < response_ids.size(); ++response)
-            coefficient_rows.push_back({{"predictor_id", dataset.variable_ids[variable]},
-                                        {"response_id", response_ids[response]},
-                                        {"coefficient", result.coefficients[variable][response]},
-                                        {"intercept", result.intercept[response]}});
-    Json prediction_rows = Json::array();
+        for (std::size_t response = 0; response < response_ids.size(); ++response) {
+            coefficient_rows.append_row({dataset.variable_ids[variable], response_ids[response],
+                result.coefficients[variable][response], result.intercept[response]});
+            if (coefficient_rows.row_count() == 2048) flush_batch(access, coefficient_rows, "plsCoefficientsTable");
+        }
+    flush_batch(access, coefficient_rows, "plsCoefficientsTable");
+    sdk::TableBatchBuilder prediction_rows({{"sample_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"response_id", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"observed_value", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"predicted_value", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"observed_label", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"predicted_label", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"confidence", STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
     if (response_mode == "regression") {
         for (std::size_t sample = 0; sample < dataset.sample_ids.size(); ++sample)
-            for (std::size_t response = 0; response < response_ids.size(); ++response)
-                prediction_rows.push_back({{"sample_id", dataset.sample_ids[sample]}, {"response_id", response_ids[response]},
-                                           {"observed_value", dataset.response_values[sample][response]},
-                                           {"predicted_value", result.predictions[sample][response]},
-                                           {"observed_label", nullptr}, {"predicted_label", nullptr}, {"confidence", nullptr}});
+            for (std::size_t response = 0; response < response_ids.size(); ++response) {
+                prediction_rows.append_row({dataset.sample_ids[sample], response_ids[response],
+                    dataset.response_values[sample][response], result.predictions[sample][response],
+                    std::monostate{}, std::monostate{}, std::monostate{}});
+                if (prediction_rows.row_count() == 2048) flush_batch(access, prediction_rows, "plsPredictionsTable");
+            }
     } else {
         for (std::size_t sample = 0; sample < dataset.sample_ids.size(); ++sample) {
             auto predicted = std::max_element(result.predictions[sample].begin(), result.predictions[sample].end());
             const auto class_index = static_cast<std::size_t>(predicted - result.predictions[sample].begin());
-            prediction_rows.push_back({{"sample_id", dataset.sample_ids[sample]}, {"response_id", group_column},
-                                       {"observed_value", nullptr}, {"predicted_value", nullptr},
-                                       {"observed_label", dataset.groups[sample]}, {"predicted_label", classes[class_index]},
-                                       {"confidence", *predicted}});
+            prediction_rows.append_row({dataset.sample_ids[sample], group_column,
+                std::monostate{}, std::monostate{}, dataset.groups[sample], classes[class_index], *predicted});
+            if (prediction_rows.row_count() == 2048) flush_batch(access, prediction_rows, "plsPredictionsTable");
         }
     }
-    emit_rows(access, "plsScoresTable", {"sample_id", "component", "x_score", "y_score", "group_label"},
-              {"string", "integer", "real", "real", "string"}, score_rows);
-    emit_rows(access, "plsLoadingsTable", {"block", "item_id", "component", "loading"},
-              {"string", "string", "integer", "real"}, loading_rows);
-    emit_rows(access, "plsCoefficientsTable", {"predictor_id", "response_id", "coefficient", "intercept"},
-              {"string", "string", "real", "real"}, coefficient_rows);
-    emit_rows(access, "plsPredictionsTable", {"sample_id", "response_id", "observed_value", "predicted_value", "observed_label", "predicted_label", "confidence"},
-              {"string", "string", "real", "real", "string", "string", "real"}, prediction_rows);
+    flush_batch(access, prediction_rows, "plsPredictionsTable");
     const Json diagnostics{{"method", "nipals_pls2"}, {"response_mode", response_mode},
                           {"samples", dataset.sample_ids.size()}, {"predictors", dataset.variable_ids.size()},
                           {"responses", response_ids.size()}, {"components", computed},
@@ -467,21 +532,24 @@ Json run_fold_change(sdk::PluginProjectAccess &access, const Json &parameters) {
         for (const auto value : row)
             if (value < 0.0) throw std::invalid_argument("fold change accepts only non-negative values");
     const auto stats = compute_fold_change(dataset.values, dataset.groups, group_a, group_b, pseudocount);
-    Json rows = Json::array();
+    sdk::TableBatchBuilder rows({{"variable_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"mean_group_a", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"mean_group_b", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"log2_fold_change", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"effect_size", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"p_value", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"adjusted_p_value", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"significant", STREAMFIND_PLUGIN_COLUMN_BOOL}});
     std::size_t significant = 0;
     for (std::size_t variable = 0; variable < dataset.variable_ids.size(); ++variable) {
         const auto &feature = stats[variable];
         const auto log2fc = std::log2((feature.mean_b + pseudocount) / (feature.mean_a + pseudocount));
         const bool is_significant = feature.adjusted_p_value < 0.05;
         if (is_significant) ++significant;
-        rows.push_back({{"variable_id", dataset.variable_ids[variable]}, {"mean_group_a", feature.mean_a},
-                        {"mean_group_b", feature.mean_b}, {"log2_fold_change", log2fc},
-                        {"effect_size", feature.effect_size_defined ? Json(feature.effect_size) : Json(nullptr)},
-                        {"p_value", feature.p_value}, {"adjusted_p_value", feature.adjusted_p_value},
-                        {"significant", is_significant}});
+        rows.append_row({dataset.variable_ids[variable], feature.mean_a, feature.mean_b, log2fc,
+            feature.effect_size_defined ? sdk::TableBatchBuilder::Cell(feature.effect_size)
+                : sdk::TableBatchBuilder::Cell(std::monostate{}), feature.p_value,
+            feature.adjusted_p_value, is_significant});
+        if (rows.row_count() == 2048) flush_batch(access, rows, "foldChangeTable");
     }
-    emit_rows(access, "foldChangeTable", {"variable_id", "mean_group_a", "mean_group_b", "log2_fold_change", "effect_size", "p_value", "adjusted_p_value", "significant"},
-              {"string", "real", "real", "real", "real", "real", "real", "boolean"}, rows);
+    flush_batch(access, rows, "foldChangeTable");
     const auto count_a = std::count(dataset.groups.begin(), dataset.groups.end(), group_a);
     const auto count_b = std::count(dataset.groups.begin(), dataset.groups.end(), group_b);
     const Json summary{{"method", "welch_t_test_benjamini_hochberg"}, {"group_a", group_a}, {"group_b", group_b},

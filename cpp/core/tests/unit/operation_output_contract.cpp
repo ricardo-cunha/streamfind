@@ -25,12 +25,6 @@ public:
         ++batches;
     }
 
-    void write_rows(const std::string &output_handle, std::uint64_t sequence,
-                    const streamfind::Json &rows) override {
-        const auto bytes = streamfind::data_proxy::arrow_ipc_encode_rows(rows);
-        write(output_handle, sequence, bytes);
-    }
-
     streamfind::Json finish(const std::string &output_handle,
                             const streamfind::Json &metadata) override {
         require(output_handle == "output-1", "finish used the wrong output handle");

@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ResultRecord } from '../../framework/backend/StreamFindApiClient';
-import {
-  artifactContractMatches,
-  artifactSummary,
-  isVisualizationArtifact,
-  prettyArtifactPayload,
-} from './artifactDisplay';
+import { artifactContractMatches, artifactSummary, prettyArtifactPayload } from './artifactDisplay';
 
 const artifact: ResultRecord = {
   result_id: 'artifact-1',
@@ -29,19 +24,8 @@ describe('artifact display model', () => {
     expect(prettyArtifactPayload('raw text')).toBe('raw text');
   });
 
-  it('matches qualified artifact contracts and identifies visualizations', () => {
+  it('matches qualified artifact contracts', () => {
     expect(artifactContractMatches('sf:table', 'table')).toBe(true);
-    expect(isVisualizationArtifact({ ...artifact, contract_id: 'sf:visualizationSpecResult' })).toBe(true);
-  });
-
-  it('summarizes visualization artifacts without exposing the full plot payload', () => {
-    const visualization: ResultRecord = {
-      ...artifact,
-      contract_id: 'sf:visualizationSpecResult',
-      representation: 'json',
-      payload: JSON.stringify({ payload: { data: [{ name: 'sample-a', x: [1, 2, 3], y: [4, 5, 6] }] } }),
-    };
-    expect(artifactSummary(visualization)).toBe('JSON\n1 legend traces · 3 total points · trace length 3');
   });
 
   it('summarizes JSON artifacts without exposing their raw payload', () => {

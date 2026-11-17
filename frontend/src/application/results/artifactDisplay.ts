@@ -10,32 +10,6 @@ export function artifactSummary(artifact: ResultRecord): string {
       .join(', ');
     return `${artifact.physical_table || 'Result table'}\n${columns.length} columns · ${artifact.row_count ?? 0} rows\n${names}${columns.length > 6 ? ', …' : ''}`;
   }
-  if (isVisualizationArtifact(artifact)) {
-    let visualization: unknown = artifact.payload;
-    if (typeof visualization === 'string') {
-      try {
-        visualization = JSON.parse(visualization);
-      } catch {
-        return 'JSON\nVisualization specification';
-      }
-    }
-    const traces =
-      visualization && typeof visualization === 'object' && !Array.isArray(visualization)
-        ? (visualization as { payload?: { data?: unknown } }).payload?.data
-        : undefined;
-    const lengths = Array.isArray(traces)
-      ? traces.map((trace) => {
-          if (!trace || typeof trace !== 'object' || Array.isArray(trace)) return 0;
-          const candidate = trace as { x?: unknown; y?: unknown };
-          return Array.isArray(candidate.x) ? candidate.x.length : Array.isArray(candidate.y) ? candidate.y.length : 0;
-        })
-      : [];
-    const totalPoints = lengths.reduce((total, length) => total + length, 0);
-    const minimum = lengths.length ? Math.min(...lengths) : 0;
-    const maximum = lengths.length ? Math.max(...lengths) : 0;
-    const traceLength = minimum === maximum ? `${minimum}` : `${minimum}–${maximum}`;
-    return `JSON\n${lengths.length} legend traces · ${totalPoints} total points · trace length ${traceLength}`;
-  }
   return `JSON\n${summarizeJsonPayload(artifact.payload)}`;
 }
 
@@ -84,11 +58,6 @@ export function artifactContractMatches(artifactContract: string, portContract?:
   if (artifactContract === portContract) return true;
   const local = (value: string) => value.split('#').at(-1)?.split(':').at(-1) ?? value;
   return local(artifactContract) === local(portContract);
-}
-
-export function isVisualizationArtifact(artifact: ResultRecord): boolean {
-  const contract = artifact.contract_id.split('#').at(-1)?.split(':').at(-1) ?? artifact.contract_id;
-  return contract === 'visualizationSpecResult';
 }
 
 export function isJsonArtifact(artifact: ResultRecord): boolean {

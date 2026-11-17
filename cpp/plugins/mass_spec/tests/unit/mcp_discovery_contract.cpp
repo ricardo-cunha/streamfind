@@ -242,7 +242,9 @@ int main() {
         std::filesystem::remove(metadata_path);
         std::filesystem::remove_all(metadata_data_path);
         const auto created = call(session, 6, "create", {{"database_path", metadata_path.string()}});
-        require(!created.at("result").value("isError", false), "MCP create rejected metadata-optional workflow creation");
+        require(!created.at("result").value("isError", false),
+                (std::string("MCP create rejected metadata-optional workflow creation: ") +
+                 created.dump()).c_str());
         const auto created_workflow = text_json(call(session, 61, "get_workflow", {{"database_path", metadata_path.string()}}));
         require(created_workflow.at("metadata") ==
                              streamfind::Json({{"name", "Untitled workflow"},

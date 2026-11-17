@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <limits>
+#include <map>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -19,6 +20,7 @@
 #include <system_error>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <deque>
 #include <arrow/buffer.h>
@@ -105,9 +107,9 @@ Json arrow_record_batch_rows(const std::shared_ptr<arrow::RecordBatch> &batch,
         case arrow::Type::DOUBLE:
             return std::static_pointer_cast<arrow::DoubleArray>(array)->Value(row);
         case arrow::Type::STRING:
-            return Json::parse(std::static_pointer_cast<arrow::StringArray>(array)->GetView(row));
+            return std::static_pointer_cast<arrow::StringArray>(array)->GetString(row);
         case arrow::Type::LARGE_STRING:
-            return Json::parse(std::static_pointer_cast<arrow::LargeStringArray>(array)->GetView(row));
+            return std::static_pointer_cast<arrow::LargeStringArray>(array)->GetString(row);
         case arrow::Type::LIST: {
             const auto list = std::static_pointer_cast<arrow::ListArray>(array);
             const auto begin = list->value_offset(row);
@@ -692,76 +694,6 @@ Json ResultStore::describe_result(const std::string &result_id) const {
     return descriptor;
 }
 
-Json ResultStore::read_navigation_index(const std::string &result_id) const {
-    require_component(result_id, "result_id");
-    constexpr std::uintmax_t max_index_bytes = 32 * 1024 * 1024;
-    Json manifest;
-    try {
-        manifest = detail::validated_manifest(root_, result_id);
-    } catch (...) {
-        return nullptr;
-    }
-    const auto path = root_ / "results" / result_id / "navigation.json";
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(path, error) || error) return nullptr;
-    std::uintmax_t size = 0;
-    try {
-        size = detail::payload_size(path);
-    } catch (...) {
-        return nullptr;
-    }
-    if (size > max_index_bytes) return nullptr;
-    try {
-        auto index = read_json_file(path);
-        if (!index.is_object() || index.value("result_id", std::string{}) != result_id ||
-            index.value("payload_digest", std::string{}) != manifest.value("payload_digest", std::string{}) ||
-            !index.value("postings", Json{}).is_object()) return nullptr;
-        const auto declared = manifest.value("navigation_columns", Json::array());
-        const auto indexed = index.value("navigation_columns", Json::array());
-        if (!declared.is_array() || !indexed.is_array() || declared != indexed) return nullptr;
-        return index.at("postings");
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-void ResultStore::write_navigation_index(const std::string &result_id, const Json &index) const {
-    require_component(result_id, "result_id");
-    constexpr std::size_t max_index_bytes = 32 * 1024 * 1024;
-    if (!index.is_object()) throw std::invalid_argument("navigation index must be an object");
-    const auto manifest = detail::validated_manifest(root_, result_id);
-    const auto navigation_columns = manifest.value("navigation_columns", Json::array());
-    if (!navigation_columns.is_array() || navigation_columns.empty()) return;
-    for (const auto &[column, postings] : index.items()) {
-        if (std::none_of(navigation_columns.begin(), navigation_columns.end(), [&](const Json &name) {
-                return name.is_string() && name.get<std::string>() == column;
-            }) || !postings.is_object())
-            throw std::invalid_argument("navigation index contains an undeclared column or invalid postings");
-    }
-    Json payload{{"result_id", result_id},
-                 {"payload_digest", manifest.value("payload_digest", std::string{})},
-                 {"navigation_columns", navigation_columns},
-                 {"postings", index}};
-    const auto serialized = payload.dump();
-    if (serialized.size() > max_index_bytes) return;
-    const auto directory = root_ / "results" / result_id;
-    std::error_code error;
-    if (!std::filesystem::is_directory(directory, error) || error)
-        throw std::runtime_error("cannot locate published result directory for navigation index");
-    const auto path = directory / "navigation.json";
-    if (std::filesystem::exists(path, error)) return;
-    if (error) throw std::runtime_error("cannot inspect result navigation index: " + error.message());
-    const auto temporary = directory / ("navigation." + create_store_id() + ".tmp");
-    write_json_file(temporary, payload);
-    std::filesystem::rename(temporary, path, error);
-    if (error) {
-        std::error_code cleanup_error;
-        std::filesystem::remove(temporary, cleanup_error);
-        if (!std::filesystem::exists(path))
-            throw std::runtime_error("cannot publish result navigation index: " + error.message());
-    }
-}
-
 Json ResultStore::read_range_statistics(const std::string &result_id, const std::string &column) const {
     require_component(result_id, "result_id");
     Json manifest;
@@ -978,11 +910,75 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
                 {"has_more", offset + rows.size() < manifest.value("row_count", std::uint64_t{0})}};
 }
 
+Json ResultStore::distinct_arrow_values(const std::string &result_id,
+                                        const std::vector<std::string> &columns) const {
+    if (columns.empty()) throw std::invalid_argument("distinct Arrow scan requires columns");
+    const auto manifest = detail::validated_manifest(root_, result_id);
+    if (manifest.value("format", std::string{}) != "arrow-ipc-file")
+        throw std::invalid_argument("distinct Arrow scan requires an Arrow IPC table result");
+    const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
+    if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
+    const auto file = *file_result;
+    auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
+    if (!reader_result.ok()) throw std::runtime_error(reader_result.status().ToString());
+    auto reader = *reader_result;
+    auto options = arrow::ipc::IpcReadOptions::Defaults();
+    for (const auto &name : columns) {
+        const auto index = reader->schema()->GetFieldIndex(name);
+        if (index < 0) throw std::invalid_argument("distinct Arrow column not found: " + name);
+        if (std::find(options.included_fields.begin(), options.included_fields.end(), index) ==
+            options.included_fields.end()) options.included_fields.push_back(index);
+    }
+    auto projected_result = arrow::ipc::RecordBatchFileReader::Open(file, options);
+    if (!projected_result.ok()) throw std::runtime_error(projected_result.status().ToString());
+    reader = *projected_result;
+
+    std::unordered_map<std::string, std::unordered_set<std::string>> seen;
+    std::unordered_map<std::string, std::map<std::string, Json>> distinct;
+    for (const auto &name : columns) {
+        seen.try_emplace(name);
+        distinct.try_emplace(name);
+    }
+    for (int batch_index = 0; batch_index < reader->num_record_batches(); ++batch_index) {
+        auto batch_result = reader->ReadRecordBatch(batch_index);
+        if (!batch_result.ok()) throw std::runtime_error(batch_result.status().ToString());
+        const auto batch = *batch_result;
+        for (const auto &name : columns) {
+            const auto column_index = batch->schema()->GetFieldIndex(name);
+            if (column_index < 0) throw std::runtime_error("projected Arrow schema lost column: " + name);
+            const auto &array = batch->column(column_index);
+            auto &keys = seen.at(name);
+            for (std::int64_t row = 0; row < batch->num_rows(); ++row) {
+                if (array->IsNull(row)) continue;
+                auto scalar = array->GetScalar(row);
+                if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                const auto key = (*scalar)->ToString();
+                if (!keys.insert(key).second) continue;
+                const auto projected_row = detail::arrow_record_batch_rows(batch->Slice(row, 1), {name});
+                if (!projected_row.is_array() || projected_row.empty() || !projected_row.front().contains(name))
+                    throw std::runtime_error("could not materialize distinct Arrow scalar for column: " + name);
+                const auto value = projected_row.front().at(name);
+                distinct.at(name).emplace(value.dump(), value);
+            }
+        }
+    }
+    Json values = Json::object();
+    for (const auto &name : columns) {
+        auto &column_values = values[name] = Json::array();
+        for (const auto &[key, value] : distinct.at(name)) column_values.push_back(value);
+    }
+    return values;
+}
+
 Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
                                             const Json &filters,
                                             std::uintmax_t offset,
-                                            std::uintmax_t limit) const {
-    if (!filters.is_array() || filters.empty() || limit == 0) return nullptr;
+                                            std::uintmax_t limit,
+                                            const std::string &search,
+                                            const std::string &sort_column,
+                                            bool descending) const {
+    if (!filters.is_array() || (filters.empty() && search.empty() && sort_column.empty()) || limit == 0) return nullptr;
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("format", std::string{}) != "arrow-ipc-file") return nullptr;
     const auto batch_counts = manifest.value("batch_row_counts", Json::array());
@@ -1009,8 +1005,17 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
     auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
     if (!reader_result.ok()) throw std::runtime_error(reader_result.status().ToString());
     auto reader = *reader_result;
+    int sort_field_index = -1;
+    if (!sort_column.empty()) {
+        sort_field_index = reader->schema()->GetFieldIndex(sort_column);
+        if (sort_field_index < 0) throw std::invalid_argument("result sort column not found: " + sort_column);
+    }
     auto options = arrow::ipc::IpcReadOptions::Defaults();
     std::unordered_map<std::string, int> field_indexes;
+    if (!search.empty()) {
+        for (int index = 0; index < reader->schema()->num_fields(); ++index)
+            options.included_fields.push_back(index);
+    }
     for (const auto &name : filter_columns) {
         const auto index = reader->schema()->GetFieldIndex(name);
         if (index < 0) return nullptr;
@@ -1020,8 +1025,12 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
             type != arrow::Type::INT64 && type != arrow::Type::UINT8 && type != arrow::Type::UINT16 &&
             type != arrow::Type::UINT32 && type != arrow::Type::UINT64 &&
             type != arrow::Type::FLOAT && type != arrow::Type::DOUBLE) return nullptr;
-        options.included_fields.push_back(index);
+        if (std::find(options.included_fields.begin(), options.included_fields.end(), index) ==
+            options.included_fields.end()) options.included_fields.push_back(index);
     }
+    if (sort_field_index >= 0 &&
+        std::find(options.included_fields.begin(), options.included_fields.end(), sort_field_index) ==
+            options.included_fields.end()) options.included_fields.push_back(sort_field_index);
     auto projected_result = arrow::ipc::RecordBatchFileReader::Open(file, options);
     if (!projected_result.ok()) throw std::runtime_error(projected_result.status().ToString());
     reader = *projected_result;
@@ -1034,6 +1043,12 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
         const auto index = reader->schema()->GetFieldIndex(name);
         if (index < 0) return nullptr;
         field_indexes.emplace(name, index);
+    }
+    std::vector<int> search_field_indexes;
+    if (!search.empty()) {
+        search_field_indexes.reserve(static_cast<std::size_t>(reader->schema()->num_fields()));
+        for (int index = 0; index < reader->schema()->num_fields(); ++index)
+            search_field_indexes.push_back(index);
     }
     if (reader->num_record_batches() != static_cast<int>(batch_counts.size()))
         throw std::runtime_error("Arrow result footer does not match its row-batch directory");
@@ -1049,6 +1064,13 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
                type == arrow::Type::UINT32 || type == arrow::Type::UINT64 ||
                type == arrow::Type::FLOAT || type == arrow::Type::DOUBLE;
     };
+    if (sort_field_index >= 0) {
+        sort_field_index = reader->schema()->GetFieldIndex(sort_column);
+        if (sort_field_index < 0) throw std::runtime_error("projected Arrow schema lost sort column");
+        const auto type = reader->schema()->field(sort_field_index)->type()->id();
+        if (type != arrow::Type::STRING && type != arrow::Type::BOOL && !is_numeric(type))
+            throw std::invalid_argument("result sort column must be a scalar string, boolean, or number");
+    }
     const auto navigation_columns = manifest.value("navigation_columns", Json::array());
     std::unordered_map<std::string, Json> range_batches;
     std::unordered_map<std::string, bool> collect_ranges;
@@ -1124,7 +1146,8 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
         if (null_value) return false;
         const auto equals = [&](const Json &expected) {
             if (type == arrow::Type::STRING)
-                return std::static_pointer_cast<arrow::StringArray>(array)->GetView(row) == expected.dump();
+                return expected.is_string() &&
+                       std::static_pointer_cast<arrow::StringArray>(array)->GetView(row) == expected.get<std::string>();
             if (type == arrow::Type::BOOL)
                 return expected.is_boolean() && std::static_pointer_cast<arrow::BooleanArray>(array)->Value(row) == expected.get<bool>();
             return is_numeric(type) && expected.is_number() && numeric_value(array, row) == expected.get<long double>();
@@ -1157,6 +1180,11 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
     std::uintmax_t match_count = 0;
     std::uintmax_t batch_offset = 0;
     std::uintmax_t skipped_batches = 0;
+    struct SortKey {
+        std::uintmax_t row_offset;
+        std::shared_ptr<arrow::Scalar> value;
+    };
+    std::vector<SortKey> sorted_matches;
     const auto end = offset > std::numeric_limits<std::uintmax_t>::max() - limit
         ? std::numeric_limits<std::uintmax_t>::max() : offset + limit;
     for (int batch_index = 0; batch_index < reader->num_record_batches(); ++batch_index) {
@@ -1197,11 +1225,56 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
                 const auto column = field_indexes.at(filter.at("column").get<std::string>());
                 if (!scalar_matches(batch->column(column), row, filter)) { matches = false; break; }
             }
+            if (matches && !search.empty()) {
+                matches = false;
+                for (const auto column : search_field_indexes) {
+                    const auto array = batch->column(column);
+                    if (array->IsNull(row)) continue;
+                    const auto scalar = array->GetScalar(row);
+                    if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                    if ((*scalar)->ToString().find(search) != std::string::npos) {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
             if (!matches) continue;
-            if (match_count >= offset && match_count < end) selected_offsets.push_back(batch_offset + row);
+            if (sort_field_index >= 0) {
+                auto value = batch->column(sort_field_index)->GetScalar(row);
+                if (!value.ok()) throw std::runtime_error(value.status().ToString());
+                sorted_matches.push_back({batch_offset + static_cast<std::uint64_t>(row), *value});
+            } else if (match_count >= offset && match_count < end) {
+                selected_offsets.push_back(batch_offset + row);
+            }
             ++match_count;
         }
         batch_offset += static_cast<std::uint64_t>(batch->num_rows());
+    }
+    if (sort_field_index >= 0) {
+        const auto type = reader->schema()->field(sort_field_index)->type()->id();
+        const auto compare = [&](const SortKey &left, const SortKey &right) {
+            if (left.value->is_valid != right.value->is_valid) return left.value->is_valid;
+            if (!left.value->is_valid) return left.row_offset < right.row_offset;
+            int order = 0;
+            if (type == arrow::Type::STRING) {
+                const auto lhs = static_cast<const arrow::StringScalar &>(*left.value).view();
+                const auto rhs = static_cast<const arrow::StringScalar &>(*right.value).view();
+                order = lhs < rhs ? -1 : lhs > rhs ? 1 : 0;
+            } else if (type == arrow::Type::BOOL) {
+                const auto lhs = static_cast<const arrow::BooleanScalar &>(*left.value).value;
+                const auto rhs = static_cast<const arrow::BooleanScalar &>(*right.value).value;
+                order = lhs == rhs ? 0 : lhs ? 1 : -1;
+            } else {
+                const auto lhs = std::stold(left.value->ToString());
+                const auto rhs = std::stold(right.value->ToString());
+                order = lhs < rhs ? -1 : lhs > rhs ? 1 : 0;
+            }
+            if (order == 0) return left.row_offset < right.row_offset;
+            return descending ? order > 0 : order < 0;
+        };
+        std::stable_sort(sorted_matches.begin(), sorted_matches.end(), compare);
+        for (auto index = offset; index < sorted_matches.size() && index < end; ++index)
+            selected_offsets.push_back(sorted_matches[static_cast<std::size_t>(index)].row_offset);
     }
     for (const auto &[name, should_collect] : collect_ranges)
         if (should_collect && range_batches.at(name).size() == batch_counts.size())

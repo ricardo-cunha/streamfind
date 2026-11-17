@@ -27,6 +27,8 @@
 #include <unordered_set>
 
 #include <duckdb.h>
+#include <arrow/api.h>
+#include <arrow/c/bridge.h>
 
 namespace streamfind
 {
@@ -35,6 +37,20 @@ namespace streamfind
     {
 
         using Statement = duckdb_prepared_statement;
+
+        std::string quote_identifier(const std::string &value)
+        {
+            if (value.empty())
+                throw Error(ErrorCode::InvalidArgument, "SQL identifier is empty");
+            std::string quoted = "\"";
+            for (const auto character : value)
+            {
+                if (character == '"') quoted += '"';
+                quoted += character;
+            }
+            quoted += '"';
+            return quoted;
+        }
 
         std::string db_error(duckdb_result &result)
         {
@@ -1209,33 +1225,28 @@ namespace streamfind
             });
         }
 
-        void write_rows(const std::string &output_handle, std::uint64_t,
-                        const Json &input_rows) override {
+        std::uint64_t write_query_result(const std::string &output_handle,
+                                         std::uint64_t sequence,
+                                         std::string_view sql) override {
             const auto found = outputs_.find(output_handle);
             if (found == outputs_.end())
                 throw Error(ErrorCode::InvalidArgument, "unknown direct table output handle");
-            if (!input_rows.is_array())
-                throw Error(ErrorCode::InvalidArgument, "table output rows must be an array");
-            std::vector<std::vector<std::optional<std::string>>> rows;
-            for (const auto &row : input_rows) {
-                if (!row.is_object())
-                    throw Error(ErrorCode::InvalidArgument, "table output row must be an object");
-                std::vector<std::optional<std::string>> values;
-                for (const auto &column : found->second.schema) {
-                    const auto name = column.value("name", std::string{});
-                    const auto value = row.find(name);
-                    if (value == row.end() || value->is_null()) values.emplace_back(std::nullopt);
-                    else values.emplace_back(value->is_string() ? value->get<std::string>() : value->dump());
-                }
-                rows.push_back(std::move(values));
+            if (sequence != found->second.next_sequence)
+                throw Error(ErrorCode::InvalidArgument, "direct table query batches must be written sequentially");
+            std::string columns;
+            for (const auto &column : found->second.schema) {
+                if (!columns.empty()) columns += ", ";
+                columns += detail::quote_identifier(column.value("name", std::string{}));
             }
-            if (rows.empty()) return;
-            std::vector<std::string> columns;
-            for (const auto &column : found->second.schema)
-                columns.push_back(column.value("name", std::string{}));
+            if (columns.empty())
+                throw Error(ErrorCode::InvalidArgument, "direct table output schema has no columns");
+            const auto insert = "INSERT INTO " + detail::quote_identifier(found->second.physical_table) +
+                                " (" + columns + ") " + std::string(sql);
             ProjectTableStore::transaction(project_, {}, [&](ProjectTableStore &tables) {
-                tables.append(found->second.physical_table, columns, rows);
+                tables.execute(insert);
             });
+            ++found->second.next_sequence;
+            return 0;
         }
 
         Json finish(const std::string &output_handle, const Json &metadata) override {
@@ -1272,6 +1283,7 @@ namespace streamfind
             std::string physical_table;
             Json schema;
             Json provenance;
+            std::uint64_t next_sequence{0};
         };
         Project &project_;
         std::unordered_map<std::string, Output> outputs_;
@@ -2731,6 +2743,101 @@ namespace streamfind
         }
         duckdb_destroy_result(&result);
         return rows;
+    }
+
+    void Project::query_arrow_batches(
+        const std::string &sql,
+        const std::function<void(const std::shared_ptr<arrow::Schema> &)> &on_schema,
+        const std::function<void(const std::shared_ptr<arrow::RecordBatch> &)> &on_batch) const
+    {
+        if (!on_schema || !on_batch)
+            throw Error(ErrorCode::InvalidArgument, "Arrow query callbacks are required");
+        std::lock_guard lock(impl_->mutex);
+        ensure_active(*impl_);
+        Connection connection(*impl_);
+        duckdb_result result{};
+        if (duckdb_query(connection.get(), sql.c_str(), &result) == DuckDBError)
+        {
+            const std::string message = duckdb_result_error(&result)
+                ? duckdb_result_error(&result) : "Arrow query failed";
+            duckdb_destroy_result(&result);
+            throw Error(ErrorCode::DatabaseError, message);
+        }
+        ResultGuard result_guard(result);
+
+        const auto column_count = duckdb_column_count(&result);
+        std::vector<duckdb_logical_type> logical_types;
+        std::vector<const char *> column_names;
+        logical_types.reserve(column_count);
+        column_names.reserve(column_count);
+        try
+        {
+            for (idx_t column = 0; column < column_count; ++column)
+            {
+                logical_types.push_back(duckdb_column_logical_type(&result, column));
+                column_names.push_back(duckdb_column_name(&result, column));
+            }
+
+            duckdb_arrow_options arrow_options = nullptr;
+            duckdb_connection_get_arrow_options(connection.get(), &arrow_options);
+            if (!arrow_options)
+                throw Error(ErrorCode::DatabaseError, "DuckDB Arrow conversion options are unavailable");
+            struct ArrowOptionsGuard
+            {
+                duckdb_arrow_options value;
+                ~ArrowOptionsGuard() { if (value) duckdb_destroy_arrow_options(&value); }
+            } arrow_options_guard{arrow_options};
+
+            ArrowSchema c_schema{};
+            auto schema_error = duckdb_to_arrow_schema(
+                arrow_options, logical_types.data(), column_names.data(), column_count, &c_schema);
+            if (schema_error)
+            {
+                const auto *message = duckdb_error_data_message(schema_error);
+                const std::string detail = message ? message : "DuckDB could not export the Arrow schema";
+                duckdb_destroy_error_data(&schema_error);
+                throw Error(ErrorCode::DatabaseError, detail);
+            }
+            auto imported_schema = arrow::ImportSchema(&c_schema);
+            if (!imported_schema.ok())
+            {
+                if (c_schema.release) c_schema.release(&c_schema);
+                throw Error(ErrorCode::DatabaseError, imported_schema.status().ToString());
+            }
+            const auto schema = *imported_schema;
+            on_schema(schema);
+
+            for (;;)
+            {
+                auto chunk = duckdb_fetch_chunk(result);
+                if (!chunk) break;
+                ArrowArray c_array{};
+                auto array_error = duckdb_data_chunk_to_arrow(arrow_options, chunk, &c_array);
+                duckdb_destroy_data_chunk(&chunk);
+                if (array_error)
+                {
+                    const auto *message = duckdb_error_data_message(array_error);
+                    const std::string detail = message ? message : "DuckDB could not export an Arrow batch";
+                    duckdb_destroy_error_data(&array_error);
+                    throw Error(ErrorCode::DatabaseError, detail);
+                }
+                auto imported_batch = arrow::ImportRecordBatch(&c_array, schema);
+                if (!imported_batch.ok())
+                {
+                    if (c_array.release) c_array.release(&c_array);
+                    throw Error(ErrorCode::DatabaseError, imported_batch.status().ToString());
+                }
+                on_batch(*imported_batch);
+            }
+        }
+        catch (...)
+        {
+            for (auto &type : logical_types)
+                if (type) duckdb_destroy_logical_type(&type);
+            throw;
+        }
+        for (auto &type : logical_types)
+            if (type) duckdb_destroy_logical_type(&type);
     }
 
 
