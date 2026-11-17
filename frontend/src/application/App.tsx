@@ -65,6 +65,18 @@ const defaultWorkflowMetadata = {
   description: 'Describe the purpose of this workflow.',
 } satisfies Record<string, string>;
 const defaultWorkflowMetadataText = JSON.stringify(defaultWorkflowMetadata, null, 2);
+const recentProjectDiagnostics = new Map<string, number>();
+
+function notifyProjectDiagnostics(project: Partial<ProjectSession>): void {
+  for (const diagnostic of project.diagnostics ?? []) {
+    if (diagnostic.severity !== 'warning' || !diagnostic.message) continue;
+    const key = `${project.session_id ?? 'unknown'}:${diagnostic.code}:${diagnostic.message}`;
+    const now = Date.now();
+    if (now - (recentProjectDiagnostics.get(key) ?? 0) < 5000) continue;
+    recentProjectDiagnostics.set(key, now);
+    notifyApp({ kind: 'warning', message: diagnostic.message });
+  }
+}
 
 function requireWorkflowMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -1324,6 +1336,7 @@ function ProjectHub({
         mode,
         workflow_metadata: workflowMetadata,
       });
+      if (mode === 'open') notifyProjectDiagnostics(project);
       if (selectedDemo && mode === 'create') {
         const initialDefinition = await client.workflowDefinition(project.session_id);
         const workflow = {
@@ -1388,6 +1401,7 @@ function ProjectHub({
                 database_path: path,
                 mode: 'open',
               });
+              notifyProjectDiagnostics(project);
               onAdded(project);
               notifyApp({ kind: 'success', message: `Opened project ${name}.` });
             } catch (error) {
@@ -1831,6 +1845,7 @@ function AppShell({
       if (changed && typeof changed === 'object' && !Array.isArray(changed)) {
         const candidate = changed as Partial<ProjectSession>;
         if (typeof candidate.session_id === 'string' && typeof candidate.database_path === 'string') {
+          if (event.type === 'project.opened') notifyProjectDiagnostics(candidate);
           if (event.type === 'project.closed') {
             setProjects((items) => items.filter((item) => item.session_id !== candidate.session_id));
             if (routeFromHash().sessionId === candidate.session_id) {

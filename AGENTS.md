@@ -19,7 +19,10 @@ commands with effects you have not used in the current checkout.
 - `sfdev` requires PowerShell 7 or later. Windows PowerShell 5.1 is not
   supported. In automation or when the shell alias is unavailable, invoke it
   with `pwsh -NoProfile -File scripts/sfdev.ps1 <arguments>` from the checkout
-  root. `sfdev env shell` defines a checkout-local alias for that shell only.
+  root. Install PowerShell through the host platform's package manager; do not
+  put it under `.streamfind/tools`. See [`scripts/README.md`](scripts/README.md)
+  for the Windows WinGet command and official Linux install instructions.
+  `sfdev env shell` defines a checkout-local alias for that shell only.
 - At the start of development, inspect `sfdev env show` and run the relevant
   `sfdev doctor --workflow native|frontend|scripts`. Use
   `sfdev setup --components ...` to provision supported prerequisites; do not
@@ -123,9 +126,11 @@ Use the repository-local `.venv` for every Python script, test, formatter, or pa
 
 - Never run repository Python code with the system interpreter.
 - Use `.venv\Scripts\python.exe` on Windows and `.venv/bin/python` on POSIX.
-- Create `.venv` in the repository root if it does not exist, using a
-  compatible installed Python or the managed fallback from `.streamfind/tools/python`.
-- Provision the fallback and create `.venv` with `sfdev setup --components python`.
+- Create `.venv` in the repository root from the pinned managed Python under
+  `.streamfind/tools/python`; do not use a system Python installation or the
+  Windows `py.exe` launcher.
+- Provision the managed runtime and create or repair `.venv` with
+  `sfdev setup --components python`.
 - Install dependencies only into that environment.
 - Prefer `python -m pip` through the selected interpreter.
 - Verify the selected interpreter before running a script:
@@ -135,16 +140,15 @@ Use the repository-local `.venv` for every Python script, test, formatter, or pa
 
 ## User-Managed Development Tools
 
-Install development tools that are missing from the machine under the current
-user's `.streamfind/tools` directory. Python is the only additional standalone
-development tool to provision there: prefer a compatible system Python, and
-otherwise install the pinned Python runtime under `.streamfind/tools/python`.
-Use that interpreter only to create the checkout's `.venv`; all repository
-Python scripts and packages stay in `.venv`. On Windows, default to
+Install development tools under the current user's `.streamfind/tools`
+directory. Python and Node.js are pinned and managed there for reproducible
+repository tooling. Use managed Python only to create the checkout's `.venv`;
+all repository Python scripts and packages stay in `.venv`. On Windows, default to
 `%USERPROFILE%\.streamfind\tools`; on Linux/WSL, default to the Linux user's
 `~/.streamfind/tools`. Respect `STREAMFIND_HOME` when it is set. Prefer a
-compatible system tool already on `PATH`; use the managed copy when the system
-tool is unavailable. Keep repository package dependencies, such as
+compatible system tool already on `PATH` for tools that are not pinned by the
+repository. Python and Node.js must use their pinned managed copies. Keep
+repository package dependencies, such as
 `frontend/node_modules`, in their project directory rather than copying them
 into the user tool cache. Report the resolved tool path through `sfdev doctor`.
 

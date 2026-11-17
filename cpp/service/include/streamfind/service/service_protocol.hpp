@@ -27,6 +27,7 @@ struct ProjectSessionDto {
     std::vector<std::string> domains;
     Json metadata{Json::object()};
     Json result_store{Json::object()};
+    Json diagnostics{Json::array()};
 };
 
 inline void to_json(Json &json, const SessionDto &value) {
@@ -38,7 +39,7 @@ inline void to_json(Json &json, const ProjectSessionDto &value) {
     json = Json{{"session_id", value.session_id}, {"database_path", value.database_path},
                 {"database_size_bytes", value.database_size_bytes},
                 {"domains", value.domains}, {"metadata", value.metadata},
-                {"result_store", value.result_store}};
+                {"result_store", value.result_store}, {"diagnostics", value.diagnostics}};
 }
 
 inline Json capability_operations_json(const std::string &domain,

@@ -41,16 +41,22 @@ operation will succeed. Do not infer that `--dry-run` is accepted globally.
 ## 1. Install and start `sfdev`
 
 `sfdev` requires **PowerShell 7 or later** (`pwsh`) on both Windows and Linux.
-Windows PowerShell 5.1 cannot run it. On Windows, install PowerShell 7 with:
+Windows PowerShell 5.1 cannot run it. Install PowerShell 7 through the
+platform's normal package manager; it is a system prerequisite, not a pinned
+StreamFind tool, and is not installed under `.streamfind/tools`.
+
+On Windows, install it with WinGet:
 
 ```powershell
-winget install --id Microsoft.PowerShell --exact --source winget
+winget install --id Microsoft.PowerShell --source winget
 ```
 
-Then open a new terminal and check `pwsh --version`. In VS Code, choose
-**Terminal: Select Default Profile**, select the PowerShell 7 profile, and
-open a new integrated terminal. The terminal must actually be running PowerShell
-7; installing it does not change already-open Windows PowerShell 5.1 sessions.
+Then open a new terminal and check `pwsh --version`. WinGet installs the
+PowerShell package for the Windows user; StreamFind does not need an
+administrator-managed copy. In VS Code, choose **Terminal: Select Default
+Profile**, select the PowerShell 7 profile, and open a new integrated terminal.
+The terminal must actually be running PowerShell 7; installing it does not
+change already-open Windows PowerShell 5.1 sessions.
 
 From a PowerShell 7 terminal at the repository root, the direct invocation is:
 
@@ -67,10 +73,14 @@ sfdev help
 ```
 
 Type `exit` to leave that shell. `env shell` does not install a global command
-or change the machine's PATH. On Linux or WSL, use the same script from a
-PowerShell 7 session, with the repository checked out in the Linux filesystem
-for native Linux builds. The direct `pwsh -File` form works when you do not
-want to enter the development shell.
+or change the machine's PATH. On Linux or WSL, install PowerShell 7 using the
+package manager for that distribution, following Microsoft's
+[PowerShell on Linux installation guide](https://learn.microsoft.com/en-us/powershell/scripting/install/linux-overview).
+For Ubuntu, Microsoft's instructions configure the package source before
+installing the `powershell` package. Then use the same script from a PowerShell
+7 session, with the repository checked out in the Linux filesystem for native
+Linux builds. The direct `pwsh -File` form works when you do not want to enter
+the development shell.
 
 ## 2. Understand the environment before working
 
@@ -116,14 +126,22 @@ package manager and needs an APT source that provides `libarrow-dev`; package
 installation uses `sudo`.
 
 Python scripts always run with the repository `.venv`. `sfdev setup
---components python` uses an installed Python 3.11–3.14 that supports `venv`
-when available. Otherwise it installs the pinned Python 3.11 runtime under
+--components python` installs and uses the pinned Python 3.11 runtime under
 `%USERPROFILE%\.streamfind\tools\python` on Windows or
 `~/.streamfind/tools/python` on Linux, then creates `.venv` in the checkout.
+System Python installations and the Windows `py.exe` launcher are never used
+for repository development. Re-running setup reuses a healthy managed `.venv`,
+replaces a healthy `.venv` created from another Python installation, and gives
+an actionable recovery command when the environment is incomplete.
 The pin and platform archive checksums are maintained in
 `scripts/build/python-version.txt` and `scripts/build/setup-python.ps1`.
 `STREAMFIND_HOME` also relocates this managed Python. Project Python packages
 remain in `.venv` and are never shared from the user tools directory.
+
+`sfdev` also uses the pinned Node.js/npm installation under the same
+`.streamfind` tools root for frontend commands. This keeps Node selection
+aligned with the complete locked dependency tree rather than a broad major
+version check against the system Node installation.
 
 ### Supported native toolchains
 
@@ -132,7 +150,9 @@ Arrow development packages**. `sfdev` first uses an existing UCRT64 MSYS2
 installation found through `PATH` or at `C:\msys64`; if unavailable, it uses
 `%USERPROFILE%\.streamfind\tools\msys2`.
 `STREAMFIND_MSYS2_ROOT` selects an explicit root, and `STREAMFIND_HOME` changes
-the managed tools root. Run `sfdev setup --components native` to install
+the managed tools root. When no system installation is available, the
+user-local `.streamfind/tools/msys2` installation does not require
+administrator rights. Run `sfdev setup --components native` to install
 MSYS2 and the required UCRT64 packages when missing. The installer version is
 pinned in `scripts/build/msys2-version.txt`; package selection is defined in
 `scripts/build/setup-msys2.ps1`. Setup persists the selected root for the

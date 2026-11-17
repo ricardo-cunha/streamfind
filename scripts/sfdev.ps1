@@ -186,28 +186,11 @@ try {
     $managedNodeDir = Join-Path $managedHome "tools/node/v$nodeVersion/$(if ($IsWindows) { 'win-x64' } else { 'linux-x64' })"
     $managedNodeBin = Join-Path $managedNodeDir 'bin'
     if ($IsWindows) { $managedNodeBin = $managedNodeDir }
-    $nodeGlobal = Resolve-Tool node
-    $npmGlobal = Resolve-Tool $npmName
-    $nodeGlobalVersion = $null
-    $globalNodeCompatible = $false
-    if ($nodeGlobal -and $npmGlobal) {
-        try {
-            $nodeGlobalVersion = ((& $nodeGlobal --version 2>$null) -join '').Trim()
-            if ($LASTEXITCODE -eq 0 -and $nodeGlobalVersion -match '^v(\d+)\.(\d+)\.(\d+)') {
-                $nodeMajor = [int]$Matches[1]
-                $nodeMinor = [int]$Matches[2]
-                $globalNodeCompatible = ($nodeMajor -eq 22 -and $nodeMinor -ge 12) -or
-                    $nodeMajor -eq 24 -or $nodeMajor -ge 26
-            }
-        } catch { $globalNodeCompatible = $false }
-    }
     $nodeManaged = Join-Path $managedNodeBin $(if ($IsWindows) { 'node.exe' } else { 'node' })
     $npmManaged = Join-Path $managedNodeBin $npmName
-    $useManagedNode = !$globalNodeCompatible
-    $selectedNode = if ($useManagedNode -and (Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and (Test-Path -LiteralPath $npmManaged -PathType Leaf)) {
-        $nodeManaged
-    } elseif (!$useManagedNode) { $nodeGlobal } else { $null }
-    $selectedNpm = if ($selectedNode -eq $nodeManaged) { $npmManaged } elseif (!$useManagedNode) { $npmGlobal } else { $null }
+    $selectedNode = if ((Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and
+        (Test-Path -LiteralPath $npmManaged -PathType Leaf)) { $nodeManaged } else { $null }
+    $selectedNpm = if ($selectedNode) { $npmManaged } else { $null }
     $tools = [ordered]@{
         pwsh = $pwsh
         git = Resolve-Tool git
@@ -220,7 +203,7 @@ try {
         ninja = if ($IsWindows) { Join-Path $bin 'ninja.exe' } else { Resolve-Tool ninja }
         python = Join-Path $root $(if ($IsWindows) { '.venv/Scripts/python.exe' } else { '.venv/bin/python' })
     }
-    $basePython = Get-StreamFindBasePython
+    $basePython = Get-StreamFindManagedPython -ManagedHome $managedHome
     $environment = [ordered]@{}
     if ($IsWindows) {
         $environment.STREAMFIND_MSYS2_ROOT = $ucrt
@@ -256,8 +239,7 @@ try {
                     else { 'MSYS2 UCRT64 found on PATH' }
                 }
                 { $_ -in 'node', 'npm' } {
-                    if ($entry.Value -and $entry.Value.StartsWith($managedNodeDir, [StringComparison]::OrdinalIgnoreCase)) { 'managed .streamfind tools' }
-                    else { 'PATH' }
+                    'managed .streamfind tools'
                 }
                 default { 'PATH' }
             }
@@ -273,13 +255,12 @@ try {
             } else {
                 $diagnostic = switch ($entry.Key) {
                     python {
-                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with Python $($basePython.Version)." }
+                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with managed Python $($basePython.Version)." }
                         else { 'Run sfdev setup --components python to install the pinned Python under .streamfind/tools and create the repository .venv.' }
                     }
                     { $IsWindows -and $_ -in 'cmake', 'ctest', 'gcc', 'gxx', 'ninja' } { 'Run sfdev setup --components native. Missing MSYS2 and UCRT64 packages are installed under .streamfind/tools.' }
                     { $_ -in 'node', 'npm' } {
-                        if ($nodeGlobal -and !$globalNodeCompatible) { "PATH Node.js $nodeGlobalVersion is incompatible with the frontend dependencies; setup installs the pinned compatible version under .streamfind/tools." }
-                        else { 'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.' }
+                        'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.'
                     }
                     default { "Install $($entry.Key) and make it available on PATH." }
                 }

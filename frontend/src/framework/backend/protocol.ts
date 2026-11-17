@@ -50,6 +50,11 @@ export type ProjectSession = {
     published_count?: number;
     size_bytes?: number;
   };
+  diagnostics?: Array<{
+    severity: string;
+    code: string;
+    message: string;
+  }>;
   initialization?: ProjectInitialization;
 };
 

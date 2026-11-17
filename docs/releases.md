@@ -20,6 +20,22 @@ The project source is maintained at
 
 The native C++ project version is **{{ streamfind_version }}**.
 
+### Upgrade notes
+
+- MCP clients that replace a workflow with `set_workflow` must first call
+  `get_workflow` and include its current `definition_revision` in the submitted
+  workflow. Saves without that revision are rejected to prevent overwriting
+  concurrent app or MCP edits.
+- When a project from 0.7.1 is opened, the service checks for the current
+  result-store manifest. If it is missing while old result registrations or a
+  sibling result-store directory are present, the service marks registered
+  results stale, clears result-cache references, and returns a warning that
+  tells the user to rerun the workflow. An old `.data` folder is preserved
+  beside the project with a `.legacy-<timestamp>` suffix. No result migration
+  is performed. If a store exists but has an invalid current manifest or
+  payloads, opening fails with the store path and validation reason so the user
+  can preserve or restore the store before reopening.
+
 ## Available packages
 
 The {{ streamfind_version }} runtime distribution contains:

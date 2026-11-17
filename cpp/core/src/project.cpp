@@ -2446,6 +2446,26 @@ namespace streamfind
         query(connection.get(), "DELETE FROM RESULT_CACHE", "clear result cache entries");
     }
 
+    std::size_t Project::invalidate_published_results(const std::string &reason)
+    {
+        if (reason.empty()) throw std::invalid_argument("result invalidation reason is required");
+        const auto inventory = get_result_inventory();
+        const auto published_count = static_cast<std::size_t>(std::count_if(
+            inventory.begin(), inventory.end(), [](const auto &result) {
+                return result.value("status", std::string{}) == "published";
+            }));
+        std::lock_guard lock(impl_->mutex);
+        ensure_active(*impl_);
+        Connection connection(*impl_);
+        query(connection.get(), "UPDATE RESULT_REGISTRY SET status = 'stale' WHERE status = 'published'",
+              "invalidate published results");
+        query(connection.get(), "DELETE FROM RESULT_CACHE_OUTPUT", "clear invalidated result cache outputs");
+        query(connection.get(), "DELETE FROM RESULT_CACHE", "clear invalidated result cache entries");
+        audit(connection.get(), "invalidate", "results",
+              Json{{"reason", reason}, {"invalidated_results", published_count}});
+        return published_count;
+    }
+
     void Project::clear_all_results()
     {
         const auto inventory = get_result_inventory();

@@ -282,10 +282,71 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
     ensure_database_is_not_open(options.database_path);
     auto project = std::make_unique<Project>(Project::open(options));
-    // Existing projects may predate the sidecar result store. Initialize it
-    // while the project session is opened so the first worker can publish
-    // results without failing on a missing store.
-    ResultStore(project->get_database_path()).initialize(false);
+    ResultStore result_store(project->get_database_path());
+    const auto prior_store = result_store.inspect(false);
+    if (prior_store.status == ResultStoreStatus::invalid) {
+        throw std::runtime_error(
+            "Project result store is incompatible or invalid at " + prior_store.root.string() +
+            ": " + prior_store.error +
+            ". No result-store migration is available. Preserve the .data folder, inspect its store.json "
+            "and manifests, and restore a matching backup or move the incompatible store aside before "
+            "reopening and rerunning the workflow.");
+    }
+    const auto registered_results = project->get_result_inventory();
+    const auto registered_published_count = static_cast<std::size_t>(std::count_if(
+        registered_results.begin(), registered_results.end(), [](const auto &result) {
+            return result.value("status", std::string{}) == "published";
+        }));
+    Json compatibility_diagnostic = nullptr;
+    std::filesystem::path preserved_store_path;
+    std::error_code store_path_error;
+    const bool legacy_store_path_exists = std::filesystem::exists(prior_store.root, store_path_error);
+    if (store_path_error)
+        throw std::runtime_error("Cannot inspect the project result-store path " + prior_store.root.string() +
+                                 ": " + store_path_error.message());
+    if (prior_store.status == ResultStoreStatus::missing &&
+        (registered_published_count != 0 || legacy_store_path_exists)) {
+        if (legacy_store_path_exists) {
+            const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            preserved_store_path = prior_store.root.parent_path() /
+                (prior_store.root.filename().string() + ".legacy-" + std::to_string(stamp));
+            for (std::uint32_t suffix = 1;; ++suffix) {
+                const bool destination_exists = std::filesystem::exists(preserved_store_path, store_path_error);
+                if (store_path_error)
+                    throw std::runtime_error("Cannot inspect a preservation path for the legacy result store: " +
+                                             store_path_error.message());
+                if (!destination_exists) break;
+                preserved_store_path = prior_store.root.parent_path() /
+                    (prior_store.root.filename().string() + ".legacy-" + std::to_string(stamp) + "-" +
+                     std::to_string(suffix));
+            }
+            std::filesystem::rename(prior_store.root, preserved_store_path, store_path_error);
+            if (store_path_error)
+                throw std::runtime_error("The project has an older result-store structure at " +
+                    prior_store.root.string() + " and it could not be preserved separately: " +
+                    store_path_error.message() + ". No migration was attempted; close applications using "
+                    "the project, preserve the .data folder, then reopen and rerun the workflow.");
+        }
+        const std::string reason =
+            "The project has published result registrations or a sibling result-store directory without a current store manifest.";
+        const auto invalidated = project->invalidate_published_results(reason);
+        compatibility_diagnostic = Json{
+            {"severity", "warning"},
+            {"code", "legacy_result_store_invalidated"},
+            {"message", "This project contains results from an older result-store structure. " +
+                            std::to_string(invalidated) +
+                            " result registration(s) were marked stale and cache references were cleared. "
+                            "No migration was attempted. The workflow and metadata were preserved; rerun "
+                            "the workflow to publish results in the current store." +
+                            (preserved_store_path.empty() ? std::string{} :
+                                " The old result-store folder was preserved at " + preserved_store_path.string() + ".") +
+                            " If the warning persists after rerunning, inspect the DuckDB result registry "
+                            "and the current sibling .data folder."}};
+    }
+    // A missing sidecar is initialized only after checking DuckDB registrations,
+    // so pre-file-store projects cannot silently appear to have no prior results.
+    result_store.initialize(false);
     project->set_result_cache_lookup([database_path = project->get_database_path()](const std::string &key) {
         return ResultStore(database_path).find_cached_results(key);
     });
@@ -313,7 +374,8 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
             }
             operation_event_callback_(session_id, operation_id, type, payload);
         });
-    const auto result = describe(session_id, *project);
+    auto result = describe(session_id, *project);
+    if (!compatibility_diagnostic.is_null()) result.diagnostics.push_back(std::move(compatibility_diagnostic));
     workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
     workflow_states_[session_id] = kWorkflowIdle;
