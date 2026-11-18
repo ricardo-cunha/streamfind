@@ -420,6 +420,8 @@ struct STREAMFIND_CORE_API ProjectOptions {
     Json metadata = Json::object();
     /// User-defined metadata for the initial workflow definition.
     Json workflow_metadata = Json::object();
+    /// Result-store identity supplied by the owning service container.
+    std::string result_store_id;
 };
 
 /** @brief Persisted identity and metadata for an open Project. */
@@ -428,7 +430,9 @@ struct STREAMFIND_CORE_API ProjectInfo {
     std::vector<std::string> domains;
     /// Project-owned metadata.
     Json metadata = Json::object();
-    int schema_version{4};
+    int schema_version{5};
+    /// Identity shared with data/store.json for this container.
+    std::string result_store_id;
     std::string framework_version;
     std::string created_at;
 };

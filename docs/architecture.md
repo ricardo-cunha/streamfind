@@ -1,8 +1,9 @@
 # How streamfind works
 
 streamfind separates project coordination from operation computation. Each
-project's DuckDB file stores workflow and metadata; a sibling `<project>.data`
-directory stores published result payloads and their query indexes. The native
+each project is a `<name>.sf` folder. Its `project.duckdb` stores workflow and
+metadata; its `data/` directory stores published result payloads and their
+query indexes. The native
 service is the single control plane: it owns project sessions, database
 transactions, workflow scheduling, worker supervision, and result publication.
 The browser app connects over HTTP and WebSocket, while the MCP server connects
@@ -23,9 +24,10 @@ the same project and runtime state.
        └─────────────────┬──────────────────┘
                          ▼
                  Native streamfind service
-                 ├── Project DuckDB metadata
-                 ├── Supervised operation workers
-                 └── Project .data result store
+                 ├── Project .sf folder
+                 │   ├── project.duckdb metadata
+                 │   └── data/ result store
+                 └── Supervised operation workers
 ```
 
 ## Operations and operation graphs
@@ -56,7 +58,7 @@ remain available for inspection.
 
 A typical application or agent follows this sequence:
 
-1. create or open a project with `database_path`;
+1. create or open a project with `project_path` naming its `.sf` folder;
 2. discover operations and inspect their schemas;
 3. add operation nodes and persist their parameters;
 4. connect compatible output and input ports;

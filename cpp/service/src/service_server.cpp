@@ -1,5 +1,6 @@
 #include "streamfind/service/service_server.hpp"
 #include "streamfind/service/service_protocol.hpp"
+#include "streamfind/project_layout.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
 #include "fixedEnvelopes.h"
 #include "element_tables.h"
@@ -164,32 +165,6 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
 }
 
 #ifdef _WIN32
-std::string pick_database_file(bool create) {
-    const auto owner = GetForegroundWindow();
-    wchar_t filename[MAX_PATH]{};
-    OPENFILENAMEW dialog{};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = owner;
-    dialog.lpstrFile = filename;
-    dialog.nMaxFile = MAX_PATH;
-    dialog.lpstrFilter = L"DuckDB files\0*.duckdb;*.db\0All files\0*.*\0";
-    dialog.nFilterIndex = 1;
-    dialog.Flags = OFN_EXPLORER;
-    if (create) {
-        dialog.Flags |= OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
-        dialog.lpstrDefExt = L"duckdb";
-        if (!GetSaveFileNameW(&dialog)) throw std::invalid_argument("database file selection cancelled");
-    } else {
-        dialog.Flags |= OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-        if (!GetOpenFileNameW(&dialog)) throw std::invalid_argument("database file selection cancelled");
-    }
-    const int size = WideCharToMultiByte(CP_UTF8, 0, filename, -1, nullptr, 0, nullptr, nullptr);
-    std::string result(static_cast<std::size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, filename, -1, result.data(), size, nullptr, nullptr);
-    result.pop_back();
-    return result;
-}
-
 std::string pick_csv_output_file() {
     wchar_t filename[MAX_PATH]{};
     OPENFILENAMEW dialog{};
@@ -303,7 +278,7 @@ Json browse_file_system(const std::string &requested_path) {
         return Json{{"path", ""}, {"entries", std::move(entries)}};
     }
 #endif
-    const auto root = requested_path.empty() ? std::filesystem::current_path() : std::filesystem::path(requested_path);
+    const auto root = requested_path.empty() ? std::filesystem::current_path() : path_from_utf8(requested_path);
     if (!std::filesystem::exists(root) || !std::filesystem::is_directory(root))
         throw std::invalid_argument("filesystem browse path is not a directory");
     Json entries = Json::array();
@@ -311,8 +286,8 @@ Json browse_file_system(const std::string &requested_path) {
         const auto status = entry.symlink_status();
         if (std::filesystem::is_symlink(status)) continue;
         const bool directory = std::filesystem::is_directory(status);
-        Json item{{"name", entry.path().filename().string()},
-                  {"path", entry.path().string()},
+        Json item{{"name", path_to_utf8(entry.path().filename())},
+                  {"path", path_to_utf8(entry.path())},
                   {"isDirectory", directory}};
         if (!directory && std::filesystem::is_regular_file(status)) item["size"] = std::filesystem::file_size(entry.path());
         entries.push_back(std::move(item));
@@ -1004,12 +979,6 @@ void ServiceServer::handle_client(std::intptr_t socket) {
 #else
                 detail::send_http(socket, 501, Json{{"error", "native path picker is only available on Windows"}});
 #endif
-            } else if (method == "GET" && (path == "/projects/file-picker" || path == "/projects/file-picker/create")) {
-#ifdef _WIN32
-                detail::send_http(socket, 200, Json{{"database_path", detail::pick_database_file(path.ends_with("/create"))}});
-#else
-                detail::send_http(socket, 501, Json{{"error", "native file picker is only available on Windows"}});
-#endif
             } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
@@ -1031,7 +1000,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto request = Json::parse(body);
                 detail::send_http(socket, 200, projects_.copy_project(
-                    session_id, request.at("destination_database_path").get<std::string>()));
+                    session_id, path_from_utf8(request.at("destination_project_path").get<std::string>())));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/history/clear")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/history/clear");
@@ -1242,7 +1211,12 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 detail::send_http(socket, 200, project);
             } else if (method == "POST" && path == "/projects") {
                 const auto input = Json::parse(body);
-                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object()), input.value("workflow_metadata", ProjectOptions{}.workflow_metadata)};
+                const auto layout = ProjectLayout::from_container(
+                    path_from_utf8(input.at("project_path").get<std::string>()));
+                ProjectOptions options;
+                options.database_path = layout.database();
+                options.metadata = input.value("metadata", Json::object());
+                options.workflow_metadata = input.value("workflow_metadata", ProjectOptions{}.workflow_metadata);
                 const auto session_id = input.at("session_id").get<std::string>();
                 const auto project = input.value("mode", "create") == "open"
                                          ? projects_.open(session_id, options)

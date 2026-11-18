@@ -22,13 +22,14 @@ int main() {
 
     const auto root = std::filesystem::path(STREAMFIND_TEST_PROJECTS_DIR) /
                       "project-runtime-execution-retry";
-    const auto database_path = root / "retry.duckdb";
+    const auto database_path = root / "retry.sf" / "project.duckdb";
     const auto data_path = ResultStore::data_path_for_database(database_path);
     std::error_code error;
     std::filesystem::remove_all(root, error);
     std::filesystem::remove_all(data_path, error);
 
     try {
+        std::filesystem::create_directories(root);
         OperationDefinition definition;
         definition.id = "test.retry_worker";
         definition.name = "Retry worker contract";

@@ -24,8 +24,8 @@ else:
 ANNOTATION_CPP = REPO_ROOT / "cpp/plugins/mass_spec/src/operations/nta/nta_annotation.cpp"
 ANNOTATION_HPP = REPO_ROOT / "cpp/plugins/mass_spec/src/operations/nta/nta_annotation.hpp"
 PARAMETERS_TTL = REPO_ROOT / "cpp/plugins/mass_spec/semantic/parameters.ttl"
-MERCK_PROJECT = REPO_ROOT / "tmp/projects/merck_workflow_annotate_verification.duckdb"
-METFRAG_PROJECT = REPO_ROOT / "tmp/projects/metfrag_verify_annotate_verification.duckdb"
+MERCK_PROJECT = REPO_ROOT / "tmp/projects/merck_workflow_annotate_verification.sf"
+METFRAG_PROJECT = REPO_ROOT / "tmp/projects/metfrag_verify_annotate_verification.sf"
 
 
 ADDUCTS = {
@@ -47,9 +47,10 @@ def _load_annotated_table(project_path: Path):
     except ImportError as error:  # pragma: no cover - environment dependent
         raise unittest.SkipTest(f"DuckDB and PyArrow are required to read Arrow result-store data: {error}")
 
-    if not project_path.is_file():
-        raise unittest.SkipTest(f"disposable validation project is not available: {project_path}")
-    connection = duckdb.connect(str(project_path), read_only=True)
+    database_path = project_path / "project.duckdb"
+    if not database_path.is_file():
+        raise unittest.SkipTest(f"disposable validation project is not available: {database_path}")
+    connection = duckdb.connect(str(database_path), read_only=True)
     try:
         registration = connection.execute(
             """
@@ -68,7 +69,7 @@ def _load_annotated_table(project_path: Path):
         raise unittest.SkipTest("published annotate_components result is not available")
 
     result_id = registration[0]
-    store_root = project_path.with_suffix(".data").resolve()
+    store_root = (project_path / "data").resolve()
     manifest_path = store_root / "results" / result_id / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if (

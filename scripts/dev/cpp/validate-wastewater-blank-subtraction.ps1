@@ -7,12 +7,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 if ([string]::IsNullOrWhiteSpace($SourceProject)) {
-    $SourceProject = Join-Path $repoRoot 'tmp\projects\wastewater-nta-progress.duckdb'
+    $SourceProject = Join-Path $repoRoot 'tmp\projects\wastewater-nta-progress.sf'
 }
-$sourceDb = (Resolve-Path -LiteralPath $SourceProject).Path
-$sourceData = [IO.Path]::ChangeExtension($sourceDb, '.data')
-$workflowPath = [IO.Path]::ChangeExtension($sourceDb, '.workflow.json')
-foreach ($requiredPath in @($sourceData, $workflowPath)) {
+$sourceContainer = (Resolve-Path -LiteralPath $SourceProject).Path
+$sourceData = Join-Path $sourceContainer 'data'
+$workflowPath = [IO.Path]::ChangeExtension($sourceContainer, '.workflow.json')
+foreach ($requiredPath in @((Join-Path $sourceContainer 'project.duckdb'), $sourceData, $workflowPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
         throw "Required wastewater project sidecar not found: $requiredPath"
     }
@@ -34,18 +34,11 @@ $logsRoot = Join-Path $repoRoot 'tmp\logs'
 New-Item -ItemType Directory -Force -Path $projectsRoot, $logsRoot | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $projectName = "phase6-wastewater-blank-check-$stamp-$([guid]::NewGuid().ToString('N').Substring(0, 6))"
-$destinationDb = Join-Path $projectsRoot "$projectName.duckdb"
-$destinationData = [IO.Path]::ChangeExtension($destinationDb, '.data')
-if ((Test-Path -LiteralPath $destinationDb) -or (Test-Path -LiteralPath $destinationData)) {
-    throw "Validation project destination already exists; refusing to overwrite it: $destinationDb"
+$destinationProject = Join-Path $projectsRoot "$projectName.sf"
+if (Test-Path -LiteralPath $destinationProject) {
+    throw "Validation project destination already exists; refusing to overwrite it: $destinationProject"
 }
-Copy-Item -LiteralPath $sourceDb -Destination $destinationDb
-Copy-Item -LiteralPath $sourceData -Destination $destinationData -Recurse
-$storePath = Join-Path $destinationData 'store.json'
-$store = Get-Content -LiteralPath $storePath -Raw | ConvertFrom-Json
-$store.database_filename = [IO.Path]::GetFileName($destinationDb)
-$store.store_id = 'store-phase6-' + [guid]::NewGuid().ToString('N')
-$store | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $storePath -Encoding UTF8
+Copy-Item -LiteralPath $sourceContainer -Destination $destinationProject -Recurse
 
 $buildRoot = Join-Path $repoRoot 'tmp\build\windows\core'
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
@@ -85,7 +78,7 @@ try {
     $null = Invoke-JsonPost "$endpoint/projects" @{
         mode = 'open'
         session_id = $session
-        database_path = $destinationDb
+        project_path = $destinationProject
     }
     $projectOpened = $true
     $null = Invoke-JsonPost "$endpoint/projects/$session/results/cache/clear" @{}
@@ -154,8 +147,8 @@ try {
     }
 
     $summary = [ordered]@{
-        project = $destinationDb
-        source_project = $sourceDb
+        project = $destinationProject
+        source_project = $sourceContainer
         workflow_node = $blankNode.id
         operation = $blankNode.operation
         state = $state.state

@@ -229,15 +229,15 @@ int main() {
         for (const auto &tool : tools) {
             const auto name = tool.value("name", tool.value("canonical_id", ""));
             if (name == "create")
-                require(tool.at("inputSchema").at("required") == streamfind::Json::array({"database_path"}),
-                        "create schema does not require database_path");
+                require(tool.at("inputSchema").at("required") == streamfind::Json::array({"project_path"}),
+                        "create schema does not require project_path");
             if (name == "set_workflow")
                 require(tool.at("inputSchema").at("required") ==
-                            streamfind::Json::array({"database_path", "workflow"}) &&
+                            streamfind::Json::array({"project_path", "workflow"}) &&
                             tool.at("inputSchema").at("properties").contains("workflow"),
                         "set_workflow schema does not advertise workflow");
             if (name == "validate_workflow")
-                require(tool.at("inputSchema").at("required") == streamfind::Json::array({"database_path"}),
+                require(tool.at("inputSchema").at("required") == streamfind::Json::array({"project_path"}),
                         "validate_workflow should allow validation of the saved workflow");
             if (name == "request_result") {
                 const auto &properties = tool.at("inputSchema").at("properties");
@@ -255,16 +255,13 @@ int main() {
             }
         }
 
-        const auto metadata_path = streamfind::test::tmp_projects_dir() / "mcp-workflow-metadata-contract.duckdb";
-        auto metadata_data_path = metadata_path;
-        metadata_data_path.replace_extension(".data");
-        std::filesystem::remove(metadata_path);
-        std::filesystem::remove_all(metadata_data_path);
-        const auto created = call(session, 6, "create", {{"database_path", metadata_path.string()}});
+        const auto metadata_path = streamfind::test::tmp_projects_dir() / "mcp-workflow-metadata-contract.sf";
+        std::filesystem::remove_all(metadata_path);
+        const auto created = call(session, 6, "create", {{"project_path", metadata_path.string()}});
         require(!created.at("result").value("isError", false),
                 (std::string("MCP create rejected metadata-optional workflow creation: ") +
                  created.dump()).c_str());
-        const auto created_workflow = text_json(call(session, 61, "get_workflow", {{"database_path", metadata_path.string()}}));
+        const auto created_workflow = text_json(call(session, 61, "get_workflow", {{"project_path", metadata_path.string()}}));
         require(created_workflow.at("metadata") ==
                              streamfind::Json({{"name", "Untitled workflow"},
                                                 {"description", "Describe the purpose of this workflow."}}),
@@ -274,16 +271,17 @@ int main() {
                                              {"description", "MCP contract test workflow"},
                                              {"owner", "mcp"}, {"purpose", "contract test"}};
         const auto updated = call(session, 7, "set_workflow",
-                                  {{"database_path", metadata_path.string()},
+                                  {{"project_path", metadata_path.string()},
                                    {"workflow", replacement_workflow}});
         require(!updated.at("result").value("isError", false), "MCP workflow metadata update failed");
-        const auto saved_metadata = text_json(call(session, 8, "get_workflow", {{"database_path", metadata_path.string()}}));
+        const auto saved_metadata = text_json(call(session, 8, "get_workflow", {{"project_path", metadata_path.string()}}));
         require(saved_metadata.at("metadata") ==
                              streamfind::Json({{"name", "MCP workflow"}, {"description", "MCP contract test workflow"},
                                                 {"owner", "mcp"}, {"purpose", "contract test"}}),
                 "MCP workflow metadata update was not persisted");
-        std::filesystem::remove(metadata_path);
-        std::filesystem::remove_all(metadata_data_path);
+        const auto closed = call(session, 9, "close", {{"project_path", metadata_path.string()}});
+        require(!closed.at("result").value("isError", false), "MCP could not close the container test project");
+        std::filesystem::remove_all(metadata_path);
 
         const auto domains = text_json(call(session, 2, "get_domains"));
         require(domains.is_array() && std::find(domains.begin(), domains.end(), "mass_spec") != domains.end(),

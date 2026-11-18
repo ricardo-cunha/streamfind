@@ -23,8 +23,8 @@ For an overview of the system boundaries and data flow, see the
 
 1. Install the native package and start the browser app via `bin/streamfind-app.exe` or connect an MCP
    client to streamfind service via `bin/streamfind-mcp.exe`.
-2. Create or open a project. Its `*.duckdb` file stores the workflow and
-   metadata; its `*.data` folder stores published results.
+2. Create or open a project. A `<name>.sf` folder contains `project.duckdb`
+   for workflow and metadata and `data/` for published results.
 3. Discover operations and configure their parameters.
 4. Connect compatible typed ports to form a workflow graph.
 5. Validate and run the graph through the service.
@@ -90,7 +90,7 @@ The C++ MCP server exposes the catalogue-backed interface.
    inspect it, and `get_project_domains` to list domains represented in that
    project.
 4. Use `get_domains` to discover domains with available Operations, then call
-   domain Operations with an explicit `database_path`.
+   domain Operations with an explicit `project_path` to the `.sf` folder.
 5. Add operation nodes with their parameters to the persisted workflow.
 6. Connect typed output ports to downstream input ports.
 7. Validate the graph, run it, and inspect the resulting published results.

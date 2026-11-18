@@ -1609,9 +1609,9 @@ export default function CanvasShell({
         nodePorts(targetCapability).inputs.find((port) => sourcePort && portMatchesPort(sourcePort, port))?.id ||
         (sourcePort
           ? targetCapability?.parameters.find(
-              (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
+              (parameter) => parameter.name !== 'project_path' && portMatchesParameter(sourcePort, parameter),
             )?.name
-            ? `parameter:${targetCapability.parameters.find((parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter))?.name}`
+            ? `parameter:${targetCapability.parameters.find((parameter) => parameter.name !== 'project_path' && portMatchesParameter(sourcePort, parameter))?.name}`
             : ''
           : '');
       if (!targetPort) return;
@@ -1642,7 +1642,7 @@ export default function CanvasShell({
             sourcePort &&
             (nodePorts(targetCapability).inputs.some((port) => portMatchesPort(sourcePort, port)) ||
               targetCapability?.parameters.some(
-                (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
+                (parameter) => parameter.name !== 'project_path' && portMatchesParameter(sourcePort, parameter),
               )),
           )
         );

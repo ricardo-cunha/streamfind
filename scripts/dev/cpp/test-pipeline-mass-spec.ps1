@@ -26,8 +26,8 @@ $executable = if ($PackagedBuild) {
     Get-BackendMcpExecutable $repoRoot
 }
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
-$database = Join-Path $repoRoot "tmp\projects\$ProjectName.duckdb"
-$dataStore = [System.IO.Path]::ChangeExtension($database, '.data')
+$database = Join-Path $repoRoot "tmp\projects\$ProjectName.sf"
+$dataStore = Join-Path $database 'data'
 $dataFiles = @(
     (Join-Path $dataRoot 'mass_spec\basic_tof\00_tof_s_is_pos_cent-r001.mzML'),
     (Join-Path $dataRoot 'mass_spec\basic_tof\00_tof_s_is_pos_cent-r002.mzML'),
@@ -47,8 +47,7 @@ New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-N
 if ($PackagedBuild -and (Test-Path $database)) {
     throw "Refusing to replace an existing packaged test project: $database"
 }
-Remove-Item -Force -ErrorAction SilentlyContinue $database
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataStore
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database
 $logRoot = Join-Path $repoRoot 'tmp\logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $listeners = @(Get-NetTCPConnection -LocalPort $ServicePort -State Listen -ErrorAction SilentlyContinue)
@@ -67,7 +66,7 @@ try {
     $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
     Initialize-Mcp $process | Out-Null
     $session = "$ProjectName-session"
-    $createBody = @{ mode = 'create'; session_id = $session; database_path = $database } |
+    $createBody = @{ mode = 'create'; session_id = $session; project_path = $database } |
         ConvertTo-Json -Depth 20
     Invoke-RestMethod -Uri "$endpoint/projects" -Method Post -ContentType 'application/json' -Body $createBody | Out-Null
 
@@ -108,7 +107,7 @@ try {
     $validation = Invoke-RestMethod -Uri "$endpoint/projects/$session/workflow/validate" -Method Post -ContentType 'application/json' -Body $validationBody
     if (-not $validation.valid) { throw "Workflow validation failed: $($validation | ConvertTo-Json -Depth 20 -Compress)" }
 
-    $run = Invoke-McpTool $process 7 'run_workflow' @{ database_path = $database; execution_mode = 'pipeline' }
+    $run = Invoke-McpTool $process 7 'run_workflow' @{ project_path = $database; execution_mode = 'pipeline' }
     Write-Host ("Pipeline run accepted: " + ($run | ConvertTo-Json -Depth 20 -Compress))
 
     $stateUri = "$endpoint/projects/$([uri]::EscapeDataString($session))/workflow/state"
@@ -228,7 +227,7 @@ try {
     $serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList $ServicePort -WorkingDirectory $buildRoot `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput $restartStdout -RedirectStandardError $restartStderr
     Start-Sleep -Milliseconds 500
-    $reopenBody = @{ mode = 'open'; session_id = $session; database_path = $database } | ConvertTo-Json -Depth 10
+    $reopenBody = @{ mode = 'open'; session_id = $session; project_path = $database } | ConvertTo-Json -Depth 10
     Invoke-RestMethod -Uri "$endpoint/projects" -Method Post -ContentType 'application/json' -Body $reopenBody | Out-Null
     $reopenedTrace = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/trace" `
         -Method Post -ContentType 'application/json' -Body $featureTraceBody
@@ -276,8 +275,7 @@ try {
         $serviceProcess.WaitForExit()
     }
     if (-not $KeepProject) {
-        Remove-Item -Force -ErrorAction SilentlyContinue $database
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataStore
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database
         Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path (Split-Path $database -Parent) "$ProjectName.workflow.json")
     } else {
         Write-Host "Kept editable test project: $database"

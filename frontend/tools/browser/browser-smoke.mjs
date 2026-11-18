@@ -16,6 +16,8 @@ try {
 
   await page.getByText('Create workflow', { exact: true }).waitFor();
   await page.getByText('Open workflow', { exact: true }).waitFor();
+  const expectedProjectName = process.env.STREAMFIND_EXPECT_PROJECT_NAME;
+  if (expectedProjectName) await page.getByText(expectedProjectName, { exact: true }).waitFor();
   await page.getByRole('main').waitFor();
 
   await page.getByRole('button', { name: 'Open appearance settings' }).click();

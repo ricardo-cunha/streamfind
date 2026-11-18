@@ -102,7 +102,7 @@ int main() {
         set_environment("STREAMFIND_SERVICE_REQUEST_TIMEOUT_SECONDS", "1");
         const auto started = std::chrono::steady_clock::now();
         try {
-            (void)streamfind::service::create_project("timeout-contract.duckdb");
+            (void)streamfind::service::create_project("timeout-contract.sf");
             result = 5;
         } catch (const std::exception &error) {
             const auto elapsed = std::chrono::steady_clock::now() - started;

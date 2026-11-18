@@ -5,12 +5,12 @@
 </p>
 
 streamfind is an open-source platform for reproducible analytical data
-processing. A project combines a DuckDB database for its workflow and metadata
-with a sibling `.data` folder for operation results. You build processing as a
-typed, validated workflow and run it through the local C++ service. The service
-supervises isolated operation workers and makes results available to both the
-browser app and MCP clients. Domain plugins provide the scientific operations;
-frontend plugins provide result viewers and other UI capabilities.
+processing. Each project is a `.sf` folder that contains its workflow database
+and operation result store. You build processing as a typed, validated workflow
+and run it through the local C++ service. The service supervises isolated
+operation workers and makes results available to both the browser app and MCP
+clients. Domain plugins provide the scientific operations; frontend plugins
+provide result viewers and other UI capabilities.
 
 ## Start here
 
@@ -24,8 +24,8 @@ frontend plugins provide result viewers and other UI capabilities.
 
 ## What you can do
 
-- Create project databases with metadata and workflows, alongside their
-  `.data` result stores and execution history.
+- Create and manage `.sf` project folders containing metadata, workflows,
+  execution history, and operation results.
 - Discover operations and their typed inputs, outputs, parameters, constraints,
   and results from the shared semantic catalogue.
 - Build mass-spectrometry workflows for analyses, spectra, chromatograms,
@@ -53,10 +53,10 @@ The service is the shared control plane for the browser app, CLI, and MCP
 server. It owns project sessions, workflow state, DuckDB metadata updates,
 worker supervision, result publication, and audit information. Workers execute
 one operation at a time and exchange typed data through the service runtime;
-they do not open the project DuckDB. Tabular results use Arrow files in the
-project's `.data` store, while other result types use formats suited to their
-payload. Both web and MCP clients inspect the same published results and run
-state.
+they do not open the project DuckDB. Tabular results use Arrow files below the
+project's `data/` directory, while other result types use formats suited to
+their payload. Both web and MCP clients inspect the same published results and
+run state.
 
 ## R package (legacy)
 
@@ -113,7 +113,7 @@ A typical client:
    inspect it;
 4. calls `get_domains` to discover available operation domains and
    `get_operations` / `get_operation` to inspect operations;
-5. invokes operations with `database_path`, or builds a persisted operation
+5. invokes operations with `project_path` to a `.sf` folder, or builds a persisted operation
    graph with nodes and typed connections;
 6. validates and runs the graph, then inspects its published results.
 

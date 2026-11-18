@@ -22,7 +22,7 @@ struct SessionDto {
 
 struct ProjectSessionDto {
     std::string session_id;
-    std::string database_path;
+    std::string project_path;
     std::uintmax_t database_size_bytes{0};
     std::vector<std::string> domains;
     Json metadata = Json::object();
@@ -36,7 +36,7 @@ inline void to_json(Json &json, const SessionDto &value) {
 }
 
 inline void to_json(Json &json, const ProjectSessionDto &value) {
-    json = Json{{"session_id", value.session_id}, {"database_path", value.database_path},
+    json = Json{{"session_id", value.session_id}, {"project_path", value.project_path},
                 {"database_size_bytes", value.database_size_bytes},
                 {"domains", value.domains}, {"metadata", value.metadata},
                 {"result_store", value.result_store}, {"diagnostics", value.diagnostics}};

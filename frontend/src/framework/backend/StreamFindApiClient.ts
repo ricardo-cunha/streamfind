@@ -333,6 +333,24 @@ export class StreamFindApiClient {
     return response.json() as Promise<ProjectSession>;
   }
 
+  async copyProject(sessionId: string, destinationProjectPath: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/copy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ destination_project_path: destinationProjectPath }),
+    });
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const payload = (await response.json()) as { error?: string };
+        detail = payload.error ? `: ${payload.error}` : '';
+      } catch {
+        // Keep the HTTP status when the service returned a non-JSON response.
+      }
+      throw new Error(`Project copy request failed (${response.status})${detail}`);
+    }
+  }
+
   async runOperation(
     sessionId: string,
     operationId: string,
@@ -601,15 +619,6 @@ export class StreamFindApiClient {
     if (!response.ok) throw new Error(`Service ${action} failed (${response.status})`);
   }
 
-  async pickDatabaseFile(mode: 'open' | 'create' = 'open'): Promise<string> {
-    const endpoint = mode === 'create' ? '/projects/file-picker/create' : '/projects/file-picker';
-    const response = await fetch(`${this.baseUrl}${endpoint}`);
-    const result = (await response.json()) as { database_path?: string; error?: string };
-    if (!response.ok || !result.database_path)
-      throw new Error(result.error || `Database file selection failed (${response.status})`);
-    return result.database_path;
-  }
-
   async pickFiles(extensions: string[]): Promise<string[]> {
     const response = await fetch(`${this.baseUrl}/projects/file-picker/files`, {
       method: 'POST',
@@ -661,7 +670,7 @@ export class StreamFindApiClient {
 
   async createProject(input: {
     session_id: string;
-    database_path: string;
+    project_path: string;
     metadata?: Record<string, unknown>;
     workflow_metadata?: Record<string, unknown>;
     mode?: 'create' | 'open';

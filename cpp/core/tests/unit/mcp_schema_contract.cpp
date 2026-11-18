@@ -40,13 +40,13 @@ void run() {
     const auto &mode = run_workflow.at("properties").at("execution_mode");
     if (mode.at("enum") != Json::array({"detailed", "pipeline"}) ||
         mode.at("default") != "detailed" ||
-        run_workflow.at("required") != Json::array({"database_path"})) {
+        run_workflow.at("required") != Json::array({"project_path"})) {
         throw std::runtime_error("MCP schema contract: run_workflow execution mode schema is misaligned");
     }
 
     const auto &transition = tool_named(tools, "transition_execution").at("inputSchema");
     if (!transition.at("properties").contains("execution_mode") ||
-        transition.at("required") != Json::array({"database_path", "status"})) {
+        transition.at("required") != Json::array({"project_path", "status"})) {
         throw std::runtime_error("MCP schema contract: transition_execution mode must be optional and advertised");
     }
 
@@ -54,7 +54,7 @@ void run() {
         tool_named(tools, "get_workflow_execution").at("inputSchema");
     if (!workflow_execution.at("properties").contains("operation_instance") ||
         workflow_execution.at("properties").at("operation_instance").at("type") != "integer" ||
-        workflow_execution.at("required") != Json::array({"database_path"})) {
+        workflow_execution.at("required") != Json::array({"project_path"})) {
         throw std::runtime_error(
             "MCP schema contract: operation status polling must accept an optional operation_instance");
     }
@@ -70,7 +70,7 @@ void run() {
 
     const auto &add = tool_named(tools, "add_operation").at("inputSchema");
     if (add.at("properties").contains("operation_id") ||
-        add.at("required") != Json::array({"database_path", "operation"})) {
+        add.at("required") != Json::array({"project_path", "operation"})) {
         throw std::runtime_error(
             "MCP schema contract: add_operation must omit operation_id and assign it automatically");
     }

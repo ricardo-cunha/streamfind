@@ -59,23 +59,23 @@ A typical client or AI agent uses this sequence:
 
 1. call `initialize`;
 2. call `tools/list` to discover callable Operations;
-3. call `create` with `database_path` for a new project;
+3. call `create` with `project_path` naming a new `.sf` folder;
 4. call `describe` or `get_metadata` to inspect the project, and
    `get_project_domains` to list domains represented in it;
 5. call `get_domains` to discover available operation domains, then call a
-   domain Operation with `database_path`.
+   domain Operation with `project_path`.
 
 Example requests, one JSON object per line:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create","arguments":{"database_path":"demo.duckdb"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create","arguments":{"project_path":"demo.sf"}}}
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_domains","arguments":{}}}
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_operations","arguments":{"domain":"mass_spec"}}}
 ```
 
-Include `database_path` on every applicable request. Operation-specific
+Include `project_path` on every applicable request. Operation-specific
 parameters and constraints are returned by `tools/list` and `get_operation`.
 Send the `notifications/initialized` notification after initialization; because
 it is a notification, the server correctly sends no response.
@@ -105,8 +105,8 @@ Use a persisted operation graph for every multi-step workflow:
 
 The workflow is stored in the project database, so it can be reopened,
 validated, rerun, and inspected by another client. Published result payloads
-are stored in the sibling `.data` folder and their registry is managed by the
-service. Use direct operation calls for independent queries; use a persisted
+are stored under `data/` inside the project `.sf` folder and their registry is
+managed by the service. Use direct operation calls for independent queries; use a persisted
 graph when downstream steps depend on upstream results.
 
 Workflow and direct-operation submissions are asynchronous. Once accepted, the

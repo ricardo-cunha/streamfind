@@ -4371,3 +4371,53 @@ h2 {
   color: var(--sf-text-secondary);
   font-size: 0.8rem;
 }
+.sf-project-folder-picker-backdrop {
+  z-index: 10001;
+}
+
+.sf-project-folder-picker {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+}
+
+.sf-project-folder-path {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.sf-project-folder-path input {
+  min-width: 0;
+  flex: 1;
+}
+
+.sf-project-folder-list {
+  min-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.sf-project-folder-list button {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.sf-project-folder-list button:hover,
+.sf-project-folder-list button.selected {
+  background: var(--sf-surface-raised);
+}
+
+.sf-project-path-preview {
+  overflow-wrap: anywhere;
+  color: var(--sf-text-muted);
+}

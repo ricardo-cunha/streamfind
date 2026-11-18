@@ -79,12 +79,11 @@ function Get-SampleAssignment {
 foreach ($case in $cases) {
     if (-not (Test-Path -LiteralPath $case.source -PathType Leaf)) { throw "Missing WIFF fixture: $($case.source)" }
     $session = "quantification-sciex-$($case.key)"
-    $database = Join-Path $databaseRoot "$session.duckdb"
-    $dataStore = [IO.Path]::ChangeExtension($database, '.data')
+    $database = Join-Path $databaseRoot "$session.sf"
+    $dataStore = Join-Path $database 'data'
     try { Invoke-Json "$Endpoint/projects/$session" 'Delete' | Out-Null } catch { }
-    if (Test-Path -LiteralPath $database) { Remove-Item -LiteralPath $database -Force }
-    if (Test-Path -LiteralPath $dataStore) { Remove-Item -LiteralPath $dataStore -Recurse -Force }
-    Invoke-Json "$Endpoint/projects" 'Post' @{ mode = 'create'; session_id = $session; database_path = $database } | Out-Null
+    if (Test-Path -LiteralPath $database) { Remove-Item -LiteralPath $database -Recurse -Force }
+    Invoke-Json "$Endpoint/projects" 'Post' @{ mode = 'create'; session_id = $session; project_path = $database } | Out-Null
 
     $readWorkflow = [ordered]@{
         schema_version = 2
@@ -191,10 +190,9 @@ foreach ($case in $cases) {
     $results | Group-Object status | Select-Object Name,Count | ConvertTo-Json -Depth 4
     if ($Cleanup) {
         try { Invoke-Json "$Endpoint/projects/$session" 'Delete' | Out-Null } catch { }
-        $database = Join-Path $databaseRoot "$session.duckdb"
-        $dataStore = [IO.Path]::ChangeExtension($database, '.data')
-        Remove-Item -LiteralPath $database -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $dataStore -Recurse -Force -ErrorAction SilentlyContinue
+        $database = Join-Path $databaseRoot "$session.sf"
+        $dataStore = Join-Path $database 'data'
+        Remove-Item -LiteralPath $database -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ([IO.Path]::ChangeExtension($database, '.workflow.json')) -Force -ErrorAction SilentlyContinue
     }
 }

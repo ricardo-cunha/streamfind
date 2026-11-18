@@ -4,7 +4,7 @@ streamfind is a native C++ analytical platform with a browser app, a shared
 project service, an MCP server, and domain plugins. Native packages target
 Windows x64 and Linux x86_64. The service coordinates app and MCP access;
 project metadata stays in DuckDB, while published result payloads live in the
-project's sibling `.data` folder.
+project's `data/` directory inside its `.sf` folder.
 
 ## Available interfaces
 
@@ -42,7 +42,7 @@ The native C++ server uses JSON-RPC over standard input/output.
 - `initialize` provides usage instructions.
 - `tools/list` exposes callable Operations, including domain Operations, without
   requiring a connected project.
-- Domain Operations require `database_path` in each request; additional
+- Domain Operations require `project_path` naming a `.sf` folder in each request; additional
   parameters are operation-specific.
 - `get_operations` and `get_operation` expose operation schemas and typed ports.
 - `add_operation` persists operation nodes and their JSON parameters.
