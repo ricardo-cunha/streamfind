@@ -26,15 +26,12 @@ The native C++ project version is **{{ streamfind_version }}**.
   `get_workflow` and include its current `definition_revision` in the submitted
   workflow. Saves without that revision are rejected to prevent overwriting
   concurrent app or MCP edits.
-- When a project from 0.7.1 is opened, the service checks for the current
-  result-store manifest. If it is missing while old result registrations or a
-  sibling result-store directory are present, the service marks registered
-  results stale, clears result-cache references, and returns a warning that
-  tells the user to rerun the workflow. An old `.data` folder is preserved
-  beside the project with a `.legacy-<timestamp>` suffix. No result migration
-  is performed. If a store exists but has an invalid current manifest or
-  payloads, opening fails with the store path and validation reason so the user
-  can preserve or restore the store before reopening.
+- Projects are now `.sf` folders containing `project.duckdb` and `data/`.
+  Earlier standalone `.duckdb` projects are not migrated or opened by this
+  runtime. Open them with their matching streamfind release, export the
+  workflow JSON, then create a new `.sf` project, import and validate the
+  workflow, and rerun it. Keep the original database and sibling `.data`
+  folder unchanged until the rebuilt project has been checked.
 
 ## Available packages
 
@@ -90,7 +87,7 @@ platform-specific instructions.
 
 The service is the shared control plane for the browser app, MCP, and CLI. It
 owns project sessions and DuckDB metadata access, supervises operation workers,
-and publishes validated results in the project `.data` sidecar. Closing the
+and publishes validated results in the project's `data/` directory. Closing the
 browser does not stop the service; use `bin/streamfind service status` or
 `bin/streamfind service stop` to inspect or stop it.
 

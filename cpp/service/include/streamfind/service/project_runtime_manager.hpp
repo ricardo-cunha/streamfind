@@ -53,7 +53,7 @@ public:
     Json workflow_definition(const std::string &session_id) const;
     Json set_metadata(const std::string &session_id, const Json &metadata);
     Json audit_trail(const std::string &session_id) const;
-    Json copy_project(const std::string &session_id, const std::filesystem::path &destination_database_path);
+    Json copy_project(const std::string &session_id, const std::filesystem::path &destination_project_path);
     Json resolve_workflow_inputs(const std::string &session_id, const std::string &operation_id,
                                  const Json &current_results = Json::object()) const;
     Json validate_workflow(const std::string &session_id, const Json &definition) const;
@@ -98,6 +98,7 @@ private:
     // Result file queries may outlive the session-map lookup. Keep result
     // cache access independent so immutable file reads never hold mutex_.
     mutable std::mutex result_cache_mutex_;
+    std::unordered_map<std::string, std::shared_ptr<void>> project_folder_locks_;
     std::unordered_map<std::string, std::unique_ptr<Project>> projects_;
     std::unordered_map<std::string, Workflow> workflow_definitions_;
     std::unordered_map<std::string, std::string> workflow_states_;

@@ -8,6 +8,12 @@ add_subdirectory(
     "${CMAKE_CURRENT_BINARY_DIR}/open62541"
     EXCLUDE_FROM_ALL)
 
+# The OPC UA implementation is built as a static archive and linked into this
+# shared plugin. Keep the vendored targets position independent without
+# modifying the vendored CMake project.
+set_target_properties(open62541-object open62541-plugins PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
+
 add_library(streamfind_sensors_plugin SHARED
     src/plugin_entrypoint.cpp
     src/operations/operations.cpp

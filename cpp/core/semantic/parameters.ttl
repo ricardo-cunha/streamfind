@@ -2,16 +2,16 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfcore:databasePathParameter
+sfcore:projectPathParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Database path" ;
-    skos:definition "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create." ;
+    skos:prefLabel "Project folder path" ;
+    skos:definition "Filesystem path of a StreamFind .sf project folder containing project.duckdb and data/." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "/data/project.duckdb" .
+    sf:example "/data/project.sf" .
 
 sfcore:workerIdParameter
     a sf:Parameter ;
@@ -164,16 +164,16 @@ sfcore:csvInputPathParameter
     sf:default "" ;
     sf:example "data/features.csv" .
 
-sfcore:destinationDatabasePathParameter
+sfcore:destinationProjectPathParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Destination database path" ;
-    skos:definition "Filesystem path for the copied DuckDB project database." ;
+    skos:prefLabel "Destination project folder path" ;
+    skos:definition "Filesystem path for the copied StreamFind .sf project folder." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "/data/copied.duckdb" .
+    sf:example "/data/copied.sf" .
 
 sfcore:operationIdParameter
     a sf:Parameter ;

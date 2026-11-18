@@ -157,12 +157,12 @@ void run() {
             throw std::runtime_error("execution contract: missing MCP request shape");
         }
     }
-    assert_request(mcp.at("requests"), "start", {"database_path"},
+    assert_request(mcp.at("requests"), "start", {"project_path"},
                    {"workflow_revision", "parameters"});
-    assert_request(mcp.at("requests"), "list", {"database_path"},
+    assert_request(mcp.at("requests"), "list", {"project_path"},
                    {"status"});
-    assert_request(mcp.at("requests"), "get", {"database_path"}, {});
-    assert_request(mcp.at("requests"), "cancel", {"database_path"}, {});
+    assert_request(mcp.at("requests"), "get", {"project_path"}, {});
+    assert_request(mcp.at("requests"), "cancel", {"project_path"}, {});
     if (string_set(mcp.at("result_fields")) !=
         std::set<std::string>{"workflow_revision",
                               "status", "progress", "result_reference", "error"}) {

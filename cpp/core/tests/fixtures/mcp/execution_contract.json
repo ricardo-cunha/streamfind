@@ -2,18 +2,18 @@
   "fixture_id": "mcp_execution_contract",
   "requests": {
     "start": {
-      "required": ["database_path"],
+      "required": ["project_path"],
       "optional": ["workflow_revision", "parameters"]
     },
     "list": {
-      "required": ["database_path"],
+      "required": ["project_path"],
       "optional": ["status"]
     },
     "get": {
-      "required": ["database_path"]
+      "required": ["project_path"]
     },
     "cancel": {
-      "required": ["database_path"]
+      "required": ["project_path"]
     }
   },
   "result_fields": [

@@ -120,17 +120,17 @@ $catalogue = if ($Catalogue) { (Resolve-Path $Catalogue).Path } else {
     $buildDir = if ($isWindowsPlatform) { 'tmp\build\windows\core' } else { 'tmp/build/linux/core' }
     Join-Path $repoRoot (Join-Path $buildDir 'semantic_catalogue/catalogue.duckdb')
 }
-$database = Join-Path $repoRoot (Join-Path (Join-Path 'tmp' 'projects') 'streamfind-cpp-nta-script.duckdb')
+$database = Join-Path $repoRoot (Join-Path (Join-Path 'tmp' 'projects') 'streamfind-cpp-nta-script.sf')
 $projectId = 'nta-cpp'
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
-Remove-Item -Force -ErrorAction SilentlyContinue $database
+Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
 $testDir = if ($isWindowsPlatform) { 'tmp/build/windows/core/tests' } else { 'tmp/build/linux/core/tests' }
 $env:PATH = (Join-Path $repoRoot $testDir) + [IO.Path]::PathSeparator + $env:PATH
 
 $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 $baseArguments = @{
-    database_path = $database
+    project_path = $database
 }
 
 function Invoke-NtaMethodWithDiagnostics {
@@ -245,13 +245,13 @@ try {
     Write-Host ("NTA workflow backend=C++ analyses={0}; internal_standards={1}; suspects={2}" -f $analysisNames.Count, $internalTargets.Count, $suspectTargets.Count)
 
     Invoke-McpTool $process 2 'create' @{
-        database_path = $database
+        project_path = $database
         domain = 'mass_spec'
     } | Out-Null
     $sourcePaths = @($workflowFiles | ForEach-Object { $_.FullName })
     if (-not $RunPipeline) {
         $added = Invoke-McpTool $process 3 'run_method' @{
-            database_path = $database
+            project_path = $database
             method = 'mass_spec.read_mass_spec_files'
             parameters = @{ source_paths = $sourcePaths }
         }
@@ -266,12 +266,12 @@ try {
         Write-Host "[setup] imported $addedCount wastewater analyses"
 
         Invoke-McpTool $process 4 'run_method' @{
-            database_path = $database
+            project_path = $database
             method = 'mass_spec.set_replicate_names'
             parameters = @{ replicate_names = $replicateNames }
         } | Out-Null
         Invoke-McpTool $process 5 'run_method' @{
-            database_path = $database
+            project_path = $database
             method = 'mass_spec.set_blank_names'
             parameters = @{ blank_names = $blankNames }
         } | Out-Null
@@ -323,6 +323,6 @@ try {
 } finally {
     Stop-StreamfindMcp $process
     if (-not $KeepProject) {
-        Remove-Item -Force -ErrorAction SilentlyContinue $database
+        Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database
     }
 }

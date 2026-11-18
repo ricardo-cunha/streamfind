@@ -41,7 +41,7 @@ export type ServiceSession = {
 
 export type ProjectSession = {
   session_id: string;
-  database_path: string;
+  project_path: string;
   database_size_bytes: number;
   domains: string[];
   metadata: Record<string, JsonValue>;

@@ -308,15 +308,14 @@ Json ResultStoreInspection::to_json() const {
 
 ResultStore::ResultStore(std::filesystem::path database_path)
     : database_path_(std::filesystem::weakly_canonical(database_path)),
-      root_(data_path_for_database(database_path_)) {}
+      root_(database_path_.parent_path() / "data") {}
 
 std::filesystem::path ResultStore::data_path_for_database(const std::filesystem::path &database_path) {
     auto canonical = database_path;
     std::error_code error;
     canonical = std::filesystem::weakly_canonical(canonical, error);
     if (error) canonical = std::filesystem::absolute(database_path, error).lexically_normal();
-    canonical.replace_extension(".data");
-    return canonical.lexically_normal();
+    return (canonical.parent_path() / "data").lexically_normal();
 }
 
 void ResultStore::require_component(const std::string &value, const char *name) {
@@ -431,7 +430,6 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads, bool calculate_
         }
         const auto value = read_json_file(manifest);
         if (value.value("layout_version", std::string{}) != kLayoutVersion ||
-            value.value("database_filename", std::string{}) != database_path_.filename().string() ||
             value.value("store_id", std::string{}).empty()) {
             result.status = ResultStoreStatus::invalid;
             result.error = "result store identity or layout version does not match the project";
@@ -591,7 +589,6 @@ ResultStoreInspection ResultStore::initialize(bool verify_payloads) {
     std::filesystem::create_directories(detail::storage_path(root_ / "runs"), error);
     if (error) throw std::runtime_error("cannot create result run store: " + error.message());
     const Json manifest{{"layout_version", kLayoutVersion},
-                        {"database_filename", database_path_.filename().string()},
                         {"store_id", create_store_id()}};
     write_json_file(root_ / "store.json", manifest);
     return inspect(verify_payloads);

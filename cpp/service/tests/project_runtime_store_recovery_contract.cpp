@@ -1,11 +1,11 @@
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 
-#include "streamfind/project.hpp"
+#include "streamfind/project_layout.hpp"
 #include "streamfind/service/project_runtime_manager.hpp"
 #include "streamfind/service/result_store.hpp"
 
@@ -20,180 +20,124 @@ void require(bool condition, const std::string &message) {
 using streamfind::service::runtime_store_recovery_test::require;
 
 int main() {
-    const auto root = std::filesystem::path(STREAMFIND_TEST_PROJECTS_DIR) /
-                      "project-runtime-store-recovery";
-    const auto database_path = root / "legacy-store.duckdb";
-    const auto data_path = streamfind::service::ResultStore::data_path_for_database(database_path);
+    const auto root = std::filesystem::path(STREAMFIND_TEST_PROJECTS_DIR) / "project-container-contract";
+    const auto container = root / "run with ünicode.v2.sf";
+    const auto layout = streamfind::ProjectLayout::from_container(container);
     std::error_code error;
     std::filesystem::remove_all(root, error);
-    std::filesystem::remove_all(data_path, error);
     try {
         std::filesystem::create_directories(root);
-        {
-            auto project = streamfind::Project::create({database_path, {}});
-            project.register_result_manifest({
-                {"result_id", "registered-old-result"},
-                {"contract_id", "test.table"},
-                {"kind", "table"},
-                {"format", "arrow-ipc-file"},
-                {"state", "published"},
-                {"producer_operation", "test.produce"},
-                {"producer_instance", "1"},
-                {"workflow_revision", 1}});
-            const auto created_inventory = project.get_result_inventory();
-            require(created_inventory.size() == 1 &&
-                    created_inventory.at(0).value("status", std::string{}) == "published",
-                    "test project did not retain its published registration");
-        }
-
-        streamfind::service::ResultStore store(database_path);
-        store.initialize(false);
-        require(store.inspect(false, false).status == streamfind::service::ResultStoreStatus::ready,
-                "test result store did not initialize");
-        std::filesystem::remove(data_path / "store.json");
-        std::filesystem::create_directories(data_path / "legacy-indexes");
-        std::ofstream(data_path / "legacy-indexes" / "index.bin", std::ios::binary) << "legacy-index";
-        require(store.inspect(false, false).status == streamfind::service::ResultStoreStatus::missing,
-                "test old store was not classified as missing current metadata");
-
         streamfind::OperationRegistry operations;
-        streamfind::service::ProjectRuntimeManager manager(operations);
-        const auto opened = manager.open("legacy-session", {database_path, {}});
-        const auto warning = std::find_if(opened.diagnostics.begin(), opened.diagnostics.end(),
-            [](const streamfind::Json &diagnostic) {
-                return diagnostic.value("code", std::string{}) == "legacy_result_store_invalidated";
-            });
-        require(warning != opened.diagnostics.end(),
-                "legacy result-store open did not report its recovery diagnostic: " + opened.diagnostics.dump());
-        require(warning->value("message", std::string{}).find("No migration was attempted") != std::string::npos,
-                "recovery diagnostic did not explain the no-migration action");
-        const auto preserved_message = warning->value("message", std::string{});
-        require(preserved_message.find(".legacy-") != std::string::npos,
-                "recovery diagnostic did not identify the preserved store folder");
-        std::filesystem::path preserved_path;
-        const auto preserved_prefix = data_path.filename().string() + ".legacy-";
-        for (const auto &entry : std::filesystem::directory_iterator(data_path.parent_path())) {
-            const auto name = entry.path().filename().string();
-            if (entry.is_directory() && name.starts_with(preserved_prefix)) {
-                preserved_path = entry.path();
-                break;
-            }
-        }
-        require(!preserved_path.empty(), "the legacy result-store folder was not renamed for preservation");
-        require(std::filesystem::exists(preserved_path / "legacy-indexes" / "index.bin"),
-                "the old result-store data was not preserved intact");
-        require(store.inspect(false, false).status == streamfind::service::ResultStoreStatus::ready,
-                "current result-store sidecar was not initialized after invalidation");
-        require(opened.result_store.value("status", std::string{}) == "ready" &&
-                    opened.result_store.value("published_count", std::size_t{1}) == 0 &&
-                    opened.result_store.value("invalid_count", std::size_t{1}) == 0,
-                "project-open metadata did not report the refreshed empty result store");
-        const auto inventory = manager.result_inventory("legacy-session");
-        require(inventory.empty(), "unavailable legacy result payloads were exposed by service inventory");
+        streamfind::service::ProjectRuntimeManager first(operations);
+        streamfind::service::ProjectRuntimeManager second(operations);
+        const auto created = first.create("container-session", {layout.database(), {}});
+        require(created.project_path == streamfind::path_to_utf8(layout.container()),
+                "service did not report the canonical project folder");
+        require(std::filesystem::is_regular_file(layout.database()),
+                "project database was not created inside the .sf folder");
+        require(std::filesystem::is_regular_file(layout.data() / "store.json"),
+                "result store was not created under .sf/data");
+        const auto store = streamfind::service::ResultStore(layout.database()).inspect(false, false);
+        require(store.status == streamfind::service::ResultStoreStatus::ready && !store.store_id.empty(),
+                "new project result-store manifest is invalid");
+        first.set_metadata("container-session", streamfind::Json{{"label", "source project"}});
 
-        manager.close("legacy-session");
-        {
-            auto project = streamfind::Project::open({database_path, {}});
-            const auto registrations = project.get_result_inventory();
-            require(registrations.size() == 1 &&
-                    registrations.at(0).value("status", std::string{}) == "stale",
-                    "published result registration was not marked stale in project metadata");
-        }
-        const auto reopened = manager.open("reopened-session", {database_path, {}});
-        require(std::none_of(reopened.diagnostics.begin(), reopened.diagnostics.end(),
-            [](const streamfind::Json &diagnostic) {
-                return diagnostic.value("code", std::string{}) == "legacy_result_store_invalidated";
-            }), "a second open repeated the old-store recovery warning");
-        require(manager.result_inventory("reopened-session").empty(),
-                "reopening exposed a result whose payload was preserved as legacy data");
-        manager.close("reopened-session");
-
-        const auto failed_root = root / "invalidation-failure";
-        const auto failed_database = failed_root / "retry-after-failure.duckdb";
-        const auto failed_data_path = streamfind::service::ResultStore::data_path_for_database(failed_database);
-        std::filesystem::create_directories(failed_root);
-        {
-            auto project = streamfind::Project::create({failed_database, {}});
-            project.register_result_manifest({
-                {"result_id", "failure-preserved-result"},
-                {"contract_id", "test.table"},
-                {"kind", "table"},
-                {"format", "arrow-ipc-file"},
-                {"state", "published"},
-                {"producer_operation", "test.produce"},
-                {"producer_instance", "1"},
-                {"workflow_revision", 1}});
-        }
-        streamfind::service::ResultStore failed_store(failed_database);
-        failed_store.initialize(false);
-        std::filesystem::remove(failed_data_path / "store.json");
-        std::filesystem::create_directories(failed_data_path / "legacy-indexes");
-        std::ofstream(failed_data_path / "legacy-indexes" / "index.bin", std::ios::binary) << "keep-on-failure";
-        {
-            auto project = streamfind::Project::open({failed_database, {}});
-            project.execute_sql("DROP TABLE AUDIT_TRAIL");
-            project.execute_sql("CREATE TABLE AUDIT_TRAIL (operation_type VARCHAR NOT NULL CHECK (operation_type != 'invalidate'), "
-                                "object_type VARCHAR NOT NULL, operation_details JSON, "
-                                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
-        }
-
-        streamfind::service::ProjectRuntimeManager retry_manager(operations);
-        bool recovery_failed = false;
+        bool duplicate_rejected = false;
         try {
-            static_cast<void>(retry_manager.open("failed-recovery-session", {failed_database, {}}));
-        } catch (const std::exception &) {
-            recovery_failed = true;
+            static_cast<void>(first.create("duplicate-session", {layout.database(), {}}));
+        } catch (const std::exception &exception) {
+            const std::string message = exception.what();
+            duplicate_rejected = message.find("already exists") != std::string::npos ||
+                                 message.find("already open") != std::string::npos;
         }
-        require(recovery_failed, "legacy recovery unexpectedly passed its injected audit failure");
-        require(!std::filesystem::exists(failed_data_path),
-                "failed recovery left the old store at its active path");
-        std::filesystem::path failed_preserved_path;
-        const auto failed_preserved_prefix = failed_data_path.filename().string() + ".legacy-";
-        for (const auto &entry : std::filesystem::directory_iterator(failed_data_path.parent_path())) {
-            const auto name = entry.path().filename().string();
-            if (entry.is_directory() && name.starts_with(failed_preserved_prefix)) {
-                failed_preserved_path = entry.path();
-                break;
-            }
+        require(duplicate_rejected && std::filesystem::is_regular_file(layout.database()) &&
+                    std::filesystem::is_regular_file(layout.data() / "store.json"),
+                "duplicate creation was not rejected without changing the existing container");
+
+        bool missing_parent_rejected = false;
+        const auto missing_parent_container = root / "missing-parent" / "invalid.sf";
+        try {
+            static_cast<void>(first.create("missing-parent-session",
+                {streamfind::ProjectLayout::from_container(missing_parent_container).database(), {}}));
+        } catch (const std::exception &exception) {
+            missing_parent_rejected = std::string(exception.what()).find("parent folder does not exist") != std::string::npos;
         }
-        require(!failed_preserved_path.empty() &&
-                    std::filesystem::exists(failed_preserved_path / "legacy-indexes" / "index.bin"),
-                "failed recovery did not preserve the legacy result-store payload");
+        require(missing_parent_rejected && !std::filesystem::exists(missing_parent_container.parent_path()),
+                "creation with a missing parent was not safely rejected");
+
+        bool legacy_path_rejected = false;
+        try {
+            static_cast<void>(streamfind::ProjectLayout::from_container(root / "legacy.duckdb"));
+        } catch (const std::exception &exception) {
+            legacy_path_rejected = std::string(exception.what()).find("matching streamfind release") != std::string::npos;
+        }
+        require(legacy_path_rejected,
+                "legacy DuckDB paths do not explain the no-migration rebuild procedure");
+
+        const auto copy_layout = streamfind::ProjectLayout::from_container(root / "copy.sf");
+        const auto copied = first.copy_project("container-session", copy_layout.container());
+        require(copied.value("project_path", "") == streamfind::path_to_utf8(copy_layout.container()) &&
+                    copied.at("session_id").is_null(),
+                "project copy did not return the new container path without attaching a session");
+        const auto copied_store = streamfind::service::ResultStore(copy_layout.database()).inspect(false, false);
+        require(copied_store.status == streamfind::service::ResultStoreStatus::ready &&
+                    copied_store.store_id != store.store_id && copied_store.published_count == 0,
+                "project copy did not receive a distinct, empty result store");
+        const auto copied_project = second.open("copied-session", {copy_layout.database(), {}});
+        require(copied_project.metadata == streamfind::Json{{"label", "source project"}},
+                "project copy did not preserve project metadata");
+        second.close("copied-session");
+
+        const auto same = first.open("another-session-id", {layout.database(), {}});
+        require(same.session_id == "container-session",
+                "opening the same folder did not reuse its existing service session");
+        bool cross_service_rejected = false;
+        try {
+            static_cast<void>(second.open("competing-session", {layout.database(), {}}));
+        } catch (const std::exception &exception) {
+            cross_service_rejected = std::string(exception.what()).find("already open") != std::string::npos;
+        }
+        require(cross_service_rejected, "a second service acquired an already-open project container");
+
+        const auto original_manifest = layout.data() / "store.json";
+        std::ifstream input(original_manifest, std::ios::binary);
+        const std::string original((std::istreambuf_iterator<char>(input)), {});
+        first.close("container-session");
+
+        auto altered = streamfind::Json::parse(original);
+        altered["store_id"] = "store-from-another-container";
         {
-            auto project = streamfind::Project::open({failed_database, {}});
-            const auto registrations = project.get_result_inventory();
-            require(registrations.size() == 1 &&
-                        registrations.front().value("status", std::string{}) == "published",
-                    "failed recovery partially invalidated the published registration");
-            project.execute_sql("DROP TABLE AUDIT_TRAIL");
-            project.execute_sql("CREATE TABLE AUDIT_TRAIL (operation_type VARCHAR NOT NULL, "
-                                "object_type VARCHAR NOT NULL, operation_details JSON, "
-                                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+            std::ofstream output(original_manifest, std::ios::binary | std::ios::trunc);
+            output << altered.dump(2) << '\n';
         }
-        const auto recovered = retry_manager.open("recovered-session", {failed_database, {}});
-        require(std::any_of(recovered.diagnostics.begin(), recovered.diagnostics.end(),
-                    [](const streamfind::Json &diagnostic) {
-                        return diagnostic.value("code", std::string{}) == "legacy_result_store_invalidated";
-                    }), "recovery retry did not report successful invalidation");
-        require(failed_store.inspect(false, false).status == streamfind::service::ResultStoreStatus::ready,
-                "recovery retry did not initialize the current result store");
-        require(recovered.result_store.value("status", std::string{}) == "ready" &&
-                    recovered.result_store.value("published_count", std::size_t{1}) == 0 &&
-                    recovered.result_store.value("invalid_count", std::size_t{1}) == 0,
-                "recovery retry did not return refreshed result-store card metadata");
-        require(retry_manager.result_inventory("recovered-session").empty(),
-                "recovery retry exposed an unavailable legacy result");
-        require(std::filesystem::exists(failed_preserved_path / "legacy-indexes" / "index.bin"),
-                "recovery retry modified the preserved legacy result-store payload");
-        retry_manager.close("recovered-session");
+        bool mismatch_rejected = false;
+        try {
+            static_cast<void>(second.open("mismatch-session", {layout.database(), {}}));
+        } catch (const std::exception &exception) {
+            mismatch_rejected = std::string(exception.what()).find("do not belong to the same .sf container") != std::string::npos;
+        }
+        require(mismatch_rejected, "database and result-store identity mismatch was not reported");
+        {
+            std::ifstream check(original_manifest, std::ios::binary);
+            const std::string unchanged((std::istreambuf_iterator<char>(check)), {});
+            require(unchanged == altered.dump(2) + "\n",
+                    "failed project open modified the mismatched result-store manifest");
+        }
+
+        {
+            std::ofstream output(original_manifest, std::ios::binary | std::ios::trunc);
+            output << original;
+        }
+        const auto reopened = second.open("reopened-session", {layout.database(), {}});
+        require(reopened.session_id == "reopened-session",
+                "the second service could not open the project after the first closed it");
+        second.close("reopened-session");
 
         std::filesystem::remove_all(root, error);
-        std::filesystem::remove_all(data_path, error);
-        std::cout << "project runtime store recovery contract passed\n";
+        std::cout << "project container ownership and store identity contract passed\n";
         return 0;
     } catch (const std::exception &exception) {
         std::filesystem::remove_all(root, error);
-        std::filesystem::remove_all(data_path, error);
         std::cerr << exception.what() << '\n';
         return 1;
     }

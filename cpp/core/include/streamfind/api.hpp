@@ -42,7 +42,7 @@ STREAMFIND_CORE_API ProjectCommand command_from_string(std::string_view name);
 /**
  * @brief Execute one JSON request against a Project.
  *
- * Requests use `database_path` to select a project. Commands
+ * Requests use `project_path` to select a project. Commands
  * that modify a workflow additionally require a `workflow` JSON value.
  * Results are JSON objects suitable for direct CLI output.
  *

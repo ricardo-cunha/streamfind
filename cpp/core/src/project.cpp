@@ -8,7 +8,9 @@
 #include "streamfind/project_table_store.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 
 #include <functional>
 
@@ -29,9 +31,17 @@
 
 namespace streamfind
 {
-    constexpr int PROJECT_SCHEMA_VERSION = 4;
+    constexpr int PROJECT_SCHEMA_VERSION = 5;
     namespace detail
     {
+
+        std::string generated_project_store_id()
+        {
+            static std::atomic_uint64_t sequence{0};
+            const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+            return "store-" + std::to_string(stamp) + "-" +
+                   std::to_string(sequence.fetch_add(1, std::memory_order_relaxed));
+        }
 
         using Statement = duckdb_prepared_statement;
 
@@ -262,7 +272,7 @@ namespace streamfind
         void create_schema(duckdb_connection connection)
         {
             query(connection,
-                  "CREATE TABLE IF NOT EXISTS PROJECT (metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT " + std::to_string(PROJECT_SCHEMA_VERSION) + ", framework_version VARCHAR NOT NULL DEFAULT '" STREAMFIND_FRAMEWORK_VERSION "')",
+                  "CREATE TABLE IF NOT EXISTS PROJECT (metadata JSON, workflow JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, schema_version INTEGER NOT NULL DEFAULT " + std::to_string(PROJECT_SCHEMA_VERSION) + ", framework_version VARCHAR NOT NULL DEFAULT '" STREAMFIND_FRAMEWORK_VERSION "', result_store_id VARCHAR NOT NULL)",
                   "create PROJECT table");
             query(connection,
                   "CREATE TABLE IF NOT EXISTS AUDIT_TRAIL (operation_type VARCHAR NOT NULL, object_type VARCHAR NOT NULL, operation_details JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -312,7 +322,7 @@ namespace streamfind
                     "); open it with a matching streamfind release and rerun its workflow; this version does not migrate projects");
 
             const std::vector<std::pair<std::string, std::vector<std::string>>> required = {
-                {"PROJECT", {"metadata", "workflow", "schema_version", "framework_version", "created_at"}},
+                {"PROJECT", {"metadata", "workflow", "schema_version", "framework_version", "created_at", "result_store_id"}},
                 {"AUDIT_TRAIL", {"operation_type", "object_type", "operation_details", "created_at"}},
                 {"WORKFLOW_REVISION", {"revision", "workflow", "created_at"}},
                 {"WORKFLOW_EXECUTION", {"workflow_revision", "launch_snapshot", "status", "progress",
@@ -1593,14 +1603,15 @@ namespace streamfind
     ProjectInfo read_info(duckdb_connection connection)
     {
         ProjectInfo info;
-        prepared(connection, "SELECT metadata, workflow, schema_version, framework_version, created_at FROM PROJECT LIMIT 1", "read PROJECT row", [](Statement) {}, [&](duckdb_result &result)
+        prepared(connection, "SELECT metadata, workflow, schema_version, framework_version, created_at, result_store_id FROM PROJECT LIMIT 1", "read PROJECT row", [](Statement) {}, [&](duckdb_result &result)
                  {
                  if (duckdb_row_count(&result) == 0) throw Error(ErrorCode::ProjectNotFound, "Project row not found");
                  info.metadata = parse_json(value_string(result, 0, 0), "PROJECT metadata");
                  info.domains = workflow_domains(parse_json(value_string(result, 1, 0), "PROJECT workflow"));
                  info.schema_version = duckdb_value_int32(&result, 2, 0);
                  info.framework_version = value_string(result, 3, 0);
-                 info.created_at = value_string(result, 4, 0); });
+                 info.created_at = value_string(result, 4, 0);
+                 info.result_store_id = value_string(result, 5, 0); });
         return info;
     }
 
@@ -1661,10 +1672,16 @@ namespace streamfind
                                      {"metadata", options.workflow_metadata},
                                      {"operations", Json::array()}, {"connections", Json::array()}};
             initial_workflow = Workflow::from_json(initial_workflow).to_json();
-            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow) VALUES (?, ?)", "create PROJECT row", [&](Statement statement)
-                     { bind_text(statement, 1, json_text(options.metadata)); bind_text(statement, 2, json_text(initial_workflow)); }, [](duckdb_result &) {});
+            const auto result_store_id = options.result_store_id.empty()
+                ? generated_project_store_id() : options.result_store_id;
+            prepared(connection.get(), "INSERT INTO PROJECT (metadata, workflow, result_store_id) VALUES (?, ?, ?)", "create PROJECT row", [&](Statement statement)
+                     { bind_text(statement, 1, json_text(options.metadata)); bind_text(statement, 2, json_text(initial_workflow)); bind_text(statement, 3, result_store_id); }, [](duckdb_result &) {});
         }
         impl->info = read_info(connection.get());
+        if (!creating && !options.result_store_id.empty() && impl->info.result_store_id != options.result_store_id)
+            throw Error(ErrorCode::SchemaMismatch,
+                "StreamFind project and result store do not belong to the same .sf container; "
+                "the project was not modified. Verify project.duckdb and data/store.json in " + options.database_path.parent_path().string());
         prepared(connection.get(), "SELECT workflow FROM PROJECT LIMIT 1", "read workflow", [&](Statement) {}, [&](duckdb_result &result)
                  {
                  if (duckdb_row_count(&result))

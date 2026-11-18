@@ -62,7 +62,7 @@ the original SCIEX input path, so update it if the source data is elsewhere.
 
 Each command has a deterministic default project name. If the project already
 exists, choose another `--project-name` or pass `--force` to replace it. Force
-removes the existing DuckDB file, sibling `.data` store, and workflow JSON
+removes the existing `.sf` project folder and workflow JSON
 sidecar; close the project in the app before replacing it. Use `--url` to
 target a non-default service endpoint. Use
 `sfdev workflows <name> --dry-run` to preview the helper invocation; dry-run

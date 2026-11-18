@@ -39,8 +39,8 @@ and the matching developer kit when building an out-of-tree plugin.
 
 ## Project API
 
-`streamfind::Project` identifies one DuckDB-backed project selected by
-`ProjectOptions`. The service owns the project session and metadata connection;
+`streamfind::Project` provides persistence inside a service-managed `.sf`
+folder. The service owns the project session and metadata connection;
 clients and workers use the public service/API boundary rather than opening
 the file independently:
 
@@ -53,8 +53,10 @@ streamfind::ProjectOptions options{
 auto project = streamfind::Project::create(options);
 ```
 
-`ProjectOptions` contains the database path, project metadata, and initial
-workflow metadata. A new project starts with an empty workflow. The project's
+The user-visible project path is the `.sf` folder, containing a fixed
+`project.duckdb` file and a `data/` result directory. `ProjectOptions` is an
+internal persistence-layer configuration and contains the database path,
+project metadata, and initial workflow metadata. A new project starts with an empty workflow. The project's
 `get_domains()` result is inferred from the domain prefixes of operation IDs in
 that workflow; it is not a setting supplied at project creation.
 

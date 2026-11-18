@@ -168,10 +168,10 @@ nodes are added.
 ## JSON API
 
 `streamfind::api::run()` exposes the same operations through
-`streamfind::api::ProjectCommand`. The database path selects the project with:
+`streamfind::api::ProjectCommand`. The container folder selects the project with:
 
 ```json
-{"database_path":"project.duckdb"}
+{"project_path":"project.sf"}
 ```
 
 Canonical commands are:

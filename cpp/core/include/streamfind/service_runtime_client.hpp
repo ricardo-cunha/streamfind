@@ -24,10 +24,10 @@ STREAMFIND_CORE_API data_proxy::Json stop_service(const std::string &instance_id
 
 /** Attach a project to an already running local streamfind service. */
 STREAMFIND_CORE_API ServiceProjectAttachment attach_project(
-    const std::filesystem::path &database_path);
+    const std::filesystem::path &project_path);
 
 STREAMFIND_CORE_API ServiceProjectAttachment create_project(
-    const std::filesystem::path &database_path,
+    const std::filesystem::path &project_path,
     const data_proxy::Json &metadata = data_proxy::Json::object(),
     const data_proxy::Json &workflow_metadata = data_proxy::Json::object());
 
@@ -84,7 +84,7 @@ STREAMFIND_CORE_API data_proxy::Json get_audit_trail(
     const ServiceProjectAttachment &attachment);
 STREAMFIND_CORE_API data_proxy::Json copy_project(
     const ServiceProjectAttachment &attachment,
-    const std::filesystem::path &destination_database_path);
+    const std::filesystem::path &destination_project_path);
 
 STREAMFIND_CORE_API data_proxy::Json get_results(const ServiceProjectAttachment &attachment);
 

@@ -4,6 +4,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../build" && pwd)/linux-common.s
 sanitize_linux_build_environment
 ensure_streamfind_example_data
 require_tool cmake; require_tool ninja; require_tool tar; require_tool sha256sum
+ABI_HEADER="$REPO_ROOT/cpp/sdk/include/streamfind/plugin_abi.h"
+abi_major="$(sed -nE 's/^[[:space:]]*STREAMFIND_PLUGIN_ABI_MAJOR[[:space:]]*=[[:space:]]*([0-9]+),?[[:space:]]*$/\1/p' "$ABI_HEADER" | head -n1)"
+abi_minor="$(sed -nE 's/^[[:space:]]*STREAMFIND_PLUGIN_ABI_MINOR[[:space:]]*=[[:space:]]*([0-9]+),?[[:space:]]*$/\1/p' "$ABI_HEADER" | head -n1)"
+if [[ -z "$abi_major" || -z "$abi_minor" ]]; then
+    echo "could not read plugin ABI version from $ABI_HEADER" >&2
+    exit 2
+fi
 VERSION="${1:-$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")}"
 if [[ -z "$VERSION" ]]; then
     echo "VERSION is empty" >&2
@@ -70,7 +77,7 @@ while IFS= read -r manifest_path; do
     tar -xOf "$archive" "$manifest_path" > "$manifest_file"
     grep -q "\"plugin_id\": \"$domain\"" "$manifest_file"
     grep -q '"version": "'"$VERSION"'"' "$manifest_file"
-    grep -q '"abi_version": { "major": 1, "minor": 1 }' "$manifest_file"
+    grep -Eq '"abi_version":[[:space:]]*\{[[:space:]]*"major":[[:space:]]*'"$abi_major"'[[:space:]]*,[[:space:]]*"minor":[[:space:]]*'"$abi_minor"'[[:space:]]*\}' "$manifest_file"
     grep -q '"static_composition": false' "$manifest_file"
     grep -q '"semantic_catalogue": "catalogue.duckdb"' "$manifest_file"
     library_name="$(grep -m1 '"linux-x86_64":' "$manifest_file" | sed -E 's/.*"linux-x86_64": "([^"]+)".*/\1/')"

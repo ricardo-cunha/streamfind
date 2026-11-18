@@ -1,6 +1,7 @@
 #include "streamfind/service/project_runtime_manager.hpp"
 #include "streamfind/service/worker_handle_broker.hpp"
 #include "streamfind/fingerprint.hpp"
+#include "streamfind/project_layout.hpp"
 #include "streamfind/service_configuration.hpp"
 
 #include <algorithm>
@@ -25,12 +26,56 @@
 #include <io.h>
 #include <windows.h>
 #else
+#include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 #endif
 
 namespace streamfind::service {
 
 namespace detail {
+
+class ProjectFolderLock {
+public:
+    explicit ProjectFolderLock(const std::filesystem::path &container) {
+        const auto path = container / ".streamfind.lock";
+#ifdef _WIN32
+        handle_ = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                              FILE_ATTRIBUTE_HIDDEN, nullptr);
+        if (handle_ == INVALID_HANDLE_VALUE)
+            throw std::runtime_error("Project folder is already open by another StreamFind service: " + path.string());
+#else
+        descriptor_ = ::open(path.c_str(), O_CREAT | O_RDWR, 0600);
+        if (descriptor_ < 0 || flock(descriptor_, LOCK_EX | LOCK_NB) != 0) {
+            if (descriptor_ >= 0) ::close(descriptor_);
+            descriptor_ = -1;
+            throw std::runtime_error("Project folder is already open by another StreamFind service: " + path.string());
+        }
+#endif
+    }
+    ~ProjectFolderLock() {
+#ifdef _WIN32
+        if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);
+#else
+        if (descriptor_ >= 0) {
+            flock(descriptor_, LOCK_UN);
+            ::close(descriptor_);
+        }
+#endif
+    }
+    ProjectFolderLock(const ProjectFolderLock &) = delete;
+    ProjectFolderLock &operator=(const ProjectFolderLock &) = delete;
+private:
+#ifdef _WIN32
+    HANDLE handle_{INVALID_HANDLE_VALUE};
+#else
+    int descriptor_{-1};
+#endif
+};
+
+std::shared_ptr<ProjectFolderLock> lock_project_folder(const std::filesystem::path &container) {
+    return std::make_shared<ProjectFolderLock>(container);
+}
 
 std::uint64_t configured_worker_memory_limit_mb(const std::filesystem::path &configuration_path) {
     return load_service_configuration(configuration_path).worker_memory_limit_mb;
@@ -237,7 +282,7 @@ ProjectSessionDto ProjectRuntimeManager::describe(const std::string &session_id,
     // lightweight store size for the project card.
     const auto inspection = result_store.inspect(false, true);
     return ProjectSessionDto{session_id,
-                             project.get_database_path().string(),
+                             path_to_utf8(project.get_database_path().parent_path()),
                              error ? 0 : size,
                              project.get_domains(),
                              project.get_metadata(),
@@ -248,9 +293,23 @@ ProjectSessionDto ProjectRuntimeManager::create(const std::string &session_id,
                                                  const ProjectOptions &options) {
     std::lock_guard lock(mutex_);
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
-    ensure_database_is_not_open(options.database_path);
-    auto project = std::make_unique<Project>(Project::create(options));
-    ResultStore(project->get_database_path()).initialize(false);
+    const auto layout = ProjectLayout::from_container(options.database_path.parent_path());
+    if (options.database_path.filename() != ProjectLayout::kDatabaseFilename ||
+        canonical_database_path(options.database_path) != canonical_database_path(layout.database()))
+        throw std::invalid_argument("Project database must be project.duckdb inside its .sf folder");
+    ensure_database_is_not_open(layout.database());
+    std::error_code error;
+    if (!std::filesystem::is_directory(layout.container().parent_path(), error) || error)
+        throw std::invalid_argument("Project parent folder does not exist: " + layout.container().parent_path().string());
+    if (!std::filesystem::create_directory(layout.container(), error) || error)
+        throw std::invalid_argument("Project folder already exists or cannot be created: " + layout.container().string());
+    std::shared_ptr<detail::ProjectFolderLock> folder_lock;
+    try {
+    folder_lock = detail::lock_project_folder(layout.container());
+    ProjectOptions initialized_options = options;
+    const auto store = ResultStore(layout.database()).initialize(false);
+    initialized_options.result_store_id = store.store_id;
+    auto project = std::make_unique<Project>(Project::create(initialized_options));
     project->set_result_cache_lookup([database_path = project->get_database_path()](const std::string &key) {
         return ResultStore(database_path).find_cached_results(key);
     });
@@ -281,81 +340,44 @@ ProjectSessionDto ProjectRuntimeManager::create(const std::string &session_id,
     const auto result = describe(session_id, *project);
     workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
+    project_folder_locks_.emplace(session_id, std::move(folder_lock));
     workflow_states_[session_id] = kWorkflowIdle;
     return result;
+    } catch (...) {
+        folder_lock.reset();
+        std::filesystem::remove_all(layout.container(), error);
+        throw;
+    }
 }
 
 ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
                                                const ProjectOptions &options) {
     std::lock_guard lock(mutex_);
+    const auto layout = ProjectLayout::from_container(options.database_path.parent_path());
+    if (options.database_path.filename() != ProjectLayout::kDatabaseFilename ||
+        canonical_database_path(options.database_path) != canonical_database_path(layout.database()))
+        throw std::invalid_argument("Project database must be project.duckdb inside its .sf folder");
+    const auto canonical = canonical_database_path(layout.database());
+    for (const auto &[existing_session, existing_project] : projects_)
+        if (canonical_database_path(existing_project->get_database_path()) == canonical)
+            return describe(existing_session, *existing_project);
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
-    ensure_database_is_not_open(options.database_path);
-    auto project = std::make_unique<Project>(Project::open(options));
-    ResultStore result_store(project->get_database_path());
+    ensure_database_is_not_open(layout.database());
+    if (!std::filesystem::is_regular_file(layout.database()))
+        throw std::runtime_error("Project database is missing at " + layout.database().string());
+    if (!std::filesystem::is_directory(layout.data()))
+        throw std::runtime_error("Project result store is missing at " + layout.data().string());
+    auto folder_lock = detail::lock_project_folder(layout.container());
+    ResultStore result_store(layout.database());
     const auto prior_store = result_store.inspect(false, false);
-    if (prior_store.status == ResultStoreStatus::invalid) {
-        throw std::runtime_error(
-            "Project result store is incompatible or invalid at " + prior_store.root.string() +
-            ": " + prior_store.error +
-            ". No result-store migration is available. Preserve the .data folder, inspect its store.json "
-            "and manifests, and restore a matching backup or move the incompatible store aside before "
-            "reopening and rerunning the workflow.");
-    }
-    const auto registered_results = project->get_result_inventory();
-    const auto registered_published_count = static_cast<std::size_t>(std::count_if(
-        registered_results.begin(), registered_results.end(), [](const auto &result) {
-            return result.value("status", std::string{}) == "published";
-        }));
-    Json compatibility_diagnostic = nullptr;
-    std::filesystem::path preserved_store_path;
-    std::error_code store_path_error;
-    const bool legacy_store_path_exists = std::filesystem::exists(prior_store.root, store_path_error);
-    if (store_path_error)
-        throw std::runtime_error("Cannot inspect the project result-store path " + prior_store.root.string() +
-                                 ": " + store_path_error.message());
-    if (prior_store.status == ResultStoreStatus::missing &&
-        (registered_published_count != 0 || legacy_store_path_exists)) {
-        if (legacy_store_path_exists) {
-            const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            preserved_store_path = prior_store.root.parent_path() /
-                (prior_store.root.filename().string() + ".legacy-" + std::to_string(stamp));
-            for (std::uint32_t suffix = 1;; ++suffix) {
-                const bool destination_exists = std::filesystem::exists(preserved_store_path, store_path_error);
-                if (store_path_error)
-                    throw std::runtime_error("Cannot inspect a preservation path for the legacy result store: " +
-                                             store_path_error.message());
-                if (!destination_exists) break;
-                preserved_store_path = prior_store.root.parent_path() /
-                    (prior_store.root.filename().string() + ".legacy-" + std::to_string(stamp) + "-" +
-                     std::to_string(suffix));
-            }
-            std::filesystem::rename(prior_store.root, preserved_store_path, store_path_error);
-            if (store_path_error)
-                throw std::runtime_error("The project has an older result-store structure at " +
-                    prior_store.root.string() + " and it could not be preserved separately: " +
-                    store_path_error.message() + ". No migration was attempted; close applications using "
-                    "the project, preserve the .data folder, then reopen and rerun the workflow.");
-        }
-        const std::string reason =
-            "The project has published result registrations or a sibling result-store directory without a current store manifest.";
-        const auto invalidated = project->invalidate_published_results(reason);
-        compatibility_diagnostic = Json{
-            {"severity", "warning"},
-            {"code", "legacy_result_store_invalidated"},
-            {"message", "This project contains results from an older result-store structure. " +
-                            std::to_string(invalidated) +
-                            " result registration(s) were marked stale and cache references were cleared. "
-                            "No migration was attempted. The workflow and metadata were preserved; rerun "
-                            "the workflow to publish results in the current store." +
-                            (preserved_store_path.empty() ? std::string{} :
-                                " The old result-store folder was preserved at " + preserved_store_path.string() + ".") +
-                            " If the warning persists after rerunning, inspect the DuckDB result registry "
-                            "and the current sibling .data folder."}};
-    }
-    // A missing sidecar is initialized only after checking DuckDB registrations,
-    // so pre-file-store projects cannot silently appear to have no prior results.
-    result_store.initialize(false);
+    if (prior_store.status != ResultStoreStatus::ready)
+        throw std::runtime_error("Project result store is unavailable at " + prior_store.root.string() +
+            (prior_store.error.empty() ? std::string{} : ": " + prior_store.error) +
+            ". No files or registrations were changed. Restore the matching data folder or open the project "
+            "with the matching streamfind release and rerun its workflow.");
+    ProjectOptions verified_options = options;
+    verified_options.result_store_id = prior_store.store_id;
+    auto project = std::make_unique<Project>(Project::open(verified_options));
     project->set_result_cache_lookup([database_path = project->get_database_path()](const std::string &key) {
         return ResultStore(database_path).find_cached_results(key);
     });
@@ -384,9 +406,9 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
             operation_event_callback_(session_id, operation_id, type, payload);
         });
     auto result = describe(session_id, *project);
-    if (!compatibility_diagnostic.is_null()) result.diagnostics.push_back(std::move(compatibility_diagnostic));
     workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
+    project_folder_locks_.emplace(session_id, std::move(folder_lock));
     workflow_states_[session_id] = kWorkflowIdle;
     return result;
 }
@@ -427,6 +449,7 @@ ProjectSessionDto ProjectRuntimeManager::close(const std::string &session_id) {
     {
         std::lock_guard lock(mutex_);
         projects_.erase(session_id);
+        project_folder_locks_.erase(session_id);
         {
             std::lock_guard cache_lock(result_cache_mutex_);
         }
@@ -481,19 +504,32 @@ Json ProjectRuntimeManager::audit_trail(const std::string &session_id) const {
 }
 
 Json ProjectRuntimeManager::copy_project(const std::string &session_id,
-                                         const std::filesystem::path &destination_database_path) {
+                                         const std::filesystem::path &destination_project_path) {
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    ensure_database_is_not_open(destination_database_path);
-    ProjectOptions options;
-    options.database_path = destination_database_path;
-    auto copy = iterator->second->copy(options);
-    ResultStore(copy.get_database_path()).initialize();
-    Json response;
-    to_json(response, describe(session_id, copy));
-    response["session_id"] = nullptr;
-    return response;
+    const auto layout = ProjectLayout::from_container(destination_project_path);
+    ensure_database_is_not_open(layout.database());
+    std::error_code error;
+    if (!std::filesystem::create_directory(layout.container(), error) || error)
+        throw std::invalid_argument("Project folder already exists or cannot be created: " + layout.container().string());
+    std::shared_ptr<detail::ProjectFolderLock> folder_lock;
+    try {
+        folder_lock = detail::lock_project_folder(layout.container());
+        ProjectOptions options;
+        options.database_path = layout.database();
+        const auto store = ResultStore(layout.database()).initialize(false);
+        options.result_store_id = store.store_id;
+        auto copy = iterator->second->copy(options);
+        Json response;
+        to_json(response, describe(session_id, copy));
+        response["session_id"] = nullptr;
+        return response;
+    } catch (...) {
+    folder_lock.reset();
+        std::filesystem::remove_all(layout.container(), error);
+        throw;
+    }
 }
 
 Json ProjectRuntimeManager::validate_workflow(const std::string &session_id, const Json &definition) const {

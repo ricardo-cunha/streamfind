@@ -88,7 +88,7 @@ function Invoke-ResultRows {
         [string]$OutputPort = ''
     )
     if (-not $OutputPort) { throw 'Invoke-ResultRows requires an explicit output port.' }
-    $inventory = @(Invoke-McpTool $Process $script:requestId 'get_result_inventory' @{ database_path = $Database })
+    $inventory = @(Invoke-McpTool $Process $script:requestId 'get_result_inventory' @{ project_path = $Database })
     $script:requestId++
     $candidate = @($inventory | Where-Object {
             [string]$_.producer_instance -eq [string]$OperationInstance -and
@@ -99,7 +99,7 @@ function Invoke-ResultRows {
         throw "No unique published result found for operation $OperationInstance output $OutputPort. Inventory=$($inventory | ConvertTo-Json -Depth 6 -Compress)"
     }
     $selector = @{
-        database_path = $Database
+        project_path = $Database
         result_id = [string]$candidate[0].result_id
         include_data = $true
         columns = $Columns
@@ -150,7 +150,7 @@ function Wait-Workflow {
     $stepStarted = $started
     do {
         Start-Sleep -Milliseconds 500
-        $snapshot = Invoke-McpTool $Process $script:requestId 'get_workflow_execution' @{ database_path = $Database }
+        $snapshot = Invoke-McpTool $Process $script:requestId 'get_workflow_execution' @{ project_path = $Database }
         $script:requestId++
         $state = [string]$snapshot.state
         $progress = $snapshot.progress
@@ -238,17 +238,16 @@ try {
         if ($safeStem.Length -gt 16) {
             $safeStem = $safeStem.Substring(0, 16)
         }
-        $database = Join-Path $databaseRoot "quantification-sciex-$safeStem.duckdb"
-        $dataStore = [System.IO.Path]::ChangeExtension($database, '.data')
-        if (Test-Path -LiteralPath $database) { Remove-Item -LiteralPath $database -Force }
-        if (Test-Path -LiteralPath $dataStore) { Remove-Item -LiteralPath $dataStore -Recurse -Force }
+        $database = Join-Path $databaseRoot "quantification-sciex-$safeStem.sf"
+        $dataStore = Join-Path $database 'data'
+        if (Test-Path -LiteralPath $database) { Remove-Item -LiteralPath $database -Recurse -Force }
 
         $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
         try {
         Initialize-Mcp $process | Out-Null
-        Invoke-McpTool $process $script:requestId 'create' @{ database_path = $database; domain = 'mass_spec' } | Out-Null
+        Invoke-McpTool $process $script:requestId 'create' @{ project_path = $database; domain = 'mass_spec' } | Out-Null
         $script:requestId++
-        $workflowRevision = (Invoke-McpTool $process $script:requestId 'get_workflow' @{ database_path = $database }).definition_revision
+        $workflowRevision = (Invoke-McpTool $process $script:requestId 'get_workflow' @{ project_path = $database }).definition_revision
         $script:requestId++
 
         $readWorkflow = @{
@@ -259,12 +258,12 @@ try {
             connections = @()
         }
         $readWorkflow.definition_revision = [int]$workflowRevision
-        Invoke-McpTool $process $script:requestId 'set_workflow' @{ database_path = $database; workflow = $readWorkflow } | Out-Null
+        Invoke-McpTool $process $script:requestId 'set_workflow' @{ project_path = $database; workflow = $readWorkflow } | Out-Null
         $script:requestId++
-        $validation = Invoke-McpTool $process $script:requestId 'validate_workflow' @{ database_path = $database; workflow = $readWorkflow }
+        $validation = Invoke-McpTool $process $script:requestId 'validate_workflow' @{ project_path = $database; workflow = $readWorkflow }
         $script:requestId++
         if (-not $validation.valid) { throw "Reader workflow validation failed for ${sourcePath}: $($validation | ConvertTo-Json -Depth 8 -Compress)" }
-        Invoke-McpTool $process $script:requestId 'run_workflow' @{ database_path = $database } | Out-Null
+        Invoke-McpTool $process $script:requestId 'run_workflow' @{ project_path = $database } | Out-Null
         $script:requestId++
         Wait-Workflow $process $database $readWorkflow
 
@@ -351,15 +350,15 @@ try {
                 @{ source_operation = 3; source_port = 'chromatogramPeaksTable'; target_operation = 5; target_port = 'chromatogramPeaksTable' }
             )
         }
-        $workflowRevision = (Invoke-McpTool $process $script:requestId 'get_workflow' @{ database_path = $database }).definition_revision
+        $workflowRevision = (Invoke-McpTool $process $script:requestId 'get_workflow' @{ project_path = $database }).definition_revision
         $script:requestId++
         $workflow.definition_revision = [int]$workflowRevision
-        Invoke-McpTool $process $script:requestId 'set_workflow' @{ database_path = $database; workflow = $workflow } | Out-Null
+        Invoke-McpTool $process $script:requestId 'set_workflow' @{ project_path = $database; workflow = $workflow } | Out-Null
         $script:requestId++
-        $validation = Invoke-McpTool $process $script:requestId 'validate_workflow' @{ database_path = $database; workflow = $workflow }
+        $validation = Invoke-McpTool $process $script:requestId 'validate_workflow' @{ project_path = $database; workflow = $workflow }
         $script:requestId++
         if (-not $validation.valid) { throw "Quantification workflow validation failed for ${sourcePath}: $($validation | ConvertTo-Json -Depth 8 -Compress)" }
-        Invoke-McpTool $process $script:requestId 'run_workflow' @{ database_path = $database } | Out-Null
+        Invoke-McpTool $process $script:requestId 'run_workflow' @{ project_path = $database } | Out-Null
         $script:requestId++
         Wait-Workflow $process $database $workflow
 
@@ -385,8 +384,7 @@ try {
         finally {
             if (-not $KeepRuntime) { Stop-StreamfindMcp $process }
             if (-not $KeepProjects) {
-                Remove-Item -LiteralPath $database -Force -ErrorAction SilentlyContinue
-                Remove-Item -LiteralPath $dataStore -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $database -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
     }

@@ -114,12 +114,10 @@ static std::string publish_small_table(streamfind::service::ResultStore &store,
 int main() {
     const std::filesystem::path database =
         std::filesystem::path(STREAMFIND_TEST_REPO_ROOT) /
-        "tmp" / "projects" / "result-store-arrow-contract.duckdb";
-    const auto data_root = streamfind::service::ResultStore::data_path_for_database(database);
+        "tmp" / "projects" / "result-store-arrow-contract.sf" / "project.duckdb";
     std::error_code error;
     std::filesystem::create_directories(database.parent_path(), error);
-    std::filesystem::remove(database, error);
-    std::filesystem::remove_all(data_root, error);
+    std::filesystem::remove_all(database.parent_path(), error);
 
     try {
         streamfind::service::ResultStore store(database);
@@ -646,10 +644,10 @@ int main() {
         store.remove_published_results({bounded_id});
         require(store.read_range_statistics(bounded_id, "count").is_null(),
                 "deleting a result left its range-statistics sidecar");
-        std::filesystem::remove_all(data_root, error);
+        std::filesystem::remove_all(database.parent_path(), error);
         return 0;
     } catch (...) {
-        std::filesystem::remove_all(data_root, error);
+        std::filesystem::remove_all(database.parent_path(), error);
         throw;
     }
 }

@@ -12,6 +12,7 @@ import {
 import logo from '../assets/streamfind.png';
 
 import WorkflowCanvas from './WorkflowCanvas';
+import { ProjectFolderPicker } from './ProjectFolderPicker';
 import { NotificationToasts } from './NotificationCenter';
 import { StreamFindApiClient, type ProjectSession, type ServiceState } from '../framework/backend/StreamFindApiClient';
 import type {
@@ -29,7 +30,7 @@ import type {
 } from '../framework/backend/protocol';
 import { notifyApp } from '../framework/notifications/notificationBus';
 import {
-  forceDuckDbPath,
+  projectContainerPath,
   navigateHash,
   palettes,
   projectNameFromPath,
@@ -703,11 +704,16 @@ function BootstrapGate({
 }
 function projectFileName(project: ProjectSession): string {
   return (
-    project.database_path
+    project.project_path
       .split(/[\\/]/)
       .pop()
       ?.replace(/\.[^.]+$/, '') || project.session_id
   );
+}
+function projectParentPath(path: string): string {
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (separator < 0) return '';
+  return path.slice(0, separator) || path.slice(0, separator + 1);
 }
 function formatDatabaseSize(bytes: number): string {
   const megabytes = bytes / (1024 * 1024);
@@ -743,18 +749,20 @@ function ProjectCard({
   summary,
   onPreview,
   onOpenWorkflow,
+  onCopy,
   onClose,
 }: {
   project: ProjectSession;
   summary?: WorkflowSummary;
   onPreview: (project: ProjectSession) => void;
   onOpenWorkflow: (project: ProjectSession) => void;
+  onCopy: (project: ProjectSession) => void;
   onClose: (project: ProjectSession) => void;
 }) {
   const copyDatabasePath = async () => {
     try {
-      await navigator.clipboard.writeText(project.database_path);
-      notifyApp({ kind: 'success', message: 'Project database path copied.' });
+      await navigator.clipboard.writeText(project.project_path);
+      notifyApp({ kind: 'success', message: 'Project folder path copied.' });
     } catch {
       notifyApp({ kind: 'error', message: 'Project path could not be copied to the clipboard.' });
     }
@@ -801,13 +809,13 @@ function ProjectCard({
           </span>
         </div>
         <span className="sf-project-path">
-          <code>{project.database_path}</code>{' '}
+          <code>{project.project_path}</code>{' '}
           <button
             type="button"
             className="sf-project-path-copy"
             onClick={() => void copyDatabasePath()}
-            aria-label={`Copy database path for ${projectFileName(project)}`}
-            title="Copy database path"
+            aria-label={`Copy project folder path for ${projectFileName(project)}`}
+            title="Copy project folder path"
           >
             <i className="fa-solid fa-copy" aria-hidden="true" />
           </button>
@@ -829,6 +837,14 @@ function ProjectCard({
           title="Open workflow canvas"
         >
           <i className="fa-solid fa-diagram-project" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onCopy(project)}
+          aria-label={`Copy project ${projectFileName(project)}`}
+          title="Copy project"
+        >
+          <i className="fa-solid fa-clone" />
         </button>
 
         <button
@@ -1019,7 +1035,7 @@ function ProjectPreview({
         <div className="sf-project-overview-grid">
           <section className="sf-project-overview-details">
             <span className="sf-project-preview-domain">{project.domains?.join(', ') || 'No domains'}</span>
-            <code>{project.database_path}</code>
+            <code>{project.project_path}</code>
             <div className="sf-workflow-summary">
               <span>
                 {workflow?.operations.length ?? 0} operations · Revision {workflow?.version ?? 0}
@@ -1142,7 +1158,6 @@ function ProjectHub({
   onProjectsRefreshed,
   onPreview,
   onOpenWorkflow,
-
   onCloseProject,
 }: {
   serviceState: ServiceState;
@@ -1153,11 +1168,17 @@ function ProjectHub({
   onProjectsRefreshed: (projects: ProjectSession[]) => void;
   onPreview: (project: ProjectSession) => void;
   onOpenWorkflow: (project: ProjectSession) => void;
-
   onCloseProject: (project: ProjectSession) => void;
 }) {
   const [mode, setMode] = useState<'create' | 'open' | null>(null);
-  const [databasePath, setDatabasePath] = useState('');
+  const [parentPath, setParentPath] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [projectPath, setProjectPath] = useState('');
+  const [copySource, setCopySource] = useState<ProjectSession | null>(null);
+  const [copyParentPath, setCopyParentPath] = useState('');
+  const [copyProjectName, setCopyProjectName] = useState('');
+  const [copying, setCopying] = useState(false);
+  const [folderPickerMode, setFolderPickerMode] = useState<'parent' | 'project' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, WorkflowSummary>>({});
   const [demos, setDemos] = useState<WorkflowDemoMetadata[]>([]);
@@ -1170,12 +1191,13 @@ function ProjectHub({
       if (event.key !== 'Escape') return;
       if (demosOpen) setDemosOpen(false);
       else if (mode) setMode(null);
+      else if (copySource && !copying) setCopySource(null);
       else if (selectedDemo) setSelectedDemo(null);
       else setMode(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [demosOpen, mode, selectedDemo]);
+  }, [copySource, copying, demosOpen, mode, selectedDemo]);
 
   useEffect(() => {
     let active = true;
@@ -1321,14 +1343,14 @@ function ProjectHub({
     if (!client || !mode) return;
     setSubmitting(true);
     try {
-      const selectedPath = mode === 'create' ? forceDuckDbPath(databasePath) : databasePath.trim();
-      const projectName = projectNameFromPath(selectedPath);
-      const sessionId = mode === 'create' ? uniqueSessionId(projectName, projects) : projectName;
+      const selectedPath = mode === 'create' ? projectContainerPath(parentPath, projectName) : projectPath.trim();
+      const selectedName = projectNameFromPath(selectedPath);
+      const sessionId = mode === 'create' ? uniqueSessionId(selectedName, projects) : selectedName;
       const workflowMetadata =
         mode === 'create' ? requireWorkflowMetadata(JSON.parse(workflowMetadataText)) : undefined;
       const project = await client.createProject({
         session_id: sessionId,
-        database_path: selectedPath,
+        project_path: selectedPath,
         mode,
         workflow_metadata: workflowMetadata,
       });
@@ -1348,7 +1370,7 @@ function ProjectHub({
       (mode === 'open' ? onAdded : onOpened)(project);
       notifyApp({
         kind: 'success',
-        message: `${selectedDemo ? 'Saved' : mode === 'create' ? 'Created' : 'Opened'} project ${projectName}${selectedDemo ? ` with ${selectedDemo.name}` : ''}.`,
+        message: `${selectedDemo ? 'Saved' : mode === 'create' ? 'Created' : 'Opened'} project ${selectedName}${selectedDemo ? ` with ${selectedDemo.name}` : ''}.`,
       });
       setSelectedDemo(null);
       setMode(null);
@@ -1358,7 +1380,47 @@ function ProjectHub({
       setSubmitting(false);
     }
   };
+  const beginCopy = (source: ProjectSession) => {
+    setCopySource(source);
+    setCopyParentPath(projectParentPath(source.project_path));
+    setCopyProjectName(`${projectFileName(source)}-copy`);
+  };
+  const submitCopy = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!client || !copySource) return;
+    setCopying(true);
+    const destinationPath = projectContainerPath(copyParentPath, copyProjectName);
+    let copied = false;
+    try {
+      await client.copyProject(copySource.session_id, destinationPath);
+      copied = true;
+      const name = projectNameFromPath(destinationPath);
+      const opened = await client.createProject({
+        session_id: uniqueSessionId(name, projects),
+        project_path: destinationPath,
+        mode: 'open',
+      });
+      onAdded(opened);
+      setCopySource(null);
+      notifyApp({ kind: 'success', message: `Copied and opened project ${name}.` });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Project copy failed.';
+      if (copied) {
+        setCopySource(null);
+        notifyApp({ kind: 'error', message: `Project was copied to ${destinationPath}, but could not be opened: ${detail}` });
+      } else {
+        notifyApp({ kind: 'error', message: detail });
+      }
+    } finally {
+      setCopying(false);
+    }
+  };
   const canInteract = serviceState === 'ready' && client !== null;
+  let projectPathPreview = 'Choose a parent folder and project name';
+  if (parentPath && projectName) {
+    try { projectPathPreview = projectContainerPath(parentPath, projectName); }
+    catch { projectPathPreview = 'Enter a valid folder name'; }
+  }
   return (
     <div className="sf-page sf-project-hub">
       <div className="sf-card-grid">
@@ -1367,7 +1429,8 @@ function ProjectHub({
           style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
-            setDatabasePath('');
+            setParentPath('');
+            setProjectName('');
             setSelectedDemo(null);
             setWorkflowMetadataText(defaultWorkflowMetadataText);
             setMode('create');
@@ -1382,29 +1445,9 @@ function ProjectHub({
           className="sf-card action-card"
           style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
           disabled={!canInteract}
-          onClick={async () => {
-            if (!client) return;
-            setSubmitting(true);
-            try {
-              const path = await client.pickDatabaseFile();
-              const name =
-                path
-                  .split(/[\\/]/)
-                  .pop()
-                  ?.replace(/\.[^.]+$/, '') || 'project-session';
-              const project = await client.createProject({
-                session_id: name,
-                database_path: path,
-                mode: 'open',
-              });
-              notifyProjectDiagnostics(project);
-              onAdded(project);
-              notifyApp({ kind: 'success', message: `Opened project ${name}.` });
-            } catch (error) {
-              notifyApp({ kind: 'error', message: error instanceof Error ? error.message : 'Project open failed.' });
-            } finally {
-              setSubmitting(false);
-            }
+          onClick={() => {
+            setProjectPath('');
+            setMode('open');
           }}
         >
           <span className="sf-card-icon">
@@ -1430,6 +1473,7 @@ function ProjectHub({
             summary={summaries[project.session_id]}
             onPreview={onPreview}
             onOpenWorkflow={onOpenWorkflow}
+            onCopy={beginCopy}
             onClose={onCloseProject}
           />
         ))}
@@ -1470,7 +1514,8 @@ function ProjectHub({
                       const metadata = demo.workflow.metadata ?? {};
                       setSelectedDemo(demo);
                       setWorkflowMetadataText(JSON.stringify(metadata, null, 2));
-                      setDatabasePath('');
+                      setParentPath('');
+                      setProjectName('');
                       setDemosOpen(false);
                     }}
                   >
@@ -1522,41 +1567,29 @@ function ProjectHub({
               </button>
             </div>
             {mode === 'create' ? (
-              <label>
-                Project file
-                <div className="sf-input-with-button">
-                  <span className="sf-selected-file" title={databasePath || undefined}>
-                    {databasePath || 'No file selected'}
-                  </span>
-                  <button
-                    type="button"
-                    className="sf-button secondary"
-                    onClick={async () => {
-                      if (!client) return;
-                      try {
-                        setDatabasePath(forceDuckDbPath(await client.pickDatabaseFile('create')));
-                      } catch (error) {
-                        notifyApp({
-                          kind: 'error',
-                          message: error instanceof Error ? error.message : 'File selection failed.',
-                        });
-                      }
-                    }}
-                    disabled={submitting}
-                  >
-                    Create file
-                  </button>
+              <>
+                <label>
+                  Parent folder
+                  <div className="sf-input-with-button">
+                    <input value={parentPath} onChange={(event) => setParentPath(event.target.value)} placeholder="C:/projects" required />
+                    <button type="button" className="sf-button secondary" onClick={() => setFolderPickerMode('parent')} disabled={submitting}>Browse</button>
+                  </div>
+                </label>
+                <label>
+                  Project name
+                  <input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="river-screening" required />
+                </label>
+                <div className="sf-project-path-preview">
+                  Project folder: <code>{projectPathPreview}</code>
                 </div>
-              </label>
+              </>
             ) : (
               <label>
-                Database path
-                <input
-                  value={databasePath}
-                  onChange={(event) => setDatabasePath(event.target.value)}
-                  placeholder="C:/data/project.duckdb"
-                  required
-                />
+                Project folder (.sf)
+                <div className="sf-input-with-button">
+                  <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="C:/projects/river-screening.sf" required />
+                  <button type="button" className="sf-button secondary" onClick={() => setFolderPickerMode('project')} disabled={submitting}>Browse</button>
+                </div>
               </label>
             )}
 
@@ -1579,7 +1612,7 @@ function ProjectHub({
               <button type="button" className="sf-button secondary" onClick={() => setMode(null)} disabled={submitting}>
                 Cancel
               </button>
-              <button type="submit" className="sf-button" disabled={submitting || (mode === 'create' && !databasePath)}>
+              <button type="submit" className="sf-button" disabled={submitting || (mode === 'create' && (!parentPath || !projectName))}>
                 {submitting
                   ? 'Working…'
                   : mode === 'create'
@@ -1591,6 +1624,76 @@ function ProjectHub({
             </div>
           </form>
         </div>
+      ) : null}
+      {copySource ? (
+        <div
+          className="sf-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !copying) setCopySource(null);
+          }}
+        >
+          <form className="sf-dialog sf-copy-project-dialog" onSubmit={submitCopy}>
+            <div className="sf-dialog-heading">
+              <div><h2>Copy project</h2></div>
+              <button
+                type="button"
+                className="sf-icon-button sf-close-button"
+                onClick={() => setCopySource(null)}
+                disabled={copying}
+                aria-label="Close copy project dialog"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+            <p>Copying {projectFileName(copySource)} keeps its workflow and project metadata, and starts with an empty results store.</p>
+            <label>
+              Parent folder
+              <div className="sf-input-with-button">
+                <input
+                  aria-label="Copy destination parent folder"
+                  value={copyParentPath}
+                  onChange={(event) => setCopyParentPath(event.target.value)}
+                  required
+                />
+                <button type="button" className="sf-button secondary" onClick={() => setFolderPickerMode('parent')} disabled={copying}>Browse</button>
+              </div>
+            </label>
+            <label>
+              Project name
+              <input
+                aria-label="Copy destination project name"
+                value={copyProjectName}
+                onChange={(event) => setCopyProjectName(event.target.value)}
+                required
+              />
+            </label>
+            <div className="sf-project-path-preview">
+              Project folder: <code>{copyParentPath && copyProjectName
+                ? projectContainerPath(copyParentPath, copyProjectName)
+                : 'Choose a parent folder and project name'}</code>
+            </div>
+            <div className="sf-dialog-actions">
+              <button type="button" className="sf-button secondary" onClick={() => setCopySource(null)} disabled={copying}>Cancel</button>
+              <button type="submit" className="sf-button" disabled={copying || !copyParentPath || !copyProjectName}>
+                {copying ? 'Copying…' : 'Copy project'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {folderPickerMode && client ? (
+        <ProjectFolderPicker
+          client={client}
+          mode={folderPickerMode}
+          initialPath={folderPickerMode === 'parent' ? (copySource ? copyParentPath : parentPath) : ''}
+          onClose={() => setFolderPickerMode(null)}
+          onSelect={(path) => {
+            if (folderPickerMode === 'parent' && copySource) setCopyParentPath(path);
+            else if (folderPickerMode === 'parent') setParentPath(path);
+            else setProjectPath(path);
+            setFolderPickerMode(null);
+          }}
+        />
       ) : null}
     </div>
   );
@@ -1832,7 +1935,7 @@ function AppShell({
       const changed = event.project;
       if (changed && typeof changed === 'object' && !Array.isArray(changed)) {
         const candidate = changed as Partial<ProjectSession>;
-        if (typeof candidate.session_id === 'string' && typeof candidate.database_path === 'string') {
+        if (typeof candidate.session_id === 'string' && typeof candidate.project_path === 'string') {
           if (event.type === 'project.opened') notifyProjectDiagnostics(candidate);
           if (event.type === 'project.closed') {
             setProjects((items) => items.filter((item) => item.session_id !== candidate.session_id));
@@ -1907,9 +2010,9 @@ function AppShell({
     navigateHash('projects');
   };
   const copyProjectPath = async () => {
-    if (!activeProject?.database_path) return;
+    if (!activeProject?.project_path) return;
     try {
-      await navigator.clipboard.writeText(activeProject.database_path);
+      await navigator.clipboard.writeText(activeProject.project_path);
       setProjectPathCopied(true);
       window.setTimeout(() => setProjectPathCopied(false), 1600);
     } catch {
@@ -1941,8 +2044,8 @@ function AppShell({
                     type="button"
                     className="sf-context-copy"
                     onClick={() => void copyProjectPath()}
-                    aria-label="Copy project database path"
-                    title={projectPathCopied ? 'Project database path copied' : 'Copy project database path'}
+                    aria-label="Copy project folder path"
+                    title={projectPathCopied ? 'Project folder path copied' : 'Copy project folder path'}
                   >
                     <i className={`fa-solid ${projectPathCopied ? 'fa-check' : 'fa-copy'}`} />
                   </button>

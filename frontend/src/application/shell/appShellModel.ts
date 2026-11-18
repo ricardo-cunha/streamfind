@@ -14,10 +14,16 @@ export function projectNameFromPath(databasePath: string): string {
   );
 }
 
-export function forceDuckDbPath(databasePath: string): string {
-  const normalized = databasePath.trim();
-  if (!normalized) return normalized;
-  return /\.duckdb$/i.test(normalized) ? normalized : normalized.replace(/\.[^.\\/]+$/, '') + '.duckdb';
+export function projectContainerPath(parentPath: string, projectName: string): string {
+  const rawParent = parentPath.trim();
+  const trimmedParent = rawParent.replace(/[\\/]+$/, '').replace(/\\/g, '/');
+  const parent = trimmedParent || (rawParent.startsWith('/') ? '/' : '');
+  const name = projectName.trim();
+  if (!parent || !name) return '';
+  if (/[\\/]/.test(name) || name === '.' || name === '..')
+    throw new Error('Project name must be a single folder name.');
+  const folderName = name.toLocaleLowerCase().endsWith('.sf') ? name : `${name}.sf`;
+  return `${parent}${parent.endsWith('/') ? '' : '/'}${folderName}`;
 }
 
 export function uniqueSessionId(projectName: string, projects: ProjectSession[]): string {

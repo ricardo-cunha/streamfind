@@ -3,6 +3,7 @@
 #include "streamfind/catalogue.hpp"
 #include "streamfind/version.hpp"
 #include "streamfind/service_runtime_client.hpp"
+#include "streamfind/project_layout.hpp"
 #include <cstdlib>
 #include <algorithm>
 #include <array>
@@ -206,11 +207,11 @@ Json tools() {
     result.push_back(tool("list_workflow_demos", "List validated workflow demos from enabled package plugins. Demo resources are resolved relative to the MCP executable configuration; malformed or unreadable demo files are returned in diagnostics.", Json::object(), Json::array()));
     result.push_back(tool("run_operation", "Run one canonical domain operation against a project database. If exactly one matching workflow node exists, its parameters, inputs, and result-port identity are used automatically. Supply operation_instance when multiple matching nodes exist. Entry operations may run directly; operations with typed inputs require an existing graph binding or explicit inputs.",
                           Json{{"operation", {{"type", "string"}}},
-                               {"database_path", {{"type", "string"}}},
+                               {"project_path", {{"type", "string"}}},
                                {"arguments", {{"type", "object"}}},
                                {"operation_instance", {{"type", "integer"}, {"description", "Integer ID of an existing workflow node."}}},
                                {"inputs", {{"type", "object"}}}},
-                          Json::array({"operation", "database_path"})));
+                          Json::array({"operation", "project_path"})));
     result.push_back(tool("get_dependencies", "List plugin-provided external dependencies and their current availability.",
                           Json{{"operation", {{"type", "string"}}}}, Json::array()));
     result.push_back(tool("install_dependencies", "Explicitly install selected plugin dependencies after reviewing their network and license requirements.",
@@ -225,27 +226,27 @@ Json tools() {
     const auto schema = [](Json properties, Json required) {
         return Json{{"type", "object"}, {"properties", std::move(properties)}, {"required", std::move(required)}};
     };
-    const Json database_path = {{"type", "string"}, {"description", "Path to the project DuckDB database."}};
+    const Json project_path = {{"type", "string"}, {"description", "Path to the .sf project folder."}};
     const Json operation_instance_reference = {
         {"type", "integer"},
         {"description", "Integer identifier of a workflow operation node."}};
-    const Json project_path_schema = schema(Json{{"database_path", database_path}}, Json::array({"database_path"}));
+    const Json project_path_schema = schema(Json{{"project_path", project_path}}, Json::array({"project_path"}));
     const Json workflow_execution_schema = schema(
-        Json{{"database_path", database_path},
+        Json{{"project_path", project_path},
              {"operation_instance", {{"type", "integer"},
                                      {"description", "When supplied, return the durable status for this integer workflow node ID; otherwise return workflow status."}}}},
-        Json::array({"database_path"}));
+        Json::array({"project_path"}));
     const Json execution_mode = {{"type", "string"}, {"enum", {"detailed", "pipeline"}},
                                 {"default", "detailed"},
                                 {"description", "Result publication mode. detailed publishes each node result immediately; pipeline retains node results during execution and publishes them together when the run ends. Both modes retain results for inspection."}};
     const Json run_workflow_schema = schema(
-        Json{{"database_path", database_path}, {"execution_mode", execution_mode}},
-        Json::array({"database_path"}));
+        Json{{"project_path", project_path}, {"execution_mode", execution_mode}},
+        Json::array({"project_path"}));
     const Json transition_execution_schema = schema(
-        Json{{"database_path", database_path},
+        Json{{"project_path", project_path},
              {"status", {{"type", "string"}, {"enum", {"running", "cancelling", "cancelled"}}}},
              {"execution_mode", execution_mode}},
-        Json::array({"database_path", "status"}));
+        Json::array({"project_path", "status"}));
     const Json workflow_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
         {"required", Json::array({"name", "description"})},
         {"properties", Json{{"name", Json{{"type", "string"}, {"minLength", 1}}},
@@ -253,29 +254,29 @@ Json tools() {
         {"description", "User-defined workflow metadata. Definition concurrency is tracked by definition_revision; workflow version tracks result provenance."}};
     const Json project_metadata_schema = Json{{"type", "object"}, {"additionalProperties", true},
         {"description", "Project-owned metadata, including the project name shown in the workspace."}};
-    const Json create_schema = schema(Json{{"database_path", database_path},
+    const Json create_schema = schema(Json{{"project_path", project_path},
                                            {"metadata", project_metadata_schema},
                                            {"workflow_metadata", workflow_metadata_schema}},
-                                      Json::array({"database_path"}));
-    const Json workflow_schema = schema(Json{{"database_path", database_path}, {"workflow", {{"type", "object"}}}},
-                                        Json::array({"database_path"}));
-    const Json set_workflow_schema = schema(Json{{"database_path", database_path},
+                                      Json::array({"project_path"}));
+    const Json workflow_schema = schema(Json{{"project_path", project_path}, {"workflow", {{"type", "object"}}}},
+                                        Json::array({"project_path"}));
+    const Json set_workflow_schema = schema(Json{{"project_path", project_path},
         {"workflow", Json{{"type", "object"},
             {"required", Json::array({"schema_version", "definition_revision", "operations", "connections"})},
             {"properties", Json{{"definition_revision", Json{{"type", "integer"},
                 {"minimum", 1}, {"description", "Concurrency revision returned by get_workflow. Saving fails if another client has changed the workflow since this revision."}}}}},
             {"additionalProperties", true}}}},
-                                            Json::array({"database_path", "workflow"}));
+                                            Json::array({"project_path", "workflow"}));
     const Json add_operation_schema = schema(
-        Json{{"database_path", database_path},
+        Json{{"project_path", project_path},
              {"operation", {{"type", "string"}}}, {"parameters", {{"type", "object"}}},
              {"inputs", {{"type", "object"}}}, {"position", {{"type", "object"}}}},
-        Json::array({"database_path", "operation"}));
+        Json::array({"project_path", "operation"}));
     const Json connect_operations_schema = schema(
-        Json{{"database_path", database_path}, {"source_operation", operation_instance_reference},
+        Json{{"project_path", project_path}, {"source_operation", operation_instance_reference},
              {"source_port", {{"type", "string"}}}, {"target_operation", operation_instance_reference},
              {"target_port", {{"type", "string"}}}},
-        Json::array({"database_path", "source_operation", "source_port", "target_operation", "target_port"}));
+        Json::array({"project_path", "source_operation", "source_port", "target_operation", "target_port"}));
     const Json result_filter_schema = {
         {"type", "object"},
         {"properties", Json{
@@ -286,7 +287,7 @@ Json tools() {
             {"values", {{"type", "array"}}}}},
         {"required", Json::array({"column"})}};
     const Json request_result_schema = schema(
-        Json{{"database_path", database_path}, {"result_id", {{"type", "string"}, {"description", "Exact published result identifier."}}},
+        Json{{"project_path", project_path}, {"result_id", {{"type", "string"}, {"description", "Exact published result identifier."}}},
              {"operation", {{"type", "string"}, {"description", "Canonical producer operation identifier."}}},
              {"operation_instance", {{"type", "integer"}, {"description", "Integer workflow node ID that produced the result."}}},
              {"output_port", {{"type", "string"}, {"description", "Output contract or semantic port identifier."}}},
@@ -297,7 +298,7 @@ Json tools() {
              {"filters", {{"type", "array"}, {"items", result_filter_schema}}},
              {"limit", Json{{"type", "integer"}, {"minimum", 1}, {"maximum", 10000}}},
              {"offset", Json{{"type", "integer"}, {"minimum", 0}}}},
-        Json::array({"database_path"}));
+        Json::array({"project_path"}));
     for (auto &entry : result) {
         const auto name = entry.value("name", "");
         if (name == "create") entry["inputSchema"] = create_schema;
@@ -310,16 +311,16 @@ Json tools() {
             name == "get_current_result_inventory" || name == "close")
             entry["inputSchema"] = project_path_schema;
         else if (name == "set_metadata") entry["inputSchema"] = schema(
-            Json{{"database_path", database_path}, {"metadata", project_metadata_schema}},
-            Json::array({"database_path", "metadata"}));
+            Json{{"project_path", project_path}, {"metadata", project_metadata_schema}},
+            Json::array({"project_path", "metadata"}));
         else if (name == "resolve_operation_inputs") entry["inputSchema"] = schema(
-            Json{{"database_path", database_path},
+            Json{{"project_path", project_path},
                  {"operation_id", operation_instance_reference}},
-            Json::array({"database_path", "operation_id"}));
+            Json::array({"project_path", "operation_id"}));
         else if (name == "copy") entry["inputSchema"] = schema(
-            Json{{"database_path", database_path},
-                 {"destination_database_path", {{"type", "string"}}}},
-            Json::array({"database_path", "destination_database_path"}));
+            Json{{"project_path", project_path},
+                 {"destination_project_path", {{"type", "string"}}}},
+            Json::array({"project_path", "destination_project_path"}));
         else if (name == "set_workflow") entry["inputSchema"] = set_workflow_schema;
         else if (name == "validate_workflow") entry["inputSchema"] = workflow_schema;
         else if (name == "add_operation") entry["inputSchema"] = add_operation_schema;
@@ -331,7 +332,7 @@ Json tools() {
 
         if (name == "create") {
             entry["description"] = "Create a new project database. This is the first step of the operation-graph workflow; then call add_operation for each node.";
-            entry["_meta"]["streamfind"]["guidance"] = "Call create once with database_path, then add operation nodes with their parameters.";
+            entry["_meta"]["streamfind"]["guidance"] = "Call create once with project_path, then add operation nodes with their parameters.";
         } else if (name == "add_operation") {
             entry["description"] = "Add one configured operation node to the persisted workflow graph. The service assigns the next integer node ID automatically.";
             entry["_meta"]["streamfind"]["guidance"] = "The node ID is assigned as one greater than the highest integer ID already in the workflow. Add every node with its final parameters before connecting typed ports. Use get_operation to inspect the operation schema.";
@@ -402,7 +403,7 @@ std::string interface_guidance() {
         "by workflow revision, producer operation instance, and output contract. Use the result "
         "inventory rather than execution text as proof that an output is available to downstream "
         "operations. This operation-graph workflow is stateless at the MCP boundary: every "
-        "project tool call carries database_path, and no connect or method session is needed.";
+        "project tool call carries project_path, and no connect or method session is needed.";
 }
 
 std::string tool_description(const Json &entry, const std::string &fallback) {
@@ -467,9 +468,9 @@ Json Session::handle(const Json &request) {
     if (name == "connect") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto database_path = arguments.at("database_path").get<std::string>();
-            const auto attachment = service::attach_project(database_path);
-            project_ = Json{{"database_path", database_path},
+            const auto project_path = arguments.at("project_path").get<std::string>();
+            const auto attachment = service::attach_project(path_from_utf8(project_path));
+            project_ = Json{{"project_path", project_path},
                             {"service_instance_id", attachment.service_instance_id},
                             {"session_id", attachment.session_id},
                             {"endpoint", attachment.endpoint}};
@@ -485,13 +486,12 @@ Json Session::handle(const Json &request) {
             if (name == "run_operation") {
                 const auto operation_id = arguments.at("operation").get<std::string>();
                 if (!operations_.find(operation_id)) throw Error(ErrorCode::InvalidArgument, "operation not found: " + operation_id);
-                ProjectOptions options;
-                options.database_path = arguments.at("database_path").get<std::string>();
+                const auto project_path = path_from_utf8(arguments.at("project_path").get<std::string>());
                 auto operation_arguments = arguments.value("arguments", Json::object());
                 const auto operation_instance = arguments.contains("operation_instance")
                     ? detail::operation_instance_id(arguments.at("operation_instance")) : std::string{};
                 const auto inputs = arguments.value("inputs", Json(nullptr));
-                const auto attachment = service::attach_project(options.database_path);
+                const auto attachment = service::attach_project(project_path);
                 const auto workflow = service::get_workflow(attachment);
                 const auto effective_instance = detail::resolve_operation_instance(
                     workflow, operation_id, operation_instance);
@@ -545,15 +545,14 @@ Json Session::handle(const Json &request) {
     if (!command && operation) {
         const auto arguments = request.at("params").value("arguments", Json::object());
         try {
-            if (!arguments.contains("database_path")) {
-                throw Error(ErrorCode::InvalidArgument, "Domain operations require database_path");
+            if (!arguments.contains("project_path")) {
+                throw Error(ErrorCode::InvalidArgument, "Domain operations require project_path");
             }
-            ProjectOptions options;
-            options.database_path = arguments.at("database_path").get<std::string>();
-            const auto attachment = service::attach_project(options.database_path);
+            const auto project_path = path_from_utf8(arguments.at("project_path").get<std::string>());
+            const auto attachment = service::attach_project(project_path);
             const auto workflow = service::get_workflow(attachment);
             Json parameters = arguments;
-            parameters.erase("database_path");
+            parameters.erase("project_path");
             parameters.erase("domain");
             const auto inputs = parameters.value("inputs", Json(nullptr));
             const auto operation_instance = parameters.contains("operation_instance")
@@ -585,14 +584,14 @@ Json Session::handle(const Json &request) {
     if (name == "validate_workflow" || name == "set_workflow") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            if (!arguments.contains("database_path") ||
+            if (!arguments.contains("project_path") ||
                 (name == "set_workflow" && !arguments.contains("workflow")))
                 throw Error(ErrorCode::InvalidArgument,
                             name == "set_workflow"
-                                ? "Workflow update requires database_path and workflow"
-                                : "Workflow validation requires database_path");
-            const auto database_path = arguments.at("database_path").get<std::string>();
-            const auto attachment = service::attach_project(database_path);
+                                ? "Workflow update requires project_path and workflow"
+                                : "Workflow validation requires project_path");
+            const auto project_path = arguments.at("project_path").get<std::string>();
+            const auto attachment = service::attach_project(path_from_utf8(project_path));
             const auto workflow = arguments.contains("workflow")
                 ? arguments.at("workflow") : Json(nullptr);
             const Json result = name == "set_workflow"
@@ -606,10 +605,10 @@ Json Session::handle(const Json &request) {
     if (name == "run_workflow") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            if (!arguments.contains("database_path"))
-                throw Error(ErrorCode::InvalidArgument, "Workflow execution requires database_path");
-            const auto database_path = arguments.at("database_path").get<std::string>();
-            const auto attachment = service::attach_project(database_path);
+            if (!arguments.contains("project_path"))
+                throw Error(ErrorCode::InvalidArgument, "Workflow execution requires project_path");
+            const auto project_path = arguments.at("project_path").get<std::string>();
+            const auto attachment = service::attach_project(path_from_utf8(project_path));
             Json response = service::start_workflow(
                 attachment, detail::requested_execution_mode(arguments));
             response["workflow"] = service::get_workflow(attachment);
@@ -623,14 +622,14 @@ Json Session::handle(const Json &request) {
         name == "set_metadata" || name == "get_audit_trail") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto database_path = arguments.at("database_path").get<std::string>();
+            const auto project_path = arguments.at("project_path").get<std::string>();
             if (name == "create") {
                 const auto attachment = service::create_project(
-                    database_path, arguments.value("metadata", Json::object()),
+                    path_from_utf8(project_path), arguments.value("metadata", Json::object()),
                     arguments.value("workflow_metadata", Json::object()));
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment))}};
             }
-            const auto attachment = service::attach_project(database_path);
+            const auto attachment = service::attach_project(path_from_utf8(project_path));
             if (name == "describe")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment))}};
             if (name == "get_project_domains")
@@ -650,7 +649,7 @@ Json Session::handle(const Json &request) {
     if (name == "add_operation" || name == "connect_operations") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto attachment = service::attach_project(arguments.at("database_path").get<std::string>());
+            const auto attachment = service::attach_project(path_from_utf8(arguments.at("project_path").get<std::string>()));
             auto workflow = service::get_workflow(attachment);
             if (name == "add_operation") {
                 if (arguments.contains("operation_id"))
@@ -680,9 +679,9 @@ Json Session::handle(const Json &request) {
     if (name == "copy") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto attachment = service::attach_project(arguments.at("database_path").get<std::string>());
+            const auto attachment = service::attach_project(path_from_utf8(arguments.at("project_path").get<std::string>()));
             const auto result = service::copy_project(
-                attachment, arguments.at("destination_database_path").get<std::string>());
+                attachment, path_from_utf8(arguments.at("destination_project_path").get<std::string>()));
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(result)}};
         } catch (const std::exception &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
@@ -692,8 +691,8 @@ Json Session::handle(const Json &request) {
         name == "cancel_execution") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto database_path = arguments.at("database_path").get<std::string>();
-            const auto attachment = service::attach_project(database_path);
+            const auto project_path = arguments.at("project_path").get<std::string>();
+            const auto attachment = service::attach_project(path_from_utf8(project_path));
             if (name == "cancel_execution")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::cancel_workflow(attachment))}};
             if (name == "transition_execution") {
@@ -723,7 +722,7 @@ Json Session::handle(const Json &request) {
     if (name == "close") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto attachment = service::attach_project(arguments.at("database_path").get<std::string>());
+            const auto attachment = service::attach_project(path_from_utf8(arguments.at("project_path").get<std::string>()));
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::close_project(attachment))}};
         } catch (const std::exception &error) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
@@ -734,7 +733,7 @@ Json Session::handle(const Json &request) {
         name == "resolve_operation_inputs") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
-            const auto attachment = service::attach_project(arguments.at("database_path").get<std::string>());
+            const auto attachment = service::attach_project(path_from_utf8(arguments.at("project_path").get<std::string>()));
             if (name == "get_workflow")
                 return {{"jsonrpc", "2.0"}, {"id", id},
                         {"result", detail::operation_result(service::get_workflow(attachment))}};

@@ -48,8 +48,8 @@ function Invoke-ServiceJson {
 
 function Invoke-Child {
     param([Parameter(Mandatory = $true)][int]$Index)
-    $database = Join-Path $projectsRoot "concurrent-find-features-cpp-$Index.duckdb"
-    $resultStore = [System.IO.Path]::ChangeExtension($database, '.data')
+    $database = Join-Path $projectsRoot "concurrent-find-features-cpp-$Index.sf"
+    $resultStore = Join-Path $database 'data'
     $log = Join-Path $logsRoot "worker-$Index.log"
     Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database, $resultStore, $log, ($log + '.err')
     $script = $scriptPath
@@ -107,7 +107,7 @@ $process = $null
 try {
     $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
     Initialize-Mcp $process | Out-Null
-    Invoke-McpTool $process 2 'create' @{ database_path = $DatabasePath; domain = 'mass_spec' } | Out-Null
+    Invoke-McpTool $process 2 'create' @{ project_path = $DatabasePath; domain = 'mass_spec' } | Out-Null
     $parameters = @{
         ppm_threshold = 10.0
         noise_threshold = 250.0
@@ -150,7 +150,7 @@ try {
         $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
         Initialize-Mcp $process | Out-Null
     }
-    Invoke-McpTool $process 4 'set_workflow' @{ database_path = $DatabasePath; workflow = $workflow } | Out-Null
+    Invoke-McpTool $process 4 'set_workflow' @{ project_path = $DatabasePath; workflow = $workflow } | Out-Null
     $controllerProcess = $null
     $start = [DateTime]::UtcNow
     Write-Output "START worker=$WorkerIndex utc=$($start.ToString('o')) fixture=$FixturePath"
@@ -159,7 +159,7 @@ try {
     Start-Sleep -Milliseconds 250
     $runError = $null
     try {
-        $result = Invoke-McpTool $process 6 'run_workflow' @{ database_path = $DatabasePath }
+        $result = Invoke-McpTool $process 6 'run_workflow' @{ project_path = $DatabasePath }
     } catch {
         $runError = $_.Exception.Message
         $result = @{ error = $runError }
@@ -167,7 +167,7 @@ try {
     if ($null -ne $controllerProcess) { $controllerProcess.WaitForExit() }
     $end = [DateTime]::UtcNow
     $project = @(Invoke-ServiceJson '/projects').projects |
-        Where-Object { [System.IO.Path]::GetFullPath($_.database_path) -eq [System.IO.Path]::GetFullPath($DatabasePath) } |
+        Where-Object { [System.IO.Path]::GetFullPath($_.project_path) -eq [System.IO.Path]::GetFullPath($DatabasePath) } |
         Select-Object -First 1
     if ($null -eq $project) { throw "Service session was not found for $DatabasePath" }
     $sessionId = [uri]::EscapeDataString([string]$project.session_id)

@@ -12,7 +12,7 @@ sfcore:create
     sf:guidance "Use create once for a new database. Then use describe to inspect it. Do not call create to open an existing project; use describe or connect instead." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:workflowMetadataParameter ;
     sf:returns sfcore:projectDescriptorResult ;
     sf:mutatesProject true .
@@ -24,9 +24,9 @@ sfcore:describe
     skos:prefLabel "Describe a project" ;
     skos:definition "Inspect a persisted project's identity, derived domains, metadata, workflow, schema version, and creation information without changing it. Use this as the normal first read after create or before other work." ;
     sf:category "project-management" ;
-    sf:guidance "Call describe with the same database_path used by create. If the project does not exist, do not guess metadata; create it or correct the path." ;
+    sf:guidance "Call describe with the same project_path used by create. If the project does not exist, do not guess metadata; create it or correct the path." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:projectDescriptorResult ;
     sf:mutatesProject false .
 
@@ -37,7 +37,7 @@ sfcore:validate
     skos:prefLabel "Validate a project" ;
     skos:definition "Validate a project's schema and persisted state." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:validationResult ;
     sf:mutatesProject false .
 
@@ -49,7 +49,7 @@ sfcore:getDomains
     skos:definition "Read the domains represented by operations in the persisted project workflow." ;
     sf:category "project-management" ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:domainsResult ;
     sf:mutatesProject false .
 
@@ -61,7 +61,7 @@ sfcore:getMetadata
     skos:definition "Return the user-defined metadata stored for a project. An empty object is a valid result when no metadata has been set." ;
     sf:category "project-management" ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:metadataResult ;
     sf:mutatesProject false .
 
@@ -73,7 +73,7 @@ sfcore:setMetadata
     skos:definition "Replace the user-defined metadata stored for a project. This changes metadata only and does not change persisted workflow operations or analyses." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:metadataParameter ;
     sf:returns sfcore:metadataResult ;
     sf:mutatesProject true .
@@ -85,7 +85,7 @@ sfcore:getWorkflow
     skos:prefLabel "Read the project workflow" ;
     skos:definition "Return the persisted operation graph, including configured operation instances and explicit typed-port connections." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowResult ;
     sf:mutatesProject false .
 
@@ -96,7 +96,7 @@ sfcore:getWorkflowExecution
     skos:prefLabel "Read workflow execution" ;
     skos:definition "Return execution status, hashes, timestamps, errors, and cache keys for the project's persisted operation executions." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowExecutionEntriesResult ;
     sf:mutatesProject false .
 
@@ -107,7 +107,7 @@ sfcore:createWorkflowExecution
     skos:prefLabel "Create workflow execution" ;
     skos:definition "Create a durable queued workflow execution record for the selected project." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject true .
 
@@ -118,7 +118,7 @@ sfcore:getExecution
     skos:prefLabel "Get workflow execution" ;
     skos:definition "Read one durable workflow execution by identifier." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject false .
 
@@ -129,7 +129,7 @@ sfcore:listExecutions
     skos:prefLabel "List workflow executions" ;
     skos:definition "List durable workflow executions scoped to the selected project." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowExecutionEntriesResult ;
     sf:mutatesProject false .
 
@@ -141,7 +141,7 @@ sfcore:transitionExecution
     skos:definition "Advance workflow execution. The running transition starts the saved workflow and accepts the same optional execution_mode as run_workflow; cancelling or cancelled requests cancellation." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:executionStatusParameter,
         sfcore:executionModeParameter ;
     sf:returns sfcore:workflowExecutionResult ;
@@ -154,7 +154,7 @@ sfcore:cancelExecution
     skos:prefLabel "Cancel workflow execution" ;
     skos:definition "Cancel a queued execution or request cancellation of a running execution." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject true .
 
@@ -167,7 +167,7 @@ sfcore:setWorkflow
     sf:guidance "Call get_workflow immediately before editing and preserve its top-level definition_revision in the submitted workflow. On a workflow revision conflict, fetch the latest definition, reconcile the edits, and submit again. The workflow version remains separate and tracks result validity; definition_revision advances for every save, including layout-only changes." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:workflowParameter ;
     sf:returns sfcore:workflowResult ;
     sf:mutatesProject true .
@@ -196,7 +196,7 @@ sfcore:runWorkflow
     sf:guidance "Call after validate_workflow succeeds for the persisted connected operation graph. Every node must have its parameters and every required input must have an explicit typed port connection. Omit execution_mode to use detailed, or select pipeline to defer publication until the workflow ends. Both modes retain all completed node results. Inspect get_result_inventory and structured results after execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:executionModeParameter ;
     sf:returns sfcore:workflowExecutionResult ;
     sf:mutatesProject true .
@@ -208,7 +208,7 @@ sfcore:getAuditTrail
     skos:prefLabel "Read project audit events" ;
     skos:definition "Return audit events recorded for a project." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:auditEntriesResult ;
     sf:mutatesProject false .
 
@@ -221,8 +221,8 @@ sfcore:copy
     skos:definition "Copy a complete persisted project, including metadata, workflow, analyses, cached tables, and audit information, to a destination database." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
-        sfcore:destinationDatabasePathParameter ;
+        sfcore:projectPathParameter,
+        sfcore:destinationProjectPathParameter ;
     sf:returns sfcore:projectDescriptorResult ;
     sf:mutatesProject true .
 
@@ -231,9 +231,9 @@ sfcore:close
     skos:inScheme sfcore:scheme ;
     sf:commandId "close" ;
     skos:prefLabel "Close a project handle" ;
-    skos:definition "Close a project handle. Operation-graph MCP calls remain stateless and carry database_path explicitly." ;
+    skos:definition "Close a project handle. Operation-graph MCP calls remain stateless and carry project_path explicitly." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:apiCommandStatusResult ;
     sf:mutatesProject false .
 
@@ -242,11 +242,11 @@ sfcore:connect
     skos:inScheme sfcore:scheme ;
     sf:commandId "connect" ;
     skos:prefLabel "Connect an MCP session to a project" ;
-    skos:definition "Open an existing project handle. The operation-graph MCP workflow does not require a connected session because every project call carries database_path." ;
+    skos:definition "Open an existing project handle. The operation-graph MCP workflow does not require a connected session because every project call carries project_path." ;
     sf:category "session-management" ;
-    sf:guidance "Do not call this for the stateless operation-graph workflow; use database_path on create, add_operation, connect_operations, validate_workflow, and run_workflow instead." ;
+    sf:guidance "Do not call this for the stateless operation-graph workflow; use project_path on create, add_operation, connect_operations, validate_workflow, and run_workflow instead." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:returns sfcore:apiCommandStatusResult ;
     sf:mutatesProject false .
 
@@ -260,7 +260,7 @@ sfcore:addOperation
     sf:guidance "The service assigns the node ID as one greater than the highest integer ID in the workflow. Do not supply an operation_id. The operation value must be a canonical ontology operation id from tools/list, such as mass_spec.find_features. Parameters belong to this node; input results are supplied through explicit port connections." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:operationParameter,
         sfcore:parametersParameter ;
     sf:mutatesProject true .
@@ -275,7 +275,7 @@ sfcore:connectOperations
     sf:guidance "Connect a declared output port to a compatible declared input port or parameter. Use the integer node IDs and semantic port IDs from the workflow and operation definitions. For dynamic parameter binding, set target_port to parameter:<parameter_name>; the published output payload is merged into that parameter before validation and execution. A target port accepts at most one connection; use validate_workflow before execution." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:sourceOperationParameter,
         sfcore:sourcePortParameter,
         sfcore:targetOperationParameter,
@@ -291,7 +291,7 @@ sfcore:getResultInventory
     sf:category "workflow-observation" ;
     sf:guidance "Use after run_workflow to verify that declared outputs are published. Match artifacts by contract_id, producer_instance, producer_operation, workflow_revision, and status; do not infer availability from the textual run response." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:mutatesProject false .
 
 sfcore:getCurrentResultInventory
@@ -303,7 +303,7 @@ sfcore:getCurrentResultInventory
     sf:category "workflow-observation" ;
     sf:guidance "Use this for current connected outputs. Use get_result_inventory when historical result browsing is required." ;
     sf:availableInDomain sfcore:streamfind ;
-    sf:hasParameter sfcore:databasePathParameter ;
+    sf:hasParameter sfcore:projectPathParameter ;
     sf:mutatesProject false .
 
 sfcore:requestResult
@@ -316,7 +316,7 @@ sfcore:requestResult
     sf:guidance "Call without include_data to discover matching published outputs. Then select exactly one with result_id, operation_instance plus output_port, or another unique filter and set include_data true. JSON artifacts return their payload; table artifacts return bounded rows using limit and offset." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:outputPortParameter,
         sfcore:resultIdParameter,
         sfcore:operationInstanceParameter,
@@ -335,7 +335,7 @@ sfcore:resolveOperationInputs
     sf:guidance "Use before executing or diagnosing a downstream node to confirm that every explicit connection resolves to a current published artifact from the expected producer instance." ;
     sf:availableInDomain sfcore:streamfind ;
     sf:hasParameter
-        sfcore:databasePathParameter,
+        sfcore:projectPathParameter,
         sfcore:operationIdParameter ;
     sf:mutatesProject false .
 

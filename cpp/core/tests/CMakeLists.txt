@@ -163,7 +163,7 @@ target_link_libraries(streamfind_project_runtime_store_recovery_contract PRIVATE
 target_include_directories(streamfind_project_runtime_store_recovery_contract PRIVATE
     ../../service/include)
 target_compile_definitions(streamfind_project_runtime_store_recovery_contract PRIVATE
-    STREAMFIND_TEST_PROJECTS_DIR="${CMAKE_BINARY_DIR}/test-projects")
+    STREAMFIND_TEST_PROJECTS_DIR="${CMAKE_SOURCE_DIR}/../tmp/projects/native-tests")
 if(WIN32)
     target_link_libraries(streamfind_project_runtime_store_recovery_contract PRIVATE ws2_32 shell32)
 endif()
@@ -188,7 +188,7 @@ target_link_libraries(streamfind_project_runtime_execution_retry_contract PRIVAT
 target_include_directories(streamfind_project_runtime_execution_retry_contract PRIVATE
     ../../service/include)
 target_compile_definitions(streamfind_project_runtime_execution_retry_contract PRIVATE
-    STREAMFIND_TEST_PROJECTS_DIR="${CMAKE_BINARY_DIR}/test-projects"
+    STREAMFIND_TEST_PROJECTS_DIR="${CMAKE_SOURCE_DIR}/../tmp/projects/native-tests"
     STREAMFIND_RETRY_WORKER_DIR="${STREAMFIND_RUNTIME_RETRY_WORKER_DIR}")
 add_dependencies(streamfind_project_runtime_execution_retry_contract streamfind_worker_fixture)
 add_custom_command(TARGET streamfind_project_runtime_execution_retry_contract POST_BUILD

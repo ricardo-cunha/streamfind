@@ -19,17 +19,29 @@ function New-StreamfindWorkflowProject {
     }
     $projectRoot = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot 'tmp/projects'))
     New-Item -ItemType Directory -Path $projectRoot -Force | Out-Null
-    $database = [IO.Path]::GetFullPath((Join-Path $projectRoot "$ProjectName.duckdb"))
+    $container = [IO.Path]::GetFullPath((Join-Path $projectRoot "$ProjectName.sf"))
     $projectPrefix = $projectRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-    if (-not $database.StartsWith($projectPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to create a project outside tmp/projects: $database"
+    if (-not $container.StartsWith($projectPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to create a project outside tmp/projects: $container"
     }
-    $dataStore = Join-Path $projectRoot "$ProjectName.data"
     $workflowSidecar = Join-Path $projectRoot "$ProjectName.workflow.json"
-    if ((Test-Path -LiteralPath $database) -or (Test-Path -LiteralPath $dataStore)) {
-        if (-not $Force) { throw "Project already exists: $database. Choose another --project-name or pass --force." }
-        if (Test-Path -LiteralPath $database) { Remove-Item -LiteralPath $database -Force }
-        if (Test-Path -LiteralPath $dataStore) { Remove-Item -LiteralPath $dataStore -Recurse -Force }
+    if (Test-Path -LiteralPath $container) {
+        if (-not $Force) { throw "Project already exists: $container. Choose another --project-name or pass --force." }
+        $lockPath = Join-Path $container '.streamfind.lock'
+        if (Test-Path -LiteralPath $lockPath) {
+            try {
+                $lockProbe = [IO.File]::Open($lockPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+                $lockProbe.Dispose()
+            } catch {
+                throw "Project is open in a StreamFind service and cannot be replaced: $container"
+            }
+        }
+        $resolvedContainer = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $container).Path)
+        $relativeContainer = [IO.Path]::GetRelativePath($projectRoot, $resolvedContainer)
+        if ([IO.Path]::IsPathRooted($relativeContainer) -or $relativeContainer.StartsWith('..')) {
+            throw "Refusing to remove a project outside tmp/projects: $resolvedContainer"
+        }
+        Remove-Item -LiteralPath $resolvedContainer -Recurse -Force
         if (Test-Path -LiteralPath $workflowSidecar) { Remove-Item -LiteralPath $workflowSidecar -Force }
     }
 
@@ -59,13 +71,13 @@ function New-StreamfindWorkflowProject {
         $script:workflowProjectRequestId = 2
         $metadata = @{ name = $ProjectName; description = $Description }
         Invoke-McpTool $process $script:workflowProjectRequestId 'create' @{
-            database_path = $database
+            project_path = $container
             metadata = @{ name = $ProjectName }
             workflow_metadata = $metadata
         } | Out-Null
         $script:workflowProjectRequestId++
 
-        $current = Invoke-McpTool $process $script:workflowProjectRequestId 'get_workflow' @{ database_path = $database }
+        $current = Invoke-McpTool $process $script:workflowProjectRequestId 'get_workflow' @{ project_path = $container }
         $script:workflowProjectRequestId++
         $definitionRevision = [int]$current.definition_revision
         if ($Workflow.PSObject.Properties.Name -contains 'definition_revision') {
@@ -74,7 +86,7 @@ function New-StreamfindWorkflowProject {
             $Workflow | Add-Member -MemberType NoteProperty -Name definition_revision -Value $definitionRevision
         }
         $validation = Invoke-McpTool $process $script:workflowProjectRequestId 'validate_workflow' @{
-            database_path = $database
+            project_path = $container
             workflow = $Workflow
         }
         $script:workflowProjectRequestId++
@@ -82,12 +94,12 @@ function New-StreamfindWorkflowProject {
             throw "Workflow validation failed: $($validation | ConvertTo-Json -Depth 12 -Compress)"
         }
         Invoke-McpTool $process $script:workflowProjectRequestId 'set_workflow' @{
-            database_path = $database
+            project_path = $container
             workflow = $Workflow
         } | Out-Null
 
         $Workflow | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $workflowSidecar -Encoding utf8
-        Write-Host "Created workflow project: $database"
+        Write-Host "Created workflow project: $container"
         Write-Host "Workflow sidecar: $workflowSidecar"
         Write-Host "Operations: $(@($Workflow.operations).Count); validation: passed; execution: not started."
     } finally {

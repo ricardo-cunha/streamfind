@@ -1,10 +1,10 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 let project = {
   session_id: 'path-test-a',
-  database_path: 'tmp/projects/path-test.duckdb',
+  project_path: 'tmp/projects/path-test.sf',
   database_size_bytes: 0,
   domains: ['core'],
   metadata: {},
@@ -12,6 +12,10 @@ let project = {
 };
 let publishedArtifactCount = 0;
 let serviceEventListener: ((event: { type: string; project?: string }) => void) | null = null;
+let createProjectCalls: Array<Record<string, unknown>> = [];
+let copyProjectCalls: Array<{ sessionId: string; destinationPath: string }> = [];
+let createProjectError: Error | null = null;
+let browsedFolders: Array<{ name: string; path: string; isDirectory: boolean }> = [];
 
 vi.mock('../framework/backend/StreamFindApiClient', () => ({
   StreamFindApiClient: class {
@@ -69,6 +73,24 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return [project];
     }
 
+    async createProject(input: Record<string, unknown>) {
+      createProjectCalls.push(input);
+      if (createProjectError) throw createProjectError;
+      return {
+        ...project,
+        session_id: input.session_id as string,
+        project_path: input.project_path as string,
+      };
+    }
+
+    async copyProject(sessionId: string, destinationPath: string) {
+      copyProjectCalls.push({ sessionId, destinationPath });
+    }
+
+    async browseFileSystem(path = '') {
+      return { path: path || 'C:/projects', entries: browsedFolders };
+    }
+
     async results() {
       return Array.from({ length: publishedArtifactCount }, (_, index) => ({
         result_id: `result-${index}`,
@@ -113,7 +135,7 @@ describe('application shell', () => {
     window.location.hash = '';
     project = {
       session_id: 'path-test-a',
-      database_path: 'tmp/projects/path-test.duckdb',
+      project_path: 'tmp/projects/path-test.sf',
       database_size_bytes: 0,
       domains: ['core'],
       metadata: {},
@@ -121,6 +143,14 @@ describe('application shell', () => {
     };
     publishedArtifactCount = 0;
     serviceEventListener = null;
+    createProjectCalls = [];
+    copyProjectCalls = [];
+    createProjectError = null;
+    browsedFolders = [
+      { name: 'existing.sf', path: 'C:/projects/existing.sf', isDirectory: true },
+      { name: 'ordinary-folder', path: 'C:/projects/ordinary-folder', isDirectory: true },
+      { name: 'notes.txt', path: 'C:/projects/notes.txt', isDirectory: false },
+    ];
     vi.useFakeTimers();
   });
 
@@ -215,7 +245,82 @@ describe('application shell', () => {
 
     expect(screen.getByText('Open workflow')).toBeInTheDocument();
     expect(screen.getByText('path-test')).toBeInTheDocument();
-    expect(screen.getByText('tmp/projects/path-test.duckdb')).toBeInTheDocument();
+    expect(screen.getByText('tmp/projects/path-test.sf')).toBeInTheDocument();
+  });
+
+  it('previews the .sf destination and submits it when creating a project', async () => {
+    createProjectError = new Error('Simulated service refusal.');
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Create workflow' }));
+    fireEvent.change(screen.getByPlaceholderText('C:/projects'), { target: { value: 'C:/projects' } });
+    fireEvent.change(screen.getByPlaceholderText('river-screening'), { target: { value: 'river-screening' } });
+
+    expect(screen.getByText('C:/projects/river-screening.sf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(createProjectCalls[0]).toMatchObject({
+      project_path: 'C:/projects/river-screening.sf',
+      mode: 'create',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Simulated service refusal.');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('heading', { name: 'Create project' })).not.toBeInTheDocument();
+  });
+
+  it('opens a selected .sf folder and keeps the open dialog when the picker is cancelled', async () => {
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('button', { name: /existing\.sf/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /ordinary-folder/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /notes\.txt/ })).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose project folder' })).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('heading', { name: 'Open project' })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /existing\.sf/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open selected project' }));
+    expect((screen.getByLabelText('Project folder (.sf)') as HTMLInputElement).value).toBe('C:/projects/existing.sf');
+    fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0]).toMatchObject({ project_path: 'C:/projects/existing.sf', mode: 'open' });
+    expect(screen.getByText('existing')).toBeInTheDocument();
+  });
+
+  it('shows the service guidance when a legacy DuckDB file is entered as a project folder', async () => {
+    createProjectError = new Error('A legacy DuckDB project file cannot be opened as a current project. Create a new .sf project.');
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    fireEvent.change(screen.getByLabelText('Project folder (.sf)'), { target: { value: 'C:/projects/legacy.duckdb' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(createProjectCalls[0]).toMatchObject({ project_path: 'C:/projects/legacy.duckdb', mode: 'open' });
+    expect(screen.getByRole('alert')).toHaveTextContent('Create a new .sf project');
+  });
+
+  it('copies a project to a new .sf folder and opens the copy', async () => {
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy project path-test' }));
+
+    expect(screen.getByText('tmp/projects/path-test-copy.sf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy project' }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(copyProjectCalls).toEqual([{ sessionId: 'path-test-a', destinationPath: 'tmp/projects/path-test-copy.sf' }]);
+    expect(createProjectCalls[0]).toMatchObject({ project_path: 'tmp/projects/path-test-copy.sf', mode: 'open' });
+    expect(screen.getByText('path-test-copy')).toBeInTheDocument();
   });
 
   it('shows the workflow state when the definition request is temporarily blocked', async () => {
