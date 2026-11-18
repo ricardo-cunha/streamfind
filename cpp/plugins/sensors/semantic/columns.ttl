@@ -1,0 +1,74 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfsensors:endpointColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Endpoint" ;
+    skos:definition "OPC UA endpoint used for the read." ;
+    sf:columnName "endpoint" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfsensors:nodeNameColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Node name" ;
+    skos:definition "User-provided output name for the requested node." ;
+    sf:columnName "node_name" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfsensors:nodeIdColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Node identifier" ;
+    skos:definition "OPC UA node identifier read by the operation." ;
+    sf:columnName "node_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfsensors:valueColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Value" ;
+    skos:definition "Decoded OPC UA scalar or array value when the read succeeds." ;
+    sf:columnName "value" ;
+    sf:type "object" ;
+    sf:storageType "JSON" .
+
+sfsensors:valueJsonColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Value JSON" ;
+    skos:definition "Serialized JSON representation of the decoded OPC UA value." ;
+    sf:columnName "value_json" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfsensors:statusCodeColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Status code" ;
+    skos:definition "OPC UA status code returned by the node read." ;
+    sf:columnName "status_code" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfsensors:statusNameColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Status name" ;
+    skos:definition "Human-readable OPC UA status name returned by the node read." ;
+    sf:columnName "status_name" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .

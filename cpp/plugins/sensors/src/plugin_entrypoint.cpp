@@ -1,7 +1,10 @@
 #include "streamfind/plugin_abi.h"
 #include "streamfind/sdk/capability_registry.hpp"
+#include "streamfind/sdk/plugin_host_access.hpp"
+#include "operations/operations.hpp"
 
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -15,13 +18,8 @@ void report_error(const streamfind_plugin_host_api *host, const std::string &mes
         host->report_error(message.data(), static_cast<uint32_t>(message.size()), host->user_data);
 }
 
-const sdk::CapabilityRegistry &capabilities() {
-    static const sdk::CapabilityRegistry registry{};
-    return registry;
-}
-
 streamfind_plugin_status invoke(
-    void *, const char *request_json, uint32_t request_size,
+    void *execution_context, const char *request_json, uint32_t request_size,
     streamfind_plugin_buffer *result_json, void *user_data) {
     if (request_json == nullptr || result_json == nullptr || user_data == nullptr)
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
@@ -29,16 +27,38 @@ streamfind_plugin_status invoke(
     try {
         const auto request = Json::parse(std::string(request_json, request_size));
         const auto capability = request.at("capability_id").get<std::string>();
-        return capabilities().find(capability) == nullptr
-                   ? STREAMFIND_PLUGIN_INVALID_ARGUMENT
-                   : STREAMFIND_PLUGIN_ERROR;
+        const auto *binding = operations::capabilities().find(capability);
+        if (binding == nullptr) return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
+        sdk::PluginHostAccess access(*host, execution_context);
+        auto parameters = request.value("parameters", Json::object());
+        parameters["_inputs"] = request.value("inputs", Json::object());
+        const auto response = binding->handler(access, parameters);
+        const auto payload = response.dump();
+        if (payload.size() > std::numeric_limits<uint32_t>::max())
+            return STREAMFIND_PLUGIN_ERROR;
+        if (host->allocate == nullptr || result_json == nullptr) return STREAMFIND_PLUGIN_ERROR;
+        auto *buffer = static_cast<char *>(host->allocate(
+            payload.size(), alignof(char), host->user_data));
+        if (buffer == nullptr) return STREAMFIND_PLUGIN_ERROR;
+        std::memcpy(buffer, payload.data(), payload.size());
+        result_json->data = buffer;
+        result_json->size = static_cast<uint32_t>(payload.size());
+        return STREAMFIND_PLUGIN_OK;
     } catch (const std::exception &error) {
         report_error(host, error.what());
         return STREAMFIND_PLUGIN_ERROR;
     }
 }
 
-void release_buffer(streamfind_plugin_buffer *, void *) {}
+void release_buffer(streamfind_plugin_buffer *buffer, void *user_data) {
+    if (buffer == nullptr || buffer->data == nullptr || user_data == nullptr) return;
+    const auto *host = static_cast<const streamfind_plugin_host_api *>(user_data);
+    if (host->deallocate != nullptr)
+        host->deallocate(const_cast<char *>(buffer->data), buffer->size,
+                         alignof(char), host->user_data);
+    buffer->data = nullptr;
+    buffer->size = 0;
+}
 
 streamfind_plugin_status register_plugin(
     const streamfind_plugin_host_api *host, streamfind_plugin_api *plugin, void *) {

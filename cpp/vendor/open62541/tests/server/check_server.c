@@ -1,0 +1,870 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Copyright 2019 (c) basysKom GmbH <opensource@basyskom.com> (Author: Frank Meerkötter)
+ *    Copyright 2026 (c) o6 Automation GmbH (Author: Andreas Ebner)
+ */
+
+#include <open62541/server.h>
+#include <open62541/server_config_default.h>
+#include <open62541/types.h>
+#include <open62541/transport_generated.h>
+#include <open62541/plugin/accesscontrol_default.h>
+
+#include "server/ua_server_internal.h"
+#include "server/ua_services.h"
+#include "test_helpers.h"
+#include "ua_types_encoding_binary.h"
+#include "testing_networklayers.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#include "check.h"
+
+static UA_Server *server = NULL;
+
+#define MAX_NOTIFICATIONS 16
+static UA_ApplicationNotificationType receivedNotifications[MAX_NOTIFICATIONS];
+static size_t receivedNotificationsCount = 0;
+
+static void
+serverNotificationCallback(UA_Server *server, UA_ApplicationNotificationType type,
+                           const UA_KeyValueMap payload) {
+    if(receivedNotificationsCount < MAX_NOTIFICATIONS)
+        receivedNotifications[receivedNotificationsCount++] = type;
+}
+
+static void setup(void) {
+    server = UA_Server_newForUnitTest();
+    UA_ServerConfig *cfg = UA_Server_getConfig(server);
+    cfg->globalNotificationCallback = serverNotificationCallback;
+    ck_assert(server != NULL);
+    receivedNotificationsCount = 0;
+}
+
+static void teardown(void) {
+    UA_Server_delete(server);
+}
+
+START_TEST(checkGetConfig) {
+    ck_assert_ptr_eq(UA_Server_getConfig(NULL), NULL);
+    ck_assert_ptr_ne(UA_Server_getConfig(server), NULL);
+} END_TEST
+
+START_TEST(checkGetNamespaceByName) {
+    size_t notFoundIndex = 62541;
+    UA_StatusCode notFound = UA_Server_getNamespaceByName(server, UA_STRING("http://opcfoundation.org/UA/invalid"), &notFoundIndex);
+    ck_assert_uint_eq(notFoundIndex, 62541); // not changed
+    ck_assert_uint_eq(notFound, UA_STATUSCODE_BADNOTFOUND);
+
+    size_t foundIndex = 62541;
+    UA_StatusCode found = UA_Server_getNamespaceByName(server, UA_STRING("http://opcfoundation.org/UA/"), &foundIndex);
+    ck_assert_uint_eq(foundIndex, 0); // this namespace always has index 0 (defined by the standard)
+    ck_assert_uint_eq(found, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(checkGetNamespaceById) {
+    UA_String searchResultNamespace;
+    UA_StatusCode notFound = UA_Server_getNamespaceByIndex(server, 10, &searchResultNamespace);
+    ck_assert_uint_eq(notFound, UA_STATUSCODE_BADNOTFOUND);
+
+    UA_StatusCode found1 = UA_Server_getNamespaceByIndex(server, 1, &searchResultNamespace);
+    ck_assert_uint_eq(found1, UA_STATUSCODE_GOOD);
+    UA_String_clear(&searchResultNamespace);
+
+    UA_StatusCode notFound2 = UA_Server_getNamespaceByIndex(server, 2, &searchResultNamespace);
+    ck_assert_uint_eq(notFound2, UA_STATUSCODE_BADNOTFOUND);
+
+    UA_String compareNamespace = UA_STRING("http://opcfoundation.org/UA/");
+    UA_StatusCode found = UA_Server_getNamespaceByIndex(server, 0, &searchResultNamespace);
+    ck_assert(UA_String_equal(&compareNamespace, &searchResultNamespace));
+    ck_assert_uint_eq(found, UA_STATUSCODE_GOOD);
+    UA_String_clear(&searchResultNamespace);
+} END_TEST
+
+static void timedCallbackHandler(UA_Server *s, void *data) {
+    *((UA_Boolean*)data) = false;  // stop the server via a timedCallback
+}
+
+START_TEST(checkServer_run) {
+    UA_Boolean running = true;
+    // 0 is in the past so the server will terminate on the first iteration
+    UA_StatusCode ret;
+    ret = UA_Server_addTimedCallback(server, &timedCallbackHandler, &running, 0, NULL);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+    ret = UA_Server_run(server, &running);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(checkGetStatistics) {
+    /* Get server statistics without running - should return valid stats */
+    UA_ServerStatistics stats = UA_Server_getStatistics(server);
+
+    /* Initial stats should be zero/empty */
+    ck_assert_uint_eq(stats.ss.currentSessionCount, 0);
+    ck_assert_uint_eq(stats.ss.cumulatedSessionCount, 0);
+    ck_assert_uint_eq(stats.ss.securityRejectedSessionCount, 0);
+    ck_assert_uint_eq(stats.ss.rejectedSessionCount, 0);
+    ck_assert_uint_eq(stats.ss.sessionTimeoutCount, 0);
+    ck_assert_uint_eq(stats.ss.sessionAbortCount, 0);
+
+    /* SecureChannel stats should also be initialized */
+    ck_assert_uint_eq(stats.scs.currentChannelCount, 0);
+    ck_assert_uint_eq(stats.scs.cumulatedChannelCount, 0);
+    ck_assert_uint_eq(stats.scs.rejectedChannelCount, 0);
+    ck_assert_uint_eq(stats.scs.channelTimeoutCount, 0);
+    ck_assert_uint_eq(stats.scs.channelAbortCount, 0);
+    ck_assert_uint_eq(stats.scs.channelPurgeCount, 0);
+} END_TEST
+
+START_TEST(checkGetLifecycleState) {
+    /* Before startup, server should be in stopped state */
+    UA_LifecycleState state = UA_Server_getLifecycleState(server);
+    ck_assert_int_eq(state, UA_LIFECYCLESTATE_STOPPED);
+
+    /* After startup, server should be in started state */
+    UA_StatusCode ret = UA_Server_run_startup(server);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+
+    state = UA_Server_getLifecycleState(server);
+    ck_assert_int_eq(state, UA_LIFECYCLESTATE_STARTED);
+
+    /* After shutdown, server should transition back to stopped */
+    ret = UA_Server_run_shutdown(server);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+
+    state = UA_Server_getLifecycleState(server);
+    ck_assert_int_eq(state, UA_LIFECYCLESTATE_STOPPED);
+} END_TEST
+
+static size_t
+countNoneEndpointTokens(UA_UserTokenType tokenType) {
+    UA_GetEndpointsRequest request;
+    UA_GetEndpointsRequest_init(&request);
+    request.endpointUrl = UA_STRING("opc.tcp://localhost:4840");
+    UA_GetEndpointsResponse response;
+    UA_GetEndpointsResponse_init(&response);
+    lockServer(server);
+    Service_GetEndpoints(server, &server->adminSession, &request, &response);
+    unlockServer(server);
+    ck_assert_uint_eq(response.responseHeader.serviceResult, UA_STATUSCODE_GOOD);
+
+    size_t count = 0;
+    for(size_t i = 0; i < response.endpointsSize; i++) {
+        const UA_EndpointDescription *ep = &response.endpoints[i];
+        if(!UA_String_equal(&ep->securityPolicyUri, &UA_SECURITY_POLICY_NONE_URI))
+            continue;
+        for(size_t j = 0; j < ep->userIdentityTokensSize; j++) {
+            if(ep->userIdentityTokens[j].tokenType == tokenType)
+                count++;
+        }
+    }
+    UA_GetEndpointsResponse_clear(&response);
+    return count;
+}
+
+/* Without an encrypting SecurityPolicy, ActivateSession rejects x509 and
+ * password tokens on #None. So the #None endpoint does not offer them. */
+START_TEST(checkNoneEndpointUserTokens) {
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+    UA_UsernamePasswordLogin login = {UA_STRING_STATIC("user"),
+                                      UA_STRING_STATIC("password")};
+    ck_assert_uint_eq(UA_AccessControl_default(config, true, NULL, 1, &login),
+                      UA_STATUSCODE_GOOD);
+
+    /* The AccessControl offers x509, as the session PKI accepts all */
+    UA_Boolean haveX509 = false;
+    for(size_t i = 0; i < config->accessControl.userTokenPoliciesSize; i++) {
+        if(config->accessControl.userTokenPolicies[i].tokenType ==
+           UA_USERTOKENTYPE_CERTIFICATE)
+            haveX509 = true;
+    }
+    ck_assert(haveX509);
+
+    config->allowNonePolicyPassword = false;
+    ck_assert_uint_gt(countNoneEndpointTokens(UA_USERTOKENTYPE_ANONYMOUS), 0);
+    ck_assert_uint_eq(countNoneEndpointTokens(UA_USERTOKENTYPE_USERNAME), 0);
+    ck_assert_uint_eq(countNoneEndpointTokens(UA_USERTOKENTYPE_CERTIFICATE), 0);
+
+    /* Passwords can be allowed without encryption, x509 tokens cannot */
+    config->allowNonePolicyPassword = true;
+    ck_assert_uint_gt(countNoneEndpointTokens(UA_USERTOKENTYPE_USERNAME), 0);
+    ck_assert_uint_eq(countNoneEndpointTokens(UA_USERTOKENTYPE_CERTIFICATE), 0);
+} END_TEST
+
+/* ---- Additional coverage tests ---- */
+
+START_TEST(checkGetDataTypes) {
+    const UA_DataTypeArray *types = UA_Server_getDataTypes(server);
+    /* Server always has at least the built-in types chain */
+    (void)types; /* may be NULL if no custom types, that's fine */
+} END_TEST
+
+START_TEST(checkFindDataType) {
+    /* Find a well-known built-in type: Int32 */
+    UA_NodeId int32Id = UA_NODEID_NUMERIC(0, UA_NS0ID_INT32);
+    const UA_DataType *dt = UA_Server_findDataType(server, &int32Id);
+    /* Built-in types are found via the default DataTypeArray */
+    if(dt) {
+        ck_assert_uint_eq(dt->memSize, sizeof(UA_Int32));
+    }
+
+    /* Non-existing type should return NULL */
+    UA_NodeId fakeId = UA_NODEID_NUMERIC(0, 99999);
+    const UA_DataType *dtFake = UA_Server_findDataType(server, &fakeId);
+    ck_assert_ptr_eq(dtFake, NULL);
+} END_TEST
+
+START_TEST(checkServerReadValue) {
+    /* Read the ServerStatus CurrentTime value from the server */
+    UA_Variant value;
+    UA_StatusCode retval = UA_Server_readValue(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_CURRENTTIME), &value);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert(UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DATETIME]));
+    UA_Variant_clear(&value);
+} END_TEST
+
+START_TEST(checkServerReadDisplayName) {
+    UA_LocalizedText displayName;
+    UA_StatusCode retval = UA_Server_readDisplayName(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER), &displayName);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert(displayName.text.length > 0);
+    UA_LocalizedText_clear(&displayName);
+} END_TEST
+
+START_TEST(checkServerReadDescription) {
+    UA_LocalizedText desc;
+    UA_StatusCode retval = UA_Server_readDescription(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER), &desc);
+    /* May or may not have description, but shouldn't fail */
+    ck_assert(retval == UA_STATUSCODE_GOOD || retval == UA_STATUSCODE_BADATTRIBUTEIDINVALID);
+    if(retval == UA_STATUSCODE_GOOD)
+        UA_LocalizedText_clear(&desc);
+} END_TEST
+
+START_TEST(checkServerReadWriteRank) {
+    UA_LocalizedText desc;
+    UA_StatusCode retval;
+
+    /* Read browse name */
+    UA_QualifiedName browseName;
+    retval = UA_Server_readBrowseName(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER), &browseName);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert(browseName.name.length > 0);
+    UA_QualifiedName_clear(&browseName);
+
+    /* Read node class */
+    UA_NodeClass nodeClass;
+    retval = UA_Server_readNodeClass(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER), &nodeClass);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nodeClass, UA_NODECLASS_OBJECT);
+} END_TEST
+
+START_TEST(checkServerReadNodeId) {
+    /* Read the NodeId attribute of a node */
+    UA_NodeId outNodeId;
+    UA_StatusCode retval = UA_Server_readNodeId(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER), &outNodeId);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(outNodeId.identifier.numeric, UA_NS0ID_OBJECTSFOLDER);
+    UA_NodeId_clear(&outNodeId);
+} END_TEST
+
+START_TEST(checkServerAddRemoveNamespace) {
+    /* Add a namespace */
+    UA_UInt16 nsIdx = UA_Server_addNamespace(server, "http://test.example.com");
+    ck_assert_uint_gt(nsIdx, 0);
+
+    /* Find it */
+    size_t foundIdx = 0;
+    UA_StatusCode retval = UA_Server_getNamespaceByName(server,
+        UA_STRING("http://test.example.com"), &foundIdx);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(foundIdx, nsIdx);
+
+    /* Add the same namespace again - should return same index */
+    UA_UInt16 nsIdx2 = UA_Server_addNamespace(server, "http://test.example.com");
+    ck_assert_uint_eq(nsIdx, nsIdx2);
+} END_TEST
+
+START_TEST(checkServerWriteValue) {
+    /* Add a variable node */
+    UA_VariableAttributes attr = UA_VariableAttributes_default;
+    UA_Int32 myInt = 42;
+    UA_Variant_setScalar(&attr.value, &myInt, &UA_TYPES[UA_TYPES_INT32]);
+    attr.accessLevel = UA_ACCESSLEVELMASK_READ | UA_ACCESSLEVELMASK_WRITE;
+
+    UA_NodeId myNodeId = UA_NODEID_STRING(1, "test.writevar");
+    UA_StatusCode retval = UA_Server_addVariableNode(server, myNodeId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        UA_QUALIFIEDNAME(1, "TestWriteVar"),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+        attr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Write a new value */
+    UA_Int32 newVal = 100;
+    UA_Variant writeVal;
+    UA_Variant_setScalar(&writeVal, &newVal, &UA_TYPES[UA_TYPES_INT32]);
+    retval = UA_Server_writeValue(server, myNodeId, writeVal);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Read back */
+    UA_Variant readVal;
+    retval = UA_Server_readValue(server, myNodeId, &readVal);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(*(UA_Int32*)readVal.data, 100);
+    UA_Variant_clear(&readVal);
+} END_TEST
+
+START_TEST(checkServerAddObjectNode) {
+    UA_ObjectAttributes oAttr = UA_ObjectAttributes_default;
+    oAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestObject");
+    UA_NodeId objId = UA_NODEID_STRING(1, "test.object");
+    UA_StatusCode retval = UA_Server_addObjectNode(server, objId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        UA_QUALIFIEDNAME(1, "TestObject"),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE),
+        oAttr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Verify node class */
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, objId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_OBJECT);
+
+    /* Delete the node */
+    retval = UA_Server_deleteNode(server, objId, true);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Verify deletion */
+    retval = UA_Server_readNodeClass(server, objId, &nc);
+    ck_assert_uint_ne(retval, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(checkServerBrowse) {
+    UA_BrowseDescription bd;
+    UA_BrowseDescription_init(&bd);
+    bd.nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    bd.browseDirection = UA_BROWSEDIRECTION_FORWARD;
+    bd.resultMask = UA_BROWSERESULTMASK_ALL;
+
+    UA_BrowseResult br = UA_Server_browse(server, 0, &bd);
+    ck_assert_uint_eq(br.statusCode, UA_STATUSCODE_GOOD);
+    ck_assert_uint_gt(br.referencesSize, 0);
+    UA_BrowseResult_clear(&br);
+} END_TEST
+
+START_TEST(checkServerReadNonExistingNode) {
+    UA_Variant value;
+    UA_NodeId badId = UA_NODEID_NUMERIC(0, 99999);
+    UA_StatusCode retval = UA_Server_readValue(server, badId, &value);
+    ck_assert_uint_ne(retval, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(checkServerTranslateBrowsePath) {
+    UA_RelativePathElement rpe;
+    UA_RelativePathElement_init(&rpe);
+    rpe.referenceTypeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
+    rpe.isInverse = false;
+    rpe.includeSubtypes = true;
+    rpe.targetName = UA_QUALIFIEDNAME(0, "Server");
+
+    UA_BrowsePath bp;
+    UA_BrowsePath_init(&bp);
+    bp.startingNode = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    bp.relativePath.elementsSize = 1;
+    bp.relativePath.elements = &rpe;
+
+    UA_BrowsePathResult bpr = UA_Server_translateBrowsePathToNodeIds(server, &bp);
+    ck_assert_uint_eq(bpr.statusCode, UA_STATUSCODE_GOOD);
+    ck_assert_uint_gt(bpr.targetsSize, 0);
+    UA_BrowsePathResult_clear(&bpr);
+} END_TEST
+
+START_TEST(checkServerAddMethodNode) {
+    UA_MethodAttributes methAttr = UA_MethodAttributes_default;
+    methAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestMethod");
+    methAttr.executable = true;
+    methAttr.userExecutable = true;
+
+    UA_NodeId methId = UA_NODEID_STRING(1, "test.method");
+    UA_StatusCode retval = UA_Server_addMethodNode(server, methId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_HASCOMPONENT),
+        UA_QUALIFIEDNAME(1, "TestMethod"),
+        methAttr, NULL, 0, NULL, 0, NULL, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Verify it's a method */
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, methId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_METHOD);
+} END_TEST
+
+START_TEST(checkServerAddReference) {
+    /* Add two objects, then add a reference between them */
+    UA_ObjectAttributes oAttr = UA_ObjectAttributes_default;
+    UA_NodeId obj1 = UA_NODEID_STRING(1, "test.ref1");
+    UA_NodeId obj2 = UA_NODEID_STRING(1, "test.ref2");
+
+    UA_Server_addObjectNode(server, obj1,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        UA_QUALIFIEDNAME(1, "RefObj1"),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE),
+        oAttr, NULL, NULL);
+    UA_Server_addObjectNode(server, obj2,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        UA_QUALIFIEDNAME(1, "RefObj2"),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE),
+        oAttr, NULL, NULL);
+
+    /* Add reference */
+    UA_StatusCode retval = UA_Server_addReference(server, obj1,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        UA_EXPANDEDNODEID_STRING(1, "test.ref2"), true);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Delete reference */
+    retval = UA_Server_deleteReference(server, obj1,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES), true,
+        UA_EXPANDEDNODEID_STRING(1, "test.ref2"), true);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(checkServerReadDataType) {
+    /* Read the DataType attribute of the CurrentTime variable */
+    UA_NodeId dataType;
+    UA_StatusCode retval = UA_Server_readDataType(server,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_CURRENTTIME),
+        &dataType);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    /* Should be UtcTime (ns=0;i=294) which is a subtype of DateTime */
+    ck_assert_uint_eq(dataType.namespaceIndex, 0);
+    ck_assert_uint_gt(dataType.identifier.numeric, 0);
+    UA_NodeId_clear(&dataType);
+} END_TEST
+
+START_TEST(checkServerRepeatedCallback) {
+    UA_Boolean triggered = false;
+    UA_UInt64 callbackId = 0;
+    UA_StatusCode ret = UA_Server_addRepeatedCallback(server,
+        timedCallbackHandler, &triggered, 100.0, &callbackId);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+    ck_assert_uint_gt(callbackId, 0);
+
+    /* Remove the callback */
+    UA_Server_removeCallback(server, callbackId);
+} END_TEST
+
+static UA_StatusCode
+childIteratorCallback(UA_NodeId childId, UA_Boolean isInverse,
+                      UA_NodeId referenceTypeId, void *handle) {
+    (*(int*)handle)++;
+    return UA_STATUSCODE_GOOD;
+}
+
+START_TEST(checkForEachChildNodeCall) {
+    /* Objects folder should have children */
+    int count = 0;
+    UA_StatusCode retval = UA_Server_forEachChildNodeCall(
+        server, UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        childIteratorCallback, &count);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_gt(count, 0);
+} END_TEST
+
+static UA_StatusCode
+childIteratorCallbackAbort(UA_NodeId childId, UA_Boolean isInverse,
+                           UA_NodeId referenceTypeId, void *handle) {
+    (*(int*)handle)++;
+    /* Abort after first child */
+    return UA_STATUSCODE_BADINTERNALERROR;
+}
+
+START_TEST(checkForEachChildNodeCall_abort) {
+    /* Test early abort via callback returning error */
+    int count = 0;
+    UA_StatusCode retval = UA_Server_forEachChildNodeCall(
+        server, UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER),
+        childIteratorCallbackAbort, &count);
+    ck_assert_uint_ne(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(count, 1);
+} END_TEST
+
+START_TEST(checkForEachChildNodeCall_invalidNode) {
+    int count = 0;
+    UA_StatusCode retval = UA_Server_forEachChildNodeCall(
+        server, UA_NODEID_NUMERIC(0, 99999),
+        childIteratorCallback, &count);
+    ck_assert_uint_ne(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(count, 0);
+} END_TEST
+
+START_TEST(checkChangeRepeatedCallbackInterval) {
+    UA_Boolean triggered = false;
+    UA_UInt64 callbackId = 0;
+    UA_StatusCode ret = UA_Server_addRepeatedCallback(server,
+        timedCallbackHandler, &triggered, 500.0, &callbackId);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+
+    /* Change interval */
+    ret = UA_Server_changeRepeatedCallbackInterval(server, callbackId, 1000.0);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+
+    /* Remove */
+    UA_Server_removeCallback(server, callbackId);
+} END_TEST
+
+START_TEST(checkMultipleNamespaces) {
+    /* Add multiple namespaces in sequence */
+    UA_UInt16 ns1 = UA_Server_addNamespace(server, "http://ns1.example.com");
+    UA_UInt16 ns2 = UA_Server_addNamespace(server, "http://ns2.example.com");
+    UA_UInt16 ns3 = UA_Server_addNamespace(server, "http://ns3.example.com");
+
+    ck_assert_uint_gt(ns1, 0);
+    ck_assert_uint_gt(ns2, ns1);
+    ck_assert_uint_gt(ns3, ns2);
+
+    /* Verify they can be found */
+    size_t foundIdx;
+    UA_StatusCode ret = UA_Server_getNamespaceByName(server,
+        UA_STRING("http://ns2.example.com"), &foundIdx);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(foundIdx, ns2);
+
+    /* Verify namespace by index */
+    UA_String nsUri;
+    ret = UA_Server_getNamespaceByIndex(server, ns3, &nsUri);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+    UA_String expected = UA_STRING("http://ns3.example.com");
+    ck_assert(UA_String_equal(&nsUri, &expected));
+    UA_String_clear(&nsUri);
+} END_TEST
+
+START_TEST(checkServerLifecycleCallbackNotification) {
+    /* Verify that the notification callback fires the distinct STARTED,
+     * STOPPING and STOPPED notifications -- not STOPPING twice -- during a
+     * normal startup/shutdown cycle. */
+    UA_StatusCode ret = UA_Server_run_startup(server);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+
+    UA_LifecycleState state = UA_Server_getLifecycleState(server);
+    ck_assert_int_eq(state, UA_LIFECYCLESTATE_STARTED);
+
+    /* Get stats while running */
+    UA_ServerStatistics stats = UA_Server_getStatistics(server);
+    (void)stats;
+
+    ret = UA_Server_run_shutdown(server);
+    ck_assert_uint_eq(ret, UA_STATUSCODE_GOOD);
+
+    ck_assert_uint_eq(receivedNotificationsCount, 3);
+    ck_assert_int_eq(receivedNotifications[0], UA_APPLICATIONNOTIFICATIONTYPE_LIFECYCLE_STARTED);
+    ck_assert_int_eq(receivedNotifications[1], UA_APPLICATIONNOTIFICATIONTYPE_LIFECYCLE_STOPPING);
+    ck_assert_int_eq(receivedNotifications[2], UA_APPLICATIONNOTIFICATIONTYPE_LIFECYCLE_STOPPED);
+} END_TEST
+
+START_TEST(checkServerAddVariableTypeNode) {
+    /* Add a custom VariableType node */
+    UA_VariableTypeAttributes vtAttr = UA_VariableTypeAttributes_default;
+    vtAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestVariableType");
+    vtAttr.dataType = UA_NODEID_NUMERIC(0, UA_NS0ID_INT32);
+    vtAttr.valueRank = UA_VALUERANK_SCALAR;
+
+    UA_NodeId vtId = UA_NODEID_STRING(1, "test.vartype");
+    UA_StatusCode retval = UA_Server_addVariableTypeNode(
+        server, vtId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE),
+        UA_QUALIFIEDNAME(1, "TestVariableType"),
+        UA_NODEID_NULL, vtAttr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Verify node class */
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, vtId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_VARIABLETYPE);
+} END_TEST
+
+START_TEST(checkServerAddViewNode) {
+    UA_ViewAttributes vAttr = UA_ViewAttributes_default;
+    vAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestView");
+
+    UA_NodeId viewId = UA_NODEID_STRING(1, "test.view");
+    UA_StatusCode retval = UA_Server_addViewNode(
+        server, viewId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_VIEWSFOLDER),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES),
+        UA_QUALIFIEDNAME(1, "TestView"),
+        vAttr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    /* Verify node class */
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, viewId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_VIEW);
+} END_TEST
+
+START_TEST(checkServerAddDataTypeNode) {
+    UA_DataTypeAttributes dtAttr = UA_DataTypeAttributes_default;
+    dtAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestDataType");
+
+    UA_NodeId dtId = UA_NODEID_STRING(1, "test.datatype");
+    UA_StatusCode retval = UA_Server_addDataTypeNode(
+        server, dtId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_STRUCTURE),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE),
+        UA_QUALIFIEDNAME(1, "TestDataType"),
+        dtAttr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, dtId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_DATATYPE);
+} END_TEST
+
+START_TEST(checkServerAddReferenceTypeNode) {
+    UA_ReferenceTypeAttributes rtAttr = UA_ReferenceTypeAttributes_default;
+    rtAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestRefType");
+    rtAttr.inverseName = UA_LOCALIZEDTEXT("en-US", "InverseTestRefType");
+
+    UA_NodeId rtId = UA_NODEID_STRING(1, "test.reftype");
+    UA_StatusCode retval = UA_Server_addReferenceTypeNode(
+        server, rtId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_NONHIERARCHICALREFERENCES),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE),
+        UA_QUALIFIEDNAME(1, "TestRefType"),
+        rtAttr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, rtId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_REFERENCETYPE);
+} END_TEST
+
+START_TEST(checkServerAddObjectTypeNode) {
+    UA_ObjectTypeAttributes otAttr = UA_ObjectTypeAttributes_default;
+    otAttr.displayName = UA_LOCALIZEDTEXT("en-US", "TestObjectType");
+
+    UA_NodeId otId = UA_NODEID_STRING(1, "test.objtype");
+    UA_StatusCode retval = UA_Server_addObjectTypeNode(
+        server, otId,
+        UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE),
+        UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE),
+        UA_QUALIFIEDNAME(1, "TestObjectType"),
+        otAttr, NULL, NULL);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    UA_NodeClass nc;
+    retval = UA_Server_readNodeClass(server, otId, &nc);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    ck_assert_int_eq(nc, UA_NODECLASS_OBJECTTYPE);
+} END_TEST
+
+START_TEST(checkServerConfig_returnsLivePointer) {
+    UA_ServerConfig *config1 = UA_Server_getConfig(server);
+    UA_ServerConfig *config2 = UA_Server_getConfig(server);
+    ck_assert_ptr_ne(config1, NULL);
+    ck_assert_ptr_eq(config1, config2);
+
+    /* Mutations through the returned pointer must persist */
+    UA_UInt32 original = config1->maxNodesPerRead;
+    config1->maxNodesPerRead = original + 17;
+    ck_assert_uint_eq(UA_Server_getConfig(server)->maxNodesPerRead,
+                      original + 17);
+    config1->maxNodesPerRead = original;
+} END_TEST
+
+static int callbackCounter = 0;
+static void testRepeatedCallback(UA_Server *s, void *data) {
+    (void)s; (void)data;
+    callbackCounter++;
+}
+
+START_TEST(checkCallbackManagement) {
+    UA_UInt64 callbackId = 0;
+
+    UA_StatusCode ret = UA_Server_run_startup(server);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+
+    ret = UA_Server_addRepeatedCallback(server, testRepeatedCallback, NULL,
+                                        1000.0, &callbackId);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+    ck_assert(callbackId != 0);
+
+    ret = UA_Server_changeRepeatedCallbackInterval(server, callbackId, 2000.0);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+
+    UA_Server_removeCallback(server, callbackId);
+
+    UA_Server_removeCallback(server, 99999);
+
+    ret = UA_Server_run_shutdown(server);
+    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
+} END_TEST
+
+static unsigned closeCount;
+static UA_StatusCode
+closeConnection(UA_ConnectionManager *cm, uintptr_t connectionId) {
+    (void)cm;
+    ck_assert_uint_eq(connectionId, 2);
+    closeCount++;
+    return UA_STATUSCODE_GOOD;
+}
+
+static void
+checkHello(size_t urlLength, size_t trailing, UA_UInt32 version, UA_StatusCode expected) {
+    UA_ConnectionManager *cm = TestConnectionManager_new("tcp", NULL);
+    ck_assert_ptr_ne(cm, NULL);
+    cm->eventSource.eventLoop = UA_Server_getConfig(server)->eventLoop;
+    cm->closeConnection = closeConnection;
+    UA_ServerComponent *bpm = getServerComponentByName(server, UA_STRING("binary"));
+    ck_assert_ptr_ne(bpm, NULL);
+    closeCount = 0;
+    void *listener = NULL;
+    serverNetworkCallback(cm, 1, bpm, &listener, UA_CONNECTIONSTATE_ESTABLISHED,
+                          &UA_KEYVALUEMAP_NULL, UA_BYTESTRING_NULL);
+    ck_assert_ptr_ne(listener, NULL);
+
+    UA_TcpHelloMessage hello;
+    UA_TcpHelloMessage_init(&hello);
+    hello.protocolVersion = version;
+    hello.receiveBufferSize = hello.sendBufferSize = 65536;
+    ck_assert_uint_eq(UA_ByteString_allocBuffer(&hello.endpointUrl, urlLength),
+                      UA_STATUSCODE_GOOD);
+    memset(hello.endpointUrl.data, 'x', urlLength);
+    UA_ByteString body = UA_BYTESTRING_NULL;
+    ck_assert_uint_eq(UA_encodeBinary(&hello, &UA_TRANSPORT[UA_TRANSPORT_TCPHELLOMESSAGE],
+                                     &body, NULL), UA_STATUSCODE_GOOD);
+    UA_TcpHelloMessage_clear(&hello);
+    UA_ByteString frame;
+    ck_assert_uint_eq(UA_ByteString_allocBuffer(&frame, 8 + body.length + trailing),
+                      UA_STATUSCODE_GOOD);
+    UA_TcpMessageHeader header = {UA_MESSAGETYPE_HEL + UA_CHUNKTYPE_FINAL,
+                                  (UA_UInt32)frame.length};
+    UA_ByteString headerBuf = {8, frame.data};
+    ck_assert_uint_eq(UA_encodeBinary(&header, &UA_TRANSPORT[UA_TRANSPORT_TCPMESSAGEHEADER],
+                                     &headerBuf, NULL), UA_STATUSCODE_GOOD);
+    memcpy(frame.data + 8, body.data, body.length);
+    memset(frame.data + 8 + body.length, 0xab, trailing);
+    UA_ByteString_clear(&body);
+
+    void *connection = listener;
+    serverNetworkCallback(cm, 2, bpm, &connection, UA_CONNECTIONSTATE_ESTABLISHED,
+                          &UA_KEYVALUEMAP_NULL, frame);
+    const UA_ByteString *response = TestConnectionManager_getLastSent(cm);
+    size_t offset = 0;
+    ck_assert_uint_eq(UA_decodeBinaryInternal(response, &offset, &header,
+                      &UA_TRANSPORT[UA_TRANSPORT_TCPMESSAGEHEADER], NULL), UA_STATUSCODE_GOOD);
+    if(expected == UA_STATUSCODE_GOOD) {
+        ck_assert_uint_eq(header.messageTypeAndChunkType, UA_MESSAGETYPE_ACK + UA_CHUNKTYPE_FINAL);
+        UA_TcpAcknowledgeMessage ack;
+        ck_assert_uint_eq(UA_decodeBinaryInternal(response, &offset, &ack,
+                          &UA_TRANSPORT[UA_TRANSPORT_TCPACKNOWLEDGEMESSAGE], NULL), UA_STATUSCODE_GOOD);
+        ck_assert_uint_eq(ack.protocolVersion, 0);
+        ck_assert_uint_eq(closeCount, 0);
+    } else {
+        ck_assert_uint_eq(header.messageTypeAndChunkType, UA_MESSAGETYPE_ERR + UA_CHUNKTYPE_FINAL);
+        UA_TcpErrorMessage error;
+        ck_assert_uint_eq(UA_decodeBinaryInternal(response, &offset, &error,
+                          &UA_TRANSPORT[UA_TRANSPORT_TCPERRORMESSAGE], NULL), UA_STATUSCODE_GOOD);
+        ck_assert_uint_eq(error.error, expected);
+        ck_assert_uint_eq(closeCount, 1);
+        UA_TcpErrorMessage_clear(&error);
+    }
+    serverNetworkCallback(cm, 2, bpm, &connection, UA_CONNECTIONSTATE_CLOSING,
+                          &UA_KEYVALUEMAP_NULL, UA_BYTESTRING_NULL);
+    serverNetworkCallback(cm, 1, bpm, &listener, UA_CONNECTIONSTATE_CLOSING,
+                          &UA_KEYVALUEMAP_NULL, UA_BYTESTRING_NULL);
+    cm->eventSource.free(&cm->eventSource);
+    UA_ByteString_clear(&frame);
+}
+
+START_TEST(helloEndpointUrlLimit) {
+    checkHello(32, 0, 0, UA_STATUSCODE_GOOD);
+    checkHello(4095, 0, 0, UA_STATUSCODE_GOOD);
+    checkHello(4096, 0, 0, UA_STATUSCODE_BADTCPENDPOINTURLINVALID);
+    checkHello(4097, 0, 0, UA_STATUSCODE_BADTCPENDPOINTURLINVALID);
+    checkHello(5000, 0, 0, UA_STATUSCODE_BADTCPENDPOINTURLINVALID);
+    checkHello(32, 0, 0xdeadbeef, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(helloTrailingData) {
+    checkHello(32, 1, 0, UA_STATUSCODE_BADDECODINGERROR);
+    checkHello(32, 8, 0, UA_STATUSCODE_BADDECODINGERROR);
+} END_TEST
+
+int main(void) {
+    Suite *s = suite_create("server");
+
+    TCase *tc_call = tcase_create("server - basics");
+    tcase_add_checked_fixture(tc_call, setup, teardown);
+    tcase_add_test(tc_call, checkGetConfig);
+    tcase_add_test(tc_call, checkGetNamespaceByName);
+    tcase_add_test(tc_call, checkGetNamespaceById);
+    tcase_add_test(tc_call, checkServer_run);
+    tcase_add_test(tc_call, helloEndpointUrlLimit);
+    tcase_add_test(tc_call, helloTrailingData);
+    tcase_add_test(tc_call, checkNoneEndpointUserTokens);
+    suite_add_tcase(s, tc_call);
+
+    TCase *tc_ext = tcase_create("server - extended");
+    tcase_add_checked_fixture(tc_ext, setup, teardown);
+    tcase_add_test(tc_ext, checkGetDataTypes);
+    tcase_add_test(tc_ext, checkFindDataType);
+    tcase_add_test(tc_ext, checkServerReadValue);
+    tcase_add_test(tc_ext, checkServerReadDisplayName);
+    tcase_add_test(tc_ext, checkServerReadDescription);
+    tcase_add_test(tc_ext, checkServerReadWriteRank);
+    tcase_add_test(tc_ext, checkServerReadNodeId);
+
+    tcase_add_test(tc_ext, checkServerAddRemoveNamespace);
+    tcase_add_test(tc_ext, checkServerWriteValue);
+    tcase_add_test(tc_ext, checkServerAddObjectNode);
+    tcase_add_test(tc_ext, checkServerBrowse);
+    tcase_add_test(tc_ext, checkServerReadNonExistingNode);
+    tcase_add_test(tc_ext, checkServerTranslateBrowsePath);
+    tcase_add_test(tc_ext, checkServerAddMethodNode);
+    tcase_add_test(tc_ext, checkServerAddReference);
+    tcase_add_test(tc_ext, checkServerReadDataType);
+    tcase_add_test(tc_ext, checkServerRepeatedCallback);
+    tcase_add_test(tc_ext, checkCallbackManagement);
+    tcase_add_test(tc_ext, checkForEachChildNodeCall);
+    tcase_add_test(tc_ext, checkForEachChildNodeCall_abort);
+    tcase_add_test(tc_ext, checkForEachChildNodeCall_invalidNode);
+    tcase_add_test(tc_ext, checkChangeRepeatedCallbackInterval);
+    tcase_add_test(tc_ext, checkMultipleNamespaces);
+    tcase_add_test(tc_ext, checkServerLifecycleCallbackNotification);
+    tcase_add_test(tc_ext, checkServerAddVariableTypeNode);
+    tcase_add_test(tc_ext, checkServerAddViewNode);
+    tcase_add_test(tc_ext, checkServerAddDataTypeNode);
+    tcase_add_test(tc_ext, checkServerAddReferenceTypeNode);
+    tcase_add_test(tc_ext, checkServerAddObjectTypeNode);
+    tcase_add_test(tc_ext, checkServerConfig_returnsLivePointer);
+    suite_add_tcase(s, tc_ext);
+
+    SRunner *sr = srunner_create(s);
+    srunner_set_fork_status(sr, CK_NOFORK);
+    srunner_run_all(sr, CK_NORMAL);
+    int number_failed = srunner_ntests_failed(sr);
+    srunner_free(sr);
+    return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+}

@@ -1,0 +1,623 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ *    Copyright 2018 (c) basysKom GmbH <opensource@basyskom.com> (Author: Peter Rustler)
+ */
+
+#include <open62541/client_subscriptions.h>
+#include <open62541/server.h>
+#include <open62541/server_config_default.h>
+#include <open62541/types.h>
+#include "server/ua_server_internal.h"
+#include "server/ua_subscription.h"
+
+#include <check.h>
+#include <stdlib.h>
+
+/* On libcheck < 0.11 (ubuntu-20.04 ships 0.10), ck_assert_ptr_null /
+ * ck_assert_ptr_nonnull are missing. Shim them to ck_assert_msg. */
+#ifndef ck_assert_ptr_null
+# define ck_assert_ptr_null(p) ck_assert_msg((p) == NULL, #p " is not NULL")
+#endif
+#ifndef ck_assert_ptr_nonnull
+# define ck_assert_ptr_nonnull(p) ck_assert_msg((p) != NULL, #p " is NULL")
+#endif
+
+#include "test_helpers.h"
+#include "testing_clock.h"
+#include "testing_networklayers.h"
+
+#ifdef UA_ENABLE_STATUSCODE_DESCRIPTIONS
+    #define ASSERT_STATUSCODE(a,b) ck_assert_str_eq(UA_StatusCode_name(a),UA_StatusCode_name(b))
+#else
+    #define ASSERT_STATUSCODE(a,b) ck_assert_uint_eq((a),(b))
+#endif
+
+UA_Server *server;
+size_t callbackCount = 0;
+UA_StatusCode expectedDataValueStatus;
+static UA_Boolean deleteAtMonitoredItemCreated;
+static UA_StatusCode deleteAtMonitoredItemCreatedResult;
+static UA_Boolean deleteAtMonitoredItemDelete;
+static UA_StatusCode deleteAtMonitoredItemDeleteResult;
+
+UA_NodeId parentNodeId;
+UA_NodeId parentReferenceNodeId;
+UA_NodeId outNodeId;
+
+static void setup(void) {
+    server = UA_Server_newForUnitTest();
+    ck_assert(server != NULL);
+
+    UA_StatusCode retval = UA_Server_run_startup(server);
+    ASSERT_STATUSCODE(retval, UA_STATUSCODE_GOOD);
+    /* Define the attribute of the uint32 variable node */
+    UA_VariableAttributes attr = UA_VariableAttributes_default;
+    UA_UInt32 myUint32 = 40;
+    UA_Variant_setScalar(&attr.value, &myUint32, &UA_TYPES[UA_TYPES_UINT32]);
+    attr.description = UA_LOCALIZEDTEXT("en-US","the answer");
+    attr.displayName = UA_LOCALIZEDTEXT("en-US","the answer");
+    //attr.dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
+    attr.accessLevel = UA_ACCESSLEVELMASK_READ | UA_ACCESSLEVELMASK_WRITE;
+
+    /* Add the variable node to the information model */
+    UA_NodeId uint32NodeId = UA_NODEID_STRING(1, "the.answer");
+    UA_QualifiedName uint32Name = UA_QUALIFIEDNAME(1, "the answer");
+    parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
+    UA_NodeId_init(&outNodeId);
+    ASSERT_STATUSCODE(UA_Server_addVariableNode(server,
+                                                uint32NodeId,
+                                                parentNodeId,
+                                                parentReferenceNodeId,
+                                                uint32Name,
+                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+                                                attr,
+                                                NULL,
+                                                &outNodeId), UA_STATUSCODE_GOOD);
+}
+
+static void teardown(void) {
+    /* cleanup */
+    UA_NodeId_clear(&parentNodeId);
+    UA_NodeId_clear(&parentReferenceNodeId);
+    UA_NodeId_clear(&outNodeId);
+    UA_Server_run_shutdown(server);
+    UA_Server_delete(server);
+}
+
+static void
+dataChangeNotificationCallback(UA_Server *thisServer,
+                               UA_UInt32 monitoredItemId,
+                               void *monitoredItemContext,
+                               const UA_NodeId *nodeId,
+                               void *nodeContext,
+                               UA_UInt32 attributeId,
+                               const UA_DataValue *value)
+{
+    static UA_UInt32 lastValue = 100;
+    UA_UInt32 currentValue = *((UA_UInt32*)value->value.data);
+    ck_assert_uint_ne(lastValue, currentValue);
+    lastValue = currentValue;
+    callbackCount++;
+}
+
+static void
+monitoredItemLifecycleCallback(UA_Server *thisServer,
+                               UA_ApplicationNotificationType type,
+                               const UA_KeyValueMap payload) {
+    if(type == UA_APPLICATIONNOTIFICATIONTYPE_MONITOREDITEM_DELETE &&
+       deleteAtMonitoredItemDelete) {
+        deleteAtMonitoredItemDelete = false;
+        const UA_UInt32 *monitoredItemId =
+            (const UA_UInt32*)payload.map[2].value.data;
+        deleteAtMonitoredItemDeleteResult =
+            UA_Server_deleteMonitoredItem(thisServer, *monitoredItemId);
+        return;
+    }
+
+    if(type != UA_APPLICATIONNOTIFICATIONTYPE_MONITOREDITEM_CREATED ||
+       !deleteAtMonitoredItemCreated)
+        return;
+
+    deleteAtMonitoredItemCreated = false;
+    const UA_UInt32 *monitoredItemId =
+        (const UA_UInt32*)payload.map[2].value.data;
+    deleteAtMonitoredItemCreatedResult =
+        UA_Server_deleteMonitoredItem(thisServer, *monitoredItemId);
+}
+
+START_TEST(Server_LocalMonitoredItem_deleteFromCreatedNotification) {
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+    config->subscriptionNotificationCallback = monitoredItemLifecycleCallback;
+    deleteAtMonitoredItemCreated = true;
+    deleteAtMonitoredItemCreatedResult = UA_STATUSCODE_BADINTERNALERROR;
+    callbackCount = 0;
+
+    UA_MonitoredItemCreateRequest request =
+        UA_MonitoredItemCreateRequest_default(outNodeId);
+    request.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    request.requestedParameters.samplingInterval = 0.0;
+
+    UA_MonitoredItemCreateResult result =
+        UA_Server_createDataChangeMonitoredItem(
+            server, UA_TIMESTAMPSTORETURN_BOTH, request, NULL,
+            dataChangeNotificationCallback);
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+    ASSERT_STATUSCODE(deleteAtMonitoredItemCreatedResult, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(callbackCount, 0);
+
+    /* The outer create path must not reactivate a MonitoredItem that the
+     * notification callback already deleted. */
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 0);
+    ASSERT_STATUSCODE(UA_Server_deleteMonitoredItem(
+        server, result.monitoredItemId),
+        UA_STATUSCODE_BADMONITOREDITEMIDINVALID);
+    config->subscriptionNotificationCallback = NULL;
+}
+END_TEST
+
+START_TEST(Server_LocalMonitoredItem_deleteFromDeleteNotification) {
+    UA_MonitoredItemCreateRequest request =
+        UA_MonitoredItemCreateRequest_default(outNodeId);
+    UA_MonitoredItemCreateResult result =
+        UA_Server_createDataChangeMonitoredItem(
+            server, UA_TIMESTAMPSTORETURN_BOTH, request, NULL,
+            dataChangeNotificationCallback);
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+    config->subscriptionNotificationCallback = monitoredItemLifecycleCallback;
+    deleteAtMonitoredItemDelete = true;
+    deleteAtMonitoredItemDeleteResult = UA_STATUSCODE_BADINTERNALERROR;
+
+    ASSERT_STATUSCODE(UA_Server_deleteMonitoredItem(
+        server, result.monitoredItemId), UA_STATUSCODE_GOOD);
+    ASSERT_STATUSCODE(deleteAtMonitoredItemDeleteResult,
+                      UA_STATUSCODE_BADMONITOREDITEMIDINVALID);
+
+    /* Recursive deletion must not enqueue the embedded delayed callback twice. */
+    UA_Server_run_iterate(server, false);
+    ASSERT_STATUSCODE(UA_Server_deleteMonitoredItem(
+        server, result.monitoredItemId),
+        UA_STATUSCODE_BADMONITOREDITEMIDINVALID);
+    config->subscriptionNotificationCallback = NULL;
+}
+END_TEST
+
+START_TEST(Server_LocalMonitoredItem) {
+    callbackCount = 0;
+
+    UA_MonitoredItemCreateRequest monitorRequest =
+            UA_MonitoredItemCreateRequest_default(outNodeId);
+    monitorRequest.requestedParameters.samplingInterval = (double)100;
+    monitorRequest.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    UA_MonitoredItemCreateResult result =
+            UA_Server_createDataChangeMonitoredItem(server,
+                                                    UA_TIMESTAMPSTORETURN_BOTH,
+                                                    monitorRequest,
+                                                    NULL,
+                                                    &dataChangeNotificationCallback);
+
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 1);
+
+    UA_UInt32 count = 0;
+    UA_Variant val;
+    UA_Variant_setScalar(&val, &count, &UA_TYPES[UA_TYPES_UINT32]);
+
+    for(size_t i = 0; i < 10; i++) {
+        count++;
+        UA_Server_writeValue(server, outNodeId, val);
+        UA_fakeSleep(100);
+        UA_Server_run_iterate(server, 1);
+    }
+    ck_assert_uint_eq(callbackCount, 11);
+}
+END_TEST
+
+static void
+deleteMonitoredItemCallback(UA_Server *thisServer,
+                            UA_UInt32 monitoredItemId,
+                            void *monitoredItemContext,
+                            const UA_NodeId *nodeId,
+                            void *nodeContext,
+                            UA_UInt32 attributeId,
+                            const UA_DataValue *value) {
+    UA_StatusCode *deleteStatus = (UA_StatusCode*)monitoredItemContext;
+    callbackCount++;
+    *deleteStatus = UA_Server_deleteMonitoredItem(thisServer, monitoredItemId);
+}
+
+START_TEST(Server_LocalMonitoredItem_deleteInCallback) {
+    callbackCount = 0;
+    UA_StatusCode deleteStatus = UA_STATUSCODE_BADINTERNALERROR;
+    UA_MonitoredItemCreateRequest request =
+        UA_MonitoredItemCreateRequest_default(outNodeId);
+    request.requestedParameters.samplingInterval = 0.0;
+    request.requestedParameters.queueSize = 3;
+
+    UA_MonitoredItemCreateResult result =
+        UA_Server_createDataChangeMonitoredItem(
+            server, UA_TIMESTAMPSTORETURN_BOTH, request, &deleteStatus,
+            deleteMonitoredItemCallback);
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+
+    UA_UInt32 newValue = 41;
+    UA_Variant value;
+    UA_Variant_setScalar(&value, &newValue, &UA_TYPES[UA_TYPES_UINT32]);
+    ASSERT_STATUSCODE(UA_Server_writeValue(server, outNodeId, value),
+                      UA_STATUSCODE_GOOD);
+
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 1);
+    ASSERT_STATUSCODE(deleteStatus, UA_STATUSCODE_GOOD);
+
+    UA_Server_run_iterate(server, false);
+}
+END_TEST
+
+static UA_UInt32 staticUInt32 = 1337;
+
+static UA_StatusCode
+readDataSource(UA_Server *s, const UA_NodeId *sessionId, void *sessionContext,
+               const UA_NodeId *nodeId, void *nodeContext,
+               UA_Boolean includeSourceTimeStamp, const UA_NumericRange *range,
+               UA_DataValue *value) {
+    UA_Variant_setScalar(&value->value, &staticUInt32, &UA_TYPES[UA_TYPES_UINT32]);
+    value->value.storageType = UA_VARIANT_DATA_NODELETE;
+    value->hasValue = true;
+    return UA_STATUSCODE_GOOD;
+}
+
+/* Use a datasource with a static memory location */
+START_TEST(Server_LocalMonitoredItem_dataSource) {
+    callbackCount = 0;
+
+    UA_DataSource ds = {readDataSource, NULL};
+    UA_Server_setVariableNode_dataSource(server, outNodeId, ds);
+
+    UA_MonitoredItemCreateRequest monitorRequest =
+            UA_MonitoredItemCreateRequest_default(outNodeId);
+    monitorRequest.requestedParameters.samplingInterval = (double)100;
+    monitorRequest.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    UA_MonitoredItemCreateResult result =
+            UA_Server_createDataChangeMonitoredItem(server,
+                                                    UA_TIMESTAMPSTORETURN_BOTH,
+                                                    monitorRequest,
+                                                    NULL,
+                                                    &dataChangeNotificationCallback);
+
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 1);
+
+    for(size_t i = 0; i < 10; i++) {
+        staticUInt32++;
+        UA_fakeSleep(100);
+        UA_Server_run_iterate(server, 1);
+    }
+    ck_assert_uint_eq(callbackCount, 11);
+}
+END_TEST
+
+/* Custom datatype with a String NodeId */
+typedef struct {
+    UA_Float p;
+} Point;
+
+static UA_DataTypeMember members[1] = {
+    {
+        UA_TYPENAME("p")           /* .memberName */
+        &UA_TYPES[UA_TYPES_FLOAT], /* .memberType */
+        0,                         /* .padding */
+        false,                     /* .isArray */
+        false                      /* .isOptional*/
+    }
+};
+
+static UA_DataType PointType = {
+    UA_TYPENAME("Point")             /* .typeName */
+    {1, UA_NODEIDTYPE_NUMERIC, {0}}, /* .typeId */
+    {1, UA_NODEIDTYPE_NUMERIC, {0}}, /* .binaryEncodingId, the numeric
+                                         identifier used on the wire (the
+                                         namespaceindex is from .typeId) */
+    {1, UA_NODEIDTYPE_NUMERIC, {0}}, /* .xmlEncodingId */
+    sizeof(Point),                   /* .memSize */
+    UA_DATATYPEKIND_STRUCTURE,       /* .typeKind */
+    true,                            /* .pointerFree */
+    false,                           /* .overlayable (depends on endianness and
+                                         the absence of padding) */
+    1,                               /* .membersSize */
+    members
+};
+
+UA_DataTypeArray customDataTypes = {NULL, 1, &PointType, UA_FALSE};
+
+START_TEST(Server_LocalMonitoredItem_CustomType) {
+    callbackCount = 0;
+
+    PointType.binaryEncodingId = UA_NODEID_STRING(1, "pointbinary");
+
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+    customDataTypes.next = config->customDataTypes;
+    config->customDataTypes = &customDataTypes;
+
+    UA_MonitoredItemCreateRequest monitorRequest =
+            UA_MonitoredItemCreateRequest_default(outNodeId);
+    monitorRequest.requestedParameters.samplingInterval = (double)100;
+    monitorRequest.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    UA_MonitoredItemCreateResult result =
+            UA_Server_createDataChangeMonitoredItem(server,
+                                                    UA_TIMESTAMPSTORETURN_BOTH,
+                                                    monitorRequest,
+                                                    NULL,
+                                                    &dataChangeNotificationCallback);
+
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 1);
+
+    /* Use a value that requires the ExtensionObject to encode the NodeId of the
+     * data type */
+    Point p = {0.0};
+    UA_Variant val;
+    UA_ExtensionObject arr[100];
+    UA_Variant_setArray(&val, arr, 100, &UA_TYPES[UA_TYPES_EXTENSIONOBJECT]);
+    for(size_t i = 0; i < 100; i++) {
+        UA_ExtensionObject_setValueNoDelete(&arr[i], &p, &PointType);
+    }
+    UA_StatusCode retval = UA_Server_writeValue(server, outNodeId, val);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+    UA_fakeSleep(100);
+    UA_Server_run_iterate(server, 1);
+    ck_assert_uint_eq(callbackCount, 2);
+
+    p.p = 1.0;
+    UA_fakeSleep(100);
+    UA_Server_run_iterate(server, 1);
+    ck_assert_uint_eq(callbackCount, 2);
+}
+END_TEST
+
+static void setupIndexRange(void) {
+    server = UA_Server_newForUnitTest();
+    ck_assert(server != NULL);
+
+    UA_StatusCode retval = UA_Server_run_startup(server);
+    ASSERT_STATUSCODE(retval, UA_STATUSCODE_GOOD);
+    /* Define the attribute of the uint32 array variable node */
+    UA_VariableAttributes attr = UA_VariableAttributes_default;
+    UA_UInt32 myUint32Array[3] = {40, 41, 42};
+    UA_Variant_setArray(&attr.value, &myUint32Array, 3, &UA_TYPES[UA_TYPES_UINT32]);
+    attr.description = UA_LOCALIZEDTEXT("en-US","UInt32 Array");
+    attr.displayName = UA_LOCALIZEDTEXT("en-US","UInt32 Array");
+    //attr.dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
+    attr.accessLevel = UA_ACCESSLEVELMASK_READ | UA_ACCESSLEVELMASK_WRITE;
+
+    /* Add the variable node to the information model */
+    UA_NodeId uint32ArrayNodeId = UA_NODEID_STRING(1, "UInt32Array");
+    UA_QualifiedName uint32ArrayName = UA_QUALIFIEDNAME(1, "UInt32 Array");
+    parentNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
+    parentReferenceNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_ORGANIZES);
+    UA_NodeId_init(&outNodeId);
+    ASSERT_STATUSCODE(UA_Server_addVariableNode(server,
+                                                uint32ArrayNodeId,
+                                                parentNodeId,
+                                                parentReferenceNodeId,
+                                                uint32ArrayName,
+                                                UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+                                                attr,
+                                                NULL,
+                                                &outNodeId), UA_STATUSCODE_GOOD);
+}
+
+static void
+dataChangeNotificationValidateStatusCallback(UA_Server *thisServer, UA_UInt32 monitoredItemId,
+                                             void *monitoredItemContext, const UA_NodeId *nodeId,
+                                             void *nodeContext, UA_UInt32 attributeId,
+                                             const UA_DataValue *value) {
+    ASSERT_STATUSCODE(value->status, expectedDataValueStatus);
+    callbackCount++;
+}
+
+START_TEST(Server_LocalMonitoredItemIndexRange) {
+    callbackCount = 0;
+    expectedDataValueStatus = UA_STATUSCODE_GOOD;
+
+    UA_MonitoredItemCreateRequest monitorRequest =
+        UA_MonitoredItemCreateRequest_default(outNodeId);
+    monitorRequest.requestedParameters.samplingInterval = (double)100;
+    monitorRequest.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    monitorRequest.itemToMonitor.indexRange = UA_STRING("0:2");
+    UA_MonitoredItemCreateResult result = UA_Server_createDataChangeMonitoredItem(
+        server, UA_TIMESTAMPSTORETURN_BOTH, monitorRequest, NULL,
+        &dataChangeNotificationValidateStatusCallback);
+
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 1);
+}
+END_TEST
+
+START_TEST(Server_LocalMonitoredItemIndexRangeOutOfBounds) {
+    callbackCount = 0;
+    expectedDataValueStatus = UA_STATUSCODE_BADINDEXRANGENODATA;
+
+    UA_MonitoredItemCreateRequest monitorRequest =
+        UA_MonitoredItemCreateRequest_default(outNodeId);
+    monitorRequest.requestedParameters.samplingInterval = (double)100;
+    monitorRequest.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    monitorRequest.itemToMonitor.indexRange = UA_STRING("3:5");
+    UA_MonitoredItemCreateResult result = UA_Server_createDataChangeMonitoredItem(
+        server, UA_TIMESTAMPSTORETURN_BOTH, monitorRequest, NULL,
+        &dataChangeNotificationValidateStatusCallback);
+
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_GOOD);
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_eq(callbackCount, 1);
+}
+END_TEST
+
+START_TEST(Server_LocalMonitoredItem_EventNotifierRejected) {
+    /* src/server/ua_services_monitoreditem.c:656-662:
+     *   if(item.itemToMonitor.attributeId == UA_ATTRIBUTEID_EVENTNOTIFIER) {
+     *     result.statusCode = UA_STATUSCODE_BADINTERNALERROR;
+     *     return result;
+     *   }
+     * The DataChange local-monitored-item creator must reject
+     * the EventNotifier attribute (use createEventMonitoredItem
+     * for events). None of the existing tests exercises this
+     * mis-use guard. */
+    UA_MonitoredItemCreateRequest request;
+    UA_MonitoredItemCreateRequest_init(&request);
+    request.itemToMonitor.nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER);
+    request.itemToMonitor.attributeId = UA_ATTRIBUTEID_EVENTNOTIFIER;
+    request.monitoringMode = UA_MONITORINGMODE_REPORTING;
+
+    UA_MonitoredItemCreateResult result = UA_Server_createDataChangeMonitoredItem(
+        server, UA_TIMESTAMPSTORETURN_BOTH, request, NULL,
+        &dataChangeNotificationCallback);
+    ASSERT_STATUSCODE(result.statusCode, UA_STATUSCODE_BADINTERNALERROR);
+    /* No monitored item was created */
+    ck_assert_uint_eq(result.monitoredItemId, 0);
+}
+END_TEST
+
+/* ==== UA_Subscription_resendData ==== */
+
+START_TEST(Server_Subscription_resendData_emptySubscription) {
+    /* src/server/ua_subscription.c:947-977 (UA_Subscription_resendData):
+     * The function walks the subscription's monitoredItems list and
+     * creates a DataChange notification for each REPORTING
+     * monitored item with an empty value queue. With no monitored
+     * items attached to the admin subscription, the LIST_FOREACH
+     * loop body never executes -- but the function entry/exit
+     * (assertions, lock check) is exercised. This is a smoke test
+     * for the function's public entry. */
+    ck_assert_ptr_nonnull(server->adminSubscription);
+    /* The admin subscription has no monitored items by default */
+    /* Reset the shared counter -- earlier tests in this file may
+     * have left it non-zero. */
+    callbackCount = 0;
+    /* Take the lock before calling -- UA_Subscription_resendData
+     * asserts UA_LOCK_ASSERT(&server->serviceMutex) */
+    lockServer(server);
+    UA_LOCK_ASSERT(&server->serviceMutex);
+    UA_Subscription_resendData(server, server->adminSubscription);
+    unlockServer(server);
+    /* No crash, no callback fired (no items) */
+    ck_assert_uint_eq(callbackCount, 0);
+}
+END_TEST
+
+START_TEST(Server_Subscription_resendData_withDataChangeItem) {
+    /* Same as above but with a real DataChange local monitored item
+     * attached to the admin subscription. The resendData call must
+     * fire the callback once with the last sampled value. */
+    UA_MonitoredItemCreateRequest request =
+        UA_MonitoredItemCreateRequest_default(outNodeId);
+    request.monitoringMode = UA_MONITORINGMODE_REPORTING;
+    request.requestedParameters.samplingInterval = 100.0;
+    UA_MonitoredItemCreateResult res = UA_Server_createDataChangeMonitoredItem(
+        server, UA_TIMESTAMPSTORETURN_BOTH, request, NULL,
+        &dataChangeNotificationCallback);
+    ASSERT_STATUSCODE(res.statusCode, UA_STATUSCODE_GOOD);
+    ck_assert_uint_ne(res.monitoredItemId, 0);
+    UA_UInt32 monId = res.monitoredItemId;
+    (void)monId;
+
+    /* Run a server iteration so the monitored item gets a sample. */
+    UA_Server_run_iterate(server, false);
+    ck_assert_uint_ge(callbackCount, 1);
+    UA_UInt32 countAfterSample = callbackCount;
+    (void)countAfterSample;
+
+    /* resendData must not crash, even with a populated item. */
+    lockServer(server);
+    UA_Subscription_resendData(server, server->adminSubscription);
+    unlockServer(server);
+
+    /* Clean up the local monitored item. */
+    UA_Server_deleteMonitoredItem(server, res.monitoredItemId);
+}
+END_TEST
+
+static UA_Boolean expectNotificationFilter;
+static unsigned filterNotifications;
+static void
+checkNotificationFilter(UA_Server *thisServer, UA_ApplicationNotificationType type,
+                        const UA_KeyValueMap payload) {
+    if(type != UA_APPLICATIONNOTIFICATIONTYPE_MONITOREDITEM_CREATED &&
+       type != UA_APPLICATIONNOTIFICATIONTYPE_MONITOREDITEM_DELETE)
+        return;
+    const UA_Variant *filter = &payload.map[10].value;
+    if(expectNotificationFilter)
+        ck_assert(UA_Variant_hasScalarType(filter, &UA_TYPES[UA_TYPES_DATACHANGEFILTER]));
+    else
+        ck_assert_ptr_null(filter->type);
+    filterNotifications++;
+}
+
+START_TEST(Server_NotificationFilterDoesNotOutliveItem) {
+    UA_Server_getConfig(server)->globalNotificationCallback = checkNotificationFilter;
+    filterNotifications = 0;
+    for(unsigned i = 0; i < 2; i++) {
+        expectNotificationFilter = (i == 0);
+        UA_MonitoredItemCreateRequest request =
+            UA_MonitoredItemCreateRequest_default(outNodeId);
+        UA_DataChangeFilter filter;
+        UA_DataChangeFilter_init(&filter);
+        filter.trigger = UA_DATACHANGETRIGGER_STATUSVALUE;
+        if(expectNotificationFilter)
+            UA_ExtensionObject_setValueNoDelete(&request.requestedParameters.filter,
+                &filter, &UA_TYPES[UA_TYPES_DATACHANGEFILTER]);
+        UA_MonitoredItemCreateResult result = UA_Server_createDataChangeMonitoredItem(
+            server, UA_TIMESTAMPSTORETURN_BOTH, request, NULL, dataChangeNotificationCallback);
+        ck_assert_uint_eq(result.statusCode, UA_STATUSCODE_GOOD);
+        ck_assert_uint_eq(UA_Server_deleteMonitoredItem(server, result.monitoredItemId), UA_STATUSCODE_GOOD);
+        UA_MonitoredItemCreateResult_clear(&result);
+    }
+    ck_assert_uint_eq(filterNotifications, 4);
+} END_TEST
+
+static Suite * testSuite_Client(void) {
+    Suite *s = suite_create("Local Monitored Item");
+    TCase *tc_server = tcase_create("Local Monitored Item Basic");
+    tcase_add_checked_fixture(tc_server, setup, teardown);
+    tcase_add_test(tc_server, Server_NotificationFilterDoesNotOutliveItem);
+    tcase_add_test(tc_server, Server_LocalMonitoredItem);
+    tcase_add_test(tc_server,
+                   Server_LocalMonitoredItem_deleteFromCreatedNotification);
+    tcase_add_test(tc_server,
+                   Server_LocalMonitoredItem_deleteFromDeleteNotification);
+    tcase_add_test(tc_server, Server_LocalMonitoredItem_deleteInCallback);
+    tcase_add_test(tc_server, Server_LocalMonitoredItem_dataSource);
+    tcase_add_test(tc_server, Server_LocalMonitoredItem_CustomType);
+    tcase_add_test(tc_server, Server_LocalMonitoredItem_EventNotifierRejected);
+    tcase_add_test(tc_server, Server_Subscription_resendData_emptySubscription);
+    tcase_add_test(tc_server, Server_Subscription_resendData_withDataChangeItem);
+    suite_add_tcase(s, tc_server);
+
+    TCase *tc_server_indexrange = tcase_create("Local Monitored Item Index Range");
+    tcase_add_checked_fixture(tc_server_indexrange, setupIndexRange, teardown);
+    tcase_add_test(tc_server_indexrange, Server_LocalMonitoredItemIndexRange);
+    tcase_add_test(tc_server_indexrange, Server_LocalMonitoredItemIndexRangeOutOfBounds);
+    suite_add_tcase(s, tc_server_indexrange);
+
+    return s;
+}
+
+int main(void) {
+    Suite *s = testSuite_Client();
+    SRunner *sr = srunner_create(s);
+    srunner_set_fork_status(sr, CK_NOFORK);
+    srunner_run_all(sr,CK_NORMAL);
+    int number_failed = srunner_ntests_failed(sr);
+    srunner_free(sr);
+    return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+}

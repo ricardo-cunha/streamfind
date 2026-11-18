@@ -1251,6 +1251,23 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
         return iterator->second->get_database_path();
     }();
     const ResultStore store(project_snapshot);
+    const auto materialize_json_artifact = [&store](Json artifact) {
+        if (!artifact.is_object()) return artifact;
+        const auto result_id = artifact.value("result_id", std::string{});
+        const auto representation = artifact.value("representation",
+                                                   artifact.value("kind", std::string{}));
+        if (result_id.empty() || representation != "json") return artifact;
+        const auto payload = artifact.find("payload");
+        if (payload == artifact.end() || payload->is_string()) {
+            try {
+                artifact["payload"] = store.read_json_payload(result_id);
+            } catch (...) {
+                // Keep the reference intact when the result is unavailable;
+                // downstream validation will report the missing payload.
+            }
+        }
+        return artifact;
+    };
     Json resolved = Json::object();
     for (const auto &connection : workflow.connections) {
         if (connection.target_operation != operation_id) continue;
@@ -1274,7 +1291,7 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
                         resolved[connection.target_port] = *output;
                     }
                 } else {
-                    resolved[connection.target_port] = *output;
+                    resolved[connection.target_port] = materialize_json_artifact(*output);
                 }
                 continue;
             }
@@ -1328,7 +1345,7 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
                 resolved[connection.target_port] = nullptr;
             }
         } else {
-            resolved[connection.target_port] = *selected;
+            resolved[connection.target_port] = materialize_json_artifact(*selected);
         }
     }
     return resolved;

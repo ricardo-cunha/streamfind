@@ -1,0 +1,81 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfsensors:endpointParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA endpoint" ;
+    skos:definition "OPC UA endpoint URL, for example opc.tcp://localhost:4840." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "opc.tcp://localhost:4840" ;
+    sf:example "opc.tcp://localhost:4840" .
+
+sfsensors:usernameParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA username" ;
+    skos:definition "Optional username for OPC UA username/password authentication." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "user" .
+
+sfsensors:passwordParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA password" ;
+    skos:definition "Optional password paired with the OPC UA username." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "secret" .
+
+sfsensors:timeoutSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA timeout" ;
+    skos:definition "Connection and request timeout in seconds." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "10" ;
+    sf:example "10" .
+
+sfsensors:maxDepthParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum browse depth" ;
+    skos:definition "Maximum number of hierarchical levels explored from the Objects folder." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "2" ;
+    sf:example "2" .
+
+sfsensors:maxChildrenParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum children per node" ;
+    skos:definition "Maximum number of child references retained for each browsed node." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "64" ;
+    sf:example "64" .
+
+sfsensors:nodesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA nodes" ;
+    skos:definition "JSON object mapping output names to OPC UA node identifiers." ;
+    sf:type "object" ;
+    sf:required true ;
+    sf:default "{}" ;
+    sf:example "{\"temperature\":\"ns=2;s=Temperature\"}" .

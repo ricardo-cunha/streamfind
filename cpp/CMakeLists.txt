@@ -366,6 +366,8 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/nlohmann/LICENSE"
     DESTINATION licenses RENAME nlohmann-json-LICENSE.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/json-schema-validator/LICENSE"
     DESTINATION licenses RENAME json-schema-validator-LICENSE.txt)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/open62541/LICENSE"
+    DESTINATION licenses RENAME open62541-LICENSE.txt)
 
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
     install(

@@ -1,0 +1,10 @@
+{
+  "id": "streamfind.sensors",
+  "name": "streamfind OPC UA viewers",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/sensors/index.ts",
+  "domains": ["sensors"],
+  "artifactContracts": ["opcuaExploration"]
+}

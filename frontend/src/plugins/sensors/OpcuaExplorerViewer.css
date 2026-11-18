@@ -1,0 +1,204 @@
+.sf-opcua-explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--sf-text);
+  background: var(--sf-surface-raised);
+}
+.sf-opcua-explorer-summary,
+.sf-opcua-explorer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--sf-border);
+}
+.sf-opcua-explorer-summary strong,
+.sf-opcua-explorer-eyebrow {
+  display: block;
+}
+.sf-opcua-explorer-eyebrow {
+  margin-bottom: 0.25rem;
+  color: var(--sf-text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.sf-opcua-explorer-health,
+.sf-opcua-graph-toolbar-actions,
+.sf-opcua-graph-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  color: var(--sf-text-muted);
+  font-size: 0.75rem;
+}
+.sf-opcua-explorer-health .is-good { color: var(--sf-success, #4ade80); }
+.sf-opcua-explorer-health .is-bad { color: var(--sf-danger, #fb7185); }
+.sf-opcua-search {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--sf-text-muted);
+  font-size: 0.75rem;
+}
+.sf-opcua-search input {
+  min-width: 18rem;
+  border: 1px solid var(--sf-border);
+  border-radius: 0.35rem;
+  padding: 0.45rem 0.6rem;
+  color: var(--sf-text);
+  background: var(--sf-surface);
+}
+.sf-opcua-fit {
+  border: 1px solid var(--sf-border);
+  border-radius: 0.3rem;
+  padding: 0.35rem 0.6rem;
+  color: var(--sf-text);
+  background: var(--sf-surface);
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+.sf-opcua-fit:hover { border-color: var(--sf-accent); }
+.sf-opcua-explorer-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.sf-opcua-graph-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.sf-opcua-graph {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 30rem;
+  overflow: hidden;
+  background:
+    linear-gradient(color-mix(in srgb, var(--sf-border) 30%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--sf-border) 30%, transparent) 1px, transparent 1px);
+  background-size: 2rem 2rem;
+}
+.sf-opcua-graph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 30rem;
+  touch-action: none;
+}
+.sf-opcua-graph-links line {
+  stroke: color-mix(in srgb, var(--sf-border) 80%, var(--sf-text));
+  stroke-width: 1.25;
+  opacity: 0.7;
+}
+.sf-opcua-graph-nodes g { cursor: grab; }
+.sf-opcua-graph-nodes g:active { cursor: grabbing; }
+.sf-opcua-graph-nodes circle {
+  stroke: var(--sf-surface-raised);
+  stroke-width: 2;
+  transition: opacity 120ms ease, stroke-width 120ms ease;
+}
+.sf-opcua-graph-nodes circle.is-object { fill: var(--sf-accent, #60a5fa); }
+.sf-opcua-graph-nodes circle.is-variable { fill: var(--sf-success, #4ade80); }
+.sf-opcua-graph-nodes circle.is-other { fill: var(--sf-warning, #fbbf24); }
+.sf-opcua-graph-nodes g.is-selected circle { stroke: var(--sf-text); stroke-width: 4; }
+.sf-opcua-graph-nodes g.is-match circle { stroke: var(--sf-warning, #fbbf24); stroke-width: 4; }
+.sf-opcua-graph-nodes g.is-dimmed { opacity: 0.17; }
+.sf-opcua-graph-label {
+  pointer-events: none;
+  fill: var(--sf-text);
+  font-size: 0.68rem;
+  font-weight: 500;
+  paint-order: stroke;
+  stroke: var(--sf-surface-raised);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.sf-opcua-graph-fallback {
+  position: absolute;
+  top: 0.8rem;
+  right: 1rem;
+  margin: 0;
+  color: var(--sf-text-muted);
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+.sf-opcua-graph-legend {
+  min-height: 2.4rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--sf-border);
+}
+.sf-opcua-legend-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-right: 0.25rem;
+  border-radius: 50%;
+  vertical-align: -0.05rem;
+}
+.sf-opcua-legend-dot.is-object { background: var(--sf-accent, #60a5fa); }
+.sf-opcua-legend-dot.is-variable { background: var(--sf-success, #4ade80); }
+.sf-opcua-explorer-details {
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--sf-border);
+}
+.sf-opcua-node-details,
+.sf-opcua-explorer-namespaces {
+  padding: 1rem;
+}
+.sf-opcua-node-details { border-bottom: 1px solid var(--sf-border); }
+.sf-opcua-node-details h3,
+.sf-opcua-explorer-namespaces h3 {
+  margin: 0 0 0.8rem;
+  font-size: 0.85rem;
+}
+.sf-opcua-node-details strong,
+.sf-opcua-node-details code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.sf-opcua-node-details code {
+  margin-top: 0.35rem;
+  color: var(--sf-accent);
+  font-size: 0.72rem;
+}
+.sf-opcua-node-details dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1rem 0 0;
+}
+.sf-opcua-node-details dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.75rem;
+}
+.sf-opcua-node-details dt { color: var(--sf-text-muted); }
+.sf-opcua-node-details dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.sf-opcua-explorer-namespaces ul { display: flex; flex-direction: column; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
+.sf-opcua-explorer-namespaces li { display: flex; flex-direction: column; gap: 0.2rem; color: var(--sf-text-muted); font-size: 0.72rem; overflow-wrap: anywhere; }
+.sf-opcua-explorer-namespaces code { color: var(--sf-accent); }
+.sf-opcua-explorer-namespaces p,
+.sf-opcua-explorer-state { padding: 1.5rem; color: var(--sf-text-muted); }
+.sf-opcua-explorer-state pre { overflow: auto; white-space: pre-wrap; }
+@media (max-width: 800px) {
+  .sf-opcua-explorer-content { grid-template-columns: 1fr; }
+  .sf-opcua-explorer-details { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--sf-border); border-left: 0; }
+  .sf-opcua-node-details { border-right: 1px solid var(--sf-border); border-bottom: 0; }
+  .sf-opcua-search input { min-width: 10rem; }
+}
+@media (max-width: 560px) {
+  .sf-opcua-explorer-summary,
+  .sf-opcua-explorer-toolbar { align-items: flex-start; flex-direction: column; }
+  .sf-opcua-search { width: 100%; align-items: flex-start; flex-direction: column; }
+  .sf-opcua-search input { width: 100%; min-width: 0; }
+  .sf-opcua-explorer-details { display: block; }
+  .sf-opcua-node-details { border-right: 0; border-bottom: 1px solid var(--sf-border); }
+}

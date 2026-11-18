@@ -1,0 +1,32 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfsensors:opcuaDataTable
+    a sf:Table ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA data table" ;
+    skos:definition "One row per requested OPC UA node containing the node identity, decoded value, serialized value, and read status." ;
+    sf:tableContractName "OPCUA_DATA" ;
+    sf:dataKind "duckdb_table" ;
+    sf:hasColumn
+        sfsensors:endpointColumn,
+        sfsensors:nodeNameColumn,
+        sfsensors:nodeIdColumn,
+        sfsensors:valueColumn,
+        sfsensors:valueJsonColumn,
+        sfsensors:statusCodeColumn,
+        sfsensors:statusNameColumn .
+
+sfsensors:opcuaExploration
+    a sf:OperationResult ;
+    sf:availableInDomain sfsensors:sensors ;
+    sf:dataKind "json" ;
+    sf:type "object" ;
+    sf:portId "opcuaExploration" ;
+    sf:semanticContract "opcuaExploration" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA exploration" ;
+    skos:definition "Endpoint metadata, namespace information, and the bounded hierarchical node tree discovered from an OPC UA Objects folder." .

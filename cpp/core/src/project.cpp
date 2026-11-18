@@ -737,10 +737,12 @@ namespace streamfind
                                     std::string_view provided_data_kind,
                                     std::string_view required_data_kind) noexcept
     {
-        if (provided_data_kind != "duckdb_table" || required_data_kind != "duckdb_table")
+        if (provided_data_kind != required_data_kind)
             return false;
-        return provided_contract == required_contract || required_contract == "anyTable" ||
-               provided_contract == "anyTable";
+        if (provided_data_kind == "duckdb_table")
+            return provided_contract == required_contract || required_contract == "anyTable" ||
+                   provided_contract == "anyTable";
+        return provided_contract == required_contract;
     }
 
     DynamicTableContract inspect_dynamic_table_contract(const Project &project,
@@ -3152,7 +3154,8 @@ namespace streamfind
                 const auto source = current_artifacts.find(connection.source_operation);
                 if (source == current_artifacts.end() || !source->is_object()) continue;
                 const auto output = source->find(connection.source_port);
-                if (output != source->end()) inputs[connection.target_port] = *output;
+                if (output != source->end() && !inputs.contains(connection.target_port))
+                    inputs[connection.target_port] = *output;
             }
             for (const auto &port : executor->definition().input_ports)
                 if (inputs.contains(port.id))

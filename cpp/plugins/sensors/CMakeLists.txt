@@ -1,4 +1,20 @@
-add_library(streamfind_sensors_plugin SHARED src/plugin_entrypoint.cpp)
+set(UA_BUILD_EXAMPLES OFF)
+set(UA_BUILD_TOOLS OFF)
+set(UA_BUILD_UNIT_TESTS OFF)
+set(UA_ENABLE_AMALGAMATION OFF)
+set(UA_ENABLE_ENCRYPTION "OFF")
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/open62541"
+    "${CMAKE_CURRENT_BINARY_DIR}/open62541"
+    EXCLUDE_FROM_ALL)
+
+add_library(streamfind_sensors_plugin SHARED
+    src/plugin_entrypoint.cpp
+    src/operations/operations.cpp
+    src/operations/opcua.cpp)
+target_link_libraries(streamfind_sensors_plugin PRIVATE
+    streamfind::cpp_sdk
+    open62541::open62541)
 streamfind_configure_cpp_library(streamfind_sensors_plugin sensors
     BUILD_DEFINE STREAMFIND_DOMAIN_BUILDING_SHARED
     USING_DEFINE STREAMFIND_DOMAIN_USING_SHARED)
