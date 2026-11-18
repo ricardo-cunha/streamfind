@@ -116,6 +116,7 @@ export function OpcuaExplorerViewer({ context }: ViewerComponentProps) {
           <div className="sf-opcua-graph-legend" aria-label="Node legend">
             <span><i className="sf-opcua-legend-dot is-object" /> Object</span>
             <span><i className="sf-opcua-legend-dot is-variable" /> Variable</span>
+            <span><i className="sf-opcua-legend-dot is-other" /> Method / other</span>
             <span>Drag nodes · scroll to zoom · click to inspect</span>
           </div>
         </div>
