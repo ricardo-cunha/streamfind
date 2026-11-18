@@ -21,6 +21,23 @@ sfsensors:exploreOpcuaServer
         sfsensors:maxChildrenParameter ;
     sf:hasOutputPort sfsensors:opcuaExploration, sfcore:operationSuccessSignal .
 
+sfsensors:inspectOpcuaNode
+    a sf:Operation ;
+    sf:operationId "sensors.inspect_opcua_node" ;
+    sf:availableInDomain sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Inspect OPC UA node" ;
+    skos:definition "Connect to an OPC UA endpoint and read the selected node's definition, attributes, current value snapshot, type definition, and property metadata." ;
+    sf:hasParameter
+        sfsensors:endpointParameter,
+        sfsensors:usernameParameter,
+        sfsensors:passwordParameter,
+        sfsensors:timeoutSecondsParameter,
+        sfsensors:nodeIdParameter ;
+    sf:hasOutputPort sfcore:operationSuccessSignal .
+
 sfsensors:collectOpcuaData
     a sf:Operation ;
     sf:operationId "sensors.collect_opcua_data" ;
@@ -29,7 +46,7 @@ sfsensors:collectOpcuaData
     sf:projectEntry true ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Collect OPC UA data" ;
-    skos:definition "Connect to an OPC UA endpoint, read the requested node values once, and emit one typed row per requested node with decoded value and OPC UA status metadata." ;
+    skos:definition "Connect to an OPC UA endpoint, classify each requested node by OPC UA NodeClass, read values only from Variable nodes, and emit one typed row per requested node." ;
     sf:hasParameter
         sfsensors:endpointParameter,
         sfsensors:usernameParameter,

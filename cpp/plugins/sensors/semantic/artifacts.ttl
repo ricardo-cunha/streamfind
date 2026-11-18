@@ -8,13 +8,16 @@ sfsensors:opcuaDataTable
     sf:availableInDomain sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA data table" ;
-    skos:definition "One row per requested OPC UA node containing the node identity, decoded value, serialized value, and read status." ;
+    skos:definition "One row per requested OPC UA node containing its NodeClass category, an indicator of whether a value was read, decoded value data for Variables, and read status." ;
     sf:tableContractName "OPCUA_DATA" ;
     sf:dataKind "table" ;
     sf:hasColumn
         sfsensors:endpointColumn,
         sfsensors:nodeNameColumn,
         sfsensors:nodeIdColumn,
+        sfsensors:nodeClassColumn,
+        sfsensors:nodeClassNameColumn,
+        sfsensors:valueAvailableColumn,
         sfsensors:valueColumn,
         sfsensors:valueJsonColumn,
         sfsensors:statusCodeColumn,
@@ -29,4 +32,4 @@ sfsensors:opcuaExploration
     sf:semanticContract "opcuaExploration" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA exploration" ;
-    skos:definition "Endpoint metadata, namespace information, and the bounded hierarchical node tree discovered from an OPC UA Objects folder." .
+    skos:definition "Endpoint metadata, namespace information, the bounded hierarchical node tree discovered from an OPC UA Objects folder, and the operation identifier used to request selected-node metadata and a value snapshot on demand." .

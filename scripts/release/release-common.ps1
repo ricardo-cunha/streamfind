@@ -16,7 +16,7 @@ function Assert-DistributionPayload([string]$PackageRoot, [string]$LicensePayloa
         }
     }
     $forbidden = Get-ChildItem -Recurse -File $PackageRoot | Where-Object {
-        $_.FullName -match '(?i)(ClearCore|ProteoWizard|msconvert|baf2sql|WinDbg|CDB|vendor[-_ ]?(sdk|dll)|confidential|oracle)'
+        $_.FullName -match '(?i)(ClearCore|ProteoWizard|msconvert|baf2sql|WinDbg|(?<![A-Za-z0-9])CDB(?:\.exe)?(?![A-Za-z0-9])|vendor[-_ ]?(sdk|dll)|confidential|oracle)'
     }
     if ($forbidden) {
         throw "Distribution payload contains development-only material: $($forbidden.FullName -join ', ')"

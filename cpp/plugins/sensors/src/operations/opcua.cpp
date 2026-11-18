@@ -167,6 +167,20 @@ Json variant_value(const UA_Variant &value) {
     return nullptr;
 }
 
+std::string node_class_name(UA_NodeClass node_class) {
+    switch (node_class) {
+    case UA_NODECLASS_OBJECT: return "Object";
+    case UA_NODECLASS_VARIABLE: return "Variable";
+    case UA_NODECLASS_METHOD: return "Method";
+    case UA_NODECLASS_OBJECTTYPE: return "ObjectType";
+    case UA_NODECLASS_VARIABLETYPE: return "VariableType";
+    case UA_NODECLASS_REFERENCETYPE: return "ReferenceType";
+    case UA_NODECLASS_DATATYPE: return "DataType";
+    case UA_NODECLASS_VIEW: return "View";
+    default: return "Unspecified";
+    }
+}
+
 Json status_json(UA_StatusCode status) {
     const char *name = UA_StatusCode_name(status);
     std::ostringstream code;
@@ -208,6 +222,7 @@ Json browse_node(UA_Client *client, const UA_NodeId &node_id,
                 {"browse_name", ua_string(browse_name.name)},
                 {"display_name", ua_string(display_name.text)},
                 {"node_class", static_cast<unsigned>(node_class)},
+                {"node_class_name", node_class_name(node_class)},
                 {"children", Json::array()}};
 
     if (depth >= max_depth) {
@@ -238,6 +253,7 @@ Json browse_node(UA_Client *client, const UA_NodeId &node_id,
                        {"browse_name", ua_string(reference.browseName.name)},
                        {"display_name", ua_string(reference.displayName.text)},
                        {"node_class", static_cast<unsigned>(reference.nodeClass)},
+                       {"node_class_name", node_class_name(reference.nodeClass)},
                        {"children", Json::array()}};
             if (UA_ExpandedNodeId_isLocal(&reference.nodeId))
                 child = browse_node(client, reference.nodeId.nodeId, depth + 1,
@@ -251,6 +267,134 @@ Json browse_node(UA_Client *client, const UA_NodeId &node_id,
     UA_BrowseResponse_clear(&response);
     UA_QualifiedName_clear(&browse_name);
     UA_LocalizedText_clear(&display_name);
+    return result;
+}
+
+Json reference_summary(const UA_ReferenceDescription &reference) {
+    return Json{{"node_id", expanded_node_id_text(reference.nodeId)},
+                {"browse_name", ua_string(reference.browseName.name)},
+                {"display_name", ua_string(reference.displayName.text)},
+                {"node_class", static_cast<unsigned>(reference.nodeClass)},
+                {"node_class_name", node_class_name(reference.nodeClass)}};
+}
+
+Json browse_references(UA_Client *client, const UA_NodeId &node_id,
+                       const UA_NodeId &reference_type, std::size_t max_children,
+                       bool read_values) {
+    UA_BrowseRequest request;
+    UA_BrowseRequest_init(&request);
+    UA_BrowseDescription description;
+    UA_BrowseDescription_init(&description);
+    UA_NodeId_copy(&node_id, &description.nodeId);
+    UA_NodeId_copy(&reference_type, &description.referenceTypeId);
+    description.browseDirection = UA_BROWSEDIRECTION_FORWARD;
+    description.includeSubtypes = false;
+    description.resultMask = UA_BROWSERESULTMASK_ALL;
+    request.requestedMaxReferencesPerNode = static_cast<UA_UInt32>(max_children);
+    request.nodesToBrowseSize = 1;
+    request.nodesToBrowse = &description;
+    auto response = UA_Client_Service_browse(client, request);
+    Json result = Json::array();
+    if (response.resultsSize > 0) {
+        const auto &browse_result = response.results[0];
+        const auto limit = std::min<std::size_t>(browse_result.referencesSize, max_children);
+        for (std::size_t index = 0; index < limit; ++index) {
+            const auto &reference = browse_result.references[index];
+            auto item = reference_summary(reference);
+            if (read_values && UA_ExpandedNodeId_isLocal(&reference.nodeId)) {
+                UA_Variant value;
+                UA_Variant_init(&value);
+                const auto status = UA_Client_readValueAttribute(client, reference.nodeId.nodeId, &value);
+                item["value_status"] = status_json(status);
+                if (UA_StatusCode_isGood(status)) item["value"] = variant_value(value);
+                UA_Variant_clear(&value);
+            }
+            result.push_back(std::move(item));
+        }
+    }
+    UA_BrowseDescription_clear(&description);
+    UA_BrowseResponse_clear(&response);
+    return result;
+}
+
+Json value_snapshot(UA_Client *client, const UA_NodeId &node_id, UA_NodeClass node_class) {
+    if (node_class != UA_NODECLASS_VARIABLE)
+        return Json{{"available", false},
+                    {"reason", "Value attribute is only applicable to Variable nodes."}};
+    UA_ReadValueId read_value;
+    UA_ReadValueId_init(&read_value);
+    UA_NodeId_copy(&node_id, &read_value.nodeId);
+    read_value.attributeId = UA_ATTRIBUTEID_VALUE;
+    const auto read_at = UA_DateTime_now();
+    auto data_value = UA_Client_read(client, &read_value);
+    UA_ReadValueId_clear(&read_value);
+
+    const auto read_status = data_value.hasStatus ? data_value.status : UA_STATUSCODE_GOOD;
+    Json snapshot{{"available", true},
+                  {"read_at", date_time_text(read_at)},
+                  {"value_status", status_json(read_status)},
+                  {"value", data_value.hasValue ? variant_value(data_value.value) : Json(nullptr)},
+                  {"source_timestamp", data_value.hasSourceTimestamp
+                      ? Json(date_time_text(data_value.sourceTimestamp)) : Json(nullptr)},
+                  {"server_timestamp", data_value.hasServerTimestamp
+                      ? Json(date_time_text(data_value.serverTimestamp)) : Json(nullptr)}};
+    UA_DataValue_clear(&data_value);
+    return snapshot;
+}
+
+Json inspect_node(UA_Client *client, const UA_NodeId &node_id) {
+    UA_QualifiedName browse_name;
+    UA_LocalizedText display_name;
+    UA_LocalizedText description;
+    UA_NodeClass node_class = UA_NODECLASS_UNSPECIFIED;
+    UA_NodeId data_type;
+    UA_Int32 value_rank = -1;
+    UA_Byte access_level = 0;
+    UA_Byte user_access_level = 0;
+    UA_Double minimum_sampling_interval = 0.0;
+    UA_Boolean historizing = false;
+    UA_QualifiedName_init(&browse_name);
+    UA_LocalizedText_init(&display_name);
+    UA_LocalizedText_init(&description);
+    UA_NodeId_init(&data_type);
+    Json statuses = Json::object();
+    const auto record_status = [&](const char *name, UA_StatusCode status) {
+        statuses[name] = status_json(status);
+    };
+    record_status("browse_name", UA_Client_readBrowseNameAttribute(client, node_id, &browse_name));
+    record_status("display_name", UA_Client_readDisplayNameAttribute(client, node_id, &display_name));
+    record_status("description", UA_Client_readDescriptionAttribute(client, node_id, &description));
+    record_status("node_class", UA_Client_readNodeClassAttribute(client, node_id, &node_class));
+    record_status("data_type", UA_Client_readDataTypeAttribute(client, node_id, &data_type));
+    record_status("value_rank", UA_Client_readValueRankAttribute(client, node_id, &value_rank));
+    record_status("access_level", UA_Client_readAccessLevelAttribute(client, node_id, &access_level));
+    record_status("user_access_level", UA_Client_readUserAccessLevelAttribute(client, node_id, &user_access_level));
+    record_status("minimum_sampling_interval", UA_Client_readMinimumSamplingIntervalAttribute(
+        client, node_id, &minimum_sampling_interval));
+    record_status("historizing", UA_Client_readHistorizingAttribute(client, node_id, &historizing));
+
+    Json result{{"node_id", node_id_text(node_id)},
+                {"browse_name", ua_string(browse_name.name)},
+                {"display_name", ua_string(display_name.text)},
+                {"description", ua_string(description.text)},
+                {"node_class", static_cast<unsigned>(node_class)},
+                {"node_class_name", node_class_name(node_class)},
+                {"data_type", node_id_text(data_type)},
+                {"value_rank", value_rank},
+                {"access_level", access_level},
+                {"user_access_level", user_access_level},
+                {"minimum_sampling_interval_ms", minimum_sampling_interval},
+                {"historizing", historizing != 0},
+                {"value_snapshot", value_snapshot(client, node_id, node_class)},
+                {"attribute_status", std::move(statuses)},
+                {"type_definitions", browse_references(
+                    client, node_id, UA_NODEID_NUMERIC(0, UA_NS0ID_HASTYPEDEFINITION), 8, false)},
+                {"properties", browse_references(
+                    client, node_id, UA_NODEID_NUMERIC(0, UA_NS0ID_HASPROPERTY), 64, true)}};
+    UA_QualifiedName_clear(&browse_name);
+    UA_LocalizedText_clear(&display_name);
+    UA_LocalizedText_clear(&description);
+    UA_NodeId_clear(&data_type);
     return result;
 }
 
@@ -304,6 +448,7 @@ Json explore_opcua_server(sdk::PluginProjectAccess &access, const Json &paramete
     auto result = Json{{"endpoint", options.endpoint},
                        {"endpoint_reachable", true},
                        {"session_created", true},
+                       {"detail_operation", "sensors.inspect_opcua_node"},
                        {"available_endpoints", std::move(endpoint_urls)},
                        {"namespaces", namespace_array(holder.client)},
                        {"node_tree", browse_node(holder.client,
@@ -311,6 +456,36 @@ Json explore_opcua_server(sdk::PluginProjectAccess &access, const Json &paramete
                                                   0, max_depth, max_children)}};
     access.report_progress(1.0, "OPC UA server exploration complete");
     return result;
+}
+
+Json inspect_opcua_node(sdk::PluginProjectAccess &access, const Json &parameters) {
+    const auto options = client_options(parameters);
+    const auto node_text = required_string(parameters, "node_id");
+    UA_NodeId node_id;
+    UA_NodeId_init(&node_id);
+    const auto parse_status = UA_NodeId_parse(
+        &node_id, UA_STRING(const_cast<char *>(node_text.c_str())));
+    if (UA_StatusCode_isBad(parse_status)) {
+        UA_NodeId_clear(&node_id);
+        throw std::invalid_argument("invalid OPC UA node id: " + node_text);
+    }
+
+    ClientHolder holder;
+    auto status = configure_client(holder.client, options.timeout_seconds);
+    if (UA_StatusCode_isBad(status)) {
+        UA_NodeId_clear(&node_id);
+        throw std::runtime_error("failed to configure OPC UA client: " + status_json(status).dump());
+    }
+    status = connect_client(holder.client, options);
+    if (UA_StatusCode_isBad(status)) {
+        UA_NodeId_clear(&node_id);
+        throw std::runtime_error("OPC UA session creation failed: " + status_json(status).dump());
+    }
+    access.report_progress(0.5, "Reading OPC UA node definition");
+    auto node = inspect_node(holder.client, node_id);
+    UA_NodeId_clear(&node_id);
+    access.report_progress(1.0, "OPC UA node definition read");
+    return Json{{"endpoint", options.endpoint}, {"session_created", true}, {"node", std::move(node)}};
 }
 
 Json collect_opcua_data(sdk::PluginProjectAccess &access, const Json &parameters) {
@@ -331,6 +506,9 @@ Json collect_opcua_data(sdk::PluginProjectAccess &access, const Json &parameters
         {"endpoint", STREAMFIND_PLUGIN_COLUMN_UTF8},
         {"node_name", STREAMFIND_PLUGIN_COLUMN_UTF8},
         {"node_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"node_class", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"node_class_name", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"value_available", STREAMFIND_PLUGIN_COLUMN_BOOL},
         {"value", STREAMFIND_PLUGIN_COLUMN_UTF8},
         {"value_json", STREAMFIND_PLUGIN_COLUMN_UTF8},
         {"status_code", STREAMFIND_PLUGIN_COLUMN_UTF8},
@@ -348,32 +526,47 @@ Json collect_opcua_data(sdk::PluginProjectAccess &access, const Json &parameters
             UA_NodeId_clear(&node_id);
             throw std::invalid_argument("invalid OPC UA node id: " + node_string);
         }
+        UA_NodeClass node_class = UA_NODECLASS_UNSPECIFIED;
+        const auto node_class_status = UA_Client_readNodeClassAttribute(
+            holder.client, node_id, &node_class);
         UA_Variant raw_value;
         UA_Variant_init(&raw_value);
-        const auto read_status = UA_Client_readValueAttribute(holder.client, node_id, &raw_value);
+        const bool is_variable = UA_StatusCode_isGood(node_class_status) &&
+            node_class == UA_NODECLASS_VARIABLE;
+        const auto read_status = is_variable
+            ? UA_Client_readValueAttribute(holder.client, node_id, &raw_value)
+            : UA_STATUSCODE_GOOD;
         std::string value;
         std::string value_json;
         std::string status_code;
         std::string status_name;
-        if (UA_StatusCode_isGood(read_status)) {
+        const bool value_available = is_variable && UA_StatusCode_isGood(read_status);
+        if (value_available) {
             const auto converted = variant_value(raw_value);
             value = converted.dump();
             value_json = value;
             const auto status = status_json(read_status);
             status_code = status["status_code"].get<std::string>();
             status_name = status["status_name"].get<std::string>();
+        } else if (!UA_StatusCode_isGood(node_class_status)) {
+            const auto status_info = status_json(node_class_status);
+            status_code = status_info["status_code"].get<std::string>();
+            status_name = status_info["status_name"].get<std::string>();
+        } else if (!is_variable) {
+            status_name = "NotApplicable";
         } else {
             const auto status_info = status_json(read_status);
             status_code = status_info["status_code"].get<std::string>();
             status_name = status_info["status_name"].get<std::string>();
         }
-        output.append_row({options.endpoint, name, node_string, value, value_json,
-                           status_code, status_name});
+        output.append_row({options.endpoint, name, node_string,
+                           static_cast<std::int64_t>(node_class), node_class_name(node_class),
+                           value_available, value, value_json, status_code, status_name});
         UA_Variant_clear(&raw_value);
         UA_NodeId_clear(&node_id);
         ++completed;
         access.report_progress(static_cast<double>(completed) / static_cast<double>(nodes->size()),
-                               "Read OPC UA node " + name);
+                               "Classified OPC UA node " + name);
     }
     output.emit(access, "opcuaDataTable");
     return Json{{"endpoint", options.endpoint}, {"nodes_requested", nodes->size()},

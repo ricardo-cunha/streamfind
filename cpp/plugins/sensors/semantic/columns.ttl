@@ -33,6 +33,36 @@ sfsensors:nodeIdColumn
     sf:type "string" ;
     sf:storageType "VARCHAR" .
 
+sfsensors:nodeClassColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Node class" ;
+    skos:definition "Numeric OPC UA NodeClass category reported by the server." ;
+    sf:columnName "node_class" ;
+    sf:type "integer" ;
+    sf:storageType "BIGINT" .
+
+sfsensors:nodeClassNameColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Node class name" ;
+    skos:definition "Human-readable OPC UA NodeClass category reported by the server." ;
+    sf:columnName "node_class_name" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfsensors:valueAvailableColumn
+    a sf:Column ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Value available" ;
+    skos:definition "Whether a value was read successfully from a Variable node; non-Variable nodes are not queried for a value." ;
+    sf:columnName "value_available" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
 sfsensors:valueColumn
     a sf:Column ;
     sf:availableInDomain sfsensors:sensors ;

@@ -47,6 +47,17 @@ sfsensors:timeoutSecondsParameter
     sf:default "10" ;
     sf:example "10" .
 
+sfsensors:nodeIdParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA node ID" ;
+    skos:definition "Identifier of the OPC UA node whose definition and metadata should be inspected." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "ns=2;s=Temperature" .
+
 sfsensors:maxDepthParameter
     a sf:Parameter ;
     sf:availableInDomain sfsensors:sensors ;

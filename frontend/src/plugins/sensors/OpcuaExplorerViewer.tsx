@@ -7,6 +7,7 @@ type OpcuaNode = {
   browse_name?: string;
   display_name?: string;
   node_class?: number;
+  node_class_name?: string;
   children?: OpcuaNode[];
 };
 
@@ -14,8 +15,45 @@ type ExplorationPayload = {
   endpoint?: string;
   endpoint_reachable?: boolean;
   session_created?: boolean;
+  detail_operation?: string;
   namespaces?: Array<{ index?: number; uri?: string }>;
   node_tree?: OpcuaNode;
+};
+
+type OpcuaReference = {
+  node_id?: string;
+  browse_name?: string;
+  display_name?: string;
+  node_class?: number;
+  value?: unknown;
+  value_status?: { status_code?: string; status_name?: string };
+};
+
+type OpcuaValueSnapshot = {
+  available?: boolean;
+  reason?: string;
+  value?: unknown;
+  value_status?: { status_code?: string; status_name?: string };
+  read_at?: string;
+  source_timestamp?: string | null;
+  server_timestamp?: string | null;
+};
+
+type OpcuaNodeDetails = {
+  node_id?: string;
+  browse_name?: string;
+  display_name?: string;
+  description?: string;
+  node_class_name?: string;
+  data_type?: string;
+  value_rank?: number;
+  access_level?: number;
+  user_access_level?: number;
+  minimum_sampling_interval_ms?: number;
+  historizing?: boolean;
+  value_snapshot?: OpcuaValueSnapshot;
+  type_definitions?: OpcuaReference[];
+  properties?: OpcuaReference[];
 };
 
 type GraphNode = d3.SimulationNodeDatum & {
@@ -23,6 +61,7 @@ type GraphNode = d3.SimulationNodeDatum & {
   label: string;
   browseName: string;
   nodeClass: number;
+  nodeClassName: string;
   depth: number;
   childCount: number;
 };
@@ -43,6 +82,12 @@ export function OpcuaExplorerViewer({ context }: ViewerComponentProps) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
+  const [detailsState, setDetailsState] = useState<{
+    nodeId: string | null;
+    loading: boolean;
+    details: OpcuaNodeDetails | null;
+    error: string | null;
+  }>({ nodeId: null, loading: false, details: null, error: null });
 
   useEffect(() => {
     setSelectedId(graph.nodes[0]?.id ?? null);
@@ -59,6 +104,47 @@ export function OpcuaExplorerViewer({ context }: ViewerComponentProps) {
   useEffect(() => {
     if (normalizedQuery && firstMatchId) setSelectedId(firstMatchId);
   }, [firstMatchId, normalizedQuery]);
+
+  useEffect(() => {
+    const nodeId = selectedNode?.id ?? null;
+    const endpoint = payload?.endpoint;
+    const client = context.pluginApi?.client;
+    if (!nodeId || !endpoint || !client) {
+      setDetailsState({ nodeId, loading: false, details: null, error: null });
+      return undefined;
+    }
+    let active = true;
+    setDetailsState({ nodeId, loading: true, details: null, error: null });
+    void client
+      .runOperation(
+        context.sessionId,
+        payload.detail_operation || 'sensors.inspect_opcua_node',
+        { endpoint, node_id: nodeId, timeout_seconds: 10 },
+        `opcua-details-${nodeId}`,
+      )
+      .then((value) => {
+        if (!active) return;
+        const details = readNodeDetails(value);
+        setDetailsState({
+          nodeId,
+          loading: false,
+          details,
+          error: details ? null : 'The OPC UA node definition response was invalid.',
+        });
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setDetailsState({
+          nodeId,
+          loading: false,
+          details: null,
+          error: error instanceof Error ? error.message : 'The OPC UA node definition could not be read.',
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [context.pluginApi, context.sessionId, payload, selectedNode?.id]);
 
   if (!payload) return <div className="sf-opcua-explorer-state">The OPC UA exploration payload is unavailable.</div>;
   if (!payload.node_tree) {
@@ -129,10 +215,11 @@ export function OpcuaExplorerViewer({ context }: ViewerComponentProps) {
                 <code>{selectedNode.id}</code>
                 <dl>
                   <div><dt>Browse name</dt><dd>{selectedNode.browseName || '—'}</dd></div>
-                  <div><dt>Class</dt><dd>{nodeClassLabel(selectedNode.nodeClass)}</dd></div>
+                  <div><dt>Class</dt><dd>{selectedNode.nodeClassName}</dd></div>
                   <div><dt>Depth</dt><dd>{selectedNode.depth}</dd></div>
                   <div><dt>Children</dt><dd>{selectedNode.childCount}</dd></div>
                 </dl>
+                <NodeDefinition state={detailsState} />
               </>
             ) : <p>Select a node in the graph.</p>}
           </section>
@@ -153,6 +240,93 @@ export function OpcuaExplorerViewer({ context }: ViewerComponentProps) {
       </section>
     </main>
   );
+}
+
+function NodeDefinition({
+  state,
+}: {
+  state: { nodeId: string | null; loading: boolean; details: OpcuaNodeDetails | null; error: string | null };
+}) {
+  if (state.loading) return <p className="sf-opcua-node-definition-state">Loading node definition…</p>;
+  if (state.error) return <p className="sf-opcua-node-definition-state is-error" role="alert">{state.error}</p>;
+  if (!state.details || state.details.node_id !== state.nodeId)
+    return <p className="sf-opcua-node-definition-state">Node definition unavailable.</p>;
+  const details = state.details;
+  return (
+    <section className="sf-opcua-node-definition" aria-label="OPC UA node definition">
+      <h4>Definition</h4>
+      <dl>
+        <div><dt>Description</dt><dd>{details.description || '—'}</dd></div>
+        <div><dt>Data type</dt><dd><code>{details.data_type || '—'}</code></dd></div>
+        <div><dt>Value rank</dt><dd>{formatDetail(details.value_rank)}</dd></div>
+        <div><dt>Access level</dt><dd>{formatDetail(details.access_level)}</dd></div>
+        <div><dt>User access</dt><dd>{formatDetail(details.user_access_level)}</dd></div>
+        <div><dt>Sampling interval</dt><dd>{details.minimum_sampling_interval_ms === undefined ? '—' : `${details.minimum_sampling_interval_ms} ms`}</dd></div>
+        <div><dt>Historizing</dt><dd>{details.historizing === undefined ? '—' : details.historizing ? 'Yes' : 'No'}</dd></div>
+      </dl>
+      <ValueSnapshot snapshot={details.value_snapshot} />
+      <ReferenceList title="Type definition" references={details.type_definitions} />
+      <ReferenceList title="Properties" references={details.properties} />
+    </section>
+  );
+}
+
+function ValueSnapshot({ snapshot }: { snapshot?: OpcuaValueSnapshot }) {
+  if (!snapshot) return null;
+  if (snapshot.available === false) {
+    return (
+      <section className="sf-opcua-value-snapshot" aria-label="OPC UA value snapshot">
+        <h5>Value snapshot</h5>
+        <p className="sf-opcua-node-definition-state">Not queried: {snapshot.reason || 'this node has no Value attribute.'}</p>
+      </section>
+    );
+  }
+  return (
+    <section className="sf-opcua-value-snapshot" aria-label="OPC UA value snapshot">
+      <h5>Value snapshot</h5>
+      <dl>
+        <div><dt>Value</dt><dd><code>{formatDetail(snapshot.value)}</code></dd></div>
+        <div><dt>Status</dt><dd>{formatStatus(snapshot.value_status)}</dd></div>
+        <div><dt>Read at</dt><dd>{formatDetail(snapshot.read_at)}</dd></div>
+        <div><dt>Source timestamp</dt><dd>{formatDetail(snapshot.source_timestamp)}</dd></div>
+        <div><dt>Server timestamp</dt><dd>{formatDetail(snapshot.server_timestamp)}</dd></div>
+      </dl>
+    </section>
+  );
+}
+
+function ReferenceList({ title, references }: { title: string; references?: OpcuaReference[] }) {
+  if (!references?.length) return null;
+  return (
+    <section className="sf-opcua-node-references" aria-label={title}>
+      <h5>{title}</h5>
+      <ul>
+        {references.map((reference) => (
+          <li key={reference.node_id}>
+            <strong>{reference.display_name || reference.browse_name || reference.node_id}</strong>
+            <code>{reference.node_id || '—'}</code>
+            {reference.value !== undefined ? <span>{formatDetail(reference.value)}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function formatDetail(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatStatus(status?: { status_code?: string; status_name?: string }): string {
+  if (!status) return '—';
+  return [status.status_name, status.status_code].filter(Boolean).join(' · ') || '—';
 }
 
 function OpcuaGraph({
@@ -249,8 +423,11 @@ function OpcuaGraph({
         node.fy = node.y;
       })
       .on('drag', (event, node) => {
+        node.x = event.x;
+        node.y = event.y;
         node.fx = event.x;
         node.fy = event.y;
+        updatePositions();
       })
       .on('end', (event, node) => {
         if (!event.active) simulation.alphaTarget(0);
@@ -331,12 +508,14 @@ function buildGraph(root: OpcuaNode): GraphData {
         label: node.display_name || node.browse_name || id,
         browseName: node.browse_name || '',
         nodeClass: node.node_class || 0,
+        nodeClassName: node.node_class_name || nodeClassLabel(node.node_class || 0),
         depth,
         childCount: Array.isArray(node.children) ? node.children.length : 0,
       });
     } else {
       current.depth = Math.min(current.depth, depth);
       current.childCount = Math.max(current.childCount, Array.isArray(node.children) ? node.children.length : 0);
+      if (node.node_class_name) current.nodeClassName = node.node_class_name;
     }
     if (parentId && parentId !== id) links.set(`${parentId}->${id}`, { source: parentId, target: id });
     if (!Array.isArray(node.children)) return;
@@ -374,4 +553,12 @@ function readPayload(value: unknown): ExplorationPayload | null {
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as ExplorationPayload;
+}
+
+function readNodeDetails(value: unknown): OpcuaNodeDetails | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as { node?: unknown };
+  const node = candidate.node;
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+  return node as OpcuaNodeDetails;
 }
