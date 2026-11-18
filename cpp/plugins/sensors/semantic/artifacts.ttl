@@ -10,7 +10,7 @@ sfsensors:opcuaDataTable
     skos:prefLabel "OPC UA data table" ;
     skos:definition "One row per requested OPC UA node containing the node identity, decoded value, serialized value, and read status." ;
     sf:tableContractName "OPCUA_DATA" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfsensors:endpointColumn,
         sfsensors:nodeNameColumn,
