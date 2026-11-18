@@ -19,6 +19,7 @@
 #include <ctime>
 #include <limits>
 #include <numeric>
+#include <unordered_set>
 
 namespace streamfind::mass_spec::nta::utils
 {
@@ -321,7 +322,7 @@ namespace streamfind::mass_spec::nta::utils
             "polarity", "configuration", "lowmz", "highmz", "bpmz", "bpint", "tic", "rt", "mobility",
             "window_mz", "window_mzlow", "window_mzhigh", "precursor_mz", "precursor_intensity",
             "precursor_charge", "activation_ce"};
-        access.read_typed_batches(table, columns, "analysis,index",
+        access.read_typed_batches(table, columns,
             [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                 const auto col = [&](const char *name) { return batch.column_index(name); };
                 const auto integer_at = [&](const char *name, std::uint64_t row) {
@@ -523,7 +524,7 @@ namespace streamfind::mass_spec::nta::utils::detail
 
         const std::string &input_table(const Json &parameters, const char *port)
         {
-            return parameters.at("_inputs").at(port).at("physical_table").get_ref<const std::string &>();
+            return parameters.at("_inputs").at(port).at("result_ref").get_ref<const std::string &>();
         }
 
         // Port of merge_NTA_FEATURE_SPECTRA: cluster a per-feature spectrum by m/z,
@@ -677,7 +678,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             if (spectra_input != inputs.end() && spectra_input->is_object())
             {
                 persisted_headers = persisted_spectra_headers(
-                    access, spectra_input->at("physical_table").get<std::string>());
+                    access, spectra_input->at("result_ref").get<std::string>());
             }
             const bool has_analysis_input = parameters.contains("_inputs") &&
                 parameters.at("_inputs").contains("analysesTable");
@@ -694,7 +695,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             if (has_analysis_input)
             {
                 const std::vector<std::string> columns{"analysis", "file_path", "analysis_index", "blank", "replicate"};
-                access.read_typed_batches(input_table(parameters, "analysesTable"), columns, "analysis",
+                access.read_typed_batches(input_table(parameters, "analysesTable"), columns,
                     [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                         const auto analysis_col = batch.column_index("analysis");
                         const auto path_col = batch.column_index("file_path");
@@ -727,7 +728,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 // Derive their analysis context from that bound artifact.
                 std::set<std::string> seen_names;
                 int feature_analysis_index = 0;
-                access.read_typed_batches(input_table(parameters, "featuresTable"), {"analysis"}, "analysis",
+                access.read_typed_batches(input_table(parameters, "featuresTable"), {"analysis"},
                     [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                         const auto analysis_col = batch.column_index("analysis");
                         for (std::uint64_t row = 0; row < batch.row_count(); ++row)
@@ -761,7 +762,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 buffers[i].analysis = data.analysis_names()[i];
             std::vector<std::string> feature_replicates(data.analysis_names().size());
             std::vector<std::string> feature_blanks(data.analysis_names().size());
-            access.read_typed_batches(input_table(parameters, "featuresTable"), feature_columns(), "analysis",
+            access.read_typed_batches(input_table(parameters, "featuresTable"), feature_columns(),
                 [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                 const auto col = [&](const char *name) { return batch.column_index(name); };
                 const auto s = [&](std::uint64_t row, const char *name) {
@@ -910,17 +911,15 @@ namespace streamfind::mass_spec::nta::utils::detail
         ::streamfind::mass_spec::nta::NtaProjectData load_internal_standards_only(streamfind::sdk::PluginProjectAccess &access, const Json &parameters)
         {
             std::vector<std::string> names;
-            std::string previous_name;
-            access.read_typed_batches(input_table(parameters, "internalStandardsTable"), {"analysis"}, "analysis",
+            std::unordered_set<std::string> seen_names;
+            access.read_typed_batches(input_table(parameters, "internalStandardsTable"), {"analysis"},
                 [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                     const auto analysis_col = batch.column_index("analysis");
                     for (std::uint64_t row = 0; row < batch.row_count(); ++row)
                     {
                         if (batch.is_null(analysis_col, row)) continue;
                         const auto name = std::string(batch.text(analysis_col, row));
-                        if (name == previous_name) continue;
-                        previous_name = name;
-                        names.push_back(name);
+                        if (seen_names.insert(name).second) names.push_back(name);
                     }
                 });
             std::vector<std::string> paths(names.size());
@@ -936,7 +935,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
             const auto read_table_targets = [&](const std::string &table) {
                 std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> parsed;
-                access.read_typed_batches(table, table_columns, "name",
+                access.read_typed_batches(table, table_columns,
                     [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                         const auto text_value = [&](const char *name, std::uint64_t row) {
                             const auto column = batch.column_index(name);
@@ -1001,7 +1000,7 @@ namespace streamfind::mass_spec::nta::utils::detail
             const auto input_it = allow_table_input ? inputs.find("suspectTargetsTable") : inputs.end();
             if (input_it != inputs.end())
             {
-                const auto table = input_it->at("physical_table").get<std::string>();
+                const auto table = input_it->at("result_ref").get<std::string>();
                 return read_table_targets(table);
             }
             std::vector<::streamfind::mass_spec::nta::suspect_screening::SuspectQuery> out;
@@ -1358,7 +1357,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 "xLogP", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula", "db_ms2_smiles",
                 "ms2_size", "ms2_mz", "ms2_intensity", "isotope_theoretical_peaks", "isotope_matched_peaks",
                 "isotope_similarity", "isotope_match"};
-            access.read_typed_batches(input_table(parameters, "suspectsTable"), columns, "analysis",
+            access.read_typed_batches(input_table(parameters, "suspectsTable"), columns,
                 [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                     for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
                         const auto analysis = batch_text(batch, "analysis", row);
@@ -1475,7 +1474,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                         "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz",
                         "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity", "isotope_theoretical_peaks",
                         "isotope_matched_peaks", "isotope_similarity", "isotope_match"};
-                    access.read_typed_batches("result:" + result_id, columns, "analysis",
+                    access.read_typed_batches("result:" + result_id, columns,
                         [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                             const auto text_value = [&](const char *column, std::uint64_t row) {
                                 const auto index = batch.column_index(column);
@@ -1551,7 +1550,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                 "eic_size", "eic_rt", "eic_mz", "eic_intensity", "eic_baseline", "eic_smoothed", "ms1_size", "ms1_mz",
                 "ms1_intensity", "ms2_size", "ms2_mz", "ms2_intensity", "isotope_theoretical_peaks", "isotope_matched_peaks",
                 "isotope_similarity", "isotope_match"};
-            access.read_typed_batches(input_table(parameters, "internalStandardsTable"), columns, "analysis",
+            access.read_typed_batches(input_table(parameters, "internalStandardsTable"), columns,
                 [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                     for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
                         const auto analysis_name = batch_text(batch, "analysis", row);
@@ -1615,7 +1614,7 @@ namespace streamfind::mass_spec::nta::utils::detail
                     "main_precursor_name", "main_precursor_formula", "main_precursor_mass",
                     "main_precursor_SMILES", "main_precursor_InChI", "main_precursor_InChIKey",
                     "main_precursor_xLogP", "SMILES", "InChI", "InChIKey"};
-                access.read_typed_batches("result:" + result_id, columns, "name",
+                access.read_typed_batches("result:" + result_id, columns,
                     [&](const ::streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                         const auto text_value = [&](const char *column, std::uint64_t row) {
                             const auto index = batch.column_index(column);

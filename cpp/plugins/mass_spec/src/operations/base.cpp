@@ -417,7 +417,7 @@ namespace streamfind::mass_spec::base
     {
         const auto &inputs = parameters.at("_inputs");
         const auto &analyses_input = inputs.at("analysesTable");
-        const auto physical_table = analyses_input.at("physical_table").get<std::string>();
+        const auto result_ref = analyses_input.at("result_ref").get<std::string>();
         const std::vector<std::string> columns = {
             "analysis", "analysis_index", "source_analysis_number", "replicate", "blank",
             "file_name", "file_path", "file_dir", "file_extension", "format", "type", "time_stamp",
@@ -462,7 +462,7 @@ namespace streamfind::mass_spec::base
         }
         streamfind::sdk::TableBatchBuilder output(std::move(output_schema));
         Json removed = Json::array();
-        access.read_typed_batches(physical_table, columns, "analysis",
+        access.read_typed_batches(result_ref, columns,
             [&](const streamfind::sdk::PluginProjectAccess::BatchView &batch) {
                 const auto analysis_column = batch.column_index("analysis");
                 for (std::uint64_t row = 0; row < batch.row_count(); ++row)
@@ -600,7 +600,7 @@ namespace streamfind::mass_spec::base
             std::size_t selected_count = 0;
             std::size_t source_index = 0;
             access.read_typed_batches(base::utils::input_table(parameters, "analysesTable"),
-                analysis_columns, "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+                analysis_columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
                     const auto analysis_column = batch.column_index("analysis");
                     for (std::uint64_t row = 0; row < batch.row_count(); ++row, ++source_index) {
                         const auto name = batch.is_null(analysis_column, row)
@@ -706,7 +706,7 @@ namespace streamfind::mass_spec::base
         const auto indices = parameters.value("indices", Json::array());
         const auto table = base::utils::input_table(parameters, "spectraHeadersTable");
         std::size_t emitted = 0;
-        access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+        access.read_typed_batches(table, columns, [&](const auto &batch) {
             std::vector<sdk::TableBatchBuilder::Column> schema;
             schema.reserve(columns.size());
             for (std::uint32_t column = 0; column < batch.column_count(); ++column)
@@ -747,7 +747,7 @@ namespace streamfind::mass_spec::base
         const auto indices = parameters.value("indices", Json::array());
         const auto table = base::utils::input_table(parameters, "chromatogramsHeadersTable");
         std::size_t emitted = 0;
-        access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+        access.read_typed_batches(table, columns, [&](const auto &batch) {
             std::vector<sdk::TableBatchBuilder::Column> schema;
             schema.reserve(columns.size());
             for (std::uint32_t column = 0; column < batch.column_count(); ++column)
@@ -808,7 +808,7 @@ namespace streamfind::mass_spec::base
         const std::vector<std::string> columns = {
             "analysis", "index", "level", "polarity", "rt", "mobility", "tic", "bpmz", "bpint"};
         const auto table = base::utils::input_table(parameters, "spectraHeadersTable");
-        access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+        access.read_typed_batches(table, columns, [&](const auto &batch) {
             const auto analysis_col = batch.column_index("analysis");
             const auto index_col = batch.column_index("index");
             const auto level_col = batch.column_index("level");

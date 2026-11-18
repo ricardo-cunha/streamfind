@@ -330,7 +330,7 @@ sfcore:resolveOperationInputs
     skos:inScheme sfcore:scheme ;
     sf:commandId "resolve_operation_inputs" ;
     skos:prefLabel "Resolve operation input artifacts" ;
-    skos:definition "Resolve each explicit workflow connection for an operation to the published immutable input artifact and physical table." ;
+    skos:definition "Resolve each explicit workflow connection for an operation to the published immutable input artifact and its result reference." ;
     sf:category "workflow-observation" ;
     sf:guidance "Use before executing or diagnosing a downstream node to confirm that every explicit connection resolves to a current published artifact from the expected producer instance." ;
     sf:availableInDomain sfcore:streamfind ;

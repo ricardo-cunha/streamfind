@@ -25,9 +25,9 @@ struct ProjectSessionDto {
     std::string database_path;
     std::uintmax_t database_size_bytes{0};
     std::vector<std::string> domains;
-    Json metadata{Json::object()};
-    Json result_store{Json::object()};
-    Json diagnostics{Json::array()};
+    Json metadata = Json::object();
+    Json result_store = Json::object();
+    Json diagnostics = Json::array();
 };
 
 inline void to_json(Json &json, const SessionDto &value) {

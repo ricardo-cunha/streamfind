@@ -164,18 +164,6 @@ sfcore:csvInputPathParameter
     sf:default "" ;
     sf:example "data/features.csv" .
 
-sfcore:rowKeyColumnsParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Row key columns" ;
-    skos:definition "One or more columns that uniquely identify and align rows in both tables for horizontal binding." ;
-    sf:type "array" ;
-    sf:items sfcore:stringColumn ;
-    sf:required true ;
-    sf:default "[]" ;
-    sf:example "[\"sample_id\",\"feature_id\"]" .
-
 sfcore:destinationDatabasePathParameter
     a sf:Parameter ;
     sf:availableInDomain sfcore:streamfind ;

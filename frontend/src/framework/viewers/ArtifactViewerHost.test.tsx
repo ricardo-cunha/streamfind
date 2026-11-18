@@ -30,6 +30,21 @@ describe('ArtifactViewerHost', () => {
     expect(screen.getByText('JSON fallback')).toBeInTheDocument();
   });
 
+  it('waits for selected JSON data before mounting a plugin viewer', () => {
+    const unhydrated = { ...artifact, payload: undefined };
+    render(
+      <ArtifactViewerHost
+        artifact={unhydrated}
+        sessionId="session-1"
+        viewerId="statistics.dashboard"
+        onClose={() => undefined}
+        fallback={<div>Loading selected JSON result</div>}
+      />,
+    );
+
+    expect(screen.getByText('Loading selected JSON result')).toBeInTheDocument();
+  });
+
   it('uses the wide shell and resolver path for table mode', () => {
     const tableArtifact = { ...artifact, representation: 'table' };
     render(

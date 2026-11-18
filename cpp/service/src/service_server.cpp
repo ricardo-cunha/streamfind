@@ -667,6 +667,14 @@ void ServiceServer::stop() {
 }
 
 void ServiceServer::handle_client(std::intptr_t socket) {
+    const auto publish_project_updated = [this](const std::string &session_id) {
+        for (const auto &project : projects_.list()) {
+            if (project.session_id == session_id) {
+                events_.publish(Json{{"type", "project.updated"}, {"project", project}});
+                return;
+            }
+        }
+    };
     try {
         std::string request;
         std::array<char, 8192> buffer{};
@@ -1038,13 +1046,17 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/results/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.clear_all_results(session_id));
+                const auto result = projects_.clear_all_results(session_id);
+                publish_project_updated(session_id);
+                detail::send_http(socket, 200, result);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/node/clear")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/results/node/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto request = Json::parse(body);
-                detail::send_http(socket, 200, projects_.clear_node_results(session_id, request.value("producer_instance", std::string{})));
+                const auto result = projects_.clear_node_results(session_id, request.value("producer_instance", std::string{}));
+                publish_project_updated(session_id);
+                detail::send_http(socket, 200, result);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");

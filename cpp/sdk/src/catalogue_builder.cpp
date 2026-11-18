@@ -404,8 +404,8 @@ Json project(const Graph &graph, const std::string &domain) {
             const auto table_contract_name = value(graph, port, std::string(sf) + "tableContractName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
             if (value_type == "table" && table_contract_name.empty())
-                throw std::runtime_error("table input port lacks a canonical DuckDB table contract: " + contract);
-            const auto data_kind = !table_contract_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
+                throw std::runtime_error("table input port lacks a logical table contract: " + contract);
+            const auto data_kind = !table_contract_name.empty() ? "table" : (value_type == "boolean" ? "boolean" : "structured_value");
             const auto port_id = value(graph, port, std::string(sf) + "portId");
             const auto semantic_contract = value(graph, port, std::string(sf) + "semanticContract");
             entry["input_ports"].push_back({{"id", port_id.empty() ? contract : port_id},
@@ -433,8 +433,8 @@ Json project(const Graph &graph, const std::string &domain) {
             const auto table_contract_name = value(graph, port, std::string(sf) + "tableContractName");
             const auto value_type = value(graph, port, std::string(sf) + "type");
             if (value_type == "table" && table_contract_name.empty())
-                throw std::runtime_error("table output port lacks a canonical DuckDB table contract: " + contract);
-            const auto data_kind = !table_contract_name.empty() ? "duckdb_table" : (value_type == "boolean" ? "boolean" : "structured_value");
+                throw std::runtime_error("table output port lacks a logical table contract: " + contract);
+            const auto data_kind = !table_contract_name.empty() ? "table" : (value_type == "boolean" ? "boolean" : "structured_value");
             has_success_signal = has_success_signal || contract == "operationSuccessSignal";
             const bool optional = std::any_of(optional_output_ports.begin(), optional_output_ports.end(), [&](const auto &candidate) {
                 return local(candidate) == contract;
@@ -483,6 +483,8 @@ Json project(const Graph &graph, const std::string &domain) {
             const auto column_name = value(graph, column, std::string(sf) + "columnName").empty() ? value(graph, column, std::string(sf) + "propertyName") : value(graph, column, std::string(sf) + "columnName");
             if (!column_name.empty()) {
                 Json projected = {{"name", column_name}, {"type", value(graph, column, std::string(sf) + "type")}};
+                const auto item = value(graph, column, std::string(sf) + "items");
+                if (!item.empty()) projected["items"] = column_schema(graph, item);
                 const auto definition = value(graph, column, std::string(skos) + "definition");
                 const auto storage_type = value(graph, column, std::string(sf) + "storageType");
                 if (!definition.empty()) projected["description"] = definition;

@@ -32,6 +32,18 @@ int main() {
         require(streamfind::fingerprint::operation("node", "node", "1", first, {{"input", "artifact-a"}}) !=
                     streamfind::fingerprint::operation("node", "node", "1", first, {{"input", "artifact-b"}}),
                 "input identity change did not change operation fingerprint");
+        const streamfind::Json fresh_table_ref = {{"result_id", "artifact-a"},
+            {"representation", "table"}, {"state", "published"}};
+        const streamfind::Json cached_table_ref = {{"result_id", "artifact-a"},
+            {"contract_id", "table"}, {"payload_ref", ""}, {"representation", "table"}};
+        require(streamfind::fingerprint::operation("node", "node", "1", {}, {{"input", fresh_table_ref}}) ==
+                    streamfind::fingerprint::operation("node", "node", "1", {}, {{"input", cached_table_ref}}),
+                "transport metadata changed a table-result fingerprint across fresh and cached runs");
+        const streamfind::Json other_table_ref = {{"result_id", "artifact-b"},
+            {"representation", "table"}, {"state", "published"}};
+        require(streamfind::fingerprint::operation("node", "node", "1", {}, {{"input", fresh_table_ref}}) !=
+                    streamfind::fingerprint::operation("node", "node", "1", {}, {{"input", other_table_ref}}),
+                "different table-result identities shared an operation fingerprint");
         require(streamfind::fingerprint::operation("node", "node-1", "1", first, {}) !=
                     streamfind::fingerprint::operation("node", "node-2", "1", first, {}),
                 "operation instance change did not change operation fingerprint");

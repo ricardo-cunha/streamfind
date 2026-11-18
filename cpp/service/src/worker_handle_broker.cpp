@@ -9,6 +9,7 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -259,7 +260,17 @@ HANDLE accept_duplicated_worker_handle(std::uintptr_t worker_local_handle) {
     return reinterpret_cast<HANDLE>(worker_local_handle);
 }
 
-ReceivedWorkerHandle receive_worker_handle(HANDLE broker_pipe) {
+ReceivedWorkerHandle receive_worker_handle(HANDLE broker_pipe, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    DWORD available = 0;
+    while (available == 0) {
+        if (!PeekNamedPipe(broker_pipe, nullptr, 0, nullptr, &available, nullptr))
+            throw std::runtime_error("worker handle broker pipe is unavailable");
+        if (available != 0) break;
+        if (std::chrono::steady_clock::now() >= deadline)
+            throw std::runtime_error("timed out waiting for worker handle grant");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     struct TransferMessage { char token[4096]; std::uint64_t worker_handle; } message{};
     DWORD received = 0;
     if (!ReadFile(broker_pipe, &message, sizeof(message), &received, nullptr) ||
@@ -290,8 +301,18 @@ void send_worker_handle(int broker_socket, int source_fd, const std::string &gra
         throw std::runtime_error("cannot pass worker file descriptor");
 }
 
-ReceivedWorkerHandle receive_worker_handle(int broker_socket) {
+ReceivedWorkerHandle receive_worker_handle(int broker_socket, std::chrono::milliseconds timeout) {
     if (broker_socket < 0) throw std::invalid_argument("worker broker socket is invalid");
+    pollfd descriptor{broker_socket, POLLIN, 0};
+    const auto wait_ms = static_cast<int>(std::clamp<std::int64_t>(timeout.count(), 0, INT_MAX));
+    const auto ready = poll(&descriptor, 1, wait_ms);
+    if (ready == 0) throw std::runtime_error("timed out waiting for worker handle grant");
+    if (ready < 0) {
+        if (errno == EINTR) throw std::runtime_error("interrupted while waiting for worker handle grant");
+        throw std::runtime_error("worker handle broker wait failed");
+    }
+    if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+        throw std::runtime_error("worker handle broker closed before granting a handle");
     std::array<char, 4096> payload{};
     std::array<char, CMSG_SPACE(sizeof(int))> ancillary{};
     iovec data{payload.data(), payload.size()};

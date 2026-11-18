@@ -36,7 +36,6 @@ export type ResultRecord = {
   result_name?: string;
   contract_id: string;
   representation: 'json' | 'table' | string;
-  physical_table?: string | null;
   payload?: JsonValue | null;
   row_count?: number;
   columns?: Array<{ name: string; type: string }>;
@@ -169,8 +168,15 @@ export type ResultTraceResponse = {
 const resultQueryCache = new Map<string, Promise<ResultQueryResponse>>();
 const RESULT_QUERY_CACHE_LIMIT = 128;
 
-function resultQueryCacheKey(sessionId: string, request: ResultQueryRequest): string {
-  return `${sessionId}\n${JSON.stringify(request)}`;
+function resultQueryCacheKey(endpoint: string, sessionId: string, request: ResultQueryRequest): string {
+  return `${endpoint}\n${sessionId}\n${JSON.stringify(request)}`;
+}
+
+function invalidateResultQueryCache(endpoint: string, sessionId: string): void {
+  const prefix = `${endpoint}\n${sessionId}\n`;
+  for (const key of resultQueryCache.keys()) {
+    if (key.startsWith(prefix)) resultQueryCache.delete(key);
+  }
 }
 
 function rememberResultQuery(key: string, request: Promise<ResultQueryResponse>): Promise<ResultQueryResponse> {
@@ -185,9 +191,10 @@ function rememberResultQuery(key: string, request: Promise<ResultQueryResponse>)
 
 function normalizeResultRecord(value: ResultRecord): ResultRecord {
   const candidate = value as ResultRecord & { columns?: unknown };
+  if (typeof candidate.result_id !== 'string' || !candidate.result_id.trim())
+    throw new Error('Result inventory record is missing its published result_id.');
   return {
     ...candidate,
-    result_id: candidate.result_id || candidate.physical_table || '',
     columns: Array.isArray(candidate.columns) ? candidate.columns : [],
   };
 }
@@ -401,6 +408,7 @@ export class StreamFindApiClient {
     });
     const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
     if (!response.ok) throw new Error(result.error || `Result clear request failed (${response.status})`);
+    invalidateResultQueryCache(this.baseUrl, sessionId);
     return result;
   }
 
@@ -443,6 +451,7 @@ export class StreamFindApiClient {
       const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
       throw new Error(`Node result cleanup failed (${response.status})${detail}`);
     }
+    invalidateResultQueryCache(this.baseUrl, sessionId);
   }
 
   async resultData(sessionId: string, request: ResultDataRequest): Promise<ResultDataResponse> {
@@ -455,8 +464,21 @@ export class StreamFindApiClient {
     return normalizeResultData(await response.json());
   }
 
+  async resultPayload(sessionId: string, resultId: string): Promise<JsonValue> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result_id: resultId }),
+    });
+    if (!response.ok) throw new Error(`Result payload request failed (${response.status})`);
+    const raw = (await response.json()) as { result_id?: unknown; payload?: unknown };
+    if (raw.result_id !== resultId || !('payload' in raw))
+      throw new Error('Result payload response did not match the requested result');
+    return raw.payload as JsonValue;
+  }
+
   async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse> {
-    const key = resultQueryCacheKey(sessionId, request);
+    const key = resultQueryCacheKey(this.baseUrl, sessionId, request);
     const cached = resultQueryCache.get(key);
     if (cached) return cached;
     const pending = (async () => {

@@ -31,16 +31,12 @@ import { notifyApp } from '../framework/notifications/notificationBus';
 import {
   forceDuckDbPath,
   navigateHash,
-  navItems,
   palettes,
   projectNameFromPath,
   routeFromHash,
   styles,
   uniqueSessionId,
-  type NavItem,
   type Palette,
-  type ParsedRoute,
-  type RouteKey,
   type Style,
 } from './shell/appShellModel';
 
@@ -1599,29 +1595,6 @@ function ProjectHub({
     </div>
   );
 }
-function WorkspacePlaceholder({ item }: { item: NavItem }) {
-  return (
-    <div className="sf-page">
-      <div className="sf-page-heading">
-        <div>
-          <span className="sf-eyebrow">Project workspace</span>
-          <h1>{item.label}</h1>
-          <p>{item.hint}. This boundary is ready for the backend contract.</p>
-        </div>
-        <span className="sf-status-pill neutral">No project selected</span>
-      </div>
-      <div className="sf-workspace-placeholder">
-        <div className="sf-placeholder-grid">
-          <span />
-          <span />
-          <span />
-        </div>
-        <strong>{item.label} is waiting for a project session</strong>
-        <p>The frontend shell intentionally contains no hard-coded domain inventory or local database access.</p>
-      </div>
-    </div>
-  );
-}
 function SettingsPane({
   mode,
   palette,
@@ -1778,13 +1751,11 @@ function AppShell({
   serviceState: ServiceState;
   serviceSession: ServiceSession | null;
 }) {
-  const [routeState, setRouteState] = useState<ParsedRoute>(routeFromHash);
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [palette, setPalette] = useState<Palette>(
     () => (localStorage.getItem('streamfind.palette') as Palette) || 'streamfind',
   );
   const [style, setStyle] = useState<Style>(() => (localStorage.getItem('streamfind.style') as Style) || 'classic');
-  const [collapsed, setCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [backendOpen, setBackendOpen] = useState(false);
   const [ontologyWikiTerm, setOntologyWikiTerm] = useState<string | null>(null);
@@ -1809,23 +1780,21 @@ function AppShell({
   const [activeProject, setActiveProject] = useState<ProjectSession | null>(null);
   const [previewProject, setPreviewProject] = useState<ProjectSession | null>(null);
   const projectOpen = activeProject !== null;
-  const route = routeState.route;
-  const effectiveRoute: RouteKey = projectOpen ? route : 'projects';
   useEffect(() => {
     let active = true;
-    const refreshProjects = () =>
+    const refreshProjects = (updateActiveProject = true) =>
       client
         .projects()
         .then((items) => {
           if (active) {
             setProjects(items);
+            if (!updateActiveProject) return;
             const sessionId = routeFromHash().sessionId;
             if (sessionId) {
               const project = items.find((item) => item.session_id === sessionId);
               if (project) {
                 setActiveProject(project);
               } else {
-                setRouteState({ route: 'projects' });
                 navigateHash('projects');
               }
             }
@@ -1833,8 +1802,27 @@ function AppShell({
         })
         .catch(() => undefined);
     const unsubscribe = client.subscribe((event) => {
-      if (event.type !== 'project.created' && event.type !== 'project.opened' && event.type !== 'project.closed')
+      const refreshAfterExecution =
+        event.type === 'operation.completed' ||
+        event.type === 'workflow.completed' ||
+        event.type === 'workflow.failed' ||
+        event.type === 'workflow.cancelled';
+      if (
+        event.type !== 'project.created' &&
+        event.type !== 'project.opened' &&
+        event.type !== 'project.closed' &&
+        event.type !== 'project.updated' &&
+        !refreshAfterExecution
+      )
         return;
+
+      if (refreshAfterExecution) {
+        // Execution changes result inventory and store size without changing
+        // the project list. Refresh descriptors so the hub card is current,
+        // while leaving the active canvas session untouched.
+        void refreshProjects(false);
+        return;
+      }
 
       // Project lifecycle events carry the session DTO. Apply it immediately so
       // the workspace responds to MCP or CLI changes without waiting for a
@@ -1850,7 +1838,6 @@ function AppShell({
             setProjects((items) => items.filter((item) => item.session_id !== candidate.session_id));
             if (routeFromHash().sessionId === candidate.session_id) {
               setActiveProject(null);
-              setRouteState({ route: 'projects' });
               navigateHash('projects');
             }
           } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.domains)) {
@@ -1888,10 +1875,16 @@ function AppShell({
     localStorage.setItem('streamfind.style', style);
   }, [style]);
   useEffect(() => {
-    const onHashChange = () => setRouteState(routeFromHash());
+    const onHashChange = () => {
+      const next = routeFromHash();
+      setActiveProject((current) => next.sessionId
+        ? projects.find((item) => item.session_id === next.sessionId) ??
+          (current?.session_id === next.sessionId ? current : null)
+        : null);
+    };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [projects]);
   useEffect(() => {
     if (!settingsOpen && !backendOpen && !previewProject) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1903,26 +1896,14 @@ function AppShell({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [backendOpen, previewProject, settingsOpen]);
-  const visibleNavItems = projectOpen ? navItems : navItems.filter((item) => item.key === 'projects');
-  const activeItem = useMemo(
-    () => navItems.find((item) => item.key === effectiveRoute) ?? navItems[0],
-    [effectiveRoute],
-  );
-  const navigate = (key: RouteKey) => {
-    const sessionId = projectOpen ? activeProject?.session_id : undefined;
-    navigateHash(key, sessionId);
-    setRouteState({ route: key, sessionId });
-  };
   const openProject = (project: ProjectSession) => {
     setPreviewProject(null);
     setActiveProject(project);
-    setRouteState({ route: 'workflow', sessionId: project.session_id });
     navigateHash('workflow', project.session_id);
   };
 
   const closeProject = () => {
     setActiveProject(null);
-    setRouteState({ route: 'projects' });
     navigateHash('projects');
   };
   const copyProjectPath = async () => {
@@ -1947,38 +1928,7 @@ function AppShell({
   };
 
   return (
-    <div className={`sf-shell ${collapsed ? 'collapsed' : ''}`}>
-      <aside className="sf-sidebar">
-        <div className="sf-brand">
-          <img src={logo} alt="" />
-          <div>
-            <strong>streamfind</strong>
-            <span>Scientific workspace</span>
-          </div>
-        </div>
-        <button className="sf-collapse" onClick={() => setCollapsed((value) => !value)} aria-label="Toggle navigation">
-          <i className={collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left'} />
-        </button>
-        <nav>
-          {visibleNavItems.map((item) => (
-            <button
-              key={item.key}
-              className={item.key === route ? 'active' : ''}
-              onClick={() => navigate(item.key)}
-              title={item.hint}
-            >
-              <span className="sf-nav-icon">
-                <i className={item.icon} />
-              </span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="sf-sidebar-footer">
-          <span className={`sf-connection-dot ${serviceState}`} />
-          <span>Service {serviceState}</span>
-        </div>
-      </aside>
+    <div className="sf-shell">
       <main className={`sf-main${activeProject ? ' sf-main-workspace' : ''}`}>
         <header className="sf-topbar">
           <div className="sf-context">
@@ -2042,7 +1992,7 @@ function AppShell({
                 onProjectHub={closeProject}
                 onOpenOntologyWiki={(term) => setOntologyWikiTerm(term || '')}
               />
-            ) : effectiveRoute === 'projects' ? (
+            ) : (
               <ProjectHub
                 serviceState={serviceState}
                 projects={projects}
@@ -2058,8 +2008,6 @@ function AppShell({
                 onOpenWorkflow={openProject}
                 onCloseProject={disconnectProject}
               />
-            ) : (
-              <WorkspacePlaceholder item={activeItem} />
             )}
           </ErrorBoundary>
         </div>

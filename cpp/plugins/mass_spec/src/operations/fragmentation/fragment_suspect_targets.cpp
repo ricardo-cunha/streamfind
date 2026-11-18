@@ -369,7 +369,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto table_input = inputs.find("suspectTargetsTable");
     if (table_input == inputs.end() || !table_input->is_object() ||
-        !table_input->contains("physical_table") || !table_input->at("physical_table").is_string())
+        !table_input->contains("result_ref") || !table_input->at("result_ref").is_string())
         throw std::invalid_argument("Connect a suspectTargetsTable input containing candidate SMILES.");
 
     const auto limits = streamfind::mass_spec::fragmentation::detail::parse_fragmenter_limits(parameters);
@@ -379,10 +379,10 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     if (!jar)
         throw std::runtime_error("MetFrag Fragmenter JAR was not found. Install the mass_spec.metfrag_fragmenter dependency.");
 
-    const auto physical_table = table_input->at("physical_table").get<std::string>();
+    const auto result_ref = table_input->at("result_ref").get<std::string>();
     struct Target { std::string name; std::string smiles; };
     std::vector<Target> targets;
-    access.read_typed_batches(physical_table, {"name", "SMILES"}, "name",
+    access.read_typed_batches(result_ref, {"name", "SMILES"},
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto name_column = batch.column_index("name");
             const auto smiles_column = batch.column_index("SMILES");

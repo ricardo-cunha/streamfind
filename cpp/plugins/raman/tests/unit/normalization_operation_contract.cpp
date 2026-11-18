@@ -20,8 +20,7 @@ class MemoryProjectAccess final : public sdk::PluginProjectAccess {
     std::string_view operation_instance() const noexcept override { return "normalize-test"; }
     bool is_cancelled() const noexcept override { return false; }
     void require_table(const std::string &) override {}
-    void read_typed_batches(const std::string &table, const std::vector<std::string> &names,
-                            const std::string &, const BatchCallback &callback) override {
+    void read_typed_batches(const std::string &table, const std::vector<std::string> &names, const BatchCallback &callback) override {
         const auto &rows = tables.at(table);
         std::vector<std::shared_ptr<arrow::Field>> fields;
         std::vector<std::shared_ptr<arrow::Array>> arrays;
@@ -192,7 +191,7 @@ int main() {
         access.tables["ingested_points"] = access.emitted.at("spectraTable");
         access.emitted.clear();
         const Json ingested_summary_parameters = {
-            {"_inputs", {{"spectraTable", {{"physical_table", "ingested_points"}}}}}
+            {"_inputs", {{"spectraTable", {{"result_ref", "ingested_points"}}}}}
         };
         const auto ingested_summary = summary_capability->handler(access, ingested_summary_parameters);
         require(ingested_summary.at("spectra").get<std::uint64_t>() == 2 &&
@@ -203,7 +202,7 @@ int main() {
         access.emitted.clear();
 
         const Json summary_parameters = {
-            {"_inputs", {{"spectraTable", {{"physical_table", "points"}}}}}
+            {"_inputs", {{"spectraTable", {{"result_ref", "points"}}}}}
         };
         const auto summary_result = summary_capability->handler(access, summary_parameters);
         require(summary_result.at("spectra").get<std::uint64_t>() == 2,
@@ -224,7 +223,7 @@ int main() {
         const Json parameters = {
             {"normalization_algorithm", "minmax"},
             {"_inputs", {
-                {"spectraTable", {{"physical_table", "points"}}}
+                {"spectraTable", {{"result_ref", "points"}}}
             }}
         };
         const auto result = capability->handler(access, parameters);
@@ -246,7 +245,7 @@ int main() {
         const Json baseline_parameters = {
             {"baseline_algorithm", "airpls"}, {"lambda", 10.0}, {"differences", 2}, {"itermax", 20},
             {"_inputs", {
-                {"spectraTable", {{"physical_table", "points"}}}
+                {"spectraTable", {{"result_ref", "points"}}}
             }}
         };
         const auto baseline_result = baseline_capability->handler(access, baseline_parameters);
@@ -296,7 +295,7 @@ int main() {
         const Json range_parameters = {
             {"minimum_coordinate", 15.0}, {"maximum_coordinate", 20.0}, {"mode", "include"},
             {"_inputs", {
-                {"spectraTable", {{"physical_table", "points"}}}
+                {"spectraTable", {{"result_ref", "points"}}}
             }}
         };
         const auto range_result = range_capability->handler(access, range_parameters);
@@ -316,7 +315,7 @@ int main() {
         const Json smoothing_parameters = {
             {"smoothing_algorithm", "moving_average"}, {"window_size", 3},
             {"_inputs", {
-                {"spectraTable", {{"physical_table", "points"}}}
+                {"spectraTable", {{"result_ref", "points"}}}
             }}
         };
         const auto smoothing_result = smoothing_capability->handler(access, smoothing_parameters);
@@ -349,7 +348,7 @@ int main() {
         const Json savgol_parameters = {
             {"window_length", 3}, {"polynomial_order", 2},
             {"_inputs", {
-                {"spectraTable", {{"physical_table", "points"}}}
+                {"spectraTable", {{"result_ref", "points"}}}
             }}
         };
         const auto savgol_result = savgol_capability->handler(access, savgol_parameters);
@@ -365,6 +364,28 @@ int main() {
                      "Savitzky-Golay did not preserve a quadratic fit at the right edge");
         require(!access.emitted.contains("spectraSummaryTable"),
                 "Savitzky-Golay unexpectedly emitted spectrum headers");
+
+        access.tables["interleaved_points"] = Json::array({
+            access.tables["points"][0], access.tables["points"][1], access.tables["points"][2],
+            access.tables["points"][3], access.tables["points"][4], access.tables["points"][5],
+            access.tables["points"][0], access.tables["points"][1], access.tables["points"][2]});
+        const auto require_interleaving_rejected = [&](const auto *operation, Json operation_parameters,
+                                                       const std::string &label) {
+            operation_parameters["_inputs"]["spectraTable"] = {{"result_ref", "interleaved_points"}};
+            try {
+                (void)operation->handler(access, operation_parameters);
+            } catch (const std::exception &operation_error) {
+                if (std::string(operation_error.what()).find("not grouped by spectrum_id") != std::string::npos)
+                    return;
+                throw std::runtime_error(label + " returned an unclear interleaved-row error: " +
+                                         operation_error.what());
+            }
+            throw std::runtime_error(label + " accepted rows interleaved across spectrum IDs");
+        };
+        require_interleaving_rejected(capability, parameters, "normalization");
+        require_interleaving_rejected(baseline_capability, baseline_parameters, "baseline correction");
+        require_interleaving_rejected(smoothing_capability, smoothing_parameters, "moving-average smoothing");
+        require_interleaving_rejected(savgol_capability, savgol_parameters, "Savitzky-Golay smoothing");
         std::cout << "Raman normalization operation contract passed\n";
         return 0;
     } catch (const std::exception &error) {

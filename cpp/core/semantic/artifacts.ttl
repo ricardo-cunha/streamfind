@@ -9,7 +9,7 @@ sfcore:projectTable
     skos:prefLabel "Project table" ;
     skos:definition "Generic project identity, metadata, workflow, and framework state." ;
     sf:tableContractName "PROJECT" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfcore:projectMetadataColumn,
         sfcore:projectWorkflowColumn,
@@ -21,9 +21,9 @@ sfcore:anyTable
     sf:availableInDomain sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Any table" ;
-    skos:definition "Generic input contract for operations that accept any persisted DuckDB table artifact without requiring a domain-specific schema." ;
+    skos:definition "Generic input contract for operations that accept any published tabular result without requiring a domain-specific schema." ;
     sf:tableContractName "ANY_TABLE" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:dynamicSchema true .
 
 sfcore:anyJson
@@ -44,7 +44,7 @@ sfcore:leftAnyTablePort
     skos:prefLabel "Left any table" ;
     skos:definition "Operation-local AnyTable input port used as the left side of a generic table binding." ;
     sf:tableContractName "ANY_TABLE_LEFT_PORT" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:dynamicSchema true ;
     sf:portId "leftTable" ;
     sf:semanticContract "anyTable" .
@@ -56,7 +56,7 @@ sfcore:rightAnyTablePort
     skos:prefLabel "Right any table" ;
     skos:definition "Operation-local AnyTable input port used as the right side of a generic table binding." ;
     sf:tableContractName "ANY_TABLE_RIGHT_PORT" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:dynamicSchema true ;
     sf:portId "rightTable" ;
     sf:semanticContract "anyTable" .
@@ -69,7 +69,7 @@ sfcore:auditTrailTable
     skos:prefLabel "Audit trail table" ;
     skos:definition "Persisted project and workflow operation audit events." ;
     sf:tableContractName "AUDIT_TRAIL" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfcore:operationTypeColumn,
         sfcore:objectTypeColumn,
@@ -82,7 +82,7 @@ sfcore:workflowExecutionTable
     skos:prefLabel "Workflow execution table" ;
     skos:definition "Singleton persisted lifecycle state for the current workflow execution." ;
     sf:tableContractName "WORKFLOW_EXECUTION" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfcore:workflowRevisionColumn,
         sfcore:launchSnapshotColumn,
@@ -103,7 +103,7 @@ sfcore:workflowExecutionStepTable
     skos:prefLabel "Workflow execution step table" ;
     skos:definition "Durable child records for the latest workflow execution, including method state, cache identity, progress, and lifecycle timestamps." ;
     sf:tableContractName "WORKFLOW_EXECUTION_STEP" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfcore:workflowRevisionColumn,
         sfcore:stepIndexColumn,

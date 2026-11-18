@@ -313,10 +313,9 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     std::set<std::string> modules;
     for (const auto &table : *manifest)
     {
-        // Dynamic input contracts such as anyTable deliberately have no
-        // declared columns. They are resolved from the connected physical
-        // table at invocation time and must not be materialized as an empty
-        // DuckDB table.
+        // Generic input contracts such as anyTable have no owned project
+        // schema. Their column definitions live in published Arrow result
+        // manifests and must not be materialized as empty DuckDB tables.
         if (!table.value("columns", Json::array()).is_array() ||
             table.value("columns", Json::array()).empty()) {
             continue;
@@ -502,79 +501,6 @@ void ProjectTableStore::append(
         return;
     }
     project_->append_rows(table_name, column_names, rows);
-}
-
-std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
-    const std::string &contract_id,
-    const std::string &producer_operation,
-    const std::string &producer_instance,
-    int workflow_revision,
-    const Json &columns) const {
-    if (!impl_ || contract_id.empty() || producer_operation.empty() ||
-        producer_instance.empty() || !columns.is_array() || columns.empty())
-        throw Error(ErrorCode::InvalidArgument, "invalid table artifact allocation");
-    static std::atomic_uint64_t sequence{0};
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto token = std::to_string(stamp) + "_" + std::to_string(sequence.fetch_add(1));
-    const std::string result_id = "artifact_" + token;
-    const std::string physical_table = "ARTIFACT_" + token;
-    std::vector<std::string> definitions;
-    for (const auto &column : columns) {
-        const auto name = column.at("name").get<std::string>();
-        if (name.empty() || name.find('\0') != std::string::npos)
-            throw Error(ErrorCode::InvalidArgument, "invalid dynamic table column name");
-        std::string quoted_name = "\"";
-        for (const char character : name)
-            quoted_name += character == '\"' ? "\"\"" : std::string(1, character);
-        definitions.push_back(quoted_name + "\" " + detail::manifest_sql_type(column));
-    }
-    std::string ddl = "CREATE TABLE " + physical_table + " (";
-    for (std::size_t index = 0; index < definitions.size(); ++index) {
-        if (index != 0) ddl += ", ";
-        ddl += definitions[index];
-    }
-    ddl += ")";
-    impl_->owned_tables.push_back(physical_table);
-    detail::store_query(*impl_, ddl);
-    const auto quote = [](const std::string &value) {
-        std::string output = "'";
-        for (const char character : value)
-            output += character == '\'' ? "''" : std::string(1, character);
-        return output + "'";
-    };
-    detail::store_query(*impl_,
-        "INSERT INTO RESULT_REGISTRY (result_id, contract_id, representation, physical_table, producer_operation, producer_instance, workflow_revision) VALUES (" +
-        quote(result_id) + ", " + quote(contract_id) + ", 'table', " +
-        quote(physical_table) + ", " + quote(producer_operation) + ", " +
-        quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
-    return {result_id, physical_table};
-}
-
-std::string ProjectTableStore::publish_result_artifact(
-    const std::string &contract_id,
-    const std::string &payload,
-    const std::string &producer_operation,
-    const std::string &producer_instance,
-    int workflow_revision) const {
-    if (!impl_ || contract_id.empty() || producer_operation.empty() ||
-        producer_instance.empty())
-        throw Error(ErrorCode::InvalidArgument, "invalid result artifact publication");
-    static std::atomic_uint64_t sequence{0};
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto result_id = "artifact_" + std::to_string(stamp) + "_" +
-        std::to_string(sequence.fetch_add(1));
-    const auto quote = [](const std::string &value) {
-        std::string output = "'";
-        for (const char character : value)
-            output += character == '\'' ? "''" : std::string(1, character);
-        return output + "'";
-    };
-    detail::store_query(*impl_,
-        "INSERT INTO RESULT_REGISTRY (result_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision) VALUES (" +
-        quote(result_id) + ", " + quote(contract_id) + ", 'json', " +
-        quote(payload) + "::JSON, " + quote(producer_operation) + ", " +
-        quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
-    return result_id;
 }
 
 void ProjectTableStore::append_artifact_lineage(

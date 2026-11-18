@@ -8,20 +8,14 @@ export function artifactSummary(artifact: ResultRecord): string {
       .slice(0, 6)
       .map((column) => column.name)
       .join(', ');
-    return `${artifact.physical_table || 'Result table'}\n${columns.length} columns · ${artifact.row_count ?? 0} rows\n${names}${columns.length > 6 ? ', …' : ''}`;
+    return `Arrow table result\n${columns.length} columns · ${artifact.row_count ?? 0} rows\n${names}${columns.length > 6 ? ', …' : ''}`;
   }
+  if (artifact.payload === undefined) return 'JSON result · open to view';
   return `JSON\n${summarizeJsonPayload(artifact.payload)}`;
 }
 
 function parseJsonPayload(payload: ResultRecord['payload']): JsonValue | null {
-  let value: unknown = payload;
-  if (typeof value === 'string') {
-    try {
-      value = JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
+  const value: unknown = payload;
   if (
     value === null ||
     typeof value === 'string' ||
@@ -45,12 +39,7 @@ function summarizeJsonPayload(payload: ResultRecord['payload']): string {
 }
 
 export function prettyArtifactPayload(payload: ResultRecord['payload']): string {
-  if (typeof payload !== 'string') return JSON.stringify(payload ?? null, null, 2);
-  try {
-    return JSON.stringify(JSON.parse(payload) as JsonValue, null, 2);
-  } catch {
-    return payload;
-  }
+  return JSON.stringify(payload ?? null, null, 2);
 }
 
 export function artifactContractMatches(artifactContract: string, portContract?: string): boolean {

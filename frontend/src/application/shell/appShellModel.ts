@@ -2,9 +2,8 @@ import type { ProjectSession } from '../../framework/backend/StreamFindApiClient
 
 export type Palette = 'streamfind' | 'playful' | 'matrix';
 export type Style = 'classic' | 'studio' | 'chrome';
-export type RouteKey = 'projects' | 'workflow' | 'results' | 'data' | 'runs' | 'provenance';
+export type RouteKey = 'projects' | 'workflow';
 export type ParsedRoute = { route: RouteKey; sessionId?: string };
-export type NavItem = { key: RouteKey; label: string; icon: string; hint: string };
 
 export function projectNameFromPath(databasePath: string): string {
   return (
@@ -28,20 +27,6 @@ export function uniqueSessionId(projectName: string, projects: ProjectSession[])
   while (existing.has(`${prefix}_${projectName}`)) prefix += 1;
   return `${prefix}_${projectName}`;
 }
-
-export const navItems: NavItem[] = [
-  { key: 'projects', label: 'Project Hub', icon: 'fa-solid fa-house', hint: 'Create and open projects' },
-  {
-    key: 'workflow',
-    label: 'Workflow',
-    icon: 'fa-solid fa-diagram-project',
-    hint: 'Compose ontology-driven workflows',
-  },
-  { key: 'results', label: 'Results', icon: 'fa-solid fa-wave-square', hint: 'Explore scientific outputs' },
-  { key: 'data', label: 'Data', icon: 'fa-solid fa-boxes-stacked', hint: 'Inspect project tables' },
-  { key: 'runs', label: 'Runs', icon: 'fa-solid fa-clock', hint: 'Monitor durable executions' },
-  { key: 'provenance', label: 'Provenance', icon: 'fa-solid fa-book-open', hint: 'Trace results to their source' },
-];
 
 export const palettes: Array<{ id: Palette; label: string; description: string; swatches: string[] }> = [
   {
@@ -77,14 +62,12 @@ export const styles: Array<{ id: Style; label: string; description: string }> = 
 export function routeFromHash(): ParsedRoute {
   const parts = window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 'project' && parts[1]) {
-    const route = parts[2] as RouteKey;
     return {
-      route: navItems.some((item) => item.key === route && item.key !== 'projects') ? route : 'workflow',
+      route: 'workflow',
       sessionId: decodeURIComponent(parts[1]),
     };
   }
-  const route = parts[0] as RouteKey;
-  return { route: navItems.some((item) => item.key === route) ? route : 'projects' };
+  return { route: parts[0] === 'workflow' ? 'workflow' : 'projects' };
 }
 
 export function navigateHash(key: RouteKey, sessionId?: string): void {

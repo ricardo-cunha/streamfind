@@ -46,6 +46,7 @@ target_include_directories(streamfind_mass_spec_filter_reason_contract PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_compile_features(streamfind_mass_spec_filter_reason_contract PRIVATE cxx_std_20)
 add_test(NAME streamfind_mass_spec_filter_reason_contract
     COMMAND streamfind_mass_spec_filter_reason_contract)
 set_tests_properties(streamfind_mass_spec_filter_reason_contract PROPERTIES
@@ -58,6 +59,7 @@ target_include_directories(streamfind_mass_spec_blank_replicate_matching_contrac
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_compile_features(streamfind_mass_spec_blank_replicate_matching_contract PRIVATE cxx_std_20)
 add_test(NAME streamfind_mass_spec_blank_replicate_matching_contract
     COMMAND streamfind_mass_spec_blank_replicate_matching_contract)
 set_tests_properties(streamfind_mass_spec_blank_replicate_matching_contract PROPERTIES
@@ -71,6 +73,7 @@ target_include_directories(streamfind_mass_spec_find_features_noise_quantile_con
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_compile_features(streamfind_mass_spec_find_features_noise_quantile_contract PRIVATE cxx_std_20)
 add_test(NAME streamfind_mass_spec_find_features_noise_quantile_contract
     COMMAND streamfind_mass_spec_find_features_noise_quantile_contract)
 set_tests_properties(streamfind_mass_spec_find_features_noise_quantile_contract PROPERTIES

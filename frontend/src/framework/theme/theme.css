@@ -138,20 +138,8 @@ button {
 }
 .sf-shell {
   height: 100%;
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  transition: grid-template-columns 0.2s ease;
-}
-.sf-shell.collapsed {
-  grid-template-columns: 56px minmax(0, 1fr);
-}
-.sf-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 5px;
-  background: color-mix(in srgb, var(--sf-surface-raised) 90%, transparent);
-  backdrop-filter: blur(14px);
 }
 button:focus,
 button:active {
@@ -159,36 +147,6 @@ button:active {
   box-shadow: none;
 }
 
-.sf-brand {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  padding: 5px;
-}
-.sf-brand img {
-  width: 38px;
-  height: 28px;
-  object-fit: contain;
-  object-position: center;
-}
-.sf-brand strong,
-.sf-brand span {
-  display: block;
-  white-space: nowrap;
-}
-.sf-brand strong {
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
-}
-.sf-brand span {
-  margin-top: 3px;
-  color: var(--sf-text-muted);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-.sf-collapse,
 .sf-icon-button {
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
@@ -196,66 +154,8 @@ button:active {
   color: var(--sf-text-secondary);
   cursor: pointer;
 }
-.sf-collapse {
-  align-self: flex-start;
-  width: 34px;
-  height: 30px;
-  padding: 5px;
-  border: 0;
-  background: transparent;
-  border-radius: 0;
-}
-.sf-collapse i {
-  font-size: 0.82rem;
-}
-.sf-collapse:hover {
-  color: var(--sf-accent);
-  border: 0;
-  background: transparent;
-}
 .sf-icon-button:hover {
   cursor: pointer;
-}
-.sf-sidebar nav {
-  display: grid;
-  gap: 5px;
-}
-.sf-sidebar nav button {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--sf-text-secondary);
-  cursor: pointer;
-  text-align: left;
-}
-.sf-sidebar nav button:hover {
-  background: var(--sf-surface-hover);
-  color: var(--sf-text);
-}
-.sf-sidebar nav button.active {
-  background: color-mix(in srgb, var(--sf-accent) 14%, var(--sf-surface-raised));
-  border-color: color-mix(in srgb, var(--sf-accent) 32%, var(--sf-border));
-  color: var(--sf-text);
-}
-.sf-nav-icon {
-  width: 20px;
-  color: var(--sf-accent);
-  font-size: 1.15rem;
-  text-align: center;
-}
-.sf-sidebar-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: auto;
-  padding: 10px 8px;
-  color: var(--sf-text-muted);
-  font-size: 0.72rem;
 }
 .sf-connection-dot {
   width: 8px;
@@ -278,20 +178,8 @@ button:active {
   background: var(--sf-error);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-error) 16%, transparent);
 }
-.sf-shell.collapsed .sf-brand div,
-.sf-shell.collapsed .sf-sidebar nav button span:not(.sf-nav-icon),
-.sf-shell.collapsed .sf-sidebar-footer span:not(.sf-connection-dot) {
-  display: none;
-}
-.sf-shell.collapsed .sf-brand,
-.sf-shell.collapsed .sf-collapse,
-.sf-shell.collapsed .sf-sidebar nav button {
-  justify-content: center;
-}
-.sf-shell.collapsed .sf-sidebar {
-  padding-inline: 5px;
-}
 .sf-main {
+  flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -696,8 +584,7 @@ h2 {
   gap: 5px;
 }
 .sf-card,
-.sf-panel,
-.sf-workspace-placeholder {
+.sf-panel {
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius);
   background: color-mix(in srgb, var(--sf-surface-raised) 92%, transparent);
@@ -1045,29 +932,6 @@ h2 {
   min-width: auto;
 }
 
-.sf-workspace-placeholder {
-  display: grid;
-  justify-items: center;
-  gap: 5px;
-  padding: 30px 10px;
-  text-align: center;
-}
-.sf-workspace-placeholder p {
-  color: var(--sf-text-secondary);
-}
-.sf-placeholder-grid {
-  display: flex;
-  gap: 5px;
-}
-.sf-placeholder-grid span {
-  width: 48px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--sf-surface-hover);
-}
-.sf-placeholder-grid span:nth-child(2) {
-  background: color-mix(in srgb, var(--sf-accent) 50%, var(--sf-surface-hover));
-}
 .sf-error {
   display: grid;
   gap: 8px;
@@ -1078,22 +942,6 @@ h2 {
   background: var(--sf-surface-raised);
 }
 @media (max-width: 720px) {
-  .sf-shell {
-    grid-template-columns: 56px minmax(0, 1fr);
-  }
-  .sf-sidebar {
-    padding-inline: 9px;
-  }
-  .sf-brand div,
-  .sf-sidebar nav button span:not(.sf-nav-icon),
-  .sf-sidebar-footer span:not(.sf-connection-dot) {
-    display: none;
-  }
-  .sf-brand,
-  .sf-collapse,
-  .sf-sidebar nav button {
-    justify-content: center;
-  }
   .sf-topbar {
     padding: 5px;
   }
@@ -1353,25 +1201,6 @@ h2 {
 :root[data-style='chrome'] {
   --sf-radius: 18px;
 }
-:root[data-style='chrome'] .sf-sidebar {
-  backdrop-filter: blur(14px);
-}
-:root[data-style='classic'] .sf-sidebar nav button {
-  border-radius: 3px;
-}
-:root[data-style='classic'] .sf-shell {
-  grid-template-columns: 220px minmax(0, 1fr);
-}
-:root[data-style='classic'] .sf-shell.collapsed {
-  grid-template-columns: 56px minmax(0, 1fr);
-}
-.sf-shell,
-.sf-shell.collapsed {
-  grid-template-columns: minmax(0, 1fr);
-}
-.sf-sidebar {
-  display: none;
-}
 .sf-context {
   display: flex;
   align-items: center;
@@ -1569,15 +1398,6 @@ h2 {
   font-size: 0.82rem;
   line-height: 1.4;
 }
-:root[data-style='chrome'] .sf-shell {
-  grid-template-columns: minmax(0, 1fr) !important;
-}
-:root[data-style='chrome'] .sf-shell.collapsed {
-  grid-template-columns: minmax(0, 1fr) !important;
-}
-.sf-shell.collapsed .sf-settings-button span:last-child {
-  display: none;
-}
 .sf-notification-button {
   position: relative;
   width: 30px;
@@ -1741,19 +1561,6 @@ h2 {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* The workspace shell has no sidebar in any visual style. */
-.sf-shell,
-.sf-shell.collapsed,
-:root[data-style='classic'] .sf-shell,
-:root[data-style='classic'] .sf-shell.collapsed,
-:root[data-style='chrome'] .sf-shell,
-:root[data-style='chrome'] .sf-shell.collapsed {
-  grid-template-columns: minmax(0, 1fr) !important;
-}
-.sf-sidebar {
-  display: none !important;
 }
 
 /* Project Hub cards use a playing-card proportion and sit on a quiet table-like surface. */

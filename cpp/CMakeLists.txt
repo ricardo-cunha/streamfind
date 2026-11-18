@@ -229,6 +229,7 @@ set(STREAMFIND_CORE_SOURCES
     core/src/project_table_store.cpp
     core/src/data_proxy_protocol.cpp
     core/src/data_proxy_output_sink.cpp
+    core/src/result_table_schema.cpp
     core/src/service_runtime_client.cpp
     core/src/service_configuration.cpp
     core/src/service_port.cpp

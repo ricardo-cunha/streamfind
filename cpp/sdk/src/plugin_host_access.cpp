@@ -274,10 +274,10 @@ bool PluginHostAccess::is_cancelled() const noexcept {
     return host_.is_cancelled != nullptr && host_.is_cancelled(execution_context_, host_.user_data) != 0;
 }
 
-void PluginHostAccess::read_typed_batches(const std::string &table_name,
-    const std::vector<std::string> &column_names, const std::string &order_by,
+void PluginHostAccess::read_typed_batches(const std::string &result_ref,
+    const std::vector<std::string> &column_names,
     const BatchCallback &callback) {
-    if (table_name.empty() || column_names.empty() || order_by.empty() || !callback)
+    if (result_ref.empty() || column_names.empty() || !callback)
         throw std::invalid_argument("invalid dynamic batch read request");
     std::vector<const char *> names;
     names.reserve(column_names.size());
@@ -287,8 +287,8 @@ void PluginHostAccess::read_typed_batches(const std::string &table_name,
     }
     if (is_cancelled()) return;
     detail::TypedReadBatch batch{callback, {}};
-    const auto status = host_.read_batch(execution_context_, table_name.data(),
-        static_cast<std::uint32_t>(table_name.size()), names.data(),
+    const auto status = host_.read_batch(execution_context_, result_ref.data(),
+        static_cast<std::uint32_t>(result_ref.size()), names.data(),
         static_cast<std::uint32_t>(names.size()), 0,
         std::numeric_limits<std::uint64_t>::max(), &detail::consume_typed_batch,
         &batch, host_.user_data);
@@ -297,10 +297,10 @@ void PluginHostAccess::read_typed_batches(const std::string &table_name,
         throw std::runtime_error("plugin read_batch failed with status " + std::to_string(status));
 }
 
-std::uint64_t PluginHostAccess::count_rows(const std::string &table_name) {
+std::uint64_t PluginHostAccess::count_rows(const std::string &result_ref) {
     std::uint64_t row_count = 0;
-    const auto status = host_.count_rows(execution_context_, table_name.data(),
-        static_cast<uint32_t>(table_name.size()), &row_count, host_.user_data);
+    const auto status = host_.count_rows(execution_context_, result_ref.data(),
+        static_cast<uint32_t>(result_ref.size()), &row_count, host_.user_data);
     if (status != STREAMFIND_PLUGIN_OK)
         throw std::runtime_error("plugin count_rows failed with status " + std::to_string(status));
     return row_count;
@@ -337,12 +337,12 @@ void PluginHostAccess::report_progress(double fraction, std::string_view message
     if (status != STREAMFIND_PLUGIN_OK) throw std::runtime_error("plugin progress reporting failed");
 }
 
-void PluginHostAccess::require_table(const std::string &table_name) {
+void PluginHostAccess::require_table(const std::string &result_ref) {
     uint8_t exists = 0;
-    const auto status = host_.has_table(execution_context_, table_name.data(),
-        static_cast<uint32_t>(table_name.size()), &exists, host_.user_data);
+    const auto status = host_.has_table(execution_context_, result_ref.data(),
+        static_cast<uint32_t>(result_ref.size()), &exists, host_.user_data);
     if (status != STREAMFIND_PLUGIN_OK || exists == 0)
-        throw std::runtime_error("plugin table is unavailable: " + table_name);
+        throw std::runtime_error("published Arrow result is unavailable: " + result_ref);
 }
 
 }  // namespace streamfind::sdk

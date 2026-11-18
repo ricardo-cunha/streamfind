@@ -1,4 +1,5 @@
 #include "streamfind/service/result_store.hpp"
+#include "streamfind/result_table_schema.hpp"
 #include "streamfind/data_proxy_protocol.hpp"
 
 #include <algorithm>
@@ -355,44 +356,78 @@ Json ResultStore::read_json_file(const std::filesystem::path &path) {
     return value;
 }
 
-ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
+ResultStoreInspection ResultStore::inspect(bool verify_payloads, bool calculate_size) const {
     ResultStoreInspection result;
     result.root = root_;
     const auto manifest = root_ / "store.json";
     std::error_code error;
-    if (!std::filesystem::exists(root_, error) || !std::filesystem::exists(manifest, error)) {
+    const bool root_exists = std::filesystem::exists(detail::storage_path(root_), error);
+    if (error) {
+        result.status = ResultStoreStatus::invalid;
+        result.error = "cannot inspect result-store path " + root_.string() + ": " + error.message();
+        return result;
+    }
+    if (!root_exists) {
         result.status = ResultStoreStatus::missing;
         return result;
     }
+    if (!std::filesystem::is_directory(detail::storage_path(root_), error) || error) {
+        result.status = ResultStoreStatus::invalid;
+        result.error = error ? "cannot inspect result-store directory " + root_.string() + ": " + error.message()
+                             : "result-store path is not a directory: " + root_.string();
+        return result;
+    }
+    error.clear();
+    const bool manifest_exists = std::filesystem::exists(detail::storage_path(manifest), error);
+    if (error) {
+        result.status = ResultStoreStatus::invalid;
+        result.error = "cannot inspect result-store manifest " + manifest.string() + ": " + error.message();
+        return result;
+    }
+    if (!manifest_exists) {
+        result.status = ResultStoreStatus::missing;
+        return result;
+    }
+    if (!std::filesystem::is_regular_file(detail::storage_path(manifest), error) || error) {
+        result.status = ResultStoreStatus::invalid;
+        result.error = error ? "cannot inspect result-store manifest " + manifest.string() + ": " + error.message()
+                             : "result-store manifest path is not a file: " + manifest.string();
+        return result;
+    }
     try {
-        // Results are immutable, but cleanup may remove a result directory
-        // while an inventory/allocate path is inspecting the store. Use the
-        // error-code iterator overloads and treat a vanished entry as a normal
-        // concurrent delete instead of turning a healthy store into invalid.
-        error.clear();
-        for (std::filesystem::recursive_directory_iterator iterator(
-                 detail::enumeration_path(root_), std::filesystem::directory_options::skip_permission_denied, error), end;
-             iterator != end;) {
-            if (error) {
-                if (error == std::errc::no_such_file_or_directory ||
-                    error == std::errc::not_a_directory) {
-                    error.clear();
-                    continue;
-                }
-                break;
-            }
-            const auto path = iterator->path();
+        if (calculate_size) {
+            // Results are immutable, but cleanup may remove a result directory
+            // while an inventory/allocate path is inspecting the store. Use the
+            // error-code iterator overloads and treat a vanished entry as a normal
+            // concurrent delete instead of turning a healthy store into invalid.
             error.clear();
-            if (std::filesystem::is_regular_file(path, error) && !error) {
-                try {
-                    result.size_bytes += detail::payload_size(path);
-                } catch (...) {
-                    // Size accounting is advisory; a transiently removed or
-                    // inaccessible entry must not invalidate the store.
+            for (std::filesystem::recursive_directory_iterator iterator(
+                     detail::enumeration_path(root_), std::filesystem::directory_options::none, error), end;
+                 iterator != end;) {
+                if (error) {
+                    if (error == std::errc::no_such_file_or_directory ||
+                        error == std::errc::not_a_directory) {
+                        error.clear();
+                        continue;
+                    }
+                    break;
                 }
+                const auto path = iterator->path();
+                error.clear();
+                if (std::filesystem::is_regular_file(path, error) && !error) {
+                    try {
+                        result.size_bytes += detail::payload_size(path);
+                    } catch (...) {
+                        // Size accounting is advisory; a transiently removed or
+                        // inaccessible entry must not invalidate the store.
+                    }
+                }
+                error.clear();
+                iterator.increment(error);
             }
-            error.clear();
-            iterator.increment(error);
+            if (error && error != std::errc::no_such_file_or_directory &&
+                error != std::errc::not_a_directory)
+                throw std::runtime_error("cannot enumerate result-store files: " + error.message());
         }
         const auto value = read_json_file(manifest);
         if (value.value("layout_version", std::string{}) != kLayoutVersion ||
@@ -411,9 +446,11 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
         const auto results = detail::enumeration_path(root_ / "results");
         std::vector<std::string> invalid_result_ids;
         error.clear();
-        if (std::filesystem::exists(results, error) && !error) {
+        const bool results_exist = std::filesystem::exists(results, error);
+        if (error) throw std::runtime_error("cannot inspect result directory: " + error.message());
+        if (results_exist) {
             for (std::filesystem::directory_iterator iterator(
-                     results, std::filesystem::directory_options::skip_permission_denied, error), end;
+                     results, std::filesystem::directory_options::none, error), end;
                  iterator != end;) {
                 if (error) {
                     if (error == std::errc::no_such_file_or_directory ||
@@ -426,6 +463,9 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                 const auto result_directory = iterator->path();
                 error.clear();
                 const bool is_directory = std::filesystem::is_directory(result_directory, error);
+                if (error && error != std::errc::no_such_file_or_directory)
+                    throw std::runtime_error("cannot inspect result entry " + result_directory.string() +
+                                             ": " + error.message());
                 error.clear();
                 iterator.increment(error);
                 if (!is_directory || error == std::errc::no_such_file_or_directory) {
@@ -446,7 +486,12 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     std::string payload_error;
                     if (payload_exists) {
                         try {
-                            actual_size = detail::payload_size(native_payload_path);
+                            if (verify_payloads || calculate_size) {
+                                actual_size = detail::payload_size(native_payload_path);
+                            } else if (!std::filesystem::is_regular_file(native_payload_path)) {
+                                payload_exists = false;
+                                payload_error = "payload is not a regular file";
+                            }
                         } catch (const std::exception &exception) {
                             payload_exists = false;
                             payload_error = exception.what();
@@ -457,7 +502,7 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     const auto valid = manifest.value("state", std::string{}) == "published" && payload_exists &&
                         (verify_payloads
                             ? (declared_size == actual_size && manifest.value("payload_digest", std::string{}) == digest)
-                            : (declared_size == 0 || declared_size == actual_size));
+                            : (!calculate_size || declared_size == 0 || declared_size == actual_size));
                     if (!valid) {
                         ++result.invalid_count;
                         if (invalid_result_ids.size() < 3) {
@@ -482,12 +527,17 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     error.clear();
                 }
             }
+            if (error && error != std::errc::no_such_file_or_directory &&
+                error != std::errc::not_a_directory)
+                throw std::runtime_error("cannot enumerate result directory: " + error.message());
         }
         const auto runs = detail::enumeration_path(root_ / "runs");
         error.clear();
-        if (std::filesystem::exists(runs, error) && !error) {
+        const bool runs_exist = std::filesystem::exists(runs, error);
+        if (error) throw std::runtime_error("cannot inspect result runs directory: " + error.message());
+        if (runs_exist) {
             for (std::filesystem::directory_iterator iterator(
-                     runs, std::filesystem::directory_options::skip_permission_denied, error), end;
+                     runs, std::filesystem::directory_options::none, error), end;
                  iterator != end;) {
                 if (error) {
                     if (error == std::errc::no_such_file_or_directory ||
@@ -498,10 +548,16 @@ ResultStoreInspection ResultStore::inspect(bool verify_payloads) const {
                     break;
                 }
                 error.clear();
-                if (iterator->is_directory(error) && !error) ++result.staging_run_count;
+                const bool is_directory = iterator->is_directory(error);
+                if (error && error != std::errc::no_such_file_or_directory)
+                    throw std::runtime_error("cannot inspect result run entry: " + error.message());
+                if (is_directory && !error) ++result.staging_run_count;
                 error.clear();
                 iterator.increment(error);
             }
+            if (error && error != std::errc::no_such_file_or_directory &&
+                error != std::errc::not_a_directory)
+                throw std::runtime_error("cannot enumerate result runs directory: " + error.message());
         }
         result.status = result.invalid_count == 0 ? ResultStoreStatus::ready : ResultStoreStatus::invalid;
         if (result.invalid_count != 0) {
@@ -593,7 +649,10 @@ Json ResultStore::find_cached_result(const std::string &computation_key) const {
 
 Json ResultStore::find_cached_results(const std::string &computation_key) const {
     if (computation_key.empty()) throw std::invalid_argument("computation_key must not be empty");
-    const auto inspection = inspect();
+    // Cache lookup validates only the candidate payloads below. A full store
+    // inspection with payload verification would hash every published result
+    // here, then hash each matching candidate a second time.
+    const auto inspection = inspect(false, false);
     if (inspection.status != ResultStoreStatus::ready) return Json::array();
 
     Json matches = Json::array();
@@ -631,7 +690,7 @@ Json ResultStore::find_cached_results(const std::string &computation_key) const 
 }
 
 std::size_t ResultStore::clear_cache() const {
-    const auto inspection = inspect(false);
+    const auto inspection = inspect(false, false);
     if (inspection.status != ResultStoreStatus::ready)
         throw std::runtime_error("cannot clear result cache: result store is not ready");
 
@@ -679,6 +738,17 @@ void ResultStore::remove_published_results(const std::vector<std::string> &resul
     }
 }
 
+std::size_t ResultStore::remove_published_results_for_run(const std::string &run_id) const {
+    require_component(run_id, "run_id");
+    std::vector<std::string> result_ids;
+    for (const auto &manifest : published_results()) {
+        if (manifest.value("run_id", std::string{}) == run_id)
+            result_ids.push_back(manifest.value("result_id", std::string{}));
+    }
+    remove_published_results(result_ids);
+    return result_ids.size();
+}
+
 Json ResultStore::describe_result(const std::string &result_id) const {
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("kind", std::string{}) == "table" &&
@@ -688,7 +758,7 @@ Json ResultStore::describe_result(const std::string &result_id) const {
     descriptor.erase("payload");
     descriptor["payload_ref"] = "result:" + result_id;
     descriptor["capabilities"] = {"describe", "read_range"};
-    if (descriptor.value("format", std::string{}) == "parquet" ||
+    if (descriptor.value("kind", std::string{}) == "table" &&
         descriptor.value("format", std::string{}) == "arrow-ipc-file")
         descriptor["capabilities"].push_back("read_batches");
     return descriptor;
@@ -1313,7 +1383,11 @@ ResultLease ResultStore::allocate(const std::string &run_id,
     require_component(format, "format");
     if (format == "arrow-ipc-file" && extension != "arrow")
         throw std::invalid_argument("Arrow IPC table results must use the .arrow payload extension");
-    const auto inspection = inspect();
+    // Allocating a new result validates store identity, manifests, and payload
+    // file presence without measuring or reading unrelated payloads. Digests
+    // are checked before cache reuse, avoiding a full-store content scan for
+    // every output allocation.
+    const auto inspection = inspect(false, false);
     if (inspection.status != ResultStoreStatus::ready)
         throw std::runtime_error("result store is not ready: " + inspection.error);
 
@@ -1398,16 +1472,14 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
         if (metadata.value("row_count", std::uint64_t{0}) != rows)
             throw std::runtime_error("Arrow result row count does not match its publication metadata");
         const auto declared_schema = metadata.value("schema", Json::array());
-        if (declared_schema.is_array() && !declared_schema.empty()) {
-            if (declared_schema.size() != static_cast<std::size_t>(reader->schema()->num_fields()))
-                throw std::runtime_error("Arrow result schema does not match its declared output schema");
-            for (const auto &field : reader->schema()->fields()) {
-                const auto declared = std::find_if(declared_schema.begin(), declared_schema.end(),
-                    [&](const Json &column) { return column.value("name", std::string{}) == field->name(); });
-                if (declared == declared_schema.end())
-                    throw std::runtime_error("Arrow result contains a column outside its declared output schema");
-            }
+        std::shared_ptr<arrow::Schema> expected_schema;
+        try {
+            expected_schema = result_table_arrow_schema(declared_schema);
+        } catch (const std::exception &error) {
+            throw std::runtime_error(std::string("Arrow result has an invalid declared schema: ") + error.what());
         }
+        if (!reader->schema()->Equals(*expected_schema, false))
+            throw std::runtime_error("Arrow result physical schema does not match its declared column order and types");
     }
     std::uintmax_t payload_size = 0;
     const auto payload_digest_value = detail::payload_digest(native_staging_payload, payload_size);

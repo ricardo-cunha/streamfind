@@ -10,7 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { StreamFindApiClient, type ResultRecord, type ProjectSession } from '../framework/backend/StreamFindApiClient';
-import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
+import type { JsonValue, StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
 import { LoadingLogo } from '../framework/ui/LoadingLogo';
 
 import { PathFileManager } from './PathFileManager';
@@ -234,6 +234,8 @@ export default function CanvasShell({
   const [artifactViewer, setArtifactViewer] = useState<ResultRecord | null>(null);
   const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'default'>('default');
   const [artifactViewerId, setArtifactViewerId] = useState<string | null>(null);
+  const [artifactPayload, setArtifactPayload] = useState<JsonValue | undefined>(undefined);
+  const [artifactPayloadError, setArtifactPayloadError] = useState<string | null>(null);
   const [hoveredOutputAnchor, setHoveredOutputAnchor] = useState<string | null>(null);
   const outputHoverTimeoutRef = useRef<number | null>(null);
 
@@ -245,6 +247,8 @@ export default function CanvasShell({
     setArtifactViewer(artifact);
     setArtifactViewerMode(mode);
     setArtifactViewerId(viewerId);
+    setArtifactPayload(artifact.payload);
+    setArtifactPayloadError(null);
   };
   const openDefaultArtifactViewer = (artifact: ResultRecord) => {
     const defaultViewer = compatibleArtifactViewers({
@@ -253,6 +257,28 @@ export default function CanvasShell({
     })[0];
     openArtifactViewer(artifact, 'default', defaultViewer?.id ?? null);
   };
+
+  useEffect(() => {
+    if (!artifactViewer || artifactViewer.representation !== 'json' || artifactViewer.payload !== undefined) return;
+    if (!client) {
+      setArtifactPayloadError('The result payload cannot be loaded because no service client is available.');
+      return;
+    }
+    let active = true;
+    setArtifactPayloadError(null);
+    void client
+      .resultPayload(project.session_id, artifactViewer.result_id)
+      .then((payload) => {
+        if (active) setArtifactPayload(payload);
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setArtifactPayloadError(error instanceof Error ? error.message : 'The result payload could not be loaded.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [artifactViewer, client, project.session_id]);
   const showOutputRendererMenu = (key: string) => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
     setHoveredOutputAnchor(key);
@@ -3713,7 +3739,11 @@ export default function CanvasShell({
       ) : null}
       {artifactViewer ? (
         <ArtifactViewerHost
-          artifact={artifactViewer}
+          artifact={
+            artifactViewer.representation === 'json' && artifactPayload !== undefined
+              ? { ...artifactViewer, payload: artifactPayload }
+              : artifactViewer
+          }
           sessionId={project.session_id}
           viewerId={artifactViewerId ?? undefined}
           mode={artifactViewerMode}
@@ -3726,7 +3756,17 @@ export default function CanvasShell({
                 : 'json'
           }
           onClose={() => setArtifactViewer(null)}
-          fallback={<pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>}
+          fallback={
+            artifactViewer.representation === 'json' && artifactViewer.payload === undefined ? (
+              <div className="sf-artifact-viewer-json" role={artifactPayloadError ? 'alert' : 'status'}>
+                {artifactPayloadError ?? 'Loading result…'}
+              </div>
+            ) : (
+              <pre className="sf-artifact-viewer-json">
+                {prettyArtifactPayload(artifactPayload ?? artifactViewer.payload)}
+              </pre>
+            )
+          }
         />
       ) : null}
     </div>

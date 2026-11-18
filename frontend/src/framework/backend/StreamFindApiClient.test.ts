@@ -155,4 +155,27 @@ describe('StreamFindApiClient capability discovery', () => {
     expect(result.mode).toBe('sample');
     expect(result.total_rows).toBe(1000000);
   });
+
+  it('loads a selected JSON payload without parsing string values', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ result_id: 'json-1', payload: '42' }));
+
+    await expect(new StreamFindApiClient('http://service').resultPayload('session-1', 'json-1')).resolves.toBe('42');
+    expect(fetchMock).toHaveBeenCalledWith('http://service/projects/session-1/results/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result_id: 'json-1' }),
+    });
+  });
+
+  it('preserves explicit JSON null and rejects a mismatched result payload', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({ result_id: 'json-1', payload: null }))
+      .mockResolvedValueOnce(response({ result_id: 'other', payload: {} }));
+    const client = new StreamFindApiClient('http://service');
+
+    await expect(client.resultPayload('session-1', 'json-1')).resolves.toBeNull();
+    await expect(client.resultPayload('session-1', 'json-1')).rejects.toThrow(
+      'Result payload response did not match the requested result',
+    );
+  });
 });

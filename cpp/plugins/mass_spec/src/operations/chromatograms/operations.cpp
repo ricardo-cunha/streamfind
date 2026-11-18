@@ -90,8 +90,7 @@ namespace streamfind::mass_spec::chromatograms
             PointGroups groups;
             std::map<std::string, std::size_t> analysis_indices;
             std::size_t next_analysis_index = 0;
-            access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns,
-                                      "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
                 const auto analysis_col = batch.column_index("analysis");
                 const auto index_col = batch.column_index("index");
                 const auto intensity_col = batch.column_index("intensity");
@@ -123,8 +122,7 @@ namespace streamfind::mass_spec::chromatograms
             PeakInputs result;
             std::map<std::string, std::size_t> analysis_indices;
             std::size_t next_analysis_index = 0;
-            access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns,
-                "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
                     const auto analysis_col = batch.column_index("analysis");
                     const auto index_col = batch.column_index("index");
                     const auto id_col = batch.column_index("chromatogram_id");
@@ -190,8 +188,7 @@ namespace streamfind::mass_spec::chromatograms
             std::map<std::string, std::size_t> analysis_indices;
             std::map<PointKey, std::size_t> offsets;
             std::size_t next_analysis_index = 0;
-            access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns,
-                                      "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
                 const auto analysis_col = batch.column_index("analysis");
                 const auto index_col = batch.column_index("index");
                 for (std::uint64_t row = 0; row < batch.row_count(); ++row)
@@ -367,8 +364,7 @@ namespace streamfind::mass_spec::chromatograms
         auto output = point_builder();
         std::map<std::string, std::size_t> analysis_indices;
         std::size_t next_analysis_index = 0;
-        access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns,
-            "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+        access.read_typed_batches(base::utils::input_table(parameters, "chromatogramsTable"), point_columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
                 const auto analysis_col = batch.column_index("analysis");
                 const auto rt_col = batch.column_index("rt");
                 for (std::uint64_t row = 0; row < batch.row_count(); ++row)
@@ -546,7 +542,7 @@ namespace streamfind::mass_spec::chromatograms
         std::map<std::string, std::size_t> analysis_indices;
         std::size_t next_analysis_index = 0;
         std::size_t emitted = 0;
-        access.read_typed_batches(table, point_columns, "analysis", [&](const auto &batch) {
+        access.read_typed_batches(table, point_columns, [&](const auto &batch) {
             std::vector<sdk::TableBatchBuilder::Column> schema;
             schema.reserve(point_columns.size());
             for (std::uint32_t column = 0; column < batch.column_count(); ++column)
@@ -586,7 +582,7 @@ namespace streamfind::mass_spec::chromatograms
         std::map<std::string, std::size_t> analysis_indices;
         std::size_t next_analysis_index = 0;
         std::size_t emitted = 0;
-        access.read_typed_batches(table, utils::peak_columns(), "analysis", [&](const auto &batch) {
+        access.read_typed_batches(table, utils::peak_columns(), [&](const auto &batch) {
             std::vector<sdk::TableBatchBuilder::Column> schema;
             schema.reserve(utils::peak_columns().size());
             for (std::uint32_t column = 0; column < batch.column_count(); ++column)

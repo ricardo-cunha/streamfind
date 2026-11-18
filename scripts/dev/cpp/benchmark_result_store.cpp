@@ -74,7 +74,8 @@ namespace streamfind::dev
                 Json::object(), [this] { return duplicate_writer(); }) {}
 
         Json write(const std::string &result_name, const Json &schema,
-                   const std::function<void(const std::string &)> &write_batches)
+                   const std::function<void(const std::string &)> &write_batches,
+                   const Json &metadata = Json::object())
         {
             const auto output = sink_.begin({
                 {"contract_id", result_name}, {"output_port", result_name},
@@ -84,7 +85,7 @@ namespace streamfind::dev
                 {"schema", schema}});
             const auto handle = output.at("output_handle").get<std::string>();
             write_batches(handle);
-            return sink_.finish(handle);
+            return sink_.finish(handle, metadata);
         }
 
         void write_batch(const std::string &handle, std::uint64_t sequence,
@@ -163,6 +164,20 @@ namespace streamfind::dev
             {"warm_median_us", warm_times[warm_times.size() / 2]},
             {"rows_returned", cold.at("rows").size()}, {"response_json_bytes", response_bytes}}
             .dump() << '\n';
+    }
+
+    template <typename Action>
+    std::int64_t median_latency_us(Action action)
+    {
+        std::vector<std::int64_t> samples;
+        for (int repeat = 0; repeat < 5; ++repeat) {
+            const auto start = Clock::now();
+            action();
+            samples.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
+                Clock::now() - start).count());
+        }
+        std::sort(samples.begin(), samples.end());
+        return samples[samples.size() / 2];
     }
 
 std::shared_ptr<arrow::RecordBatch> make_table_batch(
@@ -287,6 +302,50 @@ int main()
             {"payload_bytes", trace_descriptor.at("payload_size")},
             {"eic_points", trace_points}, {"ms2_peaks", ms2_points},
             {"working_set_bytes", streamfind::dev::working_set_bytes()}}.dump() << '\n';
+
+        constexpr std::size_t small_result_count = 64;
+        const auto small_schema = Json::array({
+            {{"name", "row_key"}, {"type", "string"}},
+            {{"name", "payload"}, {"type", "string"}}});
+        Json target_metadata{{"cacheable", true}, {"computation_key", "benchmark-selected-cache-candidate"}};
+        for (std::size_t index = 0; index < small_result_count; ++index) {
+            const auto name = "smallTable" + std::to_string(index);
+            (void)output.write(name, small_schema, [&](const std::string &handle) {
+                output.write_batch(handle, 0, streamfind::dev::make_table_batch(
+                    index, 1, std::string(128, static_cast<char>('a' + (index % 26)))));
+            }, index == 0 ? target_metadata : Json::object());
+        }
+        const auto metadata_inventory_us = streamfind::dev::median_latency_us([&] {
+            (void)store.inspect(false, false);
+        });
+        const auto full_validation_us = streamfind::dev::median_latency_us([&] {
+            (void)store.inspect(true, true);
+        });
+        const auto cache_candidate_us = streamfind::dev::median_latency_us([&] {
+            const auto candidates = store.find_cached_results("benchmark-selected-cache-candidate");
+            if (candidates.size() != 1)
+                throw std::runtime_error("selected cache candidate was not reusable");
+        });
+        const auto allocation_cleanup_us = streamfind::dev::median_latency_us([&] {
+            const auto sequence = std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count());
+            auto lease = store.allocate("benchmark-allocation-run", "allocation-" + sequence, "binary", "bin");
+            store.abort(lease);
+        });
+        const auto small_descriptor = store.published_results();
+        std::uint64_t all_payload_bytes = 0;
+        for (const auto &descriptor : small_descriptor)
+            all_payload_bytes += descriptor.value("payload_size", std::uint64_t{0});
+        const auto target = store.find_cached_results("benchmark-selected-cache-candidate").front();
+        const auto candidate_bytes = target.value("payload_size", std::uint64_t{0});
+        std::cout << Json{{"benchmark", "metadata and cache work across many results"},
+            {"result_count", small_descriptor.size()}, {"all_published_payload_bytes", all_payload_bytes},
+            {"selected_cache_candidate_payload_bytes", candidate_bytes},
+            {"metadata_inventory_median_us", metadata_inventory_us},
+            {"full_integrity_and_size_scan_median_us", full_validation_us},
+            {"selected_cache_candidate_lookup_median_us", cache_candidate_us},
+            {"small_output_allocate_abort_median_us", allocation_cleanup_us}}
+            .dump() << '\n';
 
         store.remove_published_results({table_id, trace_id});
         fs::remove_all(data_root, error);

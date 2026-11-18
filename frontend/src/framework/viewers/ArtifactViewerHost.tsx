@@ -47,7 +47,9 @@ export function ArtifactViewerHost({
       onClose={onClose}
     >
       <ViewerErrorBoundary resultId={artifact.result_id}>
-        {viewerId || mode === 'table' || artifact.representation === 'table' ? (
+        {artifact.representation === 'json' && artifact.payload === undefined ? (
+          fallback
+        ) : viewerId || mode === 'table' || artifact.representation === 'table' ? (
           <ViewerResolver viewerId={viewerId} context={context} fallback={fallback} />
         ) : (
           fallback

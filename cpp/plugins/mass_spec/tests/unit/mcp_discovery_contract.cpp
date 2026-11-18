@@ -18,6 +18,7 @@
 #endif
 
 #include "streamfind/mcp.hpp"
+#include "streamfind/service_runtime_client.hpp"
 #include "../../../../core/tests/support/tmp_projects.hpp"
 
 namespace streamfind::mcp_test_detail {
@@ -46,13 +47,14 @@ public:
         std::filesystem::create_directories(runtime_root_, error);
         if (error) throw std::runtime_error("cannot create isolated service runtime: " + error.message());
         save_and_set("STREAMFIND_SERVICE_ENDPOINT", "http://127.0.0.1:18787");
+        save_and_set("STREAMFIND_RUNTIME_DIR", (runtime_root_ / "runtime").string());
 #ifdef _WIN32
         save_and_set("LOCALAPPDATA", runtime_root_.string());
 #else
         save_and_set("XDG_RUNTIME_DIR", runtime_root_.string());
 #endif
         start(executable);
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        wait_until_ready();
     }
 
     ServiceGuard(const ServiceGuard &) = delete;
@@ -61,6 +63,7 @@ public:
     ~ServiceGuard() {
         stop();
         restore("STREAMFIND_SERVICE_ENDPOINT");
+        restore("STREAMFIND_RUNTIME_DIR");
 #ifdef _WIN32
         restore("LOCALAPPDATA");
 #else
@@ -121,6 +124,22 @@ private:
             _exit(127);
         }
 #endif
+    }
+
+    void wait_until_ready() {
+        constexpr auto attempts = 100;
+        for (int attempt = 0; attempt < attempts; ++attempt) {
+            try {
+                for (const auto &service : streamfind::service::list_services()) {
+                    if (service.value("endpoint", std::string{}) == "http://127.0.0.1:18787" &&
+                        service.value("health", std::string{}) == "healthy")
+                        return;
+                }
+            } catch (...) {
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        throw std::runtime_error("service test process did not become healthy at http://127.0.0.1:18787");
     }
 
     void stop() noexcept {

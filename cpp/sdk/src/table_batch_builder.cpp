@@ -251,6 +251,7 @@ void TableBatchBuilder::emit(PluginProjectAccess &access,
             case STREAMFIND_PLUGIN_COLUMN_FLOAT64: type = arrow::float64(); break;
             case STREAMFIND_PLUGIN_COLUMN_BOOL: type = arrow::boolean(); break;
             case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP: type = arrow::timestamp(arrow::TimeUnit::MICRO); break;
+            case STREAMFIND_PLUGIN_COLUMN_BINARY: type = arrow::binary(); break;
             default: type = arrow::utf8(); break;
             }
         }
@@ -327,6 +328,16 @@ void TableBatchBuilder::emit(PluginProjectAccess &access,
 #endif
                 if (seconds < 0) throw std::invalid_argument("typed timestamp is outside supported range");
                 require_arrow(builder.Append(static_cast<std::int64_t>(seconds) * 1000000));
+            }
+            require_arrow(builder.Finish(&output));
+        } else if (column.schema.type == STREAMFIND_PLUGIN_COLUMN_BINARY) {
+            arrow::BinaryBuilder builder;
+            for (std::uint64_t row = 0; row < row_count_; ++row) {
+                const bool valid = column.validity.empty() || (column.validity[row / 8] & (1u << (row % 8))) != 0;
+                if (!valid) { require_arrow(builder.AppendNull()); continue; }
+                const auto &value = column.strings[row];
+                require_arrow(builder.Append(reinterpret_cast<const std::uint8_t *>(value.data()),
+                                             static_cast<std::int64_t>(value.size())));
             }
             require_arrow(builder.Finish(&output));
         } else {

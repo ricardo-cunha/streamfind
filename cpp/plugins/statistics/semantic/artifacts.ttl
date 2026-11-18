@@ -11,7 +11,7 @@ sfstat:tableInputPort
     skos:prefLabel "Input table" ;
     skos:definition "Any persisted table selected as the source of a statistics matrix." ;
     sf:tableContractName "STATISTICS_ANY_TABLE_PORT" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:dynamicSchema true ;
     sf:portId "tableInput" ;
     sf:semanticContract "anyTable" .
@@ -24,7 +24,7 @@ sfstat:pcaScoresTable
     skos:prefLabel "PCA scores table" ;
     skos:definition "One row per sample and principal component, retaining sample ID and optional group label." ;
     sf:tableContractName "STATISTICS_PCA_SCORES" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:sampleIdColumn,
         sfstat:componentColumn,
@@ -39,7 +39,7 @@ sfstat:pcaLoadingsTable
     skos:prefLabel "PCA loadings table" ;
     skos:definition "One row per input variable and principal component." ;
     sf:tableContractName "STATISTICS_PCA_LOADINGS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:variableIdColumn,
         sfstat:componentColumn,
@@ -53,7 +53,7 @@ sfstat:pcaVarianceTable
     skos:prefLabel "PCA variance table" ;
     skos:definition "Eigenvalue and explained-variance summary by principal component." ;
     sf:tableContractName "STATISTICS_PCA_VARIANCE" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:componentColumn,
         sfstat:eigenvalueColumn,
@@ -68,7 +68,7 @@ sfstat:plsScoresTable
     skos:prefLabel "PLS scores table" ;
     skos:definition "One row per sample and latent component with X score, Y score, sample ID, and optional group label." ;
     sf:tableContractName "STATISTICS_PLS_SCORES" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:sampleIdColumn,
         sfstat:componentColumn,
@@ -84,7 +84,7 @@ sfstat:plsLoadingsTable
     skos:prefLabel "PLS loadings table" ;
     skos:definition "One row per X or Y block item and latent component." ;
     sf:tableContractName "STATISTICS_PLS_LOADINGS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:blockColumn,
         sfstat:itemIdColumn,
@@ -99,7 +99,7 @@ sfstat:plsCoefficientsTable
     skos:prefLabel "PLS coefficients table" ;
     skos:definition "Regression coefficient and intercept for each predictor-response pair." ;
     sf:tableContractName "STATISTICS_PLS_COEFFICIENTS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:predictorIdColumn,
         sfstat:responseIdColumn,
@@ -114,7 +114,7 @@ sfstat:plsPredictionsTable
     skos:prefLabel "PLS predictions table" ;
     skos:definition "In-sample fitted value per sample-response for regression or one predicted label and confidence per sample for PLS-DA." ;
     sf:tableContractName "STATISTICS_PLS_PREDICTIONS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:sampleIdColumn,
         sfstat:responseIdColumn,
@@ -132,7 +132,7 @@ sfstat:foldChangeTable
     skos:prefLabel "Fold-change results table" ;
     skos:definition "One row per variable with group means, directional log2 fold change, Hedges' g, Welch p-value, Benjamini-Hochberg adjusted p-value, and significance flag." ;
     sf:tableContractName "STATISTICS_FOLD_CHANGE" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:variableIdColumn,
         sfstat:meanGroupAColumn,

@@ -53,8 +53,9 @@ private:
         std::uint64_t row_count{0};
         std::intptr_t writer{-1};
         std::unique_ptr<output_detail::ArrowFileWriter> arrow_writer;
-        Json schema{Json::array()};
-        Json navigation_columns{Json::array()};
+        Json schema = Json::array();
+        Json descriptor_metadata = Json::object();
+        Json navigation_columns = Json::array();
         std::string contract_id;
         std::string output_port;
         std::string result_name;
@@ -72,7 +73,7 @@ private:
     std::string run_id_;
     std::string operation_id_;
     std::string operation_instance_;
-    Json navigation_columns_by_contract_{Json::object()};
+    Json navigation_columns_by_contract_ = Json::object();
     ReceiveWriter receive_writer_;
     std::unordered_map<std::string, Lease> leases_;
 };

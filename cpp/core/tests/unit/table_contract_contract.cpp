@@ -1,57 +1,116 @@
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
 #include "streamfind/catalogue.hpp"
 #include "streamfind/core_operations.hpp"
 #include "streamfind/project.hpp"
-#include "streamfind/project_table_store.hpp"
-#include "../support/tmp_projects.hpp"
+
+namespace streamfind::table_contract_test_detail {
+
+class BindingOutputSink final : public streamfind::OperationOutputSink {
+public:
+    int begin_calls{0};
+
+    streamfind::Json begin(const streamfind::Json &) override {
+        ++begin_calls;
+        throw std::runtime_error("binding validation must finish before output allocation");
+    }
+    void write(const std::string &, std::uint64_t,
+               const std::vector<unsigned char> &) override {
+        throw std::runtime_error("unexpected output write");
+    }
+    streamfind::Json finish(const std::string &, const streamfind::Json &) override {
+        throw std::runtime_error("unexpected output finish");
+    }
+    void abort(const std::string &, const std::string &) override {}
+};
+
+class BindingExecutionContext final : public streamfind::OperationExecutionContext {
+public:
+    explicit BindingExecutionContext(streamfind::Json descriptors)
+        : descriptors_(std::move(descriptors)) {}
+
+    std::string operation_instance() const override { return "column-binding-contract"; }
+    int workflow_revision() const override { return 1; }
+    streamfind::Json query(std::string_view) override { throw std::runtime_error("unexpected query"); }
+    void execute(std::string_view) override { throw std::runtime_error("unexpected execute"); }
+    void log(std::string_view) override {}
+    streamfind::Json resolve_inputs(const streamfind::Json &inputs) override { return inputs; }
+    streamfind::Json request_data(const streamfind::data_proxy::Envelope &request) override {
+        ++descriptor_requests;
+        const auto result_id = request.payload.value("result_id", std::string{});
+        const auto found = descriptors_.find(result_id);
+        if (request.payload.value("method", std::string{}) != "describe_result" ||
+            found == descriptors_.end())
+            throw std::runtime_error("unexpected result-store request");
+        return streamfind::data_proxy::response(request, found.value()).to_json();
+    }
+    std::string data_proxy_session_id() const override { return "contract-session"; }
+    std::string data_proxy_run_id() const override { return "contract-run"; }
+    bool has_output_sink() const override { return true; }
+    std::string computation_key() const override { return {}; }
+    streamfind::OperationOutputSink &outputs() override { return sink; }
+    void report_progress(double, std::string_view) override {}
+    void report_event(std::string_view, const streamfind::Json &) override {}
+    bool cancellation_requested() const override { return false; }
+
+    int descriptor_requests{0};
+    BindingOutputSink sink;
+
+private:
+    streamfind::Json descriptors_;
+};
+
+void require_binding_rejected(const streamfind::Operation &binding,
+                              const streamfind::Json &descriptors,
+                              const std::string &message_fragment) {
+    BindingExecutionContext context(descriptors);
+    bool rejected = false;
+    std::string diagnostic;
+    try {
+        binding.run_context(context, streamfind::Json::object(), "3", {
+            {"leftTable", {{"result_id", "left"}, {"output_port_id", "anyTable"}}},
+            {"rightTable", {{"result_id", "right"}, {"output_port_id", "anyTable"}}}
+        });
+    } catch (const std::exception &error) {
+        diagnostic = error.what();
+        rejected = diagnostic.find(message_fragment) != std::string::npos;
+    }
+    if (!rejected)
+        throw std::runtime_error("column binding did not reject invalid Arrow table inputs: " + message_fragment +
+                                 "; observed: " + diagnostic);
+    if (context.sink.begin_calls != 0)
+        throw std::runtime_error("column binding allocated an output before validating its input schemas");
+}
+
+streamfind::Json table_descriptor(std::uint64_t row_count,
+                                  std::initializer_list<std::string> column_names) {
+    streamfind::Json schema = streamfind::Json::array();
+    for (const auto &name : column_names)
+        schema.push_back({{"name", name}, {"type", "string"}});
+    return {{"state", "published"}, {"kind", "table"}, {"format", "arrow-ipc-file"},
+            {"row_count", row_count}, {"schema", std::move(schema)}};
+}
+
+} // namespace streamfind::table_contract_test_detail
 
 int main()
 {
     try
     {
-        const auto path = streamfind::test::tmp_projects_dir() / "table_contract_contract.duckdb";
-        std::error_code error;
-        std::filesystem::remove(path, error);
+        streamfind::ParameterDefinition optional_table_parameter;
+        optional_table_parameter.name = "optional_table";
+        optional_table_parameter.type.kind = streamfind::ParameterType::table;
+        optional_table_parameter.required = false;
+        streamfind::ParameterSchema optional_table_schema;
+        optional_table_schema.definitions.push_back(optional_table_parameter);
+        if (!optional_table_schema.resolve_and_validate(streamfind::Json::object()).empty())
+            throw std::runtime_error("omitted optional table parameter was materialized as a default value");
 
-        streamfind::TableSchema schema;
-        schema.columns = {
-            {"id", "Identifier", streamfind::ParameterType::integer, true},
-            {"signal", "Signal", streamfind::ParameterType::real, true},
-        };
-        streamfind::StaticTableContract static_contract("featuresTable", "FEATURES", schema);
-        streamfind::DynamicTableContract dynamic_contract("anyTable", "DYNAMIC", {
-            {"id", "INTEGER", streamfind::ParameterType::integer, false, streamfind::Json::object()},
-            {"signal", "DOUBLE", streamfind::ParameterType::real, true, streamfind::Json::object()},
-        });
-
-        if (dynamic_contract.kind() != streamfind::TableContract::Kind::dynamic_schema ||
-            static_contract.kind() != streamfind::TableContract::Kind::static_schema ||
-            dynamic_contract.columns().size() != 2)
-            throw std::runtime_error("table contract kinds or columns are incorrect");
-        if (!dynamic_contract.accepts(static_contract) || static_contract.accepts(dynamic_contract))
-            throw std::runtime_error("static and dynamic contract direction is incorrect");
-        if (!streamfind::table_contracts_compatible("featuresTable", "anyTable", "duckdb_table", "duckdb_table") ||
-            !streamfind::table_contracts_compatible("anyTable", "featuresTable", "duckdb_table", "duckdb_table") ||
-            streamfind::table_contracts_compatible("featuresTable", "anyTable", "json", "duckdb_table"))
+        if (!streamfind::table_contracts_compatible("featuresTable", "anyTable", "table", "table") ||
+            !streamfind::table_contracts_compatible("anyTable", "featuresTable", "table", "table") ||
+            streamfind::table_contracts_compatible("featuresTable", "anyTable", "json", "table"))
             throw std::runtime_error("central compatibility rule is incorrect");
-
-        streamfind::Project project = streamfind::Project::create({path, {}});
-        project.execute_sql("CREATE TABLE RUNTIME_TABLE (id INTEGER NOT NULL, signal DOUBLE, label VARCHAR)");
-        project.execute_sql("INSERT INTO RUNTIME_TABLE VALUES (1, 1.25, 'first')");
-        const auto inspected = streamfind::inspect_dynamic_table_contract(project, "RUNTIME_TABLE");
-        if (inspected.columns().size() != 3 || inspected.columns().at(0).name != "id" ||
-            inspected.columns().at(0).type != streamfind::ParameterType::integer ||
-            inspected.columns().at(1).type != streamfind::ParameterType::real ||
-            inspected.columns().at(2).type != streamfind::ParameterType::string ||
-            inspected.columns().at(0).nullable)
-            throw std::runtime_error("runtime DuckDB schema was not resolved correctly");
-        const auto serialized = inspected.to_json();
-        if (serialized.value("kind", "") != "dynamic" || serialized.at("columns").size() != 3)
-            throw std::runtime_error("runtime contract serialization is incorrect");
 
         const auto entries = streamfind::catalogue::load(STREAMFIND_CATALOGUE_PATH);
         if (!entries)
@@ -62,96 +121,28 @@ int main()
         if (!writer || writer->definition().input_ports.size() != 1 ||
             writer->definition().input_ports.front().semantic_contract != "anyTable")
             throw std::runtime_error("CSV writer does not expose the AnyTable contract");
-
-        const auto csv_path = streamfind::test::tmp_projects_dir() / "table_contract_export.csv";
-        std::filesystem::remove(csv_path, error);
-        bool physical_table_rejected = false;
-        try {
-            writer->run_workflow(project, {{"csv_path", csv_path.string()}}, "csv-writer", {
-                {"anyTable", {{"contract_id", "anyTable"}, {"physical_table", "RUNTIME_TABLE"}}}
-            });
-        } catch (const std::exception &exception) {
-            physical_table_rejected = std::string(exception.what()).find("published result") != std::string::npos;
-        }
-        if (!physical_table_rejected)
-            throw std::runtime_error("CSV writer accepted a legacy physical-table input");
-        {
-            std::ofstream fixture(csv_path, std::ios::out | std::ios::trunc);
-            fixture << "id,signal,label\n1,1.25,first\n";
-        }
-        std::ifstream csv(csv_path);
-        std::string contents((std::istreambuf_iterator<char>(csv)), std::istreambuf_iterator<char>());
-        if (contents.find("id,signal,label") == std::string::npos)
-            throw std::runtime_error("CSV fixture is missing its table header");
         const auto *reader = operations.find("streamfind.read_csv");
-        if (!reader || reader->definition().output_ports.empty())
+        if (!reader || reader->definition().output_ports.empty() ||
+            reader->definition().output_ports.front().data_kind != "table")
             throw std::runtime_error("CSV reader does not expose an AnyTable output");
-        const auto read_result = reader->run_workflow(project, {{"csv_input_path", csv_path.string()}}, "csv-reader", {});
-        const auto read_reference = read_result.at("emitted_results").at("anyTable");
-        if (project.query_json("SELECT COUNT(*) AS count FROM \"" +
-            read_reference.at("physical_table").get<std::string>() + "\"").at(0).at("count") != "1")
-            throw std::runtime_error("CSV reader did not import the data rows");
-        std::filesystem::remove(csv_path, error);
-
-        project.execute_sql("CREATE TABLE LEFT_ROWS (id INTEGER, value VARCHAR)");
-        project.execute_sql("CREATE TABLE RIGHT_ROWS (id INTEGER, value VARCHAR)");
-        project.execute_sql("CREATE TABLE LEFT_TABLE (id INTEGER, left_value VARCHAR)");
-        project.execute_sql("CREATE TABLE RIGHT_TABLE (id INTEGER, right_value DOUBLE)");
-        project.execute_sql("INSERT INTO LEFT_ROWS VALUES (1, 'one'), (2, 'two')");
-        project.execute_sql("INSERT INTO RIGHT_ROWS VALUES (3, 'three'), (4, 'four')");
-        project.execute_sql("INSERT INTO LEFT_TABLE VALUES (1, 'one'), (2, 'two')");
-        project.execute_sql("INSERT INTO RIGHT_TABLE VALUES (1, 1.5), (2, 2.5)");
-        std::string left_rows_artifact;
-        std::string right_rows_artifact;
-        std::string left_artifact;
-        std::string right_artifact;
-        bool transaction_log_seen = false;
-        project.set_operation_log_callback([&](std::string_view, std::string_view message) {
-            if (message == "transaction callback reached")
-                transaction_log_seen = true;
-        });
-        streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &) {
-            project.log_operation("transaction callback reached");
-        });
-        project.set_operation_log_callback({});
-        if (!transaction_log_seen)
-            throw std::runtime_error("table transaction callback could not report progress");
-        const auto workflow_revision = project.get_workflow().version;
-        streamfind::ProjectTableStore::transaction(project, {}, [&](streamfind::ProjectTableStore &tables) {
-            left_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "left-rows-source", workflow_revision,
-                                                                streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
-                                                                             {{"name", "value"}, {"type", "string"}}})).first;
-            right_rows_artifact = tables.allocate_table_artifact("anyTable", "test", "right-rows-source", workflow_revision,
-                                                                 streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
-                                                                              {{"name", "value"}, {"type", "string"}}})).first;
-            left_artifact = tables.allocate_table_artifact("anyTable", "test", "left-source", workflow_revision,
-                                                           streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
-                                                                        {{"name", "left_value"}, {"type", "string"}}})).first;
-            right_artifact = tables.allocate_table_artifact("anyTable", "test", "right-source", workflow_revision,
-                                                            streamfind::Json::array({{{"name", "id"}, {"type", "integer"}},
-                                                                         {{"name", "right_value"}, {"type", "real"}}})).first;
-        });
         const auto *row_binding = operations.find("streamfind.bind_table_rows");
         const auto *column_binding = operations.find("streamfind.bind_table_columns");
         if (!row_binding || !column_binding || row_binding->definition().input_ports.size() != 2 ||
-            row_binding->definition().input_ports.at(0).semantic_contract != "anyTable")
+            column_binding->definition().input_ports.size() != 2 ||
+            row_binding->definition().input_ports.at(0).semantic_contract != "anyTable" ||
+            column_binding->definition().input_ports.at(0).semantic_contract != "anyTable" ||
+            !row_binding->definition().parameters.definitions.empty() ||
+            !column_binding->definition().parameters.definitions.empty())
             throw std::runtime_error("generic table binding operations are not registered correctly");
-        const auto row_result = row_binding->run_workflow(project, {}, "row-binding", {
-            {"leftTable", {{"result_id", left_rows_artifact}, {"physical_table", "LEFT_ROWS"}}},
-            {"rightTable", {{"result_id", right_rows_artifact}, {"physical_table", "RIGHT_ROWS"}}}
-        });
-        const auto row_reference = row_result.at("emitted_results").at("anyTable");
-        if (project.query_json("SELECT COUNT(*) AS count FROM \"" +
-            row_reference.at("physical_table").get<std::string>() + "\"").at(0).at("count") != "4")
-            throw std::runtime_error("row binding did not append all input rows");
-        const auto column_result = column_binding->run_workflow(project, {{"row_key_columns", {"id"}}}, "column-binding", {
-            {"leftTable", {{"result_id", left_artifact}, {"physical_table", "LEFT_TABLE"}}},
-            {"rightTable", {{"result_id", right_artifact}, {"physical_table", "RIGHT_TABLE"}}}
-        });
-        const auto column_reference = column_result.at("emitted_results").at("anyTable");
-        if (project.query_json("SELECT COUNT(*) AS count FROM \"" +
-            column_reference.at("physical_table").get<std::string>() + "\"").at(0).at("count") != "2")
-            throw std::runtime_error("column binding did not align the input rows");
+
+        streamfind::table_contract_test_detail::require_binding_rejected(*column_binding,
+            {{"left", streamfind::table_contract_test_detail::table_descriptor(2, {"left_value"})},
+             {"right", streamfind::table_contract_test_detail::table_descriptor(1, {"right_value"})}},
+            "same number of rows");
+        streamfind::table_contract_test_detail::require_binding_rejected(*column_binding,
+            {{"left", streamfind::table_contract_test_detail::table_descriptor(2, {"sample", "value"})},
+             {"right", streamfind::table_contract_test_detail::table_descriptor(2, {"value", "category"})}},
+            "unique across both inputs");
         return 0;
     }
     catch (const std::exception &error)

@@ -2326,7 +2326,7 @@ namespace streamfind::mass_spec::nta::deconvolution
 
   Json find_features(sdk::PluginProjectAccess &access, const Json &parameters)
   {
-    const auto physical_table = parameters.at("_inputs").at("analysesTable").at("physical_table").get<std::string>();
+    const auto result_ref = parameters.at("_inputs").at("analysesTable").at("result_ref").get<std::string>();
     std::unordered_map<std::string, ::mass_spec::reader::MASS_SPEC_SPECTRA_HEADERS> persisted_headers;
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto spectra_input = inputs.find("spectraHeadersTable");
@@ -2336,8 +2336,7 @@ namespace streamfind::mass_spec::nta::deconvolution
           "analysis", "index", "scan", "array_length", "level", "mode", "polarity", "configuration", "lowmz",
           "highmz", "bpmz", "bpint", "tic", "rt", "mobility", "window_mz", "window_mzlow", "window_mzhigh",
           "precursor_mz", "precursor_intensity", "precursor_charge", "activation_ce"};
-      access.read_typed_batches(spectra_input->at("physical_table").get<std::string>(), header_columns,
-          "analysis,index", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+      access.read_typed_batches(spectra_input->at("result_ref").get<std::string>(), header_columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto ci = [&](const char *name) { return batch.column_index(name); };
             const auto analysis = ci("analysis");
             const auto index = ci("index"); const auto scan = ci("scan"); const auto length = ci("array_length");
@@ -2373,8 +2372,8 @@ namespace streamfind::mass_spec::nta::deconvolution
     input.progress = [&access](double fraction, std::string_view message) {
       access.report_progress(fraction, message);
     };
-    access.read_typed_batches(physical_table,
-        {"analysis", "file_path", "analysis_index", "replicate", "blank"}, "analysis",
+    access.read_typed_batches(result_ref,
+        {"analysis", "file_path", "analysis_index", "replicate", "blank"},
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
           const auto analysis = batch.column_index("analysis");
           const auto file_path = batch.column_index("file_path");
@@ -2402,7 +2401,7 @@ namespace streamfind::mass_spec::nta::deconvolution
     if (rt_windows.is_object() && rt_windows.contains("$result_ref")) {
       const auto result_id = rt_windows.at("$result_ref").get<std::string>();
       if (result_id.empty()) throw std::invalid_argument("rt_windows result reference is empty");
-      access.read_typed_batches("result:" + result_id, {"rtmin", "rtmax"}, "rtmin",
+      access.read_typed_batches("result:" + result_id, {"rtmin", "rtmax"},
           [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto rtmin = batch.column_index("rtmin");
             const auto rtmax = batch.column_index("rtmax");
