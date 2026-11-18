@@ -36,7 +36,7 @@ struct ResultLease {
     std::string owner_session_id;
     std::string owner_operation_id;
     std::string owner_worker_id;
-    Json schema{Json::array()};
+    Json schema = Json::array();
     std::filesystem::path staging_directory;
     std::filesystem::path staging_payload;
     std::filesystem::path published_directory;
@@ -74,7 +74,8 @@ public:
     const std::filesystem::path &database_path() const noexcept { return database_path_; }
     const std::filesystem::path &root() const noexcept { return root_; }
 
-    ResultStoreInspection inspect(bool verify_payloads = true) const;
+    ResultStoreInspection inspect(bool verify_payloads = true,
+                                  bool calculate_size = true) const;
     ResultStoreInspection initialize(bool verify_payloads = false);
     /** Remove only empty run/staging directories left by completed leases. */
     void cleanup_empty_runs() const;
@@ -89,6 +90,8 @@ public:
 
     /** Remove published payload directories after their registry entries are cleared. */
     void remove_published_results(const std::vector<std::string> &result_ids) const;
+    /** Remove unregistered outputs from a failed worker run, selected by its unique run ID. */
+    std::size_t remove_published_results_for_run(const std::string &run_id) const;
 
     /** Return a format-neutral descriptor without exposing the payload path. */
     Json describe_result(const std::string &result_id) const;

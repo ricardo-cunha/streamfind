@@ -345,9 +345,9 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto target_input = inputs.find("suspectTargetsTable");
     const auto suspects_input = inputs.find("suspectsTable");
-    if (target_input == inputs.end() || !target_input->is_object() || !target_input->contains("physical_table"))
+    if (target_input == inputs.end() || !target_input->is_object() || !target_input->contains("result_ref"))
         throw std::invalid_argument("Connect a suspectTargetsTable input.");
-    if (suspects_input == inputs.end() || !suspects_input->is_object() || !suspects_input->contains("physical_table"))
+    if (suspects_input == inputs.end() || !suspects_input->is_object() || !suspects_input->contains("result_ref"))
         throw std::invalid_argument("Connect a suspectsTable input.");
 
     const double tolerance = parameters.value("mz_clust", 0.003);
@@ -363,14 +363,14 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     const std::vector<std::string> target_columns = {"name","mass","polarity","mz","rt","formula","SMILES","InChI","InChIKey","xLogP","fragments_mz_pos","fragments_intensity_pos","fragments_mz_neg","fragments_intensity_neg"};
     std::map<std::string, detail::TargetRow> targets;
     std::size_t target_count=0, suspect_count=0;
-    access.read_typed_batches(target_input->at("physical_table").get<std::string>(),target_columns,"name",[&](const sdk::PluginProjectAccess::BatchView &batch){
+    access.read_typed_batches(target_input->at("result_ref").get<std::string>(),target_columns,[&](const sdk::PluginProjectAccess::BatchView &batch){
         for(std::uint64_t i=0;i<batch.row_count();++i){++target_count; auto row=detail::read_target_row(batch,i); const auto key=detail::identity(row); if(key.empty()) throw std::invalid_argument("Suspect target CSV contains a row without chemical identity"); targets[key]=std::move(row);}
     });
     std::set<std::string> original_keys; for(const auto &[key,row]:targets){(void)row;original_keys.insert(key);}
     const auto &suspect_columns=utils::suspects_columns();
     std::map<std::string,std::map<int,detail::Evidence>> evidence;
     std::map<std::string,detail::SuspectRow> representatives;
-    access.read_typed_batches(suspects_input->at("physical_table").get<std::string>(),suspect_columns,"analysis",[&](const sdk::PluginProjectAccess::BatchView &batch){
+    access.read_typed_batches(suspects_input->at("result_ref").get<std::string>(),suspect_columns,[&](const sdk::PluginProjectAccess::BatchView &batch){
         for(std::uint64_t i=0;i<batch.row_count();++i){
             ++suspect_count; const auto row=detail::read_suspect_row(batch,i);
             if(row.db_ms2_size<=0||row.shared_fragments<minimum_shared||!std::isfinite(row.cosine_similarity)||row.cosine_similarity<minimum_cosine) continue;

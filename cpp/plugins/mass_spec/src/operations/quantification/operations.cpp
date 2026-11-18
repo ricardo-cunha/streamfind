@@ -411,7 +411,7 @@ Json set_quantification_plan(sdk::PluginProjectAccess &access, const Json &param
         }
     }
     std::set<std::string> analysis_names;
-    access.read_typed_batches(base::utils::input_table(parameters, "analysesTable"), {"analysis"}, "analysis",
+    access.read_typed_batches(base::utils::input_table(parameters, "analysesTable"), {"analysis"},
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto analysis_column = batch.column_index("analysis");
             for (std::uint64_t row = 0; row < batch.row_count(); ++row)
@@ -536,7 +536,7 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
     std::size_t peak_row_count = 0;
     try
     {
-        access.read_typed_batches(peak_table, quantification_peak_columns, "analysis",
+        access.read_typed_batches(peak_table, quantification_peak_columns,
             [&](const sdk::PluginProjectAccess::BatchView &batch) {
                 const auto column = [&](const char *name) { return batch.column_index(name); };
                 const auto analysis_col = column("analysis");

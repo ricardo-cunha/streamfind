@@ -88,8 +88,8 @@ sf:OperationResult
 sf:Table
     a rdfs:Class ;
     rdfs:subClassOf sf:ArtifactContract ;
-    skos:prefLabel "DuckDB table artifact" ;
-    skos:definition "A physical DuckDB table persisted in the project database and exchanged through workflow artifact ports." .
+    skos:prefLabel "Tabular result" ;
+    skos:definition "Typed tabular data exchanged through workflow artifact ports and stored as Arrow IPC results." .
 
 sf:PrimitiveType
     a rdfs:Class ;
@@ -119,7 +119,7 @@ sf:TabularValue
     a rdfs:Class ;
     rdfs:subClassOf sf:ArtifactContract ;
     skos:prefLabel "Tabular value" ;
-    skos:definition "An in-memory table-shaped parameter or result value described by sf:type \"table\" and sf:Column properties; it is not itself a persisted DuckDB table." .
+    skos:definition "An in-memory table-shaped parameter described by sf:type \"table\" and sf:Column properties." .
 
 sf:ArtifactContract
     a rdfs:Class ;
@@ -137,7 +137,7 @@ sf:Column
     a rdfs:Class ;
     rdfs:subClassOf sf:Field ;
     skos:prefLabel "Tabular column" ;
-    skos:definition "A typed column shared by physical DuckDB table artifacts and in-memory tabular value contracts." .
+    skos:definition "A typed column in a tabular result or table-shaped parameter, represented by its declared Arrow type in published data." .
 
 sf:Error
     a rdfs:Class ;
@@ -410,28 +410,28 @@ sf:columnName
     rdfs:domain sf:Column ;
     rdfs:range rdfs:Literal ;
     skos:prefLabel "column name" ;
-    skos:definition "DuckDB column name." .
+    skos:definition "Name of a column in a tabular value or result." .
 
 sf:tableContractName
     a rdf:Property ;
     rdfs:domain sf:Table ;
     rdfs:range rdfs:Literal ;
     skos:prefLabel "table contract name" ;
-    skos:definition "Stable logical name of a table contract. Runtime-produced table artifacts may use a generated physical DuckDB table name and must be resolved through their artifact identifier." .
+    skos:definition "Stable logical name of a table contract, independent of the physical representation used by its published result." .
 
 sf:dataKind
     a rdf:Property ;
     rdfs:domain sf:ArtifactContract ;
     rdfs:range rdfs:Literal ;
     skos:prefLabel "data kind" ;
-    skos:definition "Runtime representation kind of an artifact contract. Persisted table contracts use the value duckdb_table." .
+    skos:definition "Logical data category of an artifact contract. Tabular results use the value table; their physical encoding is declared separately by the result format." .
 
 sf:dynamicSchema
     a rdf:Property ;
     rdfs:domain sf:Table ;
     rdfs:range xsd:boolean ;
     skos:prefLabel "dynamic schema" ;
-    skos:definition "Indicates that a table contract has no fixed ontology column set and must resolve its concrete schema from the persisted DuckDB table at runtime." .
+    skos:definition "Indicates that a table contract has no fixed ontology column set and resolves its concrete schema from the published result descriptor at runtime." .
 
 sf:portId
     a rdf:Property ;

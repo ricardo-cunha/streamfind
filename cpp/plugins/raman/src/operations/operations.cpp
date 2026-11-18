@@ -502,10 +502,10 @@ void filter_analysis_artifact(sdk::PluginProjectAccess &access, const Json &inpu
                               const std::vector<std::string> &types,
                               const std::unordered_set<std::string> &removed_ids) {
     const auto &input = inputs.at(port);
-    const auto physical_table = input.at("physical_table").get<std::string>();
+    const auto result_ref = input.at("result_ref").get<std::string>();
     sdk::TableBatchBuilder retained(typed_schema(columns, types));
     constexpr std::size_t batch_size = 8192;
-    access.read_typed_batches(physical_table, columns, "analysis_id", [&](const auto &batch) {
+    access.read_typed_batches(result_ref, columns, [&](const auto &batch) {
         const auto analysis_id_column = batch.column_index("analysis_id");
         std::vector<std::uint32_t> indices;
         indices.reserve(columns.size());
@@ -554,10 +554,10 @@ Json remove_analyses(sdk::PluginProjectAccess &access, const Json &parameters) {
 
     const std::vector<std::string> names_columns = {"analysis_id", "analysis"};
     const auto analyses_input = inputs.at("analysesTable");
-    const auto analyses_table = analyses_input.at("physical_table").get<std::string>();
+    const auto analyses_table = analyses_input.at("result_ref").get<std::string>();
     std::unordered_set<std::string> removed_ids;
     Json removed_names = Json::array();
-    access.read_typed_batches(analyses_table, names_columns, "analysis", [&](const auto &batch) {
+    access.read_typed_batches(analyses_table, names_columns, [&](const auto &batch) {
         const auto analysis_index = batch.column_index("analysis");
         const auto id_index = batch.column_index("analysis_id");
         for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
@@ -697,10 +697,10 @@ std::vector<double> airpls_baseline(const std::vector<double> &signal, double la
 
 std::string required_table_name(const Json &inputs, const char *port) {
     const auto &input = inputs.at(port);
-    if (!input.is_object() || !input.contains("physical_table") ||
-        !input.at("physical_table").is_string())
+    if (!input.is_object() || !input.contains("result_ref") ||
+        !input.at("result_ref").is_string())
         throw std::invalid_argument(std::string("missing physical table for input port ") + port);
-    return input.at("physical_table").get<std::string>();
+    return input.at("result_ref").get<std::string>();
 }
 
 Json normalize_spectra(sdk::PluginProjectAccess &access, const Json &parameters) {
@@ -761,7 +761,7 @@ Json normalize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
         spectrum_rows.clear();
     };
 
-    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+    access.read_typed_batches(points_table, point_columns, [&](const auto &batch) {
         std::vector<std::uint32_t> column_indices;
         column_indices.reserve(point_columns.size());
         for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
@@ -872,7 +872,7 @@ Json correct_spectra_baseline(sdk::PluginProjectAccess &access, const Json &para
         completed.insert(current_spectrum);
         spectrum_rows.clear();
     };
-    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+    access.read_typed_batches(points_table, point_columns, [&](const auto &batch) {
         std::vector<std::uint32_t> column_indices;
         column_indices.reserve(point_columns.size());
         for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
@@ -934,7 +934,7 @@ Json filter_spectral_range(sdk::PluginProjectAccess &access, const Json &paramet
     std::unordered_set<std::string> spectra;
     std::uint64_t input_points = 0;
     std::uint64_t kept_points = 0;
-    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+    access.read_typed_batches(points_table, point_columns, [&](const auto &batch) {
         const auto spectrum_index = batch.column_index("spectrum_id");
         const auto coordinate_index = batch.column_index("spectral_coordinate");
         std::vector<std::uint32_t> column_indices;
@@ -1013,7 +1013,7 @@ Json summarize_spectra(sdk::PluginProjectAccess &access, const Json &parameters)
             summaries.clear();
         }
     };
-    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+    access.read_typed_batches(points_table, point_columns, [&](const auto &batch) {
         const auto spectrum_index = batch.column_index("spectrum_id");
         std::vector<std::uint32_t> metadata_indices;
         metadata_indices.reserve(summary_source_columns.size());
@@ -1111,7 +1111,7 @@ Json smooth_spectra(sdk::PluginProjectAccess &access, const Json &parameters) {
         completed_spectra.insert(current_spectrum);
         spectrum_rows.clear();
     };
-    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+    access.read_typed_batches(points_table, point_columns, [&](const auto &batch) {
         std::vector<std::uint32_t> column_indices;
         column_indices.reserve(point_columns.size());
         for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));
@@ -1212,7 +1212,7 @@ Json smooth_spectra_savgol(sdk::PluginProjectAccess &access, const Json &paramet
         completed_spectra.insert(current_spectrum);
         spectrum_rows.clear();
     };
-    access.read_typed_batches(points_table, point_columns, "spectrum_id", [&](const auto &batch) {
+    access.read_typed_batches(points_table, point_columns, [&](const auto &batch) {
         std::vector<std::uint32_t> column_indices;
         column_indices.reserve(point_columns.size());
         for (const auto &name : point_columns) column_indices.push_back(batch.column_index(name));

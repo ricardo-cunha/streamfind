@@ -22,8 +22,7 @@ class MemoryProjectAccess final : public sdk::PluginProjectAccess {
     std::string_view operation_instance() const noexcept override { return "statistics-test"; }
     bool is_cancelled() const noexcept override { return false; }
     void require_table(const std::string &) override {}
-    void read_typed_batches(const std::string &table, const std::vector<std::string> &names,
-                            const std::string &, const BatchCallback &callback) override {
+    void read_typed_batches(const std::string &table, const std::vector<std::string> &names, const BatchCallback &callback) override {
         const auto &rows = tables.at(table);
         std::vector<std::shared_ptr<arrow::Field>> fields;
         std::vector<std::shared_ptr<arrow::Array>> arrays;
@@ -130,7 +129,7 @@ void require_near(double actual, double expected, double tolerance,
 Json base_parameters(const char *layout) {
     return {{"layout", layout}, {"sample_id_column", "sample"},
             {"preprocessing", "center"}, {"n_components", 1},
-            {"_inputs", {{"tableInput", {{"physical_table", "source"}}}}}};
+            {"_inputs", {{"tableInput", {{"result_ref", "source"}}}}}};
 }
 
 void test_registry_and_long_pca() {

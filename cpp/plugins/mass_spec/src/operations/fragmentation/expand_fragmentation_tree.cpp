@@ -35,11 +35,11 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("fragmentationTreeTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table") ||
-        !input->at("physical_table").is_string())
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref") ||
+        !input->at("result_ref").is_string())
         throw std::invalid_argument("Connect a fragmentationTreeTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const int max_candidates = parameters.value("max_inverse_candidates", 500);
     if (max_candidates < 1) throw std::invalid_argument("max_inverse_candidates must be at least 1.");
     const int max_attachment_variants = parameters.value("max_attachment_variants_per_fragment", 8);
@@ -66,7 +66,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         {"fragment_data", STREAMFIND_PLUGIN_COLUMN_UTF8}};
     sdk::TableBatchBuilder output(std::move(schema));
     std::vector<detail::SourceFragment> source_rows;
-    access.read_typed_batches(table, columns, "name", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+    access.read_typed_batches(table, columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
         const auto name_index = batch.column_index("name");
         const auto id_index = batch.column_index("fragment_id");
         const auto parent_index = batch.column_index("parent_id");

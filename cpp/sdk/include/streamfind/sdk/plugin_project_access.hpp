@@ -73,13 +73,13 @@ public:
     virtual std::string_view operation_instance() const noexcept = 0;
     virtual bool is_cancelled() const noexcept = 0;
 
-    virtual void require_table(const std::string &table_name) = 0;
+    virtual void require_table(const std::string &result_ref) = 0;
+    // Streams projected columns in the published result's row order; it does not sort rows.
     virtual void read_typed_batches(
-        const std::string &table_name,
+        const std::string &result_ref,
         const std::vector<std::string> &column_names,
-        const std::string &order_by,
         const BatchCallback &callback) = 0;
-    virtual std::uint64_t count_rows(const std::string &table_name) = 0;
+    virtual std::uint64_t count_rows(const std::string &result_ref) = 0;
     virtual void emit_table_batch(
         const std::string &output_contract_id,
         const std::shared_ptr<arrow::RecordBatch> &batch) = 0;

@@ -56,6 +56,27 @@ void collect_external_state(const Json &value, std::string_view key, Json &state
         for (const auto &child : value) collect_external_state(child, key, state);
 }
 
+Json stable_result_references(const Json &value) {
+    if (value.is_object()) {
+        const auto reference = value.value("$result_ref", value.value("result_id", std::string{}));
+        const auto representation = value.value("representation", value.value("kind", std::string{}));
+        const bool is_reference = value.contains("$result_ref") || value.contains("payload_ref") ||
+            representation == "table" || representation == "json";
+        if (!reference.empty() && is_reference)
+            return Json{{"$result_ref", reference}};
+        Json normalized = Json::object();
+        for (const auto &[key, child] : value.items())
+            normalized[key] = stable_result_references(child);
+        return normalized;
+    }
+    if (value.is_array()) {
+        Json normalized = Json::array();
+        for (const auto &child : value) normalized.push_back(stable_result_references(child));
+        return normalized;
+    }
+    return value;
+}
+
 }  // namespace detail
 
 std::string canonical_json(const Json &value) { return detail::canonical(value); }
@@ -77,13 +98,15 @@ std::string operation(const std::string &operation_id,
                       const Json &parameters,
                       const Json &inputs) {
     Json external_state = Json::object();
-    detail::collect_external_state(parameters, "", external_state);
-    detail::collect_external_state(inputs, "", external_state);
+    const auto stable_parameters = detail::stable_result_references(parameters);
+    const auto stable_inputs = detail::stable_result_references(inputs);
+    detail::collect_external_state(stable_parameters, "", external_state);
+    detail::collect_external_state(stable_inputs, "", external_state);
     return hash(canonical_json(Json{{"operation_id", operation_id},
                                     {"operation_instance", operation_instance},
                                     {"operation_version", operation_version},
-                                    {"parameters", parameters},
-                                    {"inputs", inputs},
+                                    {"parameters", stable_parameters},
+                                    {"inputs", stable_inputs},
                                     {"external_state", external_state}}));
 }
 

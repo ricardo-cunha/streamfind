@@ -44,10 +44,10 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters) {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("fragmentationTreeTable");
     if (input == inputs.end() || !input->is_object() ||
-        !input->contains("physical_table") || !input->at("physical_table").is_string())
+        !input->contains("result_ref") || !input->at("result_ref").is_string())
         throw std::invalid_argument("Connect a fragmentationTreeTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const auto duplicate_formula_limit = parameters.value("number_duplicate_formulas", Json(2));
     if (!duplicate_formula_limit.is_number_integer() || duplicate_formula_limit.get<int>() < 0)
         throw std::invalid_argument("number_duplicate_formulas must be a non-negative integer");
@@ -166,8 +166,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters) {
         }
     };
 
-    access.read_typed_batches(table, {"name", "fragment_id", "SMILES", "formula", "mass"},
-                              "name", process_batch);
+    access.read_typed_batches(table, {"name", "fragment_id", "SMILES", "formula", "mass"}, process_batch);
     if (access.is_cancelled()) throw std::runtime_error("Operation cancelled");
     if (source_row_count == 0) throw std::invalid_argument("fragmentationTreeTable contains no fragment rows.");
     flush();

@@ -13,6 +13,20 @@ scripts\dev\cpp\test-nta.ps1 -MaxAnalyses 3
 scripts\dev\cpp\test-vendor-readers.ps1 -Vendor Shimadzu
 ```
 
+The annotation regression check reads project registration metadata from
+DuckDB and reads the published feature rows directly from their Arrow IPC
+result-store payloads. Install its Python dependencies into the repository
+`.venv`, then invoke it through `sfdev`:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r scripts\dev\cpp\requirements.txt
+sfdev script run cpp/test_annotate_components.py
+```
+
+The regression check skips data-backed cases when its disposable projects are
+absent from `tmp/projects/`; it does not treat DuckDB as the storage format for
+published table rows.
+
 Add `-RunPipeline` to `test-nta.ps1` for the expensive NTA workflow. Example
 data is resolved from the shared `<user>/.streamfind/streamfind.data` checkout;
 `sfdev setup --components data` provisions it on demand. Override the location

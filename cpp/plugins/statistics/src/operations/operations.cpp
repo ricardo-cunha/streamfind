@@ -155,8 +155,8 @@ const Json &required_input(const Json &parameters) {
     if (inputs == parameters.end() || !inputs->is_object() || !inputs->contains("tableInput"))
         throw std::invalid_argument("statistics operation requires a tableInput AnyTable connection");
     const auto &input = inputs->at("tableInput");
-    if (!input.is_object() || !input.contains("physical_table") || !input.at("physical_table").is_string() ||
-        input.at("physical_table").get<std::string>().empty())
+    if (!input.is_object() || !input.contains("result_ref") || !input.at("result_ref").is_string() ||
+        input.at("result_ref").get<std::string>().empty())
         throw std::invalid_argument("statistics tableInput must identify a persisted table");
     return input;
 }
@@ -197,7 +197,7 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     else columns.insert(columns.end(), wide_variables.begin(), wide_variables.end());
     if (!group_column.empty()) columns.push_back(group_column);
     columns.insert(columns.end(), responses.begin(), responses.end());
-    const auto physical_table = required_input(parameters).at("physical_table").get<std::string>();
+    const auto result_ref = required_input(parameters).at("result_ref").get<std::string>();
 
     Dataset dataset;
     dataset.response_ids = responses;
@@ -208,7 +208,7 @@ Dataset read_dataset(sdk::PluginProjectAccess &access, const Json &parameters,
     std::unordered_map<std::string, std::size_t> sample_indices;
     std::unordered_map<std::string, std::size_t> variable_indices;
     std::size_t source_row = 0;
-    access.read_typed_batches(physical_table, columns, sample_column, [&](const auto &batch) {
+    access.read_typed_batches(result_ref, columns, [&](const auto &batch) {
         const auto sample_column_index = batch.column_index(sample_column);
         const auto variable_column_index = layout == "long" ? batch.column_index(variable_column) : 0;
         const auto value_column_index = layout == "long" ? batch.column_index(value_column) : 0;

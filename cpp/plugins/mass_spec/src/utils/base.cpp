@@ -57,7 +57,7 @@ std::vector<TargetRange> normalize_targets(sdk::PluginProjectAccess &access, con
             "mz", "mzmin", "mzmax", "rt", "rtmin", "rtmax"};
         const double ppm = parameters.value("ppm", 20.0);
         const double rt_tolerance = parameters.value("rt_tolerance", 60.0);
-        access.read_typed_batches("result:" + result_id, columns, "name",
+        access.read_typed_batches("result:" + result_id, columns,
             [&](const sdk::PluginProjectAccess::BatchView &batch) {
                 const auto optional_number = [&](const char *column, std::uint64_t row) -> std::optional<double> {
                     const auto index = batch.column_index(column);
@@ -318,7 +318,7 @@ nlohmann::json filter_target_rows(sdk::PluginProjectAccess &access, const nlohma
 
 const std::string &input_table(const nlohmann::json &parameters, const char *port)
 {
-    return parameters.at("_inputs").at(port).at("physical_table").get_ref<const std::string &>();
+    return parameters.at("_inputs").at(port).at("result_ref").get_ref<const std::string &>();
 }
 
 nlohmann::json read_control_rows(sdk::PluginProjectAccess &access, const nlohmann::json &parameters, const char *port,
@@ -326,7 +326,6 @@ nlohmann::json read_control_rows(sdk::PluginProjectAccess &access, const nlohman
 {
     nlohmann::json rows = nlohmann::json::array();
     access.read_typed_batches(input_table(parameters, port), columns,
-        order == nullptr ? std::string{} : std::string(order),
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             for (std::uint64_t row_index = 0; row_index < batch.row_count(); ++row_index)
             {

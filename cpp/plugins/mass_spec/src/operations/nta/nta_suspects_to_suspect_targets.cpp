@@ -298,10 +298,10 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("suspectsTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table"))
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref"))
         throw std::invalid_argument("Connect a suspectsTable or internalStandardsTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const double tolerance = parameters.value("mz_clust", 0.003);
     const double minimum_cosine = parameters.value("min_cosine_similarity", 0.7);
     const int minimum_shared = parameters.value("min_shared_fragments", 3);
@@ -319,7 +319,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     std::map<std::string, detail::SuspectRow> representatives;
     std::size_t accepted_rows = 0;
     std::size_t input_rows = 0;
-    access.read_typed_batches(table, input_columns, "analysis",
+    access.read_typed_batches(table, input_columns,
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             std::map<std::string, std::uint32_t> columns;
             for (const auto &name : input_columns) columns.emplace(name, batch.column_index(name));
@@ -463,15 +463,15 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("internalStandardsTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table"))
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref"))
         throw std::invalid_argument("Connect an internalStandardsTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const auto columns = ::streamfind::mass_spec::nta::utils::suspects_columns();
     const auto types = ::streamfind::mass_spec::nta::utils::detail::suspects_types();
     sdk::TableBatchBuilder output(detail::schema_from_types(columns, types));
     const auto rows = access.count_rows(table);
-    access.read_typed_batches(table, columns, "analysis", [&](const sdk::PluginProjectAccess::BatchView &batch) {
+    access.read_typed_batches(table, columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
         for (std::uint64_t row = 0; row < batch.row_count(); ++row)
             output.append_row(batch, row);
     });

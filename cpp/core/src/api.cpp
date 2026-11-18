@@ -273,8 +273,12 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
             if (request.contains("operation") && artifact.value("producer_operation", "") != request.at("operation").get<std::string>()) continue;
             if (request.contains("operation_instance") && artifact.value("producer_instance", "") != request.at("operation_instance").get<std::string>()) continue;
             if (request.contains("output_port") && artifact.value("contract_id", "") != request.at("output_port").get<std::string>()) continue;
-            if (request.contains("workflow_revision") && artifact.value("workflow_revision", "") !=
-                    std::to_string(request.at("workflow_revision").get<int>())) continue;
+            if (request.contains("workflow_revision")) {
+                if (!request.at("workflow_revision").is_number_integer())
+                    throw Error(ErrorCode::InvalidArgument, "workflow_revision must be an integer");
+                if (!artifact.contains("workflow_revision") ||
+                    artifact.at("workflow_revision") != request.at("workflow_revision")) continue;
+            }
             auto descriptor = artifact;
             descriptor.erase("payload");
             result.push_back(std::move(descriptor));
@@ -299,14 +303,19 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
             artifact["offset"] = data.value("offset", request.value("offset", 0));
             artifact["returned_rows"] = data.value("returned_rows", artifact["data"].size());
             artifact["has_more"] = data.value("has_more", false);
-        } else if (artifact.contains("payload") && !artifact.at("payload").is_null()) {
-            const auto &payload = artifact.at("payload");
-            if (payload.is_string()) {
-                const auto parsed = Json::parse(payload.get<std::string>(), nullptr, false);
-                artifact["data"] = parsed.is_discarded() ? Json(payload.get<std::string>()) : parsed;
-            } else {
-                artifact["data"] = payload;
-            }
+        } else if (artifact.value("representation", "") == "json") {
+            if (artifact.value("status", "") != "published")
+                throw Error(ErrorCode::MethodExecution,
+                            artifact.value("availability_error", "Result is unavailable"));
+            const auto data = service::get_result_data(
+                attachment, Json{{"result_id", artifact.value("result_id", std::string{})}});
+            if (!data.is_object() || !data.contains("payload"))
+                throw Error(ErrorCode::MethodExecution,
+                            "The selected JSON result did not return a payload.");
+            artifact["data"] = data.at("payload");
+        } else {
+            throw Error(ErrorCode::InvalidArgument,
+                        "include_data is supported only for JSON and Arrow table results");
         }
         artifact.erase("payload");
         return Json::array({std::move(artifact)});

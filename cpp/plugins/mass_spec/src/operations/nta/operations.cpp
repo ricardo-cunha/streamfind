@@ -42,7 +42,7 @@ Json get_features(sdk::PluginProjectAccess &access, const Json &parameters)
         output.emit(access, "featuresTable");
         output.clear();
     };
-    access.read_typed_batches(table, columns, "analysis",
+    access.read_typed_batches(table, columns,
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto analysis_column = batch.column_index("analysis");
             const auto filtered_column = batch.column_index("filtered");
@@ -107,7 +107,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         output.emit(access, "featuresTable");
         output.clear();
     };
-    access.read_typed_batches(base::utils::input_table(parameters, "featuresTable"), columns, "analysis",
+    access.read_typed_batches(base::utils::input_table(parameters, "featuresTable"), columns,
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto filtered_column = batch.column_index("filtered");
             for (std::uint64_t row = 0; row < batch.row_count(); ++row) {
@@ -168,7 +168,7 @@ std::size_t emit_target_matches(sdk::PluginProjectAccess &access, const Json &pa
     const auto table = base::utils::input_table(parameters, input_port);
     std::size_t source_index = 0;
     std::size_t emitted = 0;
-    access.read_typed_batches(table, columns, "analysis", [&](const auto &batch) {
+    access.read_typed_batches(table, columns, [&](const auto &batch) {
         sdk::TableBatchBuilder output(batch_schema(batch, columns));
         const auto analysis_col = batch.column_index("analysis");
         const auto mass_col = mass_name == nullptr ? UINT32_MAX : batch.column_index(mass_name);

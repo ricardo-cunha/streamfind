@@ -1,4 +1,5 @@
 #include "streamfind/data_proxy_output_sink.hpp"
+#include "streamfind/result_table_schema.hpp"
 
 #include <array>
 #include <algorithm>
@@ -66,27 +67,7 @@ public:
 
 private:
     static std::shared_ptr<arrow::Schema> schema_from_descriptor(const Json &columns) {
-        std::vector<std::shared_ptr<arrow::Field>> fields;
-        if (columns.is_array()) for (const auto &column : columns) {
-            if (!column.is_object()) continue;
-            const auto name = column.value("name", std::string{});
-            if (name.empty()) continue;
-            const auto type = column.value("type", std::string{"string"});
-            std::shared_ptr<arrow::DataType> arrow_type = arrow::utf8();
-            if (type == "integer") arrow_type = arrow::int64();
-            else if (type == "real" || type == "number") arrow_type = arrow::float64();
-            else if (type == "boolean") arrow_type = arrow::boolean();
-            else if (type == "timestamp") arrow_type = arrow::timestamp(arrow::TimeUnit::MICRO);
-            else if (type == "array") {
-                const auto item_type = column.value("items", Json::object()).value("type", std::string{"number"});
-                if (item_type == "integer") arrow_type = arrow::list(arrow::int64());
-                else if (item_type == "number" || item_type == "real") arrow_type = arrow::list(arrow::float64());
-                else if (item_type == "string") arrow_type = arrow::list(arrow::utf8());
-                else throw std::invalid_argument("unsupported Arrow table list item type: " + item_type);
-            }
-            fields.push_back(arrow::field(name, arrow_type, column.value("nullable", true)));
-        }
-        return arrow::schema(std::move(fields));
+        return result_table_arrow_schema(columns);
     }
 
     std::shared_ptr<arrow::io::FileOutputStream> sink_;
@@ -197,6 +178,11 @@ Json DataProxyOutputSink::begin(const Json &descriptor) {
     if (!payload.contains("result_id")) payload["result_id"] = create_result_id(payload);
     if (!payload.contains("run_id")) payload["run_id"] = run_id_;
     if (!payload.contains("format")) payload["format"] = "binary";
+    if (!payload.contains("extension")) {
+        const auto kind = payload.value("kind", std::string{});
+        const auto format = payload.value("format", std::string{"binary"});
+        payload["extension"] = kind == "table" && format == "arrow-ipc-file" ? "arrow" : format;
+    }
     payload["storage"] = "published";
     const auto contract_id = payload.value("contract_id", std::string{});
     if (!payload.contains("navigation_columns") && navigation_columns_by_contract_.contains(contract_id))
@@ -208,14 +194,30 @@ Json DataProxyOutputSink::begin(const Json &descriptor) {
     const auto output_port = payload.value("output_port", std::string{});
     const auto result_name = payload.value("result_name", operation_id_ + " / node " + operation_instance_);
     payload["result_name"] = result_name;
+    auto descriptor_metadata = payload;
+    for (const auto *field : {"result_id", "run_id", "extension", "storage"})
+        descriptor_metadata.erase(field);
     const auto response = request("allocate_result", {}, std::move(payload));
     const auto lease_id = response.value("lease_id", std::string{});
     const auto result_id = response.value("result_id", std::string{});
     if (lease_id.empty() || result_id.empty()) throw std::runtime_error("data-proxy did not return an output lease");
-    const auto writer = receive_writer_();
-    if (writer == -1) throw std::runtime_error("service did not provide the leased output handle");
+    std::intptr_t writer = -1;
+    try {
+        writer = receive_writer_();
+        if (writer == -1) throw std::runtime_error("service did not provide the leased output handle");
+    } catch (...) {
+        try {
+            request("abort_result", lease_id,
+                    {{"reason", "worker did not receive the leased output handle"},
+                     {"lease_id", lease_id}});
+        } catch (...) {
+            // Preserve the original handle-receive failure. The service also
+            // expires abandoned leases when the owning worker exits.
+        }
+        throw;
+    }
     Lease lease{lease_id, result_id, kind, format, 0, 0, 0, writer, nullptr, schema,
-                navigation_columns, contract_id, output_port, result_name};
+                std::move(descriptor_metadata), navigation_columns, contract_id, output_port, result_name};
     if (kind == "table")
         lease.arrow_writer = std::make_unique<output_detail::ArrowFileWriter>(writer, schema);
     else
@@ -278,7 +280,8 @@ Json DataProxyOutputSink::finish(const std::string &output_handle, const Json &m
     const auto iterator = leases_.find(output_handle);
     if (iterator == leases_.end()) throw std::invalid_argument("output handle is not active");
     if (!metadata.is_object()) throw std::invalid_argument("output metadata must be an object");
-    auto publish_metadata = metadata;
+    auto publish_metadata = iterator->second.descriptor_metadata;
+    for (const auto &[name, value] : metadata.items()) publish_metadata[name] = value;
     if (!publish_metadata.contains("kind")) publish_metadata["kind"] = iterator->second.kind;
     if (iterator->second.format == "arrow-ipc-file") {
         if (iterator->second.written_by_service) {

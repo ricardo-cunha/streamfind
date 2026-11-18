@@ -210,7 +210,11 @@ void run() {
     WorkflowExecutionManager other_manager(other);
     if (!other_manager.list().empty()) throw std::runtime_error("execution manager leaked rows across projects");
     if (other_manager.create({{"workflow_revision", 1}}).at("status") != "queued") throw std::runtime_error("independent project could not queue execution");
-    if (other.run_worker("other-worker", operations).at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
+    const OperationRunner no_op_runner = [](const std::string &, const Json &, const std::string &,
+                                            const Json &, const std::string &, bool) {
+        return Json{{"emitted_results", Json::object()}};
+    };
+    if (other.run_worker("other-worker", operations, no_op_runner).at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
     manager.scheduler_tick("worker-a");
     project.close();
     auto reopened = Project::open(options);

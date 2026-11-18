@@ -2,13 +2,16 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-const project = {
+let project = {
   session_id: 'path-test-a',
   database_path: 'tmp/projects/path-test.duckdb',
   database_size_bytes: 0,
   domains: ['core'],
   metadata: {},
+  result_store: { size_bytes: 0 },
 };
+let publishedArtifactCount = 0;
+let serviceEventListener: ((event: { type: string; project?: string }) => void) | null = null;
 
 vi.mock('../framework/backend/StreamFindApiClient', () => ({
   StreamFindApiClient: class {
@@ -66,6 +69,13 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return [project];
     }
 
+    async results() {
+      return Array.from({ length: publishedArtifactCount }, (_, index) => ({
+        result_id: `result-${index}`,
+        status: 'published',
+      }));
+    }
+
     async closeProject() {
       return project;
     }
@@ -86,7 +96,8 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return { session_id: project.session_id, state: 'cancelled' as const };
     }
 
-    subscribe() {
+    subscribe(listener: (event: { type: string; project?: string }) => void) {
+      serviceEventListener = listener;
       return () => undefined;
     }
 
@@ -100,6 +111,16 @@ describe('application shell', () => {
   beforeEach(() => {
     localStorage.clear();
     window.location.hash = '';
+    project = {
+      session_id: 'path-test-a',
+      database_path: 'tmp/projects/path-test.duckdb',
+      database_size_bytes: 0,
+      domains: ['core'],
+      metadata: {},
+      result_store: { size_bytes: 0 },
+    };
+    publishedArtifactCount = 0;
+    serviceEventListener = null;
     vi.useFakeTimers();
   });
 
@@ -205,6 +226,27 @@ describe('application shell', () => {
     expect(screen.getByText('Results store: 0.0 KB')).toBeInTheDocument();
     expect(screen.queryByText(/Workflow (queued|running|failed)/)).not.toBeInTheDocument();
     expect(screen.queryByText('Loading workflow summary…')).not.toBeInTheDocument();
+  });
+
+  it('refreshes project card result counts and store size after workflow events', async () => {
+    await showWorkspace();
+    expect(screen.getByText('Results store: 0.0 KB')).toBeInTheDocument();
+
+    project = { ...project, result_store: { size_bytes: 2048 } };
+    publishedArtifactCount = 2;
+    await act(async () => {
+      serviceEventListener?.({ type: 'workflow.completed', project: project.session_id });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Results: 2 published')).toBeInTheDocument();
+    expect(screen.getByText('Results store: 2.0 KB')).toBeInTheDocument();
   });
 
   it('keeps the Project Hub visible when no project session is active', async () => {

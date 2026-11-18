@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <atomic>
 #include <charconv>
-#include <cctype>
 #include <cmath>
 #include <chrono>
 #include <iterator>
@@ -37,14 +36,6 @@ std::uint64_t configured_worker_memory_limit_mb(const std::filesystem::path &con
     return load_service_configuration(configuration_path).worker_memory_limit_mb;
 }
 
-std::string quoted_identifier(const std::string &value) {
-    if (value.empty()) throw std::invalid_argument("data-proxy identifier is empty");
-    for (const auto character : value)
-        if (!(std::isalnum(static_cast<unsigned char>(character)) || character == '_'))
-            throw std::invalid_argument("data-proxy identifier is invalid");
-    return "\"" + value + "\"";
-}
-
 Json workflow_without_positions(Json workflow) {
     for (auto &operation : workflow["operations"]) operation.erase("position");
     return workflow;
@@ -65,6 +56,24 @@ std::string create_operation_run_id() {
     output << "operation-run-" << std::hex << now << '-'
            << sequence.fetch_add(1, std::memory_order_relaxed);
     return output.str();
+}
+
+std::string discard_failed_worker_results(const std::filesystem::path &database_path,
+                                         const std::string &run_id) noexcept {
+    try {
+        ResultStore(database_path).remove_published_results_for_run(run_id);
+        return {};
+    } catch (const std::exception &error) {
+        return error.what();
+    } catch (...) {
+        return "unknown result-store cleanup failure";
+    }
+}
+
+std::string append_cleanup_diagnostic(std::string message, const std::string &cleanup_error) {
+    if (!cleanup_error.empty())
+        message += "; failed to remove partial outputs from the failed worker run: " + cleanup_error;
+    return message;
 }
 
 int duplicate_arrow_output_descriptor(std::intptr_t native_handle) {
@@ -226,7 +235,7 @@ ProjectSessionDto ProjectRuntimeManager::describe(const std::string &session_id,
     // Project opening must not hash every multi-gigabyte payload. Individual result
     // access performs full integrity validation; inspection still reports the
     // lightweight store size for the project card.
-    const auto inspection = result_store.inspect(false);
+    const auto inspection = result_store.inspect(false, true);
     return ProjectSessionDto{session_id,
                              project.get_database_path().string(),
                              error ? 0 : size,
@@ -283,7 +292,7 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
     ensure_database_is_not_open(options.database_path);
     auto project = std::make_unique<Project>(Project::open(options));
     ResultStore result_store(project->get_database_path());
-    const auto prior_store = result_store.inspect(false);
+    const auto prior_store = result_store.inspect(false, false);
     if (prior_store.status == ResultStoreStatus::invalid) {
         throw std::runtime_error(
             "Project result store is incompatible or invalid at " + prior_store.root.string() +
@@ -838,28 +847,41 @@ Json ProjectRuntimeManager::start_operation(const std::string &session_id,
 }
 
 Json ProjectRuntimeManager::result_inventory(const std::string &session_id) const {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    std::filesystem::path database_path;
+    Json inventory;
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+        inventory = iterator->second->get_result_inventory();
+    }
     std::unordered_map<std::string, Json> registered_results;
-    for (auto metadata : iterator->second->get_result_inventory()) {
+    for (auto metadata : inventory) {
         const auto id = metadata.value("result_id", std::string{});
         if (id.empty()) continue;
         const auto revision = metadata.find("workflow_revision");
         if (revision != metadata.end() && revision->is_string()) {
-            try { metadata["workflow_revision"] = std::stoi(revision->get<std::string>()); }
-            catch (...) { metadata["workflow_revision"] = 0; }
+            const auto text = revision->get<std::string>();
+            int parsed_revision = 0;
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed_revision);
+            if (error != std::errc{} || end != text.data() + text.size() || parsed_revision < 0)
+                throw std::runtime_error("result registry contains an invalid workflow_revision for " + id);
+            metadata["workflow_revision"] = parsed_revision;
+        } else if (revision != metadata.end() &&
+                   (!revision->is_number_integer() || revision->get<std::int64_t>() < 0)) {
+            throw std::runtime_error("result registry contains an invalid workflow_revision for " + id);
         }
         registered_results[id] = std::move(metadata);
     }
-    const ResultStore store(iterator->second->get_database_path());
+    const ResultStore store(database_path);
     Json results = Json::array();
     for (const auto &manifest : store.published_results()) {
         const auto result_id = manifest.value("result_id", std::string{});
         const auto registration = registered_results.find(result_id);
         // The manifest owns payload availability; DuckDB owns project-local
         // registration and workflow provenance. Expose only committed results
-        // that have both records, and never inspect a historical DuckDB table.
+        // that have both records.
         if (result_id.empty() || registration == registered_results.end() ||
             registration->second.value("status", std::string{}) != "published")
             continue;
@@ -877,20 +899,7 @@ Json ProjectRuntimeManager::result_inventory(const std::string &session_id) cons
         if (result.value("representation", std::string{}) == "table" &&
             result.contains("schema") && result.at("schema").is_array())
             result["columns"] = result["schema"];
-        if (result.value("representation", std::string{}) == "table")
-            result["physical_table"] = "result:" + result_id;
         if (manifest.contains("contract_id")) result["contract_id"] = manifest.at("contract_id");
-        // JSON results are immutable files in the result store.  The frontend
-        // needs the bounded structured payload for JSON viewers; a payload_ref
-        // alone is useful to workers but cannot render a canvas result.
-        if (result.value("representation", std::string{}) == "json") {
-            try {
-                result["payload"] = store.read_json_payload(result.value("result_id", std::string{}));
-            } catch (const std::exception &error) {
-                result["status"] = "stale";
-                result["availability_error"] = error.what();
-            }
-        }
         results.push_back(std::move(result));
     }
     return results;
@@ -1162,6 +1171,19 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
 }
 
 Json ProjectRuntimeManager::result_data(const std::string &session_id, const Json &request) const {
+    const auto result_id = request.value("result_id", std::string{});
+    if (result_id.empty()) throw std::invalid_argument("result_id is required");
+    std::filesystem::path database_path;
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+    }
+    const ResultStore store(database_path);
+    const auto descriptor = store.describe_result(result_id);
+    if (descriptor.value("kind", std::string{}) == "json")
+        return Json{{"result_id", result_id}, {"payload", store.read_json_payload(result_id)}};
     return result_query(session_id, request);
 }
 
@@ -1251,6 +1273,19 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
         return iterator->second->get_database_path();
     }();
     const ResultStore store(project_snapshot);
+    const auto table_reference = [](const Json &descriptor, const WorkflowConnection &connection) {
+        const auto result_id = descriptor.value("result_id", std::string{});
+        if (result_id.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Table result has no result_id for connection " +
+                        connection.source_operation + "." + connection.source_port);
+        return Json{{"$result_ref", result_id}, {"result_id", result_id},
+                    {"result_ref", "result:" + result_id},
+                    {"output_port_id", connection.source_port},
+                    {"contract_id", descriptor.value("contract_id", std::string{})},
+                    {"producer_operation", descriptor.value("producer_operation", std::string{})},
+                    {"producer_instance", descriptor.value("producer_instance", connection.source_operation)}};
+    };
     Json resolved = Json::object();
     for (const auto &connection : workflow.connections) {
         if (connection.target_operation != operation_id) continue;
@@ -1261,18 +1296,15 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
                 if (connection.target_port.rfind("parameter:", 0) == 0 && output->is_object() &&
                     output->contains("result_id")) {
                     const auto result_id = output->value("result_id", std::string{});
-                    try {
-                        const auto descriptor = store.describe_result(result_id);
-                        if (descriptor.value("representation", std::string{}) == "table" ||
-                            descriptor.value("kind", std::string{}) == "table")
-                            resolved[connection.target_port] = Json{{"$result_ref", result_id}};
-                        else if (descriptor.value("representation", std::string{}) == "json")
-                            resolved[connection.target_port] = store.read_json_payload(result_id);
-                        else
-                            resolved[connection.target_port] = *output;
-                    } catch (...) {
+                    const auto descriptor = store.describe_result(result_id);
+                    const auto kind = descriptor.value(
+                        "representation", descriptor.value("kind", std::string{}));
+                    if (kind == "table")
+                        resolved[connection.target_port] = table_reference(descriptor, connection);
+                    else if (kind == "json")
+                        resolved[connection.target_port] = store.read_json_payload(result_id);
+                    else
                         resolved[connection.target_port] = *output;
-                    }
                 } else {
                     resolved[connection.target_port] = *output;
                 }
@@ -1315,15 +1347,17 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
                         "No published result for connection " +
                         connection.source_operation + "." + connection.source_port);
         if (connection.target_port.rfind("parameter:", 0) == 0) {
-            const auto payload = selected->find("payload");
-            if (payload != selected->end()) {
-                resolved[connection.target_port] = payload->is_string()
-                    ? Json::parse(payload->get<std::string>()) : *payload;
-            } else if (selected->value("representation", std::string{}) == "json") {
-                resolved[connection.target_port] = store.read_json_payload(
-                    selected->value("result_id", std::string{}));
-            } else if (selected->value("kind", std::string{}) == "table") {
-                resolved[connection.target_port] = Json{{"$result_ref", selected->value("result_id", std::string{})}};
+            const auto representation = selected->value(
+                "representation", selected->value("kind", std::string{}));
+            if (representation == "table") {
+                resolved[connection.target_port] = table_reference(*selected, connection);
+            } else if (representation == "json") {
+                const auto payload = selected->find("payload");
+                if (payload != selected->end() && !payload->is_null())
+                    resolved[connection.target_port] = *payload;
+                else
+                    resolved[connection.target_port] = store.read_json_payload(
+                        selected->value("result_id", std::string{}));
             } else {
                 resolved[connection.target_port] = nullptr;
             }
@@ -1343,6 +1377,18 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     const auto method = request.payload.value("method", std::string{});
+    if (method == "cancellation_status") {
+        const auto worker = active_workers_.find(session_id);
+        const auto active_run = active_worker_run_ids_.find(session_id);
+        if (worker == active_workers_.end() || !worker->second ||
+            worker->second->metadata().operation_id != request.operation_id ||
+            active_run == active_worker_run_ids_.end() || request.run_id != active_run->second)
+            throw std::invalid_argument("cancellation status request does not match the active worker");
+        const auto cancellation = operation_cancellations_.find(session_id);
+        if (cancellation == operation_cancellations_.end() || !cancellation->second)
+            return data_proxy::response(request, {{"cancelled", false}}).to_json();
+        return data_proxy::response(request, {{"cancelled", cancellation->second->load()}}).to_json();
+    }
     ResultStore store(iterator->second->get_database_path());
     if (method == "describe_result") {
         const auto result_id = request.payload.value("result_id", std::string{});
@@ -1356,6 +1402,14 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         const auto length = request.payload.value("length", std::uintmax_t{0});
         return data_proxy::response(request, store.read_result_range(result_id, offset, length)).to_json();
     }
+    if (method == "query" || method == "execute") {
+        const auto sql = request.payload.value("sql", std::string{});
+        if (sql.empty()) throw std::invalid_argument("data-proxy " + method + " requires sql");
+        if (method == "query")
+            return data_proxy::response(request, {{"rows", iterator->second->query_json(sql)}}).to_json();
+        iterator->second->execute_sql(sql);
+        return data_proxy::response(request, {{"executed", true}}).to_json();
+    }
     const auto lease_key = session_id + ":" + request.lease_id;
     if (method == "allocate_result") {
         const auto result_id = request.payload.value("result_id", std::string{});
@@ -1367,7 +1421,9 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         if (run_id != request.run_id)
             throw std::invalid_argument("result lease run_id does not match the active worker");
         const auto worker_iterator = active_workers_.find(session_id);
-        if (worker_iterator == active_workers_.end() || !worker_iterator->second)
+        const auto active_run = active_worker_run_ids_.find(session_id);
+        if (worker_iterator == active_workers_.end() || !worker_iterator->second ||
+            active_run == active_worker_run_ids_.end() || request.run_id != active_run->second)
             throw std::runtime_error("no active worker owns this result lease");
         const auto worker_process = worker_iterator->second;
         const auto worker = worker_process->metadata();
@@ -1447,7 +1503,9 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         const auto result_id = request.payload.value("result_id", std::string{});
         if (result_id.empty()) throw std::invalid_argument("lease_result_input requires result_id");
         const auto worker_iterator = active_workers_.find(session_id);
-        if (worker_iterator == active_workers_.end() || !worker_iterator->second)
+        const auto active_run = active_worker_run_ids_.find(session_id);
+        if (worker_iterator == active_workers_.end() || !worker_iterator->second ||
+            active_run == active_worker_run_ids_.end() || request.run_id != active_run->second)
             throw std::runtime_error("no active worker can receive the result input");
         const auto worker_process = worker_iterator->second;
         const auto worker = worker_process->metadata();
@@ -1537,67 +1595,19 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         }
         return data_proxy::response(request, {{"row_count", row_count}, {"written", true}}).to_json();
     }
-    const auto table = request.payload.value("table", std::string{});
-    if (table.empty()) throw std::invalid_argument("data-proxy request requires table");
-    if (method == "count_rows" && table.rfind("result:", 0) == 0) {
-        const auto result_id = table.substr(std::string("result:").size());
-        if (result_id.empty()) throw std::invalid_argument("result reference is empty");
-        const auto descriptor = store.describe_result(result_id);
-        return data_proxy::response(
-            request, {{"row_count", descriptor.value("row_count", std::uint64_t{0})}})
-            .to_json();
-    }
-    const auto quoted_table = detail::quoted_identifier(table);
-    if (method == "has_table") {
-        const auto tables = iterator->second->list_tables();
-        return data_proxy::response(request, {{"exists", std::find(tables.begin(), tables.end(), table) != tables.end()}}).to_json();
-    }
-    if (method == "describe") {
-        return data_proxy::response(request, {{"columns", iterator->second->query_json("DESCRIBE " + quoted_table)}}).to_json();
-    }
     if (method == "count_rows") {
-        const auto rows = iterator->second->query_json("SELECT COUNT(*) AS row_count FROM " + quoted_table);
-        return data_proxy::response(request, {{"row_count", rows.empty() ? 0 : std::stoull(rows.front().value("row_count", std::string{"0"}))}}).to_json();
-    }
-    if (method == "append_rows") {
-        const auto columns = request.payload.value("columns", Json::array());
-        const auto rows = request.payload.value("rows", Json::array());
-        if (!columns.is_array() || columns.empty() || !rows.is_array())
-            throw std::invalid_argument("data-proxy append_rows requires columns and rows");
-        std::vector<std::string> column_names;
-        column_names.reserve(columns.size());
-        for (const auto &column : columns) {
-            if (!column.is_string() || column.get<std::string>().empty())
-                throw std::invalid_argument("data-proxy append_rows has an invalid column");
-            column_names.push_back(column.get<std::string>());
-        }
-        std::vector<std::vector<std::optional<std::string>>> values;
-        values.reserve(rows.size());
-        for (const auto &row : rows) {
-            if (!row.is_array() || row.size() != column_names.size())
-                throw std::invalid_argument("data-proxy append_rows row width does not match columns");
-            std::vector<std::optional<std::string>> value;
-            value.reserve(row.size());
-            for (const auto &cell : row) {
-                if (cell.is_null()) value.push_back(std::nullopt);
-                else if (cell.is_string()) value.push_back(cell.get<std::string>());
-                else value.push_back(cell.dump());
-            }
-            values.push_back(std::move(value));
-        }
-        iterator->second->append_rows(table, column_names, values);
-        return data_proxy::response(request, {{"appended_rows", values.size()}}).to_json();
-    }
-    if (method == "query") {
-        const auto sql = request.payload.value("sql", std::string{});
-        if (sql.empty()) throw std::invalid_argument("data-proxy query requires sql");
-        return data_proxy::response(request, {{"rows", iterator->second->query_json(sql)}}).to_json();
-    }
-    if (method == "execute") {
-        const auto sql = request.payload.value("sql", std::string{});
-        if (sql.empty()) throw std::invalid_argument("data-proxy execute requires sql");
-        iterator->second->execute_sql(sql);
-        return data_proxy::response(request, {{"executed", true}}).to_json();
+        const auto result_ref = request.payload.value("result_ref", std::string{});
+        constexpr std::string_view prefix = "result:";
+        if (!result_ref.starts_with(prefix) || result_ref.size() == prefix.size())
+            throw std::invalid_argument("count_rows requires a published Arrow result_ref");
+        const auto result_id = result_ref.substr(prefix.size());
+        const auto descriptor = store.describe_result(result_id);
+        if (descriptor.value("state", std::string{}) != "published" ||
+            descriptor.value("kind", std::string{}) != "table" ||
+            descriptor.value("format", std::string{}) != "arrow-ipc-file")
+            throw std::invalid_argument("result_ref does not identify a published Arrow table: " + result_id);
+        return data_proxy::response(
+            request, {{"row_count", descriptor.value("row_count", std::uint64_t{0})}}).to_json();
     }
     throw std::invalid_argument("unsupported data-proxy method: " + method);
 }
@@ -1609,7 +1619,7 @@ Json ProjectRuntimeManager::result_cache_lookup(const std::string &session_id, c
     const auto computation_key = request.value("computation_key", std::string{});
     if (computation_key.empty()) throw std::invalid_argument("computation_key is required");
     const ResultStore store(iterator->second->get_database_path());
-    const auto inspection = store.inspect();
+    const auto inspection = store.inspect(false, false);
     const auto results = inspection.status == ResultStoreStatus::ready
                              ? store.find_cached_results(computation_key)
                              : Json::array();
@@ -1674,16 +1684,21 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                 if (execution_mode != "pipeline") return errors;
                 try {
                     const ResultStore result_store(project->get_database_path());
+                    std::vector<Json> manifests;
+                    manifests.reserve(run_result_ids.size());
                     for (const auto &result_id : run_result_ids) {
                         try {
-                            project->register_result_manifest(result_store.describe_result(result_id));
+                            manifests.push_back(result_store.describe_result(result_id));
                         } catch (const std::exception &error) {
                             if (!errors.empty()) errors += "; ";
                             errors += result_id + ": " + error.what();
                         }
                     }
+                    if (errors.empty())
+                        project->register_result_manifests(manifests);
                 } catch (const std::exception &error) {
-                    errors = error.what();
+                    if (!errors.empty()) errors += "; ";
+                    errors += error.what();
                 }
                 return errors;
             };
@@ -1705,6 +1720,7 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                                                                         const Json &inputs,
                                                                         const std::string &computation_key,
                                                                         bool) {
+                    const auto worker_run_id = detail::create_operation_run_id();
                     WorkerRequest request;
                     request.executable = configuration_path_.parent_path() /
 #ifdef _WIN32
@@ -1716,7 +1732,7 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                     request.memory_limit_mb = detail::configured_worker_memory_limit_mb(configuration_path_);
                     request.service_port = service_port_;
                     request.session_id = session_id;
-                    request.run_id = instance;
+                    request.run_id = worker_run_id;
                     request.operation_id = operation;
                     request.operation_instance = instance;
                     request.computation_key = computation_key;
@@ -1748,17 +1764,34 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                     {
                         std::lock_guard lock(mutex_);
                         active_workers_[session_id] = worker;
+                        active_worker_run_ids_[session_id] = worker_run_id;
                     }
                     WorkerResult worker_result;
                     try {
                         worker_result = worker->run();
-                    } catch (...) {
-                        abort_worker_output_leases(session_id, instance);
+                    } catch (const std::exception &error) {
+                        abort_worker_output_leases(session_id, worker_run_id);
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
                         std::lock_guard lock(mutex_);
                         active_workers_.erase(session_id);
+                        active_worker_run_ids_.erase(session_id);
+                        if (!cleanup_error.empty())
+                            throw std::runtime_error(detail::append_cleanup_diagnostic(error.what(), cleanup_error));
+                        throw;
+                    } catch (...) {
+                        abort_worker_output_leases(session_id, worker_run_id);
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
+                        std::lock_guard lock(mutex_);
+                        active_workers_.erase(session_id);
+                        active_worker_run_ids_.erase(session_id);
+                        if (!cleanup_error.empty())
+                            throw std::runtime_error(detail::append_cleanup_diagnostic(
+                                "unknown worker execution failure", cleanup_error));
                         throw;
                     }
-                    abort_worker_output_leases(session_id, instance);
+                    abort_worker_output_leases(session_id, worker_run_id);
                     if (operation_event_callback_) {
                         const auto worker_event = worker_result.cancelled
                             ? "worker.cancelled"
@@ -1771,20 +1804,45 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                     {
                         std::lock_guard lock(mutex_);
                         active_workers_.erase(session_id);
+                        active_worker_run_ids_.erase(session_id);
                     }
-                    if (worker_result.cancelled) throw Error(ErrorCode::Cancelled, "Workflow worker cancelled");
-                    if (!worker_result.error.empty()) throw Error(ErrorCode::MethodExecution, worker_result.error);
+                    if (worker_result.cancelled) {
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
+                        throw Error(ErrorCode::Cancelled, detail::append_cleanup_diagnostic(
+                            "Workflow worker cancelled", cleanup_error));
+                    }
+                    if (!worker_result.error.empty()) {
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
+                        throw Error(ErrorCode::MethodExecution, detail::append_cleanup_diagnostic(
+                            worker_result.error, cleanup_error));
+                    }
                     const auto emitted = worker_result.result.value("emitted_results", Json::object());
                     if (emitted.is_object()) {
                         const ResultStore result_store(project->get_database_path());
+                        std::vector<Json> manifests;
                         for (const auto &[output_port, reference] : emitted.items()) {
                             static_cast<void>(output_port);
                             if (!reference.is_object()) continue;
                             const auto result_id = reference.value("result_id", std::string{});
                             if (result_id.empty()) continue;
                             run_result_ids.push_back(result_id);
-                            if (execution_mode == "detailed")
-                                project->register_result_manifest(result_store.describe_result(result_id));
+                            if (execution_mode == "detailed") {
+                                manifests.push_back(result_store.describe_result(result_id));
+                            }
+                        }
+                        if (execution_mode == "detailed") {
+                            try {
+                                project->register_result_manifests(manifests);
+                            } catch (...) {
+                                const auto cleanup_error = detail::discard_failed_worker_results(
+                                    project->get_database_path(), worker_run_id);
+                                if (!cleanup_error.empty())
+                                    throw std::runtime_error(detail::append_cleanup_diagnostic(
+                                        "Could not register all operation outputs", cleanup_error));
+                                throw;
+                            }
                         }
                     }
                     return worker_result.result;
@@ -1940,8 +1998,6 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
                                {"representation", result.value("representation", result.value("kind", std::string{}))}};
                 if (reference.value("representation", std::string{}) == "json")
                     reference["payload"] = store.read_json_payload(reference.value("result_id", std::string{}));
-                if (reference.value("representation", std::string{}) == "table")
-                    reference["physical_table"] = "result:" + reference.value("result_id", std::string{});
                 emitted_results[output_port] = std::move(reference);
             }
             if (operation_log_callback_)
@@ -1968,6 +2024,7 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
         operation_cancellations_[session_id] = cancellation;
     }
 
+    const auto worker_run_id = detail::create_operation_run_id();
     WorkerRequest request;
     request.executable = configuration_path_.parent_path() /
 #ifdef _WIN32
@@ -1979,7 +2036,7 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     request.memory_limit_mb = detail::configured_worker_memory_limit_mb(configuration_path_);
     request.service_port = service_port_;
     request.session_id = session_id;
-    request.run_id = effective_instance;
+    request.run_id = worker_run_id;
     request.operation_id = operation_id;
     request.operation_instance = effective_instance;
     request.operation = operations_->find(operation_id)->definition().id;
@@ -2004,19 +2061,37 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     {
         std::lock_guard lock(mutex_);
         active_workers_[session_id] = worker;
+        active_worker_run_ids_[session_id] = worker_run_id;
     }
     try {
         WorkerResult worker_result;
         try {
             worker_result = worker->run();
-        } catch (...) {
-            abort_worker_output_leases(session_id, effective_instance);
+        } catch (const std::exception &error) {
+            abort_worker_output_leases(session_id, worker_run_id);
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
             std::lock_guard lock(mutex_);
             operation_cancellations_.erase(session_id);
             active_workers_.erase(session_id);
+            active_worker_run_ids_.erase(session_id);
+            if (!cleanup_error.empty())
+                throw std::runtime_error(detail::append_cleanup_diagnostic(error.what(), cleanup_error));
+            throw;
+        } catch (...) {
+            abort_worker_output_leases(session_id, worker_run_id);
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
+            std::lock_guard lock(mutex_);
+            operation_cancellations_.erase(session_id);
+            active_workers_.erase(session_id);
+            active_worker_run_ids_.erase(session_id);
+            if (!cleanup_error.empty())
+                throw std::runtime_error(detail::append_cleanup_diagnostic(
+                    "unknown worker execution failure", cleanup_error));
             throw;
         }
-        abort_worker_output_leases(session_id, effective_instance);
+        abort_worker_output_leases(session_id, worker_run_id);
         if (operation_event_callback_) {
             const auto worker_event = worker_result.cancelled
                 ? "worker.cancelled"
@@ -2026,28 +2101,51 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
             operation_event_callback_(session_id, worker_result.worker.operation_id,
                                       worker_event, worker_result.worker.to_json());
         }
-        if (worker_result.cancelled) throw Error(ErrorCode::Cancelled, "Operation cancelled");
-        if (!worker_result.error.empty()) throw Error(ErrorCode::MethodExecution, worker_result.error);
+        if (worker_result.cancelled) {
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
+            throw Error(ErrorCode::Cancelled, detail::append_cleanup_diagnostic(
+                "Operation cancelled", cleanup_error));
+        }
+        if (!worker_result.error.empty()) {
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
+            throw Error(ErrorCode::MethodExecution, detail::append_cleanup_diagnostic(
+                worker_result.error, cleanup_error));
+        }
         const auto emitted = worker_result.result.value("emitted_results", Json::object());
         if (emitted.is_object()) {
+            std::vector<Json> manifests;
             for (const auto &[output_port, reference] : emitted.items()) {
                 static_cast<void>(output_port);
                 if (!reference.is_object()) continue;
                 const auto result_id = reference.value("result_id", std::string{});
                 if (result_id.empty()) continue;
-                project->register_result_manifest(store.describe_result(result_id));
+                manifests.push_back(store.describe_result(result_id));
+            }
+            try {
+                project->register_result_manifests(manifests);
+            } catch (...) {
+                const auto cleanup_error = detail::discard_failed_worker_results(
+                    project->get_database_path(), worker_run_id);
+                if (!cleanup_error.empty())
+                    throw std::runtime_error(detail::append_cleanup_diagnostic(
+                        "Could not register all operation outputs", cleanup_error));
+                throw;
             }
         }
         {
             std::lock_guard lock(mutex_);
             operation_cancellations_.erase(session_id);
             active_workers_.erase(session_id);
+            active_worker_run_ids_.erase(session_id);
         }
         return worker_result.result;
     } catch (...) {
         std::lock_guard lock(mutex_);
         operation_cancellations_.erase(session_id);
         active_workers_.erase(session_id);
+        active_worker_run_ids_.erase(session_id);
         throw;
     }
 }

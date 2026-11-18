@@ -1,13 +1,16 @@
 #include "streamfind/data_proxy_output_sink.hpp"
 #include "streamfind/data_proxy_protocol.hpp"
+#include "streamfind/result_table_schema.hpp"
 #include "streamfind/service/result_store.hpp"
 #include "../support/arrow_batch_fixture.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <atomic>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <arrow/api.h>
@@ -177,13 +180,13 @@ int main() {
             {"schema", {{{"name", "count"}, {"type", "integer"}},
                         {{"name", "enabled"}, {"type", "boolean"}},
                         {{"name", "label"}, {"type", "string"}},
-                        {{"name", "trace"}, {"type", "array"}}}}});
+                        {{"name", "trace"}, {"type", "array"}, {"items", {{"type", "number"}}}}}}});
         const auto output_handle = handle.at("output_handle").get<std::string>();
         const streamfind::Json fixture_schema = streamfind::Json::array({
             {{"name", "count"}, {"type", "integer"}},
             {{"name", "enabled"}, {"type", "boolean"}},
             {{"name", "label"}, {"type", "string"}},
-            {{"name", "trace"}, {"type", "array"}}});
+            {{"name", "trace"}, {"type", "array"}, {"items", {{"type", "number"}}}}});
         sink.write_table_batch(output_handle, 0, streamfind::test::arrow_batch_fixture(fixture_schema,
             {{{"count", 7}, {"enabled", true}, {"label", "first"}, {"trace", {1.25, 2.5, 3.75}}}}));
         sink.write_table_batch(output_handle, 1, streamfind::test::arrow_batch_fixture(fixture_schema,
@@ -261,6 +264,47 @@ int main() {
             duplicate_native_handle(empty_input->native_handle()));
         require(!empty_reader.read_typed(0, 4, {"count"}),
                 "empty Arrow table returned rows");
+
+        constexpr std::int64_t large_row_count = 16384;
+        const streamfind::Json large_schema = streamfind::Json::array({
+            {{"name", "row"}, {"type", "integer"}}});
+        streamfind::Json large_rows = streamfind::Json::array();
+        for (std::int64_t row = 0; row < large_row_count; ++row)
+            large_rows.push_back({{"row", row}});
+        const auto large_handle = sink.begin({
+            {"contract_id", "largeReadBoundaryTable"}, {"kind", "table"},
+            {"format", "arrow-ipc-file"}, {"extension", "arrow"},
+            {"media_type", "application/vnd.apache.arrow.file"},
+            {"schema", large_schema}});
+        const auto large_output = large_handle.at("output_handle").get<std::string>();
+        sink.write_table_batch(large_output, 0,
+            streamfind::test::arrow_batch_fixture(large_schema, large_rows));
+        sink.write_table_batch(large_output, 1,
+            streamfind::test::arrow_batch_fixture(large_schema, {{{"row", large_row_count}}}));
+        const auto large_result = sink.finish(large_output).at("result_id").get<std::string>();
+        require(store.describe_result(large_result).value("row_count", 0) == large_row_count + 1,
+                "large Arrow boundary fixture published the wrong row count");
+        auto large_input = store.open_published_result(large_result);
+        streamfind::data_proxy::ArrowFileBatchReader large_reader(
+            duplicate_native_handle(large_input->native_handle()));
+        const auto row_zero = large_reader.read_typed(0, 1, {"row"});
+        const auto through_4094 = large_reader.read_typed(1, 4094, {"row"});
+        const auto row_4095 = large_reader.read_typed(4095, 1, {"row"});
+        const auto through_16383 = large_reader.read_typed(4096, 12288, {"row"});
+        const auto sentinel = large_reader.read_typed(large_row_count, 1, {"row"});
+        const auto end_of_file = large_reader.read_typed(large_row_count + 1, 1, {"row"});
+        require(row_zero && row_zero->num_rows() == 1 &&
+                    std::static_pointer_cast<arrow::Int64Array>(row_zero->column(0))->Value(0) == 0 &&
+                    through_4094 && through_4094->num_rows() == 4094 &&
+                    row_4095 && row_4095->num_rows() == 1 &&
+                    std::static_pointer_cast<arrow::Int64Array>(row_4095->column(0))->Value(0) == 4095 &&
+                    through_16383 && through_16383->num_rows() == 12288 &&
+                    std::static_pointer_cast<arrow::Int64Array>(through_16383->column(0))->Value(0) == 4096 &&
+                    std::static_pointer_cast<arrow::Int64Array>(through_16383->column(0))->Value(12287) == 16383 &&
+                    sentinel && sentinel->num_rows() == 1 &&
+                    std::static_pointer_cast<arrow::Int64Array>(sentinel->column(0))->Value(0) == large_row_count &&
+                    !end_of_file,
+                "handle-backed Arrow reads truncated data at a batch-size boundary or lost the final sentinel row");
 
         const auto bounded_handle = sink.begin({
             {"contract_id", "boundedTable"}, {"kind", "table"},
@@ -340,6 +384,71 @@ int main() {
                     typed_rows.at(1).at("trace").is_array() && typed_rows.at(1).at("trace").empty() &&
                     typed_rows.at(2).at("trace").is_null(),
                 "published Arrow list did not preserve numeric values, empty lists, and nulls");
+
+        const auto extended_schema = streamfind::Json::array({
+            {{"name", "amount"}, {"type", "decimal"}, {"precision", 12}, {"scale", 3}},
+            {{"name", "created"}, {"type", "timestamp"}},
+            {{"name", "payload"}, {"type", "binary"}},
+            {{"name", "indices"}, {"type", "array"}, {"items", {{"type", "integer"}}}}});
+        const auto extended_handle = sink.begin({
+            {"contract_id", "extendedTypesTable"}, {"kind", "table"},
+            {"format", "arrow-ipc-file"}, {"extension", "arrow"},
+            {"media_type", "application/vnd.apache.arrow.file"},
+            {"schema", extended_schema}});
+        const auto extended_output = extended_handle.at("output_handle").get<std::string>();
+        const auto decimal_type = arrow::decimal128(12, 3);
+        arrow::Decimal128Builder decimal_builder(decimal_type, arrow::default_memory_pool());
+        require(decimal_builder.Append(arrow::Decimal128(12345)).ok(), "decimal fixture append failed");
+        std::shared_ptr<arrow::Array> decimal_array;
+        require(decimal_builder.Finish(&decimal_array).ok(), "decimal fixture build failed");
+        arrow::TimestampBuilder timestamp_builder(
+            arrow::timestamp(arrow::TimeUnit::MICRO), arrow::default_memory_pool());
+        constexpr std::int64_t timestamp_value = 1794921518123456;
+        require(timestamp_builder.Append(timestamp_value).ok(), "timestamp fixture append failed");
+        std::shared_ptr<arrow::Array> timestamp_array;
+        require(timestamp_builder.Finish(&timestamp_array).ok(), "timestamp fixture build failed");
+        arrow::BinaryBuilder binary_builder;
+        const std::uint8_t binary_value[]{'A', 0, 'B'};
+        require(binary_builder.Append(binary_value, sizeof(binary_value)).ok(), "binary fixture append failed");
+        std::shared_ptr<arrow::Array> binary_array;
+        require(binary_builder.Finish(&binary_array).ok(), "binary fixture build failed");
+        auto integer_values = std::make_shared<arrow::Int64Builder>();
+        arrow::ListBuilder integer_list_builder(arrow::default_memory_pool(), integer_values);
+        require(integer_list_builder.Append().ok(), "integer-list fixture append failed");
+        require(integer_values->Append(4).ok() && integer_values->Append(9).ok(),
+                "integer-list values append failed");
+        std::shared_ptr<arrow::Array> integer_list_array;
+        require(integer_list_builder.Finish(&integer_list_array).ok(), "integer-list fixture build failed");
+        const auto extended_arrow_schema = streamfind::result_table_arrow_schema(extended_schema);
+        const auto extended_batch = arrow::RecordBatch::Make(
+            extended_arrow_schema, 1,
+            {decimal_array, timestamp_array, binary_array, integer_list_array});
+        sink.write_table_batch(extended_output, 0, extended_batch);
+        const auto extended_published = sink.finish(extended_output, streamfind::Json::object());
+        const auto extended_id = extended_published.at("result_id").get<std::string>();
+        auto extended_input = store.open_published_result(extended_id);
+        streamfind::data_proxy::ArrowFileBatchReader extended_reader(
+            duplicate_native_handle(extended_input->native_handle()));
+        const auto extended_roundtrip = extended_reader.read_typed(0, 2);
+        require(extended_roundtrip && extended_roundtrip->schema()->Equals(*extended_arrow_schema),
+                "published Arrow table changed decimal, timestamp, binary, or integer-list schema");
+        const auto roundtrip_amount = std::static_pointer_cast<arrow::Decimal128Array>(
+            extended_roundtrip->column(0));
+        const auto roundtrip_created = std::static_pointer_cast<arrow::TimestampArray>(
+            extended_roundtrip->column(1));
+        const auto roundtrip_payload = std::static_pointer_cast<arrow::BinaryArray>(
+            extended_roundtrip->column(2));
+        const auto roundtrip_indices = std::static_pointer_cast<arrow::ListArray>(
+            extended_roundtrip->column(3));
+        const auto roundtrip_index_values = std::static_pointer_cast<arrow::Int64Array>(
+            roundtrip_indices->values());
+        require(roundtrip_amount->FormatValue(0) == "12.345" &&
+                    roundtrip_created->Value(0) == timestamp_value &&
+                    roundtrip_payload->GetView(0) == std::string_view("A\0B", 3) &&
+                    roundtrip_indices->value_length(0) == 2 &&
+                    roundtrip_index_values->Value(roundtrip_indices->value_offset(0)) == 4 &&
+                    roundtrip_index_values->Value(roundtrip_indices->value_offset(0) + 1) == 9,
+                "published Arrow table changed extended typed values");
 
         // Exercise independent store operations concurrently: result publication,
         // projected reads of a stable result, and deletion of another result.
@@ -439,6 +548,20 @@ int main() {
         try { (void)store.describe_result(concurrent_published_id); }
         catch (const std::exception &) { concurrent_result_hidden = true; }
         require(concurrent_result_hidden, "concurrently deleted result remained discoverable");
+
+        const auto failed_run_result = publish_small_table(
+            store, "failed-operation-run", "failed-operation-result");
+        const auto successful_run_result = publish_small_table(
+            store, "successful-operation-run", "successful-operation-result");
+        require(store.remove_published_results_for_run("failed-operation-run") == 1,
+                "failed worker run did not remove its published partial output");
+        bool failed_run_output_hidden = false;
+        try { (void)store.describe_result(failed_run_result); }
+        catch (const std::exception &) { failed_run_output_hidden = true; }
+        require(failed_run_output_hidden,
+                "failed worker output remained visible after run-scoped cleanup");
+        require(store.describe_result(successful_run_result).value("state", std::string{}) == "published",
+                "run-scoped cleanup removed output from a different successful operation");
 
         const auto aborted_handle = sink.begin({
             {"contract_id", "abortedTable"}, {"kind", "table"},

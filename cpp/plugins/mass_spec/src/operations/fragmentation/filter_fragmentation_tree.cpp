@@ -16,11 +16,11 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("fragmentationTreeTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table") ||
-        !input->at("physical_table").is_string())
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref") ||
+        !input->at("result_ref").is_string())
         throw std::invalid_argument("Connect a fragmentationTreeTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const auto minimum_value = parameters.value("minimum_mass", Json(nullptr));
     const auto maximum_value = parameters.value("maximum_mass", Json(nullptr));
     if (!minimum_value.is_null() && (!minimum_value.is_number() || minimum_value.get<double>() < 0.0))
@@ -53,7 +53,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     std::size_t skipped_duplicate = 0;
     std::size_t input_rows = 0;
     std::size_t output_rows = 0;
-    access.read_typed_batches(table, columns, "depth",
+    access.read_typed_batches(table, columns,
         [&](const sdk::PluginProjectAccess::BatchView &batch) {
             const auto mass_column = batch.column_index("mass");
             const auto formula_column = batch.column_index("formula");

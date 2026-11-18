@@ -107,6 +107,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> operation_cancellations_;
     std::unordered_map<std::string, std::shared_ptr<WorkerProcess>> active_workers_;
+    std::unordered_map<std::string, std::string> active_worker_run_ids_;
     std::unordered_map<std::string, Json> workflow_progress_;
     std::unordered_map<std::string, std::string> workflow_execution_modes_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>> workflow_operation_steps_;

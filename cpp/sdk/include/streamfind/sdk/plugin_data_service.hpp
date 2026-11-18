@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -8,7 +7,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "streamfind/operation_output.hpp"
 #include "streamfind/project.hpp"
 #include "streamfind/plugin_abi.h"
 #include "streamfind/export.hpp"
@@ -16,13 +14,13 @@
 namespace streamfind::sdk {
 
 struct STREAMFIND_SDK_API PluginDataServiceContext {
+    using DataProxyRequest = std::function<Json(const data_proxy::Envelope &)>;
     using TableBatchEmitter = std::function<streamfind_plugin_status(
         void *, const char *, uint32_t, struct ArrowArray *, struct ArrowSchema *, void *)>;
     using ResultEmitter = std::function<streamfind_plugin_status(
         void *, const char *, uint32_t, const char *, uint64_t, void *)>;
     std::string operation_instance;
     std::string data_proxy_operation_id;
-    std::atomic_bool *cancelled{nullptr};
     std::function<bool()> cancellation_requested;
     std::function<void(double, std::string_view)> progress;
     std::function<void(std::string_view)> report_error;
@@ -30,13 +28,10 @@ struct STREAMFIND_SDK_API PluginDataServiceContext {
     std::string data_proxy_run_id;
     // The service-owned proxy is the only execution boundary for table and
     // typed-result access.
-    Project::DataProxyRequest data_proxy_request;
+    DataProxyRequest data_proxy_request;
     std::function<std::intptr_t()> receive_result_input_handle;
-    OperationOutputSink *output_sink{nullptr};
-    std::vector<std::string> allowed_tables;
+    std::vector<std::string> allowed_result_refs;
     std::unordered_map<std::string, std::unordered_set<std::string>> readable_columns;
-    std::unordered_map<std::string, std::unordered_set<std::string>> writable_columns;
-    std::unordered_map<std::string, std::string> output_tables;
     TableBatchEmitter emit_table_batch;
     ResultEmitter emit_result;
 };

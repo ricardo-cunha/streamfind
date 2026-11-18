@@ -55,7 +55,8 @@ private:
 // private to the launched worker and remains open for its lifetime.
 #ifdef _WIN32
 HANDLE connect_worker_handle_broker(const std::string &address);
-ReceivedWorkerHandle receive_worker_handle(HANDLE broker_pipe);
+ReceivedWorkerHandle receive_worker_handle(HANDLE broker_pipe,
+                                           std::chrono::milliseconds timeout = std::chrono::seconds(30));
 #else
 int connect_worker_handle_broker(const std::string &address);
 #endif
@@ -66,7 +67,8 @@ std::uintptr_t duplicate_worker_handle(HANDLE source, std::uint64_t target_proce
 HANDLE accept_duplicated_worker_handle(std::uintptr_t worker_local_handle);
 #else
 void send_worker_handle(int broker_socket, int source_fd, const std::string &grant_token);
-ReceivedWorkerHandle receive_worker_handle(int broker_socket);
+ReceivedWorkerHandle receive_worker_handle(
+    int broker_socket, std::chrono::milliseconds timeout = std::chrono::seconds(30));
 #endif
 
 struct WorkerHandleGrant {
