@@ -19,6 +19,7 @@ nlohmann::json filter_timeseries(sdk::PluginProjectAccess &, const nlohmann::jso
 nlohmann::json resample_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json align_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json project_aligned_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
+nlohmann::json rolling_statistics(sdk::PluginProjectAccess &, const nlohmann::json &);
 }
 
 namespace streamfind::sensors::tests {
@@ -350,6 +351,55 @@ void test_sensor_timeseries_resampling() {
             "resampler did not aggregate numeric and missing observations correctly");
 }
 
+void test_sensor_timeseries_rolling_statistics() {
+    MemoryProjectAccess access;
+    const auto make_row = [](const char *event_time, double value,
+                             const char *event_id) {
+        return Json{{"source_id", "ph-meter"},
+                    {"signal_id", "pH"},
+                    {"event_time", event_time},
+                    {"received_at", event_time},
+                    {"time_origin", "source"},
+                    {"value_type", "real"},
+                    {"value_double", value},
+                    {"value_int", nullptr},
+                    {"value_bool", nullptr},
+                    {"value_text", nullptr},
+                    {"value_json", nullptr},
+                    {"unit", "pH"},
+                    {"quality", "good"},
+                    {"status_code", "0x0"},
+                    {"capture_id", "capture-1"},
+                    {"event_id", event_id}};
+    };
+    access.tables["timeseries"] = Json::array({
+        make_row("2026-11-19T12:00:00.000000Z", 2.0, "event-1"),
+        make_row("2026-11-19T12:00:01.000000Z", 4.0, "event-2"),
+        make_row("2026-11-19T12:00:03.000000Z", 8.0, "event-3")});
+
+    const auto parameters = Json{
+        {"_inputs", {{"sensorTimeseriesTable", {{"result_ref", "timeseries"}}}}},
+        {"rolling_window_seconds", 2.0},
+        {"rolling_statistic", "mean"}};
+    const auto result = operations::detail::rolling_statistics(access, parameters);
+    require(result.at("contract") == "SENSOR_TIMESERIES",
+            "rolling statistics returned the wrong contract");
+    require(result.at("rows_emitted") == 3,
+            "rolling statistics emitted the wrong row count");
+    const auto &batch = access.emitted.at("sensorTimeseriesTable");
+    const auto signal_index = batch->schema()->GetFieldIndex("signal_id");
+    const auto value_index = batch->schema()->GetFieldIndex("value_double");
+    const auto signals = std::static_pointer_cast<arrow::StringArray>(batch->column(signal_index));
+    const auto values = std::static_pointer_cast<arrow::DoubleArray>(batch->column(value_index));
+    require(signals->GetString(0) == "pH::rolling_mean" &&
+                signals->GetString(2) == "pH::rolling_mean",
+            "rolling statistics did not emit a derived signal");
+    require(std::abs(values->Value(0) - 2.0) < 1e-12 &&
+                std::abs(values->Value(1) - 3.0) < 1e-12 &&
+                std::abs(values->Value(2) - 6.0) < 1e-12,
+            "rolling statistics used the wrong trailing window");
+}
+
 void test_sensor_timeseries_alignment() {
     MemoryProjectAccess access;
     const auto make_row = [](const char *signal, const char *event_time,
@@ -466,6 +516,7 @@ int main() {
         streamfind::sensors::tests::test_sensor_timeseries_wide_normalization();
         streamfind::sensors::tests::test_sensor_timeseries_filter();
         streamfind::sensors::tests::test_sensor_timeseries_resampling();
+        streamfind::sensors::tests::test_sensor_timeseries_rolling_statistics();
         streamfind::sensors::tests::test_sensor_timeseries_alignment();
         streamfind::sensors::tests::test_project_aligned_timeseries();
         streamfind::sensors::tests::test_sensor_timeseries_validation();

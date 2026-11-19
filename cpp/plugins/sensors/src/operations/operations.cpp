@@ -19,6 +19,7 @@ nlohmann::json filter_timeseries(sdk::PluginProjectAccess &, const nlohmann::jso
 nlohmann::json resample_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json align_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json project_aligned_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
+nlohmann::json rolling_statistics(sdk::PluginProjectAccess &, const nlohmann::json &);
 
 }  // namespace detail
 
@@ -46,6 +47,8 @@ const sdk::CapabilityRegistry &capabilities() {
          &detail::align_timeseries},
         {"sensors.project_aligned_timeseries", sdk::CapabilityKind::Operation,
          &detail::project_aligned_timeseries},
+        {"sensors.rolling_statistics", sdk::CapabilityKind::Operation,
+         &detail::rolling_statistics},
     };
     return registry;
 }

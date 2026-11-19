@@ -168,7 +168,7 @@ sfsensors:captureIdColumn
     sf:availableInDomain sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Capture ID" ;
-    skos:definition "Acquisition execution or immutable segment identity." ;
+    skos:definition "Acquisition execution identity propagated with the observation." ;
     sf:columnName "capture_id" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .

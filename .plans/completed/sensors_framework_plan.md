@@ -12,10 +12,15 @@ worktree on 2026-11-19 and expanded from the attached sensors-framework
 concept. OPC UA is the first implemented acquisition possibility and the
 reference adapter for the framework that follows.
 
+Completion: The planned sensors framework scope is complete as of 2026-11-19.
+OPC UA and MQTT provide acquisition adapters over the canonical observation
+contract, and the finite-batch time-series processing milestones are
+implemented, tested, and packaged.
+
 The target architecture is:
 
 ```text
-OPC UA / CSV / MQTT / SiLA 2 / future sources
+OPC UA / CSV / MQTT / future sources
                  |
        protocol-specific adapters
                  |
@@ -30,6 +35,12 @@ The sensors plugin owns acquisition adapters and sensor-specific processing.
 The core owns workflow execution, cancellation, typed data movement, result
 publication, project isolation, and runtime lifecycle. Adding an acquisition
 protocol should not require a core or time-series algorithm change.
+
+The plugin does not own cross-run accumulation. One operation invocation
+produces one finite result. If a user wants to append that result to a larger
+history, retain it for a later workflow, or combine results from repeated
+workflow runs, that composition must be explicit in the user's workflow using
+generic persistence and data-flow operations.
 
 ### Implementation progress
 
@@ -58,6 +69,8 @@ protocol should not require a core or time-series algorithm change.
   bounded tolerance, match/missing status, and signed time deltas.
 - [x] Add an explicit aligned-table projection back to `SENSOR_TIMESERIES_V1`
   with reference and observed time-axis policies.
+- [x] Add rolling mean, minimum, maximum, and standard-deviation operations
+  that emit derived observations through `sensorTimeseriesTable`.
 
 ## Current baseline: OPC UA reference acquisition
 
@@ -124,7 +137,7 @@ arbitrary number of sensors without dynamically changing table columns.
 | `unit` | `VARCHAR` | Unit of measurement, when known |
 | `quality` | `VARCHAR` | `good`, `uncertain`, `bad`, or `missing` |
 | `status_code` | `VARCHAR` | Protocol-native status code |
-| `capture_id` | `VARCHAR` | Acquisition execution or segment identity |
+| `capture_id` | `VARCHAR` | Acquisition execution identity |
 | `event_id` | `VARCHAR` | Observation identity for deduplication |
 
 Normally exactly one typed value column contains a value. Invalid or
@@ -169,14 +182,12 @@ open62541 connection and decoding code while adding:
 - cancellation and progress reporting;
 - typed observation batches and quality propagation;
 - reconnect and partial-result rules; and
-- immutable capture segments identified by `capture_id`.
+- one canonical result identified by `capture_id`.
 
 Continuous, months-long ingestion remains out of scope for the sensors
-operation. A finite operation may subscribe for a bounded interval and publish
-one immutable result segment. Repeated monitoring is achieved by the generic
-service scheduler invoking that finite workflow at its configured frequency;
-persistent streaming and scheduler-owned retry policy do not belong in the
-adapter.
+operation. Each invocation performs a finite read or bounded subscription and
+publishes one immutable result. Persistent streaming, cross-run accumulation,
+and long-lived connections do not belong in the adapter.
 
 ## Internal acquisition boundary
 
@@ -211,7 +222,6 @@ inside the sensors plugin and use the existing SDK batch facilities.
 | OPC UA | Snapshot, bounded polling, or monitored-item capture | Node status, source/server timestamps, reconnect |
 | CSV | Finite import and normalization | Timestamp formats, wide/long mapping, units, bad rows |
 | MQTT | Bounded topic subscription | QoS, retained messages, duplicates, payload mapping |
-| SiLA 2 | Property reads and bounded observable streams | Feature discovery, gRPC/Protobuf, metadata |
 | Modbus/serial | Future bounded polling adapter | Registers, scaling, device timestamps |
 
 CSV should reuse the generic `streamfind.read_csv` operation. A sensors-owned
@@ -220,10 +230,9 @@ into `SENSOR_TIMESERIES`, supporting explicit mappings for both wide and long
 inputs without duplicating CSV parsing.
 
 MQTT delivery semantics must be explicit; broker QoS must not be treated as
-application-level exactly-once recording. SiLA 2 should initially support
-reads and bounded observable streams. Device-control commands remain separate
-operations because their side effects and safety requirements differ from
-acquisition.
+application-level exactly-once recording. Device-control commands remain
+separate operations because their side effects and safety requirements differ
+from acquisition.
 
 ## Time-series processing operations
 
@@ -236,14 +245,14 @@ tables:
 | `sensors.filter_timeseries` | `SENSOR_TIMESERIES` | `SENSOR_TIMESERIES` |
 | `sensors.resample_timeseries` | `SENSOR_TIMESERIES` | `SENSOR_TIMESERIES` |
 | `sensors.align_timeseries` | Multiple sensor series | Aligned measurement table |
-| `sensors.rolling_statistics` | `SENSOR_TIMESERIES` | Derived time series |
-| `sensors.detect_sensor_events` | `SENSOR_TIMESERIES` | `SENSOR_EVENTS` |
+| `sensors.rolling_statistics` | `SENSOR_TIMESERIES` | `SENSOR_TIMESERIES` |
 
 The first processing slice should be validation, time filtering, resampling,
 and alignment. It must define missing samples, out-of-order events, duplicate
 timestamps, bad quality, interpolation, nearest-time tolerance, and quality
-propagation. Large historical inputs will eventually need timestamp-range
-selection and batch pruning so processing does not scan every segment.
+propagation. Cross-run accumulation, append semantics, and historical-series
+querying are intentionally outside this plan; a user workflow may compose
+finite results with generic persistence and data-flow operations.
 
 The first processing operation is `sensors.filter_timeseries`. It accepts a
 canonical time-series input and optional normalized UTC `start_time` and
@@ -286,7 +295,7 @@ Immediate runtime work:
 - preserve microsecond timestamps end to end rather than reducing them to
   whole seconds;
 - validate efficient emission of multiple bounded Arrow batches;
-- define secret references and redaction tests for OPC UA, MQTT, and SiLA 2;
+- define secret references and redaction tests for OPC UA and MQTT;
 - keep secure OPC UA connections, certificate validation, and encryption in
   the production-readiness scope; and
 - add optional time-range/projected-column reads only when historical query
@@ -362,31 +371,30 @@ bounded reconnect/resubscription. Validation is intentionally a dev-mode
 workflow check through `scripts/dev/`; no permanent integration-test target is
 required for this adapter.
 
-### M6 — SiLA 2 adapter and additional analysis
+### M6 — Additional finite-batch analysis
 
-Add feature/property discovery, bounded observation capture, structured value
-mapping, and event-detection operations.
+Add rolling mean, minimum, maximum, and standard-deviation statistics over
+finite `SENSOR_TIMESERIES` inputs. The operation emits derived observations
+through the same canonical `sensorTimeseriesTable` contract and preserves
+typed values, quality, timestamps, and provenance. Non-numeric, missing, and
+uncertain observations are handled explicitly by the operation contract.
 
-**Exit:** SiLA 2 reuses the existing acquisition and time-series pipeline;
-device-control operations remain separately scoped.
+Status: complete. The operation is registered in the sensors plugin, declared
+in the semantic catalogue, covered by the native operation contract test, and
+included in the packaged build.
 
-### M7 — Efficient historical acquisition and finite capture lifecycle
+**Exit:** finite sensor workflows can chain acquisition, validation, temporal
+processing, and rolling statistics without protocol-specific tables or
+persistent runtime state.
 
-Introduce logical sensor series spanning immutable capture segments,
-time-range/projected-column query optimization, and provenance for repeated
-bounded captures. Every acquisition operation connects at runtime, performs a
-finite read or bounded subscription, publishes its segment, and closes its
-protocol connection. A node reports cancellation or terminal failure to the
-core runtime; it does not restart workflows, persist a live connection, or
-implement scheduler-owned retry policy.
+Every acquisition operation connects at runtime, performs a finite read or
+bounded subscription, publishes one result, and closes its protocol
+connection. A node reports cancellation or terminal failure to the core
+runtime; it does not restart workflows, maintain a live connection between
+runs, append to another run's result, or own cross-run retention.
 
-The independent scheduler plan controls invocation frequency, no-overlap
-rules, retries, and failed-workflow state. M7 only makes the resulting finite
-segments efficient and coherent to query.
-
-**Exit:** repeated bounded acquisitions form consistent, queryable historical
-series without changing the finite-operation contract or adding persistent
-connections to the sensors plugin.
+Repeated acquisition, append/retention policy, and consumption by a later
+workflow are user-composed workflow concerns.
 
 ## Proposed plugin organization
 
@@ -396,7 +404,7 @@ Restructure incrementally, keeping the existing packaging and catalogue:
 cpp/plugins/sensors/
 ├── src/
 │   ├── acquisition/       observation, adapter, normalizer, capture runner
-│   ├── adapters/          opcua, csv, mqtt, sila2
+│   ├── adapters/          opcua, csv, mqtt
 │   ├── timeseries/        schema, validation, resampling, alignment
 │   ├── operations/        operation registration and entry points
 │   └── plugin_entrypoint.cpp
@@ -407,57 +415,6 @@ cpp/plugins/sensors/
 This is a target organization, not a request for a duplicate source tree or a
 large all-at-once move. Each relocation must leave one owning implementation
 path and preserve the current plugin boundaries.
-
-## Independent service and workflow plans
-
-Service scheduling and workflow logic are separate implementation tracks. The
-following section records the integration boundary for sensors; it does not
-make either capability part of this sensors-plugin plan or its completion
-criteria.
-
-Continuous monitoring should be achieved by composing bounded acquisition
-workflows with a generic service scheduler, not by making the sensors plugin
-own a permanent process. The scheduler and the workflow engine have separate
-responsibilities:
-
-- The service scheduler decides when to invoke a saved workflow and manages
-  schedule lifecycle.
-- The workflow definition decides which operations run, how data moves, what
-  logic is applied, and where results are persisted.
-- Acquisition and persistence remain ordinary operations with explicit
-  contracts. The scheduler does not infer acquisition checkpoints, data
-  formats, or analysis stages.
-
-The scheduler should call the existing workflow-start interface and store
-schedule metadata separately from the workflow definition. The first generic
-triggers are manual, interval, and after-completion; calendar/cron triggers
-can follow later. Initial lifecycle rules are no overlapping runs for a given
-workflow, skipped interval ticks while a run is active, bounded retry for
-after-completion failures, and explicit start/stop/cancel status.
-
-Workflow logic is a separate core capability. Begin with ordinary DAG
-operations such as Boolean logic, comparisons, conditional-value selection,
-data filtering, selection, merging, assertions, and failure. These can use the
-existing one-shot execution contract. Only a true branch that prevents an
-unselected subgraph from running, or a loop that repeats a subgraph, requires
-an execution-engine extension. Those extensions must remain bounded and
-domain-neutral.
-
-Side-effecting operations such as live acquisition and file writes must expose
-generic cacheability/idempotence metadata so the result cache cannot silently
-skip them merely because parameters are unchanged. The scheduler must not
-impose file locking, retries, append, or deduplication semantics on a
-workflow's persistence operation.
-
-Multiple saved workflows per project are a later project-model concern. The
-first scheduler can target one selected workflow definition per project, or
-use separate projects, until workflow-definition selection is explicitly
-implemented.
-
-See the focused future plans:
-
-- `.plans/future/workflow_scheduler_plan.md`
-- `.plans/future/workflow_logic_capabilities_plan.md`
 
 ## Cross-cutting implementation rules
 
@@ -490,7 +447,7 @@ See the focused future plans:
 | Future adapters | Protocol simulator, adapter contract tests, and packaged workflow run |
 
 Basic contract tests must be deterministic and must not require a permanently
-available external sensor server. Live pH-meter, broker, and SiLA 2 checks are
+available external sensor server. Live pH-meter and broker checks are
 integration validation only and belong in disposable worktree `.sf` projects.
 
 ## Definition of done
@@ -500,7 +457,5 @@ possibilities share the canonical observation boundary, each has plugin-owned
 semantic and native implementations, and both can be configured, validated,
 executed, and inspected in disposable `.sf` projects through the generic C++
 service/MCP host. Time-series processing must operate on the canonical result
-without knowing which protocol produced it. Scheduler lifecycle and generic
-workflow-logic implementation are validated through their respective focused
-plans. No scheduler, frontend, or core domain-specific implementation should
-be required to add the second adapter.
+without knowing which protocol produced it. No frontend or core
+domain-specific implementation should be required to add the second adapter.

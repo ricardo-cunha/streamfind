@@ -11,7 +11,8 @@ add_executable(streamfind_sensors_operation_contract
     ../src/operations/filter.cpp
     ../src/operations/resample.cpp
     ../src/operations/alignment.cpp
-    ../src/operations/project.cpp)
+    ../src/operations/project.cpp
+    ../src/operations/analysis.cpp)
 target_include_directories(streamfind_sensors_operation_contract PRIVATE
     ../../sdk/include)
 target_link_libraries(streamfind_sensors_operation_contract PRIVATE

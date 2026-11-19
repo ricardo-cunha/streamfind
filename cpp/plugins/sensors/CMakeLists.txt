@@ -40,6 +40,7 @@ add_library(streamfind_sensors_plugin SHARED
     src/operations/resample.cpp
     src/operations/alignment.cpp
     src/operations/project.cpp
+    src/operations/analysis.cpp
     src/operations/mqtt.cpp)
 target_link_libraries(streamfind_sensors_plugin PRIVATE
     streamfind::cpp_sdk

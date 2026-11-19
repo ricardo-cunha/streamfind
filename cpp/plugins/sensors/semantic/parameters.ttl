@@ -132,7 +132,7 @@ sfsensors:captureIdParameter
     sf:availableInDomain sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Capture ID" ;
-    skos:definition "Optional immutable acquisition or normalization segment identity." ;
+    skos:definition "Optional acquisition execution identity propagated to the normalized observations." ;
     sf:type "string" ;
     sf:required false ;
     sf:default "" ;
@@ -182,6 +182,30 @@ sfsensors:aggregationParameter
     sf:required false ;
     sf:default "mean" ;
     sf:constraints "mean|last" ;
+    sf:example "mean" .
+
+sfsensors:rollingWindowSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Rolling window size" ;
+    skos:definition "Trailing event-time window in seconds used for each rolling statistic; the current observation is included." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "60" ;
+    sf:constraints "{\"minimum\":0.000001}" ;
+    sf:example "30" .
+
+sfsensors:rollingStatisticParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Rolling statistic" ;
+    skos:definition "Statistic emitted for each trailing window: mean, minimum, maximum, or population standard deviation." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "mean" ;
+    sf:constraints "mean|min|max|stddev" ;
     sf:example "mean" .
 
 sfsensors:referenceSignalParameter

@@ -175,6 +175,21 @@ sfsensors:resampleTimeseries
         sfsensors:aggregationParameter ;
     sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
 
+sfsensors:rollingStatistics
+    a sf:Operation ;
+    sf:operationId "sensors.rolling_statistics" ;
+    sf:availableInDomain sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calculate rolling statistics" ;
+    skos:definition "Calculate a trailing statistic for each numeric SENSOR_TIMESERIES observation and emit the derived observations using the same canonical table contract." ;
+    sf:hasInputPort sfsensors:sensorTimeseriesTable ;
+    sf:hasParameter
+        sfsensors:rollingWindowSecondsParameter,
+        sfsensors:rollingStatisticParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
 sfsensors:alignTimeseries
     a sf:Operation ;
     sf:operationId "sensors.align_timeseries" ;
