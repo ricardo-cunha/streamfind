@@ -171,10 +171,12 @@ open62541 connection and decoding code while adding:
 - reconnect and partial-result rules; and
 - immutable capture segments identified by `capture_id`.
 
-Continuous, months-long ingestion remains out of scope for the first slice.
-A finite operation may subscribe for a bounded interval and publish results;
-persistent streaming requires separate checkpoint, restart, backpressure,
-storage, and job-management contracts.
+Continuous, months-long ingestion remains out of scope for the sensors
+operation. A finite operation may subscribe for a bounded interval and publish
+one immutable result segment. Repeated monitoring is achieved by the generic
+service scheduler invoking that finite workflow at its configured frequency;
+persistent streaming and scheduler-owned retry policy do not belong in the
+adapter.
 
 ## Internal acquisition boundary
 
@@ -368,16 +370,23 @@ mapping, and event-detection operations.
 **Exit:** SiLA 2 reuses the existing acquisition and time-series pipeline;
 device-control operations remain separately scoped.
 
-### M7 — Efficient historical and continuous acquisition
+### M7 — Efficient historical acquisition and finite capture lifecycle
 
-Introduce logical series spanning immutable segments, time-range query
-optimization, and acquisition checkpoint/restart contracts that can be
-consumed by the service scheduler and worker manager. Recurring or continuous
-workflow orchestration is owned by the independent scheduler plan, not by the
-sensors plugin.
+Introduce logical sensor series spanning immutable capture segments,
+time-range/projected-column query optimization, and provenance for repeated
+bounded captures. Every acquisition operation connects at runtime, performs a
+finite read or bounded subscription, publishes its segment, and closes its
+protocol connection. A node reports cancellation or terminal failure to the
+core runtime; it does not restart workflows, persist a live connection, or
+implement scheduler-owned retry policy.
 
-**Exit:** restartable and cancellable ingestion provides consistent,
-queryable historical results without changing the finite-operation contract.
+The independent scheduler plan controls invocation frequency, no-overlap
+rules, retries, and failed-workflow state. M7 only makes the resulting finite
+segments efficient and coherent to query.
+
+**Exit:** repeated bounded acquisitions form consistent, queryable historical
+series without changing the finite-operation contract or adding persistent
+connections to the sensors plugin.
 
 ## Proposed plugin organization
 
