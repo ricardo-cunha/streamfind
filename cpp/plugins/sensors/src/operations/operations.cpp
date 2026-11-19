@@ -12,6 +12,7 @@ nlohmann::json explore_opcua_server(sdk::PluginProjectAccess &, const nlohmann::
 nlohmann::json inspect_opcua_node(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json collect_opcua_data(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json capture_opcua_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
+nlohmann::json capture_mqtt_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json normalize_sensor_table(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json validate_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
 nlohmann::json filter_timeseries(sdk::PluginProjectAccess &, const nlohmann::json &);
@@ -31,6 +32,8 @@ const sdk::CapabilityRegistry &capabilities() {
          &detail::collect_opcua_data},
         {"sensors.capture_opcua_timeseries", sdk::CapabilityKind::Operation,
          &detail::capture_opcua_timeseries},
+        {"sensors.capture_mqtt_timeseries", sdk::CapabilityKind::Operation,
+         &detail::capture_mqtt_timeseries},
         {"sensors.normalize_sensor_table", sdk::CapabilityKind::Operation,
          &detail::normalize_sensor_table},
         {"sensors.validate_timeseries", sdk::CapabilityKind::Operation,

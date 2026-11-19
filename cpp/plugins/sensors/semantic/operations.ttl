@@ -77,6 +77,35 @@ sfsensors:captureOpcuaTimeseries
         sfsensors:captureIdParameter ;
     sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
 
+sfsensors:captureMqttTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.capture_mqtt_timeseries" ;
+    sf:availableInDomain sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry true ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Capture MQTT time series" ;
+    skos:definition "Subscribe to configured MQTT topics for a bounded interval, decode typed observations, and emit the canonical SENSOR_TIMESERIES table." ;
+    sf:hasParameter
+        sfsensors:brokerEndpointParameter,
+        sfsensors:topicsParameter,
+        sfsensors:payloadFormatParameter,
+        sfsensors:qosParameter,
+        sfsensors:clientIdParameter,
+        sfsensors:mqttUsernameParameter,
+        sfsensors:mqttPasswordParameter,
+        sfsensors:tlsEnabledParameter,
+        sfsensors:tlsCaFileParameter,
+        sfsensors:tlsClientCertificateParameter,
+        sfsensors:tlsClientKeyParameter,
+        sfsensors:tlsClientKeyPasswordParameter,
+        sfsensors:tlsVerifyServerParameter,
+        sfsensors:captureDurationParameter,
+        sfsensors:maxSamplesParameter,
+        sfsensors:maxBufferBytesParameter,
+        sfsensors:captureIdParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
 sfsensors:normalizeSensorTable
     a sf:Operation ;
     sf:operationId "sensors.normalize_sensor_table" ;

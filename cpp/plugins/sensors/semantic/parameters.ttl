@@ -230,6 +230,151 @@ sfsensors:endpointParameter
     sf:default "opc.tcp://localhost:4840" ;
     sf:example "opc.tcp://localhost:4840" .
 
+sfsensors:brokerEndpointParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT broker endpoint" ;
+    skos:definition "MQTT broker URL using tcp://, ssl://, ws://, or wss://." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "tcp://localhost:1883" ;
+    sf:example "tcp://localhost:1883" .
+
+sfsensors:topicsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT topics" ;
+    skos:definition "JSON object mapping stable signal identifiers to MQTT topic filters." ;
+    sf:type "object" ;
+    sf:required true ;
+    sf:default "{}" ;
+    sf:example "{\"temperature\":\"lab/temperature\"}" .
+
+sfsensors:payloadFormatParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT payload format" ;
+    skos:definition "MQTT payload decoding mode: json envelopes or plain text values." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "json" ;
+    sf:constraints "json|plain" ;
+    sf:example "json" .
+
+sfsensors:qosParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT QoS" ;
+    skos:definition "MQTT subscription quality of service level 0, 1, or 2." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "1" ;
+    sf:constraints "{\"enum\":[0,1,2]}" ;
+    sf:example "1" .
+
+sfsensors:clientIdParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT client ID" ;
+    skos:definition "Optional MQTT client identifier; a unique operation identifier is used when absent." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "streamfind-sensors" .
+
+sfsensors:mqttUsernameParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT username" ;
+    skos:definition "Optional MQTT broker username." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "user" .
+
+sfsensors:mqttPasswordParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT password" ;
+    skos:definition "Optional MQTT broker password paired with the username." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "secret" .
+
+sfsensors:tlsEnabledParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Enable MQTT TLS" ;
+    skos:definition "Enable TLS for ssl:// or wss:// broker endpoints." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default "false" ;
+    sf:example "true" .
+
+sfsensors:tlsCaFileParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT CA certificate" ;
+    skos:definition "Optional PEM trust-store path for MQTT broker certificate validation." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "C:/certs/ca.pem" .
+
+sfsensors:tlsClientCertificateParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT client certificate" ;
+    skos:definition "Optional PEM client certificate path for mutual TLS." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "C:/certs/client.pem" .
+
+sfsensors:tlsClientKeyParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT client key" ;
+    skos:definition "Optional PEM private-key path for mutual TLS." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "C:/certs/client.key" .
+
+sfsensors:tlsClientKeyPasswordParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT client key password" ;
+    skos:definition "Optional password for an encrypted MQTT client private key." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "secret" .
+
+sfsensors:tlsVerifyServerParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Verify MQTT broker certificate" ;
+    skos:definition "Require successful broker certificate and hostname validation for TLS connections." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default "true" ;
+    sf:example "true" .
+
 sfsensors:usernameParameter
     a sf:Parameter ;
     sf:availableInDomain sfsensors:sensors ;
@@ -312,7 +457,7 @@ sfsensors:captureDurationParameter
     sf:availableInDomain sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Capture duration" ;
-    skos:definition "Maximum duration of one finite OPC UA time-series capture in seconds." ;
+    skos:definition "Maximum duration of one finite sensor time-series capture in seconds." ;
     sf:type "real" ;
     sf:required false ;
     sf:default "10" ;
