@@ -76,6 +76,30 @@ void validate_csv_input_path(const Json &parameters) {
         throw std::invalid_argument("csv_input_path must identify an existing file");
 }
 
+Json csv_list_item_json(const std::shared_ptr<arrow::Scalar> &scalar) {
+    if (!scalar || !scalar->is_valid) return nullptr;
+    if (const auto string_scalar = std::dynamic_pointer_cast<arrow::StringScalar>(scalar))
+        return std::string(string_scalar->view());
+    if (const auto list_scalar = std::dynamic_pointer_cast<arrow::BaseListScalar>(scalar)) {
+        Json values = Json::array();
+        if (!list_scalar->value) return values;
+        values.get_ref<Json::array_t &>().reserve(static_cast<std::size_t>(list_scalar->value->length()));
+        for (std::int64_t index = 0; index < list_scalar->value->length(); ++index) {
+            const auto item = list_scalar->value->GetScalar(index);
+            if (!item.ok()) throw std::runtime_error(item.status().ToString());
+            values.push_back(csv_list_item_json(*item));
+        }
+        return values;
+    }
+
+    const auto rendered = scalar->ToString();
+    try {
+        return Json::parse(rendered);
+    } catch (...) {
+        return rendered;
+    }
+}
+
 void validate_json_path(const Json &parameters) {
     const auto path = parameters.at("json_path").get<std::string>();
     if (path.empty())
@@ -179,8 +203,11 @@ Json write_table_csv(OperationExecutionContext &context, const Json &parameters,
                 const auto scalar = array->GetScalar(row);
                 if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
                 const auto string_scalar = std::dynamic_pointer_cast<arrow::StringScalar>(*scalar);
-                output << csv_cell(string_scalar ? Json(std::string(string_scalar->view()))
-                                                 : Json((*scalar)->ToString()));
+                const auto list_scalar = std::dynamic_pointer_cast<arrow::BaseListScalar>(*scalar);
+                const Json value = list_scalar
+                    ? csv_list_item_json(*scalar)
+                    : string_scalar ? Json(std::string(string_scalar->view())) : Json((*scalar)->ToString());
+                output << csv_cell(value);
             }
             output << "\r\n";
         }
