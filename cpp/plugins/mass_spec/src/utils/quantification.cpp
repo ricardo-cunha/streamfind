@@ -70,7 +70,7 @@ std::vector<ValidationError> validate_method(const nlohmann::json &targets)
     const std::set<std::string> roles{"analyte", "internal_standard"};
     const std::set<std::string> metrics{"area", "height"};
     const std::set<std::string> normalizations{"none", "internal_standard"};
-    const std::set<std::string> models{"linear", "quadratic"};
+    const std::set<std::string> models{"linear", "quadratic", "wagner"};
     const std::set<std::string> weightings{"none", "1/x", "1/x2"};
     const std::set<std::string> intercepts{"free", "forced_zero"};
     std::set<std::string> ids;
@@ -107,8 +107,8 @@ std::vector<ValidationError> validate_method(const nlohmann::json &targets)
             errors.push_back({path + ".normalization", "internal-standard normalization is only valid for analytes"});
         const auto model = row.contains("regression_model") && !row.at("regression_model").is_null()
             ? detail::value_or_empty(row, "regression_model") : std::string{"linear"};
-        if (!detail::contains(models, model))
-            errors.push_back({path + ".regression_model", "must be linear or quadratic"});
+        if (role != "internal_standard" && !detail::contains(models, model))
+            errors.push_back({path + ".regression_model", "must be linear, quadratic, or wagner"});
         const auto weighting = row.contains("weighting") && !row.at("weighting").is_null()
             ? detail::value_or_empty(row, "weighting") : std::string{"none"};
         if (!detail::contains(weightings, weighting))

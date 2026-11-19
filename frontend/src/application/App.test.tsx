@@ -16,6 +16,8 @@ let createProjectCalls: Array<Record<string, unknown>> = [];
 let copyProjectCalls: Array<{ sessionId: string; destinationPath: string }> = [];
 let createProjectError: Error | null = null;
 let browsedFolders: Array<{ name: string; path: string; isDirectory: boolean }> = [];
+let nativeFolderPickerPaths: string[] = [];
+let nativeFolderPickerError: Error | null = null;
 
 vi.mock('../framework/backend/StreamFindApiClient', () => ({
   StreamFindApiClient: class {
@@ -91,6 +93,11 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return { path: path || 'C:/projects', entries: browsedFolders };
     }
 
+    async pickFolders() {
+      if (nativeFolderPickerError) throw nativeFolderPickerError;
+      return nativeFolderPickerPaths;
+    }
+
     async results() {
       return Array.from({ length: publishedArtifactCount }, (_, index) => ({
         result_id: `result-${index}`,
@@ -146,6 +153,8 @@ describe('application shell', () => {
     createProjectCalls = [];
     copyProjectCalls = [];
     createProjectError = null;
+    nativeFolderPickerPaths = [];
+    nativeFolderPickerError = new Error('Native folder picker unavailable in test environment.');
     browsedFolders = [
       { name: 'existing.sf', path: 'C:/projects/existing.sf', isDirectory: true },
       { name: 'ordinary-folder', path: 'C:/projects/ordinary-folder', isDirectory: true },
@@ -296,6 +305,20 @@ describe('application shell', () => {
     expect(createProjectCalls).toHaveLength(1);
     expect(createProjectCalls[0]).toMatchObject({ project_path: 'C:/projects/existing.sf', mode: 'open' });
     expect(screen.getByText('existing')).toBeInTheDocument();
+  });
+
+  it('uses the native folder wizard for open workflow when it is available', async () => {
+    nativeFolderPickerError = null;
+    nativeFolderPickerPaths = ['C:/projects/native-existing.sf'];
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+
+    await act(async () => { await Promise.resolve(); });
+    expect((screen.getByLabelText('Project folder (.sf)') as HTMLInputElement).value).toBe(
+      'C:/projects/native-existing.sf',
+    );
+    expect(screen.queryByRole('dialog', { name: 'Choose project folder' })).not.toBeInTheDocument();
   });
 
   it('shows the service guidance when a legacy DuckDB file is entered as a project folder', async () => {

@@ -85,6 +85,12 @@ describe('ChromatogramPeaksViewer', () => {
     expect(hovertemplate).toContain('Wavelength:');
     expect(hovertemplate).toContain('S/N:');
     expect(hovertemplate).toContain('<extra></extra>');
+    expect(spec.payload.data[0]).not.toHaveProperty('fill');
+    expect(spec.payload.data[1]).toMatchObject({
+      fill: 'tozeroy',
+      x: [4, 5, 6],
+      y: [0, 100, 0],
+    });
     expect(screen.getByTestId('peak-plot').textContent).toMatch(/"fillcolor":"rgba\(/);
   });
 });

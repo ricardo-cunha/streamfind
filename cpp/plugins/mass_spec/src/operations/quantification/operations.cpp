@@ -3,6 +3,7 @@
 #include "operations/base.hpp"
 #include "streamfind/sdk/debug_session.hpp"
 #include "streamfind/sdk/table_batch_builder.hpp"
+#include "utils/calibration.hpp"
 #include "utils/chromatograms.hpp"
 #include "utils/quantification.hpp"
 
@@ -161,6 +162,7 @@ bool is_water_blank(const Json &row)
 struct PeakRecord
 {
     std::string analysis;
+    std::string chromatogram_id;
     std::string signal_type;
     std::string chromatogram_type;
     std::string detector;
@@ -169,6 +171,8 @@ struct PeakRecord
     std::optional<std::int64_t> polarity;
     std::optional<std::int64_t> eic_size;
     std::optional<double> rt;
+    std::optional<double> rt_start;
+    std::optional<double> rt_end;
     std::optional<double> height;
     std::optional<double> area;
     std::optional<double> precursor_mz;
@@ -289,6 +293,7 @@ PeakSelection select_peak(const Json &method, const std::string &prefix, const s
                           const std::map<std::pair<std::string, int>, std::vector<PeakRecord>> &peaks_by_chromatogram)
 {
     std::vector<PeakRecord> candidates;
+    bool channel_matches = false;
     const auto has_rt = has_value(method, "rt");
     const auto expected_rt = has_rt ? number_value(method, "rt") : 0.0;
     const auto rt_tolerance = has_value(method, "rt_tolerance")
@@ -299,6 +304,7 @@ PeakSelection select_peak(const Json &method, const std::string &prefix, const s
         for (const auto &peak : peaks)
         {
             if (!transition_matches(method, peak, prefix)) continue;
+            channel_matches = true;
             if (has_rt && std::abs(number_value(peak, "rt") - expected_rt) > rt_tolerance) continue;
             candidates.push_back(peak);
         }
@@ -306,7 +312,7 @@ PeakSelection select_peak(const Json &method, const std::string &prefix, const s
     if (candidates.empty())
     {
         PeakSelection result;
-        result.status = "peak_not_found";
+        result.status = channel_matches ? "peak_not_found" : "channel_mismatch";
         return result;
     }
     // The retention-time window limits eligibility; it must not make a
@@ -347,16 +353,136 @@ double response_value(const PeakRecord &peak, const Json &method)
 const std::vector<std::string> quantification_columns{
     "analysis", "target_id", "role", "sample_type", "calibration_level", "nominal_concentration",
     "dilution_factor", "exclude", "internal_standard_id", "normalization", "chromatogram_index", "peak_id", "peak_rt",
-    "peak_area", "peak_height", "eic_size", "eic_rt", "eic_intensity", "qualifier_eic_size", "qualifier_eic_rt", "qualifier_eic_intensity", "response_metric", "response", "internal_standard_response", "response_ratio",
-    "qualifier_response", "qualifier_ratio", "status", "quantifier_status", "internal_standard_status", "candidate_count",
-    "qualifier_status", "included", "back_calculated_concentration", "residual", "relative_residual", "exclusion_reason",
-    "rt_error", "calculated_concentration", "final_concentration", "concentration_unit", "qualifier_ratio_pass", "accuracy_percent", "flags"};
+    "peak_rt_start", "peak_rt_end", "peak_area", "peak_height", "eic_size", "eic_rt", "eic_intensity", "qualifier_eic_size", "qualifier_eic_rt",
+    "qualifier_eic_intensity", "internal_standard_eic_size", "internal_standard_eic_rt", "internal_standard_eic_intensity",
+    "quantifier_chromatogram_id", "qualifier_chromatogram_id", "qualifier_chromatogram_index", "qualifier_peak_id",
+    "qualifier_peak_rt", "qualifier_peak_rt_start", "qualifier_peak_rt_end", "qualifier_peak_area", "qualifier_peak_height",
+    "internal_standard_peak_rt", "internal_standard_peak_rt_start", "internal_standard_peak_rt_end", "internal_standard_peak_area", "internal_standard_peak_height",
+    "qualifier_rt_error", "qualifier_candidate_count",
+    "response_metric", "response", "internal_standard_response", "response_ratio", "qualifier_response", "qualifier_ratio",
+    "status", "quantifier_status", "internal_standard_status", "candidate_count", "qualifier_status", "included",
+    "back_calculated_concentration", "residual", "relative_residual", "exclusion_reason", "rt_error", "calculated_concentration",
+    "final_concentration", "concentration_unit", "qualifier_ratio_pass", "accuracy_percent", "flags"};
 
 const std::vector<std::string> quantification_types{
-    "string", "string", "string", "string", "integer", "real", "real", "boolean", "string", "string", "integer", "integer",
-    "real", "real", "real", "integer", "array", "array", "integer", "array", "array", "string", "real", "real", "real", "real",
-    "real", "string", "string", "string", "integer", "string", "boolean", "real", "real", "real", "string", "real", "real",
-    "real", "string", "boolean", "real", "string"};
+    "string", // analysis
+    "string", // target_id
+    "string", // role
+    "string", // sample_type
+    "integer", // calibration_level
+    "real", // nominal_concentration
+    "real", // dilution_factor
+    "boolean", // exclude
+    "string", // internal_standard_id
+    "string", // normalization
+    "integer", // chromatogram_index
+    "integer", // peak_id
+    "real", // peak_rt
+    "real", // peak_rt_start
+    "real", // peak_rt_end
+    "real", // peak_area
+    "real", // peak_height
+    "integer", // eic_size
+    "array", // eic_rt
+    "array", // eic_intensity
+    "integer", // qualifier_eic_size
+    "array", // qualifier_eic_rt
+    "array", // qualifier_eic_intensity
+    "integer", // internal_standard_eic_size
+    "array", // internal_standard_eic_rt
+    "array", // internal_standard_eic_intensity
+    "string", // quantifier_chromatogram_id
+    "string", // qualifier_chromatogram_id
+    "integer", // qualifier_chromatogram_index
+    "integer", // qualifier_peak_id
+    "real", // qualifier_peak_rt
+    "real", // qualifier_peak_rt_start
+    "real", // qualifier_peak_rt_end
+    "real", // qualifier_peak_area
+    "real", // qualifier_peak_height
+    "real", // internal_standard_peak_rt
+    "real", // internal_standard_peak_rt_start
+    "real", // internal_standard_peak_rt_end
+    "real", // internal_standard_peak_area
+    "real", // internal_standard_peak_height
+    "real", // qualifier_rt_error
+    "integer", // qualifier_candidate_count
+    "string", // response_metric
+    "real", // response
+    "real", // internal_standard_response
+    "real", // response_ratio
+    "real", // qualifier_response
+    "real", // qualifier_ratio
+    "string", // status
+    "string", // quantifier_status
+    "string", // internal_standard_status
+    "integer", // candidate_count
+    "string", // qualifier_status
+    "boolean", // included
+    "real", // back_calculated_concentration
+    "real", // residual
+    "real", // relative_residual
+    "string", // exclusion_reason
+    "real", // rt_error
+    "real", // calculated_concentration
+    "real", // final_concentration
+    "string", // concentration_unit
+    "boolean", // qualifier_ratio_pass
+    "real", // accuracy_percent
+    "string" // flags
+};
+
+void set_eic_columns(TypedRow &row, const std::string &prefix, const PeakRecord &peak)
+{
+    if (peak.eic_size)
+        set_cell(row, quantification_columns, prefix + "_size", static_cast<std::int64_t>(*peak.eic_size));
+    if (peak.has_eic_rt) {
+        std::vector<sdk::TableBatchBuilder::ListCell> values;
+        for (const auto value : peak.eic_rt) values.emplace_back(value);
+        set_cell(row, quantification_columns, prefix + "_rt", std::move(values));
+    }
+    if (peak.has_eic_intensity) {
+        std::vector<sdk::TableBatchBuilder::ListCell> values;
+        for (const auto value : peak.eic_intensity) values.emplace_back(value);
+        set_cell(row, quantification_columns, prefix + "_intensity", std::move(values));
+    }
+}
+
+void set_peak_boundary_columns(TypedRow &row, const std::string &prefix, const PeakRecord &peak)
+{
+    if (peak.rt)
+        set_cell(row, quantification_columns, prefix + "_rt", *peak.rt);
+    if (peak.rt_start)
+        set_cell(row, quantification_columns, prefix + "_rt_start", *peak.rt_start);
+    if (peak.rt_end)
+        set_cell(row, quantification_columns, prefix + "_rt_end", *peak.rt_end);
+    if (peak.area)
+        set_cell(row, quantification_columns, prefix + "_area", *peak.area);
+    if (peak.height)
+        set_cell(row, quantification_columns, prefix + "_height", *peak.height);
+}
+
+void copy_eic_columns(TypedRow &destination, const std::string &destination_prefix,
+                      const TypedRow &source, const std::string &source_prefix)
+{
+    for (const auto *suffix : {"size", "rt", "intensity"})
+        set_cell(destination, quantification_columns, destination_prefix + "_" + suffix,
+                 get_cell(source, quantification_columns, source_prefix + "_" + suffix));
+}
+
+void copy_peak_boundary_columns(TypedRow &destination, const std::string &destination_prefix,
+                                const TypedRow &source, const std::string &source_prefix)
+{
+    for (const auto *suffix : {"rt", "rt_start", "rt_end", "area", "height"})
+        set_cell(destination, quantification_columns, destination_prefix + "_" + suffix,
+                 get_cell(source, quantification_columns, source_prefix + "_" + suffix));
+}
+
+void set_channel_provenance(TypedRow &row, const std::string &prefix, const PeakRecord &peak)
+{
+    if (!peak.chromatogram_id.empty())
+        set_cell(row, quantification_columns, prefix + "_chromatogram_id", peak.chromatogram_id);
+}
 }
 
 Json set_quantification_plan(sdk::PluginProjectAccess &access, const Json &parameters)
@@ -381,7 +507,20 @@ Json set_quantification_plan(sdk::PluginProjectAccess &access, const Json &param
         {"enabled", true}, {"regression_model", "linear"}, {"weighting", "none"},
         {"intercept_mode", "free"}};
     for (const auto &target : targets)
-        detail::append_config_row(method_rows, target, method_columns, method_types, method_defaults);
+    {
+        auto normalized_target = target;
+        auto target_defaults = method_defaults;
+        if (target.value("role", std::string{}) == "internal_standard")
+        {
+            normalized_target["regression_model"] = nullptr;
+            normalized_target["weighting"] = nullptr;
+            normalized_target["intercept_mode"] = nullptr;
+            target_defaults["regression_model"] = nullptr;
+            target_defaults["weighting"] = nullptr;
+            target_defaults["intercept_mode"] = nullptr;
+        }
+        detail::append_config_row(method_rows, normalized_target, method_columns, method_types, target_defaults);
+    }
     method_rows.emit(access, "quantificationMethodTable");
 
     const auto assignments = parameters.value("quant_sample_assignments", Json::array());
@@ -465,7 +604,8 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
         const auto rows = base::utils::read_control_rows(
             access, parameters, "quantificationMethodTable",
             {"target_id", "role", "internal_standard_id", "rt", "rt_tolerance", "response_metric",
-             "normalization", "quantifier_signal_type", "quantifier_chromatogram_type", "quantifier_polarity",
+             "normalization", "concentration_unit", "regression_model", "weighting", "intercept_mode",
+             "quantifier_signal_type", "quantifier_chromatogram_type", "quantifier_polarity",
              "quantifier_precursor_mz", "quantifier_product_mz", "quantifier_detector", "quantifier_wavelength_nm",
              "quantifier_mz_tolerance_ppm", "qualifier_signal_type", "qualifier_chromatogram_type", "qualifier_polarity",
              "qualifier_precursor_mz", "qualifier_product_mz", "qualifier_detector", "qualifier_wavelength_nm",
@@ -543,6 +683,8 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
                 const auto chromatogram_col = column("chromatogram_index");
                 const auto peak_id_col = column("peak_id");
                 const auto rt_col = column("rt");
+                const auto rt_start_col = column("rt_start");
+                const auto rt_end_col = column("rt_end");
                 const auto height_col = column("height");
                 const auto area_col = column("area");
                 const auto polarity_col = column("polarity");
@@ -552,6 +694,7 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
                 const auto signal_col = column("signal_type");
                 const auto chromatogram_type_col = column("chromatogram_type");
                 const auto detector_col = column("detector");
+                const auto chromatogram_id_col = column("chromatogram_id");
                 const auto eic_size_col = column("eic_size");
                 const auto eic_rt_col = column("eic_rt");
                 const auto eic_intensity_col = column("eic_intensity");
@@ -559,9 +702,12 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
                 {
                     detail::PeakRecord peak;
                     peak.analysis = batch.is_null(analysis_col, row) ? std::string{} : std::string(batch.text(analysis_col, row));
+                    if (!batch.is_null(chromatogram_id_col, row)) peak.chromatogram_id = batch.text(chromatogram_id_col, row);
                     if (!batch.is_null(chromatogram_col, row)) peak.chromatogram_index = batch.integer(chromatogram_col, row);
                     if (!batch.is_null(peak_id_col, row)) peak.peak_id = batch.integer(peak_id_col, row);
                     if (!batch.is_null(rt_col, row)) peak.rt = batch.real(rt_col, row);
+                    if (!batch.is_null(rt_start_col, row)) peak.rt_start = batch.real(rt_start_col, row);
+                    if (!batch.is_null(rt_end_col, row)) peak.rt_end = batch.real(rt_end_col, row);
                     if (!batch.is_null(height_col, row)) peak.height = batch.real(height_col, row);
                     if (!batch.is_null(area_col, row)) peak.area = batch.real(area_col, row);
                     if (!batch.is_null(polarity_col, row)) peak.polarity = batch.integer(polarity_col, row);
@@ -647,18 +793,9 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
         {
             detail::set_cell(row, detail::quantification_columns, "chromatogram_index", static_cast<std::int64_t>(quantifier.peak.chromatogram_index.value_or(0)));
             detail::set_cell(row, detail::quantification_columns, "peak_id", static_cast<std::int64_t>(quantifier.peak.peak_id.value_or(0)));
-            detail::set_cell(row, detail::quantification_columns, "peak_rt", quantifier.peak.rt.value_or(0.0));
-            detail::set_cell(row, detail::quantification_columns, "peak_area", quantifier.peak.area.value_or(0.0));
-            detail::set_cell(row, detail::quantification_columns, "peak_height", quantifier.peak.height.value_or(0.0));
-            if (quantifier.peak.eic_size) detail::set_cell(row, detail::quantification_columns, "eic_size", static_cast<std::int64_t>(*quantifier.peak.eic_size));
-            if (quantifier.peak.has_eic_rt) {
-                std::vector<sdk::TableBatchBuilder::ListCell> values; for (const auto value : quantifier.peak.eic_rt) values.emplace_back(value);
-                detail::set_cell(row, detail::quantification_columns, "eic_rt", std::move(values));
-            }
-            if (quantifier.peak.has_eic_intensity) {
-                std::vector<sdk::TableBatchBuilder::ListCell> values; for (const auto value : quantifier.peak.eic_intensity) values.emplace_back(value);
-                detail::set_cell(row, detail::quantification_columns, "eic_intensity", std::move(values));
-            }
+            detail::set_peak_boundary_columns(row, "peak", quantifier.peak);
+            detail::set_channel_provenance(row, "quantifier", quantifier.peak);
+            detail::set_eic_columns(row, "eic", quantifier.peak);
             detail::set_cell(row, detail::quantification_columns, "response", detail::response_value(quantifier.peak, target));
         }
         if (detail::has_value(target, "qualifier_signal_type"))
@@ -668,17 +805,20 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
                 debug_line("Analysis " + analysis + ", target " + target_id + ": qualifier=" + qualifier.status +
                            ", candidates=" + std::to_string(qualifier.candidates));
             detail::set_cell(row, detail::quantification_columns, "qualifier_status", qualifier.status);
+            detail::set_cell(row, detail::quantification_columns, "qualifier_candidate_count",
+                             static_cast<std::int64_t>(qualifier.candidates));
             if (qualifier.status == "matched")
             {
-                if (qualifier.peak.eic_size) detail::set_cell(row, detail::quantification_columns, "qualifier_eic_size", static_cast<std::int64_t>(*qualifier.peak.eic_size));
-                if (qualifier.peak.has_eic_rt) {
-                    std::vector<sdk::TableBatchBuilder::ListCell> values; for (const auto value : qualifier.peak.eic_rt) values.emplace_back(value);
-                    detail::set_cell(row, detail::quantification_columns, "qualifier_eic_rt", std::move(values));
-                }
-                if (qualifier.peak.has_eic_intensity) {
-                    std::vector<sdk::TableBatchBuilder::ListCell> values; for (const auto value : qualifier.peak.eic_intensity) values.emplace_back(value);
-                    detail::set_cell(row, detail::quantification_columns, "qualifier_eic_intensity", std::move(values));
-                }
+                detail::set_channel_provenance(row, "qualifier", qualifier.peak);
+                detail::set_cell(row, detail::quantification_columns, "qualifier_chromatogram_index",
+                                 static_cast<std::int64_t>(qualifier.peak.chromatogram_index.value_or(0)));
+                detail::set_cell(row, detail::quantification_columns, "qualifier_peak_id",
+                                 static_cast<std::int64_t>(qualifier.peak.peak_id.value_or(0)));
+                detail::set_peak_boundary_columns(row, "qualifier_peak", qualifier.peak);
+                if (detail::has_value(target, "rt") && qualifier.peak.rt)
+                    detail::set_cell(row, detail::quantification_columns, "qualifier_rt_error",
+                                     *qualifier.peak.rt - detail::number_value(target, "rt"));
+                detail::set_eic_columns(row, "qualifier_eic", qualifier.peak);
                 const auto qualifier_response = detail::response_value(qualifier.peak, target);
                 detail::set_cell(row, detail::quantification_columns, "qualifier_response", qualifier_response);
                 const auto response = detail::row_number(row, detail::quantification_columns, "response");
@@ -742,12 +882,20 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
             detail::set_cell(row, detail::quantification_columns, "internal_standard_status", std::string("matched"));
             const auto is_response = detail::row_number(is_row, detail::quantification_columns, "response");
             detail::set_cell(row, detail::quantification_columns, "internal_standard_response", is_response);
+            detail::copy_eic_columns(row, "internal_standard_eic", is_row, "eic");
+            detail::copy_peak_boundary_columns(row, "internal_standard_peak", is_row, "peak");
             const auto response = detail::row_number(row, detail::quantification_columns, "response");
             if (!std::isfinite(response) || response == 0.0) continue;
             if (is_response == 0.0) { detail::set_cell(row, detail::quantification_columns, "status", std::string("internal_standard_zero_response")); continue; }
             detail::set_cell(row, detail::quantification_columns, "response_ratio", response / is_response);
         }
-        debug_line("Internal-standard response calculation completed");
+        std::vector<detail::TypedRow> analyte_responses;
+        analyte_responses.reserve(output.size());
+        for (auto &row : output)
+            if (detail::row_text(row, detail::quantification_columns, "role") != "internal_standard")
+                analyte_responses.push_back(std::move(row));
+        output = std::move(analyte_responses);
+        debug_line("Internal-standard response calculation completed; published rows: " + std::to_string(output.size()));
         stage = "assembling quantificationTable";
         access.report_progress(0.90, "Quantification response rows assembled; continuing calibration");
     }
@@ -782,9 +930,11 @@ struct CalibrationFit
 
 const std::vector<std::string> calibration_model_columns{
     "target_id", "model", "weighting", "intercept_mode", "coefficient_0", "coefficient_1",
-    "coefficient_2", "r_squared", "adjusted_r_squared", "rmse", "n_points", "range_min", "range_max", "fit_status"};
+    "coefficient_2", "r_squared", "adjusted_r_squared", "rmse", "n_points", "range_min", "range_max",
+    "domain_status", "monotonicity_status", "fit_status"};
 const std::vector<std::string> calibration_model_types{
-    "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "integer", "real", "real", "string"};
+    "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "integer",
+    "real", "real", "string", "string", "string"};
 const std::vector<std::string> calibration_point_columns{
     "target_id", "analysis", "peak_id", "calibration_level", "nominal_concentration", "response",
     "internal_standard_response", "response_ratio", "included", "back_calculated_concentration", "residual",
@@ -810,8 +960,13 @@ std::string calibration_exclusion_reason(const TypedRow &row, const Json &method
     if (text_value(method, "normalization") == "internal_standard" &&
         row_text(row, quantification_columns, "internal_standard_status") != "matched")
         return "internal_standard_" + row_text(row, quantification_columns, "internal_standard_status");
+    const auto concentration = row_number(row, quantification_columns, "nominal_concentration");
+    const auto model = text_value(method, "regression_model");
+    if (model == "wagner" && concentration <= 0.0)
+        return "nonpositive_concentration_log_domain";
     const auto response = response_for_calibration(row, method);
-    if (!std::isfinite(response) || response <= 0.0) return "nonpositive_response";
+    if (!std::isfinite(response) || response <= 0.0)
+        return model == "wagner" ? "nonpositive_response_log_domain" : "nonpositive_response";
     return {};
 }
 
@@ -845,16 +1000,26 @@ std::map<std::string, Json> enabled_methods(const std::vector<Json> &rows)
 CalibrationFit fit_target(const std::string &target_id, const Json &method,
                           std::vector<TypedRow> &responses, const int minimum_points)
 {
+    const auto model = method.value("regression_model", std::string{"linear"});
+    if (model != "linear" && model != "quadratic" && model != "wagner")
+        throw std::invalid_argument("quantification target '" + target_id +
+                                    "' requests unsupported regression model '" + model +
+                                    "'; supported models are linear, quadratic, and wagner");
+
     CalibrationFit result;
     result.model.resize(calibration_model_columns.size(), std::monostate{});
     set_cell(result.model, calibration_model_columns, "target_id", target_id);
-    set_cell(result.model, calibration_model_columns, "model", method.value("regression_model", std::string{"linear"}));
-    set_cell(result.model, calibration_model_columns, "weighting", method.value("weighting", std::string{"none"}));
-    set_cell(result.model, calibration_model_columns, "intercept_mode", method.value("intercept_mode", std::string{"free"}));
+    const auto weighting = method.value("weighting", std::string{"none"});
+    const auto intercept_mode = method.value("intercept_mode", std::string{"free"});
+    set_cell(result.model, calibration_model_columns, "model", model);
+    set_cell(result.model, calibration_model_columns, "weighting", weighting);
+    set_cell(result.model, calibration_model_columns, "intercept_mode", intercept_mode);
     set_cell(result.model, calibration_model_columns, "n_points", std::int64_t{0});
+    set_cell(result.model, calibration_model_columns, "domain_status", std::string("not_applicable"));
+    set_cell(result.model, calibration_model_columns, "monotonicity_status", std::string("unknown"));
     set_cell(result.model, calibration_model_columns, "fit_status", std::string("insufficient_data"));
 
-    std::vector<std::pair<double, double>> valid;
+    std::vector<calibration::LinearPoint> valid;
     std::vector<std::size_t> included_rows;
     for (std::size_t row_index = 0; row_index < responses.size(); ++row_index)
     {
@@ -881,57 +1046,85 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
         }
         const auto x = row_number(row, quantification_columns, "nominal_concentration");
         const auto y = response_for_calibration(row, method);
+        if ((weighting == "1/x" || weighting == "1/x2") && x <= 0.0)
+        {
+            set_cell(point, calibration_point_columns, "included", false);
+            set_cell(point, calibration_point_columns, "exclusion_reason",
+                     x == 0.0 ? "zero_concentration_weight_undefined"
+                              : "nonpositive_concentration_weight_undefined");
+            result.points.push_back(std::move(point));
+            continue;
+        }
         set_cell(point, calibration_point_columns, "included", true);
         included_rows.push_back(row_index);
-        valid.emplace_back(x, y);
+        valid.push_back({x, y});
         result.points.push_back(std::move(point));
     }
 
-    if (valid.size() < static_cast<std::size_t>(std::max(minimum_points, 2)))
-        return result;
-
-    double sum_x = 0.0, sum_y = 0.0, sum_xx = 0.0, sum_xy = 0.0;
-    for (const auto &[x, y] : valid)
+    const auto options = calibration::LinearFitOptions{weighting, intercept_mode};
+    const auto linear_fit = model == "linear"
+        ? std::optional<calibration::LinearFit>(calibration::fit_linear(valid, minimum_points, options))
+        : std::nullopt;
+    const auto quadratic_fit = model == "quadratic"
+        ? std::optional<calibration::QuadraticFit>(calibration::fit_quadratic(valid, minimum_points, options))
+        : std::nullopt;
+    const auto wagner_fit = model == "wagner"
+        ? std::optional<calibration::WagnerFit>(calibration::fit_wagner(valid, minimum_points, options))
+        : std::nullopt;
+    const auto fit_status = linear_fit.has_value() ? linear_fit->status
+        : quadratic_fit.has_value() ? quadratic_fit->status : wagner_fit->status;
+    const auto point_count = linear_fit.has_value() ? linear_fit->n_points
+        : quadratic_fit.has_value() ? quadratic_fit->n_points : wagner_fit->n_points;
+    set_cell(result.model, calibration_model_columns, "fit_status", fit_status);
+    if (linear_fit.has_value())
     {
-        sum_x += x;
-        sum_y += y;
-        sum_xx += x * x;
-        sum_xy += x * y;
+        set_cell(result.model, calibration_model_columns, "monotonicity_status", linear_fit->monotonicity_status);
+        if (point_count > 0)
+        {
+            set_cell(result.model, calibration_model_columns, "coefficient_0", linear_fit->intercept);
+            set_cell(result.model, calibration_model_columns, "coefficient_1", linear_fit->slope);
+            set_cell(result.model, calibration_model_columns, "r_squared", linear_fit->r_squared);
+            set_cell(result.model, calibration_model_columns, "adjusted_r_squared", linear_fit->adjusted_r_squared);
+            set_cell(result.model, calibration_model_columns, "rmse", linear_fit->rmse);
+            set_cell(result.model, calibration_model_columns, "n_points", static_cast<std::int64_t>(point_count));
+            set_cell(result.model, calibration_model_columns, "range_min", linear_fit->range_min);
+            set_cell(result.model, calibration_model_columns, "range_max", linear_fit->range_max);
+        }
     }
-    const auto n = static_cast<double>(valid.size());
-    const auto denominator = n * sum_xx - sum_x * sum_x;
-    if (std::abs(denominator) <= 1e-15) return result;
-    const auto slope = (n * sum_xy - sum_x * sum_y) / denominator;
-    const auto intercept = (sum_y - slope * sum_x) / n;
-    if (!std::isfinite(slope) || !std::isfinite(intercept) || std::abs(slope) <= 1e-15)
-        return result;
-
-    const auto mean_y = sum_y / n;
-    double ss_res = 0.0, ss_tot = 0.0;
-    double range_min = valid.front().first, range_max = valid.front().first;
-    for (const auto &[x, y] : valid)
+    else if (quadratic_fit.has_value())
     {
-        const auto predicted = intercept + slope * x;
-        ss_res += (y - predicted) * (y - predicted);
-        ss_tot += (y - mean_y) * (y - mean_y);
-        range_min = std::min(range_min, x);
-        range_max = std::max(range_max, x);
+        set_cell(result.model, calibration_model_columns, "monotonicity_status", quadratic_fit->monotonicity_status);
+        if (point_count > 0)
+        {
+            set_cell(result.model, calibration_model_columns, "coefficient_0", quadratic_fit->coefficient_0);
+            set_cell(result.model, calibration_model_columns, "coefficient_1", quadratic_fit->coefficient_1);
+            set_cell(result.model, calibration_model_columns, "coefficient_2", quadratic_fit->coefficient_2);
+            set_cell(result.model, calibration_model_columns, "r_squared", quadratic_fit->r_squared);
+            set_cell(result.model, calibration_model_columns, "adjusted_r_squared", quadratic_fit->adjusted_r_squared);
+            set_cell(result.model, calibration_model_columns, "rmse", quadratic_fit->rmse);
+            set_cell(result.model, calibration_model_columns, "n_points", static_cast<std::int64_t>(point_count));
+            set_cell(result.model, calibration_model_columns, "range_min", quadratic_fit->range_min);
+            set_cell(result.model, calibration_model_columns, "range_max", quadratic_fit->range_max);
+        }
     }
-    const auto r_squared = ss_tot > 0.0 ? 1.0 - ss_res / ss_tot : 1.0;
-    const auto rmse = std::sqrt(ss_res / n);
-    const auto adjusted = valid.size() > 2
-        ? 1.0 - (1.0 - r_squared) * (n - 1.0) / (n - 2.0) : 0.0;
-    set_cell(result.model, calibration_model_columns, "coefficient_0", intercept);
-    set_cell(result.model, calibration_model_columns, "coefficient_1", slope);
-    set_cell(result.model, calibration_model_columns, "r_squared", r_squared);
-    set_cell(result.model, calibration_model_columns, "adjusted_r_squared", adjusted);
-    set_cell(result.model, calibration_model_columns, "rmse", rmse);
-    set_cell(result.model, calibration_model_columns, "n_points", static_cast<std::int64_t>(valid.size()));
-    set_cell(result.model, calibration_model_columns, "range_min", range_min);
-    set_cell(result.model, calibration_model_columns, "range_max", range_max);
-    set_cell(result.model, calibration_model_columns, "fit_status", std::string(slope > 0.0 ? "ok" : "failed"));
-    if (slope <= 0.0)
-        return result;
+    else
+    {
+        set_cell(result.model, calibration_model_columns, "domain_status", wagner_fit->domain_status);
+        set_cell(result.model, calibration_model_columns, "monotonicity_status", wagner_fit->monotonicity_status);
+        if (point_count > 0)
+        {
+            set_cell(result.model, calibration_model_columns, "coefficient_0", wagner_fit->coefficient_0);
+            set_cell(result.model, calibration_model_columns, "coefficient_1", wagner_fit->coefficient_1);
+            set_cell(result.model, calibration_model_columns, "coefficient_2", wagner_fit->coefficient_2);
+            set_cell(result.model, calibration_model_columns, "r_squared", wagner_fit->r_squared);
+            set_cell(result.model, calibration_model_columns, "adjusted_r_squared", wagner_fit->adjusted_r_squared);
+            set_cell(result.model, calibration_model_columns, "rmse", wagner_fit->rmse);
+            set_cell(result.model, calibration_model_columns, "n_points", static_cast<std::int64_t>(point_count));
+            set_cell(result.model, calibration_model_columns, "range_min", wagner_fit->range_min);
+            set_cell(result.model, calibration_model_columns, "range_max", wagner_fit->range_max);
+        }
+    }
+    if (fit_status != "ok") return result;
     for (auto &point : result.points)
     {
         if (!row_boolean(point, calibration_point_columns, "included")) continue;
@@ -939,10 +1132,18 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
         const auto y = text_value(method, "normalization") == "internal_standard"
             ? row_number(point, calibration_point_columns, "response_ratio")
             : row_number(point, calibration_point_columns, "response");
-        const auto back_calculated = (y - intercept) / slope;
-        set_cell(point, calibration_point_columns, "back_calculated_concentration", back_calculated);
-        set_cell(point, calibration_point_columns, "residual", y - (intercept + slope * x));
-        if (x != 0.0) set_cell(point, calibration_point_columns, "relative_residual", 100.0 * (back_calculated - x) / x);
+        const auto inverse = linear_fit.has_value()
+            ? calibration::inverse_linear(*linear_fit, y)
+            : quadratic_fit.has_value() ? calibration::inverse_quadratic(*quadratic_fit, y)
+                                        : calibration::inverse_wagner(*wagner_fit, y);
+        set_cell(point, calibration_point_columns, "back_calculated_concentration", inverse.concentration);
+        const auto predicted = linear_fit.has_value()
+            ? calibration::predict_linear(*linear_fit, x)
+            : quadratic_fit.has_value() ? calibration::predict_quadratic(*quadratic_fit, x)
+                                        : calibration::predict_wagner(*wagner_fit, x);
+        const auto residual = model == "wagner" ? std::log(y) - std::log(predicted) : y - predicted;
+        set_cell(point, calibration_point_columns, "residual", residual);
+        if (x != 0.0) set_cell(point, calibration_point_columns, "relative_residual", 100.0 * (inverse.concentration - x) / x);
     }
     for (const auto index : included_rows) {
         const auto point = std::find_if(result.points.begin(), result.points.end(), [&](const TypedRow &candidate) {
@@ -1013,16 +1214,56 @@ void quantify_samples(const std::map<std::string, Json> &methods,
                 ? row_number(row, quantification_columns, "response_ratio") : row_number(row, quantification_columns, "response");
             const auto slope = row_number(model, calibration_model_columns, "coefficient_1");
             const auto intercept = row_number(model, calibration_model_columns, "coefficient_0");
-            if (std::isfinite(y) && y > 0.0 && std::isfinite(slope) && std::abs(slope) > 1e-15)
+            const auto model_name = row_text(model, calibration_model_columns, "model");
+            calibration::InverseResult inverse;
+            if (model_name == "quadratic")
             {
-                const auto calculated = (y - intercept) / slope;
+                calibration::QuadraticFit quadratic_fit;
+                quadratic_fit.coefficient_0 = intercept;
+                quadratic_fit.coefficient_1 = slope;
+                quadratic_fit.coefficient_2 = row_number(model, calibration_model_columns, "coefficient_2");
+                quadratic_fit.range_min = row_number(model, calibration_model_columns, "range_min");
+                quadratic_fit.range_max = row_number(model, calibration_model_columns, "range_max");
+                quadratic_fit.monotonicity_status = row_text(model, calibration_model_columns, "monotonicity_status");
+                quadratic_fit.status = "ok";
+                inverse = calibration::inverse_quadratic(quadratic_fit, y);
+            }
+            else if (model_name == "wagner")
+            {
+                calibration::WagnerFit wagner_fit;
+                wagner_fit.coefficient_0 = intercept;
+                wagner_fit.coefficient_1 = slope;
+                wagner_fit.coefficient_2 = row_number(model, calibration_model_columns, "coefficient_2");
+                wagner_fit.range_min = row_number(model, calibration_model_columns, "range_min");
+                wagner_fit.range_max = row_number(model, calibration_model_columns, "range_max");
+                wagner_fit.monotonicity_status = row_text(model, calibration_model_columns, "monotonicity_status");
+                wagner_fit.domain_status = "positive_domain";
+                wagner_fit.status = "ok";
+                inverse = calibration::inverse_wagner(wagner_fit, y);
+            }
+            else
+            {
+                calibration::LinearFit linear_fit;
+                linear_fit.intercept = intercept;
+                linear_fit.slope = slope;
+                linear_fit.range_min = row_number(model, calibration_model_columns, "range_min");
+                linear_fit.range_max = row_number(model, calibration_model_columns, "range_max");
+                linear_fit.status = "ok";
+                inverse = calibration::inverse_linear(linear_fit, y);
+            }
+            if (inverse.status == "invalid_response")
+            {
+                set_cell(row, quantification_columns, "status", std::string("invalid_response"));
+                flags.push_back("invalid_response");
+            }
+            else
+            {
+                const auto calculated = inverse.concentration;
                 const auto dilution = row_number(row, quantification_columns, "dilution_factor", 1.0);
                 const auto final_value = calculated * dilution;
                 set_cell(row, quantification_columns, "calculated_concentration", calculated);
                 set_cell(row, quantification_columns, "final_concentration", final_value);
-                const auto lower = row_number(model, calibration_model_columns, "range_min");
-                const auto upper = row_number(model, calibration_model_columns, "range_max");
-                std::string status = calculated < lower ? "below_calibration_range" : calculated > upper ? "above_calibration_range" : "ok";
+                std::string status = inverse.status;
                 if (status != "ok") flags.push_back(status);
                 else if (require_qualifier && std::holds_alternative<bool>(get_cell(row, quantification_columns, "qualifier_ratio_pass")) &&
                          !row_boolean(row, quantification_columns, "qualifier_ratio_pass")) { status = "qualifier_failed"; flags.push_back(status); }
@@ -1036,7 +1277,6 @@ void quantify_samples(const std::map<std::string, Json> &methods,
                 }
                 set_cell(row, quantification_columns, "status", std::move(status));
             }
-            else { set_cell(row, quantification_columns, "status", std::string("invalid_response")); flags.push_back("invalid_response"); }
         }
         else if (model_it == model_by_target.end() || row_text(*model_it->second, calibration_model_columns, "fit_status") != "ok")
         {

@@ -6,6 +6,7 @@ export type MassSpecFilterValues = Record<string, string[]>;
 type MassSpecFilterToolbarProps = {
   selectByColumns: readonly MassSpecFilterColumn[];
   filterColumns: readonly MassSpecFilterColumn[];
+  showSelectByRow?: boolean;
   selectBy: string[];
   onSelectByChange: (columns: string[]) => void;
   optionValues: Record<string, string[]>;
@@ -109,6 +110,7 @@ function MultiValueFilter({
 export function MassSpecFilterToolbar({
   selectByColumns,
   filterColumns,
+  showSelectByRow = true,
   selectBy,
   onSelectByChange,
   optionValues,
@@ -118,26 +120,28 @@ export function MassSpecFilterToolbar({
 }: MassSpecFilterToolbarProps) {
   return (
     <div className="sf-mass-spec-filter-toolbar">
-      <div className="sf-mass-spec-filter-row sf-mass-spec-select-by-row" aria-label="Select by">
-        <span className="sf-mass-spec-filter-row-label">Select by</span>
-        {selectByColumns.map(([column, label]) => (
-          <label className="sf-mass-spec-checkbox" key={column}>
-            <input
-              type="checkbox"
-              checked={selectBy.includes(column)}
-              onChange={(event) => {
-                if (event.target.checked) {
-                  onSelectByChange([...selectBy, column]);
-                  return;
-                }
-                const next = selectBy.filter((value) => value !== column);
-                if (next.length) onSelectByChange(next);
-              }}
-            />
-            {label}
-          </label>
-        ))}
-      </div>
+      {showSelectByRow ? (
+        <div className="sf-mass-spec-filter-row sf-mass-spec-select-by-row" aria-label="Select by">
+          <span className="sf-mass-spec-filter-row-label">Select by</span>
+          {selectByColumns.map(([column, label]) => (
+            <label className="sf-mass-spec-checkbox" key={column}>
+              <input
+                type="checkbox"
+                checked={selectBy.includes(column)}
+                onChange={(event) => {
+                  if (event.target.checked) {
+                    onSelectByChange([...selectBy, column]);
+                    return;
+                  }
+                  const next = selectBy.filter((value) => value !== column);
+                  if (next.length) onSelectByChange(next);
+                }}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      ) : null}
       <div className="sf-mass-spec-filter-row sf-mass-spec-values-row" aria-label="Filters">
         <span className="sf-mass-spec-filter-row-label">Filter</span>
         {filterColumns.map(([column, label]) => (

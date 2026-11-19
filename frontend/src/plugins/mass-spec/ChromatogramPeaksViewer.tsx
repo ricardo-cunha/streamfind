@@ -166,6 +166,41 @@ function peakHoverTemplate(row: PeakRow): string {
   return `${metadata}<extra></extra>`;
 }
 
+function interpolateAt(x: number[], y: number[], target: number): number | null {
+  for (let index = 0; index < x.length; index += 1) {
+    if (x[index] === target) return y[index];
+    if (index === 0 || x[index - 1] > target || target > x[index]) continue;
+    const leftX = x[index - 1];
+    const rightX = x[index];
+    const leftY = y[index - 1];
+    const rightY = y[index];
+    if (rightX === leftX) return leftY;
+    const fraction = (target - leftX) / (rightX - leftX);
+    return leftY + fraction * (rightY - leftY);
+  }
+  return null;
+}
+
+function boundedPeakTrace(row: PeakRow, x: number[], y: number[]): { x: number[]; y: number[] } | null {
+  const start = Number(row.rt_start);
+  const end = Number(row.rt_end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  const startY = interpolateAt(x, y, start);
+  const endY = interpolateAt(x, y, end);
+  if (startY === null || endY === null) return null;
+  const windowX = [start];
+  const windowY = [startY];
+  for (let index = 0; index < x.length; index += 1) {
+    if (x[index] > start && x[index] < end) {
+      windowX.push(x[index]);
+      windowY.push(y[index]);
+    }
+  }
+  windowX.push(end);
+  windowY.push(endY);
+  return { x: windowX, y: windowY };
+}
+
 function makePeakSpec(
   rows: PeakRow[],
   resultId: string,
@@ -186,6 +221,7 @@ function makePeakSpec(
     const color = colorFor(`${text(row, 'analysis')}\n${text(row, 'chromatogram_id')}`);
     const peakRt = number(row, 'rt');
     const peakHeight = number(row, 'height') || Math.max(...y);
+    const integrated = boundedPeakTrace(row, x, y);
     const result: PlotlyTrace[] = [
       {
         type: 'scattergl',
@@ -194,12 +230,25 @@ function makePeakSpec(
         showlegend: showLegend,
         legendgroup: legendLabel,
         line: { color, width: 1.8 },
-        fill: 'tozeroy',
-        fillcolor: withAlpha(color, 0.21),
         x,
         y,
         hovertemplate: peakHoverTemplate(row),
       },
+      ...(integrated
+        ? [{
+            type: 'scattergl',
+            mode: 'lines',
+            name: `${legendLabel} integrated area`,
+            showlegend: false,
+            legendgroup: legendLabel,
+            line: { color, width: 0 },
+            fill: 'tozeroy',
+            fillcolor: withAlpha(color, 0.21),
+            x: integrated.x,
+            y: integrated.y,
+            hovertemplate: '<extra></extra>',
+          }]
+        : []),
       {
         type: 'scattergl',
         mode: 'markers',

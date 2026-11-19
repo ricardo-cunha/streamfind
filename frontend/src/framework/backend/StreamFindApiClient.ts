@@ -641,7 +641,11 @@ export class StreamFindApiClient {
   async pickFolders(): Promise<string[]> {
     const response = await fetch(`${this.baseUrl}/projects/file-picker/folders`, { method: 'POST' });
     const result = (await response.json()) as { paths?: string[]; error?: string };
-    if (!response.ok || !result.paths) throw new Error(result.error || `Folder selection failed (${response.status})`);
+    if (!response.ok) {
+      if (result.error?.toLocaleLowerCase().includes('cancel')) return [];
+      throw new Error(result.error || `Folder selection failed (${response.status})`);
+    }
+    if (!result.paths) throw new Error(`Folder selection failed (${response.status})`);
     return result.paths;
   }
 

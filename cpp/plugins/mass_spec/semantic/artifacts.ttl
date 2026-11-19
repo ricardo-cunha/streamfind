@@ -293,7 +293,7 @@ sfms:quantificationTable
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification table" ;
-    skos:definition "Unified per-analysis quantification rows containing selected peak responses, compact EIC arrays, calibration-point diagnostics, and final concentration results." ;
+    skos:definition "Unified analyte per-analysis quantification rows containing selected quantifier, qualifier, and assigned internal-standard peak responses, compact EIC arrays, calibration-point diagnostics, and final concentration results." ;
     sf:tableContractName "MASS_SPEC_QUANTIFICATION" ;
     sf:dataKind "table" ;
     sf:hasColumn
@@ -310,6 +310,8 @@ sfms:quantificationTable
         sfms:chromatogramIndexColumn,
         sfms:peakIdColumn,
         sfms:quantPeakRtColumn,
+        sfms:quantPeakRtStartColumn,
+        sfms:quantPeakRtEndColumn,
         sfms:quantPeakAreaColumn,
         sfms:quantPeakHeightColumn,
         sfms:eicSizeColumn,
@@ -318,6 +320,25 @@ sfms:quantificationTable
         sfms:qualifierEicSizeColumn,
         sfms:qualifierEicRtColumn,
         sfms:qualifierEicIntensityColumn,
+        sfms:internalStandardEicSizeColumn,
+        sfms:internalStandardEicRtColumn,
+        sfms:internalStandardEicIntensityColumn,
+        sfms:quantifierChromatogramIdColumn,
+        sfms:qualifierChromatogramIdColumn,
+        sfms:qualifierChromatogramIndexColumn,
+        sfms:qualifierPeakIdColumn,
+        sfms:qualifierPeakRtColumn,
+        sfms:qualifierPeakRtStartColumn,
+        sfms:qualifierPeakRtEndColumn,
+        sfms:qualifierPeakAreaColumn,
+        sfms:qualifierPeakHeightColumn,
+        sfms:internalStandardPeakRtColumn,
+        sfms:internalStandardPeakRtStartColumn,
+        sfms:internalStandardPeakRtEndColumn,
+        sfms:internalStandardPeakAreaColumn,
+        sfms:internalStandardPeakHeightColumn,
+        sfms:qualifierRtErrorColumn,
+        sfms:qualifierCandidateCountColumn,
         sfms:responseMetricColumn,
         sfms:responseColumn,
         sfms:internalStandardResponseColumn,
@@ -365,6 +386,8 @@ sfms:quantificationCalibrationModelsTable
         sfms:nPointsColumn,
         sfms:rangeMinColumn,
         sfms:rangeMaxColumn,
+        sfms:calibrationDomainStatusColumn,
+        sfms:monotonicityStatusColumn,
         sfms:fitStatusColumn .
 
 sfms:featuresTable

@@ -1544,7 +1544,7 @@ sfms:mergeParameter
     skos:definition "Whether to merge nearby chromatographic peaks." ;
     sf:type "boolean" ;
     sf:required false ;
-    sf:default false ;
+    sf:default true ;
     sf:example true .
 
 sfms:mergeDistanceParameter
@@ -1555,8 +1555,8 @@ sfms:mergeDistanceParameter
     skos:definition "Maximum distance between peak apices for merging, in retention-time units." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
-    sf:example 45.0 .
+    sf:default 5.0 ;
+    sf:example 5.0 .
 
 sfms:minPeakHeightParameter
     a sf:Parameter ;
@@ -1599,8 +1599,8 @@ sfms:peakTracePaddingSecondsParameter
     skos:definition "Retention-time padding added on both sides of each detected peak when storing its EIC arrays." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
-    sf:example 5.0 .
+    sf:default 10.0 ;
+    sf:example 10.0 .
 
 sfms:smoothingEnabledParameter
     a sf:Parameter ;
