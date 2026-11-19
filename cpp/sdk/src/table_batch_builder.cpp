@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <arrow/api.h>
 #include <ctime>
@@ -9,6 +10,86 @@
 #include <sstream>
 
 namespace streamfind::sdk {
+
+namespace detail {
+
+int timestamp_digit(char value) {
+    return value >= '0' && value <= '9' ? value - '0' : -1;
+}
+
+std::int64_t parse_timestamp_microseconds(const std::string &value) {
+    if (value.size() < 19 || (value[10] != 'T' && value[10] != ' '))
+        throw std::invalid_argument("typed timestamp must use ISO-8601 date-time text");
+
+    std::tm parsed{};
+    std::istringstream input(value.substr(0, 19));
+    input >> std::get_time(&parsed, value[10] == 'T'
+        ? "%Y-%m-%dT%H:%M:%S" : "%Y-%m-%d %H:%M:%S");
+    if (input.fail())
+        throw std::invalid_argument("typed timestamp must use ISO-8601 date-time text");
+
+    std::size_t position = 19;
+    std::int64_t fraction = 0;
+    std::size_t fraction_digits = 0;
+    if (position < value.size() && value[position] == '.') {
+        ++position;
+        while (position < value.size()) {
+            const auto digit = timestamp_digit(value[position]);
+            if (digit < 0) break;
+            if (fraction_digits == 6)
+                throw std::invalid_argument("typed timestamp precision exceeds microseconds");
+            fraction = fraction * 10 + digit;
+            ++fraction_digits;
+            ++position;
+        }
+        if (fraction_digits == 0)
+            throw std::invalid_argument("typed timestamp fraction must contain digits");
+        while (fraction_digits++ < 6) fraction *= 10;
+    }
+
+    std::int64_t offset_seconds = 0;
+    if (position < value.size() && (value[position] == 'Z' || value[position] == 'z')) {
+        ++position;
+    } else if (position < value.size() && (value[position] == '+' || value[position] == '-')) {
+        const auto sign = value[position++] == '+' ? 1 : -1;
+        const auto hour_start = position;
+        while (position < value.size() && timestamp_digit(value[position]) >= 0) ++position;
+        const auto hour_digits = position - hour_start;
+        if (hour_digits != 2 || position >= value.size())
+            throw std::invalid_argument("typed timestamp has an invalid UTC offset");
+        const auto hours = (timestamp_digit(value[hour_start]) * 10) +
+            timestamp_digit(value[hour_start + 1]);
+        std::size_t minute_start = position;
+        if (value[position] == ':') {
+            ++position;
+            minute_start = position;
+        }
+        if (position + 2 > value.size() || timestamp_digit(value[position]) < 0 ||
+            timestamp_digit(value[position + 1]) < 0)
+            throw std::invalid_argument("typed timestamp has an invalid UTC offset");
+        const auto minutes = (timestamp_digit(value[minute_start]) * 10) +
+            timestamp_digit(value[minute_start + 1]);
+        position += 2;
+        if (hours > 23 || minutes > 59)
+            throw std::invalid_argument("typed timestamp has an invalid UTC offset");
+        offset_seconds = sign * (static_cast<std::int64_t>(hours) * 3600 + minutes * 60);
+    }
+    if (position != value.size())
+        throw std::invalid_argument("typed timestamp must use ISO-8601 date-time text");
+
+#ifdef _WIN32
+    const auto seconds = _mkgmtime(&parsed);
+#else
+    const auto seconds = timegm(&parsed);
+#endif
+    if (seconds < 0)
+        throw std::invalid_argument("typed timestamp is outside supported range");
+    constexpr auto micros_per_second = std::int64_t{1000000};
+    return static_cast<std::int64_t>(seconds) * micros_per_second + fraction -
+        offset_seconds * micros_per_second;
+}
+
+}  // namespace detail
 
 TableBatchBuilder::TableBatchBuilder(std::vector<Column> schema) {
     if (schema.empty()) throw std::invalid_argument("typed table batch schema must not be empty");
@@ -316,18 +397,7 @@ void TableBatchBuilder::emit(PluginProjectAccess &access,
             for (std::uint64_t row = 0; row < row_count_; ++row) {
                 const bool valid = column.validity.empty() || (column.validity[row / 8] & (1u << (row % 8))) != 0;
                 if (!valid) { require_arrow(builder.AppendNull()); continue; }
-                const auto &value = column.strings[row];
-                std::tm parsed{};
-                std::istringstream input(value);
-                input >> std::get_time(&parsed, value.find('T') == std::string::npos ? "%Y-%m-%d %H:%M:%S" : "%Y-%m-%dT%H:%M:%S");
-                if (input.fail()) throw std::invalid_argument("typed timestamp must use ISO-8601 date-time text");
-#ifdef _WIN32
-                const auto seconds = _mkgmtime(&parsed);
-#else
-                const auto seconds = timegm(&parsed);
-#endif
-                if (seconds < 0) throw std::invalid_argument("typed timestamp is outside supported range");
-                require_arrow(builder.Append(static_cast<std::int64_t>(seconds) * 1000000));
+                require_arrow(builder.Append(detail::parse_timestamp_microseconds(column.strings[row])));
             }
             require_arrow(builder.Finish(&output));
         } else if (column.schema.type == STREAMFIND_PLUGIN_COLUMN_BINARY) {

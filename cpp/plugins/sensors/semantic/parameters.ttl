@@ -3,6 +3,222 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+sfsensors:sourceIdColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Source ID column" ;
+    skos:definition "Input column containing the stable acquisition source identity." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "source_id" ;
+    sf:example "device" .
+
+sfsensors:layoutParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Input layout" ;
+    skos:definition "CSV/table layout: long uses one signal and value per row; wide uses each selected variable column as a signal." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "long" ;
+    sf:constraints "long|wide" ;
+    sf:example "wide" .
+
+sfsensors:variableColumnsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Variable columns" ;
+    skos:definition "Explicit wide-layout table columns to emit as sensor signals, in the desired signal order." ;
+    sf:type "array" ;
+    sf:required false ;
+    sf:default "[]" ;
+    sf:items sfcore:stringItemParameter ;
+    sf:example "[\"pH\",\"temperature\"]" .
+
+sfsensors:signalIdColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Signal ID column" ;
+    skos:definition "Long-layout input column containing the stable sensor or channel identity." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "signal_id" ;
+    sf:example "sensor" .
+
+sfsensors:eventTimeColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Event time column" ;
+    skos:definition "Input column containing the measurement timestamp in ISO-8601 form." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "event_time" ;
+    sf:example "timestamp" .
+
+sfsensors:valueColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sensor value column" ;
+    skos:definition "Long-layout input scalar column containing the observation value." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "value" ;
+    sf:example "pH" .
+
+sfsensors:receivedAtColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Received-at column" ;
+    skos:definition "Optional input column containing the time streamfind received the observation; absent values use invocation time." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "received_at" .
+
+sfsensors:unitColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Unit column" ;
+    skos:definition "Optional input column containing the measurement unit." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "unit" .
+
+sfsensors:qualityColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quality column" ;
+    skos:definition "Optional input column containing good, uncertain, bad, or missing quality." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "quality" .
+
+sfsensors:statusCodeColumnParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Status-code column" ;
+    skos:definition "Optional input column containing the protocol-native status code." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "status_code" .
+
+sfsensors:timeOriginParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Time origin" ;
+    skos:definition "Origin of the event timestamp: source, server, broker, or receiver." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "source" ;
+    sf:constraints "source|server|broker|receiver" ;
+    sf:example "source" .
+
+sfsensors:captureIdParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Capture ID" ;
+    skos:definition "Optional immutable acquisition or normalization segment identity." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "capture-2026-01-01" .
+
+sfsensors:startTimeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Start time" ;
+    skos:definition "Inclusive lower bound for event_time, in normalized ISO-8601 UTC form." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "2026-11-19T12:00:00.000000Z" .
+
+sfsensors:endTimeParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "End time" ;
+    skos:definition "Exclusive upper bound for event_time, in normalized ISO-8601 UTC form." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "" ;
+    sf:example "2026-11-19T13:00:00.000000Z" .
+
+sfsensors:windowSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Window size" ;
+    skos:definition "Fixed UTC resampling window size in seconds; windows are left-closed and right-open and anchored at the Unix epoch." ;
+    sf:type "real" ;
+    sf:required true ;
+    sf:default "60" ;
+    sf:constraints "{\"minimum\":0.000001}" ;
+    sf:example "60" .
+
+sfsensors:aggregationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Aggregation" ;
+    skos:definition "Resampling aggregation: mean averages numeric observations and last selects the latest observation in each window." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "mean" ;
+    sf:constraints "mean|last" ;
+    sf:example "mean" .
+
+sfsensors:referenceSignalParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Reference signal" ;
+    skos:definition "Signal identifier whose observations define the timestamps used for nearest-time alignment." ;
+    sf:type "string" ;
+    sf:required true ;
+    sf:default "" ;
+    sf:example "pH" .
+
+sfsensors:toleranceSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Alignment tolerance" ;
+    skos:definition "Maximum absolute event-time distance in seconds for a nearest observation to be considered matched." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "1" ;
+    sf:constraints "{\"minimum\":0}" ;
+    sf:example "0.5" .
+
+sfsensors:timeAxisParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Alignment time axis" ;
+    skos:definition "Timestamp axis used when projecting aligned observations back to SENSOR_TIMESERIES: reference uses the reference timeline, while observed uses matched event times and anchors missing matches to the reference timestamp." ;
+    sf:type "string" ;
+    sf:required false ;
+    sf:default "reference" ;
+    sf:constraints "reference|observed" ;
+    sf:example "reference" .
+
 sfsensors:endpointParameter
     a sf:Parameter ;
     sf:availableInDomain sfsensors:sensors ;
@@ -90,3 +306,51 @@ sfsensors:nodesParameter
     sf:required true ;
     sf:default "{}" ;
     sf:example "{\"temperature\":\"ns=2;s=Temperature\"}" .
+
+sfsensors:captureDurationParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Capture duration" ;
+    skos:definition "Maximum duration of one finite OPC UA time-series capture in seconds." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "10" ;
+    sf:constraints "{\"minimum\":0.001,\"maximum\":3600}" ;
+    sf:example "30" .
+
+sfsensors:captureIntervalParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sample interval" ;
+    skos:definition "Polling interval for each requested OPC UA node in milliseconds." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "1000" ;
+    sf:constraints "{\"minimum\":1,\"maximum\":600000}" ;
+    sf:example "1000" .
+
+sfsensors:maxSamplesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum samples" ;
+    skos:definition "Maximum total observations emitted by one finite capture across all requested nodes." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "1000" ;
+    sf:constraints "{\"minimum\":1,\"maximum\":1000000}" ;
+    sf:example "300" .
+
+sfsensors:maxBufferBytesParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum buffer bytes" ;
+    skos:definition "Maximum approximate in-memory Arrow batch size before a capture publishes another immutable result batch." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "67108864" ;
+    sf:constraints "{\"minimum\":1,\"maximum\":536870912}" ;
+    sf:example "16777216" .

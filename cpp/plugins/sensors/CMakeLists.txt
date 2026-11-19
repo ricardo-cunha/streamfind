@@ -17,7 +17,13 @@ set_target_properties(open62541-object open62541-plugins PROPERTIES
 add_library(streamfind_sensors_plugin SHARED
     src/plugin_entrypoint.cpp
     src/operations/operations.cpp
-    src/operations/opcua.cpp)
+    src/operations/opcua.cpp
+    src/operations/timeseries.cpp
+    src/operations/validation.cpp
+    src/operations/filter.cpp
+    src/operations/resample.cpp
+    src/operations/alignment.cpp
+    src/operations/project.cpp)
 target_link_libraries(streamfind_sensors_plugin PRIVATE
     streamfind::cpp_sdk
     open62541::open62541)

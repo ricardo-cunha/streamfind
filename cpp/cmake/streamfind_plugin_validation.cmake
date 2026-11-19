@@ -52,21 +52,12 @@ function(streamfind_stage_mingw_plugin_runtime target domain)
                 "${CMAKE_BINARY_DIR}/bin")
     endif()
     if(domain STREQUAL "mass_spec" AND TARGET streamfind_openbabel_runtime)
+        # Open Babel's runtime target owns development-tree staging and the
+        # root CMakeLists owns the CPack install rule. Do not copy the same
+        # data directory again from the mass-spec plugin post-build hook: on
+        # Windows the second recursive copy can collide with a locked or
+        # read-only generated file in the shared bin directory.
         add_dependencies(${target} streamfind_openbabel_runtime)
-        set(_streamfind_openbabel_runtime_dir "${CMAKE_BINARY_DIR}/bin")
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                "${_streamfind_openbabel_runtime_dir}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<TARGET_FILE:streamfind_openbabel_runtime>"
-                "${_streamfind_openbabel_runtime_dir}"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${STREAMFIND_OPENBABEL_DATA_DIR}"
-                "${_streamfind_openbabel_runtime_dir}/data/openbabel")
-        install(FILES "$<TARGET_FILE:streamfind_openbabel_runtime>"
-            DESTINATION bin)
-        install(DIRECTORY "${STREAMFIND_OPENBABEL_DATA_DIR}/"
-            DESTINATION "bin/data/openbabel")
     endif()
 endfunction()
 

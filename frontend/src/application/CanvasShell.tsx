@@ -3757,7 +3757,9 @@ export default function CanvasShell({
           }
           onClose={() => setArtifactViewer(null)}
           fallback={
-            artifactViewer.representation === 'json' && artifactViewer.payload === undefined ? (
+            artifactViewer.representation === 'json' &&
+            artifactViewer.payload === undefined &&
+            artifactPayload === undefined ? (
               <div className="sf-artifact-viewer-json" role={artifactPayloadError ? 'alert' : 'status'}>
                 {artifactPayloadError ?? 'Loading result…'}
               </div>

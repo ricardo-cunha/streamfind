@@ -31,6 +31,34 @@ The core owns workflow execution, cancellation, typed data movement, result
 publication, project isolation, and runtime lifecycle. Adding an acquisition
 protocol should not require a core or time-series algorithm change.
 
+### Implementation progress
+
+- [x] Added the `SENSOR_TIMESERIES_V1` semantic table contract and explicit
+  typed observation columns.
+- [x] Added `sensors.normalize_sensor_table` for explicit input-column mapping,
+  quality/provenance normalization, and bounded Arrow batch publication.
+- [x] Corrected SDK timestamp conversion to preserve microseconds and normalize
+  ISO-8601 UTC offsets.
+- [x] Added a deterministic native contract test for fractional timestamps,
+  UTC offsets, typed values, missing values, and quality.
+- [x] Add the shared internal observation/adapter boundary and bounded OPC UA
+  time-series capture operation with duration, interval, sample-count, buffer,
+  and cancellation limits.
+- [x] Validate the packaged OPC UA capture against the LADS pH-meter server,
+  including typed pH values and missing rows for non-Variable nodes.
+- [x] Add the first time-series processing operation, a non-mutating validator
+  for the canonical table contract.
+- [x] Implement the CSV-to-`SENSOR_TIMESERIES` workflow through generic
+  `streamfind.read_csv` and explicit long/wide normalization mappings.
+- [x] Add protocol-independent inclusive-start/exclusive-end time filtering
+  over `SENSOR_TIMESERIES`, preserving typed values, quality, and provenance.
+- [x] Add fixed-window UTC resampling with explicit `mean`/`last`
+  aggregation and quality propagation for partial and all-missing windows.
+- [x] Add nearest-time alignment to an explicit reference signal with a
+  bounded tolerance, match/missing status, and signed time deltas.
+- [x] Add an explicit aligned-table projection back to `SENSOR_TIMESERIES_V1`
+  with reference and observed time-axis policies.
+
 ## Current baseline: OPC UA reference acquisition
 
 The sensors plugin currently provides three plugin-owned operations:
@@ -215,6 +243,35 @@ timestamps, bad quality, interpolation, nearest-time tolerance, and quality
 propagation. Large historical inputs will eventually need timestamp-range
 selection and batch pruning so processing does not scan every segment.
 
+The first processing operation is `sensors.filter_timeseries`. It accepts a
+canonical time-series input and optional normalized UTC `start_time` and
+`end_time` bounds. The interval is left-closed and right-open, so a row at
+`start_time` is retained while a row at `end_time` is excluded. Filtering
+copies the canonical typed columns without changing values or quality and is
+safe to compose with the validator before resampling and alignment.
+
+The resampling operation is `sensors.resample_timeseries`. It anchors fixed
+windows at the Unix epoch, uses left-closed/right-open intervals, supports
+numeric `mean` and latest-observation `last`, and propagates a partial window
+with both valid and missing numeric readings as `uncertain`. A window with no
+usable value remains `missing`, so the validator can distinguish an absent
+reading from a degraded aggregate.
+
+The alignment operation is `sensors.align_timeseries`. It uses one signal as
+the per-source reference timeline, selects the nearest observation from every
+other signal within a non-negative tolerance, and emits `SENSOR_ALIGNED_V1`.
+The aligned table retains both the reference and matched event times, typed
+values and quality metadata, an `alignment_status` of `reference`, `matched`,
+or `missing`, and a signed microsecond delta. Unmatched signals are represented
+explicitly as missing rows rather than being silently dropped.
+
+The projection operation is `sensors.project_aligned_timeseries`. It is the
+explicit bridge from `SENSOR_ALIGNED_V1` to `SENSOR_TIMESERIES_V1`; generic
+filtering, resampling, validation, and future analysis nodes consume the
+projected canonical table. Its `reference` axis uses the reference timeline,
+while its `observed` axis uses matched event times and anchors an unavailable
+match to the reference timestamp so the canonical timestamp remains valid.
+
 ## Runtime, security, and ABI direction
 
 The current v3.0 plugin interface already provides the primitives needed for a
@@ -280,6 +337,11 @@ time-series results using the same canonical contract.
 Implement validation, time filtering, resampling, and alignment with
 deterministic tests for missing, late, duplicate, and bad-quality observations.
 
+Status: complete for the finite-batch processing slice. The validator,
+inclusive/exclusive filter, fixed-window resampler, and nearest-time aligner
+are implemented and covered by the sensors operation contract test; service
+scheduling remains a later runtime concern.
+
 **Exit:** acquisition → canonical time series → temporal analysis → published
 result works without protocol-specific processing logic.
 
@@ -302,8 +364,10 @@ device-control operations remain separately scoped.
 ### M7 — Efficient historical and continuous acquisition
 
 Introduce logical series spanning immutable segments, time-range query
-optimization, service-managed checkpoints, recurring/continuous workers, and
-justified additive ABI extensions.
+optimization, and acquisition checkpoint/restart contracts that can be
+consumed by the service scheduler and worker manager. Recurring or continuous
+workflow orchestration is owned by the independent scheduler plan, not by the
+sensors plugin.
 
 **Exit:** restartable and cancellable ingestion provides consistent,
 queryable historical results without changing the finite-operation contract.
@@ -328,7 +392,12 @@ This is a target organization, not a request for a duplicate source tree or a
 large all-at-once move. Each relocation must leave one owning implementation
 path and preserve the current plugin boundaries.
 
-## Service scheduling and workflow logic direction
+## Independent service and workflow plans
+
+Service scheduling and workflow logic are separate implementation tracks. The
+following section records the integration boundary for sensors; it does not
+make either capability part of this sensors-plugin plan or its completion
+criteria.
 
 Continuous monitoring should be achieved by composing bounded acquisition
 workflows with a generic service scheduler, not by making the sensors plugin
@@ -415,8 +484,7 @@ possibilities share the canonical observation boundary, each has plugin-owned
 semantic and native implementations, and both can be configured, validated,
 executed, and inspected in disposable `.sf` projects through the generic C++
 service/MCP host. Time-series processing must operate on the canonical result
-without knowing which protocol produced it. A generic scheduler must be able
-to trigger the same workflows manually, on an interval, or after completion,
-and generic logic nodes must support bounded conditional processing without
-requiring sensors-specific execution code. No frontend or core
-domain-specific implementation should be required to add the second adapter.
+without knowing which protocol produced it. Scheduler lifecycle and generic
+workflow-logic implementation are validated through their respective focused
+plans. No scheduler, frontend, or core domain-specific implementation should
+be required to add the second adapter.

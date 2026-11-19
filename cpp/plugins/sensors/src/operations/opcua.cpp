@@ -1,5 +1,6 @@
 #include "streamfind/sdk/plugin_project_access.hpp"
 #include "streamfind/sdk/table_batch_builder.hpp"
+#include "../acquisition/observation.hpp"
 
 #include <open62541/client.h>
 #include <open62541/client_config_default.h>
@@ -12,10 +13,12 @@
 #include <cstdint>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -23,6 +26,7 @@
 namespace streamfind::sensors::operations::detail {
 
 using Json = nlohmann::json;
+using Cell = sdk::TableBatchBuilder::Cell;
 
 struct ClientOptions {
     std::string endpoint;
@@ -106,7 +110,8 @@ std::string date_time_text(UA_DateTime value) {
            << std::setw(2) << date_time.month << '-' << std::setw(2) << date_time.day
            << 'T' << std::setw(2) << date_time.hour << ':' << std::setw(2)
            << date_time.min << ':' << std::setw(2) << date_time.sec << '.'
-           << std::setw(3) << date_time.milliSec << 'Z';
+           << std::setw(6) << (static_cast<unsigned>(date_time.milliSec) * 1000u +
+                               static_cast<unsigned>(date_time.microSec)) << 'Z';
     return output.str();
 }
 
@@ -571,6 +576,295 @@ Json collect_opcua_data(sdk::PluginProjectAccess &access, const Json &parameters
     output.emit(access, "opcuaDataTable");
     return Json{{"endpoint", options.endpoint}, {"nodes_requested", nodes->size()},
                 {"rows_emitted", output.row_count()}};
+}
+
+double positive_real_parameter(const Json &parameters, const char *name,
+                               double default_value, double maximum) {
+    const auto found = parameters.find(name);
+    if (found == parameters.end()) return default_value;
+    if (!found->is_number()) throw std::invalid_argument(std::string(name) + " must be numeric");
+    const auto value = found->get<double>();
+    if (!std::isfinite(value) || value <= 0.0 || value > maximum)
+        throw std::invalid_argument(std::string(name) + " must be finite, positive, and within its limit");
+    return value;
+}
+
+std::size_t positive_integer_parameter(const Json &parameters, const char *name,
+                                       std::size_t default_value, std::size_t maximum) {
+    const auto found = parameters.find(name);
+    if (found == parameters.end()) return default_value;
+    if (!found->is_number_unsigned() && !found->is_number_integer())
+        throw std::invalid_argument(std::string(name) + " must be an integer");
+    const auto value = found->get<std::int64_t>();
+    if (value <= 0 || static_cast<std::uint64_t>(value) > maximum)
+        throw std::invalid_argument(std::string(name) + " must be positive and within its limit");
+    return static_cast<std::size_t>(value);
+}
+
+acquisition::CaptureRequest capture_request(const Json &parameters) {
+    const auto duration_seconds = positive_real_parameter(parameters, "capture_duration", 10.0, 3600.0);
+    const auto interval_ms = positive_real_parameter(parameters, "capture_interval", 1000.0, 600000.0);
+    acquisition::CaptureRequest request;
+    request.duration = std::chrono::milliseconds(static_cast<std::int64_t>(duration_seconds * 1000.0));
+    request.sample_interval = std::chrono::milliseconds(static_cast<std::int64_t>(interval_ms));
+    request.max_samples = positive_integer_parameter(parameters, "max_samples", 1000, 1000000);
+    request.max_buffer_bytes = positive_integer_parameter(
+        parameters, "max_buffer_bytes", 64u * 1024u * 1024u, 512u * 1024u * 1024u);
+    if (request.duration.count() == 0 || request.sample_interval.count() == 0)
+        throw std::invalid_argument("capture duration and sample interval must be at least one millisecond");
+    return request;
+}
+
+acquisition::SensorValue sensor_value(const UA_Variant &value) {
+    acquisition::SensorValue result;
+    if (UA_Variant_isEmpty(&value)) return result;
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BOOLEAN])) {
+        result.kind = acquisition::SensorValueKind::Boolean;
+        result.boolean = *static_cast<const UA_Boolean *>(value.data) != 0;
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_SBYTE])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_SByte *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_BYTE])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_Byte *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_INT16])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_Int16 *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT16])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_UInt16 *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_INT32])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_Int32 *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT32])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_UInt32 *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_INT64])) {
+        result.kind = acquisition::SensorValueKind::Integer;
+        result.integer = *static_cast<const UA_Int64 *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_UINT64])) {
+        const auto converted = *static_cast<const UA_UInt64 *>(value.data);
+        if (converted <= static_cast<UA_UInt64>(std::numeric_limits<std::int64_t>::max())) {
+            result.kind = acquisition::SensorValueKind::Integer;
+            result.integer = static_cast<std::int64_t>(converted);
+            return result;
+        }
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_FLOAT]) ||
+        UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DOUBLE])) {
+        result.kind = acquisition::SensorValueKind::Real;
+        result.real = UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_FLOAT])
+            ? static_cast<double>(*static_cast<const UA_Float *>(value.data))
+            : *static_cast<const UA_Double *>(value.data);
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_STRING])) {
+        result.kind = acquisition::SensorValueKind::Text;
+        result.text = ua_string(*static_cast<const UA_String *>(value.data));
+        return result;
+    }
+    if (UA_Variant_hasScalarType(&value, &UA_TYPES[UA_TYPES_DATETIME])) {
+        result.kind = acquisition::SensorValueKind::Text;
+        result.text = date_time_text(*static_cast<const UA_DateTime *>(value.data));
+        return result;
+    }
+    result.kind = acquisition::SensorValueKind::Json;
+    result.text = variant_value(value).dump();
+    return result;
+}
+
+sdk::TableBatchBuilder make_capture_batch() {
+    return sdk::TableBatchBuilder({
+        {"source_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"signal_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"event_time", STREAMFIND_PLUGIN_COLUMN_TIMESTAMP},
+        {"received_at", STREAMFIND_PLUGIN_COLUMN_TIMESTAMP},
+        {"time_origin", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"value_type", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"value_double", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"value_int", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"value_bool", STREAMFIND_PLUGIN_COLUMN_BOOL},
+        {"value_text", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"value_json", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"unit", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"quality", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"status_code", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"capture_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"event_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+    });
+}
+
+std::size_t observation_size(const acquisition::SensorObservation &observation) {
+    std::size_t size = observation.source_id.size() + observation.signal_id.size() +
+        observation.event_time.size() + observation.received_at.size() +
+        observation.capture_id.size() + observation.event_id.size() + 128;
+    if (observation.value.text.has_value()) size += observation.value.text->size();
+    if (observation.unit.has_value()) size += observation.unit->size();
+    if (observation.status_code.has_value()) size += observation.status_code->size();
+    return size;
+}
+
+Json capture_opcua_timeseries(sdk::PluginProjectAccess &access, const Json &parameters) {
+    const auto options = client_options(parameters);
+    const auto nodes = parameters.find("nodes");
+    if (nodes == parameters.end() || !nodes->is_object() || nodes->empty())
+        throw std::invalid_argument("nodes must be a non-empty object mapping signal names to OPC UA node ids");
+    const auto request = capture_request(parameters);
+    const auto capture_id = optional_string(parameters, "capture_id").empty()
+        ? std::string(access.operation_instance()) : optional_string(parameters, "capture_id");
+
+    ClientHolder holder;
+    auto status = configure_client(holder.client, options.timeout_seconds);
+    if (UA_StatusCode_isBad(status))
+        throw std::runtime_error("failed to configure OPC UA client: " + status_json(status).dump());
+    status = connect_client(holder.client, options);
+    if (UA_StatusCode_isBad(status))
+        throw std::runtime_error("OPC UA session creation failed: " + status_json(status).dump());
+
+    struct RequestedNode {
+        std::string signal_id;
+        std::string node_text;
+        UA_NodeId node_id;
+        UA_NodeClass node_class = UA_NODECLASS_UNSPECIFIED;
+        UA_StatusCode node_class_status = UA_STATUSCODE_GOOD;
+        RequestedNode() { UA_NodeId_init(&node_id); }
+        ~RequestedNode() { UA_NodeId_clear(&node_id); }
+        RequestedNode(const RequestedNode &) = delete;
+        RequestedNode &operator=(const RequestedNode &) = delete;
+    };
+    std::vector<std::unique_ptr<RequestedNode>> requested;
+    requested.reserve(nodes->size());
+    for (const auto &[signal_id, node_value] : nodes->items()) {
+        if (!node_value.is_string() || node_value.get<std::string>().empty())
+            throw std::invalid_argument("nodes must map signal names to non-empty node-id strings");
+        auto node = std::make_unique<RequestedNode>();
+        node->signal_id = signal_id;
+        node->node_text = node_value.get<std::string>();
+        const auto parse_status = UA_NodeId_parse(
+            &node->node_id, UA_STRING(const_cast<char *>(node->node_text.c_str())));
+        if (UA_StatusCode_isBad(parse_status))
+            throw std::invalid_argument("invalid OPC UA node id: " + node->node_text);
+        node->node_class_status = UA_Client_readNodeClassAttribute(
+            holder.client, node->node_id, &node->node_class);
+        requested.push_back(std::move(node));
+    }
+
+    auto output = make_capture_batch();
+    std::size_t buffered_bytes = 0;
+    std::uint64_t rows_emitted = 0;
+    std::uint64_t sample_count = 0;
+    const auto start = std::chrono::steady_clock::now();
+    auto next_sample = start;
+    auto flush = [&]() {
+        if (output.row_count() == 0) return;
+        rows_emitted += output.row_count();
+        output.emit(access, "sensorTimeseriesTable");
+        output = make_capture_batch();
+        buffered_bytes = 0;
+    };
+
+    while (sample_count < request.max_samples &&
+           std::chrono::steady_clock::now() - start <= request.duration) {
+        if (access.is_cancelled()) throw std::runtime_error("OPC UA time-series capture cancelled");
+        const auto received_at = date_time_text(UA_DateTime_now());
+        for (const auto &node : requested) {
+            if (sample_count >= request.max_samples) break;
+            acquisition::SensorObservation observation;
+            observation.source_id = options.endpoint;
+            observation.signal_id = node->signal_id;
+            observation.received_at = received_at;
+            observation.capture_id = capture_id;
+            observation.event_id = capture_id + ":" + node->signal_id + ":" +
+                std::to_string(sample_count);
+            if (UA_StatusCode_isBad(node->node_class_status) ||
+                node->node_class != UA_NODECLASS_VARIABLE) {
+                observation.event_time = received_at;
+                observation.time_origin = "receiver";
+                observation.quality = "missing";
+                observation.status_code = UA_StatusCode_isBad(node->node_class_status)
+                    ? std::optional<std::string>(status_json(node->node_class_status).at("status_code").get<std::string>())
+                    : std::optional<std::string>("NotApplicable");
+            } else {
+                UA_ReadValueId read_value;
+                UA_ReadValueId_init(&read_value);
+                UA_NodeId_copy(&node->node_id, &read_value.nodeId);
+                read_value.attributeId = UA_ATTRIBUTEID_VALUE;
+                const auto read_at = UA_DateTime_now();
+                auto data_value = UA_Client_read(holder.client, &read_value);
+                UA_ReadValueId_clear(&read_value);
+                const auto read_status = data_value.hasStatus ? data_value.status : UA_STATUSCODE_GOOD;
+                observation.quality = UA_StatusCode_isGood(read_status) && data_value.hasValue
+                    ? "good" : UA_StatusCode_isUncertain(read_status) ? "uncertain" : "bad";
+                observation.status_code = status_json(read_status).at("status_code").get<std::string>();
+                observation.event_time = data_value.hasSourceTimestamp
+                    ? date_time_text(data_value.sourceTimestamp)
+                    : data_value.hasServerTimestamp ? date_time_text(data_value.serverTimestamp)
+                                                    : date_time_text(read_at);
+                observation.time_origin = data_value.hasSourceTimestamp
+                    ? "source" : data_value.hasServerTimestamp ? "server" : "receiver";
+                if (data_value.hasValue && UA_StatusCode_isGood(read_status))
+                    observation.value = sensor_value(data_value.value);
+                UA_DataValue_clear(&data_value);
+            }
+            const auto row_bytes = observation_size(observation);
+            if (row_bytes > request.max_buffer_bytes)
+                throw std::runtime_error("single OPC UA observation exceeds max_buffer_bytes");
+            if (buffered_bytes != 0 && buffered_bytes + row_bytes > request.max_buffer_bytes)
+                flush();
+            const auto &value = observation.value;
+            output.append_row({observation.source_id, observation.signal_id, observation.event_time,
+                               observation.received_at, observation.time_origin,
+                               value.kind == acquisition::SensorValueKind::Real ? "real" :
+                               value.kind == acquisition::SensorValueKind::Integer ? "integer" :
+                               value.kind == acquisition::SensorValueKind::Boolean ? "boolean" :
+                               value.kind == acquisition::SensorValueKind::Text ? "string" :
+                               value.kind == acquisition::SensorValueKind::Json ? "json" : "missing",
+                               value.real.has_value() ? sdk::TableBatchBuilder::Cell(*value.real) : Cell(std::monostate{}),
+                               value.integer.has_value() ? sdk::TableBatchBuilder::Cell(*value.integer) : Cell(std::monostate{}),
+                               value.boolean.has_value() ? sdk::TableBatchBuilder::Cell(*value.boolean) : Cell(std::monostate{}),
+                               value.kind == acquisition::SensorValueKind::Text && value.text.has_value() ? Cell(*value.text) : Cell(std::monostate{}),
+                               value.kind == acquisition::SensorValueKind::Json && value.text.has_value() ? Cell(*value.text) : Cell(std::monostate{}),
+                               observation.unit.has_value() ? Cell(*observation.unit) : Cell(std::monostate{}),
+                               observation.quality,
+                               observation.status_code.has_value() ? Cell(*observation.status_code) : Cell(std::monostate{}),
+                               observation.capture_id, observation.event_id});
+            buffered_bytes += row_bytes;
+            ++sample_count;
+            if (output.row_count() >= 1024) flush();
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            const auto fraction = std::min(1.0, std::chrono::duration<double>(elapsed).count() /
+                                                  std::chrono::duration<double>(request.duration).count());
+            access.report_progress(fraction, "Capturing OPC UA time-series observations");
+        }
+        next_sample += request.sample_interval;
+        while (std::chrono::steady_clock::now() < next_sample) {
+            if (access.is_cancelled()) throw std::runtime_error("OPC UA time-series capture cancelled");
+            const auto remaining = next_sample - std::chrono::steady_clock::now();
+            std::this_thread::sleep_for(std::min(
+                remaining, std::chrono::steady_clock::duration(std::chrono::milliseconds(100))));
+        }
+    }
+    flush();
+    access.report_progress(1.0, "OPC UA time-series capture complete");
+    return Json{{"endpoint", options.endpoint}, {"capture_id", capture_id},
+                {"rows_emitted", rows_emitted}, {"samples_limit", request.max_samples},
+                {"duration_seconds", request.duration.count() / 1000.0}};
 }
 
 }  // namespace streamfind::sensors::operations::detail
