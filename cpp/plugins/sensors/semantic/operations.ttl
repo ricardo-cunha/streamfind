@@ -92,6 +92,8 @@ sfsensors:captureMqttTimeseries
         sfsensors:payloadFormatParameter,
         sfsensors:qosParameter,
         sfsensors:clientIdParameter,
+        sfsensors:maxReconnectAttemptsParameter,
+        sfsensors:reconnectBackoffSecondsParameter,
         sfsensors:mqttUsernameParameter,
         sfsensors:mqttPasswordParameter,
         sfsensors:tlsEnabledParameter,

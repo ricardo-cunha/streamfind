@@ -348,10 +348,17 @@ result works without protocol-specific processing logic.
 ### M5 — MQTT adapter
 
 Add topic and payload mappings, bounded subscriptions, TLS authentication, QoS
-handling, reconnection, duplicate protection, and a deterministic local-broker
-integration test.
+handling, bounded reconnection, duplicate protection, and dev-mode broker
+validation through scripts under `scripts/dev/`.
 
 **Exit:** MQTT produces the same canonical result without processing changes.
+
+Status: complete for the finite MQTT adapter slice. The adapter publishes the
+canonical sensor time-series contract with typed JSON/plain payload mapping,
+TLS credentials, QoS, bounded callback buffering, duplicate protection, and
+bounded reconnect/resubscription. Validation is intentionally a dev-mode
+workflow check through `scripts/dev/`; no permanent integration-test target is
+required for this adapter.
 
 ### M6 — SiLA 2 adapter and additional analysis
 

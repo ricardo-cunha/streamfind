@@ -287,6 +287,30 @@ sfsensors:clientIdParameter
     sf:default "" ;
     sf:example "streamfind-sensors" .
 
+sfsensors:maxReconnectAttemptsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum MQTT reconnect attempts" ;
+    skos:definition "Maximum number of bounded reconnect attempts after an established MQTT connection is lost. Zero disables reconnect." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:default "3" ;
+    sf:constraints "{\"minimum\":0,\"maximum\":32}" ;
+    sf:example "3" .
+
+sfsensors:reconnectBackoffSecondsParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "MQTT reconnect backoff" ;
+    skos:definition "Delay in seconds between bounded MQTT reconnect attempts." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default "1" ;
+    sf:constraints "{\"minimum\":0,\"maximum\":60}" ;
+    sf:example "1" .
+
 sfsensors:mqttUsernameParameter
     a sf:Parameter ;
     sf:availableInDomain sfsensors:sensors ;

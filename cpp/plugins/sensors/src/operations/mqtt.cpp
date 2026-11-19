@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -74,6 +75,17 @@ std::size_t positive_integer_parameter(const Json &parameters, const char *name,
     return static_cast<std::size_t>(found->get<std::int64_t>());
 }
 
+std::size_t non_negative_integer_parameter(const Json &parameters, const char *name,
+                                           std::size_t default_value,
+                                           std::size_t maximum) {
+    const auto found = parameters.find(name);
+    if (found == parameters.end() || found->is_null()) return default_value;
+    if (!found->is_number_integer() || found->get<std::int64_t>() < 0 ||
+        static_cast<std::uint64_t>(found->get<std::int64_t>()) > maximum)
+        throw std::invalid_argument(std::string(name) + " must be a non-negative integer within its limit");
+    return static_cast<std::size_t>(found->get<std::int64_t>());
+}
+
 int qos_parameter(const Json &parameters) {
     const auto found = parameters.find("qos");
     if (found == parameters.end() || found->is_null()) return 1;
@@ -92,6 +104,18 @@ double positive_real_parameter(const Json &parameters, const char *name,
     const auto value = found->get<double>();
     if (!std::isfinite(value) || value <= 0.0 || value > maximum)
         throw std::invalid_argument(std::string(name) + " must be finite, positive, and within its limit");
+    return value;
+}
+
+double non_negative_real_parameter(const Json &parameters, const char *name,
+                                   double default_value, double maximum) {
+    const auto found = parameters.find(name);
+    if (found == parameters.end() || found->is_null()) return default_value;
+    if (!found->is_number())
+        throw std::invalid_argument(std::string(name) + " must be numeric");
+    const auto value = found->get<double>();
+    if (!std::isfinite(value) || value < 0.0 || value > maximum)
+        throw std::invalid_argument(std::string(name) + " must be finite, non-negative, and within its limit");
     return value;
 }
 
@@ -281,6 +305,19 @@ std::unordered_map<std::string, std::string> topic_parameters(const Json &parame
     return topics;
 }
 
+int subscribe_topics(MQTTClient client, const std::unordered_map<std::string, std::string> &topics,
+                     int qos, std::string &failed_topic) {
+    for (const auto &[signal_id, topic] : topics) {
+        (void)signal_id;
+        const auto status = MQTTClient_subscribe(client, topic.c_str(), qos);
+        if (status != MQTTCLIENT_SUCCESS) {
+            failed_topic = topic;
+            return status;
+        }
+    }
+    return MQTTCLIENT_SUCCESS;
+}
+
 }  // namespace mqtt_internal
 
 nlohmann::json capture_mqtt_timeseries(sdk::PluginProjectAccess &access,
@@ -297,6 +334,10 @@ nlohmann::json capture_mqtt_timeseries(sdk::PluginProjectAccess &access,
     const auto max_samples = positive_integer_parameter(parameters, "max_samples", 1000, 1000000);
     const auto max_buffer_bytes = positive_integer_parameter(
         parameters, "max_buffer_bytes", 64u * 1024u * 1024u, 512u * 1024u * 1024u);
+    const auto max_reconnect_attempts = non_negative_integer_parameter(
+        parameters, "max_reconnect_attempts", 3, 32);
+    const auto reconnect_backoff_seconds = non_negative_real_parameter(
+        parameters, "reconnect_backoff_seconds", 1.0, 60.0);
     const std::string operation_instance(access.operation_instance());
     const auto capture_id = string_parameter(parameters, "capture_id", operation_instance);
     const auto client_id = string_parameter(
@@ -340,17 +381,18 @@ nlohmann::json capture_mqtt_timeseries(sdk::PluginProjectAccess &access,
     }
     status = MQTTClient_connect(holder.client, &connect_options);
     if (status != MQTTCLIENT_SUCCESS) throw std::runtime_error(mqtt_error(status, "MQTT connection"));
-    for (const auto &[signal_id, topic] : topics) {
-        status = MQTTClient_subscribe(holder.client, topic.c_str(), qos);
-        if (status != MQTTCLIENT_SUCCESS)
-            throw std::runtime_error(mqtt_error(status, "MQTT subscription to " + topic));
-    }
+    std::string failed_topic;
+    status = subscribe_topics(holder.client, topics, qos, failed_topic);
+    if (status != MQTTCLIENT_SUCCESS)
+        throw std::runtime_error(mqtt_error(status, "MQTT subscription to " + failed_topic));
 
     auto output = make_output_batch();
     std::size_t buffered_bytes = 0;
     std::uint64_t rows_emitted = 0;
     std::uint64_t sequence = 0;
     std::uint64_t duplicates = 0;
+    std::uint64_t reconnections = 0;
+    std::size_t reconnect_attempts = 0;
     std::unordered_set<std::string> seen;
     const auto start = std::chrono::steady_clock::now();
     const auto deadline = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
@@ -377,7 +419,41 @@ nlohmann::json capture_mqtt_timeseries(sdk::PluginProjectAccess &access,
             queue_overflow = state.queue_overflow;
             state.queue_overflow = false;
         }
-        if (!connection_error.empty()) throw std::runtime_error(connection_error);
+        if (!connection_error.empty()) {
+            if (reconnect_attempts >= max_reconnect_attempts)
+                throw std::runtime_error(connection_error + "; reconnect attempts exhausted");
+            ++reconnect_attempts;
+            access.report_progress(std::min(1.0,
+                                            std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() /
+                                                duration),
+                                   "Reconnecting to MQTT broker (attempt " +
+                                       std::to_string(reconnect_attempts) + ")");
+            const auto remaining = deadline - std::chrono::steady_clock::now();
+            const auto backoff = std::chrono::duration<double>(reconnect_backoff_seconds);
+            if (remaining > std::chrono::steady_clock::duration::zero() && backoff.count() > 0.0) {
+                const auto remaining_seconds = std::chrono::duration<double>(remaining);
+                std::this_thread::sleep_for(std::min(backoff, remaining_seconds));
+            }
+            if (std::chrono::steady_clock::now() >= deadline) break;
+            status = MQTTClient_connect(holder.client, &connect_options);
+            if (status == MQTTCLIENT_SUCCESS) {
+                failed_topic.clear();
+                status = subscribe_topics(holder.client, topics, qos, failed_topic);
+            }
+            if (status == MQTTCLIENT_SUCCESS) {
+                {
+                    std::lock_guard lock(state.mutex);
+                    state.connection_error.clear();
+                }
+                ++reconnections;
+                reconnect_attempts = 0;
+            } else if (reconnect_attempts >= max_reconnect_attempts) {
+                throw std::runtime_error(mqtt_error(status, failed_topic.empty()
+                                                               ? "MQTT reconnect"
+                                                               : "MQTT resubscription to " + failed_topic));
+            }
+            continue;
+        }
         if (queue_overflow)
             throw std::runtime_error("MQTT pending message buffer exceeded max_buffer_bytes");
         for (const auto &message : pending) {
@@ -431,6 +507,7 @@ nlohmann::json capture_mqtt_timeseries(sdk::PluginProjectAccess &access,
     access.report_progress(1.0, "MQTT time-series capture complete");
     return Json{{"broker_endpoint", endpoint}, {"capture_id", capture_id},
                 {"rows_emitted", rows_emitted}, {"duplicates_skipped", duplicates},
+                {"reconnections", reconnections},
                 {"samples_limit", max_samples}, {"duration_seconds", duration},
                 {"topics", static_cast<std::uint64_t>(topics.size())}};
 }
