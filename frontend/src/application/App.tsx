@@ -166,7 +166,7 @@ function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
   };
   const tableFromPort = (port: CapabilityPort): TableContract | undefined => {
     if (port.table) return port.table;
-    if (port.data_kind !== 'duckdb_table' || !port.schema?.properties) return undefined;
+    if (port.data_kind !== 'table' || !port.schema?.properties) return undefined;
     const required = new Set(port.schema.required || []);
     return {
       table_contract_name: port.id,

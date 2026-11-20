@@ -308,6 +308,30 @@ sfms:qcMaxRelativeErrorParameter
     sf:default 20.0 ;
     sf:example 20.0 .
 
+sfms:blankMaxResponseParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Blank maximum normalized response" ;
+    skos:definition "Optional maximum response or internal-standard response ratio accepted for blank samples. When omitted, blank status remains not_evaluated." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default -1.0 ;
+    sf:example -1.0 .
+
+sfms:carryoverMaxResponseParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Carryover maximum normalized response" ;
+    skos:definition "Optional maximum response or internal-standard response ratio accepted for a blank after a preceding matched sample. When omitted, carryover status remains not_evaluated." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default -1.0 ;
+    sf:example -1.0 .
+
 sfms:targetsCsvPathParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;

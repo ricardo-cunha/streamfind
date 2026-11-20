@@ -249,6 +249,9 @@ sfms:quantificationMethodTable
         sfms:regressionModelColumn,
         sfms:weightingColumn,
         sfms:interceptModeColumn,
+        sfms:calibrationLowerLimitColumn,
+        sfms:calibrationUpperLimitColumn,
+        sfms:replicateModeColumn,
         sfms:quantifierSignalTypeColumn,
         sfms:quantifierChromatogramTypeColumn,
         sfms:quantifierPolarityColumn,
@@ -339,6 +342,8 @@ sfms:quantificationTable
         sfms:internalStandardPeakHeightColumn,
         sfms:qualifierRtErrorColumn,
         sfms:qualifierCandidateCountColumn,
+        sfms:candidatePeakIdsColumn,
+        sfms:qualifierCandidatePeakIdsColumn,
         sfms:responseMetricColumn,
         sfms:responseColumn,
         sfms:internalStandardResponseColumn,
@@ -361,7 +366,14 @@ sfms:quantificationTable
         sfms:concentrationUnitColumn,
         sfms:qualifierRatioPassColumn,
         sfms:accuracyPercentColumn,
-        sfms:flagsColumn .
+        sfms:flagsColumn,
+        sfms:calibrationRangeStatusColumn,
+        sfms:calibrationLevelStatusColumn,
+        sfms:calibrationReplicateCountColumn,
+        sfms:qcStatusColumn,
+        sfms:blankStatusColumn,
+        sfms:carryoverStatusColumn,
+        sfms:dilutionStatusColumn .
 
 sfms:quantificationCalibrationModelsTable
     a sf:Table ;
@@ -386,6 +398,14 @@ sfms:quantificationCalibrationModelsTable
         sfms:nPointsColumn,
         sfms:rangeMinColumn,
         sfms:rangeMaxColumn,
+        sfms:calibrationLimitMinColumn,
+        sfms:calibrationLimitMaxColumn,
+        sfms:calibrationDistinctLevelsColumn,
+        sfms:minReplicatesPerLevelColumn,
+        sfms:maxReplicatesPerLevelColumn,
+        sfms:replicateModeColumn,
+        sfms:replicateStatusColumn,
+        sfms:calibrationAcceptanceStatusColumn,
         sfms:calibrationDomainStatusColumn,
         sfms:monotonicityStatusColumn,
         sfms:fitStatusColumn .

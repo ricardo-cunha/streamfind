@@ -1,4 +1,4 @@
-.sf-quantification-viewer { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; color: var(--sf-text); }
+.sf-quantification-viewer { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; height: 100%; overflow-x: hidden; overflow-y: auto; color: var(--sf-text); }
 .sf-quantification-viewer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 0; position: sticky; top: 0; z-index: 2; background: var(--sf-surface-raised); }
 .sf-quantification-viewer-toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--sf-text-secondary); font-size: .82rem; }
 .sf-quantification-viewer select, .sf-quantification-viewer input { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text); padding: 4px 7px; font: inherit; }
@@ -7,12 +7,19 @@
 .sf-quantification-tabs button { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text-secondary); padding: 5px 10px; cursor: pointer; font: inherit; }
 .sf-quantification-tabs button.is-active { background: var(--sf-accent); color: var(--sf-on-accent, white); border-color: var(--sf-accent); }
 .sf-quantification-summary { margin-left: auto; color: var(--sf-text-secondary); white-space: nowrap; font-size: .8rem; }
-.sf-quantification-calibration-plots { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 12px; min-width: 0; }
-.sf-quantification-calibration-plots section { min-width: 0; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-surface); overflow: hidden; }
-.sf-quantification-calibration-plots h3 { margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--sf-border); font-size: .85rem; color: var(--sf-text-secondary); }
+.sf-quantification-load-notice { color: var(--sf-warning, #b47700); font-size: .78rem; }
+.sf-quantification-export { display: inline-flex; gap: 5px; }
+.sf-quantification-export button { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text-secondary); padding: 4px 7px; cursor: pointer; font: inherit; font-size: .78rem; }
+.sf-quantification-export button:hover { border-color: var(--sf-accent); color: var(--sf-accent); }
+.sf-quantification-calibration-top { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.45fr) minmax(280px, 1fr); gap: 12px; min-width: 0; align-items: stretch; }
+.sf-quantification-calibration-top > section { min-width: 0; border: 0; border-radius: 0; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-calibration-top > .sf-quantification-table-card { min-height: 0; }
 .sf-quantification-plot { min-height: 360px; height: 42vh; min-width: 0; }
+.sf-quantification-calibration-top .sf-quantification-plot { min-height: 180px; height: min(22vh, 260px); }
+.sf-quantification-results-plot { min-height: 220px; height: min(28vh, 320px); }
 .sf-quantification-plot > section, .sf-quantification-plot > section > [role='img'], .sf-quantification-plot > div, .sf-quantification-plot .js-plotly-plot, .sf-quantification-plot .plot-container, .sf-quantification-plot .svg-container { width: 100% !important; height: 100% !important; }
 .sf-quantification-table-card { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-table-card table { user-select: text; }
 .sf-quantification-table-card--fill { flex: 1 1 0; }
 .sf-quantification-table-card h3 { margin: 0; padding: 9px 12px; font-size: .9rem; border-bottom: 1px solid var(--sf-border); }
 .sf-quantification-table-card h3 small { color: var(--sf-text-secondary); font-weight: normal; margin-left: 6px; }
@@ -35,15 +42,13 @@
 .sf-quantification-note { margin: 0; padding: 7px 10px; color: var(--sf-text-secondary); font-size: .78rem; }
 .sf-quantification-viewer-state { display: grid; min-height: 180px; place-items: center; color: var(--sf-text-secondary); }
 .sf-quantification-detail-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: color-mix(in srgb, var(--sf-overlay, #061314) 74%, transparent); }
-.sf-quantification-detail-modal { display: flex; flex-direction: column; width: min(1240px, calc(100vw - 36px)); max-height: calc(100vh - 36px); min-height: 0; overflow: hidden; border: 1px solid var(--sf-border); border-radius: 10px; background: var(--sf-surface-raised); color: var(--sf-text); box-shadow: var(--sf-modal-shadow); }
-.sf-quantification-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px 13px; border-bottom: 1px solid var(--sf-border); }
+.sf-quantification-detail-modal { display: flex; flex-direction: column; width: min(1240px, calc(100vw - 36px)); max-height: calc(100vh - 36px); min-height: 0; overflow: hidden; border: 1px solid var(--sf-border); border-radius: 10px; background: var(--sf-surface-raised); color: var(--sf-text); box-shadow: var(--sf-modal-shadow); user-select: text; }
+.sf-quantification-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px 13px; border-bottom: 0; }
 .sf-quantification-detail-header h2 { margin: 2px 0 3px; font-size: 1.05rem; }
-.sf-quantification-detail-eyebrow { margin: 0; color: var(--sf-accent); font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .sf-quantification-detail-subtitle { margin: 0; color: var(--sf-text-secondary); font-size: .82rem; }
-.sf-quantification-detail-close { width: 30px; height: 30px; border: 1px solid var(--sf-border); border-radius: 5px; background: var(--sf-surface); color: var(--sf-text); font-size: 1.3rem; line-height: 1; cursor: pointer; }
+.sf-quantification-detail-close { width: 30px; height: 30px; border: 0; border-radius: 5px; background: var(--sf-surface); color: var(--sf-text); font-size: 1.3rem; line-height: 1; cursor: pointer; }
 .sf-quantification-detail-close:hover { border-color: var(--sf-accent); color: var(--sf-accent); }
 .sf-quantification-detail-body { min-height: 0; overflow: auto; padding: 16px 20px 20px; }
-.sf-quantification-detail-help { margin: 0 0 12px; padding: 8px 10px; border-left: 3px solid var(--sf-accent); color: var(--sf-text-secondary); font-size: .78rem; }
 .sf-quantification-detail-peak-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .sf-quantification-detail-peak-card, .sf-quantification-detail-section { min-width: 0; border: 1px solid var(--sf-border); border-radius: 7px; background: var(--sf-surface); overflow: hidden; }
 .sf-quantification-detail-peak-card h3, .sf-quantification-detail-section h3 { margin: 0; padding: 9px 11px; border-bottom: 1px solid var(--sf-border); color: var(--sf-text-secondary); font-size: .82rem; }
@@ -70,4 +75,5 @@
   .sf-quantification-detail-body { padding: 12px; }
   .sf-quantification-detail-peak-grid, .sf-quantification-detail-section .sf-quantification-detail-metrics { grid-template-columns: 1fr; }
 }
-@media (max-width: 900px) { .sf-quantification-viewer { overflow: auto; } .sf-quantification-calibration-plots { grid-template-columns: 1fr; } .sf-quantification-table-card--fill { flex: 0 0 auto; } .sf-quantification-table-scroll { max-height: 280px; } }
+@media (max-width: 1100px) { .sf-quantification-calibration-top { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sf-quantification-calibration-top > .sf-quantification-table-card { grid-column: 1 / -1; } }
+@media (max-width: 900px) { .sf-quantification-viewer { overflow: auto; } .sf-quantification-calibration-top { grid-template-columns: 1fr; } .sf-quantification-calibration-top > .sf-quantification-table-card { grid-column: auto; } .sf-quantification-table-card--fill { flex: 0 0 auto; } .sf-quantification-table-scroll { max-height: 280px; } }

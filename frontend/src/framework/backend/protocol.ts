@@ -252,7 +252,7 @@ export type CapabilityPort = {
   table?: TableContract;
   schema?: JsonSchema;
   semantic_contract?: string;
-  data_kind?: 'duckdb_table' | 'structured_value' | 'signal';
+  data_kind?: 'table' | 'structured_value' | 'signal';
   representations?: string[];
   optional?: boolean;
 };

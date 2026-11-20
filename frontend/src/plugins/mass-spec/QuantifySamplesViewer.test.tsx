@@ -193,7 +193,7 @@ describe('QuantifySamplesViewer', () => {
     expect(screen.getByRole('img', { name: 'Quantifier EIC peak shape' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Qualifier EIC peak shape' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Internal standard EIC peak shape' })).toBeInTheDocument();
-    expect(screen.getByText('Calibration models')).toBeInTheDocument();
+    expect(screen.queryByText('Calibration models')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('quantification-plot')[1].textContent).toContain('Residual');
     const calibrationPlot = screen.getAllByTestId('quantification-plot')[0].textContent ?? '';
     expect(calibrationPlot).toContain('quadratic fit');
@@ -201,8 +201,8 @@ describe('QuantifySamplesViewer', () => {
     expect(calibrationPlot).not.toContain('"name":"diclofenac raw"');
     expect(calibrationPlot).not.toContain('"name":"diclofenac excluded"');
     expect(calibrationPlot).not.toContain('"name":"diclofenac quadratic fit"');
-    fireEvent.click(screen.getByRole('tab', { name: 'Responses & results' }));
-    expect(screen.getByText('QC, unknown & blank results')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Results' }));
+    expect(screen.queryByText('QC, unknown & blank results')).not.toBeInTheDocument();
     expect(screen.queryByText('cal-1')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Compound')).toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Sample type')).toBeInTheDocument();
@@ -227,7 +227,7 @@ describe('QuantifySamplesViewer', () => {
     expect(resultRow).not.toBeNull();
     fireEvent.doubleClick(resultRow as HTMLElement);
     expect(screen.getByRole('dialog', { name: 'Quantification row details' })).toBeInTheDocument();
-    expect(screen.getByText('Peak inspection')).toBeInTheDocument();
+    expect(screen.queryByText('Peak inspection')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Quantifier EIC detail' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Qualifier EIC detail' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Internal standard EIC detail' })).toBeInTheDocument();

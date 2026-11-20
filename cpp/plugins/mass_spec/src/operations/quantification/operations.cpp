@@ -17,6 +17,7 @@
 #include <optional>
 #include <set>
 #include <limits>
+#include <numeric>
 
 namespace streamfind::mass_spec::quantification
 {
@@ -287,7 +288,19 @@ struct PeakSelection
     std::string status = "channel_mismatch";
     PeakRecord peak;
     int candidates = 0;
+    std::vector<int> candidate_peak_ids;
 };
+
+std::string candidate_peak_ids_text(const PeakSelection &selection)
+{
+    std::ostringstream ids;
+    for (std::size_t index = 0; index < selection.candidate_peak_ids.size(); ++index)
+    {
+        if (index != 0) ids << ',';
+        ids << selection.candidate_peak_ids[index];
+    }
+    return ids.str();
+}
 
 PeakSelection select_peak(const Json &method, const std::string &prefix, const std::string &analysis,
                           const std::map<std::pair<std::string, int>, std::vector<PeakRecord>> &peaks_by_chromatogram)
@@ -341,6 +354,9 @@ PeakSelection select_peak(const Json &method, const std::string &prefix, const s
     result.status = "matched";
     result.peak = candidates.front();
     result.candidates = static_cast<int>(candidates.size());
+    result.candidate_peak_ids.reserve(candidates.size());
+    for (const auto &candidate : candidates)
+        if (candidate.peak_id) result.candidate_peak_ids.push_back(*candidate.peak_id);
     return result;
 }
 
@@ -358,11 +374,13 @@ const std::vector<std::string> quantification_columns{
     "quantifier_chromatogram_id", "qualifier_chromatogram_id", "qualifier_chromatogram_index", "qualifier_peak_id",
     "qualifier_peak_rt", "qualifier_peak_rt_start", "qualifier_peak_rt_end", "qualifier_peak_area", "qualifier_peak_height",
     "internal_standard_peak_rt", "internal_standard_peak_rt_start", "internal_standard_peak_rt_end", "internal_standard_peak_area", "internal_standard_peak_height",
-    "qualifier_rt_error", "qualifier_candidate_count",
+    "qualifier_rt_error", "qualifier_candidate_count", "candidate_peak_ids", "qualifier_candidate_peak_ids",
     "response_metric", "response", "internal_standard_response", "response_ratio", "qualifier_response", "qualifier_ratio",
     "status", "quantifier_status", "internal_standard_status", "candidate_count", "qualifier_status", "included",
     "back_calculated_concentration", "residual", "relative_residual", "exclusion_reason", "rt_error", "calculated_concentration",
-    "final_concentration", "concentration_unit", "qualifier_ratio_pass", "accuracy_percent", "flags"};
+    "final_concentration", "concentration_unit", "qualifier_ratio_pass", "accuracy_percent", "flags",
+    "calibration_range_status", "calibration_level_status", "calibration_replicate_count",
+    "qc_status", "blank_status", "carryover_status", "dilution_status"};
 
 const std::vector<std::string> quantification_types{
     "string", // analysis
@@ -407,6 +425,8 @@ const std::vector<std::string> quantification_types{
     "real", // internal_standard_peak_height
     "real", // qualifier_rt_error
     "integer", // qualifier_candidate_count
+    "string", // candidate_peak_ids
+    "string", // qualifier_candidate_peak_ids
     "string", // response_metric
     "real", // response
     "real", // internal_standard_response
@@ -429,7 +449,14 @@ const std::vector<std::string> quantification_types{
     "string", // concentration_unit
     "boolean", // qualifier_ratio_pass
     "real", // accuracy_percent
-    "string" // flags
+    "string", // flags
+    "string", // calibration_range_status
+    "string", // calibration_level_status
+    "integer", // calibration_replicate_count
+    "string", // qc_status
+    "string", // blank_status
+    "string", // carryover_status
+    "string" // dilution_status
 };
 
 void set_eic_columns(TypedRow &row, const std::string &prefix, const PeakRecord &peak)
@@ -492,20 +519,23 @@ Json set_quantification_plan(sdk::PluginProjectAccess &access, const Json &param
     const std::vector<std::string> method_columns{
         "target_id", "role", "internal_standard_id", "rt", "rt_tolerance",
         "response_metric", "normalization", "concentration_unit", "regression_model", "weighting",
-        "intercept_mode", "quantifier_signal_type", "quantifier_chromatogram_type", "quantifier_polarity",
+        "intercept_mode", "calibration_lower_limit", "calibration_upper_limit", "replicate_mode",
+        "quantifier_signal_type", "quantifier_chromatogram_type", "quantifier_polarity",
         "quantifier_precursor_mz", "quantifier_product_mz", "quantifier_detector",
         "quantifier_wavelength_nm", "quantifier_mz_tolerance_ppm", "qualifier_signal_type",
         "qualifier_chromatogram_type", "qualifier_polarity", "qualifier_precursor_mz", "qualifier_product_mz",
         "qualifier_detector", "qualifier_wavelength_nm", "qualifier_mz_tolerance_ppm",
         "expected_ratio", "ratio_tolerance", "enabled"};
     const std::vector<std::string> method_types{
-        "string", "string", "string", "real", "real", "string", "string", "string", "string",
-        "string", "string", "string", "string", "integer", "real", "real", "string", "real", "real", "string",
+        "string", "string", "string", "real", "real",
+        "string", "string", "string", "string", "string", "string",
+        "real", "real", "string",
+        "string", "string", "integer", "real", "real", "string", "real", "real", "string",
         "string", "integer", "real", "real", "string", "real", "real", "real", "real", "boolean"};
     sdk::TableBatchBuilder method_rows(detail::table_schema(method_columns, method_types));
     const std::map<std::string, Json> method_defaults{
         {"enabled", true}, {"regression_model", "linear"}, {"weighting", "none"},
-        {"intercept_mode", "free"}};
+        {"intercept_mode", "free"}, {"replicate_mode", "individual"}};
     for (const auto &target : targets)
     {
         auto normalized_target = target;
@@ -518,6 +548,9 @@ Json set_quantification_plan(sdk::PluginProjectAccess &access, const Json &param
             target_defaults["regression_model"] = nullptr;
             target_defaults["weighting"] = nullptr;
             target_defaults["intercept_mode"] = nullptr;
+            target_defaults["calibration_lower_limit"] = nullptr;
+            target_defaults["calibration_upper_limit"] = nullptr;
+            target_defaults["replicate_mode"] = nullptr;
         }
         detail::append_config_row(method_rows, normalized_target, method_columns, method_types, target_defaults);
     }
@@ -605,6 +638,7 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
             access, parameters, "quantificationMethodTable",
             {"target_id", "role", "internal_standard_id", "rt", "rt_tolerance", "response_metric",
              "normalization", "concentration_unit", "regression_model", "weighting", "intercept_mode",
+             "calibration_lower_limit", "calibration_upper_limit", "replicate_mode",
              "quantifier_signal_type", "quantifier_chromatogram_type", "quantifier_polarity",
              "quantifier_precursor_mz", "quantifier_product_mz", "quantifier_detector", "quantifier_wavelength_nm",
              "quantifier_mz_tolerance_ppm", "qualifier_signal_type", "qualifier_chromatogram_type", "qualifier_polarity",
@@ -784,11 +818,27 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
         detail::set_cell(row, detail::quantification_columns, "response_metric", target.value("response_metric", std::string{"area"}));
         detail::set_cell(row, detail::quantification_columns, "status", quantifier.status);
         detail::set_cell(row, detail::quantification_columns, "quantifier_status", quantifier.status);
+        detail::set_cell(row, detail::quantification_columns, "candidate_peak_ids",
+                         detail::candidate_peak_ids_text(quantifier));
         detail::set_cell(row, detail::quantification_columns, "internal_standard_status",
             role == "analyte" && normalization == "internal_standard" ? std::string("not_evaluated") :
             role == "internal_standard" ? std::string("not_applicable") : std::string("not_required"));
         detail::set_cell(row, detail::quantification_columns, "candidate_count", static_cast<std::int64_t>(quantifier.candidates));
         detail::set_cell(row, detail::quantification_columns, "qualifier_status", std::string("not_configured"));
+        const auto sample_type = assignment.value("sample_type", std::string{});
+        detail::set_cell(row, detail::quantification_columns, "calibration_range_status", std::string("not_applicable"));
+        detail::set_cell(row, detail::quantification_columns, "calibration_level_status",
+                         sample_type == "calibrator" ? std::string("not_evaluated") : std::string("not_applicable"));
+        detail::set_cell(row, detail::quantification_columns, "qc_status",
+                         sample_type == "qc" ? std::string("not_evaluated") : std::string("not_applicable"));
+        detail::set_cell(row, detail::quantification_columns, "blank_status",
+                         sample_type == "blank" ? std::string("not_evaluated") : std::string("not_applicable"));
+        detail::set_cell(row, detail::quantification_columns, "carryover_status",
+                         sample_type == "blank" ? std::string("not_evaluated") : std::string("not_applicable"));
+        const auto dilution_factor = assignment.value("dilution_factor", 1.0);
+        detail::set_cell(row, detail::quantification_columns, "dilution_status",
+                         role != "analyte" ? std::string("not_applicable") :
+                         dilution_factor == 1.0 ? std::string("not_applied") : std::string("applied"));
         if (quantifier.status == "matched")
         {
             detail::set_cell(row, detail::quantification_columns, "chromatogram_index", static_cast<std::int64_t>(quantifier.peak.chromatogram_index.value_or(0)));
@@ -807,6 +857,8 @@ std::vector<detail::TypedRow> extract_response_rows(sdk::PluginProjectAccess &ac
             detail::set_cell(row, detail::quantification_columns, "qualifier_status", qualifier.status);
             detail::set_cell(row, detail::quantification_columns, "qualifier_candidate_count",
                              static_cast<std::int64_t>(qualifier.candidates));
+            detail::set_cell(row, detail::quantification_columns, "qualifier_candidate_peak_ids",
+                             detail::candidate_peak_ids_text(qualifier));
             if (qualifier.status == "matched")
             {
                 detail::set_channel_provenance(row, "qualifier", qualifier.peak);
@@ -931,16 +983,18 @@ struct CalibrationFit
 const std::vector<std::string> calibration_model_columns{
     "target_id", "model", "weighting", "intercept_mode", "coefficient_0", "coefficient_1",
     "coefficient_2", "r_squared", "adjusted_r_squared", "rmse", "n_points", "range_min", "range_max",
+    "calibration_limit_min", "calibration_limit_max", "distinct_levels", "min_replicates_per_level",
+    "max_replicates_per_level", "replicate_mode", "replicate_status", "calibration_acceptance_status",
     "domain_status", "monotonicity_status", "fit_status"};
 const std::vector<std::string> calibration_model_types{
     "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "integer",
-    "real", "real", "string", "string", "string"};
+    "real", "real", "real", "real", "integer", "integer", "integer", "string", "string", "string", "string", "string", "string"};
 const std::vector<std::string> calibration_point_columns{
     "target_id", "analysis", "peak_id", "calibration_level", "nominal_concentration", "response",
     "internal_standard_response", "response_ratio", "included", "back_calculated_concentration", "residual",
-    "relative_residual", "exclusion_reason"};
+    "relative_residual", "exclusion_reason", "replicate_count", "level_status"};
 const std::vector<std::string> calibration_point_types{
-    "string", "string", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "real", "real", "string"};
+    "string", "string", "integer", "integer", "real", "real", "real", "real", "boolean", "real", "real", "real", "string", "integer", "string"};
 
 double response_for_calibration(const TypedRow &row, const Json &method)
 {
@@ -975,7 +1029,8 @@ std::vector<Json> read_quantification_method(sdk::PluginProjectAccess &access, c
     const auto rows = base::utils::read_control_rows(
         access, parameters, "quantificationMethodTable",
         {"target_id", "role", "normalization", "concentration_unit", "regression_model", "weighting",
-         "intercept_mode", "rt", "enabled", "expected_ratio", "ratio_tolerance"}, "target_id");
+         "intercept_mode", "calibration_lower_limit", "calibration_upper_limit", "replicate_mode",
+         "rt", "enabled", "expected_ratio", "ratio_tolerance"}, "target_id");
     if (!rows.is_array())
         throw std::invalid_argument("quantificationMethodTable reader returned a non-array row set");
     std::vector<Json> result;
@@ -1018,8 +1073,13 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
     set_cell(result.model, calibration_model_columns, "domain_status", std::string("not_applicable"));
     set_cell(result.model, calibration_model_columns, "monotonicity_status", std::string("unknown"));
     set_cell(result.model, calibration_model_columns, "fit_status", std::string("insufficient_data"));
+    set_cell(result.model, calibration_model_columns, "replicate_mode",
+             method.value("replicate_mode", std::string{"individual"}));
+    set_cell(result.model, calibration_model_columns, "replicate_status", std::string("not_evaluated"));
+    set_cell(result.model, calibration_model_columns, "calibration_acceptance_status", std::string("not_evaluated"));
 
     std::vector<calibration::LinearPoint> valid;
+    std::map<double, std::vector<double>> responses_by_level;
     std::vector<std::size_t> included_rows;
     for (std::size_t row_index = 0; row_index < responses.size(); ++row_index)
     {
@@ -1041,6 +1101,7 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
         if (!reason.empty())
         {
             set_cell(point, calibration_point_columns, "exclusion_reason", reason);
+            set_cell(point, calibration_point_columns, "level_status", std::string("excluded"));
             result.points.push_back(std::move(point));
             continue;
         }
@@ -1052,30 +1113,89 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
             set_cell(point, calibration_point_columns, "exclusion_reason",
                      x == 0.0 ? "zero_concentration_weight_undefined"
                               : "nonpositive_concentration_weight_undefined");
+            set_cell(point, calibration_point_columns, "level_status", std::string("excluded"));
             result.points.push_back(std::move(point));
             continue;
         }
         set_cell(point, calibration_point_columns, "included", true);
+        set_cell(point, calibration_point_columns, "level_status", std::string("included"));
         included_rows.push_back(row_index);
         valid.push_back({x, y});
+        responses_by_level[x].push_back(y);
         result.points.push_back(std::move(point));
     }
 
+    for (auto &point : result.points)
+    {
+        const auto x = row_number(point, calibration_point_columns, "nominal_concentration");
+        const auto level = responses_by_level.find(x);
+        if (level != responses_by_level.end())
+            set_cell(point, calibration_point_columns, "replicate_count",
+                     static_cast<std::int64_t>(level->second.size()));
+        else
+            set_cell(point, calibration_point_columns, "replicate_count", std::int64_t{0});
+    }
+
+    std::vector<calibration::LinearPoint> fit_points;
+    const auto replicate_mode = method.value("replicate_mode", std::string{"individual"});
+    if (replicate_mode == "average_by_level")
+    {
+        for (const auto &[x, values] : responses_by_level)
+        {
+            const auto sum = std::accumulate(values.begin(), values.end(), 0.0);
+            fit_points.push_back({x, sum / static_cast<double>(values.size())});
+        }
+    }
+    else
+        fit_points = valid;
+    const auto distinct_levels = static_cast<std::int64_t>(responses_by_level.size());
+    const auto min_replicates = responses_by_level.empty() ? 0 :
+        static_cast<std::int64_t>(std::min_element(responses_by_level.begin(), responses_by_level.end(),
+            [](const auto &left, const auto &right) { return left.second.size() < right.second.size(); })->second.size());
+    const auto max_replicates = responses_by_level.empty() ? 0 :
+        static_cast<std::int64_t>(std::max_element(responses_by_level.begin(), responses_by_level.end(),
+            [](const auto &left, const auto &right) { return left.second.size() < right.second.size(); })->second.size());
+    set_cell(result.model, calibration_model_columns, "distinct_levels", distinct_levels);
+    set_cell(result.model, calibration_model_columns, "min_replicates_per_level", min_replicates);
+    set_cell(result.model, calibration_model_columns, "max_replicates_per_level", max_replicates);
+    set_cell(result.model, calibration_model_columns, "replicate_status",
+             responses_by_level.empty() ? std::string("no_valid_levels") :
+             replicate_mode == "average_by_level" ? std::string("replicates_averaged_by_level") :
+             min_replicates > 1 ? std::string("replicates_retained") : std::string("single_observation_per_level"));
+
     const auto options = calibration::LinearFitOptions{weighting, intercept_mode};
-    const auto linear_fit = model == "linear"
-        ? std::optional<calibration::LinearFit>(calibration::fit_linear(valid, minimum_points, options))
+    auto linear_fit = model == "linear"
+        ? std::optional<calibration::LinearFit>(calibration::fit_linear(fit_points, minimum_points, options))
         : std::nullopt;
-    const auto quadratic_fit = model == "quadratic"
-        ? std::optional<calibration::QuadraticFit>(calibration::fit_quadratic(valid, minimum_points, options))
+    auto quadratic_fit = model == "quadratic"
+        ? std::optional<calibration::QuadraticFit>(calibration::fit_quadratic(fit_points, minimum_points, options))
         : std::nullopt;
-    const auto wagner_fit = model == "wagner"
-        ? std::optional<calibration::WagnerFit>(calibration::fit_wagner(valid, minimum_points, options))
+    auto wagner_fit = model == "wagner"
+        ? std::optional<calibration::WagnerFit>(calibration::fit_wagner(fit_points, minimum_points, options))
         : std::nullopt;
     const auto fit_status = linear_fit.has_value() ? linear_fit->status
         : quadratic_fit.has_value() ? quadratic_fit->status : wagner_fit->status;
     const auto point_count = linear_fit.has_value() ? linear_fit->n_points
         : quadratic_fit.has_value() ? quadratic_fit->n_points : wagner_fit->n_points;
     set_cell(result.model, calibration_model_columns, "fit_status", fit_status);
+    const auto declared_limit = [&](const char *field, const double fallback) {
+        return method.contains(field) && !method.at(field).is_null() ? method.at(field).get<double>() : fallback;
+    };
+    const auto observed_min = linear_fit.has_value() ? linear_fit->range_min
+        : quadratic_fit.has_value() ? quadratic_fit->range_min : wagner_fit->range_min;
+    const auto observed_max = linear_fit.has_value() ? linear_fit->range_max
+        : quadratic_fit.has_value() ? quadratic_fit->range_max : wagner_fit->range_max;
+    const auto effective_min = declared_limit("calibration_lower_limit", observed_min);
+    const auto effective_max = declared_limit("calibration_upper_limit", observed_max);
+    set_cell(result.model, calibration_model_columns, "calibration_limit_min", effective_min);
+    set_cell(result.model, calibration_model_columns, "calibration_limit_max", effective_max);
+    if (linear_fit.has_value()) { linear_fit->range_min = effective_min; linear_fit->range_max = effective_max; }
+    if (quadratic_fit.has_value()) { quadratic_fit->range_min = effective_min; quadratic_fit->range_max = effective_max; }
+    if (wagner_fit.has_value()) { wagner_fit->range_min = effective_min; wagner_fit->range_max = effective_max; }
+    const auto monotonicity = linear_fit.has_value() ? linear_fit->monotonicity_status
+        : quadratic_fit.has_value() ? quadratic_fit->monotonicity_status : wagner_fit->monotonicity_status;
+    set_cell(result.model, calibration_model_columns, "calibration_acceptance_status",
+             fit_status != "ok" ? fit_status : monotonicity == "increasing" ? std::string("accepted") : monotonicity);
     if (linear_fit.has_value())
     {
         set_cell(result.model, calibration_model_columns, "monotonicity_status", linear_fit->monotonicity_status);
@@ -1154,6 +1274,10 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
             set_cell(responses[index], quantification_columns, field,
                      get_cell(*point, calibration_point_columns, field));
         }
+        set_cell(responses[index], quantification_columns, "calibration_replicate_count",
+                 get_cell(*point, calibration_point_columns, "replicate_count"));
+        set_cell(responses[index], quantification_columns, "calibration_level_status",
+                 get_cell(*point, calibration_point_columns, "level_status"));
     }
     return result;
 }
@@ -1181,10 +1305,12 @@ std::pair<std::vector<TypedRow>, std::vector<TypedRow>> fit_quantification_calib
 
 void quantify_samples(const std::map<std::string, Json> &methods,
                       std::vector<TypedRow> &responses, const std::vector<TypedRow> &models,
-                      const bool require_qualifier, const double max_qc_error)
+                      const bool require_qualifier, const double max_qc_error,
+                      const double blank_max_response, const double carryover_max_response)
 {
     std::map<std::string, const TypedRow *> model_by_target;
     for (const auto &model : models) model_by_target[row_text(model, calibration_model_columns, "target_id")] = &model;
+    std::map<std::string, double> previous_response_by_target;
     for (auto &row : responses)
     {
         if (row_text(row, quantification_columns, "role") != "analyte") continue;
@@ -1192,6 +1318,7 @@ void quantify_samples(const std::map<std::string, Json> &methods,
         const auto method_it = methods.find(target_id);
         if (method_it == methods.end()) continue;
         const auto &method = method_it->second;
+        const auto sample_type = row_text(row, quantification_columns, "sample_type");
         if (method.contains("concentration_unit") && !method.at("concentration_unit").is_null())
             set_cell(row, quantification_columns, "concentration_unit", method.at("concentration_unit").get<std::string>());
         const auto peak_rt = row_number(row, quantification_columns, "peak_rt");
@@ -1199,6 +1326,32 @@ void quantify_samples(const std::map<std::string, Json> &methods,
         if (std::isfinite(peak_rt) && std::isfinite(method_rt))
             set_cell(row, quantification_columns, "rt_error", peak_rt - method_rt);
         std::vector<std::string> flags;
+        const auto normalized_response = text_value(method, "normalization") == "internal_standard"
+            ? row_number(row, quantification_columns, "response_ratio")
+            : row_number(row, quantification_columns, "response");
+        if (sample_type == "blank" && std::isfinite(normalized_response))
+        {
+            if (std::isfinite(blank_max_response))
+            {
+                const auto blank_pass = normalized_response <= blank_max_response;
+                set_cell(row, quantification_columns, "blank_status", blank_pass ? std::string("pass") : std::string("failed"));
+                if (!blank_pass) flags.push_back("blank_response_above_limit");
+            }
+            if (std::isfinite(carryover_max_response))
+            {
+                const auto previous = previous_response_by_target.find(target_id);
+                const auto carryover_pass = previous == previous_response_by_target.end() || normalized_response <= carryover_max_response;
+                set_cell(row, quantification_columns, "carryover_status", carryover_pass ? std::string("pass") : std::string("failed"));
+                if (!carryover_pass) flags.push_back("carryover_above_limit");
+            }
+        }
+        else if (sample_type != "blank" && std::isfinite(normalized_response) &&
+                 row_text(row, quantification_columns, "quantifier_status") == "matched")
+            previous_response_by_target[target_id] = normalized_response;
+        if (!std::isfinite(blank_max_response) && sample_type == "blank")
+            set_cell(row, quantification_columns, "blank_status", std::string("not_evaluated"));
+        if (!std::isfinite(carryover_max_response) && sample_type == "blank")
+            set_cell(row, quantification_columns, "carryover_status", std::string("not_evaluated"));
         const auto qualifier_status = row_text(row, quantification_columns, "qualifier_status");
         if (qualifier_status == "pass") set_cell(row, quantification_columns, "qualifier_ratio_pass", true);
         else if (qualifier_status != "not_configured" && qualifier_status != "matched" && !qualifier_status.empty()) {
@@ -1254,16 +1407,26 @@ void quantify_samples(const std::map<std::string, Json> &methods,
             if (inverse.status == "invalid_response")
             {
                 set_cell(row, quantification_columns, "status", std::string("invalid_response"));
+                set_cell(row, quantification_columns, "calibration_range_status", std::string("invalid_response"));
                 flags.push_back("invalid_response");
             }
             else
             {
                 const auto calculated = inverse.concentration;
                 const auto dilution = row_number(row, quantification_columns, "dilution_factor", 1.0);
+                if (!std::isfinite(dilution) || dilution <= 0.0)
+                {
+                    set_cell(row, quantification_columns, "dilution_status", std::string("invalid"));
+                    flags.push_back("invalid_dilution_factor");
+                }
+                else
+                    set_cell(row, quantification_columns, "dilution_status", dilution == 1.0 ? std::string("not_applied") : std::string("applied"));
                 const auto final_value = calculated * dilution;
                 set_cell(row, quantification_columns, "calculated_concentration", calculated);
                 set_cell(row, quantification_columns, "final_concentration", final_value);
                 std::string status = inverse.status;
+                set_cell(row, quantification_columns, "calibration_range_status",
+                         status == "ok" ? std::string("in_range") : status);
                 if (status != "ok") flags.push_back(status);
                 else if (require_qualifier && std::holds_alternative<bool>(get_cell(row, quantification_columns, "qualifier_ratio_pass")) &&
                          !row_boolean(row, quantification_columns, "qualifier_ratio_pass")) { status = "qualifier_failed"; flags.push_back(status); }
@@ -1271,8 +1434,12 @@ void quantify_samples(const std::map<std::string, Json> &methods,
                 if (std::isfinite(nominal) && nominal != 0.0) {
                     const auto accuracy = 100.0 * final_value / nominal;
                     set_cell(row, quantification_columns, "accuracy_percent", accuracy);
-                    if (row_text(row, quantification_columns, "sample_type") == "qc" && std::abs(accuracy - 100.0) > max_qc_error) {
-                        flags.push_back("qc_accuracy_out_of_range"); status = "qc_failed";
+                    if (sample_type == "qc") {
+                        const auto qc_pass = std::abs(accuracy - 100.0) <= max_qc_error;
+                        set_cell(row, quantification_columns, "qc_status", qc_pass ? std::string("pass") : std::string("failed"));
+                        if (!qc_pass) {
+                            flags.push_back("qc_accuracy_out_of_range"); status = "qc_failed";
+                        }
                     }
                 }
                 set_cell(row, quantification_columns, "status", std::move(status));
@@ -1330,7 +1497,13 @@ Json quantify(sdk::PluginProjectAccess &access, const Json &parameters)
         access.report_progress(0.96, "Applying calibration models to samples");
         detail::quantify_samples(
             methods, responses, models, parameters.value("require_qualifier", false),
-            parameters.value("qc_max_relative_error", 20.0));
+            parameters.value("qc_max_relative_error", 20.0),
+            parameters.contains("blank_max_response") && !parameters.at("blank_max_response").is_null() &&
+                    parameters.at("blank_max_response").get<double>() >= 0.0
+                ? parameters.at("blank_max_response").get<double>() : std::numeric_limits<double>::quiet_NaN(),
+            parameters.contains("carryover_max_response") && !parameters.at("carryover_max_response").is_null() &&
+                    parameters.at("carryover_max_response").get<double>() >= 0.0
+                ? parameters.at("carryover_max_response").get<double>() : std::numeric_limits<double>::quiet_NaN());
         stage = "publishing quantification table";
         detail::emit_typed_rows(access, "quantificationTable", detail::quantification_columns,
                                 detail::quantification_types, responses);

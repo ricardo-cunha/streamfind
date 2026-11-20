@@ -49,6 +49,25 @@ int main()
     invalid[0]["internal_standard_id"] = "caffeine";
     if (streamfind::mass_spec::quantification::utils::validate_method(invalid).empty())
         return 6;
+    auto policy = target_rows;
+    policy[0]["replicate_mode"] = "average_by_level";
+    policy[0]["calibration_lower_limit"] = 0.1;
+    policy[0]["calibration_upper_limit"] = 25.0;
+    if (!streamfind::mass_spec::quantification::utils::validate_method(policy).empty())
+        return 7;
+    invalid = policy;
+    invalid[0]["replicate_mode"] = "median_by_level";
+    if (streamfind::mass_spec::quantification::utils::validate_method(invalid).empty())
+        return 8;
+    invalid = policy;
+    invalid[0]["calibration_lower_limit"] = 25.0;
+    invalid[0]["calibration_upper_limit"] = 0.1;
+    if (streamfind::mass_spec::quantification::utils::validate_method(invalid).empty())
+        return 9;
+    invalid = policy;
+    invalid[1]["replicate_mode"] = "individual";
+    if (streamfind::mass_spec::quantification::utils::validate_method(invalid).empty())
+        return 10;
 
     std::cout << "quantification validation contract passed\n";
     return 0;

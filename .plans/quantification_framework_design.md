@@ -207,18 +207,23 @@ even though qualifier EIC arrays are already available.
 
 ### 3.1 Numerical calibration support
 
-The declared calibration choices need either implementation or removal from
-the editable method schema. The preferred direction is implementation, in the
-following order:
+The declared model families are now implemented and tested: weighted and
+forced-zero linear regression, weighted quadratic regression, and explicit
+unweighted Wagner regression with safe inverse calculation. The remaining
+numerical work is refinement of the contract rather than another core model
+family:
 
-1. weighted linear regression with a free intercept (`none`, `1/x`, `1/x2`);
-2. forced-zero linear regression;
-3. quadratic regression, with explicit weighting and intercept semantics;
-4. Wagner regression for positive-response, positive-concentration curves that
-   are better described by a quadratic in log-space;
-5. model diagnostics and safe inverse calculation for each supported model.
+- define replicate averaging versus individual-point fitting and the minimum
+  number of distinct calibration levels;
+- publish degrees of freedom, conditioning diagnostics, and model-specific
+  bias/accuracy summaries where they are needed for acceptance decisions;
+- define the relationship between observed fitted-point range and explicit
+  method calibration limits;
+- complete model-family comparison checks on representative wide-range data;
+- keep all inverse and domain statuses visible in typed result fields and
+  diagnostic flags.
 
-The current fitter also needs explicit handling for:
+The implementation and policy still need explicit handling for:
 
 - zero-concentration calibrators under inverse-concentration weighting;
 - duplicate calibration levels and replicate averaging versus individual-point
@@ -265,11 +270,10 @@ implementation.
 
 ### 3.3 Peak and transition auditability
 
-The current peak selection is deterministic, but the contract should make the
-decision more inspectable:
+The current contract now persists quantifier and qualifier identity, peak
+metrics, RT boundaries, EIC traces, candidate counts, and channel IDs. The
+remaining auditability work is to make the decision path more complete:
 
-- persist quantifier and qualifier channel identity for the selected peak;
-- persist qualifier peak ID, chromatogram index, RT, area, height, and RT error;
 - distinguish “no matching channel”, “no peak in RT window”, “multiple
   candidates”, and “selected strongest candidate”;
 - expose candidate peak IDs or a compact candidate diagnostic when ambiguity is
@@ -282,16 +286,17 @@ decision more inspectable:
 ### 3.4 Internal-standard and qualifier completeness
 
 The current implementation calculates analyte/internal-standard ratios and
-qualifier ratios, but the plan should still add:
+qualifier ratios, publishes separate quantifier, qualifier, and internal-
+standard EIC/peak fields on analyte rows, and removes internal-standard rows
+from the published result. The remaining work is:
 
-- explicit validation that every normalized analyte has a usable assignment for
-  the relevant analysis set;
-- separate quantifier and qualifier peak provenance;
+- strengthen validation that every normalized analyte has a usable assignment
+  for the relevant analysis set;
 - configurable qualifier acceptance ranges per target, rather than only a
   single optional ratio/tolerance pair when more expressive rules are needed;
 - clear behavior when the qualifier is absent but `require_qualifier` is false;
 - tests proving that internal-standard rows are never themselves calibrated as
-  analytes.
+  analytes across all supported sample types and failure modes.
 
 ### 3.5 Viewer and result inspection
 
@@ -302,28 +307,31 @@ The viewer is useful, but further work should add:
 - confidence/prediction bands only when their statistical assumptions are
   explicitly documented;
 - a compact per-target QC/run summary;
-- a detail view for quantifier and qualifier peak identity and full EIC data;
 - explicit labels for normalized response versus raw response;
 - robust handling of large result sets without loading every EIC array into the
   browser at once;
 - export of the selected model, points, and results with provenance.
 
+The existing viewer already renders quantifier, qualifier, and internal-
+standard EIC sparklines, peak boundaries, and a double-click detail modal with
+larger EIC plots and metrics. Those features now need broader edge-case tests
+and candidate/diagnostic content rather than a first implementation.
+
 ### 3.6 Test coverage
 
-Current native quantification coverage focuses on configuration validation and
-chromatogram peak contracts. There is no dedicated C++ numerical contract for
-the implemented linear fit and inverse calculation. The frontend test covers
-viewer loading, filtering, EIC columns, plot traces, and row selection, while
-the SCIEX scripts provide development-stage data-backed checks.
+Current native coverage includes a dedicated calibration numerical contract,
+configuration and chromatogram-peak contracts, and a packaged SCIEX workflow
+check. The frontend tests cover viewer loading, filtering, EIC columns, plot
+traces, row selection, detail inspection, and peak boundaries.
 
 The remaining test layers are:
 
-- typed-output contract tests for model, calibration diagnostics, qualifier
-  provenance, and statuses;
+- typed-output assertions for all range, inverse, qualifier, internal-standard,
+  and acceptance statuses;
 - an end-to-end `.sf` project run comparing model families and expected
-  original-scale result behavior;
-- viewer tests for all sample shapes, range traces, model options, and large
-  table behavior.
+  original-scale result behavior on a representative data set;
+- viewer tests for all sample shapes, model options, empty/missing EICs, and
+  large table behavior.
 
 ## 4. Calibration model expansion
 
@@ -739,28 +747,33 @@ The recommended immediate slice is **Phase E**. It completes peak provenance
 and the calibration/QC acceptance policy now that the primary model families
 and their safe inverse behavior are implemented.
 
-The decisions that should be recorded with that work are:
+The following decisions are already resolved in the implementation:
 
-1. Are calibration replicates fit as individual observations or averaged by
-   level, and how are replicate acceptance limits applied?
+- Wagner is explicit, unweighted, and fitted in log-response/log-concentration
+  space; it is never an automatic fallback for linear regression.
+- Forced-zero is an exposed, validated option for linear and quadratic fits.
+- Out-of-range inverse results retain their numeric diagnostic concentration and
+  are flagged `above_calibration_range` or `below_calibration_range`.
+- Wagner inverse roots must be real, positive, monotonic-branch compatible,
+  and inside the fitted concentration range before an in-range concentration is
+  accepted.
+
+The remaining decisions to record with Phase E are:
+
+1. Replicates now have an explicit method policy: `individual` is the default
+   and `average_by_level` fits the mean response per nominal level. Per-level
+   counts and inclusion status are retained; replicate acceptance limits are
+   still a future policy refinement.
 2. Should zero-level calibrators participate in weighted fits, and what weight
    is assigned when `x = 0`?
-3. Should forced-zero be available to users or restricted to validated methods?
-4. Are calibration limits the observed fitted-point range, explicit method
-   limits, or both?
-5. Should a result outside the calibration range be reported with its numeric
-   extrapolation for audit purposes, or should final concentration be withheld
-   while retaining only a calculated diagnostic value? **Decision:** retain the
-   numeric extrapolation as a diagnostic value while marking the row
-   `above_calibration_range` or `below_calibration_range`; it remains outside
-   the validated reportable range and must not be treated as an in-range result.
-6. Is one qualifier sufficient for the target contract, or should the method
+3. Calibration limits now support both observed/effective model limits and
+   optional explicit per-target lower and upper limits. The remaining work is
+   an assay-specific acceptance rule for incomplete or inconsistent limits.
+4. Is one qualifier sufficient for the target contract, or should the method
    support multiple qualifier transitions with independent ratios?
-7. Is a 4PL/5PL model genuinely required for a supported detector/assay, or
-   should LC-MS quantification remain limited to linear and quadratic families?
-8. Should Wagner initially be unweighted in log-space only, with transformed
-   residuals reported separately from original-scale accuracy?
-9. Which calibration acceptance limits define a valid Wagner branch, and how
+5. 4PL/5PL is explicitly deferred; the current generic LC-MS contract remains
+   linear, quadratic, and Wagner until an assay-specific requirement exists.
+6. Which calibration acceptance limits define a valid Wagner branch, and how
    should a root be selected when both quadratic roots fall within the nominal
    concentration range?
 
@@ -781,6 +794,10 @@ The first auditability slice is now implemented in the quantification contract:
   no peak inside the configured retention-time window;
 - semantic column definitions and the `quantificationTable` artifact list were
   extended for these provenance fields;
+- quantifier, qualifier, and internal-standard peak boundaries and EIC arrays
+  are published on the analyte row;
+- the viewer renders all three EIC traces in tables and opens a larger
+  three-column row-detail modal on double-click;
 - the SCIEX development fixture now checks that the provenance columns are
   present in the published result contract.
 
@@ -792,3 +809,49 @@ The newest published Mix1 result contains the selected quantifier and
 qualifier chromatogram IDs and qualifier peak provenance for 156 rows. The
 next Phase E slice is replicate acceptance, explicit calibration limits, and
 dilution/SPE audit summaries.
+
+## 14. Plan review checkpoint — 2026-11-19
+
+The implementation audit confirms that Phases A–D and the first Phase E
+auditability slice are complete. The remaining work is now policy, diagnostics,
+and validation rather than another calibration-model implementation.
+
+Priority order for the next implementation slice:
+
+1. Refine replicate acceptance and zero-level weighting policy, and add
+   per-level calibration/QC acceptance thresholds where the assay defines them.
+2. Complete typed status coverage for missing channels, missing peaks,
+   ambiguous candidates, qualifier failures, missing internal standards,
+   inverse failures, and range failures; candidate IDs and QC/blank/carryover/
+   dilution statuses are now published.
+3. Extend the viewer with weighted and accuracy diagnostics, per-target/run
+   summaries, and provenance-preserving export. Model equations/inverse
+   descriptions, audit summaries, CSV/JSON export, and bounded EIC paging are
+   now present; lazy loading of detail EICs remains an optimization for very
+   large tables.
+4. Add the remaining native, fixture, and frontend edge-case tests, including
+   replicate handling, zero-level weighting, empty EICs, ambiguous candidates,
+   and large result sets.
+
+Additional calibration families such as 4PL/5PL remain deliberately deferred
+until an assay-specific requirement and validation data justify them.
+
+## 15. Phase E policy and diagnostics checkpoint — 2026-11-19
+
+Implemented in the current worktree:
+
+- per-target calibration lower/upper limits and explicit replicate mode;
+- level replicate counts, inclusion status, model replicate summaries, and
+  calibration acceptance status;
+- candidate peak ID provenance for quantifier and qualifier selection;
+- typed calibration-range, QC, blank, carryover, and dilution statuses;
+- optional blank and carryover response thresholds with disabled sentinel
+  defaults;
+- model equation/inverse summaries, audit counts, bounded EIC paging, and
+  CSV/JSON export in the quantification viewer;
+- validation coverage for replicate-mode and calibration-limit method input.
+
+The remaining Phase E work is focused on policy choices and edge-case fixtures,
+not 4PL/5PL. In particular, zero-level weighting, assay-specific per-level
+acceptance limits, lazy loading of detail EIC arrays, and full end-to-end tests
+for ambiguous candidates and large result sets still need explicit coverage.

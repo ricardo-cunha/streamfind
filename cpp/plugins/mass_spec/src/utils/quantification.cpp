@@ -43,6 +43,18 @@ bool positive_number(const Json &row, const char *field, const std::string &path
     return true;
 }
 
+bool nonnegative_number(const Json &row, const char *field, const std::string &path,
+                        std::vector<ValidationError> &errors)
+{
+    if (!row.contains(field) || row.at(field).is_null()) return true;
+    if (!row.at(field).is_number() || row.at(field).get<double>() < 0.0)
+    {
+        errors.push_back({path + "." + field, "must be a non-negative number"});
+        return false;
+    }
+    return true;
+}
+
 std::string value_or_empty(const Json &row, const char *field)
 {
     const auto it = row.find(field);
@@ -73,6 +85,7 @@ std::vector<ValidationError> validate_method(const nlohmann::json &targets)
     const std::set<std::string> models{"linear", "quadratic", "wagner"};
     const std::set<std::string> weightings{"none", "1/x", "1/x2"};
     const std::set<std::string> intercepts{"free", "forced_zero"};
+    const std::set<std::string> replicate_modes{"individual", "average_by_level"};
     std::set<std::string> ids;
 
     for (std::size_t i = 0; i < targets.size(); ++i)
@@ -117,6 +130,22 @@ std::vector<ValidationError> validate_method(const nlohmann::json &targets)
             ? detail::value_or_empty(row, "intercept_mode") : std::string{"free"};
         if (!detail::contains(intercepts, intercept))
             errors.push_back({path + ".intercept_mode", "must be free or forced_zero"});
+        const auto replicate_mode = row.contains("replicate_mode") && !row.at("replicate_mode").is_null()
+            ? detail::value_or_empty(row, "replicate_mode") : std::string{"individual"};
+        if (role != "internal_standard" && !detail::contains(replicate_modes, replicate_mode))
+            errors.push_back({path + ".replicate_mode", "must be individual or average_by_level"});
+        if (role == "internal_standard" && row.contains("replicate_mode") && !row.at("replicate_mode").is_null())
+            errors.push_back({path + ".replicate_mode", "must be absent for an internal standard"});
+        const bool has_lower = detail::nonnegative_number(row, "calibration_lower_limit", path, errors);
+        const bool has_upper = detail::positive_number(row, "calibration_upper_limit", path, errors, false);
+        if (role == "internal_standard" && ((row.contains("calibration_lower_limit") && !row.at("calibration_lower_limit").is_null()) ||
+                                             (row.contains("calibration_upper_limit") && !row.at("calibration_upper_limit").is_null())))
+            errors.push_back({path + ".calibration_lower_limit", "calibration limits are only valid for analytes"});
+        if (role != "internal_standard" && has_lower && has_upper &&
+            row.contains("calibration_lower_limit") && row.contains("calibration_upper_limit") &&
+            !row.at("calibration_lower_limit").is_null() && !row.at("calibration_upper_limit").is_null() &&
+            row.at("calibration_lower_limit").get<double>() >= row.at("calibration_upper_limit").get<double>())
+            errors.push_back({path + ".calibration_lower_limit", "must be less than calibration_upper_limit"});
         if (row.contains("rt") && !row.at("rt").is_null())
             detail::positive_number(row, "rt", path, errors, false);
         if (row.contains("rt_tolerance") && !row.at("rt_tolerance").is_null())

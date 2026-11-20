@@ -31,6 +31,14 @@ const MODEL_COLUMNS = [
   'n_points',
   'range_min',
   'range_max',
+  'calibration_limit_min',
+  'calibration_limit_max',
+  'distinct_levels',
+  'min_replicates_per_level',
+  'max_replicates_per_level',
+  'replicate_mode',
+  'replicate_status',
+  'calibration_acceptance_status',
   'domain_status',
   'monotonicity_status',
   'fit_status',
@@ -58,6 +66,10 @@ const CALIBRATION_COLUMNS = [
   'residual',
   'relative_residual',
   'exclusion_reason',
+  'calibration_level_status',
+  'calibration_replicate_count',
+  'candidate_peak_ids',
+  'qualifier_candidate_peak_ids',
 ];
 const QUANTIFICATION_QUERY_COLUMNS = [
   'analysis',
@@ -97,6 +109,8 @@ const QUANTIFICATION_QUERY_COLUMNS = [
   'qualifier_peak_height',
   'qualifier_rt_error',
   'qualifier_candidate_count',
+  'candidate_peak_ids',
+  'qualifier_candidate_peak_ids',
   'rt_error',
   'peak_area',
   'peak_height',
@@ -122,6 +136,13 @@ const QUANTIFICATION_QUERY_COLUMNS = [
   'qualifier_ratio_pass',
   'accuracy_percent',
   'flags',
+  'calibration_range_status',
+  'calibration_level_status',
+  'calibration_replicate_count',
+  'qc_status',
+  'blank_status',
+  'carryover_status',
+  'dilution_status',
 ];
 const QUANTIFICATION_COLUMNS = [
   'analysis',
@@ -162,6 +183,11 @@ const QUANTIFICATION_COLUMNS = [
   'quantifier_status',
   'internal_standard_status',
   'qualifier_status',
+  'calibration_range_status',
+  'qc_status',
+  'blank_status',
+  'carryover_status',
+  'dilution_status',
   'flags',
 ];
 
@@ -383,6 +409,8 @@ function statusClass(value: string): string {
     normalized === 'ok' ||
     normalized === 'matched' ||
     normalized === 'pass' ||
+    normalized === 'accepted' ||
+    normalized === 'in_range' ||
     normalized === 'within' ||
     normalized === 'within limit'
   )
@@ -421,7 +449,7 @@ function color(index: number): string {
 function plotLayout(plotTheme: PlotTheme, xTitle: string, yTitle: string): Record<string, JsonValue> {
   return {
     autosize: true,
-    margin: { l: 68, r: 20, t: 20, b: 58 },
+    margin: { l: 88, r: 20, t: 20, b: 58 },
     paper_bgcolor: plotTheme.background,
     plot_bgcolor: plotTheme.background,
     font: { color: plotTheme.text },
@@ -452,6 +480,26 @@ function modelValue(model: QuantRow, x: number): number {
     return Math.exp(c0 + c1 * logX + c2 * logX * logX);
   }
   return c0 + c1 * x + c2 * x * x;
+}
+
+function downloadRows(filename: string, rows: QuantRow[], columns: string[], format: 'csv' | 'json') {
+  if (typeof window === 'undefined') return;
+  const payload = format === 'json'
+    ? JSON.stringify(rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? null]))), null, 2)
+    : [
+        columns.join(','),
+        ...rows.map((row) => columns.map((column) => {
+          const value = row[column] ?? '';
+          return /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+        }).join(',')),
+      ].join('\n');
+  const blob = new Blob([payload], { type: format === 'json' ? 'application/json' : 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function calibrationSpec(
@@ -533,7 +581,7 @@ function calibrationSpec(
     renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
     payload: {
       data: traces,
-      layout: plotLayout(plotTheme, 'Nominal concentration', 'Response / internal-standard ratio'),
+      layout: plotLayout(plotTheme, 'Nominal concentration', 'Response /<br>internal-standard ratio'),
       config: { responsive: true, displaylogo: false },
     },
     provenance: {
@@ -807,6 +855,7 @@ function DataTable({
   limit = 1000,
   accuracyLimit = 20,
   fillHeight = false,
+  showHeader = true,
 }: {
   title: string;
   rows: QuantRow[];
@@ -817,6 +866,7 @@ function DataTable({
   limit?: number;
   accuracyLimit?: number;
   fillHeight?: boolean;
+  showHeader?: boolean;
 }) {
   const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
@@ -836,6 +886,21 @@ function DataTable({
       qualifier_peak_rt_end: 'Qualifier end RT',
       internal_standard_peak_rt_start: 'IS start RT',
       internal_standard_peak_rt_end: 'IS end RT',
+      calibration_range_status: 'Calibration range',
+      calibration_level_status: 'Calibration level',
+      qc_status: 'QC status',
+      blank_status: 'Blank status',
+      carryover_status: 'Carryover status',
+      dilution_status: 'Dilution status',
+      calibration_acceptance_status: 'Calibration acceptance',
+      replicate_status: 'Replicate status',
+      calibration_limit_min: 'Calibration limit min',
+      calibration_limit_max: 'Calibration limit max',
+      distinct_levels: 'Distinct levels',
+      min_replicates_per_level: 'Min reps / level',
+      max_replicates_per_level: 'Max reps / level',
+      candidate_peak_ids: 'Candidate peak IDs',
+      qualifier_candidate_peak_ids: 'Qualifier candidate IDs',
     };
     return labels[column] ?? (column === 'eic'
       ? 'Quantifier EIC'
@@ -847,9 +912,11 @@ function DataTable({
   };
   return (
     <section className={`sf-quantification-table-card${fillHeight ? ' sf-quantification-table-card--fill' : ''}`}>
-      <h3>
-        {title} <small>{rows.length} rows</small>
-      </h3>
+      {showHeader && (
+        <h3>
+          {title} <small>{rows.length} rows</small>
+        </h3>
+      )}
       <div className="sf-quantification-table-scroll">
         <table>
           <thead>
@@ -900,6 +967,14 @@ function DataTable({
                       'internal_standard_status',
                       'qualifier_status',
                       'accuracy_check',
+                      'calibration_range_status',
+                      'calibration_level_status',
+                      'qc_status',
+                      'blank_status',
+                      'carryover_status',
+                      'dilution_status',
+                      'calibration_acceptance_status',
+                      'replicate_status',
                     ].includes(column);
                     return (
                       <td key={column} className={isStatus ? statusClass(value) : undefined}>
@@ -944,6 +1019,8 @@ const ROW_DETAIL_METRICS: DetailMetric[] = [
   { label: 'Internal standard status', column: 'internal_standard_status' },
   { label: 'Candidate count', column: 'candidate_count', digits: 0 },
   { label: 'Qualifier candidate count', column: 'qualifier_candidate_count', digits: 0 },
+  { label: 'Candidate peak IDs', column: 'candidate_peak_ids' },
+  { label: 'Qualifier candidate peak IDs', column: 'qualifier_candidate_peak_ids' },
   { label: 'Included', column: 'included' },
   { label: 'Back-calculated concentration', column: 'back_calculated_concentration' },
   { label: 'Residual', column: 'residual' },
@@ -957,6 +1034,12 @@ const ROW_DETAIL_METRICS: DetailMetric[] = [
   { label: 'Qualifier ratio pass', column: 'qualifier_ratio_pass' },
   { label: 'Accuracy percent', column: 'accuracy_percent' },
   { label: 'Flags', column: 'flags' },
+  { label: 'Calibration range status', column: 'calibration_range_status' },
+  { label: 'Calibration level status', column: 'calibration_level_status' },
+  { label: 'QC status', column: 'qc_status' },
+  { label: 'Blank status', column: 'blank_status' },
+  { label: 'Carryover status', column: 'carryover_status' },
+  { label: 'Dilution status', column: 'dilution_status' },
 ];
 
 function DetailMetricList({ metrics, row }: { metrics: DetailMetric[]; row: QuantRow }) {
@@ -1036,7 +1119,6 @@ function QuantificationRowDetailModal({ row, onClose }: { row: QuantRow; onClose
       <section className="sf-quantification-detail-modal" role="dialog" aria-modal="true" aria-label="Quantification row details">
         <header className="sf-quantification-detail-header">
           <div>
-            <p className="sf-quantification-detail-eyebrow">Peak inspection</p>
             <h2>{text(row, 'target_id') || 'Quantification row'}</h2>
             <p className="sf-quantification-detail-subtitle">
               {text(row, 'analysis') || '—'} · {text(row, 'sample_type') || '—'}
@@ -1047,9 +1129,6 @@ function QuantificationRowDetailModal({ row, onClose }: { row: QuantRow; onClose
           </button>
         </header>
         <div className="sf-quantification-detail-body">
-          <p className="sf-quantification-detail-help">
-            The line is the extracted EIC. The shaded region is the integrated peak area between the marked start and end boundaries.
-          </p>
           <div className="sf-quantification-detail-peak-grid">
             <PeakDetailCard row={row} prefix="eic" label="Quantifier EIC" metrics={quantifierMetrics} />
             <PeakDetailCard row={row} prefix="qualifier_eic" label="Qualifier EIC" metrics={qualifierMetrics} />
@@ -1081,6 +1160,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
   const [accuracyLimit, setAccuracyLimit] = useState(20);
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
   const [detailRow, setDetailRow] = useState<QuantRow | null>(null);
+  const [loadNotice, setLoadNotice] = useState('');
   const resultId = artifact?.result_id ?? '';
   const loading = !loadState || loadState.resultId !== resultId;
   const error = loadState?.resultId === resultId ? loadState.error : undefined;
@@ -1109,17 +1189,30 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
             const contract = localArtifactContract(candidate.contract_id);
             const columns =
               contract === 'quantificationCalibrationModelsTable' ? MODEL_COLUMNS : QUANTIFICATION_QUERY_COLUMNS;
-            const response = await client.resultQuery(context.sessionId, {
-              result_id: candidate.result_id,
-              mode: 'page',
-              columns,
-              limit: 10000,
-            });
-            return [contract, response.rows] as const;
+            const rows: QuantRow[] = [];
+            let offset = 0;
+            let hasMore = false;
+            do {
+              const response = await client.resultQuery(context.sessionId, {
+                result_id: candidate.result_id,
+                mode: 'page',
+                columns,
+                offset,
+                limit: 10000,
+                ...(contract === 'quantificationTable' ? { eic_max_points: 256 } : {}),
+              });
+              rows.push(...response.rows);
+              offset += response.rows.length;
+              hasMore = response.has_more;
+              if (!response.rows.length || rows.length >= 50000) break;
+            } while (hasMore);
+            return [contract, rows, hasMore] as const;
           }),
         );
         if (cancelled) return;
-        setTables(Object.fromEntries(loaded));
+        setTables(Object.fromEntries(loaded.map(([contract, rows]) => [contract, rows])));
+        const truncated = loaded.some(([, , hasMore]) => hasMore);
+        setLoadNotice(truncated ? 'Only the first 50,000 rows are loaded; use filters before exporting very large results.' : '');
         setLoadState({ resultId });
       })
       .catch((reason: unknown) => {
@@ -1210,7 +1303,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
             aria-selected={tab === 'calibration'}
             onClick={() => setTab('calibration')}
           >
-            Calibration curves
+            Calibration
           </button>
           <button
             className={tab === 'results' ? 'is-active' : ''}
@@ -1218,7 +1311,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
             aria-selected={tab === 'results'}
             onClick={() => setTab('results')}
           >
-            Responses & results
+            Results
           </button>
         </div>
         <MassSpecFilterToolbar
@@ -1259,15 +1352,29 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
             </label>
           </>
         )}
+        {loadNotice && <span className="sf-quantification-load-notice">{loadNotice}</span>}
         <span className="sf-quantification-summary">
           {models.length} models · {quantification.length} quantification rows
         </span>
+        <div className="sf-quantification-export" aria-label="Export quantification data">
+          <button
+            type="button"
+            onClick={() => downloadRows(tab === 'calibration' ? 'quantification-calibration.csv' : 'quantification-results.csv', tab === 'calibration' ? points : results, tab === 'calibration' ? CALIBRATION_COLUMNS : QUANTIFICATION_COLUMNS, 'csv')}
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadRows(tab === 'calibration' ? 'quantification-calibration.json' : 'quantification-results.json', tab === 'calibration' ? points : results, tab === 'calibration' ? CALIBRATION_COLUMNS : QUANTIFICATION_COLUMNS, 'json')}
+          >
+            Export JSON
+          </button>
+        </div>
       </div>
       {tab === 'calibration' ? (
         <>
-          <div className="sf-quantification-calibration-plots">
+          <div className="sf-quantification-calibration-top">
             <section>
-              <h3>Calibration model</h3>
               <div className="sf-quantification-plot">
                 {calibrationPlot ? (
                   <VisualizationRenderer spec={calibrationPlot} onPointClick={handlePlotPointClick} />
@@ -1277,7 +1384,6 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
               </div>
             </section>
             <section>
-              <h3>Residuals</h3>
               <div className="sf-quantification-plot">
                 {residualPlot ? (
                   <VisualizationRenderer spec={residualPlot} onPointClick={handlePlotPointClick} />
@@ -1286,8 +1392,8 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
                 )}
               </div>
             </section>
+            <DataTable title="Calibration models" rows={visibleModels} columns={MODEL_COLUMNS} showHeader={false} />
           </div>
-          <DataTable title="Calibration models" rows={visibleModels} columns={MODEL_COLUMNS} />
           <DataTable
             title="Raw calibration points"
             rows={points}
@@ -1295,12 +1401,13 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
             selectedRowKey={selectedRowKey}
             onRowSelect={setSelectedRowKey}
             onRowOpen={setDetailRow}
+            showHeader={false}
             fillHeight
           />
         </>
       ) : (
         <>
-          <div className="sf-quantification-plot">
+          <div className="sf-quantification-plot sf-quantification-results-plot">
             {resultPlot ? (
               <VisualizationRenderer spec={resultPlot} onPointClick={handlePlotPointClick} />
             ) : (
@@ -1316,6 +1423,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
             onRowOpen={setDetailRow}
             accuracyLimit={accuracyLimit}
             fillHeight
+            showHeader={false}
           />
         </>
       )}
