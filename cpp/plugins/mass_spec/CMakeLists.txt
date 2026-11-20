@@ -40,6 +40,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/utils/base.cpp
     src/utils/target_csv.cpp
     src/utils/chromatograms.cpp
+    src/utils/calibration.cpp
     src/utils/quantification.cpp
     src/utils/nta.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"

@@ -251,8 +251,11 @@
         "merge": true,
         "merge_distance": 5,
         "min_peak_height": 0,
-        "min_snr": 5,
-        "peak_trace_padding_seconds": 5
+        "min_peak_distance": 0,
+        "min_peak_width": 0,
+        "max_peak_width": 30,
+        "min_snr": 3,
+        "peak_trace_padding_seconds": 10
       },
       "position": {
         "x": 1449.2759211653815,
@@ -2871,7 +2874,7 @@
             "quantifier_precursor_mz": 296,
             "quantifier_product_mz": 214.1,
             "quantifier_signal_type": "MS",
-            "regression_model": "linear",
+            "regression_model": "wagner",
             "response_metric": "area",
             "role": "analyte",
             "rt": 378.4,
@@ -2881,7 +2884,7 @@
           },
           {
             "enabled": true,
-            "intercept_mode": "free",
+            "intercept_mode": null,
             "name": "Diclofenac-D4",
             "normalization": "none",
             "quantifier_chromatogram_type": "SRM",
@@ -2891,13 +2894,13 @@
             "quantifier_precursor_mz": 300,
             "quantifier_product_mz": 218,
             "quantifier_signal_type": "MS",
-            "regression_model": "linear",
+            "regression_model": null,
             "response_metric": "area",
             "role": "internal_standard",
             "rt": 377.1,
             "rt_tolerance": 10,
             "target_id": "diclofenac_d4",
-            "weighting": "none"
+            "weighting": null
           },
           {
             "enabled": true,
@@ -2929,7 +2932,7 @@
           },
           {
             "enabled": true,
-            "intercept_mode": "free",
+            "intercept_mode": null,
             "name": "Sulfamethoxazol-D4",
             "normalization": "none",
             "quantifier_chromatogram_type": "SRM",
@@ -2939,13 +2942,13 @@
             "quantifier_precursor_mz": 258.108,
             "quantifier_product_mz": 96.1,
             "quantifier_signal_type": "MS",
-            "regression_model": "linear",
+            "regression_model": null,
             "response_metric": "area",
             "role": "internal_standard",
             "rt": 174.25,
             "rt_tolerance": 10,
             "target_id": "sulfamethoxazol_d4",
-            "weighting": "none"
+            "weighting": null
           }
         ]
       },

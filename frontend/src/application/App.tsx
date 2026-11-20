@@ -166,7 +166,7 @@ function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
   };
   const tableFromPort = (port: CapabilityPort): TableContract | undefined => {
     if (port.table) return port.table;
-    if (port.data_kind !== 'duckdb_table' || !port.schema?.properties) return undefined;
+    if (port.data_kind !== 'table' || !port.schema?.properties) return undefined;
     const required = new Set(port.schema.required || []);
     return {
       table_contract_name: port.id,
@@ -1415,6 +1415,18 @@ function ProjectHub({
       setCopying(false);
     }
   };
+  const chooseFolder = async (targetMode: 'parent' | 'project') => {
+    if (!client) return;
+    try {
+      const [selectedPath] = await client.pickFolders();
+      if (!selectedPath) return;
+      if (targetMode === 'parent' && copySource) setCopyParentPath(selectedPath);
+      else if (targetMode === 'parent') setParentPath(selectedPath);
+      else setProjectPath(selectedPath);
+    } catch {
+      setFolderPickerMode(targetMode);
+    }
+  };
   const canInteract = serviceState === 'ready' && client !== null;
   let projectPathPreview = 'Choose a parent folder and project name';
   if (parentPath && projectName) {
@@ -1572,7 +1584,7 @@ function ProjectHub({
                   Parent folder
                   <div className="sf-input-with-button">
                     <input value={parentPath} onChange={(event) => setParentPath(event.target.value)} placeholder="C:/projects" required />
-                    <button type="button" className="sf-button secondary" onClick={() => setFolderPickerMode('parent')} disabled={submitting}>Browse</button>
+                    <button type="button" className="sf-button secondary" onClick={() => void chooseFolder('parent')} disabled={submitting}>Browse</button>
                   </div>
                 </label>
                 <label>
@@ -1588,7 +1600,7 @@ function ProjectHub({
                 Project folder (.sf)
                 <div className="sf-input-with-button">
                   <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="C:/projects/river-screening.sf" required />
-                  <button type="button" className="sf-button secondary" onClick={() => setFolderPickerMode('project')} disabled={submitting}>Browse</button>
+                  <button type="button" className="sf-button secondary" onClick={() => void chooseFolder('project')} disabled={submitting}>Browse</button>
                 </div>
               </label>
             )}
@@ -1655,7 +1667,7 @@ function ProjectHub({
                   onChange={(event) => setCopyParentPath(event.target.value)}
                   required
                 />
-                <button type="button" className="sf-button secondary" onClick={() => setFolderPickerMode('parent')} disabled={copying}>Browse</button>
+                <button type="button" className="sf-button secondary" onClick={() => void chooseFolder('parent')} disabled={copying}>Browse</button>
               </div>
             </label>
             <label>

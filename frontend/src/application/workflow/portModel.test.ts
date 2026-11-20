@@ -3,6 +3,7 @@ import {
   nodePorts,
   parameterTypeKey,
   portMatchesParameter,
+  portMatchesPort,
   portTypeKey,
   schemaShape,
   typeClass,
@@ -41,11 +42,11 @@ describe('workflow port model', () => {
         {
           id: 'targetsTable',
           label: 'Targets',
-          dataKind: 'duckdb_table',
+          dataKind: 'table',
           schema: {
             properties: { mass: { type: 'array', items: { type: 'number' } } },
           },
-          typeKey: 'duckdb_table:targetsTable',
+          typeKey: 'table:targetsTable',
         },
         {
           name: 'targets',
@@ -54,6 +55,27 @@ describe('workflow port model', () => {
             additionalProperties: false,
             properties: { mass: { type: 'array', items: { type: 'number' } } },
           },
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it('allows specific table outputs to connect to anyTable inputs', () => {
+    expect(
+      portMatchesPort(
+        {
+          id: 'analysesTable',
+          label: 'Analyses',
+          semanticContract: 'analysesTable',
+          dataKind: 'table',
+          typeKey: 'table:analysesTable',
+        },
+        {
+          id: 'tableInput',
+          label: 'Any table',
+          semanticContract: 'anyTable',
+          dataKind: 'table',
+          typeKey: 'table:anyTable',
         },
       ),
     ).toBe(true);

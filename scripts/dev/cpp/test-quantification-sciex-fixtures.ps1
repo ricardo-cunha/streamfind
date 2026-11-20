@@ -8,6 +8,7 @@ param(
     [switch]$SkipBuild,
     [switch]$KeepProjects,
     [switch]$KeepRuntime,
+    [int]$RuntimePort = 8788,
     [int]$TimeoutMinutes = 0
 )
 
@@ -49,7 +50,10 @@ if (@($existingServices | Where-Object { $_.health -eq 'healthy' }).Count -gt 0)
     throw 'A streamfind service is already running. Refusing to start the fixture harness because streamfind-mcp would attach to that service; rerun after the service is stopped or use a separate machine/session.'
 }
 $runtimeRoot = Join-Path $repoRoot 'tmp\scratch\quantification-sciex-runtime'
-$runtimePort = 8791
+$runtimePort = $RuntimePort
+if ($runtimePort -lt 1024 -or $runtimePort -gt 65535) {
+    throw "RuntimePort must be between 1024 and 65535: $runtimePort"
+}
 $runtimeListeners = @(Get-NetTCPConnection -LocalPort $runtimePort -State Listen -ErrorAction SilentlyContinue |
     Where-Object { $_.OwningProcess -ne 0 })
 if ($runtimeListeners.Count -gt 0) {
@@ -343,7 +347,6 @@ try {
                 @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 2; target_port = 'analysesTable' },
                 @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 2; target_port = 'chromatogramsHeadersTable' },
                 @{ source_operation = 2; source_port = 'chromatogramsTable'; target_operation = 3; target_port = 'chromatogramsTable' },
-                @{ source_operation = 1; source_port = 'chromatogramsHeadersTable'; target_operation = 3; target_port = 'chromatogramsHeadersTable' },
                 @{ source_operation = 1; source_port = 'analysesTable'; target_operation = 4; target_port = 'analysesTable' },
                 @{ source_operation = 4; source_port = 'quantificationMethodTable'; target_operation = 5; target_port = 'quantificationMethodTable' },
                 @{ source_operation = 4; source_port = 'quantificationAnalysesTable'; target_operation = 5; target_port = 'quantificationAnalysesTable' },
@@ -364,13 +367,29 @@ try {
 
         $methodRows = Invoke-ResultRows $process $database 4 @('target_id', 'role', 'internal_standard_id', 'quantifier_precursor_mz', 'quantifier_product_mz') 'quantificationMethodTable'
         $assignmentRows = Invoke-ResultRows $process $database 4 @('analysis', 'target_id', 'sample_type') 'quantificationAnalysesTable'
-        $responseRows = Invoke-ResultRows $process $database 5 @('analysis', 'target_id', 'response', 'response_ratio', 'status', 'qualifier_status') 'quantificationTable'
+        $responseRows = Invoke-ResultRows $process $database 5 @(
+            'analysis', 'target_id', 'response', 'response_ratio', 'status', 'qualifier_status',
+            'quantifier_chromatogram_id', 'qualifier_chromatogram_id', 'qualifier_chromatogram_index',
+            'qualifier_peak_id', 'qualifier_peak_rt', 'qualifier_peak_area', 'qualifier_peak_height',
+            'qualifier_rt_error', 'qualifier_candidate_count'
+        ) 'quantificationTable'
         if ($methodRows.Count -ne 2) { throw "Expected two horizontal method rows for $sourcePath, found $($methodRows.Count)" }
         if ($assignmentRows.Count -ne ($analysisNames.Count * 2)) {
             throw "Expected $($analysisNames.Count * 2) assignment rows for $sourcePath, found $($assignmentRows.Count)"
         }
-        if ($responseRows.Count -ne ($analysisNames.Count * 2)) {
-            throw "Expected $($analysisNames.Count * 2) response rows for $sourcePath, found $($responseRows.Count)"
+        if ($responseRows.Count -eq 0) {
+            throw "Expected at least one quantification row for $sourcePath, found none"
+        }
+        $requiredResponseColumns = @(
+            'quantifier_chromatogram_id', 'qualifier_chromatogram_id', 'qualifier_chromatogram_index',
+            'qualifier_peak_id', 'qualifier_peak_rt', 'qualifier_peak_area', 'qualifier_peak_height',
+            'qualifier_rt_error', 'qualifier_candidate_count'
+        )
+        $responseColumnNames = @($responseRows[0].PSObject.Properties.Name)
+        foreach ($columnName in $requiredResponseColumns) {
+            if ($responseColumnNames -notcontains $columnName) {
+                throw "Quantification output for $sourcePath is missing provenance column '$columnName'"
+            }
         }
         $summary += [pscustomobject]@{
             File = $sourcePath

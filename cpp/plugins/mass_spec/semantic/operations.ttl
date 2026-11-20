@@ -400,7 +400,9 @@ sfms:quantify
         sfcore:debugAnalysisParameter,
         sfms:minimumCalibrationPointsParameter,
         sfms:requireQualifierParameter,
-        sfms:qcMaxRelativeErrorParameter ;
+        sfms:qcMaxRelativeErrorParameter,
+        sfms:blankMaxResponseParameter,
+        sfms:carryoverMaxResponseParameter ;
     sf:hasInputPort sfms:quantificationMethodTable, sfms:quantificationAnalysesTable, sfms:chromatogramPeaksTable ;
     sf:hasOutputPort sfms:quantificationTable, sfms:quantificationCalibrationModelsTable, sfcore:operationSuccessSignal ;
     sf:optionalOutputPort sfms:quantificationDebugResult .

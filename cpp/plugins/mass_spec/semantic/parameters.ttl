@@ -308,6 +308,30 @@ sfms:qcMaxRelativeErrorParameter
     sf:default 20.0 ;
     sf:example 20.0 .
 
+sfms:blankMaxResponseParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Blank maximum normalized response" ;
+    skos:definition "Optional maximum response or internal-standard response ratio accepted for blank samples. When omitted, blank status remains not_evaluated." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default -1.0 ;
+    sf:example -1.0 .
+
+sfms:carryoverMaxResponseParameter
+    a sf:Parameter ;
+    sf:availableInDomain sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Carryover maximum normalized response" ;
+    skos:definition "Optional maximum response or internal-standard response ratio accepted for a blank after a preceding matched sample. When omitted, carryover status remains not_evaluated." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default -1.0 ;
+    sf:example -1.0 .
+
 sfms:targetsCsvPathParameter
     a sf:Parameter ;
     sf:availableInDomain sfms:mass_spec ;
@@ -1544,7 +1568,7 @@ sfms:mergeParameter
     skos:definition "Whether to merge nearby chromatographic peaks." ;
     sf:type "boolean" ;
     sf:required false ;
-    sf:default false ;
+    sf:default true ;
     sf:example true .
 
 sfms:mergeDistanceParameter
@@ -1555,8 +1579,8 @@ sfms:mergeDistanceParameter
     skos:definition "Maximum distance between peak apices for merging, in retention-time units." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
-    sf:example 45.0 .
+    sf:default 5.0 ;
+    sf:example 5.0 .
 
 sfms:minPeakHeightParameter
     a sf:Parameter ;
@@ -1599,8 +1623,8 @@ sfms:peakTracePaddingSecondsParameter
     skos:definition "Retention-time padding added on both sides of each detected peak when storing its EIC arrays." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
-    sf:example 5.0 .
+    sf:default 10.0 ;
+    sf:example 10.0 .
 
 sfms:smoothingEnabledParameter
     a sf:Parameter ;

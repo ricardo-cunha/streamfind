@@ -126,6 +126,17 @@ add_test(NAME streamfind_mass_spec_quantification_validation_contract
 set_tests_properties(streamfind_mass_spec_quantification_validation_contract PROPERTIES
     LABELS "mass_spec;quantification;configuration")
 
+add_executable(streamfind_mass_spec_calibration_contract
+    unit/calibration_contract.cpp
+    ../src/utils/calibration.cpp)
+target_include_directories(streamfind_mass_spec_calibration_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_compile_features(streamfind_mass_spec_calibration_contract PRIVATE cxx_std_20)
+add_test(NAME streamfind_mass_spec_calibration_contract
+    COMMAND streamfind_mass_spec_calibration_contract)
+set_tests_properties(streamfind_mass_spec_calibration_contract PROPERTIES
+    LABELS "mass_spec;quantification;calibration")
+
 add_executable(streamfind_mass_spec_chromatogram_peak_contract
     unit/chromatogram_peak_contract.cpp
     ../src/utils/chromatograms.cpp)
