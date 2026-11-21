@@ -279,25 +279,39 @@ describe('application shell', () => {
   it('opens a selected .sf folder and keeps the open dialog when the picker is cancelled', async () => {
     await showWorkspace();
     fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+      vi.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(screen.getByRole('button', { name: /existing\.sf/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /ordinary-folder/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /notes\.txt/ })).not.toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose project folder' })).getByRole('button', { name: 'Cancel' }));
+    const projectFileList = within(screen.getByRole('main', { name: 'Files and folders' }));
+    expect(projectFileList.getByRole('button', { name: /existing\.sf/ })).toBeInTheDocument();
+    expect(projectFileList.queryByRole('button', { name: /ordinary-folder/ })).not.toBeInTheDocument();
+    expect(projectFileList.queryByRole('button', { name: /notes\.txt/ })).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose a StreamFind project' })).getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('heading', { name: 'Open project' })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+      vi.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
     });
-    fireEvent.click(screen.getByRole('button', { name: /existing\.sf/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open selected project' }));
+    const reopenedProjectFileList = within(screen.getByRole('main', { name: 'Files and folders' }));
+    await act(async () => {
+      fireEvent.click(reopenedProjectFileList.getByRole('button', { name: /existing\.sf/ }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Choose selected folder' }));
+      await Promise.resolve();
+    });
     expect((screen.getByLabelText('Project folder (.sf)') as HTMLInputElement).value).toBe('C:/projects/existing.sf');
     fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
 
@@ -307,18 +321,23 @@ describe('application shell', () => {
     expect(screen.getByText('existing')).toBeInTheDocument();
   });
 
-  it('uses the native folder wizard for open workflow when it is available', async () => {
-    nativeFolderPickerError = null;
-    nativeFolderPickerPaths = ['C:/projects/native-existing.sf'];
+  it('uses the project folder wizard for open workflow', async () => {
     await showWorkspace();
     fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
     fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    await act(async () => { await Promise.resolve(); });
-    expect((screen.getByLabelText('Project folder (.sf)') as HTMLInputElement).value).toBe(
-      'C:/projects/native-existing.sf',
-    );
-    expect(screen.queryByRole('dialog', { name: 'Choose project folder' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Choose a StreamFind project' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('main', { name: 'Files and folders' })).getByRole('button', { name: /existing\.sf/ }),
+    ).toBeInTheDocument();
+    expect(nativeFolderPickerPaths).toEqual([]);
   });
 
   it('shows the service guidance when a legacy DuckDB file is entered as a project folder', async () => {
