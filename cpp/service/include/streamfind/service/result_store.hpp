@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <mutex>
 
 namespace streamfind::service {
 
@@ -146,6 +147,7 @@ private:
 
     std::filesystem::path database_path_;
     std::filesystem::path root_;
+    mutable std::mutex lifecycle_mutex_;
 };
 
 }  // namespace streamfind::service

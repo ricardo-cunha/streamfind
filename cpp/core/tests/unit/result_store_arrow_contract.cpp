@@ -5,6 +5,7 @@
 #include "../support/arrow_batch_fixture.hpp"
 
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <atomic>
@@ -36,6 +37,19 @@ static std::intptr_t duplicate_native_handle(std::intptr_t source) {
 
 static void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
+}
+
+static std::uint64_t test_process_id() {
+#ifdef _WIN32
+    return static_cast<std::uint64_t>(GetCurrentProcessId());
+#else
+    return static_cast<std::uint64_t>(getpid());
+#endif
+}
+
+static std::uint64_t test_run_id() {
+    const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+    return test_process_id() ^ static_cast<std::uint64_t>(ticks);
 }
 
 static void write_lease_bytes(streamfind::service::ResultLease &lease,
@@ -114,11 +128,9 @@ static std::string publish_small_table(streamfind::service::ResultStore &store,
 int main() {
     const std::filesystem::path database =
         std::filesystem::path(STREAMFIND_TEST_REPO_ROOT) /
-        "tmp" / "projects" / "result-store-arrow-contract.sf" / "project.duckdb";
-    std::error_code error;
-    std::filesystem::create_directories(database.parent_path(), error);
-    std::filesystem::remove_all(database.parent_path(), error);
-
+        "tmp" / "projects" /
+        ("result-store-arrow-contract-" + std::to_string(test_run_id()) + ".sf") /
+        "project.duckdb";
     try {
         streamfind::service::ResultStore store(database);
         require(store.initialize().status == streamfind::service::ResultStoreStatus::ready,
@@ -644,10 +656,8 @@ int main() {
         store.remove_published_results({bounded_id});
         require(store.read_range_statistics(bounded_id, "count").is_null(),
                 "deleting a result left its range-statistics sidecar");
-        std::filesystem::remove_all(database.parent_path(), error);
         return 0;
     } catch (...) {
-        std::filesystem::remove_all(database.parent_path(), error);
         throw;
     }
 }

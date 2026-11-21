@@ -724,14 +724,17 @@ void ResultStore::remove_published_results(const std::vector<std::string> &resul
         require_component(result_id, "result_id");
         const auto directory = root_ / "results" / result_id;
         std::error_code error;
-        if (!std::filesystem::exists(directory, error)) {
-            if (error) throw std::runtime_error("cannot inspect result payload: " + error.message());
-            continue;
+        std::filesystem::directory_iterator entries(directory, error);
+        if (error == std::make_error_code(std::errc::no_such_file_or_directory)) continue;
+        if (error) throw std::runtime_error("cannot inspect result payload: " + error.message());
+        for (const auto &entry : entries) {
+            if (entry.is_directory(error) || error)
+                throw std::runtime_error("published result directory contains an unexpected subdirectory: " + result_id);
+            if (!std::filesystem::remove(entry.path(), error) || error)
+                throw std::runtime_error("cannot remove published result payload entry: " + error.message());
         }
-        if (!std::filesystem::is_directory(directory, error) || error)
-            throw std::runtime_error("published result path is not a directory: " + result_id);
-        std::filesystem::remove_all(directory, error);
-        if (error) throw std::runtime_error("cannot remove published result payload: " + error.message());
+        if (!std::filesystem::remove(directory, error) && error)
+            throw std::runtime_error("cannot remove published result directory: " + error.message());
     }
 }
 
@@ -782,18 +785,16 @@ Json ResultStore::read_range_statistics(const std::string &result_id, const std:
         encoded_column.push_back(hex[byte & 0x0f]);
     }
     const auto path = root_ / "results" / result_id / ("range-" + encoded_column + ".json");
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(path, error) || error) return nullptr;
     constexpr std::uintmax_t max_range_index_bytes = 8 * 1024 * 1024;
-    std::uintmax_t size = 0;
     try {
-        size = detail::payload_size(path);
-    } catch (...) {
-        return nullptr;
-    }
-    if (size > max_range_index_bytes) return nullptr;
-    try {
-        const auto index = read_json_file(path);
+        std::ifstream input(detail::storage_path(path), std::ios::binary);
+        if (!input) return nullptr;
+        input.seekg(0, std::ios::end);
+        const auto size = input.tellg();
+        if (size < 0 || static_cast<std::uintmax_t>(size) > max_range_index_bytes) return nullptr;
+        input.seekg(0, std::ios::beg);
+        Json index;
+        input >> index;
         if (index.value("result_id", std::string{}) != result_id ||
             index.value("column", std::string{}) != column ||
             index.value("payload_digest", std::string{}) != manifest.value("payload_digest", std::string{}) ||
@@ -837,17 +838,10 @@ void ResultStore::write_range_statistics(const std::string &result_id,
     if (!std::filesystem::is_directory(directory, error) || error)
         throw std::runtime_error("cannot locate published result directory for range index");
     const auto path = directory / ("range-" + encoded_column + ".json");
-    if (std::filesystem::exists(path, error)) return;
-    if (error) throw std::runtime_error("cannot inspect result range index: " + error.message());
-    const auto temporary = directory / ("range-" + encoded_column + "." + create_store_id() + ".tmp");
-    write_json_file(temporary, index);
-    std::filesystem::rename(temporary, path, error);
-    if (error) {
-        std::error_code cleanup_error;
-        std::filesystem::remove(temporary, cleanup_error);
-        if (!std::filesystem::exists(path))
-            throw std::runtime_error("cannot publish result range index: " + error.message());
-    }
+    // Range statistics are a rebuildable derived cache. Write the validated
+    // index directly so MinGW's Windows filesystem layer does not block on the
+    // rename of a sidecar next to an Arrow payload.
+    write_json_file(path, index);
 }
 
 Json ResultStore::read_result_range(const std::string &result_id,
@@ -1068,7 +1062,7 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
     auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
     if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
-    const auto file = *file_result;
+    auto file = *file_result;
     auto reader_result = arrow::ipc::RecordBatchFileReader::Open(file);
     if (!reader_result.ok()) throw std::runtime_error(reader_result.status().ToString());
     auto reader = *reader_result;
@@ -1343,6 +1337,11 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
         for (auto index = offset; index < sorted_matches.size() && index < end; ++index)
             selected_offsets.push_back(sorted_matches[static_cast<std::size_t>(index)].row_offset);
     }
+    // Release Arrow's payload handles before creating the sidecar. On Windows,
+    // the MinGW filesystem layer can otherwise block while publishing a file
+    // beside an open Arrow payload.
+    reader.reset();
+    file.reset();
     for (const auto &[name, should_collect] : collect_ranges)
         if (should_collect && range_batches.at(name).size() == batch_counts.size())
             write_range_statistics(result_id, name, range_batches.at(name));
@@ -1437,6 +1436,7 @@ ResultLease ResultStore::allocate(const std::string &run_id,
 }
 
 Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
+    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
     if (lease.writer) lease.writer->close();
     const auto native_staging_payload = detail::storage_path(lease.staging_payload);
     std::error_code payload_error;
@@ -1515,6 +1515,7 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
 }
 
 void ResultStore::abort(const ResultLease &lease) const {
+    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
     if (lease.writer) lease.writer->close();
     std::error_code error;
     // A staging result has a fixed, shallow layout (payload plus optional
