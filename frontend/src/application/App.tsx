@@ -711,8 +711,11 @@ function projectFileName(project: ProjectSession): string {
   );
 }
 function projectParentPath(path: string): string {
+  if (/^[A-Za-z]:[\\/]*$/.test(path)) return path.endsWith('\\') || path.endsWith('/') ? path : `${path}\\`;
+  if (path === '/') return '/';
   const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   if (separator < 0) return '';
+  if (/^[A-Za-z]:[\\/]/.test(path) && separator === 2) return path.slice(0, 3);
   return path.slice(0, separator) || path.slice(0, separator + 1);
 }
 function formatDatabaseSize(bytes: number): string {
@@ -732,7 +735,13 @@ function workflowDomains(workflow: WorkflowDefinition): string[] {
           : 'core';
     }),
   );
-  return domains.size ? [...domains].sort() : ['core'];
+  return [...domains].sort();
+}
+function domainLabel(domains?: string[]): string {
+  const visibleDomains = (domains ?? []).filter((domain) => domain.toLowerCase() !== 'streamfind');
+  if (!visibleDomains.length) return '';
+  if (visibleDomains.length > 1) return 'Multiple domains';
+  return visibleDomains[0].replaceAll('-', '_');
 }
 function projectDomainColor(domains?: string[]): string {
   const colors = (domains?.length ? domains : ['core']).map((domain) => `var(--sf-domain-${domain})`);
@@ -768,6 +777,8 @@ function ProjectCard({
     }
   };
 
+  const domains = summary?.domains?.length ? summary.domains : project.domains ?? [];
+
   return (
     <article
       className="sf-project-row"
@@ -775,7 +786,6 @@ function ProjectCard({
     >
       <div>
         <strong>{projectFileName(project)}</strong>
-        <span>{project.domains?.join(', ') || 'No domains'}</span>
         <div className="sf-workflow-summary">
           {summary ? (
             <>
@@ -1016,6 +1026,7 @@ function ProjectPreview({
         : workflowState === 'failed'
           ? 'failed'
           : 'idle';
+  const overviewDomainLabel = domainLabel(workflow ? workflowDomains(workflow) : project.domains);
   return (
     <div
       className="sf-dialog-backdrop"
@@ -1034,7 +1045,9 @@ function ProjectPreview({
         </div>
         <div className="sf-project-overview-grid">
           <section className="sf-project-overview-details">
-            <span className="sf-project-preview-domain">{project.domains?.join(', ') || 'No domains'}</span>
+            {overviewDomainLabel ? (
+              <span className="sf-project-preview-domain">{overviewDomainLabel}</span>
+            ) : null}
             <code>{project.project_path}</code>
             <div className="sf-workflow-summary">
               <span>
@@ -1415,17 +1428,9 @@ function ProjectHub({
       setCopying(false);
     }
   };
-  const chooseFolder = async (targetMode: 'parent' | 'project') => {
+  const chooseFolder = (targetMode: 'parent' | 'project') => {
     if (!client) return;
-    try {
-      const [selectedPath] = await client.pickFolders();
-      if (!selectedPath) return;
-      if (targetMode === 'parent' && copySource) setCopyParentPath(selectedPath);
-      else if (targetMode === 'parent') setParentPath(selectedPath);
-      else setProjectPath(selectedPath);
-    } catch {
-      setFolderPickerMode(targetMode);
-    }
+    setFolderPickerMode(targetMode);
   };
   const canInteract = serviceState === 'ready' && client !== null;
   let projectPathPreview = 'Choose a parent folder and project name';
@@ -1561,7 +1566,10 @@ function ProjectHub({
             if (event.target === event.currentTarget && !submitting) setMode(null);
           }}
         >
-          <form className={`sf-dialog ${mode === 'create' ? 'sf-create-workflow-dialog' : ''}`} onSubmit={submit}>
+          <form
+            className={`sf-dialog ${mode === 'create' ? 'sf-create-workflow-dialog' : ''} ${mode === 'open' ? 'sf-open-project-dialog' : ''}`}
+            onSubmit={submit}
+          >
             <div className="sf-dialog-heading">
               <div>
                 <h2>
@@ -1697,7 +1705,12 @@ function ProjectHub({
         <ProjectFolderPicker
           client={client}
           mode={folderPickerMode}
-          initialPath={folderPickerMode === 'parent' ? (copySource ? copyParentPath : parentPath) : ''}
+          initialPath={folderPickerMode === 'project'
+            ? projectParentPath(projectPath)
+            : projectParentPath(copySource ? copyParentPath : parentPath)}
+          selectedPath={folderPickerMode === 'project'
+            ? projectPath
+            : copySource ? copyParentPath : parentPath}
           onClose={() => setFolderPickerMode(null)}
           onSelect={(path) => {
             if (folderPickerMode === 'parent' && copySource) setCopyParentPath(path);

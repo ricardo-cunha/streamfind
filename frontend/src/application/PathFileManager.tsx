@@ -5,6 +5,9 @@ type PathFileManagerProps = {
   client: StreamFindApiClient;
   selectedPaths: string[];
   onAddPaths: (paths: string[]) => void;
+  mode?: 'paths' | 'folder' | 'project-folder';
+  initialPath?: string;
+  onProjectSelectionChange?: (path: string) => void;
 };
 
 type TreeNode = FileSystemEntry & { children?: TreeNode[]; expanded?: boolean; loading?: boolean };
@@ -42,7 +45,14 @@ function fileIcon(entry: FileSystemEntry): string {
   return entry.isDirectory ? 'fa-solid fa-folder sf-file-icon-folder' : 'fa-solid fa-file sf-file-icon-file';
 }
 
-export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileManagerProps) {
+export function PathFileManager({
+  client,
+  selectedPaths,
+  onAddPaths,
+  mode = 'paths',
+  initialPath = '',
+  onProjectSelectionChange,
+}: PathFileManagerProps) {
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<FileSystemEntry[]>([]);
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -52,6 +62,7 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingPaths, setPendingPaths] = useState<string[]>(selectedPaths);
+  const initialSelection = selectedPaths[0] ?? '';
   const selectionAnchor = useRef<string | null>(null);
   const requestId = useRef(0);
 
@@ -59,6 +70,10 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
     const id = ++requestId.current;
     setLoading(true);
     setError(null);
+    if (mode !== 'paths') {
+      setPendingPaths([]);
+      onProjectSelectionChange?.('');
+    }
     void client
       .browseFileSystem(path)
       .then((result) => {
@@ -99,19 +114,28 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const id = ++requestId.current;
-      void client
-        .browseFileSystem('')
-        .then((result) => {
+      const rootRequest = client.browseFileSystem('');
+      const currentRequest = initialPath ? client.browseFileSystem(initialPath) : rootRequest;
+      void Promise.all([rootRequest, currentRequest])
+        .then(([root, current]) => {
           if (id !== requestId.current) return;
-          setTree(treeNodes(result.entries));
-          setCurrentPath(result.path);
-          setEntries(result.entries);
+          setTree(treeNodes(root.entries));
+          setCurrentPath(current.path);
+          setEntries(current.entries);
+          if (mode !== 'paths') {
+            const selectedFolder = current.entries.find(
+              (entry) => entry.path === initialSelection && entry.isDirectory &&
+                (mode !== 'project-folder' || entry.name.toLowerCase().endsWith('.sf')),
+            );
+            setPendingPaths(selectedFolder ? [selectedFolder.path] : []);
+            onProjectSelectionChange?.(selectedFolder?.path ?? '');
+          }
         })
         .catch((reason) => setError(reason instanceof Error ? reason.message : 'Filesystem browse failed.'))
         .finally(() => setLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [client]);
+  }, [client, initialPath, initialSelection, mode, onProjectSelectionChange]);
 
   useEffect(() => {
     if (!resizingSidebar) return undefined;
@@ -127,14 +151,16 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
   }, [resizingSidebar]);
 
   const visibleEntries = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
+    const query = mode === 'paths' ? search.trim().toLocaleLowerCase() : '';
     return entries
+      .filter((entry) => mode === 'paths' || (entry.isDirectory &&
+        (mode !== 'project-folder' || entry.name.toLocaleLowerCase().endsWith('.sf'))))
       .filter((entry) => !query || entry.name.toLocaleLowerCase().includes(query))
       .sort((left, right) => {
         if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1;
         return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
       });
-  }, [entries, search]);
+  }, [entries, mode, search]);
 
   const selectEntry = (entry: FileSystemEntry, event: MouseEvent, contextSelection = false) => {
     event.preventDefault();
@@ -186,7 +212,7 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
     ));
 
   return (
-    <div className="sf-windows-file-picker">
+    <div className={`sf-windows-file-picker${mode !== 'paths' ? ' sf-folder-selection-file-picker' : ''}`}>
       <div className="sf-windows-toolbar">
         <button type="button" aria-label="Refresh" disabled={loading} onClick={() => loadPath(currentPath)}>
           <i className="fa-solid fa-rotate-right" />
@@ -201,10 +227,12 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
             </span>
           ))}
         </div>
-        <label className="sf-windows-search">
-          <i className="fa-solid fa-magnifying-glass" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" />
-        </label>
+        {mode === 'paths' ? (
+          <label className="sf-windows-search">
+            <i className="fa-solid fa-magnifying-glass" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" />
+          </label>
+        ) : null}
       </div>
       <div className="sf-windows-content" style={{ gridTemplateColumns: `${sidebarWidth}px 6px minmax(0, 1fr)` }}>
         <aside className="sf-windows-sidebar" aria-label="Folder tree">
@@ -228,16 +256,29 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
           {error ? <div className="sf-windows-empty sf-json-editor-error">{error}</div> : null}
           {loading ? <div className="sf-windows-empty">Loading…</div> : null}
           {!loading && !error && !visibleEntries.length ? (
-            <div className="sf-windows-empty">This folder is empty.</div>
+            <div className="sf-windows-empty">
+              {mode === 'project-folder' ? 'No .sf project folders in this location.' : 'No folders in this location.'}
+            </div>
           ) : null}
           {visibleEntries.map((entry) => (
             <button
               type="button"
               className={`sf-windows-file-row${pendingPaths.includes(entry.path) ? ' selected' : ''}`}
               key={entry.path}
-              onClick={(event) => selectEntry(entry, event)}
-              onContextMenu={(event) => selectEntry(entry, event, true)}
-              onDoubleClick={() => entry.isDirectory && loadPath(entry.path)}
+              onClick={(event) => {
+                if (mode !== 'paths') {
+                  event.preventDefault();
+                  setPendingPaths([entry.path]);
+                  onProjectSelectionChange?.(entry.path);
+                  selectionAnchor.current = entry.path;
+                } else {
+                  selectEntry(entry, event);
+                }
+              }}
+              onContextMenu={mode !== 'paths' ? (event) => event.preventDefault() : (event) => selectEntry(entry, event, true)}
+              onDoubleClick={() => {
+                if (mode === 'paths' && entry.isDirectory) loadPath(entry.path);
+              }}
             >
               <span>
                 <i className={fileIcon(entry)} /> {entry.name.replace(/[\\/]$/, '')}
@@ -249,24 +290,26 @@ export function PathFileManager({ client, selectedPaths, onAddPaths }: PathFileM
           ))}
         </main>
       </div>
-      <div className="sf-windows-file-name-bar">
-        <span className="sf-windows-selection-count" aria-live="polite">
-          {pendingPaths.length} path{pendingPaths.length === 1 ? '' : 's'} selected
-        </span>
-        <span className="sf-windows-selection-help">Shift-click or right-click to add a batch.</span>
-        <button
-          type="button"
-          className="sf-button"
-          disabled={!pendingPaths.length}
-          onClick={() => {
-            onAddPaths(pendingPaths);
-            setPendingPaths([]);
-            selectionAnchor.current = null;
-          }}
-        >
-          <i className="fa-solid fa-plus" /> Add selected paths
-        </button>
-      </div>
+      {mode === 'paths' ? (
+        <div className="sf-windows-file-name-bar">
+          <span className="sf-windows-selection-count" aria-live="polite">
+            {pendingPaths.length} path{pendingPaths.length === 1 ? '' : 's'} selected
+          </span>
+          <span className="sf-windows-selection-help">Shift-click or right-click to add a batch.</span>
+          <button
+            type="button"
+            className="sf-button"
+            disabled={!pendingPaths.length}
+            onClick={() => {
+              onAddPaths(pendingPaths);
+              setPendingPaths([]);
+              selectionAnchor.current = null;
+            }}
+          >
+            <i className="fa-solid fa-plus" /> Add selected paths
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

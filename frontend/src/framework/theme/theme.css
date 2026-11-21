@@ -787,13 +787,34 @@ h2 {
   background: var(--sf-surface-raised);
   box-shadow: var(--sf-modal-shadow);
 }
+.sf-open-project-dialog button {
+  border: 0;
+}
 .sf-create-workflow-dialog {
-  inline-size: 95vw;
-  block-size: 95vh;
-  max-width: none;
-  max-height: none;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  inline-size: min(780px, calc(100vw - 32px));
+  block-size: min(620px, calc(100vh - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  min-height: min(420px, calc(100vh - 32px));
+  grid-template-rows: auto auto auto auto minmax(130px, 1fr) auto;
+  gap: 14px;
+  padding: 20px;
   overflow: hidden;
+}
+.sf-create-workflow-dialog button {
+  border: 0;
+}
+.sf-create-workflow-dialog .sf-dialog-heading {
+  align-items: center;
+}
+.sf-create-workflow-dialog input {
+  min-height: 40px;
+  box-sizing: border-box;
+}
+.sf-create-workflow-dialog .sf-input-with-button > .sf-button,
+.sf-create-workflow-dialog .sf-dialog-actions > .sf-button {
+  min-height: 40px;
+  padding: 8px 16px;
 }
 .sf-dialog.sf-workflow-demo-dialog {
   inline-size: 95vw;
@@ -813,8 +834,16 @@ h2 {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 0;
-  resize: both;
+  min-height: 130px;
+  resize: none;
+  padding: 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius);
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  line-height: 1.5;
 }
 .sf-dialog-heading {
   display: flex;
@@ -1843,9 +1872,23 @@ h2 {
 .sf-project-overview-details {
   display: grid;
   align-content: start;
+  justify-items: stretch;
   gap: 10px;
   padding: 16px;
   background: var(--sf-surface-raised);
+  text-align: left;
+}
+.sf-project-overview-details > code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--sf-text-secondary);
+  text-align: left;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.sf-project-overview-details .sf-workflow-summary {
+  justify-items: start;
+  text-align: left;
 }
 .sf-project-overview-details h3 {
   margin: 8px 0 0;
@@ -1859,7 +1902,7 @@ h2 {
   padding: 12px;
   overflow: auto;
   color: var(--sf-text);
-  background: color-mix(in srgb, var(--sf-surface-raised) 92%, var(--sf-accent) 8%);
+  background: var(--sf-surface-raised);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.78rem;
   line-height: 1.45;
@@ -4375,46 +4418,16 @@ h2 {
   z-index: 10001;
 }
 
-.sf-project-folder-picker {
-  display: flex;
-  flex-direction: column;
-  width: min(720px, calc(100vw - 32px));
-  max-height: min(760px, calc(100vh - 32px));
+.sf-project-folder-wizard-backdrop {
+  z-index: 10001;
 }
 
-.sf-project-folder-path {
-  display: flex;
-  gap: 8px;
-  padding: 12px 0;
+.sf-project-folder-wizard .sf-windows-file-row {
+  cursor: pointer;
 }
 
-.sf-project-folder-path input {
-  min-width: 0;
-  flex: 1;
-}
-
-.sf-project-folder-list {
-  min-height: 180px;
-  overflow: auto;
-  border: 1px solid var(--sf-border);
-  border-radius: 6px;
-  padding: 6px;
-}
-
-.sf-project-folder-list button {
-  display: block;
-  width: 100%;
-  padding: 8px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-}
-
-.sf-project-folder-list button:hover,
-.sf-project-folder-list button.selected {
-  background: var(--sf-surface-raised);
+.sf-folder-selection-file-picker {
+  grid-template-rows: 42px minmax(0, 1fr);
 }
 
 .sf-project-path-preview {
