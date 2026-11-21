@@ -3009,6 +3009,46 @@ h2 {
 :root[data-style='chrome'] .sf-project-hub .action-card:nth-child(2):not(:disabled):hover {
   transform: translateY(-8px) rotate(1deg);
 }
+:root .sf-project-hub .sf-project-row {
+  box-shadow: none !important;
+}
+:root .sf-project-hub .sf-project-row:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 34%, transparent),
+    0 6px 16px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 18%, transparent) !important;
+}
+:root[data-style='classic'] .sf-project-hub .sf-project-row,
+:root[data-style='studio'] .sf-project-hub .sf-project-row,
+:root[data-style='chrome'] .sf-project-hub .sf-project-row {
+  box-shadow: none !important;
+}
+:root[data-style='classic'] .sf-project-hub .sf-project-row:hover {
+  box-shadow: 2px 3px 0 var(--sf-project-card-border) !important;
+}
+:root[data-style='studio'] .sf-project-hub .sf-project-row:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 50%, transparent),
+    0 3px 0 color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 40%, transparent),
+    0 5px 10px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 28%, transparent) !important;
+}
+:root[data-style='chrome'] .sf-project-hub .sf-project-row:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 50%, transparent),
+    0 8px 0 color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 38%, transparent),
+    0 14px 24px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 25%, transparent) !important;
+}
+:root .sf-project-hub .action-card,
+:root[data-style='classic'] .sf-project-hub .action-card,
+:root[data-style='studio'] .sf-project-hub .action-card,
+:root[data-style='chrome'] .sf-project-hub .action-card {
+  box-shadow: none !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+:root .sf-project-hub .action-card:not(:disabled):hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 34%, transparent),
+    0 6px 16px color-mix(in srgb, var(--sf-project-domain-color, var(--sf-domain-core)) 18%, transparent) !important;
+}
 :root[data-style='chrome'] .sf-canvas-node {
   border-radius: 18px;
   background: color-mix(in srgb, var(--sf-domain-base) 14%, var(--sf-surface-raised));
