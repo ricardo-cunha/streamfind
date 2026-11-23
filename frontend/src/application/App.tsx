@@ -10,6 +10,12 @@ import {
   useState,
 } from 'react';
 import logo from '../assets/streamfind.png';
+import {
+  blendPluginColors,
+  normalizePluginId,
+  pluginClassName,
+  pluginColor,
+} from '../framework/theme/pluginColors';
 
 import WorkflowCanvas from './WorkflowCanvas';
 import { ProjectFolderPicker } from './ProjectFolderPicker';
@@ -101,8 +107,7 @@ type OntologyEntry = {
 };
 
 function workflowPluginClass(operation: string): string {
-  const plugin = operation.split('.')[0] || 'core';
-  return plugin.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return pluginClassName(operation.split('.')[0]);
 }
 
 function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
@@ -727,12 +732,7 @@ function formatDatabaseSize(bytes: number): string {
 function workflowPlugins(workflow: WorkflowDefinition): string[] {
   const plugins = new Set(
     workflow.operations.map((operation) => {
-      const plugin = workflowPluginClass(operation.operation);
-      return plugin === 'mass-spec' || plugin === 'raman' || plugin === 'sensors' || plugin === 'statistics'
-        ? plugin
-        : plugin === 'streamfind'
-          ? 'streamfind'
-          : 'core';
+      return normalizePluginId(operation.operation.split('.')[0]);
     }),
   );
   return [...plugins].sort();
@@ -744,14 +744,7 @@ function pluginLabel(plugins?: string[]): string {
   return visiblePlugins[0].replaceAll('-', '_');
 }
 function projectPluginColor(plugins?: string[]): string {
-  const colors = (plugins?.length ? plugins : ['core']).map((plugin) => `var(--sf-plugin-${plugin})`);
-  return colors
-    .slice(1)
-    .reduce(
-      (blend, color, index) =>
-        `color-mix(in srgb, ${blend} ${(100 * (index + 1)) / (index + 2)}%, ${color} ${100 / (index + 2)}%)`,
-      colors[0],
-    );
+  return blendPluginColors(plugins);
 }
 function ProjectCard({
   project,
@@ -782,7 +775,7 @@ function ProjectCard({
   return (
     <article
       className="sf-project-row"
-      style={{ '--sf-project-plugin-color': projectPluginColor(summary?.plugins) } as CSSProperties}
+      style={{ '--sf-project-plugin-color': projectPluginColor(plugins) } as CSSProperties}
     >
       <div>
         <strong>{projectFileName(project)}</strong>
@@ -938,6 +931,9 @@ const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: 
                 <g
                   key={operation.id}
                   className={`sf-workflow-overview-node sf-plugin-${workflowPluginClass(operation.operation)}`}
+                  style={
+                    { '--sf-overview-node-base': pluginColor(operation.operation.split('.')[0]) } as CSSProperties
+                  }
                   transform={`translate(${position.x}, ${position.y})`}
                 >
                   <rect width={nodeWidth} height={nodeHeight} rx="8" />
@@ -1443,7 +1439,7 @@ function ProjectHub({
       <div className="sf-card-grid">
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-plugin-color': 'var(--sf-plugin-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': projectPluginColor(['core']) } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
             setParentPath('');
@@ -1460,7 +1456,7 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-plugin-color': 'var(--sf-plugin-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': projectPluginColor(['core']) } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
             setProjectPath('');
@@ -1474,7 +1470,7 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-plugin-color': 'var(--sf-plugin-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': projectPluginColor(['core']) } as CSSProperties}
           disabled={!canInteract}
           onClick={() => setDemosOpen(true)}
         >

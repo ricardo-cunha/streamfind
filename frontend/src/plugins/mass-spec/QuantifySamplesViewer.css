@@ -5,7 +5,7 @@
 .sf-quantification-viewer input { width: 64px; }
 .sf-quantification-tabs { display: inline-flex; gap: 4px; }
 .sf-quantification-tabs button { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text-secondary); padding: 5px 10px; cursor: pointer; font: inherit; }
-.sf-quantification-tabs button.is-active { background: var(--sf-accent); color: var(--sf-on-accent, white); border-color: var(--sf-accent); }
+.sf-quantification-tabs button.is-active { background: var(--sf-accent); color: var(--sf-text-on-accent); border-color: var(--sf-accent); }
 .sf-quantification-summary { margin-left: auto; color: var(--sf-text-secondary); white-space: nowrap; font-size: .8rem; }
 .sf-quantification-load-notice { color: var(--sf-warning, #b47700); font-size: .78rem; }
 .sf-quantification-export { display: inline-flex; gap: 5px; }
@@ -37,7 +37,7 @@
 .sf-quantification-eic-empty { color: var(--sf-text-secondary); display: inline-block; width: 92px; text-align: center; }
 .sf-quantification-table-card td.is-good { color: var(--sf-success, #258a52); }
 .sf-quantification-table-card td.is-warning { color: var(--sf-warning, #b47700); }
-.sf-quantification-table-card td.is-bad { color: var(--sf-danger, #c43d3d); }
+.sf-quantification-table-card td.is-bad { color: var(--sf-error); }
 .sf-quantification-status { font-weight: 600; }
 .sf-quantification-note { margin: 0; padding: 7px 10px; color: var(--sf-text-secondary); font-size: .78rem; }
 .sf-quantification-viewer-state { display: grid; min-height: 180px; place-items: center; color: var(--sf-text-secondary); }

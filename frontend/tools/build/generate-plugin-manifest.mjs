@@ -10,6 +10,24 @@ const viteManifestPath = join(dist, '.vite', 'manifest.json');
 const outputPath = join(dist, 'plugins.json');
 const viteManifest = JSON.parse(await readFile(viteManifestPath, 'utf8'));
 
+function collectCssAssets(source) {
+  const visited = new Set();
+  const css = new Set();
+
+  function visit(key) {
+    if (visited.has(key)) return;
+    visited.add(key);
+
+    const entry = viteManifest[key];
+    if (!entry) throw new Error(`Vite manifest did not emit imported plugin chunk: ${key}`);
+    for (const asset of entry.css ?? []) css.add(asset);
+    for (const imported of entry.imports ?? []) visit(imported);
+  }
+
+  visit(source);
+  return [...css];
+}
+
 const registrations = await discoverPluginManifests(pluginsRoot);
 const plugins = registrations.map((registration) => {
   const { source } = registration;
@@ -44,7 +62,10 @@ for (const registration of registrations) {
     // and ReactDOM instances in the browser.
     `export { default } from '/assets/${entryAsset}';\nexport * from '/assets/${entryAsset}';\n`,
   );
-  const css = viteEntry.css?.map((asset) => asset.split('/').pop()) ?? [];
+  // Vite attaches extracted CSS to the shared chunk that imports it, rather
+  // than to every viewer entry. Include styles from the complete static import
+  // graph so dynamically loaded viewers receive their own stylesheets.
+  const css = collectCssAssets(registration.source).map((asset) => asset.split('/').pop());
   if (css.length) {
     await writeFile(
       join(packageAssets, 'viewer.css'),

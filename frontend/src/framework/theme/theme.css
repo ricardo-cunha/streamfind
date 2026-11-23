@@ -1211,6 +1211,12 @@ h2 {
   --sf-domain-sensors: #b76818;
   --sf-domain-statistics: #c14d68;
   --sf-domain-unknown: #64748b;
+  --sf-plugin-core: var(--sf-domain-core);
+  --sf-plugin-streamfind: var(--sf-domain-streamfind);
+  --sf-plugin-mass-spec: var(--sf-domain-mass-spec);
+  --sf-plugin-raman: var(--sf-domain-raman);
+  --sf-plugin-sensors: var(--sf-domain-sensors);
+  --sf-plugin-statistics: var(--sf-domain-statistics);
 }
 :root[data-theme='dark'] {
   --sf-domain-core: #78a7ff;
@@ -1220,6 +1226,11 @@ h2 {
   --sf-domain-sensors: #e6a04b;
   --sf-domain-statistics: #ff8ca1;
   --sf-domain-unknown: #a8b3c7;
+}
+.sf-project-hub .sf-card,
+.sf-project-hub .sf-project-row,
+.sf-demo-list-item {
+  --sf-project-domain-color: var(--sf-project-plugin-color, var(--sf-plugin-core));
 }
 :root[data-style='classic'] {
   --sf-radius: 3px;
@@ -1942,23 +1953,23 @@ h2 {
   opacity: 0.65;
 }
 .sf-workflow-overview-node {
-  --sf-overview-node-base: var(--sf-domain-core);
+  --sf-overview-node-base: var(--sf-plugin-core);
 }
-.sf-workflow-overview-node.sf-domain-streamfind,
-.sf-workflow-overview-node.sf-domain-core {
-  --sf-overview-node-base: var(--sf-domain-streamfind);
+.sf-workflow-overview-node.sf-plugin-streamfind,
+.sf-workflow-overview-node.sf-plugin-core {
+  --sf-overview-node-base: var(--sf-plugin-streamfind);
 }
-.sf-workflow-overview-node.sf-domain-mass-spec {
-  --sf-overview-node-base: var(--sf-domain-mass-spec);
+.sf-workflow-overview-node.sf-plugin-mass-spec {
+  --sf-overview-node-base: var(--sf-plugin-mass-spec);
 }
-.sf-workflow-overview-node.sf-domain-raman {
-  --sf-overview-node-base: var(--sf-domain-raman);
+.sf-workflow-overview-node.sf-plugin-raman {
+  --sf-overview-node-base: var(--sf-plugin-raman);
 }
-.sf-workflow-overview-node.sf-domain-sensors {
-  --sf-overview-node-base: var(--sf-domain-sensors);
+.sf-workflow-overview-node.sf-plugin-sensors {
+  --sf-overview-node-base: var(--sf-plugin-sensors);
 }
-.sf-workflow-overview-node.sf-domain-statistics {
-  --sf-overview-node-base: var(--sf-domain-statistics);
+.sf-workflow-overview-node.sf-plugin-statistics {
+  --sf-overview-node-base: var(--sf-plugin-statistics);
 }
 .sf-workflow-overview-node > rect:first-child {
   fill: var(--sf-overview-node-base);
@@ -2187,20 +2198,20 @@ h2 {
   margin-top: 3px;
   overflow-wrap: anywhere;
 }
-.sf-canvas-node.sf-domain-streamfind {
-  --sf-domain-base: var(--sf-domain-streamfind);
+.sf-canvas-node.sf-plugin-streamfind {
+  --sf-domain-base: var(--sf-plugin-streamfind);
 }
-.sf-canvas-node.sf-domain-mass-spec {
-  --sf-domain-base: var(--sf-domain-mass-spec);
+.sf-canvas-node.sf-plugin-mass-spec {
+  --sf-domain-base: var(--sf-plugin-mass-spec);
 }
-.sf-canvas-node.sf-domain-raman {
-  --sf-domain-base: var(--sf-domain-raman);
+.sf-canvas-node.sf-plugin-raman {
+  --sf-domain-base: var(--sf-plugin-raman);
 }
-.sf-canvas-node.sf-domain-sensors {
-  --sf-domain-base: var(--sf-domain-sensors);
+.sf-canvas-node.sf-plugin-sensors {
+  --sf-domain-base: var(--sf-plugin-sensors);
 }
-.sf-canvas-node.sf-domain-statistics {
-  --sf-domain-base: var(--sf-domain-statistics);
+.sf-canvas-node.sf-plugin-statistics {
+  --sf-domain-base: var(--sf-plugin-statistics);
 }
 .sf-canvas-node-header strong {
   flex: 1;
@@ -2863,20 +2874,20 @@ h2 {
 :root[data-theme='dark'] .sf-operation-deck-card {
   background: color-mix(in srgb, var(--sf-domain-color, var(--sf-domain-core)) 22%, var(--sf-surface-raised));
 }
-.sf-operation-deck-card.sf-domain-streamfind {
-  --sf-domain-color: var(--sf-domain-streamfind);
+.sf-operation-deck-card.sf-plugin-streamfind {
+  --sf-domain-color: var(--sf-plugin-streamfind);
 }
-.sf-operation-deck-card.sf-domain-mass-spec {
-  --sf-domain-color: var(--sf-domain-mass-spec);
+.sf-operation-deck-card.sf-plugin-mass-spec {
+  --sf-domain-color: var(--sf-plugin-mass-spec);
 }
-.sf-operation-deck-card.sf-domain-raman {
-  --sf-domain-color: var(--sf-domain-raman);
+.sf-operation-deck-card.sf-plugin-raman {
+  --sf-domain-color: var(--sf-plugin-raman);
 }
-.sf-operation-deck-card.sf-domain-sensors {
-  --sf-domain-color: var(--sf-domain-sensors);
+.sf-operation-deck-card.sf-plugin-sensors {
+  --sf-domain-color: var(--sf-plugin-sensors);
 }
-.sf-operation-deck-card.sf-domain-statistics {
-  --sf-domain-color: var(--sf-domain-statistics);
+.sf-operation-deck-card.sf-plugin-statistics {
+  --sf-domain-color: var(--sf-plugin-statistics);
 }
 .sf-operation-deck-card:hover {
   cursor: default;

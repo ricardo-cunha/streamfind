@@ -8,6 +8,7 @@ import {
   useCallback,
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
+  type CSSProperties,
 } from 'react';
 import { StreamFindApiClient, type ResultRecord, type ProjectSession } from '../framework/backend/StreamFindApiClient';
 import type { JsonValue, StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
@@ -16,9 +17,9 @@ import { LoadingLogo } from '../framework/ui/LoadingLogo';
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from '../framework/notifications/notificationBus';
 import { ArtifactViewerHost } from '../framework/viewers/ArtifactViewerHost';
-import { compatibleArtifactViewers } from '../framework/viewers/viewerTypes';
+import { pluginClassName, pluginColor } from '../framework/theme/pluginColors';
 
-import { frontendPluginApi } from '../framework/plugins/FrontendPluginRegistry';
+import { frontendPluginApi, frontendPluginRegistry } from '../framework/plugins/FrontendPluginRegistry';
 import {
   canvasWorkflow,
   canvasSnapshotFingerprint,
@@ -250,11 +251,16 @@ export default function CanvasShell({
     setArtifactPayload(artifact.payload);
     setArtifactPayloadError(null);
   };
-  const openDefaultArtifactViewer = (artifact: ResultRecord) => {
-    const defaultViewer = compatibleArtifactViewers({
+  const artifactViewers = (artifact: ResultRecord) => {
+    const pluginId =
+      capabilities.operations.find((operation) => operation.canonical_id === artifact.producer_operation)?.plugin ?? 'core';
+    return frontendPluginRegistry.compatibleArtifactViewers(pluginId, {
       semanticType: artifact.contract_id,
       representation: artifact.representation,
-    })[0];
+    });
+  };
+  const openDefaultArtifactViewer = (artifact: ResultRecord) => {
+    const defaultViewer = artifactViewers(artifact)[0];
     openArtifactViewer(artifact, 'default', defaultViewer?.id ?? null);
   };
 
@@ -2544,7 +2550,8 @@ export default function CanvasShell({
           const capability = node.capabilityId
             ? capabilities.operations.find((item) => item.canonical_id === node.capabilityId)
             : undefined;
-          const pluginClass = (capability?.plugin || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const pluginId = capability?.plugin || 'core';
+          const pluginClass = pluginClassName(pluginId);
           const outputArtifact = (port: NodePort) =>
             currentResults
               .filter(
@@ -2558,7 +2565,7 @@ export default function CanvasShell({
             <div
               key={node.id}
               className={`sf-canvas-node ${node.kind} sf-plugin-${pluginClass} ${node.executionState === 'running' ? 'running' : ''}${selectedNodeIds.includes(node.id) ? ' selected' : ''}`}
-              style={{ left: node.x, top: node.y }}
+              style={{ left: node.x, top: node.y, '--sf-domain-base': pluginColor(pluginId) } as CSSProperties}
               onMouseDown={(event) => beginNodeDrag(event, node)}
               onMouseUp={() => {
                 setInteraction(null);
@@ -2754,10 +2761,7 @@ export default function CanvasShell({
                           <span>{artifactSummary(outputArtifact(port) as ResultRecord)}</span>
                           {(() => {
                             const artifact = outputArtifact(port) as ResultRecord;
-                            const compatibleViewers = compatibleArtifactViewers({
-                              semanticType: artifact.contract_id,
-                              representation: artifact.representation,
-                            });
+                            const compatibleViewers = artifactViewers(artifact);
                             return compatibleViewers.length || isJsonArtifact(artifact) ? (
                               <>
                                 {compatibleViewers.map((viewer) => (
@@ -3537,11 +3541,10 @@ export default function CanvasShell({
               const metadata = `${template.module || 'core'} · ${ports.inputs.length} input${ports.inputs.length === 1 ? '' : 's'} · ${ports.outputs.length} output${ports.outputs.length === 1 ? '' : 's'}`;
               return (
                 <article
-                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-plugin-${(
-                    template.plugin || 'unknown'
-                  )
-                    .replace(/[^a-z0-9]+/gi, '-')
-                    .toLowerCase()}`}
+                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-plugin-${pluginClassName(
+                    template.plugin || 'unknown',
+                  )}`}
+                  style={{ '--sf-domain-color': pluginColor(template.plugin) } as CSSProperties}
                   key={template.id}
                   data-plugin={template.plugin || 'unknown'}
                 >

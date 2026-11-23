@@ -22,6 +22,8 @@ $root = $Script:REPO_ROOT
 $frontendDir = Join-Path $root 'frontend'
 $frontendDist = Join-Path $frontendDir 'dist'
 $packageApp = Join-Path $root 'tmp\packaged_build\app'
+$frontendViewers = Join-Path $frontendDist 'viewers\native'
+$packageViewers = Join-Path $root 'tmp\packaged_build\viewers\native'
 
 if (-not (Test-Path (Join-Path $root 'tmp\packaged_build\bin\streamfind-app.exe'))) {
     throw 'tmp\packaged_build is not a complete packaged build. Run package-cpp.ps1 first.'
@@ -37,6 +39,9 @@ try {
 if (-not (Test-Path (Join-Path $frontendDist 'index.html'))) {
     throw 'Frontend build did not produce dist/index.html'
 }
+if (-not (Test-Path $frontendViewers -PathType Container)) {
+    throw 'Frontend build did not produce dist/viewers/native'
+}
 
 Write-Log "Refreshing packaged frontend: $packageApp"
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $packageApp
@@ -44,4 +49,8 @@ New-Item -ItemType Directory -Path $packageApp -Force | Out-Null
 Copy-Item -Recurse -Force (Join-Path $frontendDist '*') $packageApp
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'tmp\packaged_build\viewers\native'), (Join-Path $root 'tmp\packaged_build\viewers\custom'), (Join-Path $root 'tmp\packaged_build\plugins\native'), (Join-Path $root 'tmp\packaged_build\plugins\custom') | Out-Null
 
-Write-Log "Packaged frontend ready: $packageApp"
+Write-Log "Refreshing packaged native viewers: $packageViewers"
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $packageViewers
+Copy-Item -Recurse -Force $frontendViewers $packageViewers
+
+Write-Log "Packaged frontend and native viewers ready: $packageApp"
