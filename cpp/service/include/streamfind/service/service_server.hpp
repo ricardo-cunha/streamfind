@@ -60,6 +60,8 @@ private:
     std::uint16_t port_;
     std::filesystem::path application_root_;
     std::filesystem::path runtime_root_;
+    std::vector<std::filesystem::path> viewer_deployment_roots_;
+    std::vector<std::string> enabled_viewers_;
     Json service_identity_;
     std::string service_token_;
     std::atomic<bool> stopping_{false};

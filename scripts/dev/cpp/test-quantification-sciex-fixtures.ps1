@@ -72,8 +72,10 @@ Copy-Item -LiteralPath (Join-Path $buildRoot 'plugins') -Destination $runtimeRoo
     server = @{ port = $runtimePort; automatic_port_fallback = $false }
     worker = @{ memory_limit_mb = 0 }
     tray = @{ enabled = $false; start_with_app = $false; start_with_service = $false; status_interval_ms = 2000; notifications = $false }
-    plugin_roots = @((Join-Path $runtimeRoot 'plugins'))
-    enabled_plugins = @('mass_spec')
+    plugin_roots = @{ development = @(); deployment = @((Join-Path $runtimeRoot 'plugins')) }
+    viewer_roots = @{ development = @(); deployment = @((Join-Path $runtimeRoot 'viewers\native')) }
+    enabled_viewers = @()
+    enabled_plugins = @('native.plugin.mass_spec')
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $runtimeRoot 'streamfind.json') -Encoding utf8
 $executable = Join-Path $runtimeRoot 'streamfind-mcp.exe'
 $serviceCli = Join-Path $runtimeRoot 'streamfind.exe'
@@ -249,7 +251,7 @@ try {
         $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
         try {
         Initialize-Mcp $process | Out-Null
-        Invoke-McpTool $process $script:requestId 'create' @{ project_path = $database; domain = 'mass_spec' } | Out-Null
+        Invoke-McpTool $process $script:requestId 'create' @{ project_path = $database; plugin = 'mass_spec' } | Out-Null
         $script:requestId++
         $workflowRevision = (Invoke-McpTool $process $script:requestId 'get_workflow' @{ project_path = $database }).definition_revision
         $script:requestId++

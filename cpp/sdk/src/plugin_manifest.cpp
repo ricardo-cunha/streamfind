@@ -13,6 +13,16 @@ std::string required_string(const nlohmann::json &object, const char *name) {
     return object.at(name).get<std::string>();
 }
 
+bool is_package_relative_path(const std::string &value) {
+    if (value.empty()) return false;
+    const std::filesystem::path path(value);
+    if (path.is_absolute()) return false;
+    for (const auto &component : path) {
+        if (component == ".." || component == ".") return false;
+    }
+    return true;
+}
+
 }  // namespace streamfind::sdk::detail
 
 namespace streamfind::sdk {
@@ -31,14 +41,30 @@ PluginManifestResult parse_plugin_manifest(const std::string &json_text) {
         }
 
         PluginManifest manifest;
+        if (!document.contains("schema_version") || !document.at("schema_version").is_number_integer()) {
+            throw std::invalid_argument("manifest schema_version must be an integer");
+        }
+        manifest.schema_version = document.at("schema_version").get<int>();
+        if (manifest.schema_version != 1) {
+            throw std::invalid_argument("unsupported manifest schema_version: " +
+                                        std::to_string(manifest.schema_version));
+        }
         manifest.plugin_id = detail::required_string(document, "plugin_id");
         manifest.name = detail::required_string(document, "name");
         manifest.version = detail::required_string(document, "version");
-        manifest.domain = detail::required_string(document, "domain");
+        manifest.plugin = detail::required_string(document, "plugin");
+        manifest.ontology_namespace = detail::required_string(document, "ontology_namespace");
         manifest.semantic_catalogue = detail::required_string(document, "semantic_catalogue");
 
-        if (manifest.plugin_id.empty() || manifest.domain.empty()) {
-            throw std::invalid_argument("manifest plugin_id and domain must not be empty");
+        if (manifest.plugin_id.empty() || manifest.plugin.empty()) {
+            throw std::invalid_argument("manifest plugin_id and plugin must not be empty");
+        }
+        if (manifest.ontology_namespace.empty() || manifest.ontology_namespace.back() != '#') {
+            throw std::invalid_argument("manifest ontology_namespace must be a non-empty namespace ending with '#'");
+        }
+        if (!detail::is_package_relative_path(manifest.semantic_catalogue)) {
+            throw std::invalid_argument(
+                "manifest semantic_catalogue path must be relative and remain inside its package");
         }
         const auto &libraries = document.at("library");
         if (!libraries.is_object() || libraries.empty()) {
@@ -49,8 +75,7 @@ PluginManifestResult parse_plugin_manifest(const std::string &json_text) {
                 throw std::invalid_argument("manifest library paths must be non-empty strings");
             }
             const auto library_name = library.get<std::string>();
-            const std::filesystem::path library_path(library_name);
-            if (library_path.is_absolute() || library_name.find("..") != std::string::npos) {
+            if (!detail::is_package_relative_path(library_name)) {
                 throw std::invalid_argument("manifest library paths must be relative and remain inside their package");
             }
             manifest.libraries.emplace(platform, library_name);

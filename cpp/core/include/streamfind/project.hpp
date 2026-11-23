@@ -193,7 +193,7 @@ struct STREAMFIND_CORE_API MethodDefinition {
     /// Human-readable method documentation.
     std::string description;
     std::string version{"1"};
-    std::string domain;
+    std::string plugin;
     /// Tables that must exist before this method can execute.
     std::vector<std::string> reads;
     /// Additional tables required when the named boolean parameter is true.
@@ -252,8 +252,8 @@ public:
     void register_method(Method method);
     /** @brief Find a method by id, or return nullptr. */
     const Method *find(const std::string &id) const noexcept;
-    /** @brief Return metadata for registered methods, optionally filtered by domain. */
-    std::vector<MethodDefinition> list(const std::string &domain = {}) const;
+    /** @brief Return metadata for registered methods, optionally filtered by plugin. */
+    std::vector<MethodDefinition> list(const std::string &plugin = {}) const;
 
 private:
     std::vector<Method> methods_;
@@ -274,7 +274,7 @@ struct STREAMFIND_CORE_API OperationDefinition {
         static Port from_json(const Json &value);
     };
 
-    std::string id, name, description, domain, version{"1"};
+    std::string id, name, description, plugin, version{"1"};
     bool project_entry{false};
 
     ParameterSchema parameters;
@@ -311,7 +311,7 @@ class STREAMFIND_CORE_API OperationRegistry {
 public:
     void register_operation(Operation operation);
     const Operation *find(const std::string &id) const noexcept;
-    std::vector<OperationDefinition> list(const std::string &domain = {}) const;
+    std::vector<OperationDefinition> list(const std::string &plugin = {}) const;
 private:
     std::vector<Operation> operations_;
 };
@@ -426,8 +426,8 @@ struct STREAMFIND_CORE_API ProjectOptions {
 
 /** @brief Persisted identity and metadata for an open Project. */
 struct STREAMFIND_CORE_API ProjectInfo {
-    /// Domains represented by persisted workflow operations.
-    std::vector<std::string> domains;
+    /// Plugins represented by persisted workflow operations.
+    std::vector<std::string> plugins;
     /// Project-owned metadata.
     Json metadata = Json::object();
     int schema_version{5};
@@ -478,8 +478,8 @@ public:
 
     /** @brief Replace project metadata. */
     void set_metadata(Json metadata);
-    /** @brief Return domains represented by persisted workflow operations. */
-    std::vector<std::string> get_domains() const;
+    /** @brief Return plugins represented by persisted workflow operations. */
+    std::vector<std::string> get_plugins() const;
     /** @brief Validate the project schema and persisted row state. */
     void validate() const;
     Workflow get_workflow() const;
@@ -501,7 +501,7 @@ public:
     Project copy(const ProjectOptions &options) const;
     /** @brief List tables visible in the project database. */
     std::vector<std::string> list_tables() const;
-    /** @brief Execute domain-owned SQL using the Project database connection. */
+    /** @brief Execute plugin-owned SQL using the Project database connection. */
     void execute_sql(const std::string &sql) const;
     /** @brief Execute a query and return rows as JSON objects keyed by column name. */
     Json query_json(const std::string &sql) const;

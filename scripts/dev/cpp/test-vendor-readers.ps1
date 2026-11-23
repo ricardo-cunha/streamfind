@@ -53,7 +53,7 @@ try {
     Initialize-Mcp $process | Out-Null
     Invoke-McpTool $process 2 'create' @{
         project_path = $database
-        domain = 'mass_spec'
+        plugin = 'mass_spec'
     } | Out-Null
     $workflow = @{
         schema_version = 2

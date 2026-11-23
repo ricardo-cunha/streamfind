@@ -1006,7 +1006,7 @@ namespace streamfind
     Json Method::to_json() const
     {
         return {
-            {"id", definition_.id}, {"name", definition_.name}, {"description", definition_.description}, {"version", definition_.version}, {"domain", definition_.domain}, {"reads", definition_.reads}, {"single_occurrence", definition_.single_occurrence}, {"developer", definition_.developer}, {"contact", definition_.contact}, {"link", definition_.link}, {"doi", definition_.doi}, {"parameters", definition_.parameters.to_json()}, {"writes", definition_.writes}};
+            {"id", definition_.id}, {"name", definition_.name}, {"description", definition_.description}, {"version", definition_.version}, {"plugin", definition_.plugin}, {"reads", definition_.reads}, {"single_occurrence", definition_.single_occurrence}, {"developer", definition_.developer}, {"contact", definition_.contact}, {"link", definition_.link}, {"doi", definition_.doi}, {"parameters", definition_.parameters.to_json()}, {"writes", definition_.writes}};
     }
 
     MethodDefinition Method::definition_from_json(const Json &value)
@@ -1020,7 +1020,7 @@ namespace streamfind
         definition.name = value.value("name", definition.id);
         definition.description = value.value("description", "");
         definition.version = value.value("version", "1");
-        definition.domain = value.value("domain", "");
+        definition.plugin = value.value("plugin", "");
         definition.reads = value.value("reads", std::vector<std::string>{});
         definition.single_occurrence = value.value("single_occurrence", false);
         definition.developer = value.value("developer", "");
@@ -1106,13 +1106,13 @@ namespace streamfind
         return it == methods_.end() ? nullptr : &*it;
     }
 
-    std::vector<MethodDefinition> MethodRegistry::list(const std::string &domain) const
+    std::vector<MethodDefinition> MethodRegistry::list(const std::string &plugin) const
     {
         std::vector<MethodDefinition> output;
         output.reserve(methods_.size());
         for (const auto &method : methods_)
         {
-            if (domain.empty() || method.definition().domain == domain)
+            if (plugin.empty() || method.definition().plugin == plugin)
                 output.push_back(method.definition());
         }
         return output;
@@ -1169,7 +1169,7 @@ namespace streamfind
         return {{"id", definition_.id},
                 {"name", definition_.name},
                 {"description", definition_.description},
-                {"domain", definition_.domain},
+                {"plugin", definition_.plugin},
                 {"version", definition_.version},
                 {"project_entry", definition_.project_entry},
 
@@ -1269,11 +1269,11 @@ namespace streamfind
                                      { return operation.definition().id == id; });
         return it == operations_.end() ? nullptr : &*it;
     }
-    std::vector<OperationDefinition> OperationRegistry::list(const std::string &domain) const
+    std::vector<OperationDefinition> OperationRegistry::list(const std::string &plugin) const
     {
         std::vector<OperationDefinition> output;
         for (const auto &operation : operations_)
-            if (domain.empty() || operation.definition().domain == domain)
+            if (plugin.empty() || operation.definition().plugin == plugin)
                 output.push_back(operation.definition());
         return output;
     }
@@ -1586,18 +1586,18 @@ namespace streamfind
             throw Error(ErrorCode::InvalidArgument, "Project is closed");
     }
 
-    std::vector<std::string> workflow_domains(const Json &workflow)
+    std::vector<std::string> workflow_plugins(const Json &workflow)
     {
         if (!workflow.is_object()) return {};
-        std::set<std::string> domains;
+        std::set<std::string> plugins;
         for (const auto &operation : workflow.value("operations", Json::array()))
         {
             const auto operation_id = operation.value("operation", "");
             const auto separator = operation_id.find('.');
             if (separator != std::string::npos && separator > 0)
-                domains.insert(operation_id.substr(0, separator));
+                plugins.insert(operation_id.substr(0, separator));
         }
-        return {domains.begin(), domains.end()};
+        return {plugins.begin(), plugins.end()};
     }
 
     ProjectInfo read_info(duckdb_connection connection)
@@ -1607,7 +1607,7 @@ namespace streamfind
                  {
                  if (duckdb_row_count(&result) == 0) throw Error(ErrorCode::ProjectNotFound, "Project row not found");
                  info.metadata = parse_json(value_string(result, 0, 0), "PROJECT metadata");
-                 info.domains = workflow_domains(parse_json(value_string(result, 1, 0), "PROJECT workflow"));
+                 info.plugins = workflow_plugins(parse_json(value_string(result, 1, 0), "PROJECT workflow"));
                  info.schema_version = duckdb_value_int32(&result, 2, 0);
                  info.framework_version = value_string(result, 3, 0);
                  info.created_at = value_string(result, 4, 0);
@@ -1717,11 +1717,11 @@ namespace streamfind
 
     const std::filesystem::path &Project::get_database_path() const noexcept { return impl_->options.database_path; }
 
-    std::vector<std::string> Project::get_domains() const
+    std::vector<std::string> Project::get_plugins() const
     {
         std::lock_guard lock(impl_->mutex);
         ensure_active(*impl_);
-        return impl_->info.domains;
+        return impl_->info.plugins;
     }
 
     void Project::validate() const

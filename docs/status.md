@@ -1,7 +1,7 @@
 # Availability and compatibility
 
 streamfind is a native C++ analytical platform with a browser app, a shared
-project service, an MCP server, and domain plugins. Native packages target
+project service, an MCP server, and backend plugins. Native packages target
 Windows x64 and Linux x86_64. The service coordinates app and MCP access;
 project metadata stays in DuckDB, while published result payloads live in the
 project's `data/` directory inside its `.sf` folder.
@@ -10,10 +10,10 @@ project's `data/` directory inside its `.sf` folder.
 
 | Interface | Current availability | Recommended use |
 | --- | --- | --- |
-| C++ backend runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Project, workflow, and domain processing |
+| C++ backend runtime | Version {{ streamfind_version }} packages for Windows x64 and Linux x86_64 | Project, workflow, and plugin processing |
 | MCP server | Included in the C++ packages | Applications and AI agents using the shared operation catalogue |
 | React web app | Browser interface using the C++ service | Interactive project and workflow work |
-| C++ backend plugins | Built-in plugins and an out-of-tree developer kit | Add native operations and domain capabilities |
+| C++ backend plugins | Built-in plugins and the SDK embedded in each runtime archive | Add native operations and plugin capabilities |
 | Frontend plugins | TypeScript plugin contracts in the frontend workspace | Add UI capabilities, viewers, and editors |
 
 See [Releases](releases.md) for package downloads and checksums.
@@ -40,9 +40,9 @@ format merely because a reader exists in the catalogue.
 The native C++ server uses JSON-RPC over standard input/output.
 
 - `initialize` provides usage instructions.
-- `tools/list` exposes callable Operations, including domain Operations, without
+- `tools/list` exposes callable Operations, including plugin Operations, without
   requiring a connected project.
-- Domain Operations require `project_path` naming a `.sf` folder in each request; additional
+- Plugin Operations require `project_path` naming a `.sf` folder in each request; additional
   parameters are operation-specific.
 - `get_operations` and `get_operation` expose operation schemas and typed ports.
 - `add_operation` persists operation nodes and their JSON parameters.
@@ -62,7 +62,7 @@ The native packages do not promise:
 - automatic installation of Java, MetFrag, or other optional scientific tools;
 
 Backend and frontend plugin contracts evolve with the streamfind runtime. Use a
-matching runtime and developer-kit version; cross-version C++ ABI stability is
+matching runtime archive and embedded SDK version; cross-version C++ ABI stability is
 not guaranteed. See [Plugin development](plugin-development.md) for the two
 plugin surfaces. The separate legacy R package documents its own capabilities
 and does not connect to the current native Result Runtime; see [R package
@@ -91,6 +91,6 @@ The browser application is backed by the C++ service.
 Both native archives include the built static assets and launchers under `bin/`;
 `streamfind-app` opens the app and `streamfind` manages the shared service.
 The app uses the C++ backend's public service boundary and does not contain a
-second persistence or domain-processing implementation. See [Web app](web-app.md)
+second persistence or plugin-processing implementation. See [Web app](web-app.md)
 and [Plugin development](plugin-development.md) for package-based development
 verification.

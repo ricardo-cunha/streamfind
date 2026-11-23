@@ -46,6 +46,8 @@ struct WorkerRequest {
     Json parameters = Json::object();
     Json inputs = nullptr;
     std::uint64_t memory_limit_mb{0};
+    std::uint64_t plugin_generation{0};
+    Json plugin_versions = Json::array();
 };
 
 struct WorkerResult {

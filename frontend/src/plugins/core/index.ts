@@ -4,11 +4,13 @@ import { GenericTableViewer } from './artifact-viewers/GenericTableViewer';
 
 export const coreFrontendPlugin: FrontendPlugin = {
   manifest: {
-    id: 'streamfind.core',
+    schemaVersion: 1,
+    kind: 'viewer',
+    id: 'native.viewer.core',
     name: 'streamfind core viewers',
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
-    artifactContracts: ['table'],
+    artifactContracts: ['https://streamfind.dev/catalogue/core#table'],
     artifactRepresentations: ['table'],
     capabilities: ['artifact-viewers'],
   },

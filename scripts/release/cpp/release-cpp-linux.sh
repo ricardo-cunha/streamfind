@@ -33,7 +33,7 @@ if [[ "${STREAMFIND_SKIP_FRONTEND_BUILD:-0}" == 0 ]]; then
     (cd "$FRONTEND" && npm ci && npm run build)
 fi
 test -f "$FRONTEND_DIST/index.html"
-cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_DATA_ROOT="$STREAMFIND_DATA_REPOSITORY_ROOT" -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
+cmake -G Ninja -S "$REPO_ROOT/cpp" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_DATA_ROOT="$STREAMFIND_DATA_REPOSITORY_ROOT" -DSTREAMFIND_BUILD_SHARED=OFF -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=ON -DSTREAMFIND_ENABLED_PLUGINS="$PLUGINS" -DSTREAMFIND_APP_DIR="$FRONTEND_DIST"
 cmake --build "$BUILD" --parallel "${STREAMFIND_JOBS:-$(nproc)}"
 [[ "${STREAMFIND_RUN_TESTS:-1}" == 0 ]] || (cd "$BUILD" && ctest --output-on-failure)
 (cd "$BUILD" && cpack -G TGZ -C Release -B "$OUT")
@@ -54,17 +54,17 @@ listing="${archive}.list"
 tar -tzf "$archive" > "$listing"
 grep -Eq '(^|/)app/index\.html$' "$listing"
 grep -Eq '(^|/)streamfind$' "$listing"
-plugin_manifests=$(grep -E '(^|/)plugins/[^/]+/plugin\.json$' "$listing")
+grep -Eq '(^|/)bin/streamfind-dev$' "$listing"
+grep -Eq '(^|/)dev/streamfind-dev-setup\.ps1$' "$listing"
+grep -Eq '(^|/)sdk/native/sdk-manifest\.json$' "$listing"
+grep -Eq '(^|/)sdk/viewer/@streamfind/viewer-sdk/package\.json$' "$listing"
+plugin_manifests=$(grep -E '(^|/)plugins/[^/]+/[^/]+/plugin\.json$' "$listing")
 test -n "$plugin_manifests"
-if grep -Eq '(^|/)sdk/' "$listing"; then
-    echo "runtime archive must not contain an sdk directory" >&2
-    exit 1
-fi
-if grep -Eq '(^|/)core/vendors(/|$)' "$listing"; then
+if grep -Eq '^[^/]+/core/vendors(/|$)' "$listing"; then
     echo "runtime archive must not contain the removed core/vendors directory" >&2
     exit 1
 fi
-native_outside_bin=$(grep -E '\.(so|dylib)$' "$listing" | grep -Ev '(^|/)(bin|plugins/[^/]+)/' || true)
+native_outside_bin=$(grep -E '\.(so|dylib)$' "$listing" | grep -Ev '(^|/)(bin|sdk/native/lib|plugins/[^/]+)/' || true)
 if [[ -n "$native_outside_bin" ]]; then
     echo "runtime archive contains native libraries outside bin or plugin packages:" >&2
     printf '%s\n' "$native_outside_bin" >&2
@@ -72,17 +72,18 @@ if [[ -n "$native_outside_bin" ]]; then
 fi
 grep -Eq '(^|/)core/catalogue\.duckdb$' "$listing"
 while IFS= read -r manifest_path; do
-    domain="$(dirname "$manifest_path" | xargs basename)"
-    manifest_file="${archive}.${domain}.manifest"
+    plugin_id="$(dirname "$manifest_path" | xargs basename)"
+    plugin_root="$(dirname "$(dirname "$manifest_path")" | xargs basename)"
+    manifest_file="${archive}.${plugin_id}.manifest"
     tar -xOf "$archive" "$manifest_path" > "$manifest_file"
-    grep -q "\"plugin_id\": \"$domain\"" "$manifest_file"
+    grep -q "\"plugin_id\": \"$plugin_id\"" "$manifest_file"
     grep -q '"version": "'"$VERSION"'"' "$manifest_file"
     grep -Eq '"abi_version":[[:space:]]*\{[[:space:]]*"major":[[:space:]]*'"$abi_major"'[[:space:]]*,[[:space:]]*"minor":[[:space:]]*'"$abi_minor"'[[:space:]]*\}' "$manifest_file"
     grep -q '"static_composition": false' "$manifest_file"
     grep -q '"semantic_catalogue": "catalogue.duckdb"' "$manifest_file"
     library_name="$(grep -m1 '"linux-x86_64":' "$manifest_file" | sed -E 's/.*"linux-x86_64": "([^"]+)".*/\1/')"
     test -n "$library_name"
-    grep -Eq '(^|/)plugins/'"$domain"'/'"$library_name"'$' "$listing"
+    grep -Eq '(^|/)plugins/'"$plugin_root"'/'"$plugin_id"'/'"$library_name"'$' "$listing"
     grep -q '"linux-x86_64": "'"$library_name"'"' "$manifest_file"
     rm -f "$manifest_file"
 done <<< "$plugin_manifests"

@@ -33,7 +33,7 @@ int main() {
         OperationDefinition definition;
         definition.id = "test.retry_worker";
         definition.name = "Retry worker contract";
-        definition.domain = "test";
+        definition.plugin = "test";
         definition.parameters = ParameterSchema::from_json(Json::array({Json{
             {"name", "mode"}, {"type", Json{{"type", "string"}}}, {"default", "success"}
         }}));

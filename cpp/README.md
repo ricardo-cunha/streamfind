@@ -12,8 +12,8 @@ The C++ implementation is split into three layers:
   execution, schema lifecycle, and framework operations.
 - `sdk/` defines the public plugin contract, semantic catalogue projection,
   manifest validation, and the versioned C ABI used by runtime-loaded libraries.
-- `plugins/` owns domain catalogues, readers, algorithms, and domain capability
-  implementations. The shipped domains are `mass_spec`, `raman`, and `sensors`.
+- `plugins/` owns plugin catalogues, readers, algorithms, and plugin capability
+  implementations. The shipped plugins are `mass_spec`, `raman`, and `sensors`.
 
 Plugins do not receive `Project`, DuckDB handles, STL objects, JSON objects, or
 C++ exceptions across the dynamic boundary. Dynamic execution receives an opaque
@@ -27,11 +27,11 @@ enable a plugin. Loaded libraries remain resident for the process lifetime.
 
 The current package manifests are:
 
-| Domain | Windows library | POSIX library | Domain state |
+| Plugin | Windows library | POSIX library | Plugin state |
 | --- | --- | --- | --- |
 | `mass_spec` | `streamfind_mass_spec.dll` | `libstreamfind_mass_spec.so` | Native readers and NTA methods |
 | `raman` | `streamfind_raman.dll` | `libstreamfind_raman.so` | Native ASC/SIF and WiTec text readers for Raman/IR spectra and time-resolved spectra; processing operations are in development |
-| `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty domain; no executable capabilities yet |
+| `sensors` | `streamfind_sensors.dll` | `libstreamfind_sensors.so` | Dynamic empty plugin; no executable capabilities yet |
 
 For a development-tree runtime, place `streamfind.json` beside
 `streamfind-mcp.exe` and configure explicit plugin roots and IDs:
@@ -40,8 +40,10 @@ For a development-tree runtime, place `streamfind.json` beside
 {
   "server": {"port": 8787, "automatic_port_fallback": true},
   "worker": {"memory_limit_mb": 0},
-  "plugin_roots": ["C:/path/to/plugins"],
-  "enabled_plugins": ["mass_spec", "raman"]
+  "plugin_roots": {"development": ["C:/path/to/plugin-source"], "deployment": ["C:/path/to/plugins"]},
+  "viewer_roots": {"development": ["C:/path/to/viewer-source"], "deployment": ["C:/path/to/viewers/native"]},
+  "enabled_plugins": ["native.plugin.mass_spec", "native.plugin.raman"],
+  "enabled_viewers": []
 }
 ```
 
@@ -146,7 +148,7 @@ Canonical `Project` methods:
 ```text
 get_metadata() / set_metadata(Json)
 get_database_path()
-get_domains()
+get_plugins()
 validate()
 get_workflow() / set_workflow(Workflow)
 copy(ProjectOptions)
@@ -161,8 +163,8 @@ close()
 `Project` is move-only and owns its native DuckDB state. `close()` marks the
 handle closed; later operations fail. Destruction closes the handle as well.
 `ProjectOptions` initializes project and workflow metadata; it does not assign
-domains. `get_domains()` derives the project's domain list from operation IDs
-in its persisted workflow, so a new empty project has no domains until workflow
+plugins. `get_plugins()` derives the project's plugin list from operation IDs
+in its persisted workflow, so a new empty project has no plugins until workflow
 nodes are added.
 
 ## JSON API
@@ -179,7 +181,7 @@ Canonical commands are:
 ```text
 create, describe, validate
 get_metadata, set_metadata
-get_project_domains
+get_project_plugins
 get_workflow, set_workflow, validate_workflow, run_workflow
 add_operation, connect_operations, get_result_inventory
 copy
@@ -254,8 +256,8 @@ scripts\dev\cpp\test-nta.ps1 -RunPipeline
 ### Plugin discovery and Release packaging
 
 Every directory under `cpp/plugins/` containing a `CMakeLists.txt` is discovered
-automatically. A plugin directory uses its directory name as its domain and must
-define the target `streamfind_<domain>_plugin`; its semantic sources live under
+automatically. A plugin directory uses its directory name as its plugin and must
+define the target `streamfind_<plugin>_plugin`; its semantic sources live under
 `semantic/`. The plugin CMake file owns its source list, manifest, semantic
 catalogue, build-tree staging, and install rules. The top-level build automatically
 includes discovered plugins in the aggregate catalogue, MCP configuration, default
@@ -302,9 +304,9 @@ native platforms.
 The C++ backend is the authoritative native implementation. The current
 workspace version is the value in the repository [`VERSION`](../VERSION) file.
 
-The normal C++ runtime package is intentionally lean. It contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, and runtime vendors. It does **not** contain `sdk/`.
+The C++ runtime package contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, runtime vendors, `streamfind-dev`, and the matching native/viewer SDK payload.
 
-The `cpp/sdk/` tree remains an internal framework layer used to define the plugin ABI, host access services, catalogue projection, package validation, and built-in plugin integration. An optional developer kit can install that framework for external plugin development; it is separate from the runtime release.
+The `cpp/sdk/` tree defines the plugin ABI, host access services, catalogue projection, package validation, and built-in plugin integration. Its matching installed payload is part of the same runtime release used for external plugin development.
 
 Runtime libraries are centralized beside the executables under `bin/`:
 
@@ -318,13 +320,13 @@ bin/
 
 Do not copy vendor libraries beside individual plugins. The packaged launcher and host configure the single package-relative `bin/` runtime path.
 
-The shipped plugin domains are:
+The shipped plugin plugins are:
 
-| Domain | Current state |
+| Plugin | Current state |
 | --- | --- |
-| `mass_spec` | Native readers and NTA methods; primary production domain |
+| `mass_spec` | Native readers and NTA methods; primary production plugin |
 | `raman` | Native ASC/SIF and WiTec text ingestion with Raman/IR spectrum tables; processing remains in development |
-| `sensors` | Dynamic empty domain; no executable capabilities yet |
+| `sensors` | Dynamic empty plugin; no executable capabilities yet |
 
 
 
@@ -416,7 +418,7 @@ The Linux runtime release performs the equivalent extracted-package checks, incl
 bash scripts/release/cpp/release-cpp-linux.sh
 ```
 
-Archives and checksums are written under `tmp/release-output/`. The runtime archive must not contain an `sdk/` directory or plugin-local vendor copies.
+Archives and checksums are written under `tmp/release-output/`. Each platform archive contains the matching SDK and must not contain plugin-local vendor copies.
 
 ## Develop bundled plugins
 
@@ -439,18 +441,16 @@ use the C++ developer kit.
 
 ## Develop an out-of-tree plugin
 
-Use this optional workflow only when a backend plugin is developed outside
-the streamfind repository. Build the platform developer kit with
-`sfdev sdk build`, or configure the SDK install option in a local developer
-build. On Windows, this command also builds the Linux kit when Ubuntu/WSL is
-available. The kit is platform-specific and is not part of the runtime
-release. Frontend-only plugins stay in the repository frontend workspace and
-do not need the C++ kit.
+Use this workflow when a backend plugin is developed outside the streamfind
+repository. Build or obtain the single platform runtime archive with
+`sfdev release prepare`; it contains the matching native SDK, viewer SDK and
+`streamfind-dev` dispatcher. Frontend-only plugins stay in the repository
+frontend workspace and do not need the native SDK.
 
 Generate an external backend/frontend project scaffold:
 
 ```powershell
-.venv\\Scripts\\python.exe scripts\\dev\\plugin_generator.py init tmp\\scratch\\my-plugin --kind full --domain example --name my-plugin
+.venv\\Scripts\\python.exe scripts\\dev\\plugin_generator.py init tmp\\scratch\\my-plugin --kind full --plugin example --name my-plugin
 ```
 
 Build the generated backend against an installed developer kit:
@@ -469,13 +469,10 @@ The first-party out-of-tree consumer check is:
 .venv\\Scripts\\python.exe scripts\\dev\\test_plugin_consumer.py --source cpp\\sdk\\examples\\minimal_plugin --prefix tmp\\build\\windows\\devkit\\install --build tmp\\build\\plugin-consumer --cmake C:/msys64/ucrt64/bin/cmake.exe --ninja C:/msys64/ucrt64/bin/ninja.exe
 ```
 
-For a distributable developer kit, use:
-
-```powershell
-scripts\\release\\cpp\\package-plugin-devkit.ps1
-```
-
-The developer-kit command configures, builds, installs, packages, and validates an out-of-tree C++ consumer. Frontend plugins use the generated TypeScript contract and do not require the C++ SDK headers.
+The combined release command configures, builds, installs, packages, and
+validates the runtime together with its matching SDK and an out-of-tree C++
+consumer. Frontend plugins use the generated TypeScript contract and do not
+require the C++ SDK headers.
 
 ## Using a packaged C++ runtime
 
@@ -516,14 +513,16 @@ For a development-tree host, place `streamfind.json` beside `streamfind-mcp.exe`
 ```json
 {
   "server": {"port": 8787, "automatic_port_fallback": true},
-  "plugin_roots": ["C:/path/to/plugins"],
-  "enabled_plugins": ["mass_spec", "raman"]
+  "plugin_roots": {"development": ["C:/path/to/plugin-source"], "deployment": ["C:/path/to/plugins"]},
+  "viewer_roots": {"development": ["C:/path/to/viewer-source"], "deployment": ["C:/path/to/viewers/native"]},
+  "enabled_plugins": ["native.plugin.mass_spec", "native.plugin.raman"],
+  "enabled_viewers": []
 }
 ```
 
 ## Routine checks before submitting C++ changes
 
-1. Keep changes within the owning layer: core owns projects, transactions, workflow execution, and lifecycle; SDK owns generic plugin contracts; plugins own domain readers, algorithms, semantics, and operations.
+1. Keep changes within the owning layer: core owns projects, transactions, workflow execution, and lifecycle; SDK owns generic plugin contracts; plugins own plugin readers, algorithms, semantics, and operations.
 2. If semantic Turtle or catalogue inputs change, format/validate them and rebuild the native catalogue before testing MCP discovery.
 3. Run the narrowest affected C++ build and CTest target first.
 4. Run the complete CTest suite for framework, plugin, MCP, dependency, mass-spec, and NTA interface changes.

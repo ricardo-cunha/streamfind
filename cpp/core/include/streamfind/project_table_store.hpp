@@ -13,14 +13,14 @@
 
 namespace streamfind {
 
-/** @brief Table contract owned by a registered domain module. */
+/** @brief Table contract owned by a registered plugin module. */
 struct STREAMFIND_CORE_API TableRequirement {
     std::string name;
     std::vector<std::string> required_columns;
     std::vector<std::pair<std::string, std::string>> required_column_types;
 };
 
-/** @brief Narrow table-access boundary for domain modules. */
+/** @brief Narrow table-access boundary for plugin modules. */
 class STREAMFIND_CORE_API ProjectTableStore {
 public:
     struct Impl;
@@ -36,16 +36,16 @@ public:
                             const std::function<void(ProjectTableStore &)> &callback);
     /** @brief Install tables and schema state from the selected catalogue manifest. */
     static void install_manifest_schema(Project &project,
-                                        const std::string &domain,
+                                        const std::string &plugin,
                                         const std::string &module_id);
 
     /** @brief Return whether a physical table exists in the open project file. */
     bool has_table(const std::string &table_name) const;
-    /** @brief Require tables and columns declared by a domain module. */
+    /** @brief Require tables and columns declared by a plugin module. */
     void require(const std::vector<TableRequirement> &requirements) const;
-    void require_manifest(const std::string &domain, const std::string &module_id) const;
+    void require_manifest(const std::string &plugin, const std::string &module_id) const;
     /** @brief Require a module schema record and its generated table manifest. */
-    void require_installed_manifest(const std::string &domain, const std::string &module_id,
+    void require_installed_manifest(const std::string &plugin, const std::string &module_id,
                                     int minimum_version = 1) const;
     /** @brief Install module-owned DDL in the open project file. */
     void ensure_table(const std::string &table_name, const std::string &ddl) const;

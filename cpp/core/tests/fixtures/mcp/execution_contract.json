@@ -32,7 +32,7 @@
   ],
   "error_codes": [
     "project_not_found",
-    "project_domain_mismatch",
+    "project_plugin_mismatch",
     "workflow_not_found",
     "workflow_invalid",
     "execution_not_found",

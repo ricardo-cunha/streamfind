@@ -4,7 +4,7 @@
 </p>
 
 streamfind is an open-source platform for reproducible analytical data
-processing. It brings domain-specific algorithms, workflow design, and result
+processing. It brings plugin-specific algorithms, workflow design, and result
 exploration together in a shared environment, helping researchers and
 developers build, extend, and communicate analytical work. Workflows can be
 used interactively in the browser app or automated through MCP clients.
@@ -13,6 +13,7 @@ used interactively in the browser app or automated through MCP clients.
 
 - [Download the current native packages](releases.md).
 - [Use the browser application](web-app.md).
+- [Use the CLI, browser launcher, MCP adapter, and development CLI](cli.md).
 - [Use the C++ MCP server](quickstart/cpp-mcp.md).
 - [Develop backend and frontend plugins](plugin-development.md).
 
@@ -21,8 +22,9 @@ For an overview of the system boundaries and data flow, see the
 
 # Typical workflow
 
-1. Install the native package and start the browser app via `bin/streamfind-app.exe` or connect an MCP
-   client to streamfind service via `bin/streamfind-mcp.exe`.
+1. Install the native package and start the browser app via `bin/streamfind-app.exe`,
+   manage its service with `bin/streamfind.exe`, or connect an MCP client via
+   `bin/streamfind-mcp.exe`.
 2. Create or open a project. A `<name>.sf` folder contains `project.duckdb`
    for workflow and metadata and `data/` for published results.
 3. Discover operations and configure their parameters.
@@ -34,9 +36,11 @@ For an overview of the system boundaries and data flow, see the
 
 | Interface | Provides |
 | --- | --- |
-| C++ backend service | Project and workflow runtime, semantic catalogue, and domain processing |
+| C++ backend service | Project and workflow runtime, semantic catalogue, and plugin processing |
 | MCP | JSON-RPC over stdio for applications and AI agents |
 | React web app | Browser application served by the packaged C++ service |
+| Public CLI | Starts, inspects, and stops the package-scoped service |
+| `streamfind-dev` | Builds, validates, packages, and installs external plugins and viewers |
 
 The service is the single owner of project database access and result
 publication. Operation workers receive typed inputs and return typed outputs
@@ -45,7 +49,7 @@ stored in Arrow format and can be queried by the backend for app and MCP views.
 Other result types can use JSON, images, or binary formats as appropriate.
 
 The plugin framework has two extension surfaces: C++ plugins add backend
-operations and domain capabilities; TypeScript frontend plugins add UI
+operations and plugin capabilities; TypeScript frontend plugins add UI
 capabilities such as result viewers and editors. See [Plugin development](plugin-development.md).
 
 # R package (legacy)
@@ -61,7 +65,7 @@ for package status and usage.
 
 # Supported analytical work
 
-streamfind brings several analytical domains into a common workflow platform:
+streamfind brings several analytical plugins into a common workflow platform:
 
 - **Mass spectrometry:** import analysis files and work with spectra and
   chromatograms; detect and group features; annotate isotopes, adducts, and
@@ -73,11 +77,11 @@ streamfind brings several analytical domains into a common workflow platform:
   acquisition-time metadata.
 - **Statistics:** explore tabular data with PCA and PLS regression or
   classification, and compare two groups with fold-change analysis.
-- **Sensors:** the domain is being developed for sensor-data workflows. A
+- **Sensors:** the plugin is being developed for sensor-data workflows. A
   planned direction is connecting to OPC UA servers to bring process data into
   streamfind; sensor operations are not yet available in the current package.
 
-These domains share the workflow and result-viewing framework, while each
+These plugins share the workflow and result-viewing framework, while each
 provides its own data structures and analytical methods.
 
 # MCP at a glance
@@ -87,10 +91,10 @@ The C++ MCP server exposes the catalogue-backed interface.
 1. Call `initialize` to receive the server capabilities and usage guidance.
 2. Call `tools/list` to discover callable Operations.
 3. Use `create` to create a project. Then use `describe` or `get_metadata` to
-   inspect it, and `get_project_domains` to list domains represented in that
+   inspect it, and `get_project_plugins` to list plugins represented in that
    project.
-4. Use `get_domains` to discover domains with available Operations, then call
-   domain Operations with an explicit `project_path` to the `.sf` folder.
+4. Use `get_plugins` to discover plugins with available Operations, then call
+   plugin Operations with an explicit `project_path` to the `.sf` folder.
 5. Add operation nodes with their parameters to the persisted workflow.
 6. Connect typed output ports to downstream input ports.
 7. Validate the graph, run it, and inspect the resulting published results.

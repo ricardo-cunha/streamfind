@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "plugin_id": "stage9.fixture",
   "name": "Stage 9 dynamic fixture",
   "version": "0.4.1",
@@ -7,7 +8,8 @@
   "library": {
     "@STREAMFIND_DYNAMIC_PLATFORM@": "@STREAMFIND_DYNAMIC_LIBRARY@"
   },
-  "domain": "stage9",
+  "plugin": "stage9",
+  "ontology_namespace": "https://streamfind.dev/catalogue/plugins/stage9#",
   "semantic_catalogue": "catalogue.duckdb",
   "static_composition": false,
   "platforms": ["@STREAMFIND_DYNAMIC_PLATFORM@"]

@@ -58,6 +58,36 @@ For command examples, setup details, logging, dry-run output, package and
 release flows, see [`scripts/README.md`](scripts/README.md). That guide and
 `sfdev help` should stay aligned with the implementation.
 
+### Checkout development versus embedded development
+
+`sfdev` is the checkout development framework. It operates on the repository
+source tree and owns repository setup, native/frontend builds, CTest, packaged
+Windows verification, and platform release creation. It writes checkout-local
+builds, logs, packages, and release archives under `tmp/`.
+
+The embedded development framework is the `streamfind-dev` dispatcher and
+provisioning content shipped inside a packaged build or extracted release.
+It is used after a runtime package has been delivered, to create and develop
+external plugins and viewers against that package's SDK. It does not rebuild
+the StreamFind core, does not replace `sfdev`, and does not use the checkout's
+source tree as its development workspace.
+
+From Windows, Linux release creation is explicitly orchestrated by the
+checkout framework with:
+
+```powershell
+sfdev release prepare --linux --distribution Ubuntu
+sfdev release verify --linux --distribution Ubuntu
+```
+
+These commands mirror the current checkout into the selected WSL
+distribution's native Linux home as `/home/<linux-user>/<worktree-name>`.
+The Linux build, tests, package validation, and extracted MCP smoke run there;
+only the verified Linux archive and combined checksums are exported to this
+checkout's `tmp/release-output/`. `/mnt/c` is used only as the WSL bridge for
+source synchronization and final artifact export, never as the Linux build
+tree.
+
 ## C++ Project Rules
 
 - On Windows, build and package the C++ core and native plugins with the MSYS2 MinGW-w64 UCRT64 GCC stack: GCC/G++, CMake, Ninja, and Arrow development packages. Prefer an existing system MSYS2 installation; if unavailable, provision MSYS2 and its packages under `%USERPROFILE%\.streamfind\tools\msys2` (or `%STREAMFIND_HOME%\tools\msys2`). Resolve the root through `STREAMFIND_MSYS2_ROOT`; do not hard-code a machine-specific MSYS2 path. Do not use MSVC, Visual Studio environment initialization, `cl.exe`, or the MSVC linker for streamfind core/plugin builds or release distributions. Package matching MinGW runtime DLLs under the runtime vendor tree when required.

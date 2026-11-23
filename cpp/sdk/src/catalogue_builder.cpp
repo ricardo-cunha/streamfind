@@ -333,18 +333,18 @@ Json result_schema(const Graph &graph, const std::string &resource) {
     if (!properties.empty()) result["properties"] = properties;
     return result;
 }
-std::string module_id(const Graph &graph, const std::string &resource, const std::string &, const std::string &domain, const std::string &) {
+std::string module_id(const Graph &graph, const std::string &resource, const std::string &, const std::string &plugin, const std::string &) {
     const auto declared = value(graph, resource, std::string(sf) + "providedByModule");
     if (!declared.empty()) {
         const auto name = local(declared);
-        if (name == "baseModule") return domain + ".base";
-        if (name.ends_with("Module")) return domain + "." + name.substr(0, name.size() - 6);
+        if (name == "baseModule") return plugin + ".base";
+        if (name.ends_with("Module")) return plugin + "." + name.substr(0, name.size() - 6);
         return name;
     }
-    return domain + ".base";
+    return plugin + ".base";
 }
 
-Json project(const Graph &graph, const std::string &domain) {
+Json project(const Graph &graph, const std::string &plugin) {
     Json output = {{"version", 2}, {"entries", Json::array()}, {"tables", Json::array()}};
     for (const auto &[subject, predicates] : graph) {
         const auto operation = value(graph, subject, std::string(sf) + "operationId");
@@ -353,18 +353,18 @@ Json project(const Graph &graph, const std::string &domain) {
         if (operation.empty() && command.empty() && method.empty()) continue;
         const auto canonical = method.empty() ? (command.empty() ? operation : command) : method;
         const auto kind = method.empty() ? (command.empty() ? "operation" : "command") : "method";
-        const auto resource_domain = local(value(graph, subject, std::string(sf) + "availableInDomain"));
-        if (!domain.empty() && resource_domain != domain) continue;
-        const auto effective_domain = resource_domain.empty() ? "streamfind" : resource_domain;
-        Json entry = {{"kind", kind}, {"canonical_id", canonical}, {"domain", effective_domain},
-                      {"module_id", module_id(graph, subject, kind, effective_domain, canonical)},
+        const auto resource_plugin = local(value(graph, subject, std::string(sf) + "availableInPlugin"));
+        if (!plugin.empty() && resource_plugin != plugin) continue;
+        const auto effective_plugin = resource_plugin.empty() ? "streamfind" : resource_plugin;
+        Json entry = {{"kind", kind}, {"canonical_id", canonical}, {"plugin", effective_plugin},
+                      {"module_id", module_id(graph, subject, kind, effective_plugin, canonical)},
                       {"label", value(graph, subject, std::string(skos) + "prefLabel")},
                       {"definition", value(graph, subject, std::string(skos) + "definition")}, {"executable", true}, {"exposed", true}};
         const auto category = value(graph, subject, std::string(sf) + "category");
         const auto guidance = value(graph, subject, std::string(sf) + "guidance");
         Json next = Json::array(); for (const auto &item : values(graph, subject, std::string(sf) + "nextOperation")) next.push_back(value(graph, item, std::string(sf) + "operationId").empty() ? item : value(graph, item, std::string(sf) + "operationId"));
-        entry["interface"] = {{"category", category.empty() ? (kind == std::string("method") ? "workflow-method" : "domain-operation") : category}, {"guidance", guidance}, {"next_operations", next}};
-        const auto domain_resource = value(graph, subject, std::string(sf) + "availableInDomain"); entry["interface_guidance"] = value(graph, domain_resource, std::string(sf) + "guidance");
+        entry["interface"] = {{"category", category.empty() ? (kind == std::string("method") ? "workflow-method" : "plugin-operation") : category}, {"guidance", guidance}, {"next_operations", next}};
+        const auto plugin_resource = value(graph, subject, std::string(sf) + "availableInPlugin"); entry["interface_guidance"] = value(graph, plugin_resource, std::string(sf) + "guidance");
         Json parameters = Json::array(); for (const auto &parameter : values(graph, subject, std::string(sf) + "hasParameter")) { const auto parameter_extensions = extensions(graph, parameter); const auto directory_extensions = extension_values(graph, parameter, std::string(sf) + "directoryExtensions"); Json item = {{"name", wire_name(resource_name(parameter))}, {"label", value(graph, parameter, std::string(skos) + "prefLabel")}, {"type", value(graph, parameter, std::string(sf) + "type")}, {"required", boolean(graph, parameter, std::string(sf) + "required")}, {"constraints", Json::object()}, {"items", nullptr}, {"extensions", parameter_extensions}, {"schema", parameter_schema(graph, parameter)}, {"example", nullptr}, {"description", value(graph, parameter, std::string(skos) + "definition")}, {"default", nullptr}}; const auto declared_default = value(graph, parameter, std::string(sf) + "default"); if (!declared_default.empty()) { item["default"] = literal_json(declared_default); item["schema"]["default"] = literal_json(declared_default); } const auto path_kind = value(graph, parameter, std::string(sf) + "pathKind"); if (!path_kind.empty()) item["path_kind"] = path_kind; if (!parameter_extensions.empty()) item["schema"]["x-streamfind-file-extensions"] = parameter_extensions; if (!path_kind.empty()) item["schema"]["x-streamfind-path-kind"] = path_kind; if (!directory_extensions.empty()) item["directory_extensions"] = directory_extensions; const auto constraint = value(graph, parameter, std::string(sf) + "constraints"); if (!constraint.empty()) item["constraints"] = constraint; const auto item_ref = value(graph, parameter, std::string(sf) + "items"); if (!item_ref.empty()) item["items"] = resource_name(item_ref); const auto example = value(graph, parameter, std::string(sf) + "example"); if (!example.empty()) item["example"] = literal_json(example); parameters.push_back(item); }
         entry["parameters"] = parameters; Json input = {{"type", "object"}, {"title", entry["label"]}, {"description", entry["definition"]}, {"properties", Json::object()}, {"required", Json::array()}}; for (const auto &parameter : parameters) { input["properties"][parameter["name"]] = mcp_schema(parameter["schema"]); if (parameter["required"]) input["required"].push_back(parameter["name"]); } if (std::string(kind) == "operation" || std::string(kind) == "command") entry["mcp"] = {{"name", canonical}, {"input_schema", input}};
         if (std::string(kind) == "method") entry.erase("mcp");
@@ -476,8 +476,8 @@ Json project(const Graph &graph, const std::string &domain) {
     for (const auto &[subject, predicates] : graph) {
         const auto table_contract_name = value(graph, subject, std::string(sf) + "tableContractName");
         if (table_contract_name.empty()) continue;
-        const auto domain_resource = value(graph, subject, std::string(sf) + "availableInDomain"); const auto table_domain = domain_resource.empty() ? "streamfind" : local(domain_resource);
-        if (!domain.empty() && table_domain != domain) continue;
+        const auto plugin_resource = value(graph, subject, std::string(sf) + "availableInPlugin"); const auto table_plugin = plugin_resource.empty() ? "streamfind" : local(plugin_resource);
+        if (!plugin.empty() && table_plugin != plugin) continue;
         Json columns = Json::array();
         for (const auto &column : values(graph, subject, std::string(sf) + "hasColumn")) {
             const auto column_name = value(graph, column, std::string(sf) + "columnName").empty() ? value(graph, column, std::string(sf) + "propertyName") : value(graph, column, std::string(sf) + "columnName");
@@ -499,7 +499,7 @@ Json project(const Graph &graph, const std::string &domain) {
                 : value(graph, column, std::string(sf) + "columnName");
             if (!name.empty()) navigation_columns.push_back(name);
         }
-        output["tables"].push_back({{"resource_id", local(subject)}, {"table_contract_name", table_contract_name}, {"domain", table_domain}, {"module_id", module_id(graph, subject, "table", table_domain, table_contract_name)}, {"columns", columns}, {"navigation_columns", navigation_columns}});
+        output["tables"].push_back({{"resource_id", local(subject)}, {"table_contract_name", table_contract_name}, {"plugin", table_plugin}, {"module_id", module_id(graph, subject, "table", table_plugin, table_contract_name)}, {"columns", columns}, {"navigation_columns", navigation_columns}});
     }
     std::sort(output["entries"].begin(), output["entries"].end(), [](const Json &a, const Json &b) { return a["canonical_id"] < b["canonical_id"]; });
     std::sort(output["tables"].begin(), output["tables"].end(), [](const Json &a, const Json &b) { return a["table_contract_name"] < b["table_contract_name"]; });
@@ -514,8 +514,8 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
     duckdb_database database; duckdb_connection connection; duckdb_result result;
     if (duckdb_open(request.output_database.string().c_str(), &database) != DuckDBSuccess || duckdb_connect(database, &connection) != DuckDBSuccess) throw std::runtime_error("cannot open catalogue database");
     const auto exec = [&](const std::string &sql) { if (duckdb_query(connection, sql.c_str(), &result) != DuckDBSuccess) { const std::string error = duckdb_result_error(&result); duckdb_destroy_result(&result); throw std::runtime_error(error); } duckdb_destroy_result(&result); };
-    exec("CREATE TABLE catalogue_entries (canonical_id VARCHAR PRIMARY KEY, kind VARCHAR, domain VARCHAR, label VARCHAR, definition VARCHAR, category VARCHAR, invocation_model VARCHAR, requires_connection BOOLEAN, guidance VARCHAR, next_operations JSON, interface_guidance VARCHAR, executable BOOLEAN, exposed BOOLEAN, mcp_name VARCHAR, input_schema JSON, parameters JSON, result_schema JSON, reads_tables JSON, writes_tables JSON, single_occurrence BOOLEAN, mutates_project BOOLEAN, module_id VARCHAR, conditional_reads JSON, result_id VARCHAR, project_entry BOOLEAN, input_ports JSON, output_ports JSON)");
-    exec("CREATE TABLE catalogue_tables (table_contract_name VARCHAR PRIMARY KEY, domain VARCHAR, module_id VARCHAR, resource_id VARCHAR, columns JSON, navigation_columns JSON)");
+    exec("CREATE TABLE catalogue_entries (canonical_id VARCHAR PRIMARY KEY, kind VARCHAR, plugin VARCHAR, label VARCHAR, definition VARCHAR, category VARCHAR, invocation_model VARCHAR, requires_connection BOOLEAN, guidance VARCHAR, next_operations JSON, interface_guidance VARCHAR, executable BOOLEAN, exposed BOOLEAN, mcp_name VARCHAR, input_schema JSON, parameters JSON, result_schema JSON, reads_tables JSON, writes_tables JSON, single_occurrence BOOLEAN, mutates_project BOOLEAN, module_id VARCHAR, conditional_reads JSON, result_id VARCHAR, project_entry BOOLEAN, input_ports JSON, output_ports JSON)");
+    exec("CREATE TABLE catalogue_tables (table_contract_name VARCHAR PRIMARY KEY, plugin VARCHAR, module_id VARCHAR, resource_id VARCHAR, columns JSON, navigation_columns JSON)");
     exec("CREATE TABLE catalogue_metadata (key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)");
     for (const auto &entry : catalogue["entries"]) {
         const auto &iface = entry["interface"]; const auto &effects = entry["effects"];
@@ -528,20 +528,20 @@ void write_catalogue(const Json &catalogue, const CatalogueBuildRequest &request
         const auto result_id = entry["result"].contains("id") && entry["result"]["id"].is_string()
             ? sql_quote(entry["result"]["id"].get<std::string>())
             : "NULL";
-        const auto sql = "INSERT INTO catalogue_entries VALUES (" + sql_quote(entry["canonical_id"]) + "," + sql_quote(entry["kind"]) + "," + sql_quote(entry["domain"]) + "," + sql_quote(entry["label"]) + "," + sql_quote(entry["definition"]) + "," + sql_quote(iface["category"]) + ",NULL,NULL," + sql_quote(iface["guidance"]) + "," + sql_quote(iface["next_operations"].dump()) + "," + sql_quote(entry["interface_guidance"]) + ",true,true," + (mcp_name.empty() ? "NULL" : sql_quote(mcp_name)) + "," + input_schema + "," + sql_quote(entry["parameters"].dump()) + "," + sql_quote(json_text(entry["result"]["schema"])) + "," + sql_quote(effects["reads"].dump()) + "," + sql_quote(effects["writes"].dump()) + "," + ((entry.contains("single_occurrence") && entry["single_occurrence"].is_boolean()) ? (entry["single_occurrence"] ? "true" : "false") : "NULL") + "," + (mutates_project ? "true" : "false") + "," + sql_quote(entry["module_id"]) + "," + sql_quote(entry.value("conditional_reads", Json::array()).dump()) + "," + result_id + "," + (project_entry ? "true" : "false") + "," + sql_quote(entry.value("input_ports", Json::array()).dump()) + "," + sql_quote(entry.value("output_ports", Json::array()).dump()) + ")";
+        const auto sql = "INSERT INTO catalogue_entries VALUES (" + sql_quote(entry["canonical_id"]) + "," + sql_quote(entry["kind"]) + "," + sql_quote(entry["plugin"]) + "," + sql_quote(entry["label"]) + "," + sql_quote(entry["definition"]) + "," + sql_quote(iface["category"]) + ",NULL,NULL," + sql_quote(iface["guidance"]) + "," + sql_quote(iface["next_operations"].dump()) + "," + sql_quote(entry["interface_guidance"]) + ",true,true," + (mcp_name.empty() ? "NULL" : sql_quote(mcp_name)) + "," + input_schema + "," + sql_quote(entry["parameters"].dump()) + "," + sql_quote(json_text(entry["result"]["schema"])) + "," + sql_quote(effects["reads"].dump()) + "," + sql_quote(effects["writes"].dump()) + "," + ((entry.contains("single_occurrence") && entry["single_occurrence"].is_boolean()) ? (entry["single_occurrence"] ? "true" : "false") : "NULL") + "," + (mutates_project ? "true" : "false") + "," + sql_quote(entry["module_id"]) + "," + sql_quote(entry.value("conditional_reads", Json::array()).dump()) + "," + result_id + "," + (project_entry ? "true" : "false") + "," + sql_quote(entry.value("input_ports", Json::array()).dump()) + "," + sql_quote(entry.value("output_ports", Json::array()).dump()) + ")";
         exec(sql);
     }
     for (const auto &table : catalogue["tables"]) {
         const auto sql = "INSERT INTO catalogue_tables VALUES (" +
             sql_quote(table["table_contract_name"]) + "," +
-            sql_quote(table["domain"]) + "," +
+            sql_quote(table["plugin"]) + "," +
             sql_quote(table["module_id"]) + "," +
             sql_quote(table["resource_id"]) + "," +
             sql_quote(table["columns"].dump()) + "," +
             sql_quote(table.value("navigation_columns", Json::array()).dump()) + ")";
         exec(sql);
     }
-    exec("INSERT INTO catalogue_metadata VALUES ('schema_version','2'),('catalogue_kind'," + sql_quote(request.catalogue_kind) + "),('domain_id'," + sql_quote(request.resources.domain_id) + "),('generator_version','native-cpp-sdk')");
+    exec("INSERT INTO catalogue_metadata VALUES ('schema_version','2'),('catalogue_kind'," + sql_quote(request.catalogue_kind) + "),('plugin_id'," + sql_quote(request.resources.plugin_id) + "),('ontology_namespace'," + sql_quote(request.ontology_namespace) + "),('named_graph'," + sql_quote(request.ontology_namespace) + "),('generator_version','native-cpp-sdk')");
     duckdb_disconnect(&connection); duckdb_close(&database);
 }
 
@@ -551,6 +551,37 @@ namespace streamfind::sdk {
 CatalogueBuildResult build_plugin_catalogue(const CatalogueBuildRequest &request) {
     CatalogueBuildResult result; result.validation = validate_semantics_with_jena(request.resources, jena_home());
     if (!result.validation.valid) { result.diagnostics = result.validation.diagnostics; return result; }
-    try { const auto graph = detail::parse(request.resources); const auto catalogue = detail::project(graph, request.resources.domain_id); detail::write_catalogue(catalogue, request); if (!request.output_json.empty()) { std::ofstream file(request.output_json); file << catalogue.dump(2) << '\n'; } if (!request.output_matrix.empty()) { std::ofstream file(request.output_matrix); file << "{\"entries\":["; bool first = true; for (const auto &entry : catalogue["entries"]) { if (!first) file << ','; first = false; file << "{\"canonical_id\":" << nlohmann::json(entry["canonical_id"]).dump() << ",\"kind\":" << nlohmann::json(entry["kind"]).dump() << ",\"domain_id\":" << nlohmann::json(entry["domain"]).dump() << ",\"module_id\":" << nlohmann::json(entry["module_id"]).dump() << "}"; } file << "]}\n"; } result.success = true; } catch (const std::exception &error) { result.diagnostics = error.what(); } return result;
+    try {
+        const auto graph = detail::parse(request.resources);
+        auto catalogue = detail::project(graph, request.resources.plugin_id);
+        if (request.catalogue_kind == "plugin") {
+            catalogue["metadata"] = {{"plugin_id", request.resources.plugin_id},
+                                      {"ontology_namespace", request.ontology_namespace},
+                                      {"named_graph", request.ontology_namespace}};
+        }
+        detail::write_catalogue(catalogue, request);
+        if (!request.output_json.empty()) {
+            std::ofstream file(request.output_json);
+            file << catalogue.dump(2) << '\n';
+        }
+        if (!request.output_matrix.empty()) {
+            std::ofstream file(request.output_matrix);
+            file << "{\"entries\":[";
+            bool first = true;
+            for (const auto &entry : catalogue["entries"]) {
+                if (!first) file << ',';
+                first = false;
+                file << "{\"canonical_id\":" << nlohmann::json(entry["canonical_id"]).dump()
+                     << ",\"kind\":" << nlohmann::json(entry["kind"]).dump()
+                     << ",\"plugin_id\":" << nlohmann::json(entry["plugin"]).dump()
+                     << ",\"module_id\":" << nlohmann::json(entry["module_id"]).dump() << "}";
+            }
+            file << "]}\n";
+        }
+        result.success = true;
+    } catch (const std::exception &error) {
+        result.diagnostics = error.what();
+    }
+    return result;
 }
 }  // namespace streamfind::sdk

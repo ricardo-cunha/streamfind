@@ -3,14 +3,14 @@
 include_guard(GLOBAL)
 
 # Run the SDK-owned structural/package validator after a plugin is linked.
-function(streamfind_validate_plugin_build target domain)
+function(streamfind_validate_plugin_build target plugin)
     add_dependencies(${target} streamfind_sdk_plugin_validator)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND $<TARGET_FILE:streamfind_sdk_plugin_validator>
             --source-dir "${CMAKE_CURRENT_SOURCE_DIR}"
             --output-dir "$<TARGET_FILE_DIR:${target}>"
             --manifest "${STREAMFIND_BUNDLED_MANIFEST}"
-            --domain "${domain}"
+            --plugin "${plugin}"
             --library "$<TARGET_FILE_NAME:${target}>"
         VERBATIM)
 endfunction()
@@ -18,7 +18,7 @@ endfunction()
 # Stage runtime dependencies in the single package runtime directory. The
 # host and plugins use the same bin directory, so no duplicate DLL copies are
 # needed in plugin or core vendor subdirectories.
-function(streamfind_stage_mingw_plugin_runtime target domain)
+function(streamfind_stage_mingw_plugin_runtime target plugin)
     if(NOT MINGW OR NOT WIN32)
         return()
     endif()
@@ -51,7 +51,7 @@ function(streamfind_stage_mingw_plugin_runtime target domain)
                 "${STREAMFIND_DUCKDB_RUNTIME}"
                 "${CMAKE_BINARY_DIR}/bin")
     endif()
-    if(domain STREQUAL "mass_spec" AND TARGET streamfind_openbabel_runtime)
+    if(plugin STREQUAL "mass_spec" AND TARGET streamfind_openbabel_runtime)
         # Open Babel's runtime target owns development-tree staging and the
         # root CMakeLists owns the CPack install rule. Do not copy the same
         # data directory again from the mass-spec plugin post-build hook: on

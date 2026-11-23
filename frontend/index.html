@@ -51,6 +51,18 @@
         if (savedStyle) root.dataset.style = savedStyle;
       })();
     </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "/extensions/runtime/react.mjs",
+          "react/jsx-runtime": "/extensions/runtime/jsx-runtime.mjs",
+          "react/jsx-dev-runtime": "/extensions/runtime/jsx-dev-runtime.mjs",
+          "react-dom": "/extensions/runtime/react-dom.mjs",
+          "react-dom/client": "/extensions/runtime/react-dom-client.mjs",
+          "@streamfind/viewer-sdk": "/extensions/runtime/viewer-sdk.mjs"
+        }
+      }
+    </script>
     <link rel="icon" type="image/png" href="/src/assets/streamfind.png" />
     <link
       rel="stylesheet"

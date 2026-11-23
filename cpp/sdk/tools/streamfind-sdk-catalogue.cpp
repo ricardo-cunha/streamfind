@@ -29,18 +29,19 @@ int main(int argc, char **argv) {
     for (int index = 1; index + 1 < argc; ++index)
         if (std::string(argv[index]) == "--plugin-semantic")
             request.resources.plugin_directories.emplace_back(argv[index + 1]);
-    request.resources.domain_id = argument(argc, argv, "--domain").string();
+    request.resources.plugin_id = argument(argc, argv, "--plugin").string();
     request.output_json = argument(argc, argv, "--output-json");
     request.output_matrix = argument(argc, argv, "--output-matrix");
     request.output_database = argument(argc, argv, "--output-db");
     request.catalogue_kind = argument(argc, argv, "--catalogue-kind").string();
+    request.ontology_namespace = argument(argc, argv, "--ontology-namespace").string();
     if (request.catalogue_kind.empty()) request.catalogue_kind = "plugin";
     if (has_flag(argc, argv, "--core-only")) request.resources.plugin_directories.clear();
     request.jena_home = streamfind::sdk::jena_home();
     if (request.resources.core_directory.empty() || request.output_database.empty() ||
-        (request.catalogue_kind != "aggregate" && request.resources.domain_id.empty()) ||
+        (request.catalogue_kind != "aggregate" && request.resources.plugin_id.empty()) ||
         (request.catalogue_kind == "plugin" && request.resources.plugin_directories.empty())) {
-        std::cerr << "usage: streamfind-sdk-catalogue --core-semantic DIR --plugin-semantic DIR --domain ID "
+        std::cerr << "usage: streamfind-sdk-catalogue --core-semantic DIR --plugin-semantic DIR --plugin ID "
                      "--catalogue-kind plugin|core [--core-only] --output-json FILE "
                      "--output-matrix FILE --output-db FILE\n";
         return 2;

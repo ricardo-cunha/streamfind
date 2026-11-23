@@ -27,7 +27,7 @@ target_link_libraries(streamfind_mass_spec_project_isolation_contract PRIVATE st
 target_compile_definitions(streamfind_mass_spec_project_isolation_contract PRIVATE
     STREAMFIND_CATALOGUE_PATH="${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
     STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../core/tests/fixtures/project/multiproject.json"
-    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/domain_schema_manifest.json")
+    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/plugin_schema_manifest.json")
 add_test(NAME streamfind_mass_spec_project_isolation_contract
     COMMAND streamfind_mass_spec_project_isolation_contract)
 set_tests_properties(streamfind_mass_spec_project_isolation_contract PROPERTIES

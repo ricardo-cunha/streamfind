@@ -27,9 +27,9 @@ def main() -> int:
     build = args.build.resolve()
     if not (source / "CMakeLists.txt").is_file():
         parser.error(f"consumer source is missing CMakeLists.txt: {source}")
-    package_dir = prefix / "sdk" / "cmake" / "streamfind"
+    package_dir = prefix / "sdk" / "native" / "cmake" / "streamfind"
     if not (package_dir / "streamfindConfig.cmake").is_file():
-        parser.error(f"developer kit CMake package is missing: {package_dir}")
+        parser.error(f"runtime archive SDK CMake package is missing: {package_dir}")
     if build.exists():
         shutil.rmtree(build)
     build.mkdir(parents=True)
@@ -40,7 +40,7 @@ def main() -> int:
     if not executable.is_file():
         raise SystemExit(f"consumer executable was not produced: {executable}")
     run([str(executable)], build)
-    print("out-of-tree developer-kit consumer passed")
+    print("out-of-tree runtime-SDK consumer passed")
     return 0
 
 

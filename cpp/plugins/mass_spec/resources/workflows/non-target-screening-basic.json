@@ -657,5 +657,5 @@
   "schema_version": 2,
   "version": 1,
   "workflow_id": "mass-spec-non-target-screening-basic",
-  "domain": "mass_spec"
+  "plugin": "mass_spec"
 }

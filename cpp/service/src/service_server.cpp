@@ -1,6 +1,7 @@
 #include "streamfind/service/service_server.hpp"
 #include "streamfind/service/service_protocol.hpp"
 #include "streamfind/project_layout.hpp"
+#include "streamfind/plugin_configuration.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
 #include "fixedEnvelopes.h"
 #include "element_tables.h"
@@ -401,15 +402,24 @@ void send_http(std::intptr_t socket, int status, const Json &body) {
     send_all(socket, "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(text.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n" + text);
 }
 
+bool path_within(const std::filesystem::path &root, const std::filesystem::path &value) {
+    const auto canonical_root = std::filesystem::weakly_canonical(root);
+    const auto canonical_value = std::filesystem::weakly_canonical(value);
+    auto root_it = canonical_root.begin();
+    auto value_it = canonical_value.begin();
+    for (; root_it != canonical_root.end(); ++root_it, ++value_it)
+        if (value_it == canonical_value.end() || *root_it != *value_it) return false;
+    return true;
+}
+
 void send_file(std::intptr_t socket, const std::filesystem::path &root, const std::string &request_path) {
     const auto relative = request_path == "/" ? std::filesystem::path("index.html") : std::filesystem::path(request_path.substr(1));
     if (relative.empty() || relative.string().find("..") != std::string::npos) {
         send_http(socket, 404, Json{{"error", "application asset not found"}});
         return;
     }
-    const auto canonical_root = std::filesystem::weakly_canonical(root);
     const auto file = std::filesystem::weakly_canonical(root / relative);
-    if (!std::filesystem::exists(file) || file.string().rfind(canonical_root.string(), 0) != 0) {
+    if (!std::filesystem::exists(file) || !path_within(root, file)) {
         send_http(socket, 404, Json{{"error", "application asset not found"}});
         return;
     }
@@ -446,6 +456,163 @@ std::string read_text_file(const std::filesystem::path &path) {
     std::ifstream input(path);
     if (!input) throw std::runtime_error("unable to read workflow demo: " + path.string());
     return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+}
+
+std::vector<std::filesystem::path> viewer_roots(const std::vector<std::filesystem::path> &configured_roots) {
+    std::vector<std::filesystem::path> roots = configured_roots;
+    std::sort(roots.begin(), roots.end());
+    roots.erase(std::unique(roots.begin(), roots.end()), roots.end());
+    return roots;
+}
+
+Json installed_viewer_manifest(const std::vector<std::filesystem::path> &configured_roots,
+                               const std::vector<std::string> &enabled_viewers) {
+    Json plugins = Json::array();
+    std::set<std::string> ids;
+    const std::set<std::string> enabled(enabled_viewers.begin(), enabled_viewers.end());
+    for (const auto &root : viewer_roots(configured_roots)) {
+        if (!std::filesystem::is_directory(root)) continue;
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(root)) {
+            if (!entry.is_regular_file() || entry.path().filename() != "plugin.manifest.json") continue;
+            try {
+                const auto package_root = entry.path().parent_path();
+                auto manifest = Json::parse(read_text_file(entry.path()));
+                if (!manifest.is_object() || manifest.value("kind", "") != "viewer") continue;
+                const auto id = manifest.value("id", std::string{});
+                const auto version = manifest.value("version", std::string{});
+                if (id.empty() || version.empty()) continue;
+                if (!enabled.contains(id)) continue;
+                const auto activation_path = package_root / "activation.json";
+                if (std::filesystem::is_regular_file(activation_path)) {
+                    const auto activation = Json::parse(read_text_file(activation_path));
+                    if (!activation.value("active", false) || activation.value("id", std::string{}) != id ||
+                        activation.value("version", std::string{}) != version) continue;
+                    if (activation.contains("package_digest")) manifest["packageDigest"] = activation.at("package_digest");
+                } else if (!manifest.value("active", false)) continue;
+                auto entry_file = manifest.value("entry", std::string("viewer.mjs"));
+                const auto bundle = std::filesystem::weakly_canonical(package_root / entry_file);
+                if (!std::filesystem::is_regular_file(bundle) || !path_within(package_root, bundle)) continue;
+                manifest.erase("active");
+                const auto route = manifest.value("route", std::string("/viewers/"));
+                manifest.erase("route");
+                manifest["entry"] = route +
+                    std::filesystem::relative(bundle, root).generic_string();
+                if (manifest.contains("css") && manifest["css"].is_array()) {
+                    for (auto &stylesheet : manifest["css"]) {
+                        if (!stylesheet.is_string()) throw std::invalid_argument("viewer stylesheet must be a string");
+                        const auto stylesheet_file = std::filesystem::weakly_canonical(
+                            package_root / stylesheet.get<std::string>());
+                        if (!std::filesystem::is_regular_file(stylesheet_file) ||
+                            !path_within(package_root, stylesheet_file))
+                            throw std::invalid_argument("viewer stylesheet is outside its package");
+                        stylesheet = route +
+                            std::filesystem::relative(stylesheet_file, root).generic_string();
+                    }
+                }
+                if (!ids.insert(id).second) continue;
+                plugins.push_back(std::move(manifest));
+            } catch (const std::exception &) {
+                // A broken optional viewer cannot prevent the bundled app from starting.
+            }
+        }
+    }
+    return plugins;
+}
+
+void send_combined_plugin_manifest(std::intptr_t socket, const std::filesystem::path &application_root,
+                                   const std::vector<std::filesystem::path> &viewer_deployment_roots,
+                                   const std::vector<std::string> &enabled_viewers) {
+    Json result = Json::object();
+    const auto base = application_root / "plugins.json";
+    if (std::filesystem::is_regular_file(base)) {
+        try { result = Json::parse(read_text_file(base)); } catch (const std::exception &) {}
+    }
+    if (!result.is_object()) result = Json::object();
+    if (!result.contains("plugins") || !result["plugins"].is_array()) result["plugins"] = Json::array();
+    for (const auto &plugin : installed_viewer_manifest(viewer_deployment_roots, enabled_viewers)) result["plugins"].push_back(plugin);
+    send_http(socket, 200, result);
+}
+
+void send_viewer_file(std::intptr_t socket, const std::vector<std::filesystem::path> &viewer_deployment_roots,
+                      const std::string &request_path) {
+    const std::string prefix = "/viewers/";
+    const auto relative_text = request_path.substr(prefix.size());
+    const auto relative = std::filesystem::path(relative_text);
+    if (relative.empty() || relative.is_absolute() || relative_text.find("..") != std::string::npos) {
+        send_http(socket, 404, Json{{"error", "viewer asset not found"}});
+        return;
+    }
+    for (const auto &root : viewer_roots(viewer_deployment_roots)) {
+        const auto file = root / relative;
+        if (std::filesystem::is_regular_file(file) && path_within(root, file)) {
+            send_file(socket, root, "/" + relative.generic_string());
+            return;
+        }
+    }
+    send_http(socket, 404, Json{{"error", "viewer asset not found"}});
+}
+
+void send_viewer_runtime_module(std::intptr_t socket, const std::string &request_path) {
+    static const std::map<std::string, std::string> modules = {
+        {"/extensions/runtime/react.mjs", R"JS(const runtime = globalThis.__streamfindReact;
+if (!runtime) throw new Error('StreamFind React runtime is unavailable');
+export default runtime.default ?? runtime;
+export const Children = runtime.Children;
+export const Component = runtime.Component;
+export const Fragment = runtime.Fragment;
+export const createContext = runtime.createContext;
+export const createElement = runtime.createElement;
+export const forwardRef = runtime.forwardRef;
+export const memo = runtime.memo;
+export const useCallback = runtime.useCallback;
+export const useEffect = runtime.useEffect;
+export const useMemo = runtime.useMemo;
+export const useRef = runtime.useRef;
+export const useState = runtime.useState;
+export const useSyncExternalStore = runtime.useSyncExternalStore;
+export const useContext = runtime.useContext;
+)JS"},
+        {"/extensions/runtime/jsx-runtime.mjs", R"JS(const runtime = globalThis.__streamfindJsxRuntime;
+if (!runtime) throw new Error('StreamFind JSX runtime is unavailable');
+export const Fragment = runtime.Fragment;
+export const jsx = runtime.jsx;
+export const jsxs = runtime.jsxs;
+)JS"},
+        {"/extensions/runtime/jsx-dev-runtime.mjs", R"JS(const runtime = globalThis.__streamfindJsxRuntime;
+if (!runtime) throw new Error('StreamFind JSX runtime is unavailable');
+export const Fragment = runtime.Fragment;
+export const jsxDEV = runtime.jsxDEV ?? runtime.jsx;
+)JS"},
+        {"/extensions/runtime/react-dom.mjs", R"JS(const runtime = globalThis.__streamfindReactDom;
+if (!runtime) throw new Error('StreamFind ReactDOM runtime is unavailable');
+export default runtime.default ?? runtime;
+export const createPortal = runtime.createPortal;
+export const flushSync = runtime.flushSync;
+)JS"},
+        {"/extensions/runtime/react-dom-client.mjs", R"JS(const runtime = globalThis.__streamfindReactDomClient;
+if (!runtime) throw new Error('StreamFind ReactDOM client runtime is unavailable');
+export const createRoot = runtime.createRoot;
+export const hydrateRoot = runtime.hydrateRoot;
+)JS"},
+        {"/extensions/runtime/viewer-sdk.mjs", R"JS(const runtime = globalThis.__streamfindViewerSdk;
+if (!runtime) throw new Error('StreamFind viewer SDK runtime is unavailable');
+export const VIEWER_SDK_API_VERSION = runtime.VIEWER_SDK_API_VERSION;
+export const FRONTEND_PLUGIN_API_VERSION = runtime.FRONTEND_PLUGIN_API_VERSION;
+export const FRONTEND_PLUGIN_MANIFEST_KIND = runtime.FRONTEND_PLUGIN_MANIFEST_KIND;
+export const FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION = runtime.FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION;
+export const artifactContractMatches = runtime.artifactContractMatches;
+export const isQualifiedArtifactContract = runtime.isQualifiedArtifactContract;
+export const localArtifactContract = runtime.localArtifactContract;
+)JS"},
+    };
+    const auto module = modules.find(request_path);
+    if (module == modules.end()) {
+        send_http(socket, 404, Json{{"error", "viewer runtime module not found"}});
+        return;
+    }
+    const auto &body = module->second;
+    send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/javascript; charset=utf-8\r\nContent-Length: " +
+        std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
 }
 
 std::vector<std::filesystem::path> workflow_demo_files(const std::filesystem::path &package_root) {
@@ -593,7 +760,12 @@ ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &co
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) throw std::runtime_error("Winsock initialization failed");
 #endif
+    const auto extension_configuration = load_plugin_configuration_file(configuration_path);
+    if (!extension_configuration.valid) throw std::runtime_error(extension_configuration.diagnostics);
+    viewer_deployment_roots_ = extension_configuration.configuration.viewer_deployment_roots;
+    enabled_viewers_ = extension_configuration.configuration.enabled_viewers;
     plugin_runtime_.load(configuration_path, methods_, operations_);
+    projects_.set_plugin_snapshot(plugin_runtime_.status());
 }
 ServiceServer::~ServiceServer() { stop();
 #ifdef _WIN32
@@ -619,7 +791,7 @@ Json ServiceServer::workflow_demos() const {
                 {"name", metadata.value("name", parsed.name.empty() ? id : parsed.name)},
                 {"description", metadata.value("description", "Workflow demonstration")},
                 {"use_case", metadata.value("use_case", "")},
-                {"domain", metadata.value("domain", "")},
+                {"plugin", metadata.value("plugin", "")},
                 {"metadata", metadata},
                 {"workflow", parsed.to_json()}
             });
@@ -751,8 +923,14 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             const auto body_start = separator + 4;
             const auto body = body_start < request.size() ? request.substr(body_start) : std::string{};
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
+            else if (method == "GET" && path == "/plugins.json")
+                detail::send_combined_plugin_manifest(socket, application_root_, viewer_deployment_roots_, enabled_viewers_);
+            else if (method == "GET" && path.rfind("/extensions/runtime/", 0) == 0)
+                detail::send_viewer_runtime_module(socket, path);
+            else if (method == "GET" && path.rfind("/viewers/", 0) == 0)
+                detail::send_viewer_file(socket, viewer_deployment_roots_, path);
             else if (method == "GET" && std::filesystem::exists(application_root_) &&
-                     (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
+                     (path == "/" || path.rfind("/assets/", 0) == 0))
                 detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/health") {
                 auto health = projects_.health_snapshot();
@@ -911,22 +1089,33 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     throw std::invalid_argument("dependency installation requires allow_network=true");
                 detail::send_http(socket, 200, plugin_runtime_.install_dependencies(request));
             }
+            else if (method == "GET" && path == "/plugins/status")
+                detail::send_http(socket, 200, plugin_runtime_.status());
+            else if (method == "POST" && path == "/plugins/activate") {
+                const auto request = Json::parse(body);
+                const auto plugin_id = request.value("plugin_id", std::string{});
+                if (plugin_id.empty()) throw std::invalid_argument("plugin_id is required");
+                auto result = plugin_runtime_.activate(plugin_id, methods_, operations_);
+                projects_.set_plugin_snapshot(plugin_runtime_.status());
+                result["service_generation"] = result.value("generation", 0);
+                detail::send_http(socket, 200, result);
+            }
             else if (method == "GET" && route == "/capabilities/index") detail::send_http(socket, 200, capability_index_json());
-            else if (method == "GET" && route.rfind("/capabilities/domains/", 0) == 0 && route.ends_with("/modules")) {
-                const auto domain = detail::percent_decode(route.substr(std::string("/capabilities/domains/").size(), route.size() - std::string("/capabilities/domains/").size() - std::string("/modules").size()));
+            else if (method == "GET" && route.rfind("/capabilities/plugins/", 0) == 0 && route.ends_with("/modules")) {
+                const auto plugin = detail::percent_decode(route.substr(std::string("/capabilities/plugins/").size(), route.size() - std::string("/capabilities/plugins/").size() - std::string("/modules").size()));
                 Json modules = Json::array();
                 const auto entries = catalogue::entries_json();
                 std::set<std::string> unique;
                 if (entries) for (const auto &entry : *entries)
-                    if (entry.value("kind", "") == "operation" && entry.value("exposed", false) && entry.value("executable", false) && entry.value("domain", "") == domain)
+                    if (entry.value("kind", "") == "operation" && entry.value("exposed", false) && entry.value("executable", false) && entry.value("plugin", "") == plugin)
                         unique.insert(entry.value("module_id", ""));
                 for (const auto &module : unique) modules.push_back(module);
-                detail::send_http(socket, 200, Json{{"domain", domain}, {"modules", modules}});
+                detail::send_http(socket, 200, Json{{"plugin", plugin}, {"modules", modules}});
             }
             else if (method == "GET" && route == "/capabilities/operations") {
-                const auto domain = query_value("domain");
-                if (domain.empty()) detail::send_http(socket, 400, Json{{"error", "domain is required"}});
-                else detail::send_http(socket, 200, Json{{"operations", capability_operations_json(domain, query_value("module"), query_value("search"), query_value("include_schema") == "true")} });
+                const auto plugin = query_value("plugin");
+                if (plugin.empty()) detail::send_http(socket, 400, Json{{"error", "plugin is required"}});
+                else detail::send_http(socket, 200, Json{{"operations", capability_operations_json(plugin, query_value("module"), query_value("search"), query_value("include_schema") == "true")} });
             }
             else if (method == "GET" && route.rfind("/capabilities/operations/", 0) == 0) {
                 const auto operation_id = detail::percent_decode(route.substr(std::string("/capabilities/operations/").size()));
@@ -1223,7 +1412,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                                          : projects_.create(session_id, options);
                 const auto event_type = input.value("mode", "create") == "open" ? "project.opened" : "project.created";
                 Json response = project;
-                response["initialization"] = project_initialization_json(project.domains);
+                response["initialization"] = project_initialization_json(project.plugins);
                 events_.publish(Json{{"type", event_type}, {"project", response}});
                 detail::send_http(socket, 201, response);
             } else if (method == "GET" && path == "/")

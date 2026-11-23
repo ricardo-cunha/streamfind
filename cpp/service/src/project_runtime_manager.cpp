@@ -1,4 +1,7 @@
 #include "streamfind/service/project_runtime_manager.hpp"
+#include "streamfind/plugin_configuration.hpp"
+#include "streamfind/plugin_lockfile.hpp"
+#include "streamfind/plugin_registry.hpp"
 #include "streamfind/service/worker_handle_broker.hpp"
 #include "streamfind/fingerprint.hpp"
 #include "streamfind/project_layout.hpp"
@@ -13,6 +16,7 @@
 #include <map>
 #include <sstream>
 #include <stdexcept>
+#include <cstdlib>
 #include <system_error>
 #include <tuple>
 #include <unordered_map>
@@ -32,6 +36,35 @@
 #endif
 
 namespace streamfind::service {
+
+namespace lockfile_detail {
+
+std::filesystem::path configured_registry_path(const std::filesystem::path &configuration_path) {
+    if (!configuration_path.empty()) {
+        const auto configuration = load_plugin_configuration_file(configuration_path);
+        if (configuration.valid && !configuration.configuration.registry_path.empty())
+            return configuration.configuration.registry_path;
+    }
+    if (const auto *home = std::getenv("STREAMFIND_HOME"); home != nullptr && *home)
+        return std::filesystem::path(home) / "extensions" / "registry.json";
+    return {};
+}
+
+void enforce_project_plugin_lockfile(const std::filesystem::path &container,
+                                     const std::filesystem::path &configuration_path) {
+    const auto lock_path = container / "project.extensions.lock.json";
+    if (!std::filesystem::exists(lock_path)) return;
+    const auto lock = load_plugin_lockfile(lock_path);
+    if (!lock.valid) throw std::runtime_error(lock.diagnostics);
+    const auto registry_path = configured_registry_path(configuration_path);
+    if (registry_path.empty() || !std::filesystem::exists(registry_path))
+        throw std::runtime_error("project plugin lockfile requires an installed plugin registry: " + lock_path.string());
+    const auto registry = load_plugin_registry(registry_path);
+    if (!registry.valid) throw std::runtime_error(registry.diagnostics);
+    validate_plugin_lockfile_against_registry(lock.lockfile, registry.registry);
+}
+
+}  // namespace lockfile_detail
 
 namespace detail {
 
@@ -284,7 +317,7 @@ ProjectSessionDto ProjectRuntimeManager::describe(const std::string &session_id,
     return ProjectSessionDto{session_id,
                              path_to_utf8(project.get_database_path().parent_path()),
                              error ? 0 : size,
-                             project.get_domains(),
+                             project.get_plugins(),
                              project.get_metadata(),
                              inspection.to_json()};
 }
@@ -367,6 +400,7 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
         throw std::runtime_error("Project database is missing at " + layout.database().string());
     if (!std::filesystem::is_directory(layout.data()))
         throw std::runtime_error("Project result store is missing at " + layout.data().string());
+    lockfile_detail::enforce_project_plugin_lockfile(layout.container(), configuration_path_);
     auto folder_lock = detail::lock_project_folder(layout.container());
     ResultStore result_store(layout.database());
     const auto prior_store = result_store.inspect(false, false);
@@ -2098,6 +2132,11 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     request.workflow = project->get_workflow().to_json();
     request.parameters = parameters;
     request.inputs = effective_inputs;
+    {
+        std::lock_guard lock(mutex_);
+        request.plugin_generation = plugin_snapshot_.value("generation", static_cast<std::uint64_t>(0));
+        request.plugin_versions = plugin_snapshot_.value("plugins", Json::array());
+    }
     auto worker = std::make_shared<WorkerProcess>(std::move(request),
         [this, session_id](const WorkerMetadata &metadata, std::string_view type,
                            std::string_view message, const Json &payload) {
@@ -2226,6 +2265,11 @@ void ProjectRuntimeManager::set_operation_event_callback(
     std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> callback) {
     std::lock_guard lock(mutex_);
     operation_event_callback_ = std::move(callback);
+}
+
+void ProjectRuntimeManager::set_plugin_snapshot(const Json &snapshot) {
+    std::lock_guard lock(mutex_);
+    plugin_snapshot_ = snapshot;
 }
 
 }  // namespace streamfind::service

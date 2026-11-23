@@ -60,15 +60,14 @@ function Show-Help([string]$Topic) {
         'workflows' = @('workflows nta|impurities|quantification [--project-name NAME] [--url ENDPOINT] [--force] [--dry-run]', 'Create a validated, editable workflow project through MCP in a running service.', 'Creates a .sf folder under tmp/projects/ and does not execute operations. --url selects the service endpoint. --force deletes the named .sf folder and workflow sidecar first; close that project in the app before replacing it.')
         'version show' = @('version show', 'Print the canonical streamfind version from VERSION.')
         'version bump' = @('version bump patch|minor|major [--dry-run]', 'Advance the canonical VERSION.', 'Resets lower components and prints the previous and next version.')
-        'sdk build' = @('sdk build [--dry-run]', 'Build the Windows kit and, when Ubuntu/WSL is available, the Linux kit.', 'Uses the canonical VERSION and runs each platform package validation.')
         'plugin list' = @('plugin list', 'List the bundled native plugin directories.')
-        'plugin new' = @('plugin new PATH [--kind backend|frontend|full] [--domain ID] [--dry-run]', 'Create an external plugin project.')
-        'plugin build' = @('plugin build PATH --sdk PATH [--dry-run]', 'Configure and compile an external native plugin against an installed developer kit.')
+        'plugin new' = @('plugin new PATH [--kind backend|frontend|full] [--plugin ID] [--dry-run]', 'Create an external plugin project.')
+        'plugin build' = @('plugin build PATH --sdk PATH [--dry-run]', 'Configure and compile an external native plugin against the SDK in a matching runtime archive.')
         'plugin test' = @('plugin test PATH [--dry-run]', 'Run the external native plugin CTest suite.')
-        'plugin stage' = @('plugin stage PATH [--dry-run]', 'Install a built external native plugin under tmp/build/.')
-        'plugin validate' = @('plugin validate PATH --sdk PATH [--dry-run]', 'Validate the staged native plugin with the developer kit validator.')
-        'release prepare' = @('release prepare [--dry-run]', 'Build and validate the runtime release archive for this host.', 'Requires a clean committed checkout. Run on Windows and Linux to produce both archives.')
-        'release verify' = @('release verify [--dry-run]', 'Verify checksums and smoke-test the extracted runtime for this host.', 'Uses the canonical VERSION and the repository Python environment.')
+        'plugin stage' = @('plugin stage PATH [--dry-run]', 'Install a built external native plugin under tmp/build/.../stage/plugins/custom/custom.plugin.<name>/.')
+        'plugin validate' = @('plugin validate PATH --sdk PATH [--dry-run]', 'Validate the staged native plugin with the validator from a matching runtime archive.')
+        'release prepare' = @('release prepare [--linux] [--distribution NAME] [--dry-run]', 'Build and validate a runtime release archive.', 'Without --linux, uses the current host. On Windows, --linux mirrors the checkout into the WSL user home under the worktree name, builds and tests there, then exports the archive back to tmp/release-output/. Requires a clean committed checkout.')
+        'release verify' = @('release verify [--linux] [--distribution NAME] [--dry-run]', 'Verify checksums and smoke-test an extracted runtime archive.', 'Without --linux, verifies the current host release. On Windows, --linux runs the extracted Linux package checks inside the native WSL worktree mirror.')
         'release publish' = @('release publish [--dry-run]', 'Publish checksum-verified runtime archives to GitHub.', 'Requires authenticated gh and an existing remote version tag.')
     }
     if (!$Topic) {
@@ -99,7 +98,7 @@ try {
     $command = $args[0]
     $subject = ''
     $index = 1
-    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'sdk', 'release', 'plugin', 'workflows') {
+    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'release', 'plugin', 'workflows') {
         if ($args.Count -lt 2) { throw "Missing subcommand for $command" }
         $subject = $args[1]
         $index = 2
@@ -133,15 +132,14 @@ try {
         'workflows/quantification' { 'project-name', 'url', 'force', 'dry-run' }
         'doctor/' { 'json', 'workflow' }
         'setup/' { 'components', 'dry-run' }
-        'sdk/build' { 'dry-run' }
         'plugin/list' { }
-        'plugin/new' { 'kind', 'domain', 'dry-run' }
+        'plugin/new' { 'kind', 'plugin', 'dry-run' }
         'plugin/build' { 'sdk', 'dry-run' }
         'plugin/test' { 'dry-run' }
         'plugin/stage' { 'dry-run' }
         'plugin/validate' { 'sdk', 'dry-run' }
-        'release/prepare' { 'dry-run' }
-        'release/verify' { 'dry-run' }
+        'release/prepare' { 'linux', 'distribution', 'dry-run' }
+        'release/verify' { 'linux', 'distribution', 'dry-run' }
         'release/publish' { 'dry-run' }
         'configure/' { 'config', 'dry-run' }
         'build/backend' { 'target', 'jobs', 'dry-run' }
@@ -157,7 +155,7 @@ try {
         'version/bump' { 'dry-run' }
         default { throw "Unknown command: $command $subject" }
     }
-    $logExecution = $command -in 'configure', 'build', 'test', 'check', 'package', 'setup', 'sdk', 'release' -or
+    $logExecution = $command -in 'configure', 'build', 'test', 'check', 'package', 'setup', 'release' -or
         ($command -eq 'plugin' -and $subject -ne 'list') -or
         "$command/$subject" -eq 'script/run'
     if ($command -eq 'workflows') { $logExecution = $true }
@@ -174,7 +172,7 @@ try {
         if (!$argument.StartsWith('--') -or $name -notin $allowed -or $options.ContainsKey($name)) {
             throw "Unexpected option: $argument"
         }
-        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only', 'force') { $options[$name] = $true; continue }
+        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only', 'force', 'linux') { $options[$name] = $true; continue }
         if (++$index -ge $args.Count -or ([string]$args[$index]).StartsWith('--')) { throw "Missing value for --$name" }
         $options[$name] = $args[$index]
     }
@@ -388,7 +386,7 @@ try {
         if ($subject -eq 'new') {
             $arguments = @((Join-Path $PSScriptRoot 'dev/plugin_generator.py'), 'init', $pluginPath)
             if ($options.kind) { $arguments += '--kind', $options.kind }
-            if ($options.domain) { $arguments += '--domain', $options.domain }
+            if ($options.plugin) { $arguments += '--plugin', $options.plugin }
             $steps += New-Step $root $tools.python $arguments
         } else {
             $source = Join-Path $pluginPath 'backend'
@@ -398,10 +396,10 @@ try {
             $pluginTree = Join-Path $root "tmp/build/external-plugins/$key"
             $stage = Join-Path $pluginTree 'stage'
             if ($subject -in 'build', 'validate') {
-                if (!$options.sdk) { throw 'Specify the extracted developer kit with --sdk PATH' }
+                if (!$options.sdk) { throw 'Specify the matching runtime archive with --sdk PATH' }
                 $kit = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($options.sdk)
-                $kitConfig = Join-Path $kit 'sdk/cmake/streamfind'
-                if (!(Test-Path -LiteralPath (Join-Path $kitConfig 'streamfindConfig.cmake'))) { throw "Developer kit CMake package missing: $kitConfig" }
+                $kitConfig = Join-Path $kit 'sdk/native/cmake/streamfind'
+                if (!(Test-Path -LiteralPath (Join-Path $kitConfig 'streamfindConfig.cmake'))) { throw "Runtime archive SDK CMake package missing: $kitConfig" }
                 $activePath = $environment.PATH ?? $env:PATH
                 $environment.PATH = (Join-Path $kit 'bin') + [IO.Path]::PathSeparator + $activePath
             }
@@ -422,11 +420,12 @@ try {
                     $manifestFile = Join-Path $pluginTree 'plugin.json'
                     $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
                     $platformKey = if ($IsWindows) { 'windows-x86_64' } else { 'linux-x86_64' }
-                    if ($manifest.domain -notmatch '^[a-z][a-z0-9_]*$') { throw 'Invalid manifest domain' }
-                    $validator = Join-Path $kit $(if ($IsWindows) { 'sdk/bin/streamfind_sdk_plugin_validator.exe' } else { 'sdk/bin/streamfind_sdk_plugin_validator' })
+                    if ($manifest.plugin -notmatch '^[a-z][a-z0-9_]*$') { throw 'Invalid manifest plugin' }
+                    $validator = Join-Path $kit $(if ($IsWindows) { 'sdk/native/bin/streamfind_sdk_plugin_validator.exe' } else { 'sdk/native/bin/streamfind_sdk_plugin_validator' })
+                    $pluginId = "custom.plugin.$($manifest.plugin)"
                     $steps += New-Step $root $validator @('--source-dir', $source,
-                        '--output-dir', (Join-Path $stage "plugins/$($manifest.domain)"),
-                        '--manifest', $manifestFile, '--domain', $manifest.domain, '--library', $manifest.library.$platformKey)
+                        '--output-dir', (Join-Path $stage "plugins/custom/$pluginId"),
+                        '--manifest', $manifestFile, '--plugin', $manifest.plugin, '--library', $manifest.library.$platformKey)
                 }
             }
         }
@@ -443,20 +442,24 @@ try {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-python.ps1'))
         }
         if ('native' -in $components) {
+            $provisioner = Join-Path $PSScriptRoot 'release/dev/streamfind-dev-setup.ps1'
             if ($IsWindows) {
-                $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-msys2.ps1'), '-Root', $ucrt)
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', $provisioner,
+                    '-Command', 'setup', '-Target', 'native', '-Workspace', $root)
             } elseif ($IsLinux) {
-                $steps += New-Step $root (Resolve-Tool sudo) @('apt-get', 'install', '--no-upgrade',
-                    'build-essential', 'cmake', 'ninja-build', 'libarrow-dev', 'libabsl-dev', 'libbrotli-dev',
-                    'libssl-dev', 'libprotobuf-dev', 'liblz4-dev', 'libre2-dev', 'libbz2-dev',
-                    'libutf8proc-dev', 'libcurl4-openssl-dev', 'zlib1g-dev')
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', $provisioner,
+                    '-Command', 'setup', '-Target', 'native', '-Workspace', $root)
             } else { throw 'Native package setup supports Windows MSYS2 UCRT64 and Ubuntu/Debian APT.' }
         }
         if ('native' -in $components -or 'java' -in $components) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-java.ps1'))
         }
         if (('frontend' -in $components -or 'browser' -in $components) -and !$tools.node) {
-            $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-node.ps1'))
+            $provisioner = Join-Path $PSScriptRoot 'release/dev/streamfind-dev-setup.ps1'
+            $provisionerArguments = @('-NoProfile', '-File', $provisioner,
+                '-Command', 'setup', '-Target', 'viewer', '-Workspace', $root)
+            if ('frontend' -in $components) { $provisionerArguments += @('-Viewer', $frontend) }
+            $steps += New-Step $root $pwsh $provisionerArguments
             $tools.node = $nodeManaged
             $tools.npm = $npmManaged
             $environment.PATH = if ($IsWindows) { "$managedNodeBin;$($environment.PATH ?? $env:PATH)" }
@@ -501,14 +504,21 @@ try {
         if ($options.force) { $workflowArguments += '-Force' }
         $steps += New-Step $root $pwsh $workflowArguments
     }
-    if ($command -eq 'release' -and $subject -in 'verify', 'publish') {
+    if ($command -eq 'release' -and $subject -eq 'verify' -and $options.linux -and $IsWindows) {
+        $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
+        $linuxHelper = Join-Path $PSScriptRoot 'release/cpp/release-cpp-wsl.ps1'
+        $linuxArguments = @('-NoProfile', '-File', $linuxHelper, '-Command', 'verify', '-Version', $version)
+        if ($options.distribution) { $linuxArguments += '-Distribution', $options.distribution }
+        $steps += New-Step $root $pwsh $linuxArguments
+    } elseif ($command -eq 'release' -and $subject -in 'verify', 'publish') {
+        if ($options.linux) { throw '--linux is supported for release prepare and release verify on Windows, not release publish' }
         $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
         $arguments = @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'release/publish-release.ps1'), '-Version', $version)
         if ($subject -eq 'verify') { $arguments += '-VerifyOnly' }
         else { $arguments += '-RequireProvenance' }
         $steps += New-Step $root $pwsh $arguments
     }
-    if ($command -eq 'sdk' -or "$command/$subject" -eq 'release/prepare') {
+    if ("$command/$subject" -eq 'release/prepare') {
         $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
         if ($command -eq 'release' -and !$options['dry-run']) {
             $git = Resolve-Tool git
@@ -518,38 +528,17 @@ try {
             $releaseCommit = & $git -C $root rev-parse HEAD
             if ($LASTEXITCODE -ne 0 -or $releaseCommit -notmatch '^[0-9a-f]{40}$') { throw 'Cannot resolve the release source commit' }
         }
-        $scriptName = if ($command -eq 'sdk') { 'package-plugin-devkit' } else { 'release-cpp' }
         $scriptDirectory = Join-Path $PSScriptRoot 'release/cpp'
-        if ($command -eq 'sdk' -and $IsWindows) {
-            $windowsSdkScript = Join-Path $scriptDirectory 'package-plugin-devkit.ps1'
-            $steps += New-Step $root $pwsh @('-NoProfile', '-File', $windowsSdkScript, '-Version', $version)
-
-            $wsl = Resolve-Tool 'wsl.exe'
-            if ($wsl) {
-                $wslListing = & $wsl --list --quiet 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    $distributionNames = (($wslListing -join "`n").Replace([string][char]0, '') -split '\r?\n' |
-                        ForEach-Object { $_.Trim() } | Where-Object { $_ })
-                    $ubuntu = $distributionNames | Where-Object { $_ -match '^Ubuntu(?:[-_ ].*)?$' } | Select-Object -First 1
-                    if ($ubuntu) {
-                        $linuxSdkScript = Join-Path $scriptDirectory 'package-plugin-devkit-linux.sh'
-                        $linuxScriptPath = & $wsl --distribution $ubuntu --exec wslpath -a $linuxSdkScript
-                        if ($LASTEXITCODE -eq 0 -and $linuxScriptPath) {
-                            $linuxScriptPath = ([string]$linuxScriptPath).Replace([string][char]0, '').Trim()
-                            $steps += New-Step $root $wsl @('--distribution', $ubuntu, '--exec', '/usr/bin/env',
-                                'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-                                'STREAMFIND_SKIP_FRONTEND_BUILD=1', '/bin/bash', $linuxScriptPath, $version)
-                        } else {
-                            Write-Warning "Ubuntu WSL distribution '$ubuntu' is installed but could not resolve the Linux SDK build script path; building the Windows SDK only."
-                        }
-                    }
-                }
-            }
+        if ($IsWindows -and $options.linux) {
+            $linuxHelper = Join-Path $PSScriptRoot 'release/cpp/release-cpp-wsl.ps1'
+            $linuxArguments = @('-NoProfile', '-File', $linuxHelper, '-Command', 'prepare', '-Version', $version)
+            if ($options.distribution) { $linuxArguments += '-Distribution', $options.distribution }
+            $steps += New-Step $root $pwsh $linuxArguments
         } elseif ($IsWindows) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File',
-                (Join-Path $scriptDirectory "$scriptName.ps1"), '-Version', $version)
+                (Join-Path $scriptDirectory 'release-cpp.ps1'), '-Version', $version)
         } elseif ($IsLinux) {
-            $steps += New-Step $root (Resolve-Tool bash) @((Join-Path $scriptDirectory "$scriptName-linux.sh"), $version)
+            $steps += New-Step $root (Resolve-Tool bash) @((Join-Path $scriptDirectory 'release-cpp-linux.sh'), $version)
         } else { throw 'Release and SDK packaging support Windows and Linux' }
     }
     if ($command -eq 'package') {
@@ -723,12 +712,15 @@ try {
         if ($LASTEXITCODE -ne 0 -or $currentCommit -ne $releaseCommit) { throw 'Source commit changed during release preparation' }
         $changes = & $git -C $root status --porcelain
         if ($LASTEXITCODE -ne 0 -or $changes) { throw 'Checkout changed during release preparation' }
-        $archiveName = if ($IsWindows) { "streamfind-core-cpp-$version-Windows-x86_64.zip" }
-            else { "streamfind-core-cpp-$version-Linux-x86_64.tgz" }
+        $releaseIsLinux = [bool]$options.linux -or $IsLinux
+        $archiveName = if ($releaseIsLinux) { "streamfind-core-cpp-$version-Linux-x86_64.tgz" }
+            else { "streamfind-core-cpp-$version-Windows-x86_64.zip" }
         $archive = Join-Path $root "tmp/release-output/$archiveName"
         [ordered]@{ version = $version; commit = $releaseCommit; archive = $archiveName
             sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-            cmake = $tools.cmake; compiler = $tools.gxx; plugins = 'ALL' } |
+            cmake = if ($releaseIsLinux -and $IsWindows) { "WSL:$($options.distribution ?? 'Ubuntu')/cmake" } else { $tools.cmake }
+            compiler = if ($releaseIsLinux -and $IsWindows) { "WSL:$($options.distribution ?? 'Ubuntu')/g++" } else { $tools.gxx }
+            plugins = 'ALL' } |
             ConvertTo-Json | Set-Content -LiteralPath "$archive.provenance.json" -Encoding utf8
     }
     if ($options.json) {

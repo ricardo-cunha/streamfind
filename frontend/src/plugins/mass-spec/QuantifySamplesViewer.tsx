@@ -39,7 +39,7 @@ const MODEL_COLUMNS = [
   'replicate_mode',
   'replicate_status',
   'calibration_acceptance_status',
-  'domain_status',
+  'plugin_status',
   'monotonicity_status',
   'fit_status',
 ];

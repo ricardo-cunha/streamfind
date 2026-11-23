@@ -79,7 +79,7 @@ int run() {
     streamfind::OperationDefinition definition;
     definition.id = "test.tail";
     definition.name = "Tail operation";
-    definition.domain = "test";
+    definition.plugin = "test";
     definition.parameters.definitions.push_back({"a", "First fingerprint parameter", {streamfind::ParameterType::integer}, nullptr, false});
     definition.parameters.definitions.push_back({"b", "Second fingerprint parameter", {streamfind::ParameterType::integer}, nullptr, false});
     definition.output_ports.push_back({"test.result", "test.result", "one", "json", {"json"}, false});
@@ -88,7 +88,7 @@ int run() {
     streamfind::OperationDefinition consumer_definition;
     consumer_definition.id = "test.consumer";
     consumer_definition.name = "Consumer operation";
-    consumer_definition.domain = "test";
+    consumer_definition.plugin = "test";
     consumer_definition.input_ports.push_back({"input", "test.table", "one", "table", {"table"}, false});
     operations.register_operation(streamfind::Operation(consumer_definition));
 
@@ -215,7 +215,7 @@ int run() {
     streamfind::OperationDefinition incomplete_definition;
     incomplete_definition.id = "test.incomplete";
     incomplete_definition.name = "Incomplete output operation";
-    incomplete_definition.domain = "test";
+    incomplete_definition.plugin = "test";
     incomplete_definition.output_ports.push_back({"test.result", "test.result", "one", "json", {"json"}, false});
     incomplete_definition.output_ports.push_back({"test.missing", "test.missing", "one", "json", {"json"}, false});
     operations.register_operation(streamfind::Operation(incomplete_definition));
@@ -273,7 +273,7 @@ int run() {
     }
     project.close();
     auto reopened = streamfind::Project::open({path, {}});
-    if (reopened.get_domains().size() != 1 ||
+    if (reopened.get_plugins().size() != 1 ||
         reopened.get_metadata().at("owner") != "test") {
         std::cerr << "project reopen failed\n";
         return 1;

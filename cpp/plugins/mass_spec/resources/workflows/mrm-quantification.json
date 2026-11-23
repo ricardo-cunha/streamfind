@@ -44,7 +44,7 @@
     }
   ],
   "metadata": {
-    "domain": "mass_spec",
+    "plugin": "mass_spec",
     "description": "MRM quantification demo using deuterated internal standards, compound-specific calibration models, qualifier transitions, QC samples, unknowns, and blanks.",
     "id": "mass-spec-mrm-quantification",
     "methods": [
@@ -2828,6 +2828,6 @@
   "schema_version": 2,
   "version": 39,
   "workflow_id": "mass-spec-mrm-quantification",
-  "domain": "mass_spec",
+  "plugin": "mass_spec",
   "definition_revision": 1
 }

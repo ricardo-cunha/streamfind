@@ -10,7 +10,7 @@ describe('core frontend plugin', () => {
 
     registerCoreFrontendPlugin(registry);
 
-    expect(registry.ids()).toEqual(['streamfind.core']);
+    expect(registry.ids()).toEqual(['native.viewer.core']);
     expect(viewers.get('core.table')?.label).toBe('Table renderer');
     expect(viewers.resolve({ semanticType: 'sf:featuresTable', representation: 'table' })?.id).toBe('core.table');
   });

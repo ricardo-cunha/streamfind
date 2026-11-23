@@ -1,12 +1,12 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfsensors:exploreOpcuaServer
     a sf:Operation ;
     sf:operationId "sensors.explore_opcua_server" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry true ;
     skos:inScheme sfcore:scheme ;
@@ -24,7 +24,7 @@ sfsensors:exploreOpcuaServer
 sfsensors:inspectOpcuaNode
     a sf:Operation ;
     sf:operationId "sensors.inspect_opcua_node" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -41,7 +41,7 @@ sfsensors:inspectOpcuaNode
 sfsensors:collectOpcuaData
     a sf:Operation ;
     sf:operationId "sensors.collect_opcua_data" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry true ;
     skos:inScheme sfcore:scheme ;
@@ -58,7 +58,7 @@ sfsensors:collectOpcuaData
 sfsensors:captureOpcuaTimeseries
     a sf:Operation ;
     sf:operationId "sensors.capture_opcua_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry true ;
     skos:inScheme sfcore:scheme ;
@@ -80,7 +80,7 @@ sfsensors:captureOpcuaTimeseries
 sfsensors:captureMqttTimeseries
     a sf:Operation ;
     sf:operationId "sensors.capture_mqtt_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry true ;
     skos:inScheme sfcore:scheme ;
@@ -111,7 +111,7 @@ sfsensors:captureMqttTimeseries
 sfsensors:normalizeSensorTable
     a sf:Operation ;
     sf:operationId "sensors.normalize_sensor_table" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -136,7 +136,7 @@ sfsensors:normalizeSensorTable
 sfsensors:validateTimeseries
     a sf:Operation ;
     sf:operationId "sensors.validate_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -148,7 +148,7 @@ sfsensors:validateTimeseries
 sfsensors:filterTimeseries
     a sf:Operation ;
     sf:operationId "sensors.filter_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -163,7 +163,7 @@ sfsensors:filterTimeseries
 sfsensors:resampleTimeseries
     a sf:Operation ;
     sf:operationId "sensors.resample_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -178,7 +178,7 @@ sfsensors:resampleTimeseries
 sfsensors:rollingStatistics
     a sf:Operation ;
     sf:operationId "sensors.rolling_statistics" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -193,7 +193,7 @@ sfsensors:rollingStatistics
 sfsensors:alignTimeseries
     a sf:Operation ;
     sf:operationId "sensors.align_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;
@@ -208,7 +208,7 @@ sfsensors:alignTimeseries
 sfsensors:projectAlignedTimeseries
     a sf:Operation ;
     sf:operationId "sensors.project_aligned_timeseries" ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:providedByModule sfsensors:baseModule ;
     sf:projectEntry false ;
     skos:inScheme sfcore:scheme ;

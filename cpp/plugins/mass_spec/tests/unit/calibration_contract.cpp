@@ -173,7 +173,7 @@ int main()
         {8.0, std::exp(0.4 + 0.8 * std::log(8.0) + 0.1 * std::log(8.0) * std::log(8.0))}};
     const auto wagner = fit_wagner(wagner_points, 3, LinearFitOptions{});
     require(wagner.status == "ok", "Exact Wagner calibration did not fit successfully.");
-    require(wagner.domain_status == "positive_domain", "Wagner positive-domain status is incorrect.");
+    require(wagner.plugin_status == "positive_plugin", "Wagner positive-plugin status is incorrect.");
     require(wagner.monotonicity_status == "increasing", "Increasing Wagner fit was not accepted.");
     require_near(wagner.coefficient_0, 0.4, 1.0e-10, "Wagner coefficient 0 is incorrect.");
     require_near(wagner.coefficient_1, 0.8, 1.0e-10, "Wagner coefficient 1 is incorrect.");
@@ -231,8 +231,8 @@ int main()
             "Wagner no-real-root response was not rejected.");
     const auto invalid_wagner = fit_wagner({{0.0, 1.0}, {1.0, 2.0}, {2.0, 4.0}}, 3, LinearFitOptions{});
     require(invalid_wagner.status == "insufficient_data", "Wagner accepted a non-positive concentration.");
-    require(invalid_wagner.domain_status == "excluded_nonpositive",
-            "Wagner invalid-domain exclusion was not reported.");
+    require(invalid_wagner.plugin_status == "excluded_nonpositive",
+            "Wagner invalid-plugin exclusion was not reported.");
 
     std::cout << "mass-spec calibration contract passed\n";
     return 0;

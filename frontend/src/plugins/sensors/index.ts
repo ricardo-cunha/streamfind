@@ -4,19 +4,21 @@ import './OpcuaExplorerViewer.css';
 
 export const sensorsFrontendPlugin: FrontendPlugin = {
   manifest: {
-    id: 'streamfind.sensors',
+    schemaVersion: 1,
+    kind: 'viewer',
+    id: 'native.viewer.sensors',
     name: 'streamfind OPC UA viewers',
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
-    domains: ['sensors'],
-    artifactContracts: ['opcuaExploration'],
+    plugins: ['sensors'],
+    artifactContracts: ['https://streamfind.dev/catalogue/plugins/sensors#opcuaExploration'],
     capabilities: ['opcua-node-explorer'],
   },
   setup(api) {
     api.registerViewer({
       id: 'sensors.opcua-explorer',
       label: 'OPC UA network explorer',
-      accepts: ['opcuaExploration'],
+      accepts: ['https://streamfind.dev/catalogue/plugins/sensors#opcuaExploration'],
       component: OpcuaExplorerViewer,
     });
   },

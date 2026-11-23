@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/plugins/statistics#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfstat:tableInputPort
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Input table" ;
@@ -18,7 +18,7 @@ sfstat:tableInputPort
 
 sfstat:pcaScoresTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA scores table" ;
@@ -33,7 +33,7 @@ sfstat:pcaScoresTable
 
 sfstat:pcaLoadingsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA loadings table" ;
@@ -47,7 +47,7 @@ sfstat:pcaLoadingsTable
 
 sfstat:pcaVarianceTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA variance table" ;
@@ -62,7 +62,7 @@ sfstat:pcaVarianceTable
 
 sfstat:plsScoresTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS scores table" ;
@@ -78,7 +78,7 @@ sfstat:plsScoresTable
 
 sfstat:plsLoadingsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS loadings table" ;
@@ -93,7 +93,7 @@ sfstat:plsLoadingsTable
 
 sfstat:plsCoefficientsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS coefficients table" ;
@@ -108,7 +108,7 @@ sfstat:plsCoefficientsTable
 
 sfstat:plsPredictionsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS predictions table" ;
@@ -126,7 +126,7 @@ sfstat:plsPredictionsTable
 
 sfstat:foldChangeTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fold-change results table" ;
@@ -145,7 +145,7 @@ sfstat:foldChangeTable
 
 sfstat:pcaDiagnostics
     a sf:OperationResult ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA diagnostics" ;
@@ -154,7 +154,7 @@ sfstat:pcaDiagnostics
 
 sfstat:plsDiagnostics
     a sf:OperationResult ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS diagnostics" ;
@@ -163,7 +163,7 @@ sfstat:plsDiagnostics
 
 sfstat:foldChangeDiagnostics
     a sf:OperationResult ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fold-change diagnostics" ;

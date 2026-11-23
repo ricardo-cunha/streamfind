@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sfms: <https://streamfind.dev/catalogue/plugins/mass_spec#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfms:findFeaturesDebugResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Find features debug result" ;
@@ -14,7 +14,7 @@ sfms:findFeaturesDebugResult
 
 sfms:quantificationDebugResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quantification debug result" ;
@@ -23,7 +23,7 @@ sfms:quantificationDebugResult
 
 sfms:createComponentsDebugResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Create components debug result" ;
@@ -32,7 +32,7 @@ sfms:createComponentsDebugResult
 
 sfms:annotateComponentsDebugResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Annotate components debug result" ;
@@ -41,7 +41,7 @@ sfms:annotateComponentsDebugResult
 
 sfms:fillFeaturesDebugResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fill feature gaps debug result" ;
@@ -50,7 +50,7 @@ sfms:fillFeaturesDebugResult
 
 sfms:groupFeaturesDebugResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Group features debug result" ;
@@ -59,7 +59,7 @@ sfms:groupFeaturesDebugResult
 
 sfms:analysesTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry analyses table" ;
@@ -91,7 +91,7 @@ sfms:analysesTable
 
 sfms:spectraHeadersTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry spectra headers table" ;
@@ -124,7 +124,7 @@ sfms:spectraHeadersTable
 
 sfms:chromatogramsHeadersTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry chromatograms headers table" ;
@@ -153,7 +153,7 @@ sfms:chromatogramsHeadersTable
 
 sfms:chromatogramsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry chromatograms table" ;
@@ -181,7 +181,7 @@ sfms:chromatogramsTable
 
 sfms:chromatogramPeaksTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry chromatogram peaks table" ;
@@ -230,7 +230,7 @@ sfms:chromatogramPeaksTable
 
 sfms:quantificationMethodTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification method table" ;
@@ -274,7 +274,7 @@ sfms:quantificationMethodTable
 
 sfms:quantificationAnalysesTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification analyses table" ;
@@ -292,7 +292,7 @@ sfms:quantificationAnalysesTable
 
 sfms:quantificationTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification table" ;
@@ -377,7 +377,7 @@ sfms:quantificationTable
 
 sfms:quantificationCalibrationModelsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry quantification calibration models table" ;
@@ -406,13 +406,13 @@ sfms:quantificationCalibrationModelsTable
         sfms:replicateModeColumn,
         sfms:replicateStatusColumn,
         sfms:calibrationAcceptanceStatusColumn,
-        sfms:calibrationDomainStatusColumn,
+        sfms:calibrationPluginStatusColumn,
         sfms:monotonicityStatusColumn,
         sfms:fitStatusColumn .
 
 sfms:featuresTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry features table" ;
@@ -514,7 +514,7 @@ sfms:featuresTable
 
 sfms:suspectsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspects table" ;
@@ -573,7 +573,7 @@ sfms:suspectsTable
 
 sfms:internalStandardsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry internal standards table" ;
@@ -632,7 +632,7 @@ sfms:internalStandardsTable
 
 sfms:transformationProductsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry transformation products table" ;
@@ -677,7 +677,7 @@ sfms:transformationProductsTable
 
 sfms:ticTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry total ion current" ;
     skos:definition "Table of total ion current records." ;
@@ -696,7 +696,7 @@ sfms:ticTable
 
 sfms:spectraTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry spectra" ;
     skos:definition "Table of raw spectra." ;
@@ -719,7 +719,7 @@ sfms:spectraTable
 
 sfms:eicTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry extracted ion chromatograms" ;
     skos:definition "Table of extracted ion chromatogram spectra." ;
@@ -743,7 +743,7 @@ sfms:eicTable
 
 sfms:ms1Table
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry MS1 spectra" ;
     skos:definition "Table of clustered and presence-filtered MS1 spectrum points." ;
@@ -767,7 +767,7 @@ sfms:ms1Table
 
 sfms:ms2Table
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry MS2 spectra" ;
     skos:definition "Table of clustered and presence-filtered MS2 spectrum points." ;
@@ -791,7 +791,7 @@ sfms:ms2Table
 
 sfms:analysisNamesResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry analysis names" ;
@@ -801,7 +801,7 @@ sfms:analysisNamesResult
 
 sfms:replicateNamesResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry replicate names" ;
@@ -811,7 +811,7 @@ sfms:replicateNamesResult
 
 sfms:blankNamesResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry blank names" ;
@@ -821,7 +821,7 @@ sfms:blankNamesResult
 
 sfms:concentrationsResult
     a sf:OperationResult ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry concentrations" ;
@@ -831,7 +831,7 @@ sfms:concentrationsResult
 
 sfms:targetsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry targets table" ;
@@ -855,7 +855,7 @@ sfms:targetsTable
 
 sfms:rtWindowsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention-time windows table" ;
@@ -868,7 +868,7 @@ sfms:rtWindowsTable
 
 sfms:suspectTargetsTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspect targets table" ;
@@ -893,7 +893,7 @@ sfms:suspectTargetsTable
 
 sfms:transformationProductCandidatesTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry transformation-product candidate table" ;
@@ -924,7 +924,7 @@ sfms:transformationProductCandidatesTable
 
 sfms:fragmentationTreeTable
     a sf:Table ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag fragmentation tree table" ;

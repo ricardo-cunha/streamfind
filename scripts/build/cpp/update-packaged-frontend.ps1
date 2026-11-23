@@ -11,7 +11,7 @@
 param()
 
 if (-not $IsWindows) {
-    throw 'Refresh tmp/packaged_build from native Windows PowerShell on the development machine. WSL is reserved for Linux release and developer-kit builds.'
+    throw 'Refresh tmp/packaged_build from native Windows PowerShell on the development machine. WSL is reserved for Linux runtime/development release builds.'
 }
 
 . "$PSScriptRoot\..\build-common.ps1"
@@ -42,5 +42,6 @@ Write-Log "Refreshing packaged frontend: $packageApp"
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $packageApp
 New-Item -ItemType Directory -Path $packageApp -Force | Out-Null
 Copy-Item -Recurse -Force (Join-Path $frontendDist '*') $packageApp
+New-Item -ItemType Directory -Force -Path (Join-Path $root 'tmp\packaged_build\viewers\native'), (Join-Path $root 'tmp\packaged_build\viewers\custom'), (Join-Path $root 'tmp\packaged_build\plugins\native'), (Join-Path $root 'tmp\packaged_build\plugins\custom') | Out-Null
 
 Write-Log "Packaged frontend ready: $packageApp"

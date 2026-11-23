@@ -289,6 +289,14 @@ int main(int argc, char **argv) {
         OperationRegistry operations;
         ServicePluginRuntime runtime;
         runtime.load(configuration, methods, operations);
+        const auto expected_generation = request_line.value("plugin_generation", static_cast<std::uint64_t>(0));
+        const auto expected_plugins = request_line.value("plugin_versions", Json::array());
+        const auto actual_plugins = runtime.status();
+        if (expected_generation != 0 && actual_plugins.value("generation", static_cast<std::uint64_t>(0)) != expected_generation)
+            throw std::runtime_error("worker plugin generation changed before startup");
+        if (!expected_plugins.is_null() && expected_plugins != Json::array() &&
+            actual_plugins.value("plugins", Json::array()) != expected_plugins)
+            throw std::runtime_error("worker plugin version set changed before startup");
         int exit_code = 0;
         const auto workflow = request_line.value("workflow", Json::object());
         if (!workflow.is_object() || workflow.empty())

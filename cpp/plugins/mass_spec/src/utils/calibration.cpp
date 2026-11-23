@@ -387,14 +387,14 @@ WagnerFit fit_wagner(const std::vector<LinearPoint> &points, const int minimum_p
         if (!detail::finite_point(point)) continue;
         if (point.concentration <= 0.0 || point.response <= 0.0)
         {
-            result.domain_status = "excluded_nonpositive";
+            result.plugin_status = "excluded_nonpositive";
             continue;
         }
         const auto log_concentration = std::log(point.concentration);
         const auto log_response = std::log(point.response);
         if (!std::isfinite(log_concentration) || !std::isfinite(log_response))
         {
-            result.domain_status = "excluded_nonfinite_log";
+            result.plugin_status = "excluded_nonfinite_log";
             continue;
         }
         valid_points.push_back(point);
@@ -405,14 +405,14 @@ WagnerFit fit_wagner(const std::vector<LinearPoint> &points, const int minimum_p
         minimum_points, options.intercept_mode == "forced_zero" ? 2 : 3));
     if (transformed.size() < required)
     {
-        if (result.domain_status == "unknown") result.domain_status = "insufficient_positive_points";
+        if (result.plugin_status == "unknown") result.plugin_status = "insufficient_positive_points";
         return result;
     }
     const auto solved = detail::solve_weighted(transformed, options.intercept_mode == "forced_zero", 2);
     if (!solved.solved)
     {
         result.status = "singular_model";
-        result.domain_status = "positive_domain";
+        result.plugin_status = "positive_plugin";
         return result;
     }
 
@@ -462,7 +462,7 @@ WagnerFit fit_wagner(const std::vector<LinearPoint> &points, const int minimum_p
     const auto log_max = std::log(result.range_max);
     const auto derivative_min = result.coefficient_1 + 2.0 * result.coefficient_2 * log_min;
     const auto derivative_max = result.coefficient_1 + 2.0 * result.coefficient_2 * log_max;
-    result.domain_status = "positive_domain";
+    result.plugin_status = "positive_plugin";
     if (std::isfinite(derivative_min) && std::isfinite(derivative_max) &&
         derivative_min > detail::kEpsilon && derivative_max > detail::kEpsilon)
     {

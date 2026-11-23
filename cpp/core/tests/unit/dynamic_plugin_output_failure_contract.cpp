@@ -110,7 +110,7 @@ void run() {
         {"kind", "operation"},
         {"canonical_id", "test.partial_json_outputs"},
         {"label", "Partial JSON outputs"},
-        {"domain", "test"},
+        {"plugin", "test"},
         {"executable", true},
         {"parameters", Json::array()},
         {"input_ports", Json::array()},

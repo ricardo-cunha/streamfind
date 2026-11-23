@@ -43,7 +43,7 @@ try {
 
     Invoke-McpTool $process 3 'create' @{
         project_path = $database
-        domain = 'mass_spec'
+        plugin = 'mass_spec'
     } | Out-Null
     $added = Invoke-McpTool $process 4 'mass_spec.add_analyses' @{
         project_path = $database

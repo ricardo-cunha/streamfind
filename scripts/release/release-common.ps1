@@ -37,18 +37,19 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         'bin/streamfind-server.exe',
         'bin/streamfind-worker.exe',
         'bin/streamfind-mcp.exe',
+        'bin/streamfind-dev.exe',
         'bin/streamfind-tray.exe',
         'bin/streamfind.json',
-        'plugins/mass_spec/plugin.json',
-        'plugins/mass_spec/catalogue.duckdb',
-        'plugins/mass_spec/streamfind_mass_spec.dll',
-        'plugins/mass_spec/ontology/operations.ttl',
-        'plugins/raman/plugin.json',
-        'plugins/raman/catalogue.duckdb',
-        'plugins/raman/streamfind_raman.dll',
-        'plugins/sensors/plugin.json',
-        'plugins/sensors/catalogue.duckdb',
-        'plugins/sensors/streamfind_sensors.dll',
+        'plugins/native/native.plugin.mass_spec/plugin.json',
+        'plugins/native/native.plugin.mass_spec/catalogue.duckdb',
+        'plugins/native/native.plugin.mass_spec/streamfind_mass_spec.dll',
+        'plugins/native/native.plugin.mass_spec/ontology/operations.ttl',
+        'plugins/native/native.plugin.raman/plugin.json',
+        'plugins/native/native.plugin.raman/catalogue.duckdb',
+        'plugins/native/native.plugin.raman/streamfind_raman.dll',
+        'plugins/native/native.plugin.sensors/plugin.json',
+        'plugins/native/native.plugin.sensors/catalogue.duckdb',
+        'plugins/native/native.plugin.sensors/streamfind_sensors.dll',
         'core/catalogue.duckdb',
         'core/ontology/operations.ttl',
         'bin/openbabel_streamfind.dll',
@@ -57,12 +58,29 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         'bin/libstdc++-6.dll',
         'bin/libwinpthread-1.dll',
         'bin/data/openbabel/logp.txt',
-        'app/index.html'
+        'app/index.html',
+        'dev/streamfind-dev-setup.ps1',
+        'dev/StreamFindProvisioning.psm1',
+        'dev/toolchains.lock.json',
+        'dev/setup-manifest.json',
+        'sdk/native/sdk-manifest.json',
+        'sdk/native/cmake/streamfind/streamfindConfig.cmake',
+        'sdk/native/bin/streamfind_sdk_plugin_validator.exe',
+        'sdk/native/bin/streamfind_sdk_catalogue.exe',
+        'sdk/viewer/@streamfind/viewer-sdk/package.json',
+        'sdk/viewer/@streamfind/viewer-sdk/src/index.ts'
     )
     foreach ($relative in $required) {
         if (-not (Test-Path (Join-Path $PackageRoot $relative))) {
             throw "C++ distribution payload is missing $relative"
         }
+    }
+    $machineLocal = Get-ChildItem -Recurse -File $PackageRoot | Where-Object {
+        $relative = $_.FullName.Substring($PackageRoot.Length).TrimStart('\','/')
+        $relative -match '(?i)(^|[\\/])(node_modules|\.venv|tmp[\\/]build)([\\/]|$)|(^|[\\/])(home|Users|mnt)[\\/]'
+    }
+    if ($machineLocal) {
+        throw "C++ distribution contains machine-local or generated development paths: $($machineLocal.FullName -join ', ')"
     }
 
     $legacyVendorRoot = Join-Path $PackageRoot 'core/vendors'
@@ -72,27 +90,29 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
     $nativeOutsideBin = Get-ChildItem -Recurse -File $PackageRoot |
         Where-Object {
             $_.Extension -match '(?i)^\.(dll|so|dylib)$' -and
-            $_.FullName.Substring($PackageRoot.Length).TrimStart('\','/') -notmatch '^(bin[\\/]|plugins[\\/][^\\/]+[\\/])'
+            $_.FullName.Substring($PackageRoot.Length).TrimStart('\','/') -notmatch '^(bin[\\/]|sdk[\\/]native[\\/](bin|lib)[\\/]|plugins[\\/][^\\/]+[\\/])'
         }
     if ($nativeOutsideBin) {
         throw "C++ distribution contains native runtime files outside bin or plugin packages: $($nativeOutsideBin.FullName -join ', ')"
     }
 
     $pluginRoot = Join-Path $PackageRoot 'plugins'
-    $pluginDirectories = @(Get-ChildItem -Path $pluginRoot -Directory)
+    $nativePluginRoot = Join-Path $pluginRoot 'native'
+    $pluginDirectories = @(Get-ChildItem -Path $nativePluginRoot -Directory)
     if ($pluginDirectories.Count -eq 0) {
-        throw "C++ distribution contains no plugins under $pluginRoot"
+        throw "C++ distribution contains no native plugins under $nativePluginRoot"
     }
     foreach ($pluginDirectory in $pluginDirectories) {
-        $domain = $pluginDirectory.Name
+        $plugin = $pluginDirectory.Name
         $manifestPath = Join-Path $pluginDirectory.FullName 'plugin.json'
         try {
             $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
         } catch {
             throw "Invalid plugin manifest: $manifestPath ($($_.Exception.Message))"
         }
-        if ($manifest.plugin_id -ne $domain) { throw "Plugin manifest ID mismatch: $manifestPath" }
-        if ($manifest.domain -ne $domain) { throw "Plugin manifest domain mismatch: $manifestPath" }
+        if ($manifest.plugin_id -ne $plugin) { throw "Plugin manifest ID mismatch: $manifestPath" }
+        $expectedPluginName = $plugin -replace '^native\.plugin\.', ''
+        if ($manifest.plugin -ne $expectedPluginName) { throw "Plugin manifest plugin mismatch: $manifestPath" }
         if ($manifest.version -ne $env:STREAMFIND_PACKAGE_VERSION -and $env:STREAMFIND_PACKAGE_VERSION) {
             throw "Plugin manifest version mismatch: $manifestPath"
         }
@@ -106,13 +126,13 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
         if (-not $libraryName) { throw "Plugin manifest Windows library is missing: $manifestPath" }
         foreach ($requiredPluginFile in @('catalogue.duckdb', $libraryName, 'ontology')) {
             if (-not (Test-Path (Join-Path $pluginDirectory.FullName $requiredPluginFile))) {
-                throw "C++ distribution plugin payload is missing $requiredPluginFile in $domain"
+                throw "C++ distribution plugin payload is missing $requiredPluginFile in $plugin"
             }
         }
     }
-    $sdkDirectory = Join-Path $PackageRoot 'sdk'
-    if (Test-Path $sdkDirectory) {
-        throw "Runtime C++ distribution must not contain the SDK directory: $sdkDirectory"
+    $setupPreview = & pwsh -NoProfile -File (Join-Path $PackageRoot 'dev/streamfind-dev-setup.ps1') setup -Target all -Workspace (Join-Path $PackageRoot '..\package-workspace-preview') -ManagedHome (Join-Path $PackageRoot '..\package-managed-home-preview') -DryRun | ConvertFrom-Json
+    if ($setupPreview.target -ne 'all' -or (($setupPreview.actions -join "`n") -notmatch 'Python')) {
+        throw 'Combined runtime package setup preview did not include workspace Python provisioning'
     }
 }
 

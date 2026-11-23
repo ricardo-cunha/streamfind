@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfsensors:sourceIdColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source ID column" ;
     skos:definition "Input column containing the stable acquisition source identity." ;
@@ -16,7 +16,7 @@ sfsensors:sourceIdColumnParameter
 
 sfsensors:layoutParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Input layout" ;
     skos:definition "CSV/table layout: long uses one signal and value per row; wide uses each selected variable column as a signal." ;
@@ -28,7 +28,7 @@ sfsensors:layoutParameter
 
 sfsensors:variableColumnsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Variable columns" ;
     skos:definition "Explicit wide-layout table columns to emit as sensor signals, in the desired signal order." ;
@@ -40,7 +40,7 @@ sfsensors:variableColumnsParameter
 
 sfsensors:signalIdColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Signal ID column" ;
     skos:definition "Long-layout input column containing the stable sensor or channel identity." ;
@@ -51,7 +51,7 @@ sfsensors:signalIdColumnParameter
 
 sfsensors:eventTimeColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Event time column" ;
     skos:definition "Input column containing the measurement timestamp in ISO-8601 form." ;
@@ -62,7 +62,7 @@ sfsensors:eventTimeColumnParameter
 
 sfsensors:valueColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Sensor value column" ;
     skos:definition "Long-layout input scalar column containing the observation value." ;
@@ -73,7 +73,7 @@ sfsensors:valueColumnParameter
 
 sfsensors:receivedAtColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Received-at column" ;
     skos:definition "Optional input column containing the time streamfind received the observation; absent values use invocation time." ;
@@ -84,7 +84,7 @@ sfsensors:receivedAtColumnParameter
 
 sfsensors:unitColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Unit column" ;
     skos:definition "Optional input column containing the measurement unit." ;
@@ -95,7 +95,7 @@ sfsensors:unitColumnParameter
 
 sfsensors:qualityColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quality column" ;
     skos:definition "Optional input column containing good, uncertain, bad, or missing quality." ;
@@ -106,7 +106,7 @@ sfsensors:qualityColumnParameter
 
 sfsensors:statusCodeColumnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Status-code column" ;
     skos:definition "Optional input column containing the protocol-native status code." ;
@@ -117,7 +117,7 @@ sfsensors:statusCodeColumnParameter
 
 sfsensors:timeOriginParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Time origin" ;
     skos:definition "Origin of the event timestamp: source, server, broker, or receiver." ;
@@ -129,7 +129,7 @@ sfsensors:timeOriginParameter
 
 sfsensors:captureIdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Capture ID" ;
     skos:definition "Optional acquisition execution identity propagated to the normalized observations." ;
@@ -140,7 +140,7 @@ sfsensors:captureIdParameter
 
 sfsensors:startTimeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Start time" ;
     skos:definition "Inclusive lower bound for event_time, in normalized ISO-8601 UTC form." ;
@@ -151,7 +151,7 @@ sfsensors:startTimeParameter
 
 sfsensors:endTimeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "End time" ;
     skos:definition "Exclusive upper bound for event_time, in normalized ISO-8601 UTC form." ;
@@ -162,7 +162,7 @@ sfsensors:endTimeParameter
 
 sfsensors:windowSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window size" ;
     skos:definition "Fixed UTC resampling window size in seconds; windows are left-closed and right-open and anchored at the Unix epoch." ;
@@ -174,7 +174,7 @@ sfsensors:windowSecondsParameter
 
 sfsensors:aggregationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Aggregation" ;
     skos:definition "Resampling aggregation: mean averages numeric observations and last selects the latest observation in each window." ;
@@ -186,7 +186,7 @@ sfsensors:aggregationParameter
 
 sfsensors:rollingWindowSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Rolling window size" ;
     skos:definition "Trailing event-time window in seconds used for each rolling statistic; the current observation is included." ;
@@ -198,7 +198,7 @@ sfsensors:rollingWindowSecondsParameter
 
 sfsensors:rollingStatisticParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Rolling statistic" ;
     skos:definition "Statistic emitted for each trailing window: mean, minimum, maximum, or population standard deviation." ;
@@ -210,7 +210,7 @@ sfsensors:rollingStatisticParameter
 
 sfsensors:referenceSignalParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Reference signal" ;
     skos:definition "Signal identifier whose observations define the timestamps used for nearest-time alignment." ;
@@ -221,7 +221,7 @@ sfsensors:referenceSignalParameter
 
 sfsensors:toleranceSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Alignment tolerance" ;
     skos:definition "Maximum absolute event-time distance in seconds for a nearest observation to be considered matched." ;
@@ -233,7 +233,7 @@ sfsensors:toleranceSecondsParameter
 
 sfsensors:timeAxisParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Alignment time axis" ;
     skos:definition "Timestamp axis used when projecting aligned observations back to SENSOR_TIMESERIES: reference uses the reference timeline, while observed uses matched event times and anchors missing matches to the reference timestamp." ;
@@ -245,7 +245,7 @@ sfsensors:timeAxisParameter
 
 sfsensors:endpointParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA endpoint" ;
     skos:definition "OPC UA endpoint URL, for example opc.tcp://localhost:4840." ;
@@ -256,7 +256,7 @@ sfsensors:endpointParameter
 
 sfsensors:brokerEndpointParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT broker endpoint" ;
     skos:definition "MQTT broker URL using tcp://, ssl://, ws://, or wss://." ;
@@ -267,7 +267,7 @@ sfsensors:brokerEndpointParameter
 
 sfsensors:topicsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT topics" ;
     skos:definition "JSON object mapping stable signal identifiers to MQTT topic filters." ;
@@ -278,7 +278,7 @@ sfsensors:topicsParameter
 
 sfsensors:payloadFormatParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT payload format" ;
     skos:definition "MQTT payload decoding mode: json envelopes or plain text values." ;
@@ -290,7 +290,7 @@ sfsensors:payloadFormatParameter
 
 sfsensors:qosParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT QoS" ;
     skos:definition "MQTT subscription quality of service level 0, 1, or 2." ;
@@ -302,7 +302,7 @@ sfsensors:qosParameter
 
 sfsensors:clientIdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT client ID" ;
     skos:definition "Optional MQTT client identifier; a unique operation identifier is used when absent." ;
@@ -313,7 +313,7 @@ sfsensors:clientIdParameter
 
 sfsensors:maxReconnectAttemptsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum MQTT reconnect attempts" ;
     skos:definition "Maximum number of bounded reconnect attempts after an established MQTT connection is lost. Zero disables reconnect." ;
@@ -325,7 +325,7 @@ sfsensors:maxReconnectAttemptsParameter
 
 sfsensors:reconnectBackoffSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT reconnect backoff" ;
     skos:definition "Delay in seconds between bounded MQTT reconnect attempts." ;
@@ -337,7 +337,7 @@ sfsensors:reconnectBackoffSecondsParameter
 
 sfsensors:mqttUsernameParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT username" ;
     skos:definition "Optional MQTT broker username." ;
@@ -348,7 +348,7 @@ sfsensors:mqttUsernameParameter
 
 sfsensors:mqttPasswordParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT password" ;
     skos:definition "Optional MQTT broker password paired with the username." ;
@@ -359,7 +359,7 @@ sfsensors:mqttPasswordParameter
 
 sfsensors:tlsEnabledParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Enable MQTT TLS" ;
     skos:definition "Enable TLS for ssl:// or wss:// broker endpoints." ;
@@ -370,7 +370,7 @@ sfsensors:tlsEnabledParameter
 
 sfsensors:tlsCaFileParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT CA certificate" ;
     skos:definition "Optional PEM trust-store path for MQTT broker certificate validation." ;
@@ -381,7 +381,7 @@ sfsensors:tlsCaFileParameter
 
 sfsensors:tlsClientCertificateParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT client certificate" ;
     skos:definition "Optional PEM client certificate path for mutual TLS." ;
@@ -392,7 +392,7 @@ sfsensors:tlsClientCertificateParameter
 
 sfsensors:tlsClientKeyParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT client key" ;
     skos:definition "Optional PEM private-key path for mutual TLS." ;
@@ -403,7 +403,7 @@ sfsensors:tlsClientKeyParameter
 
 sfsensors:tlsClientKeyPasswordParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MQTT client key password" ;
     skos:definition "Optional password for an encrypted MQTT client private key." ;
@@ -414,7 +414,7 @@ sfsensors:tlsClientKeyPasswordParameter
 
 sfsensors:tlsVerifyServerParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Verify MQTT broker certificate" ;
     skos:definition "Require successful broker certificate and hostname validation for TLS connections." ;
@@ -425,7 +425,7 @@ sfsensors:tlsVerifyServerParameter
 
 sfsensors:usernameParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA username" ;
     skos:definition "Optional username for OPC UA username/password authentication." ;
@@ -436,7 +436,7 @@ sfsensors:usernameParameter
 
 sfsensors:passwordParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA password" ;
     skos:definition "Optional password paired with the OPC UA username." ;
@@ -447,7 +447,7 @@ sfsensors:passwordParameter
 
 sfsensors:timeoutSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA timeout" ;
     skos:definition "Connection and request timeout in seconds." ;
@@ -458,7 +458,7 @@ sfsensors:timeoutSecondsParameter
 
 sfsensors:nodeIdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA node ID" ;
     skos:definition "Identifier of the OPC UA node whose definition and metadata should be inspected." ;
@@ -469,7 +469,7 @@ sfsensors:nodeIdParameter
 
 sfsensors:maxDepthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum browse depth" ;
     skos:definition "Maximum number of hierarchical levels explored from the Objects folder." ;
@@ -480,7 +480,7 @@ sfsensors:maxDepthParameter
 
 sfsensors:maxChildrenParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum children per node" ;
     skos:definition "Maximum number of child references retained for each browsed node." ;
@@ -491,7 +491,7 @@ sfsensors:maxChildrenParameter
 
 sfsensors:nodesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA nodes" ;
     skos:definition "JSON object mapping output names to OPC UA node identifiers." ;
@@ -502,7 +502,7 @@ sfsensors:nodesParameter
 
 sfsensors:captureDurationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Capture duration" ;
     skos:definition "Maximum duration of one finite sensor time-series capture in seconds." ;
@@ -514,7 +514,7 @@ sfsensors:captureDurationParameter
 
 sfsensors:captureIntervalParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Sample interval" ;
     skos:definition "Polling interval for each requested OPC UA node in milliseconds." ;
@@ -526,7 +526,7 @@ sfsensors:captureIntervalParameter
 
 sfsensors:maxSamplesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum samples" ;
     skos:definition "Maximum total observations emitted by one finite capture across all requested nodes." ;
@@ -538,7 +538,7 @@ sfsensors:maxSamplesParameter
 
 sfsensors:maxBufferBytesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum buffer bytes" ;
     skos:definition "Maximum approximate in-memory Arrow batch size before a capture publishes another immutable result batch." ;

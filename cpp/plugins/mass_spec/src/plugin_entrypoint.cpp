@@ -213,7 +213,7 @@ streamfind_plugin_status register_plugin(
     const streamfind_plugin_host_api *host, streamfind_plugin_api *plugin, void *) {
     if (host == nullptr || plugin == nullptr) return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     plugin->module_id = "mass_spec.nta";
-    plugin->domain_id = "mass_spec";
+    plugin->plugin_id = "native.plugin.mass_spec";
     plugin->invoke = &invoke;
     plugin->release_buffer = &release_buffer;
     plugin->describe_dependencies = &describe_dependencies;
@@ -237,7 +237,7 @@ streamfind_plugin_get_descriptor(
     descriptor->struct_size = sizeof(*descriptor);
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
-    descriptor->plugin_id = "mass_spec";
+    descriptor->plugin_id = "native.plugin.mass_spec";
     descriptor->plugin_version = STREAMFIND_BUNDLED_PLUGIN_VERSION;
     descriptor->register_plugin = &streamfind::mass_spec::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::mass_spec::dynamic_detail::shutdown_plugin;

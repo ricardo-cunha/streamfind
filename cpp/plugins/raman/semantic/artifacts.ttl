@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sfram: <https://streamfind.dev/catalogue/plugins/raman#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfram:analysesTable
     a sf:Table ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raman analyses table" ;
@@ -34,7 +34,7 @@ sfram:analysesTable
 
 sfram:spectraSummaryTable
     a sf:Table ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raman spectra summary table" ;
@@ -62,7 +62,7 @@ sfram:spectraSummaryTable
 
 sfram:spectraTable
     a sf:Table ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raman spectra table" ;
@@ -94,7 +94,7 @@ sfram:spectraTable
 
 sfram:baselineTable
     a sf:Table ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raman baseline table" ;
@@ -109,7 +109,7 @@ sfram:baselineTable
 
 sfram:sourceMetadataTable
     a sf:Table ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raman source metadata table" ;

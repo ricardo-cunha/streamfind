@@ -145,7 +145,7 @@ void run() {
     }
 
     const std::set<std::string> expected_error_codes = {
-        "project_not_found", "project_domain_mismatch", "workflow_not_found",
+        "project_not_found", "project_plugin_mismatch", "workflow_not_found",
         "workflow_invalid", "execution_not_found", "execution_not_cancellable",
         "execution_state_conflict", "execution_interrupted", "backend_busy",
         "database_error", "method_error"};

@@ -11,6 +11,8 @@ function plugin(
 ): FrontendPlugin {
   return {
     manifest: {
+      schemaVersion: 1,
+      kind: 'viewer',
       id: 'test.plugin',
       name: 'Test plugin',
       version: '1.0.0',
@@ -31,7 +33,7 @@ describe('frontend plugin registry', () => {
         api.registerViewer({
           id: 'test.table',
           label: 'Test table',
-          accepts: ['table'],
+          accepts: ['sf:table'],
           component: () => null,
         });
       }),

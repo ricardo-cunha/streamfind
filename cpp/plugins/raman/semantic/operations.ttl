@@ -1,12 +1,12 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sfram: <https://streamfind.dev/catalogue/plugins/raman#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfram:readRamanFiles
     a sf:Operation ;
     sf:operationId "raman.read_raman_files" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     sf:projectEntry true ;
     skos:inScheme sfcore:scheme ;
@@ -18,7 +18,7 @@ sfram:readRamanFiles
 sfram:ramanRemoveAnalyses
     a sf:Operation ;
     sf:operationId "raman.remove_analyses" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Remove Raman analyses" ;
@@ -30,7 +30,7 @@ sfram:ramanRemoveAnalyses
 sfram:normalizeSpectra
     a sf:Operation ;
     sf:operationId "raman.normalize_spectra" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Normalize spectra" ;
@@ -44,7 +44,7 @@ sfram:normalizeSpectra
 sfram:correctSpectraBaseline
     a sf:Operation ;
     sf:operationId "raman.correct_spectra_baseline" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Correct spectra baseline" ;
@@ -60,7 +60,7 @@ sfram:correctSpectraBaseline
 sfram:filterSpectralRange
     a sf:Operation ;
     sf:operationId "raman.filter_spectral_range" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Filter spectral range" ;
@@ -75,7 +75,7 @@ sfram:filterSpectralRange
 sfram:summarizeSpectra
     a sf:Operation ;
     sf:operationId "raman.summarize_spectra" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Summarize spectra" ;
@@ -86,7 +86,7 @@ sfram:summarizeSpectra
 sfram:smoothSpectra
     a sf:Operation ;
     sf:operationId "raman.smooth_spectra" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Smooth spectra" ;
@@ -100,7 +100,7 @@ sfram:smoothSpectra
 sfram:smoothSpectraSavitzkyGolay
     a sf:Operation ;
     sf:operationId "raman.smooth_spectra_savgol" ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     sf:providedByModule sfram:baseModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Smooth spectra (Savitzky-Golay)" ;

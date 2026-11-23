@@ -130,7 +130,7 @@ bool matches_search(const Json &entry, const std::string &search) {
 Json operation_summary(const Json &entry) {
     return Json{{"canonical_id", entry.value("canonical_id", "")},
                 {"label", entry.value("label", "")},
-                {"domain", entry.value("domain", "")},
+                {"plugin", entry.value("plugin", "")},
                 {"module_id", entry.value("module_id", "")},
                 {"definition", entry.value("definition", "")}};
 }
@@ -172,7 +172,7 @@ Json workflow_demos(const OperationRegistry &registry,
             const auto id = metadata.value("id", file.stem().string());
             workflows.push_back({{"id", id}, {"name", metadata.value("name", workflow.name.empty() ? id : workflow.name)},
                                  {"description", metadata.value("description", "Workflow demonstration")},
-                                 {"use_case", metadata.value("use_case", "")}, {"domain", metadata.value("domain", "")},
+                                 {"use_case", metadata.value("use_case", "")}, {"plugin", metadata.value("plugin", "")},
                                  {"workflow", workflow.to_json()}});
         } catch (const std::exception &error) {
             diagnostics.push_back({{"path", file.string()}, {"message", error.what()}});
@@ -182,7 +182,7 @@ Json workflow_demos(const OperationRegistry &registry,
 }
 
 Json tools() {
-    // Keep the initial MCP surface stable and small. Domain operations are
+    // Keep the initial MCP surface stable and small. Plugin operations are
     // discovered through the query tools below and invoked through
     // run_operation rather than being registered as one tool per operation.
     const auto catalogue = streamfind::catalogue::tools_json();
@@ -195,17 +195,17 @@ Json tools() {
             supported_catalogue_commands.push_back(entry);
     }
     result = std::move(supported_catalogue_commands);
-    result.push_back(tool("get_domains", "List domains that provide exposed operations.", Json::object(), Json::array()));
-    result.push_back(tool("get_modules", "List operation modules available in a domain.",
-                          Json{{"domain", {{"type", "string"}}}}, Json::array({"domain"})));
-    result.push_back(tool("get_operations", "List exposed executable operations for a domain and optional module, with optional search.",
-                          Json{{"domain", {{"type", "string"}}}, {"module", {{"type", "string"}}},
+    result.push_back(tool("get_plugins", "List plugins that provide exposed operations.", Json::object(), Json::array()));
+    result.push_back(tool("get_modules", "List operation modules available in a plugin.",
+                          Json{{"plugin", {{"type", "string"}}}}, Json::array({"plugin"})));
+    result.push_back(tool("get_operations", "List exposed executable operations for a plugin and optional module, with optional search.",
+                          Json{{"plugin", {{"type", "string"}}}, {"module", {{"type", "string"}}},
                                {"search", {{"type", "string"}}}},
-                          Json::array({"domain"})));
+                          Json::array({"plugin"})));
     result.push_back(tool("get_operation", "Return the full catalogue definition for one operation.",
                           Json{{"operation", {{"type", "string"}}}}, Json::array({"operation"})));
     result.push_back(tool("list_workflow_demos", "List validated workflow demos from enabled package plugins. Demo resources are resolved relative to the MCP executable configuration; malformed or unreadable demo files are returned in diagnostics.", Json::object(), Json::array()));
-    result.push_back(tool("run_operation", "Run one canonical domain operation against a project database. If exactly one matching workflow node exists, its parameters, inputs, and result-port identity are used automatically. Supply operation_instance when multiple matching nodes exist. Entry operations may run directly; operations with typed inputs require an existing graph binding or explicit inputs.",
+    result.push_back(tool("run_operation", "Run one canonical plugin operation against a project database. If exactly one matching workflow node exists, its parameters, inputs, and result-port identity are used automatically. Supply operation_instance when multiple matching nodes exist. Entry operations may run directly; operations with typed inputs require an existing graph binding or explicit inputs.",
                           Json{{"operation", {{"type", "string"}}},
                                {"project_path", {{"type", "string"}}},
                                {"arguments", {{"type", "object"}}},
@@ -218,6 +218,60 @@ Json tools() {
                           Json{{"dependency_ids", {{"type", "array"}, {"items", {{"type", "string"}}}}},
                                {"allow_network", {{"type", "boolean"}}}},
                           Json::array({"dependency_ids"})));
+
+    result.push_back(tool("dev_doctor", "Inspect the packaged developer environment, registry compatibility, and retained source paths.",
+                          Json{{"managed_home", {{"type", "string"}}}, {"workspace", {{"type", "string"}}},
+                               {"sdk", {{"type", "string"}}}, {"package", {{"type", "string"}}}}, Json::array()));
+    Json dev_list_properties = Json::object();
+    dev_list_properties["target"] = Json{{"type", "string"}, {"enum", Json::array({"native", "viewer", "all"})}};
+    dev_list_properties["managed_home"] = Json{{"type", "string"}};
+    result.push_back(tool("dev_list", "List installed native plugins and viewers through streamfind-dev.",
+                          dev_list_properties, Json::array()));
+    Json dev_inspect_properties = Json::object();
+    dev_inspect_properties["package"] = Json{{"type", "string"}};
+    dev_inspect_properties["target"] = Json{{"type", "string"}, {"enum", Json::array({"native", "viewer"})}};
+    dev_inspect_properties["managed_home"] = Json{{"type", "string"}};
+    result.push_back(tool("dev_inspect", "Inspect a packaged native plugin or viewer without loading its code.",
+                          dev_inspect_properties, Json::array({"package"})));
+    result.push_back(tool("dev_task_status", "Read the status and bounded output of an asynchronous developer command.",
+                          Json{{"task_id", {{"type", "string"}}}}, Json::array({"task_id"})));
+    result.push_back(tool("dev_task_cancel", "Request cancellation of an asynchronous developer command.",
+                          Json{{"task_id", {{"type", "string"}}}}, Json::array({"task_id"})));
+    result.push_back(tool("dev_plugin_create", "Create a custom native plugin project through streamfind-dev.",
+                          Json{{"name", {{"type", "string"}}}, {"workspace", {{"type", "string"}}}},
+                          Json::array({"name"})));
+    result.push_back(tool("dev_plugin_add_operation", "Add an operation to a custom native plugin project through streamfind-dev.",
+                          Json{{"name", {{"type", "string"}}}, {"plugin", {{"type", "string"}}}},
+                          Json::array({"name", "plugin"})));
+    const auto dev_plugin_path = Json{{"plugin", {{"type", "string"}}},
+                                      {"sdk", {{"type", "string"}}},
+                                      {"build", {{"type", "string"}}},
+                                      {"async", {{"type", "boolean"}}}};
+    for (const auto *name : {"dev_plugin_build", "dev_plugin_test", "dev_plugin_validate", "dev_plugin_package"})
+        result.push_back(tool(name, "Run the corresponding native plugin development command through streamfind-dev.",
+                              dev_plugin_path, Json::array({"plugin", "sdk"})));
+    result.push_back(tool("dev_plugin_rebuild", "Rebuild a native plugin from retained source against the selected SDK.",
+                          dev_plugin_path, Json::array({"plugin", "sdk"})));
+    result.push_back(tool("dev_plugin_install", "Install a validated native plugin package through streamfind-dev.",
+                          Json{{"package", {{"type", "string"}}}, {"managed_home", {{"type", "string"}}}},
+                          Json::array({"package"})));
+    result.push_back(tool("dev_plugin_activate", "Activate an installed native plugin version through streamfind-dev.",
+                          Json{{"id", {{"type", "string"}}}, {"version", {{"type", "string"}}}},
+                          Json::array({"id"})));
+    result.push_back(tool("dev_viewer_install", "Install a validated viewer package through streamfind-dev.",
+                          Json{{"package", {{"type", "string"}}}, {"managed_home", {{"type", "string"}}}},
+                          Json::array({"package"})));
+    result.push_back(tool("dev_viewer_activate", "Activate an installed viewer version through streamfind-dev.",
+                          Json{{"id", {{"type", "string"}}}, {"version", {{"type", "string"}}}},
+                          Json::array({"id"})));
+    result.push_back(tool("dev_viewer_create", "Create an independently buildable viewer project through streamfind-dev.",
+                          Json{{"name", {{"type", "string"}}}, {"contract", {{"type", "string"}}}, {"workspace", {{"type", "string"}}}},
+                          Json::array({"name", "contract"})));
+    const auto dev_viewer_path = Json{{"viewer", {{"type", "string"}}},
+                                      {"async", {{"type", "boolean"}}}};
+    for (const auto *name : {"dev_viewer_build", "dev_viewer_test", "dev_viewer_validate", "dev_viewer_package"})
+        result.push_back(tool(name, "Run the corresponding viewer development command through streamfind-dev.",
+                              dev_viewer_path, Json::array({"viewer"})));
 
     // Core project commands are catalogue entries, but their shared project
     // scope is enforced by the MCP dispatcher rather than by an ontology
@@ -303,7 +357,7 @@ Json tools() {
         const auto name = entry.value("name", "");
         if (name == "create") entry["inputSchema"] = create_schema;
         else if (name == "describe" || name == "connect" || name == "validate" ||
-            name == "get_project_domains" || name == "get_metadata" ||
+            name == "get_project_plugins" || name == "get_metadata" ||
             name == "get_workflow" || name == "create_workflow_execution" ||
             name == "get_execution" || name == "list_executions" ||
             name == "cancel_execution" ||
@@ -356,7 +410,7 @@ Json tools() {
             entry["_meta"]["streamfind"]["guidance"] = "The service retains the latest operation status for the project session and returns worker metadata when available. Poll until a terminal state, then inspect results.";
         } else if (name == "request_result") {
             entry["description"] = "Select one published operation output, optionally returning its JSON payload or bounded table rows.";
-            entry["_meta"]["streamfind"]["guidance"] = "First call without include_data to discover candidates and inspect the schema. Then select one result. For table results, specify the columns you need; optional filters use the shared service query operators and are independent of the table's domain.";
+            entry["_meta"]["streamfind"]["guidance"] = "First call without include_data to discover candidates and inspect the schema. Then select one result. For table results, specify the columns you need; optional filters use the shared service query operators and are independent of the table's plugin.";
         }
     }
     return result;
@@ -364,7 +418,7 @@ Json tools() {
 
 const char *command(const std::string &name) {
     static const std::array commands = {
-        "create", "describe", "validate", "get_project_domains", "get_metadata",
+        "create", "describe", "validate", "get_project_plugins", "get_metadata",
         "set_metadata", "get_workflow", "get_workflow_execution", "transition_execution", "cancel_execution", "set_workflow", "validate_workflow",
         "run_workflow",
         "get_audit_trail", "copy", "close",
@@ -378,7 +432,7 @@ const char *command(const std::string &name) {
 std::string interface_guidance() {
     return
         "StreamFind is a workflow-centric data-processing framework. A project is a "
-        "DuckDB-backed workspace with derived domains, ontology-defined operations, immutable "
+        "DuckDB-backed workspace with derived plugins, ontology-defined operations, immutable "
         "results, workflow revisions, and execution history. Build processing workflows "
         "as an acyclic graph of operation instances: each operation has a unique instance "
         "id, parameters, typed input/output ports, and an operationSuccessSignal. Connect "
@@ -431,10 +485,12 @@ Json workflow_result(const Json &value) {
 Session::Session(const OperationRegistry &operations, DependencyList dependencies,
                  DependencyInstaller installer, std::filesystem::path worker_executable,
                  std::filesystem::path worker_configuration,
-                 WorkflowDemoDirectories workflow_demo_directories)
+                 WorkflowDemoDirectories workflow_demo_directories,
+                 DevelopmentInvoker development_invoker)
     : operations_(operations), dependencies_(std::move(dependencies)), installer_(std::move(installer)),
       worker_executable_(std::move(worker_executable)), worker_configuration_(std::move(worker_configuration)),
-      workflow_demo_directories_(std::move(workflow_demo_directories)) {}
+      workflow_demo_directories_(std::move(workflow_demo_directories)),
+      development_invoker_(std::move(development_invoker)) {}
 
 Json Session::handle(const Json &request) {
     const auto id = request.value("id", Json(nullptr));
@@ -448,6 +504,19 @@ Json Session::handle(const Json &request) {
 
     if (method != "tools/call") return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", -32601}, {"message", "Unsupported MCP method"}}}};
     const auto name = request.at("params").value("name", "");
+    if (name.starts_with("dev_")) {
+        if (!development_invoker_)
+            return {{"jsonrpc", "2.0"}, {"id", id},
+                    {"error", {{"code", -32601}, {"message", "Development tools are unavailable in this MCP runtime"}}}};
+        try {
+            const auto arguments = request.at("params").value("arguments", Json::object());
+            return {{"jsonrpc", "2.0"}, {"id", id},
+                    {"result", detail::operation_result(development_invoker_(name, arguments))}};
+        } catch (const std::exception &error) {
+            return {{"jsonrpc", "2.0"}, {"id", id},
+                    {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
+        }
+    }
     if (name == "list_workflow_demos") {
         const auto directories = workflow_demo_directories_ ? workflow_demo_directories_()
                                                              : std::vector<std::filesystem::path>{};
@@ -479,7 +548,7 @@ Json Session::handle(const Json &request) {
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isError", true}, {"content", Json::array({{{"type", "text"}, {"text", error.what()}}})}}}};
         }
     }
-    if (name == "get_domains" || name == "get_modules" || name == "get_operations" || name == "get_operation" || name == "run_operation") {
+    if (name == "get_plugins" || name == "get_modules" || name == "get_operations" || name == "get_operation" || name == "run_operation") {
         const auto arguments = request.at("params").value("arguments", Json::object());
         const auto entries = streamfind::catalogue::entries_json();
         try {
@@ -519,9 +588,9 @@ Json Session::handle(const Json &request) {
             std::set<std::string> values;
             if (entries) for (const auto &entry : *entries) {
                 if (!detail::is_executable_operation(entry)) continue;
-                const auto domain = entry.value("domain", "");
-                if (name != "get_domains" && name != "get_operation" && domain != arguments.value("domain", "")) continue;
-                if (name == "get_domains") values.insert(domain);
+                const auto plugin = entry.value("plugin", "");
+                if (name != "get_plugins" && name != "get_operation" && plugin != arguments.value("plugin", "")) continue;
+                if (name == "get_plugins") values.insert(plugin);
                 else if (name == "get_modules") values.insert(entry.value("module_id", ""));
                 else if (name == "get_operations" &&
                          (arguments.value("module", "").empty() || entry.value("module_id", "") == arguments.value("module", "")) &&
@@ -530,7 +599,7 @@ Json Session::handle(const Json &request) {
                 else if (name == "get_operation" && entry.value("canonical_id", "") == arguments.value("operation", ""))
                     result.push_back(entry);
             }
-            if (name == "get_domains" || name == "get_modules")
+            if (name == "get_plugins" || name == "get_modules")
                 for (const auto &value : values) result.push_back(value);
             if (name == "get_operation" && result.empty())
                 throw Error(ErrorCode::InvalidArgument,
@@ -546,14 +615,14 @@ Json Session::handle(const Json &request) {
         const auto arguments = request.at("params").value("arguments", Json::object());
         try {
             if (!arguments.contains("project_path")) {
-                throw Error(ErrorCode::InvalidArgument, "Domain operations require project_path");
+                throw Error(ErrorCode::InvalidArgument, "Plugin operations require project_path");
             }
             const auto project_path = path_from_utf8(arguments.at("project_path").get<std::string>());
             const auto attachment = service::attach_project(project_path);
             const auto workflow = service::get_workflow(attachment);
             Json parameters = arguments;
             parameters.erase("project_path");
-            parameters.erase("domain");
+            parameters.erase("plugin");
             const auto inputs = parameters.value("inputs", Json(nullptr));
             const auto operation_instance = parameters.contains("operation_instance")
                 ? detail::operation_instance_id(parameters.at("operation_instance")) : std::string{};
@@ -618,7 +687,7 @@ Json Session::handle(const Json &request) {
         }
     }
     if (name == "create" || name == "describe" || name == "validate" ||
-        name == "get_project_domains" || name == "get_metadata" ||
+        name == "get_project_plugins" || name == "get_metadata" ||
         name == "set_metadata" || name == "get_audit_trail") {
         try {
             const auto arguments = request.at("params").value("arguments", Json::object());
@@ -632,8 +701,8 @@ Json Session::handle(const Json &request) {
             const auto attachment = service::attach_project(path_from_utf8(project_path));
             if (name == "describe")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment))}};
-            if (name == "get_project_domains")
-                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment).value("domains", Json::array()))}};
+            if (name == "get_project_plugins")
+                return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment).value("plugins", Json::array()))}};
             if (name == "get_metadata")
                 return {{"jsonrpc", "2.0"}, {"id", id}, {"result", detail::operation_result(service::get_project(attachment).value("metadata", Json::object()))}};
             if (name == "set_metadata")

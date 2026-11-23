@@ -1,5 +1,6 @@
 {
-  "plugin_id": "sensors",
+  "schema_version": 1,
+  "plugin_id": "native.plugin.sensors",
   "name": "StreamFind Sensors plugin",
   "version": "@PROJECT_VERSION@",
   "abi_version": { "major": 3, "minor": 0 },
@@ -8,7 +9,8 @@
     "windows-x86_64": "streamfind_sensors.dll",
     "linux-x86_64": "libstreamfind_sensors.so"
   },
-  "domain": "sensors",
+  "plugin": "sensors",
+  "ontology_namespace": "https://streamfind.dev/catalogue/plugins/sensors#",
   "semantic_catalogue": "catalogue.duckdb",
   "static_composition": false,
   "platforms": ["windows-x86_64", "linux-x86_64"]

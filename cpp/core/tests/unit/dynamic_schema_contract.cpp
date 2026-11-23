@@ -19,7 +19,7 @@ int main() {
         {"entries", streamfind::Json::array()},
         {"tables", streamfind::Json::array({streamfind::Json{
             {"table_contract_name", "DYNAMIC_SCHEMA_TABLE"},
-            {"domain", "test"},
+            {"plugin", "test"},
             {"module_id", "test.module"},
             {"columns", streamfind::Json::array({
                 streamfind::Json{{"name", "name"}, {"type", "string"}},
@@ -32,7 +32,7 @@ int main() {
                 streamfind::Json{{"name", "metadata"}, {"type", "object"}},
             })}}, streamfind::Json{
             {"table_contract_name", "DYNAMIC_INPUT_PORT"},
-            {"domain", "test"},
+            {"plugin", "test"},
             {"module_id", "test.module"},
             {"columns", streamfind::Json::array()}
         }})}
@@ -50,7 +50,7 @@ int main() {
     if (tables.has_table("DYNAMIC_INPUT_PORT"))
         throw std::runtime_error("schema-less dynamic input was materialized");
     const auto state = project.query_json(
-        "SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = 'test' AND module_id = 'test.module'");
+        "SELECT schema_version FROM MODULE_SCHEMA WHERE plugin_id = 'test' AND module_id = 'test.module'");
     if (state.size() != 1 || state.at(0).value("schema_version", std::string{}) != "1")
         throw std::runtime_error("manifest schema state was not persisted");
 

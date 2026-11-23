@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfsensors:sourceIdColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source ID" ;
     skos:definition "Stable identity of the acquisition source." ;
@@ -15,7 +15,7 @@ sfsensors:sourceIdColumn
 
 sfsensors:signalIdColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Signal ID" ;
     skos:definition "Stable identity of the sensor or channel." ;
@@ -25,7 +25,7 @@ sfsensors:signalIdColumn
 
 sfsensors:referenceSignalColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Reference signal" ;
     skos:definition "Signal whose observations define the reference timestamps for alignment." ;
@@ -35,7 +35,7 @@ sfsensors:referenceSignalColumn
 
 sfsensors:referenceEventTimeColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Reference event time" ;
     skos:definition "Reference signal timestamp to which the aligned observation is compared." ;
@@ -45,7 +45,7 @@ sfsensors:referenceEventTimeColumn
 
 sfsensors:eventTimeColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Event time" ;
     skos:definition "Measurement time normalized to UTC with microsecond precision when available." ;
@@ -55,7 +55,7 @@ sfsensors:eventTimeColumn
 
 sfsensors:receivedAtColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Received at" ;
     skos:definition "Time at which streamfind received the observation." ;
@@ -65,7 +65,7 @@ sfsensors:receivedAtColumn
 
 sfsensors:timeOriginColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Time origin" ;
     skos:definition "Origin of event_time: source, server, broker, or receiver." ;
@@ -75,7 +75,7 @@ sfsensors:timeOriginColumn
 
 sfsensors:valueTypeColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Value type" ;
     skos:definition "Typed value representation: real, integer, boolean, string, json, or missing." ;
@@ -85,7 +85,7 @@ sfsensors:valueTypeColumn
 
 sfsensors:valueDoubleColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Real value" ;
     skos:definition "Numeric real observation when value_type is real." ;
@@ -95,7 +95,7 @@ sfsensors:valueDoubleColumn
 
 sfsensors:valueIntColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Integer value" ;
     skos:definition "Integer observation when value_type is integer." ;
@@ -105,7 +105,7 @@ sfsensors:valueIntColumn
 
 sfsensors:valueBoolColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Boolean value" ;
     skos:definition "Boolean observation when value_type is boolean." ;
@@ -115,7 +115,7 @@ sfsensors:valueBoolColumn
 
 sfsensors:valueTextColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Text value" ;
     skos:definition "Text observation when value_type is string." ;
@@ -125,7 +125,7 @@ sfsensors:valueTextColumn
 
 sfsensors:sensorValueJsonColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "JSON value" ;
     skos:definition "Serialized structured observation when value_type is json." ;
@@ -135,7 +135,7 @@ sfsensors:sensorValueJsonColumn
 
 sfsensors:unitColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Unit" ;
     skos:definition "Unit of measurement when known." ;
@@ -145,7 +145,7 @@ sfsensors:unitColumn
 
 sfsensors:qualityColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quality" ;
     skos:definition "Normalized observation quality: good, uncertain, bad, or missing." ;
@@ -155,7 +155,7 @@ sfsensors:qualityColumn
 
 sfsensors:sensorStatusCodeColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Status code" ;
     skos:definition "Protocol-native status code associated with the observation." ;
@@ -165,7 +165,7 @@ sfsensors:sensorStatusCodeColumn
 
 sfsensors:captureIdColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Capture ID" ;
     skos:definition "Acquisition execution identity propagated with the observation." ;
@@ -175,7 +175,7 @@ sfsensors:captureIdColumn
 
 sfsensors:eventIdColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Event ID" ;
     skos:definition "Observation identity used for deduplication and provenance." ;
@@ -185,7 +185,7 @@ sfsensors:eventIdColumn
 
 sfsensors:alignmentStatusColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Alignment status" ;
     skos:definition "Whether the row is the reference observation, a nearest observation within tolerance, or an unavailable observation." ;
@@ -195,7 +195,7 @@ sfsensors:alignmentStatusColumn
 
 sfsensors:timeDeltaMicrosecondsColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Alignment time delta" ;
     skos:definition "Signed matched event_time minus reference_event_time in microseconds; absent when no observation is within tolerance." ;
@@ -205,7 +205,7 @@ sfsensors:timeDeltaMicrosecondsColumn
 
 sfsensors:endpointColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Endpoint" ;
     skos:definition "OPC UA endpoint used for the read." ;
@@ -215,7 +215,7 @@ sfsensors:endpointColumn
 
 sfsensors:nodeNameColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Node name" ;
     skos:definition "User-provided output name for the requested node." ;
@@ -225,7 +225,7 @@ sfsensors:nodeNameColumn
 
 sfsensors:nodeIdColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Node identifier" ;
     skos:definition "OPC UA node identifier read by the operation." ;
@@ -235,7 +235,7 @@ sfsensors:nodeIdColumn
 
 sfsensors:nodeClassColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Node class" ;
     skos:definition "Numeric OPC UA NodeClass category reported by the server." ;
@@ -245,7 +245,7 @@ sfsensors:nodeClassColumn
 
 sfsensors:nodeClassNameColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Node class name" ;
     skos:definition "Human-readable OPC UA NodeClass category reported by the server." ;
@@ -255,7 +255,7 @@ sfsensors:nodeClassNameColumn
 
 sfsensors:valueAvailableColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Value available" ;
     skos:definition "Whether a value was read successfully from a Variable node; non-Variable nodes are not queried for a value." ;
@@ -265,7 +265,7 @@ sfsensors:valueAvailableColumn
 
 sfsensors:valueColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Value" ;
     skos:definition "Decoded OPC UA scalar or array value when the read succeeds." ;
@@ -275,7 +275,7 @@ sfsensors:valueColumn
 
 sfsensors:valueJsonColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Value JSON" ;
     skos:definition "Serialized JSON representation of the decoded OPC UA value." ;
@@ -285,7 +285,7 @@ sfsensors:valueJsonColumn
 
 sfsensors:statusCodeColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Status code" ;
     skos:definition "OPC UA status code returned by the node read." ;
@@ -295,7 +295,7 @@ sfsensors:statusCodeColumn
 
 sfsensors:statusNameColumn
     a sf:Column ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Status name" ;
     skos:definition "Human-readable OPC UA status name returned by the node read." ;

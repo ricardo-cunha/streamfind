@@ -1,7 +1,7 @@
 import { notifyApp } from '../notifications/notificationBus';
 import { artifactContractMatches } from '../artifacts/artifactContracts';
 import { StreamFindApiClient } from '../backend/StreamFindApiClient';
-import { viewerRegistry, type ViewerRegistry, type ViewerRegistration } from '../viewers/viewerTypes';
+import { viewerRegistry, viewerMatchesManifest, type ViewerRegistry, type ViewerRegistration } from '../viewers/viewerTypes';
 import { visualizationRegistry, type VisualizationRegistry } from '../visualization/VisualizationRegistry';
 import {
   FRONTEND_PLUGIN_API_VERSION,
@@ -55,12 +55,20 @@ export class FrontendPluginRegistry {
       this.plugins.delete(plugin.manifest.id);
       throw error;
     }
-    this.setupViewerIds.delete(plugin.manifest.id);
-    this.setupRendererIds.delete(plugin.manifest.id);
   }
 
   has(id: string): boolean {
     return this.plugins.has(id);
+  }
+
+  unregister(id: string): boolean {
+    if (!this.plugins.has(id)) return false;
+    for (const viewerId of this.setupViewerIds.get(id) ?? []) this.viewers.unregister(viewerId);
+    for (const rendererId of this.setupRendererIds.get(id) ?? []) this.visualizations.unregister(rendererId);
+    this.setupViewerIds.delete(id);
+    this.setupRendererIds.delete(id);
+    this.plugins.delete(id);
+    return true;
   }
 
   ids(): string[] {
@@ -108,11 +116,8 @@ export class FrontendPluginRegistry {
     if (before) throw new Error(`Viewer already registered: ${viewer.id}`);
     const contracts = plugin.manifest.artifactContracts ?? [];
     const representations = plugin.manifest.artifactRepresentations ?? [];
-    if (
-      (contracts.length || representations.length) &&
-      !viewer.accepts.some((accepted) => contracts.some((declared) => sameContract(accepted, declared))) &&
-      !(viewer.representations ?? []).some((representation) => representations.includes(representation))
-    ) {
+    const compatible = viewerMatchesManifest({ accepts: viewer.accepts, representations: viewer.representations }, contracts, representations);
+    if ((contracts.length || representations.length) && !compatible) {
       throw new Error(`Viewer contracts are incompatible with frontend plugin: ${viewer.id}`);
     }
     this.viewers.register(viewer);
@@ -133,11 +138,6 @@ export class FrontendPluginRegistry {
 type FrontendPluginManifestEntry = {
   manifest: FrontendPlugin['manifest'];
 };
-
-function sameContract(left: string, right: string): boolean {
-  const local = (value: string) => value.split('#').at(-1)?.split(':').at(-1) ?? value;
-  return left === right || local(left) === local(right);
-}
 
 function validateManifest(plugin: FrontendPlugin): void {
   const { manifest } = plugin;

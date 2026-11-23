@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfram: <https://streamfind.dev/catalogue/domains/raman#> .
+@prefix sfram: <https://streamfind.dev/catalogue/plugins/raman#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfram:analysisIdColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis identifier" ;
     skos:definition "Identifier derived from the normalized source-file path; shared by the analysis and its spectra, points, and metadata." ;
@@ -15,7 +15,7 @@ sfram:analysisIdColumn
 
 sfram:analysisColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis name" ;
     skos:definition "Human-readable analysis name derived from the source filename." ;
@@ -25,7 +25,7 @@ sfram:analysisColumn
 
 sfram:filePathColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File path" ;
     skos:definition "Path to the source file." ;
@@ -35,7 +35,7 @@ sfram:filePathColumn
 
 sfram:fileNameColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File name" ;
     skos:definition "Source filename including extension." ;
@@ -45,7 +45,7 @@ sfram:fileNameColumn
 
 sfram:formatColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Format" ;
     skos:definition "Source file format identifier." ;
@@ -55,7 +55,7 @@ sfram:formatColumn
 
 sfram:techniqueColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Technique" ;
     skos:definition "Spectroscopic technique." ;
@@ -65,7 +65,7 @@ sfram:techniqueColumn
 
 sfram:acquisitionKindColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Acquisition kind" ;
     skos:definition "Acquisition shape, distinguishing a single spectrum from a time-resolved sequence and indicating when time units are unknown." ;
@@ -75,7 +75,7 @@ sfram:acquisitionKindColumn
 
 sfram:numberSpectraColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of spectra" ;
     skos:definition "Number of spectra in the source." ;
@@ -85,7 +85,7 @@ sfram:numberSpectraColumn
 
 sfram:numberPointsColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of points" ;
     skos:definition "Total spectral points in the source." ;
@@ -95,7 +95,7 @@ sfram:numberPointsColumn
 
 sfram:hasTimeColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Has time" ;
     skos:definition "Whether the acquisition has a time coordinate." ;
@@ -105,7 +105,7 @@ sfram:hasTimeColumn
 
 sfram:timeKindColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Time kind" ;
     skos:definition "Semantic interpretation of the acquisition-time coordinate, such as elapsed time or retention time." ;
@@ -115,7 +115,7 @@ sfram:timeKindColumn
 
 sfram:axisKindColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Axis kind" ;
     skos:definition "Semantic kind of the spectral coordinate, such as Raman shift, wavenumber, wavelength, or pixel index." ;
@@ -125,7 +125,7 @@ sfram:axisKindColumn
 
 sfram:axisUnitColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Axis unit" ;
     skos:definition "Unit used by spectral_coordinate for this analysis or spectrum." ;
@@ -135,7 +135,7 @@ sfram:axisUnitColumn
 
 sfram:signalKindColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Signal kind" ;
     skos:definition "Interpretation of the measured or processed signal, for example intensity, transmittance, or normalized intensity." ;
@@ -145,7 +145,7 @@ sfram:signalKindColumn
 
 sfram:signalUnitColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Signal unit" ;
     skos:definition "Unit of the measured or processed signal, when known; percent transmittance is represented by signal_kind transmittance and signal_unit %." ;
@@ -155,7 +155,7 @@ sfram:signalUnitColumn
 
 sfram:startTimeSecondsColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Start time in seconds" ;
     skos:definition "First known acquisition time converted to seconds." ;
@@ -165,7 +165,7 @@ sfram:startTimeSecondsColumn
 
 sfram:endTimeSecondsColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "End time in seconds" ;
     skos:definition "Last known acquisition time converted to seconds." ;
@@ -175,7 +175,7 @@ sfram:endTimeSecondsColumn
 
 sfram:metadataJsonColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Metadata JSON" ;
     skos:definition "File-level metadata entries emitted by the parser, serialized as a JSON object; repeated keys are represented as arrays." ;
@@ -185,7 +185,7 @@ sfram:metadataJsonColumn
 
 sfram:spectrumIdColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Spectrum identifier" ;
     skos:definition "Stable identifier of a spectrum within its source." ;
@@ -195,7 +195,7 @@ sfram:spectrumIdColumn
 
 sfram:spectrumIndexColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Spectrum index" ;
     skos:definition "Zero-based spectrum ordinal." ;
@@ -205,7 +205,7 @@ sfram:spectrumIndexColumn
 
 sfram:sourceFrameIndexColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source frame index" ;
     skos:definition "Zero-based frame ordinal in the source file." ;
@@ -215,7 +215,7 @@ sfram:sourceFrameIndexColumn
 
 sfram:sourcePathColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source path" ;
     skos:definition "Path of the file supplying this record." ;
@@ -225,7 +225,7 @@ sfram:sourcePathColumn
 
 sfram:pointCountColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Point count" ;
     skos:definition "Number of points in a spectrum." ;
@@ -235,7 +235,7 @@ sfram:pointCountColumn
 
 sfram:frameTimeValueColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Frame time value" ;
     skos:definition "Original time value recorded for this frame." ;
@@ -245,7 +245,7 @@ sfram:frameTimeValueColumn
 
 sfram:frameTimeUnitColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Frame time unit" ;
     skos:definition "Unit of the original frame time value." ;
@@ -255,7 +255,7 @@ sfram:frameTimeUnitColumn
 
 sfram:timeSecondsColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Time in seconds" ;
     skos:definition "Frame time converted to seconds when its unit is known." ;
@@ -265,7 +265,7 @@ sfram:timeSecondsColumn
 
 sfram:sourceAxisKindColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source axis kind" ;
     skos:definition "Resolved spectral-coordinate kind recorded at import, before downstream point processing." ;
@@ -275,7 +275,7 @@ sfram:sourceAxisKindColumn
 
 sfram:sourceAxisUnitColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source axis unit" ;
     skos:definition "Resolved spectral-coordinate unit recorded at import, before downstream point processing." ;
@@ -285,7 +285,7 @@ sfram:sourceAxisUnitColumn
 
 sfram:axisOrderColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Axis order" ;
     skos:definition "Direction of spectral coordinates in stored point order (increasing or decreasing)." ;
@@ -295,7 +295,7 @@ sfram:axisOrderColumn
 
 sfram:pointIndexColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Point index" ;
     skos:definition "Zero-based point ordinal." ;
@@ -305,7 +305,7 @@ sfram:pointIndexColumn
 
 sfram:sourcePointIndexColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source point index" ;
     skos:definition "Zero-based point ordinal in the source." ;
@@ -315,7 +315,7 @@ sfram:sourcePointIndexColumn
 
 sfram:sourceSpectralCoordinateColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source spectral coordinate" ;
     skos:definition "Unmodified spectral coordinate from the source." ;
@@ -325,7 +325,7 @@ sfram:sourceSpectralCoordinateColumn
 
 sfram:spectralCoordinateColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Spectral coordinate" ;
     skos:definition "Current spectral coordinate used by downstream processing; initially equal to the source coordinate." ;
@@ -335,7 +335,7 @@ sfram:spectralCoordinateColumn
 
 sfram:intensityColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Intensity" ;
     skos:definition "Current signal value at this spectral point; downstream operations may smooth, normalize, or baseline-correct it." ;
@@ -345,7 +345,7 @@ sfram:intensityColumn
 
 sfram:baselineIntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Estimated baseline intensity" ;
     skos:definition "Baseline estimated before subtraction, aligned to the corresponding spectrum point and not clipped to the observed signal." ;
@@ -355,7 +355,7 @@ sfram:baselineIntensityColumn
 
 sfram:metadataKeyColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Metadata key" ;
     skos:definition "Metadata field name emitted by the source-format reader." ;
@@ -365,7 +365,7 @@ sfram:metadataKeyColumn
 
 sfram:occurrenceColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Occurrence" ;
     skos:definition "Zero-based occurrence of a repeated metadata key." ;
@@ -375,7 +375,7 @@ sfram:occurrenceColumn
 
 sfram:metadataValueColumn
     a sf:Column ;
-    sf:availableInDomain sfram:raman ;
+    sf:availableInPlugin sfram:raman ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Metadata value" ;
     skos:definition "Metadata value emitted by the source-format reader, preserved as text." ;

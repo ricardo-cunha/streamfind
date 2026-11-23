@@ -15,6 +15,7 @@ WINDOWS_SYSTEM = {
     "ntdll.dll", "ole32.dll", "oleaut32.dll", "shell32.dll", "user32.dll",
     "version.dll", "ws2_32.dll", "winhttp.dll", "winmm.dll", "secur32.dll",
     "rstrtmgr.dll", "shlwapi.dll", "imm32.dll", "msimg32.dll", "comctl32.dll",
+    "crypt32.dll", "iphlpapi.dll", "ncrypt.dll", "rpcrt4.dll",
 }
 
 

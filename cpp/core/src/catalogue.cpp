@@ -113,7 +113,7 @@ public:
     Json entries() const {
         duckdb_result result{};
         const char *sql =
-            "SELECT canonical_id, kind, domain, label, definition, category, invocation_model, "
+            "SELECT canonical_id, kind, plugin, label, definition, category, invocation_model, "
             "requires_connection, guidance, next_operations, interface_guidance, executable, "
             "exposed, mcp_name, input_schema, parameters, result_schema, reads_tables, "
             "writes_tables, single_occurrence, mutates_project, module_id, conditional_reads, result_id, project_entry, input_ports, output_ports "
@@ -132,10 +132,10 @@ public:
         return entries;
     }
 
-    Json tables(const std::string &domain, const std::string &module_id) const {
+    Json tables(const std::string &plugin, const std::string &module_id) const {
         duckdb_result result{};
-        const std::string sql = "SELECT table_contract_name, module_id, resource_id, CAST(columns AS VARCHAR), CAST(navigation_columns AS VARCHAR) FROM catalogue_tables WHERE domain = '" +
-                                domain + "' AND module_id = '" + module_id + "' ORDER BY table_contract_name";
+        const std::string sql = "SELECT table_contract_name, module_id, resource_id, CAST(columns AS VARCHAR), CAST(navigation_columns AS VARCHAR) FROM catalogue_tables WHERE plugin = '" +
+                                plugin + "' AND module_id = '" + module_id + "' ORDER BY table_contract_name";
         if (duckdb_query(connection_, sql.c_str(), &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
             duckdb_destroy_result(&result);
@@ -154,7 +154,7 @@ public:
 
     Json document() const {
         duckdb_result result{};
-        const char *sql = "SELECT table_contract_name, domain, module_id, resource_id, CAST(columns AS VARCHAR), CAST(navigation_columns AS VARCHAR) FROM catalogue_tables ORDER BY table_contract_name";
+        const char *sql = "SELECT table_contract_name, plugin, module_id, resource_id, CAST(columns AS VARCHAR), CAST(navigation_columns AS VARCHAR) FROM catalogue_tables ORDER BY table_contract_name";
         if (duckdb_query(connection_, sql, &result) == DuckDBError) {
             const std::string message = duckdb_result_error(&result) ? duckdb_result_error(&result) : "query failed";
             duckdb_destroy_result(&result);
@@ -162,11 +162,19 @@ public:
         }
         Json table_list = Json::array();
         for (idx_t row = 0; row < duckdb_row_count(&result); ++row)
-            table_list.push_back(Json{{"table_contract_name", text(result, 0, row)}, {"domain", text(result, 1, row)},
+            table_list.push_back(Json{{"table_contract_name", text(result, 0, row)}, {"plugin", text(result, 1, row)},
                                       {"module_id", text(result, 2, row)}, {"resource_id", text(result, 3, row)},
                                       {"columns", value(result, 4, row)}, {"navigation_columns", value(result, 5, row)}});
         duckdb_destroy_result(&result);
-        return Json{{"version", 2}, {"entries", entries()}, {"tables", std::move(table_list)}};
+        Json metadata = Json::object();
+        duckdb_result metadata_result{};
+        if (duckdb_query(connection_, "SELECT key, value FROM catalogue_metadata", &metadata_result) == DuckDBSuccess) {
+            for (idx_t row = 0; row < duckdb_row_count(&metadata_result); ++row)
+                metadata[text(metadata_result, 0, row)] = text(metadata_result, 1, row);
+        }
+        duckdb_destroy_result(&metadata_result);
+        return Json{{"version", 2}, {"entries", entries()}, {"tables", std::move(table_list)},
+                    {"metadata", std::move(metadata)}};
     }
 
 private:
@@ -204,7 +212,7 @@ private:
         Json entry = {
             {"kind", kind},
             {"canonical_id", text(result, 0, row)},
-            {"domain", text(result, 2, row)},
+            {"plugin", text(result, 2, row)},
             {"label", text(result, 3, row)},
             {"definition", text(result, 4, row)},
             {"interface", Json{
@@ -250,12 +258,18 @@ private:
 
 Json import_plugin_catalogue(const Json &base,
                              const Json &plugin,
-                             std::string_view expected_domain,
-                             const std::vector<std::string> &expected_modules) {
+                             std::string_view expected_plugin,
+                             const std::vector<std::string> &expected_modules,
+                             std::string_view expected_namespace) {
     detail::validate_catalogue_document(base, "base");
     detail::validate_catalogue_document(plugin, "plugin");
-    if (expected_domain.empty() || expected_modules.empty())
+    if (expected_plugin.empty() || expected_modules.empty() || expected_namespace.empty())
         throw std::invalid_argument("catalogue: plugin ownership contract is empty");
+    if (!plugin.contains("metadata") || !plugin.at("metadata").is_object() ||
+        plugin.at("metadata").value("plugin_id", "") != expected_plugin ||
+        plugin.at("metadata").value("ontology_namespace", "") != expected_namespace ||
+        plugin.at("metadata").value("named_graph", "") != expected_namespace)
+        throw std::invalid_argument("catalogue: plugin provenance does not match its manifest owner");
 
     const std::set<std::string> modules(expected_modules.begin(), expected_modules.end());
     std::set<std::string> ids;
@@ -279,12 +293,12 @@ Json import_plugin_catalogue(const Json &base,
     for (const auto &entry : plugin.at("entries")) {
         if (!entry.is_object() || !entry.contains("canonical_id") ||
             !entry.at("canonical_id").is_string() ||
-            !entry.contains("domain") || !entry.at("domain").is_string() ||
+            !entry.contains("plugin") || !entry.at("plugin").is_string() ||
             !entry.contains("module_id") || !entry.at("module_id").is_string())
             throw std::invalid_argument("catalogue: plugin entry is missing ownership metadata");
         const auto id = entry.at("canonical_id").get<std::string>();
-        if (entry.at("domain").get<std::string>() != expected_domain)
-            throw std::invalid_argument("catalogue: plugin entry has wrong domain " + id);
+        if (entry.at("plugin").get<std::string>() != expected_plugin)
+            throw std::invalid_argument("catalogue: plugin entry has wrong plugin " + id);
         if (!modules.contains(entry.at("module_id").get<std::string>()))
             throw std::invalid_argument("catalogue: plugin entry has wrong module " + id);
         if (!ids.insert(id).second)
@@ -294,7 +308,7 @@ Json import_plugin_catalogue(const Json &base,
     if (plugin.contains("tables") && plugin.at("tables").is_array()) {
         for (const auto &table : plugin.at("tables")) {
             if (!table.is_object()) throw std::invalid_argument("catalogue: plugin table is not an object");
-            if (table.value("domain", "") != expected_domain ||
+            if (table.value("plugin", "") != expected_plugin ||
                 !modules.contains(table.value("module_id", "")))
                 throw std::invalid_argument("catalogue: plugin table has wrong ownership");
             if (!table_contract_names.insert(table.value("table_contract_name", "")).second)
@@ -349,11 +363,20 @@ namespace {
 struct Catalogue {
     std::optional<Json> entries;
     std::string error;
+    bool initialized{false};
 };
 
 /** @brief Whole-process catalogue, loaded once via the default search chain. */
 const Catalogue &catalogue() {
-    static const Catalogue value = [] {
+    static Catalogue value;
+    if (detail::runtime_document) {
+        value.entries = detail::runtime_document->at("entries");
+        value.error.clear();
+        value.initialized = true;
+        return value;
+    }
+    if (value.initialized) return value;
+    value = [] {
         Catalogue result;
         if (detail::runtime_document) {
             result.entries = detail::runtime_document->at("entries");
@@ -372,6 +395,7 @@ const Catalogue &catalogue() {
         } catch (const std::exception &exception) {
             result.error = exception.what();
         }
+        result.initialized = true;
         return result;
     }();
     return value;
@@ -390,12 +414,12 @@ std::optional<Json> load(const std::optional<std::string> &path) {
     return catalogue().entries;
 }
 
-std::optional<Json> table_manifest_json(const std::string &domain, const std::string &module_id) {
+std::optional<Json> table_manifest_json(const std::string &plugin, const std::string &module_id) {
     if (detail::runtime_document) {
         Json output = Json::array();
         if (detail::runtime_document->contains("tables"))
             for (const auto &table : detail::runtime_document->at("tables"))
-                if (table.value("domain", "") == domain &&
+                if (table.value("plugin", "") == plugin &&
                     (module_id.empty() || table.value("module_id", "") == module_id))
                     output.push_back(table);
         return output;
@@ -403,7 +427,7 @@ std::optional<Json> table_manifest_json(const std::string &domain, const std::st
     const auto path = find_path();
     if (!path) return std::nullopt;
     try {
-        return detail::CatalogueReader(*path).tables(domain, module_id);
+        return detail::CatalogueReader(*path).tables(plugin, module_id);
     } catch (const std::exception &) {
         return std::nullopt;
     }
@@ -414,7 +438,7 @@ std::optional<Json> tools_json() {
     if (!entries) return std::nullopt;
     Json tools = Json::array();
     for (const auto &entry : *entries) {
-        if ((entry.value("kind", "") != "operation" && entry.value("kind", "") != "command") || entry.value("domain", "") != "streamfind" ||
+        if ((entry.value("kind", "") != "operation" && entry.value("kind", "") != "command") || entry.value("plugin", "") != "streamfind" ||
             !entry.value("exposed", false)) {
             continue;
         }

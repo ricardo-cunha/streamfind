@@ -1,15 +1,17 @@
 {
-  "id": "streamfind.statistics",
+  "schemaVersion": 1,
+  "kind": "viewer",
+  "id": "native.viewer.statistics",
   "name": "streamfind statistics viewers",
   "version": "1.0.0",
   "apiVersion": "1.0",
   "activation": "optional",
   "source": "src/plugins/statistics/index.ts",
-  "domains": ["statistics"],
+  "plugins": ["statistics"],
   "artifactContracts": [
-    "pcaDiagnostics",
-    "plsDiagnostics",
-    "foldChangeDiagnostics"
+    "https://streamfind.dev/catalogue/plugins/statistics#pcaDiagnostics",
+    "https://streamfind.dev/catalogue/plugins/statistics#plsDiagnostics",
+    "https://streamfind.dev/catalogue/plugins/statistics#foldChangeDiagnostics"
   ],
   "capabilities": ["statistics-linked-results-dashboard"]
 }

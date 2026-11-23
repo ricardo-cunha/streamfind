@@ -29,16 +29,18 @@ add_custom_command(TARGET streamfind_statistics_plugin POST_BUILD
 streamfind_validate_plugin_build(streamfind_statistics_plugin statistics)
 streamfind_stage_mingw_plugin_runtime(streamfind_statistics_plugin statistics)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
-    DESTINATION plugins/statistics/ontology)
+    DESTINATION plugins/native/native.plugin.statistics/ontology)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
-    DESTINATION plugins/statistics/resources)
+    DESTINATION plugins/native/native.plugin.statistics/resources)
 install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
-    DESTINATION plugins/statistics)
+    DESTINATION plugins/native/native.plugin.statistics)
 install(TARGETS streamfind_statistics_plugin
-    RUNTIME DESTINATION plugins/statistics
-    LIBRARY DESTINATION plugins/statistics)
+    RUNTIME DESTINATION plugins/native/native.plugin.statistics
+    LIBRARY DESTINATION plugins/native/native.plugin.statistics)
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-    install(TARGETS streamfind_statistics_plugin ARCHIVE DESTINATION sdk/lib)
+    install(TARGETS streamfind_statistics_plugin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib)
 endif()
 if(STREAMFIND_BUILD_TESTS)
     add_subdirectory(tests)

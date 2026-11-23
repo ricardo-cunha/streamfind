@@ -11,6 +11,16 @@ export default defineConfig({
       input: {
         application: 'index.html',
       },
+      output: {
+        manualChunks(id) {
+          const normalized = id.replaceAll('\\', '/');
+          if (normalized.includes('/node_modules/react/') || normalized.includes('/node_modules/react-dom/')) {
+            return 'react-runtime';
+          }
+          if (normalized.includes('/src/framework/')) return 'streamfind-framework';
+          return undefined;
+        },
+      },
     },
   },
   test: {

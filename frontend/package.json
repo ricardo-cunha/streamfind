@@ -9,6 +9,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"tools/**/*.mjs\" \"index.html\" \"vite.config.ts\" \"eslint.config.js\"",
     "lint": "eslint .",
     "browser:smoke": "node tools/browser/browser-smoke.mjs",
+    "viewer:smoke": "node tools/browser/viewer-extension-smoke.mjs",
     "test": "vitest",
     "test:run": "vitest run"
   },

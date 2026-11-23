@@ -4,19 +4,21 @@ import { StatisticsDashboard } from './StatisticsDashboard';
 
 export const statisticsFrontendPlugin: FrontendPlugin = {
   manifest: {
-    id: 'streamfind.statistics',
+    schemaVersion: 1,
+    kind: 'viewer',
+    id: 'native.viewer.statistics',
     name: 'streamfind statistics viewers',
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
-    domains: ['statistics'],
-    artifactContracts: [...STATISTICS_RESULT_CONTRACTS],
+    plugins: ['statistics'],
+    artifactContracts: STATISTICS_RESULT_CONTRACTS.map((contract) => `https://streamfind.dev/catalogue/plugins/statistics#${contract}`),
     capabilities: ['statistics-linked-results-dashboard'],
   },
   setup(api) {
     api.registerViewer({
       id: 'statistics.results-dashboard',
       label: 'Statistics results dashboard',
-      accepts: [...STATISTICS_RESULT_CONTRACTS],
+      accepts: STATISTICS_RESULT_CONTRACTS.map((contract) => `https://streamfind.dev/catalogue/plugins/statistics#${contract}`),
       component: StatisticsDashboard,
     });
   },

@@ -58,6 +58,9 @@ def main() -> int:
         if process.returncode not in (0, -15):
             sys.stderr.write(process.stderr.read())
             raise RuntimeError(f"MCP exited with {process.returncode}")
+        subprocess.run([str(root / "bin" / "streamfind"), "service", "stop", "--json"],
+                       cwd=root / "bin", env=env, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return 0
 
 

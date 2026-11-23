@@ -5,7 +5,7 @@
 int main() {
     std::ifstream input(SENSORS_PLUGIN_MANIFEST);
     const std::string text((std::istreambuf_iterator<char>(input)), {});
-    if (text.find("\"plugin_id\": \"sensors\"") == std::string::npos)
-        throw std::runtime_error("Sensors plugin manifest does not identify the sensors domain");
+    if (text.find("\"plugin_id\": \"native.plugin.sensors\"") == std::string::npos)
+        throw std::runtime_error("Sensors plugin manifest does not identify the sensors plugin");
     return 0;
 }

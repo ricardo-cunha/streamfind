@@ -107,7 +107,7 @@ $process = $null
 try {
     $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
     Initialize-Mcp $process | Out-Null
-    Invoke-McpTool $process 2 'create' @{ project_path = $DatabasePath; domain = 'mass_spec' } | Out-Null
+    Invoke-McpTool $process 2 'create' @{ project_path = $DatabasePath; plugin = 'mass_spec' } | Out-Null
     $parameters = @{
         ppm_threshold = 10.0
         noise_threshold = 250.0

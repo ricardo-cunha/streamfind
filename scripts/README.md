@@ -15,6 +15,13 @@ path while standing in the main checkout, for example
 `pwsh -NoProfile -File .worktrees/mass-spec-expansion/scripts/sfdev.ps1 env show`;
 its build trees, projects, packages, and logs remain under that worktree.
 
+`sfdev` is the checkout development framework: it builds and tests the source
+checkout, creates the unpacked Windows verification package, and prepares
+releases. The embedded development framework is the `streamfind-dev` command
+and `dev/` payload shipped inside a packaged build or extracted release. It is
+for developing external plugins and viewers against that package's SDK and is
+not a replacement for checkout `sfdev`.
+
 ## Quick start for AI agents
 
 Use this sequence at the beginning of a coding task:
@@ -125,6 +132,30 @@ same managed tools root. On Ubuntu/Debian, native setup uses the system
 package manager and needs an APT source that provides `libarrow-dev`; package
 installation uses `sudo`.
 
+### Release-distributed extension setup
+
+Extracted runtime archives contain `dev/streamfind-dev-setup.ps1`,
+`dev/StreamFindProvisioning.psm1`, `dev/toolchains.lock.json`, and
+`dev/setup-manifest.json`. These files are self-contained and do not require a
+repository checkout. They are the provisioning boundary used by the native
+`streamfind-dev` dispatcher shipped in the same archive:
+
+```powershell
+pwsh -NoProfile -File dev/streamfind-dev-setup.ps1 setup -Target all `
+  -Workspace "$HOME\Documents\streamfind-dev"
+pwsh -NoProfile -File dev/streamfind-dev-setup.ps1 doctor -Json
+```
+
+The helper stores its cache under `$STREAMFIND_HOME/downloads`, uses exact
+version and SHA-256 entries from `toolchains.lock.json`, retries downloads,
+uses an exclusive setup lock, stages installs before replacing a destination,
+and supports `-Offline` and `-DryRun`. A missing offline artifact reports the
+expected cache path and digest. Node/npm setup runs `npm ci` only when a viewer
+path with `package-lock.json` is supplied. Windows provisions MSYS2 UCRT64;
+Ubuntu and Debian install native dependencies through `sudo apt-get`, so those
+system packages are intentionally not represented as contents of
+`$STREAMFIND_HOME`.
+
 Python scripts always run with the repository `.venv`. `sfdev setup
 --components python` installs and uses the pinned Python 3.11 runtime under
 `%USERPROFILE%\.streamfind\tools\python` on Windows or
@@ -142,6 +173,32 @@ remain in `.venv` and are never shared from the user tools directory.
 `.streamfind` tools root for frontend commands. This keeps Node selection
 aligned with the complete locked dependency tree rather than a broad major
 version check against the system Node installation.
+
+The release-distributed `streamfind-dev` setup has a separate `python` target
+for packaged-build development. It keeps the pinned interpreter in
+`$STREAMFIND_HOME/tools/python` and creates the virtual environment in the
+selected workspace, for example:
+
+```powershell
+streamfind-dev setup --target python --workspace D:\streamfind-dev
+```
+
+This creates `D:\streamfind-dev\.venv`; it never places a virtual environment
+inside the extracted package. `streamfind-dev setup --target all` provisions
+the Python runtime and workspace environment together. The workspace `.venv`
+is independent for each development workspace, while the managed interpreter
+and verified download cache remain shared.
+
+Package installation is intentionally opt-in and the environment remains
+extensible. To install an initial requirements file, pass it explicitly:
+
+```powershell
+streamfind-dev setup --target python --workspace D:\streamfind-dev `
+  --requirements D:\streamfind-dev\requirements.txt
+```
+
+The setup does not enforce or replace a lockfile, and developers may install
+additional packages into the workspace environment as needed.
 
 ### Supported native toolchains
 
@@ -161,11 +218,23 @@ setup. Do not use MSVC or Visual Studio build tools for the streamfind C++ core
 or bundled plugins.
 
 Linux builds use GCC/G++, CMake, and Ninja. WSL Ubuntu is supported for Linux
-release and developer-kit creation and validation. Run
-PowerShell 7 inside the WSL environment and keep the checkout/build on the
-Linux filesystem for the Linux toolchain. Each platform has a separate build
-with its own deterministic build tree; do not share one build directory across
-core/developer-kit modes, compilers, or operating systems. The Linux scripts remove Windows-mounted executable paths
+release creation and validation. From Windows, use the checkout framework's
+Linux release bridge instead of building on `/mnt/c`:
+
+```powershell
+sfdev release prepare --linux --distribution Ubuntu
+sfdev release verify --linux --distribution Ubuntu
+```
+
+The bridge mirrors the current worktree into the selected distribution's
+native home as `/home/<linux-user>/<worktree-name>`, runs the complete Linux
+build, CTest, package, dependency, and extracted MCP checks there, and exports
+only the verified archive and checksums back through `/mnt/c`. It resolves the
+Linux user from that distribution's `$HOME`; no username or machine path is
+hard-coded. Each platform has a separate build with its own deterministic
+build tree; do not share one build directory across core and development
+configurations,
+compilers, or operating systems. The Linux scripts remove Windows-mounted executable paths
 from `PATH` and discard imported Windows CMake/pkg-config hints. The Linux
 CMake preset clears inherited package-search hints. If an existing Linux CMake
 cache contains Windows/MSYS2 package or compiler paths, the managed tree is
@@ -315,9 +384,9 @@ CTest, and stages the package under `tmp/packaged_build/`. Run the app from
 `tmp/packaged_build/bin/` to exercise the packaged service, plugins, catalogue,
 frontend, and runtime paths together.
 
-Do not run `sfdev package` from WSL. WSL is reserved for Linux release and
-developer-kit builds and their extracted-package checks; those write to the
-Linux build trees and `tmp/release-output/`, and never create or replace
+Do not run `sfdev package` from WSL. WSL is reserved for Linux release builds
+and their extracted-package checks; those write to the native Linux mirror and
+export only release artifacts, and never create or replace
 `tmp/packaged_build/`.
 
 For a frontend-only update to an existing complete package:
@@ -333,40 +402,51 @@ the source or packaging rule and regenerate the package.
 ## 6. Create and validate an external plugin
 
 The plugin commands scaffold and validate an external plugin against the
-streamfind plugin developer kit:
+streamfind external plugin workflow:
 
 ```powershell
-sfdev sdk build
+sfdev release prepare
 sfdev plugin list
-sfdev plugin new ./tmp/scratch/example-plugin --domain example_ping
+sfdev plugin new ./tmp/scratch/example-plugin --plugin example_ping
 sfdev plugin build ./tmp/scratch/example-plugin --sdk <extracted-kit-path>
 sfdev plugin test ./tmp/scratch/example-plugin
 sfdev plugin stage ./tmp/scratch/example-plugin
 sfdev plugin validate ./tmp/scratch/example-plugin --sdk <extracted-kit-path>
 ```
 
-Replace `<extracted-kit-path>` with the actual extracted kit location. The
-staged native plugin must be added to the service's configured plugin roots
-and enabled plugin IDs before it can be loaded. `sdk build` writes its
-versioned developer-kit package to `tmp/release-output/`.
+Replace `<extracted-kit-path>` with the matching runtime archive's extracted
+root. The stage command installs the plugin under
+`tmp/build/external-plugins/<source-key>/stage/plugins/custom/custom.plugin.<name>/`;
+the validator uses that same canonical package layout. Add the stage's
+`plugins/custom/` directory to the service's configured custom plugin roots and
+enable the full `custom.plugin.<name>` ID before loading it. For external
+plugin development from an installed package, use the embedded
+`streamfind-dev` commands instead; they install versioned packages under
+`<STREAMFIND_HOME>/extensions/plugins/`. `release prepare` writes its
+versioned combined runtime and development package to `tmp/release-output/`.
 
 ## 7. Prepare a release
 
 Release preparation requires a clean, committed checkout and uses the
-canonical version in `VERSION`. Build each platform's archive on its native
-host: Windows on Windows, Linux on Linux or WSL. The release output folder is
+canonical version in `VERSION`. The checkout framework can build the current
+host release directly, or orchestrate a Linux release from Windows through a
+native WSL worktree mirror. The release output folder is
 `tmp/release-output/`.
 
 ```powershell
 sfdev version show
 sfdev release prepare
 sfdev release verify
+sfdev release prepare --linux --distribution Ubuntu
+sfdev release verify --linux --distribution Ubuntu
 ```
 
-Run the same preparation and verification from Linux/WSL to produce and check
-the Linux archive. `release verify` checks local checksums and smoke-tests the
-archive for the current host. After the version tag has been pushed and the
-release is ready to publish, use `sfdev release publish`; publishing requires
+The `--linux` commands, when run from Windows, synchronize the checkout into
+`/home/<linux-user>/<worktree-name>` in the selected WSL distribution, execute
+the Linux release script and tests there, and export the verified `.tgz` back
+to `tmp/release-output/`. `release verify` checks local checksums and
+smoke-tests the extracted archive. After the version tag has been pushed and
+the release is ready to publish, use `sfdev release publish`; publishing requires
 authenticated GitHub CLI (`gh`) and an existing remote version tag. See
 [`AGENTS.md`](../AGENTS.md) for the guarded release and tag procedure.
 
@@ -422,9 +502,9 @@ example to `scripts/dev/README.md` when a new development helper is introduced.
 | Location | Purpose |
 | --- | --- |
 | `tmp/build/windows/core/` | Windows core build tree |
-| `tmp/build/windows/devkit/` | Windows plugin developer-kit build tree |
+| `tmp/build/windows/devkit/` | Windows development configuration build tree used for SDK/package validation |
 | `tmp/build/linux/core/` | Linux core build tree and Linux release build |
-| `tmp/build/linux/devkit/` | Linux plugin developer-kit build tree |
+| `tmp/build/linux/devkit/` | Linux development configuration build tree used for SDK/package validation |
 | `tmp/packaged_build/` | Native host-machine unpacked package for manual app/service/MCP testing; this Windows workflow creates it on Windows |
 | `tmp/release-output/` | Versioned release archives and checksums |
 | `tmp/projects/` | Disposable DuckDB projects and fixtures created for checks |
@@ -459,7 +539,7 @@ sfdev clean --scope all-temp --dry-run
 | `sfdev script list\|info\|run` | Discover and run development-stage scripts |
 | `sfdev workflows nta\|impurities\|quantification` | Create validated editable workflow projects through MCP |
 | `sfdev package` | Build or refresh the unpacked Windows development-verification package |
-| `sfdev sdk build` / `sfdev plugin ...` | Build a plugin SDK or work on an external plugin |
+| `sfdev release prepare` / `sfdev plugin ...` | Build the combined runtime/development release or work on an external plugin |
 | `sfdev version show\|bump` | Inspect or advance the canonical version |
 | `sfdev release prepare\|verify\|publish` | Prepare, verify, or publish versioned release archives |
 | `sfdev clean` | Remove the platform build tree or all temporary output |

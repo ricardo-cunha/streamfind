@@ -290,6 +290,53 @@ void print_services(const std::vector<Json> &values, bool json) {
     }
 }
 
+int forward_dev_command(int argc, char **argv) {
+    const auto executable = std::filesystem::absolute(std::filesystem::path(argv[0])).parent_path() /
+#ifdef _WIN32
+        "streamfind-dev.exe";
+#else
+        "streamfind-dev";
+#endif
+    if (!std::filesystem::is_regular_file(executable))
+        throw std::runtime_error("streamfind-dev was not found beside streamfind: " + executable.string());
+#ifdef _WIN32
+    auto quote = [](const std::wstring &value) {
+        std::wstring result = L"\"";
+        std::size_t slashes = 0;
+        for (const auto character : value) {
+            if (character == L'\\') { ++slashes; continue; }
+            if (character == L'"') { result.append(slashes * 2 + 1, L'\\'); result += L'"'; slashes = 0; continue; }
+            result.append(slashes, L'\\'); slashes = 0; result += character;
+        }
+        result.append(slashes * 2, L'\\'); result += L'"';
+        return result;
+    };
+    std::wstring command = quote(executable.wstring());
+    for (int index = 2; index < argc; ++index) command += L" " + quote(std::filesystem::path(argv[index]).wstring());
+    STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    PROCESS_INFORMATION process{};
+    auto buffer = std::vector<wchar_t>(command.begin(), command.end()); buffer.push_back(L'\0');
+    if (!CreateProcessW(executable.wstring().c_str(), buffer.data(), nullptr, nullptr, TRUE,
+                        CREATE_NO_WINDOW, nullptr, executable.parent_path().wstring().c_str(),
+                        &startup, &process))
+        throw std::runtime_error("unable to launch streamfind-dev");
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD status = 1; GetExitCodeProcess(process.hProcess, &status);
+    CloseHandle(process.hProcess); CloseHandle(process.hThread);
+    return static_cast<int>(status);
+#else
+    std::vector<char *> arguments;
+    arguments.push_back(const_cast<char *>(executable.c_str()));
+    for (int index = 2; index < argc; ++index) arguments.push_back(argv[index]);
+    arguments.push_back(nullptr);
+    execv(executable.c_str(), arguments.data());
+    throw std::runtime_error("unable to launch streamfind-dev");
+#endif
+}
+
 }  // namespace streamfind::service_cli::detail
 
 int main(int argc, char **argv) {
@@ -304,6 +351,8 @@ int main(int argc, char **argv) {
         return code;
     };
     try {
+        if (argc >= 2 && std::string(argv[1]) == "dev")
+            return finish(streamfind::service_cli::detail::forward_dev_command(argc, argv));
         streamfind::service::ServiceDiscovery::configure_runtime_scope();
         if (argc < 3 || std::string(argv[1]) != "service") {
             std::cout << "Usage: streamfind service start [--port <port>] [--json]\n"

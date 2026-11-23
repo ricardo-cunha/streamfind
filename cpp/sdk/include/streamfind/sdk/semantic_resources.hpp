@@ -11,7 +11,7 @@ namespace streamfind::sdk {
 struct STREAMFIND_SDK_API SemanticResourceSet {
     std::filesystem::path core_directory;
     std::vector<std::filesystem::path> plugin_directories;
-    std::string domain_id;
+    std::string plugin_id;
 };
 
 STREAMFIND_SDK_API std::vector<std::filesystem::path>

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "viewer",
+  "id": "native.viewer.mass_spec.chromatogramsTable.chromatograms_table_viewer",
+  "name": "Raw chromatograms viewer",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/mass-spec/viewers/chromatogramsTableRaw/index.ts",
+  "plugins": ["mass_spec"],
+  "artifactContracts": ["https://streamfind.dev/catalogue/plugins/mass_spec#chromatogramsTable"]
+}

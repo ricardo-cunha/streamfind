@@ -5,6 +5,8 @@ import { FRONTEND_PLUGIN_API_VERSION, type FrontendPlugin } from './pluginTypes'
 import { ViewerRegistry } from '../viewers/viewerTypes';
 
 const manifest: RuntimeFrontendPluginManifest = {
+  schemaVersion: 1,
+  kind: 'viewer',
   id: 'runtime.test',
   name: 'Runtime test plugin',
   version: '1.0.0',
@@ -48,6 +50,20 @@ describe('frontend plugin loader', () => {
     expect(importer).toHaveBeenCalledTimes(1);
   });
 
+  it('replaces an already loaded package when its version or digest changes', async () => {
+    const viewers = new ViewerRegistry();
+    const registry = new FrontendPluginRegistry(viewers);
+    const importer = vi.fn().mockResolvedValue({ default: plugin });
+    const loader = new FrontendPluginLoader(registry, importer, new Set([window.location.origin]));
+
+    await expect(loader.load({ ...manifest, packageDigest: 'digest-a' })).resolves.toBe(true);
+    await expect(loader.load({ ...manifest, version: '2.0.0', packageDigest: 'digest-b' })).resolves.toBe(true);
+
+    expect(importer).toHaveBeenCalledTimes(2);
+    expect(registry.ids()).toEqual(['runtime.test']);
+    expect(viewers.ids()).toEqual(['runtime.test.viewer']);
+  });
+
   it('loads packaged plugin stylesheets before importing the plugin', async () => {
     const registry = new FrontendPluginRegistry(new ViewerRegistry());
     const importer = vi.fn().mockResolvedValue({ default: plugin });
@@ -71,6 +87,31 @@ describe('frontend plugin loader', () => {
     );
 
     await expect(loader.load({ ...manifest, entry: 'https://plugins.example.test/plugin.js' })).resolves.toBe(false);
+    expect(importer).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported viewer manifest schema and kind', async () => {
+    const importer = vi.fn();
+    const loader = new FrontendPluginLoader(
+      new FrontendPluginRegistry(new ViewerRegistry()),
+      importer,
+      new Set([window.location.origin]),
+    );
+
+    await expect(loader.load({ ...manifest, schemaVersion: 2 as 1 })).resolves.toBe(false);
+    await expect(loader.load({ ...manifest, kind: 'native' as 'viewer' })).resolves.toBe(false);
+    expect(importer).not.toHaveBeenCalled();
+  });
+
+  it('does not execute a viewer that requests an unavailable sandbox policy', async () => {
+    const importer = vi.fn();
+    const loader = new FrontendPluginLoader(
+      new FrontendPluginRegistry(new ViewerRegistry()),
+      importer,
+      new Set([window.location.origin]),
+    );
+
+    await expect(loader.load({ ...manifest, trust: 'sandboxed' })).resolves.toBe(false);
     expect(importer).not.toHaveBeenCalled();
   });
 

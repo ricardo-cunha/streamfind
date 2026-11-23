@@ -31,7 +31,7 @@ function Read-ReaderArtifacts {
         [Parameter(Mandatory = $true)][string]$SourcePath
     )
 
-    Invoke-McpTool $Process $Id 'create' @{ project_path = $Database; domain = 'mass_spec' } | Out-Null
+    Invoke-McpTool $Process $Id 'create' @{ project_path = $Database; plugin = 'mass_spec' } | Out-Null
     $analysisName = [System.IO.Path]::GetFileNameWithoutExtension($SourcePath)
     $workflow = @{
         schema_version = 2

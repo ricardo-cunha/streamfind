@@ -4,12 +4,12 @@
 
 # Core project-management capabilities are API commands in commands.ttl.
 
-# Workflow data-processing operations are declared by their owning domain.
+# Workflow data-processing operations are declared by their owning plugin.
 
 sfcore:selectPaths
     a sf:Operation ;
     sf:operationId "streamfind.select_paths" ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:prefLabel "Select files and folders" ;
     skos:definition "Publish a user-provided JSON array of files and vendor directories for connection to a workflow input." ;
     sf:category "workflow-input" ;
@@ -19,7 +19,7 @@ sfcore:selectPaths
 sfcore:writeTableCsv
     a sf:Operation ;
     sf:operationId "streamfind.write_table_csv" ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Write table to CSV" ;
     skos:definition "Write any connected published Arrow table result to a CSV file with column headers. The input result is not modified." ;
@@ -32,7 +32,7 @@ sfcore:writeTableCsv
 sfcore:writeJson
     a sf:Operation ;
     sf:operationId "streamfind.write_json" ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Write JSON" ;
     skos:definition "Write any connected JSON artifact to a formatted UTF-8 JSON file without changing the artifact." ;
@@ -45,7 +45,7 @@ sfcore:writeJson
 sfcore:readCsv
     a sf:Operation ;
     sf:operationId "streamfind.read_csv" ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Read CSV" ;
     skos:definition "Read a headered UTF-8 CSV file and publish its rows as an Arrow table result with a runtime-resolved AnyTable schema." ;
@@ -57,7 +57,7 @@ sfcore:readCsv
 sfcore:bindTableRows
     a sf:Operation ;
     sf:operationId "streamfind.bind_table_rows" ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Bind table rows" ;
     skos:definition "Append the rows of two published Arrow table results vertically after runtime validation that their column names and types match exactly." ;
@@ -69,7 +69,7 @@ sfcore:bindTableRows
 sfcore:bindTableColumns
     a sf:Operation ;
     sf:operationId "streamfind.bind_table_columns" ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Bind table columns" ;
     skos:definition "Concatenate columns from two published Arrow table results by row position after validating equal row counts and unique output column names." ;

@@ -1,5 +1,6 @@
 {
-  "plugin_id": "mass_spec",
+  "schema_version": 1,
+  "plugin_id": "native.plugin.mass_spec",
   "name": "StreamFind Mass Spectrometry plugin",
   "version": "@PROJECT_VERSION@",
   "abi_version": { "major": 3, "minor": 0 },
@@ -8,7 +9,8 @@
     "windows-x86_64": "streamfind_mass_spec.dll",
     "linux-x86_64": "libstreamfind_mass_spec.so"
   },
-  "domain": "mass_spec",
+  "plugin": "mass_spec",
+  "ontology_namespace": "https://streamfind.dev/catalogue/plugins/mass_spec#",
   "semantic_catalogue": "catalogue.duckdb",
   "static_composition": false,
   "platforms": ["windows-x86_64", "linux-x86_64"]

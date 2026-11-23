@@ -12,7 +12,7 @@
       -Clean    wipe the build tree first
       -Tests    after building, run ctest --output-on-failure
       -Target   a specific CMake target to build (default: all)
-      -Plugins  comma-separated plugin domains or ALL (default: ALL)
+      -Plugins  comma-separated plugin plugins or ALL (default: ALL)
       -CMakeArgs additional configure arguments, e.g. -CMakeArgs '-DNAME=value'
       -Config   Debug|Release (default Debug)
 #>

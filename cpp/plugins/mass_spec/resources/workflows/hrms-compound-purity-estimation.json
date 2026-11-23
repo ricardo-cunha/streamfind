@@ -536,5 +536,5 @@
   "schema_version": 2,
   "version": 33,
   "workflow_id": "workflow",
-  "domain": "mass_spec"
+  "plugin": "mass_spec"
 }

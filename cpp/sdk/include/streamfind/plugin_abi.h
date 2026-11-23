@@ -176,7 +176,7 @@ struct streamfind_plugin_api {
     uint32_t abi_major;
     uint32_t abi_minor;
     const char *module_id;
-    const char *domain_id;
+    const char *plugin_id;
     streamfind_plugin_invoke_fn invoke;
     streamfind_plugin_release_buffer_fn release_buffer;
     void *user_data;

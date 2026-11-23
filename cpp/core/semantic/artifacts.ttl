@@ -4,7 +4,7 @@
 
 sfcore:projectTable
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project table" ;
     skos:definition "Generic project identity, metadata, workflow, and framework state." ;
@@ -18,17 +18,17 @@ sfcore:projectTable
 
 sfcore:anyTable
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Any table" ;
-    skos:definition "Generic input contract for operations that accept any published tabular result without requiring a domain-specific schema." ;
+    skos:definition "Generic input contract for operations that accept any published tabular result without requiring a plugin-specific schema." ;
     sf:tableContractName "ANY_TABLE" ;
     sf:dataKind "table" ;
     sf:dynamicSchema true .
 
 sfcore:anyJson
     a sf:OperationResult ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Any JSON" ;
     skos:definition "Generic JSON input contract for operations that accept any structured JSON artifact." ;
@@ -39,7 +39,7 @@ sfcore:anyJson
 
 sfcore:leftAnyTablePort
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Left any table" ;
     skos:definition "Operation-local AnyTable input port used as the left side of a generic table binding." ;
@@ -51,7 +51,7 @@ sfcore:leftAnyTablePort
 
 sfcore:rightAnyTablePort
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Right any table" ;
     skos:definition "Operation-local AnyTable input port used as the right side of a generic table binding." ;
@@ -64,7 +64,7 @@ sfcore:rightAnyTablePort
 
 sfcore:auditTrailTable
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Audit trail table" ;
     skos:definition "Persisted project and workflow operation audit events." ;
@@ -77,7 +77,7 @@ sfcore:auditTrailTable
 
 sfcore:workflowExecutionTable
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution table" ;
     skos:definition "Singleton persisted lifecycle state for the current workflow execution." ;
@@ -98,7 +98,7 @@ sfcore:workflowExecutionTable
 
 sfcore:workflowExecutionStepTable
     a sf:Table ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution step table" ;
     skos:definition "Durable child records for the latest workflow execution, including method state, cache identity, progress, and lifecycle timestamps." ;
@@ -122,7 +122,7 @@ sfcore:workflowExecutionStepTable
 
 sfcore:operationSuccessSignal
     a sf:OperationResult ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation success signal" ;
@@ -131,7 +131,7 @@ sfcore:operationSuccessSignal
 
 sfcore:operationStatusResult
     a sf:OperationResult ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation status" ;
@@ -143,7 +143,7 @@ sfcore:operationStatusResult
 
 sfcore:selectedPathsResult
     a sf:OperationResult ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Selected files and folders" ;

@@ -6,6 +6,8 @@
 #include <string>
 
 #include "streamfind/project_layout.hpp"
+#include "streamfind/plugin_lockfile.hpp"
+#include "streamfind/plugin_registry.hpp"
 #include "streamfind/service/project_runtime_manager.hpp"
 #include "streamfind/service/result_store.hpp"
 
@@ -132,6 +134,35 @@ int main() {
         require(reopened.session_id == "reopened-session",
                 "the second service could not open the project after the first closed it");
         second.close("reopened-session");
+
+        const auto registry_path = root / "registry.json";
+        streamfind::write_plugin_registry_atomic(registry_path, streamfind::PluginRegistry{
+            1, 7, {streamfind::InstalledPlugin{"native.plugin.sensors", "0.8.0",
+                streamfind::native_plugin_platform(), root / "installed-sensors", "sha256:sensors",
+                "local", "verified", true}}});
+        const auto configuration_path = root / "streamfind.json";
+        {
+            std::ofstream output(configuration_path, std::ios::binary | std::ios::trunc);
+            output << streamfind::Json{{"registry_path", registry_path.generic_string()}}.dump(2) << '\n';
+        }
+        streamfind::write_plugin_lockfile_atomic(layout.container() / "project.extensions.lock.json",
+            streamfind::PluginLockfile{1, {streamfind::PluginLockEntry{
+                "native.plugin.sensors", "0.8.0", "sha256:sensors", 3, 0, {}, {}}}});
+        streamfind::OperationRegistry locked_operations;
+        streamfind::service::ProjectRuntimeManager locked(locked_operations, configuration_path);
+        const auto locked_open = locked.open("locked-session", {layout.database(), {}});
+        require(locked_open.session_id == "locked-session", "matching project plugin lockfile was rejected");
+        locked.close("locked-session");
+        streamfind::write_plugin_lockfile_atomic(layout.container() / "project.extensions.lock.json",
+            streamfind::PluginLockfile{1, {streamfind::PluginLockEntry{
+                "native.plugin.sensors", "0.8.1", "sha256:sensors", 3, 0, {}, {}}}});
+        bool lock_mismatch_rejected = false;
+        try {
+            static_cast<void>(locked.open("mismatched-lock-session", {layout.database(), {}}));
+        } catch (const std::exception &exception) {
+            lock_mismatch_rejected = std::string(exception.what()).find("does not match") != std::string::npos;
+        }
+        require(lock_mismatch_rejected, "project plugin lockfile mismatch was not rejected");
 
         std::filesystem::remove_all(root, error);
         std::cout << "project container ownership and store identity contract passed\n";

@@ -2,7 +2,7 @@
 
 #include "streamfind/sdk/plugin_contract.hpp"
 
-streamfind::catalogue::DomainModuleBinding make_example_module() {
+streamfind::catalogue::PluginModuleBinding make_example_module() {
     return {"example.base", "example", "1", {}, {}, {}, {}, {}};
 }
 

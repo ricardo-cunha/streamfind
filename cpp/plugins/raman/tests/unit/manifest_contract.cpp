@@ -5,7 +5,7 @@
 int main() {
     std::ifstream input(RAMAN_PLUGIN_MANIFEST);
     const std::string text((std::istreambuf_iterator<char>(input)), {});
-    if (text.find("\"plugin_id\": \"raman\"") == std::string::npos)
-        throw std::runtime_error("Raman plugin manifest does not identify the raman domain");
+    if (text.find("\"plugin_id\": \"native.plugin.raman\"") == std::string::npos)
+        throw std::runtime_error("Raman plugin manifest does not identify the raman plugin");
     return 0;
 }

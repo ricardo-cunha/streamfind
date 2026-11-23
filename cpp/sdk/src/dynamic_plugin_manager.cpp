@@ -1,4 +1,5 @@
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
+#include "streamfind/sdk/abi_type_profile.hpp"
 #include "streamfind/operation_execution_context.hpp"
 
 #include <atomic>
@@ -139,8 +140,8 @@ Json invoke_dynamic(
             throw Error(ErrorCode::SchemaMismatch,
                 "dynamic output contract is ambiguous across ports: " + contract);
     }
-    const auto manifest = !plugin.manifest.domain.empty()
-        ? catalogue::table_manifest_json(plugin.manifest.domain, "")
+    const auto manifest = !plugin.manifest.plugin.empty()
+        ? catalogue::table_manifest_json(plugin.manifest.plugin, "")
         : std::optional<Json>{};
 
     OperationOutputSink *operation_output_sink = &execution_context.outputs();
@@ -290,7 +291,7 @@ Json invoke_dynamic(
         };
         context.emit_result = [&emitted_results, &capability_id, &producer_instance, &lineage_inputs,
                                &output_contract_port_ids, workflow_revision, operation_output_sink,
-                               &execution_context, &context](
+                               &execution_context, &context, &plugin](
             void *, const char *contract, uint32_t contract_size,
             const char *payload, uint64_t payload_size, void *) -> streamfind_plugin_status {
             if (contract == nullptr || contract_size == 0 || payload == nullptr)
@@ -336,7 +337,12 @@ Json invoke_dynamic(
                              {"output_port_id", output_port->second},
                              {"computation_key", execution_context.computation_key()},
                              {"cacheable", !execution_context.computation_key().empty()},
-                             {"provenance", Json{{"lineage_inputs", lineage}}}});
+                             {"provenance", Json{{"lineage_inputs", lineage},
+                                                   {"plugin_id", plugin.manifest.plugin_id},
+                                                   {"plugin_version", plugin.manifest.version},
+                                                   {"package_digest", plugin.package_digest},
+                                                   {"operation_id", capability_id},
+                                                   {"result_contract", contract_id}}}});
                     const auto result_id = manifest.value("result_id", allocation.value("result_id", std::string{}));
                     if (result_id.empty()) return STREAMFIND_PLUGIN_ERROR;
                     emitted_results[output_port->second] = Json{
@@ -429,7 +435,11 @@ Json invoke_dynamic(
                                                     {"source_port", source_port},
                                                     {"target_port", target_port}});
                              return lineage;
-                         }()}}}});
+                         }()}, {"plugin_id", plugin.manifest.plugin_id},
+                         {"plugin_version", plugin.manifest.version},
+                         {"package_digest", plugin.package_digest},
+                         {"operation_id", capability_id},
+                         {"result_contract", contract}}}});
                 const auto result_id = manifest.value("result_id", std::string{});
                 if (result_id.empty())
                     throw Error(ErrorCode::MethodExecution,
@@ -475,6 +485,17 @@ DynamicPluginLoadResult load_dynamic_plugin_package(const std::filesystem::path 
         return result;
     }
     result.manifest = manifest_result.manifest;
+    const auto provenance_path = package_root / "provenance.json";
+    if (std::filesystem::is_regular_file(provenance_path)) {
+        try {
+            std::ifstream provenance(provenance_path);
+            const auto document = Json::parse(provenance);
+            result.package_digest = document.value("package_digest", std::string{});
+        } catch (...) {
+            result.diagnostics = "plugin provenance is invalid";
+            return result;
+        }
+    }
 
     if (result.manifest.abi_major != STREAMFIND_PLUGIN_ABI_MAJOR) {
         result.diagnostics = "plugin ABI major is incompatible with the host";
@@ -585,6 +606,7 @@ void register_dynamic_plugin_capabilities(
     const Json &catalogue_entries,
     MethodRegistry &methods,
     OperationRegistry &operations) {
+    validate_abi_type_profile(catalogue_entries);
     if (!plugin.loaded || !catalogue_entries.is_array()) {
         throw Error(ErrorCode::InvalidArgument,
                     "dynamic plugin registration requires a loaded plugin and catalogue entries");
@@ -619,7 +641,7 @@ void register_dynamic_plugin_capabilities(
             definition.id = id;
             definition.name = entry.value("label", id);
             definition.description = entry.value("definition", "");
-            definition.domain = entry.value("domain", "");
+            definition.plugin = entry.value("plugin", "");
             definition.version = entry.value("operation_version", "1");
             definition.project_entry = entry.value("project_entry", false);
 

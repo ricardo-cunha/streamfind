@@ -18,7 +18,7 @@ param(
 )
 
 if (-not $IsWindows) {
-    throw 'Create tmp/packaged_build from native Windows PowerShell on the development machine. WSL is reserved for Linux release and developer-kit builds.'
+    throw 'Create tmp/packaged_build from native Windows PowerShell on the development machine. WSL is reserved for Linux runtime/development release builds.'
 }
 
 . "$PSScriptRoot\..\build-common.ps1"
@@ -64,7 +64,7 @@ Write-Log "Configuring C++ package build ($Config)..."
     "-DCMAKE_PREFIX_PATH=$($toolchain.Root)\ucrt64" `
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
     '-DSTREAMFIND_BUILD_TESTS=ON' "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)" '-DSTREAMFIND_BUILD_SHARED=OFF' `
-    '-DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF' `
+    '-DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=ON' `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
@@ -92,6 +92,7 @@ Expand-Archive -LiteralPath $archive.FullName -DestinationPath $extractDir
 $packageRoot = Get-ChildItem -Path $extractDir -Directory | Select-Object -First 1
 if (-not $packageRoot) { throw 'C++ package archive has no top-level directory' }
 Copy-Item -Recurse -Force (Join-Path $packageRoot.FullName '*') $packageBuild
+New-Item -ItemType Directory -Force -Path (Join-Path $packageBuild 'plugins\native'), (Join-Path $packageBuild 'plugins\custom'), (Join-Path $packageBuild 'viewers\native'), (Join-Path $packageBuild 'viewers\custom') | Out-Null
 Assert-CppDistributionPayload $packageBuild
 
 Write-Log "Packaged build ready: $packageBuild"

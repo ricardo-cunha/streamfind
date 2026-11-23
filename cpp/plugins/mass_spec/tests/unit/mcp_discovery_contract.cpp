@@ -188,7 +188,7 @@ int main() {
                 "MCP still serves the removed visualization resource surface");
         const auto listed = session.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}});
         const auto tools = listed.at("result").at("tools");
-        bool has_domains = false;
+        bool has_plugins = false;
         bool has_modules = false;
         bool has_operations = false;
         bool has_operation = false;
@@ -206,7 +206,7 @@ int main() {
             require(name != "add_method" && name != "remove_method" && name != "get_available_methods" &&
                         name != "run_method",
                     "legacy workflow-method MCP tool leaked into tools/list");
-            has_domains = has_domains || name == "get_domains";
+            has_plugins = has_plugins || name == "get_plugins";
             has_modules = has_modules || name == "get_modules";
             has_operations = has_operations || name == "get_operations";
             has_operation = has_operation || name == "get_operation";
@@ -219,7 +219,7 @@ int main() {
             has_current_artifact_inventory = has_current_artifact_inventory || name == "get_current_result_inventory";
             has_workflow_demos = has_workflow_demos || name == "list_workflow_demos";
         }
-        require(has_domains && has_modules && has_operations && has_operation && has_run_operation,
+        require(has_plugins && has_modules && has_operations && has_operation && has_run_operation,
                 "stable MCP discovery tools are incomplete");
         require(has_create && has_add_operation && has_connect_operations && has_set_workflow,
                 "operation-graph MCP tools are incomplete");
@@ -283,15 +283,15 @@ int main() {
         require(!closed.at("result").value("isError", false), "MCP could not close the container test project");
         std::filesystem::remove_all(metadata_path);
 
-        const auto domains = text_json(call(session, 2, "get_domains"));
-        require(domains.is_array() && std::find(domains.begin(), domains.end(), "mass_spec") != domains.end(),
+        const auto plugins = text_json(call(session, 2, "get_plugins"));
+        require(plugins.is_array() && std::find(plugins.begin(), plugins.end(), "mass_spec") != plugins.end(),
                 "mass_spec was not discoverable");
 
         const auto operations = text_json(call(session, 3, "get_operations",
-                                                {{"domain", "mass_spec"}, {"module", "mass_spec.nta"}}));
+                                                {{"plugin", "mass_spec"}, {"module", "mass_spec.nta"}}));
         require(operations.is_array() && !operations.empty(), "mass_spec.nta operations were not discoverable");
         const auto first = operations.at(0);
-        const std::set<std::string> summary_fields = {"canonical_id", "label", "domain", "module_id", "definition"};
+        const std::set<std::string> summary_fields = {"canonical_id", "label", "plugin", "module_id", "definition"};
         require(first.size() == summary_fields.size(), "operation summary has unexpected fields");
         for (const auto &field : summary_fields)
             require(first.contains(field) && first.at(field).is_string(), "operation summary field is missing or not a string");
@@ -301,7 +301,7 @@ int main() {
         require(!first.contains("parameters") && !first.contains("input_ports") && !first.contains("executable"),
                 "operation summary leaked full catalogue detail");
         for (const auto &operation : operations)
-            require(operation.value("domain", "") == "mass_spec" &&
+            require(operation.value("plugin", "") == "mass_spec" &&
                         operation.value("module_id", "") == "mass_spec.nta",
                     "operation filtering returned the wrong module");
         for (const auto &operation : operations)
@@ -309,7 +309,7 @@ int main() {
                     "operation catalogue still exposes the removed cacheable flag");
 
         const auto searched = text_json(call(session, 4, "get_operations",
-                                             {{"domain", "mass_spec"}, {"search", "nta"}}));
+                                             {{"plugin", "mass_spec"}, {"search", "nta"}}));
         require(searched.is_array() && !searched.empty() && searched.size() <= operations.size(),
                 "operation search returned an invalid result");
         for (const auto &operation : searched)

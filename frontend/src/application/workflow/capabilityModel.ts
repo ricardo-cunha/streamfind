@@ -10,7 +10,7 @@ export type NodeTemplate = {
   outputsToCanvas: boolean;
   capabilityId?: string;
   projectEntry?: boolean;
-  domain?: string;
+  plugin?: string;
   module?: string;
 };
 
@@ -35,7 +35,7 @@ export function capabilityTemplates(capabilities: ServiceCapabilities): NodeTemp
       outputsToCanvas: capability.kind === 'operation',
       capabilityId: capability.canonical_id,
       projectEntry: capability.project_entry === true,
-      domain: capability.domain,
+      plugin: capability.plugin,
       module: capability.module_id,
     }));
 }

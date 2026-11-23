@@ -88,6 +88,7 @@ public:
     bool contains(const std::string &session_id) const;
     void set_operation_log_callback(std::function<void(const std::string &, std::string_view, std::string_view)> callback);
     void set_operation_event_callback(std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> callback);
+    void set_plugin_snapshot(const Json &snapshot);
 
 private:
     ProjectSessionDto describe(const std::string &session_id, const Project &project) const;
@@ -117,6 +118,7 @@ private:
     std::uint16_t service_port_{0};
     mutable std::unordered_map<std::string, ResultLease> data_proxy_leases_;
     mutable std::unordered_map<std::string, Json> decoded_trace_cache_;
+    Json plugin_snapshot_ = Json{{"generation", 0}, {"plugins", Json::array()}};
     mutable std::deque<std::string> decoded_trace_cache_order_;
     mutable std::size_t decoded_trace_cache_bytes_{0};
     static constexpr std::size_t kDecodedTraceCacheBytes = 32 * 1024 * 1024;

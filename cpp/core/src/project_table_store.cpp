@@ -305,9 +305,9 @@ void ProjectTableStore::transaction(Project &project,
 }
 
 void ProjectTableStore::install_manifest_schema(Project &project,
-                                                 const std::string &domain,
+                                                 const std::string &plugin,
                                                  const std::string &module_id) {
-    const auto manifest = catalogue::table_manifest_json(domain, "");
+    const auto manifest = catalogue::table_manifest_json(plugin, "");
     if (!manifest) throw Error(ErrorCode::SchemaMismatch, "module table manifest unavailable: " + module_id);
     std::vector<std::string> owned_tables;
     std::set<std::string> modules;
@@ -325,9 +325,9 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     }
     ProjectTableStore::transaction(project, owned_tables, [&](ProjectTableStore &tables) {
         tables.execute(
-            "CREATE TABLE IF NOT EXISTS MODULE_SCHEMA (domain_id VARCHAR NOT NULL, module_id VARCHAR NOT NULL, "
+            "CREATE TABLE IF NOT EXISTS MODULE_SCHEMA (plugin_id VARCHAR NOT NULL, module_id VARCHAR NOT NULL, "
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
-            "PRIMARY KEY (domain_id, module_id))");
+            "PRIMARY KEY (plugin_id, module_id))");
         for (const auto &table : *manifest) {
             if (!table.value("columns", Json::array()).is_array() ||
                 table.value("columns", Json::array()).empty()) {
@@ -344,8 +344,8 @@ void ProjectTableStore::install_manifest_schema(Project &project,
         }
         for (const auto &installed_module : modules) {
             if (installed_module.empty()) continue;
-            tables.execute("DELETE FROM MODULE_SCHEMA WHERE domain_id = '" + domain + "' AND module_id = '" + installed_module + "'");
-            tables.execute("INSERT INTO MODULE_SCHEMA (domain_id, module_id, schema_version) VALUES ('" + domain + "', '" + installed_module + "', 1)");
+            tables.execute("DELETE FROM MODULE_SCHEMA WHERE plugin_id = '" + plugin + "' AND module_id = '" + installed_module + "'");
+            tables.execute("INSERT INTO MODULE_SCHEMA (plugin_id, module_id, schema_version) VALUES ('" + plugin + "', '" + installed_module + "', 1)");
         }
     });
 }
@@ -372,7 +372,7 @@ bool ProjectTableStore::has_table(const std::string &table_name) const {
 void ProjectTableStore::require(const std::vector<TableRequirement> &requirements) const {
     for (const auto &requirement : requirements) {
         if (!has_table(requirement.name))
-            throw Error(ErrorCode::SchemaMismatch, "missing domain table: " + requirement.name);
+            throw Error(ErrorCode::SchemaMismatch, "missing plugin table: " + requirement.name);
         if (requirement.required_columns.empty() && requirement.required_column_types.empty()) continue;
         const auto rows = impl_
             ? detail::store_query_json(*impl_, "DESCRIBE \"" + requirement.name + "\"")
@@ -383,7 +383,7 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
             });
             if (found == rows.end())
                 throw Error(ErrorCode::SchemaMismatch,
-                            "missing column " + column + " in domain table " + requirement.name);
+                            "missing column " + column + " in plugin table " + requirement.name);
         }
         for (const auto &[column, semantic_type] : requirement.required_column_types) {
             const auto found = std::find_if(rows.begin(), rows.end(), [&column](const auto &row) {
@@ -391,7 +391,7 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
             });
             if (found == rows.end())
                 throw Error(ErrorCode::SchemaMismatch,
-                            "missing column " + column + " in domain table " + requirement.name);
+                            "missing column " + column + " in plugin table " + requirement.name);
             const std::string actual = found->value("column_type", "");
             const auto hash = semantic_type.rfind('#');
             const std::string expected = hash == std::string::npos ? semantic_type : semantic_type.substr(hash + 1);
@@ -403,14 +403,14 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
                 : expected == "array" || expected == "object" ? actual == "JSON"
                 : true;
             if (!compatible)
-                throw Error(ErrorCode::SchemaMismatch, "incompatible type for " + column + " in domain table " +
+                throw Error(ErrorCode::SchemaMismatch, "incompatible type for " + column + " in plugin table " +
                                                         requirement.name + ": expected " + expected + ", got " + actual);
         }
     }
 }
 
-void ProjectTableStore::require_manifest(const std::string &domain, const std::string &module_id) const {
-    const auto manifest = catalogue::table_manifest_json(domain, module_id);
+void ProjectTableStore::require_manifest(const std::string &plugin, const std::string &module_id) const {
+    const auto manifest = catalogue::table_manifest_json(plugin, module_id);
     if (!manifest) throw Error(ErrorCode::DatabaseError, "generated table manifest unavailable");
     std::vector<TableRequirement> requirements;
     for (const auto &table : *manifest) {
@@ -423,15 +423,15 @@ void ProjectTableStore::require_manifest(const std::string &domain, const std::s
     require(requirements);
 }
 
-void ProjectTableStore::require_installed_manifest(const std::string &domain,
+void ProjectTableStore::require_installed_manifest(const std::string &plugin,
                                                    const std::string &module_id,
                                                    int minimum_version) const {
     try {
         const auto rows = impl_
-            ? detail::store_query_json(*impl_, "SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = '" +
-                                       domain + "' AND module_id = '" + module_id + "' LIMIT 1")
-            : project_->query_json("SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = '" +
-                                   domain + "' AND module_id = '" + module_id + "' LIMIT 1");
+            ? detail::store_query_json(*impl_, "SELECT schema_version FROM MODULE_SCHEMA WHERE plugin_id = '" +
+                                       plugin + "' AND module_id = '" + module_id + "' LIMIT 1")
+            : project_->query_json("SELECT schema_version FROM MODULE_SCHEMA WHERE plugin_id = '" +
+                                   plugin + "' AND module_id = '" + module_id + "' LIMIT 1");
         if (rows.empty() || rows.at(0).value("schema_version", "") < std::to_string(minimum_version))
             throw Error(ErrorCode::SchemaMismatch, "module schema is not installed: " + module_id);
     } catch (const Error &) {
@@ -439,7 +439,7 @@ void ProjectTableStore::require_installed_manifest(const std::string &domain,
     } catch (const std::exception &) {
         throw Error(ErrorCode::SchemaMismatch, "module schema is not installed: " + module_id);
     }
-    require_manifest(domain, module_id);
+    require_manifest(plugin, module_id);
 }
 
 void ProjectTableStore::ensure_table(const std::string &table_name, const std::string &ddl) const {

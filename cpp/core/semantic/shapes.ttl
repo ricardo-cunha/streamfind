@@ -7,7 +7,7 @@
 
 sfcore:SemanticEntryShape
     a sh:NodeShape ;
-    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Domain, sf:DomainModule, sf:Project, sf:Workflow, sf:WorkflowMetadata, sf:Parameter, sf:OperationResult, sf:Error, sf:Table, sf:Field, sf:Column, sf:PrimitiveType, sf:SemanticType, sf:ArrayType, sf:ApiCommandResult ;
+    sh:targetClass sf:Operation, sf:ApiCommand, sf:ArtifactContract, sf:WorkflowConnection, sf:Method, sf:Plugin, sf:PluginModule, sf:Project, sf:Workflow, sf:WorkflowMetadata, sf:Parameter, sf:OperationResult, sf:Error, sf:Table, sf:Field, sf:Column, sf:PrimitiveType, sf:SemanticType, sf:ArrayType, sf:ApiCommandResult ;
     sh:property [ sh:path skos:prefLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path skos:definition ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
@@ -19,7 +19,7 @@ sfcore:ApiCommandShape
     a sh:NodeShape ;
     sh:targetClass sf:ApiCommand ;
     sh:property [ sh:path sf:commandId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
     sh:property [ sh:path sf:returns ; sh:maxCount 1 ; sh:class sf:ApiCommandResult ] ;
     sh:property [ sh:path sf:mutatesProject ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
@@ -31,7 +31,7 @@ sfcore:OperationShape
     sh:targetClass sf:Operation ;
     sh:property [ sh:path sf:operationId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:operationVersion ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:projectEntry ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:hasParameter ; sh:class sf:Parameter ] ;
     sh:property [ sh:path sf:hasInputPort ; sh:class sf:ArtifactContract ] ;
@@ -66,17 +66,17 @@ sfcore:WorkflowConnectionShape
     sh:property [ sh:path sf:targetNodeId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ] ;
     sh:property [ sh:path sf:targetPortId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .
 
-sfcore:DomainModuleShape
+sfcore:PluginModuleShape
     a sh:NodeShape ;
-    sh:targetClass sf:DomainModule ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] .
+    sh:targetClass sf:PluginModule ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] .
 
 sfcore:MethodShape
     a sh:NodeShape ;
     sh:targetClass sf:Method ;
     sh:property [ sh:path sf:methodId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:singleOccurrence ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:hasParameter ; sh:minCount 1 ; sh:class sf:Parameter ] ;
     sh:property [ sh:path sf:reads ; sh:class sf:Table ] ;
     sh:property [ sh:path sf:writes ; sh:class sf:Table ] ;
@@ -121,7 +121,7 @@ sf:ReadDependencyShape
 sfcore:ParameterShape
     a sh:NodeShape ;
     sh:targetClass sf:Parameter ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:required ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path sf:default ; sh:minCount 1 ; sh:maxCount 1 ] ;
@@ -195,7 +195,7 @@ sfcore:ErrorShape
 sfcore:ApiCommandResultShape
     a sh:NodeShape ;
     sh:targetClass sf:ApiCommandResult ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" ) ] ;
     sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
     sh:property [ sh:path sf:items ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
@@ -203,7 +203,7 @@ sfcore:ApiCommandResultShape
 sfcore:OperationResultShape
     a sh:NodeShape ;
     sh:targetClass sf:OperationResult ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:dataKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "json" ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" ) ] ;
     sh:property [ sh:path sf:hasProperty ; sh:or ( [ sh:class sf:Field ] [ sh:class sf:Column ] ) ] ;
@@ -247,7 +247,7 @@ sfcore:OperationResultShape
 sfcore:TableShape
     a sh:NodeShape ;
     sh:targetClass sf:Table ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:tableContractName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Z][A-Z0-9_]*$" ] ;
     sh:property [ sh:path sf:dataKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:hasValue "table" ] ;
     sh:property [ sh:path sf:hasColumn ; sh:class sf:Column ] ;
@@ -274,7 +274,7 @@ sfcore:TableShape
 sfcore:ColumnShape
     a sh:NodeShape ;
     sh:targetClass sf:Column ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:columnName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[A-Za-z][A-Za-z0-9_]*$" ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 0 ] ;
@@ -284,7 +284,7 @@ sfcore:ColumnShape
 sfcore:FieldShape
     a sh:NodeShape ;
     sh:targetClass sf:Field ;
-    sh:property [ sh:path sf:availableInDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Domain ] ;
+    sh:property [ sh:path sf:availableInPlugin ; sh:minCount 1 ; sh:maxCount 1 ; sh:class sf:Plugin ] ;
     sh:property [ sh:path sf:type ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "string" "integer" "real" "boolean" "object" "array" "table" "binary" "timestamp" "path" ) ] ;
     sh:property [ sh:path sf:propertyName ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
     sh:property [ sh:path sf:required ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;

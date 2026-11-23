@@ -59,7 +59,7 @@ struct WagnerFit
     double range_min = 0.0;
     double range_max = 0.0;
     std::string monotonicity_status = "unknown";
-    std::string domain_status = "unknown";
+    std::string plugin_status = "unknown";
     std::string status = "insufficient_data";
 };
 

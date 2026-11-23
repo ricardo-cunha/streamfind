@@ -20,7 +20,7 @@ enum class ProjectCommand {
     set_workflow,
     validate_workflow,
     validate,
-    get_project_domains,
+    get_project_plugins,
     copy,
     run_workflow,
     get_metadata,

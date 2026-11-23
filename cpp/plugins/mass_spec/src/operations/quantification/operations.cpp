@@ -985,7 +985,7 @@ const std::vector<std::string> calibration_model_columns{
     "coefficient_2", "r_squared", "adjusted_r_squared", "rmse", "n_points", "range_min", "range_max",
     "calibration_limit_min", "calibration_limit_max", "distinct_levels", "min_replicates_per_level",
     "max_replicates_per_level", "replicate_mode", "replicate_status", "calibration_acceptance_status",
-    "domain_status", "monotonicity_status", "fit_status"};
+    "plugin_status", "monotonicity_status", "fit_status"};
 const std::vector<std::string> calibration_model_types{
     "string", "string", "string", "string", "real", "real", "real", "real", "real", "real", "integer",
     "real", "real", "real", "real", "integer", "integer", "integer", "string", "string", "string", "string", "string", "string"};
@@ -1017,10 +1017,10 @@ std::string calibration_exclusion_reason(const TypedRow &row, const Json &method
     const auto concentration = row_number(row, quantification_columns, "nominal_concentration");
     const auto model = text_value(method, "regression_model");
     if (model == "wagner" && concentration <= 0.0)
-        return "nonpositive_concentration_log_domain";
+        return "nonpositive_concentration_log_plugin";
     const auto response = response_for_calibration(row, method);
     if (!std::isfinite(response) || response <= 0.0)
-        return model == "wagner" ? "nonpositive_response_log_domain" : "nonpositive_response";
+        return model == "wagner" ? "nonpositive_response_log_plugin" : "nonpositive_response";
     return {};
 }
 
@@ -1070,7 +1070,7 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
     set_cell(result.model, calibration_model_columns, "weighting", weighting);
     set_cell(result.model, calibration_model_columns, "intercept_mode", intercept_mode);
     set_cell(result.model, calibration_model_columns, "n_points", std::int64_t{0});
-    set_cell(result.model, calibration_model_columns, "domain_status", std::string("not_applicable"));
+    set_cell(result.model, calibration_model_columns, "plugin_status", std::string("not_applicable"));
     set_cell(result.model, calibration_model_columns, "monotonicity_status", std::string("unknown"));
     set_cell(result.model, calibration_model_columns, "fit_status", std::string("insufficient_data"));
     set_cell(result.model, calibration_model_columns, "replicate_mode",
@@ -1229,7 +1229,7 @@ CalibrationFit fit_target(const std::string &target_id, const Json &method,
     }
     else
     {
-        set_cell(result.model, calibration_model_columns, "domain_status", wagner_fit->domain_status);
+        set_cell(result.model, calibration_model_columns, "plugin_status", wagner_fit->plugin_status);
         set_cell(result.model, calibration_model_columns, "monotonicity_status", wagner_fit->monotonicity_status);
         if (point_count > 0)
         {
@@ -1390,7 +1390,7 @@ void quantify_samples(const std::map<std::string, Json> &methods,
                 wagner_fit.range_min = row_number(model, calibration_model_columns, "range_min");
                 wagner_fit.range_max = row_number(model, calibration_model_columns, "range_max");
                 wagner_fit.monotonicity_status = row_text(model, calibration_model_columns, "monotonicity_status");
-                wagner_fit.domain_status = "positive_domain";
+                wagner_fit.plugin_status = "positive_plugin";
                 wagner_fit.status = "ok";
                 inverse = calibration::inverse_wagner(wagner_fit, y);
             }

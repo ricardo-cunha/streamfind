@@ -16,7 +16,7 @@ and configure each node's parameters. Run an operation to inspect one step, or
 run the workflow to execute connected steps in dependency order. The activity
 log shows operation progress and failures. Published results can be opened
 from output ports and explored with the result renderer provided for their
-type, including tables and domain-specific visualizations.
+type, including tables and plugin-specific visualizations.
 
 The app and MCP clients use the same local service. A project opened through
 the service, and results produced by either client, are available to the other
@@ -43,6 +43,12 @@ The application is local rather than hosted and does not expose the backend
 beyond the local machine by default. On Linux, the
 launcher uses `xdg-open`; if that command is unavailable, copy the URL printed
 by the launcher into a browser manually.
+
+The app is one client of the package-scoped service. Use the public CLI for
+service lifecycle operations and use the MCP adapter when an automation client
+needs the same projects and workflow runs. See [Command-line interfaces](cli.md)
+for the relationship between `streamfind`, `streamfind-app`, `streamfind-mcp`,
+and `streamfind-dev`.
 
 ## Windows release
 
@@ -116,4 +122,4 @@ The browser communicates with the C++ service for:
 
 The browser is therefore a client of the C++ backend, not a second backend. New
 persistence, operation, reader, and plugin capabilities belong in the C++ core
-or its domain plugins first.
+or its backend plugins first.

@@ -1,0 +1,17 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfsensors:sensors
+    a sf:Plugin ;
+    skos:prefLabel "sensors" ;
+    skos:definition "Sensor data project plugin." ;
+    sf:guidance "Sensor workflow: use Explore OPC UA server to discover a bounded node tree or use Collect OPC UA data directly with known node IDs, then validate the graph and run_workflow." .
+
+sfsensors:baseModule
+    a sf:PluginModule ;
+    sf:availableInPlugin sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA sensor access" ;
+    skos:definition "Native OPC UA server exploration and point-in-time sensor data collection operations." .

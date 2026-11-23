@@ -1,6 +1,6 @@
-// Keep plugin entry modules in Vite's production graph without naming domains here.
+// Keep plugin entry modules in Vite's production graph without naming plugins here.
 export const bundledFrontendPluginEntries = import.meta.glob([
-  '../../plugins/*/index.ts',
+  '../../plugins/**/index.ts',
   '!../../plugins/core/index.ts',
 ]);
 

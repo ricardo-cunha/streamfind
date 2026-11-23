@@ -246,7 +246,7 @@ try {
 
     Invoke-McpTool $process 2 'create' @{
         project_path = $database
-        domain = 'mass_spec'
+        plugin = 'mass_spec'
     } | Out-Null
     $sourcePaths = @($workflowFiles | ForEach-Object { $_.FullName })
     if (-not $RunPipeline) {

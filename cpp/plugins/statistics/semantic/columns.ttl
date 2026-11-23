@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/plugins/statistics#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfstat:sampleIdColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Sample ID" ;
     skos:definition "Stable identifier of a source sample." ;
@@ -15,7 +15,7 @@ sfstat:sampleIdColumn
 
 sfstat:variableIdColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Variable ID" ;
     skos:definition "Stable source variable identifier or selected wide-layout column name." ;
@@ -25,7 +25,7 @@ sfstat:variableIdColumn
 
 sfstat:componentColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Component" ;
     skos:definition "One-based latent component index." ;
@@ -35,7 +35,7 @@ sfstat:componentColumn
 
 sfstat:scoreColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Score" ;
     skos:definition "Sample score on the selected principal component." ;
@@ -45,7 +45,7 @@ sfstat:scoreColumn
 
 sfstat:groupLabelColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Group label" ;
     skos:definition "Optional sample-level group label copied from the source table." ;
@@ -55,7 +55,7 @@ sfstat:groupLabelColumn
 
 sfstat:loadingColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Loading" ;
     skos:definition "Variable or response loading on a latent component." ;
@@ -65,7 +65,7 @@ sfstat:loadingColumn
 
 sfstat:eigenvalueColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Eigenvalue" ;
     skos:definition "Variance represented by a principal component." ;
@@ -75,7 +75,7 @@ sfstat:eigenvalueColumn
 
 sfstat:explainedVarianceRatioColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Explained variance ratio" ;
     skos:definition "Fraction of total variance represented by this component." ;
@@ -85,7 +85,7 @@ sfstat:explainedVarianceRatioColumn
 
 sfstat:cumulativeVarianceColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cumulative explained variance" ;
     skos:definition "Cumulative explained variance ratio through this component." ;
@@ -95,7 +95,7 @@ sfstat:cumulativeVarianceColumn
 
 sfstat:xScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "X score" ;
     skos:definition "Sample score in the predictor block for a PLS component." ;
@@ -105,7 +105,7 @@ sfstat:xScoreColumn
 
 sfstat:yScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Y score" ;
     skos:definition "Sample score in the response block for a PLS component." ;
@@ -115,7 +115,7 @@ sfstat:yScoreColumn
 
 sfstat:blockColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Block" ;
     skos:definition "PLS matrix block represented by a loading row: x or y." ;
@@ -125,7 +125,7 @@ sfstat:blockColumn
 
 sfstat:itemIdColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Item ID" ;
     skos:definition "Predictor variable or selected response identifier for a PLS loading." ;
@@ -135,7 +135,7 @@ sfstat:itemIdColumn
 
 sfstat:predictorIdColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Predictor ID" ;
     skos:definition "Stable identifier of a predictor variable." ;
@@ -145,7 +145,7 @@ sfstat:predictorIdColumn
 
 sfstat:responseIdColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Response ID" ;
     skos:definition "Selected numeric response column or categorical group column." ;
@@ -155,7 +155,7 @@ sfstat:responseIdColumn
 
 sfstat:coefficientColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Coefficient" ;
     skos:definition "Fitted PLS regression coefficient for a predictor-response pair." ;
@@ -165,7 +165,7 @@ sfstat:coefficientColumn
 
 sfstat:interceptColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Intercept" ;
     skos:definition "Fitted PLS regression intercept for a response." ;
@@ -175,7 +175,7 @@ sfstat:interceptColumn
 
 sfstat:observedValueColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Observed value" ;
     skos:definition "Observed numeric response; null for PLS-DA." ;
@@ -185,7 +185,7 @@ sfstat:observedValueColumn
 
 sfstat:predictedValueColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Predicted value" ;
     skos:definition "In-sample fitted numeric response; null for PLS-DA." ;
@@ -195,7 +195,7 @@ sfstat:predictedValueColumn
 
 sfstat:observedLabelColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Observed label" ;
     skos:definition "Observed categorical response label; null for numeric PLS." ;
@@ -205,7 +205,7 @@ sfstat:observedLabelColumn
 
 sfstat:predictedLabelColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Predicted label" ;
     skos:definition "PLS-DA class label with the greatest fitted score; null for numeric PLS." ;
@@ -215,7 +215,7 @@ sfstat:predictedLabelColumn
 
 sfstat:confidenceColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Confidence score" ;
     skos:definition "Maximum uncalibrated fitted class score for PLS-DA; null for numeric PLS." ;
@@ -225,7 +225,7 @@ sfstat:confidenceColumn
 
 sfstat:meanGroupAColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Group A mean" ;
     skos:definition "Arithmetic mean for group A." ;
@@ -235,7 +235,7 @@ sfstat:meanGroupAColumn
 
 sfstat:meanGroupBColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Group B mean" ;
     skos:definition "Arithmetic mean for group B." ;
@@ -245,7 +245,7 @@ sfstat:meanGroupBColumn
 
 sfstat:log2FoldChangeColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Log2 fold change" ;
     skos:definition "Log2 of the pseudocount-adjusted group B mean divided by the group A mean." ;
@@ -255,7 +255,7 @@ sfstat:log2FoldChangeColumn
 
 sfstat:effectSizeColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Hedges g" ;
     skos:definition "Small-sample-corrected standardized mean difference, group B minus group A." ;
@@ -265,7 +265,7 @@ sfstat:effectSizeColumn
 
 sfstat:pValueColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Welch p-value" ;
     skos:definition "Two-sided Welch two-sample t-test p-value." ;
@@ -275,7 +275,7 @@ sfstat:pValueColumn
 
 sfstat:adjustedPValueColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Adjusted p-value" ;
     skos:definition "Benjamini-Hochberg adjusted p-value across tested variables." ;
@@ -285,7 +285,7 @@ sfstat:adjustedPValueColumn
 
 sfstat:significantColumn
     a sf:Column ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Significant" ;
     skos:definition "True when the adjusted p-value is below 0.05." ;

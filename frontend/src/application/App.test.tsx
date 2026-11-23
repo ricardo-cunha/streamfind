@@ -6,7 +6,7 @@ let project = {
   session_id: 'path-test-a',
   project_path: 'tmp/projects/path-test.sf',
   database_size_bytes: 0,
-  domains: ['core'],
+  plugins: ['core'],
   metadata: {},
   result_store: { size_bytes: 0 },
 };
@@ -28,7 +28,7 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
     }
 
     async capabilities() {
-      return { protocol_version: '1.0', operations: [], domains: ['core'], endpoints: [] };
+      return { protocol_version: '1.0', operations: [], plugins: ['core'], endpoints: [] };
     }
 
     async workflowDemos() {
@@ -144,7 +144,7 @@ describe('application shell', () => {
       session_id: 'path-test-a',
       project_path: 'tmp/projects/path-test.sf',
       database_size_bytes: 0,
-      domains: ['core'],
+      plugins: ['core'],
       metadata: {},
       result_store: { size_bytes: 0 },
     };
@@ -223,7 +223,7 @@ describe('application shell', () => {
     expect(screen.queryByText(/Revision/)).not.toBeInTheDocument();
     expect(screen.queryByText(/workflow demo/, { selector: '.sf-workflow-summary' })).not.toBeInTheDocument();
     expect(
-      screen.queryByText('Show the workflow demo picker.', { selector: '.sf-project-preview-domain' }),
+      screen.queryByText('Show the workflow demo picker.', { selector: '.sf-project-preview-plugin' }),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/"use_case": "Show the workflow demo picker\."/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create Workflow' })).toBeInTheDocument();

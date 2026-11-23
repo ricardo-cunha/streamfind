@@ -1,5 +1,8 @@
 # Use the C++ MCP server
 
+For the roles of the public CLI, browser launcher, MCP adapter, and embedded
+development CLI, see [Command-line interfaces](../cli.md).
+
 The C++ MCP server is included in the
 [Windows x64 and Linux x86_64 C++ packages](../releases.md). It communicates
 with MCP clients using JSON-RPC messages over standard input/output.
@@ -30,8 +33,10 @@ It controls the enabled plugins and the preferred local service port:
 ```json
 {
   "server": {"port": 8787, "automatic_port_fallback": true},
-  "plugin_roots": ["../plugins"],
-  "enabled_plugins": ["mass_spec", "raman", "sensors", "statistics"]
+  "plugin_roots": {"development": [], "deployment": ["../plugins"]},
+  "viewer_roots": {"development": [], "deployment": ["../viewers/native"]},
+  "enabled_plugins": ["native.plugin.mass_spec", "native.plugin.raman", "native.plugin.sensors", "native.plugin.statistics"],
+  "enabled_viewers": []
 }
 ```
 
@@ -61,9 +66,9 @@ A typical client or AI agent uses this sequence:
 2. call `tools/list` to discover callable Operations;
 3. call `create` with `project_path` naming a new `.sf` folder;
 4. call `describe` or `get_metadata` to inspect the project, and
-   `get_project_domains` to list domains represented in it;
-5. call `get_domains` to discover available operation domains, then call a
-   domain Operation with `project_path`.
+   `get_project_plugins` to list plugins represented in it;
+5. call `get_plugins` to discover available operation plugins, then call a
+   plugin Operation with `project_path`.
 
 Example requests, one JSON object per line:
 
@@ -71,8 +76,8 @@ Example requests, one JSON object per line:
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create","arguments":{"project_path":"demo.sf"}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_domains","arguments":{}}}
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_operations","arguments":{"domain":"mass_spec"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_plugins","arguments":{}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_operations","arguments":{"plugin":"mass_spec"}}}
 ```
 
 Include `project_path` on every applicable request. Operation-specific
@@ -80,16 +85,16 @@ parameters and constraints are returned by `tools/list` and `get_operation`.
 Send the `notifications/initialized` notification after initialization; because
 it is a notification, the server correctly sends no response.
 
-`get_domains` lists domains that expose operations in the enabled catalogue.
-`get_project_domains` instead reports domains represented by operation nodes in
+`get_plugins` lists plugins that expose operations in the enabled catalogue.
+`get_project_plugins` instead reports plugins represented by operation nodes in
 the selected project's workflow; it is normally empty immediately after
-`create` and fills as domain operations are added.
+`create` and fills as plugin operations are added.
 
 ## Build a workflow
 
 Use a persisted operation graph for every multi-step workflow:
 
-1. call `get_operations` to discover operations in a domain;
+1. call `get_operations` to discover operations in a plugin;
 2. call `get_operation` to inspect parameters and typed ports;
 3. call `add_operation` with the canonical operation ID and a JSON
    `parameters` object; the service assigns the node's unique integer ID;

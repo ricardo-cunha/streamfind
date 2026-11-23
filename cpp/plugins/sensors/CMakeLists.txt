@@ -53,7 +53,7 @@ streamfind_add_semantic_catalogue(streamfind_sensors_plugin sensors
     "${CMAKE_CURRENT_SOURCE_DIR}/semantic")
 target_include_directories(streamfind_sensors_plugin PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:sdk/include>
+    $<INSTALL_INTERFACE:sdk/native/include>
 )
 set_target_properties(streamfind_sensors_plugin PROPERTIES OUTPUT_NAME "streamfind_sensors")
 if(WIN32)
@@ -93,14 +93,16 @@ if(MINGW AND WIN32 AND PAHO_WITH_SSL)
     endforeach()
 endif()
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
-    DESTINATION plugins/sensors/ontology)
+    DESTINATION plugins/native/native.plugin.sensors/ontology)
 install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
-    DESTINATION plugins/sensors)
+    DESTINATION plugins/native/native.plugin.sensors)
 install(TARGETS streamfind_sensors_plugin
-    RUNTIME DESTINATION plugins/sensors
-    LIBRARY DESTINATION plugins/sensors)
+    RUNTIME DESTINATION plugins/native/native.plugin.sensors
+    LIBRARY DESTINATION plugins/native/native.plugin.sensors)
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-    install(TARGETS streamfind_sensors_plugin ARCHIVE DESTINATION sdk/lib)
+    install(TARGETS streamfind_sensors_plugin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib)
 endif()
 if(STREAMFIND_BUILD_TESTS)
     add_subdirectory(tests)

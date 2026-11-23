@@ -289,8 +289,8 @@ export class StreamFindApiClient {
     return response.json() as Promise<CapabilityIndexResponse>;
   }
 
-  async capabilityModules(domain: string): Promise<CapabilityModulesResponse> {
-    const response = await fetch(`${this.baseUrl}/capabilities/domains/${encodeURIComponent(domain)}/modules`);
+  async capabilityModules(plugin: string): Promise<CapabilityModulesResponse> {
+    const response = await fetch(`${this.baseUrl}/capabilities/plugins/${encodeURIComponent(plugin)}/modules`);
     if (!response.ok) throw new Error(`Capability module request failed (${response.status})`);
     return response.json() as Promise<CapabilityModulesResponse>;
   }
@@ -304,7 +304,7 @@ export class StreamFindApiClient {
   async capabilityOperations(
     options: CapabilityOperationsRequest,
   ): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
-    const query = new URLSearchParams({ domain: options.domain });
+    const query = new URLSearchParams({ plugin: options.plugin });
     if (options.module) query.set('module', options.module);
     if (options.search) query.set('search', options.search);
     if (options.includeSchema) query.set('include_schema', 'true');

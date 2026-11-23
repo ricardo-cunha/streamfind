@@ -84,7 +84,7 @@ ProjectCommand command_from_string(std::string_view name) {
     if (name == "set_workflow") return ProjectCommand::set_workflow;
     if (name == "validate_workflow") return ProjectCommand::validate_workflow;
     if (name == "validate") return ProjectCommand::validate;
-    if (name == "get_project_domains") return ProjectCommand::get_project_domains;
+    if (name == "get_project_plugins") return ProjectCommand::get_project_plugins;
     if (name == "copy") return ProjectCommand::copy;
     if (name == "run_workflow") return ProjectCommand::run_workflow;
     if (name == "get_metadata") return ProjectCommand::get_metadata;
@@ -130,9 +130,9 @@ Json run(ProjectCommand command, const Json &request, const OperationRegistry &r
             detail::options_from_request(request).database_path.parent_path());
         return service::validate_workflow(attachment);
     }
-    case ProjectCommand::get_project_domains: {
+    case ProjectCommand::get_project_plugins: {
         const auto attachment = service::attach_project(detail::options_from_request(request).database_path.parent_path());
-        return service::get_project(attachment).value("domains", Json::array());
+        return service::get_project(attachment).value("plugins", Json::array());
     }
 
     case ProjectCommand::copy: {

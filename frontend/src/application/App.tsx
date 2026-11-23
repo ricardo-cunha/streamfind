@@ -55,7 +55,7 @@ type WorkflowSummary = {
   revision?: number;
   state: WorkflowState;
   artifactCount?: number;
-  domains?: string[];
+  plugins?: string[];
 };
 const defaultWorkflowMetadata = {
   name: 'Untitled workflow',
@@ -100,9 +100,9 @@ type OntologyEntry = {
   dataKind?: string;
 };
 
-function workflowDomainClass(operation: string): string {
-  const domain = operation.split('.')[0] || 'core';
-  return domain.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+function workflowPluginClass(operation: string): string {
+  const plugin = operation.split('.')[0] || 'core';
+  return plugin.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
 function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
@@ -724,27 +724,27 @@ function formatDatabaseSize(bytes: number): string {
   if (megabytes >= 1) return `${megabytes.toFixed(2)} MB`;
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
-function workflowDomains(workflow: WorkflowDefinition): string[] {
-  const domains = new Set(
+function workflowPlugins(workflow: WorkflowDefinition): string[] {
+  const plugins = new Set(
     workflow.operations.map((operation) => {
-      const domain = workflowDomainClass(operation.operation);
-      return domain === 'mass-spec' || domain === 'raman' || domain === 'sensors' || domain === 'statistics'
-        ? domain
-        : domain === 'streamfind'
+      const plugin = workflowPluginClass(operation.operation);
+      return plugin === 'mass-spec' || plugin === 'raman' || plugin === 'sensors' || plugin === 'statistics'
+        ? plugin
+        : plugin === 'streamfind'
           ? 'streamfind'
           : 'core';
     }),
   );
-  return [...domains].sort();
+  return [...plugins].sort();
 }
-function domainLabel(domains?: string[]): string {
-  const visibleDomains = (domains ?? []).filter((domain) => domain.toLowerCase() !== 'streamfind');
-  if (!visibleDomains.length) return '';
-  if (visibleDomains.length > 1) return 'Multiple domains';
-  return visibleDomains[0].replaceAll('-', '_');
+function pluginLabel(plugins?: string[]): string {
+  const visiblePlugins = (plugins ?? []).filter((plugin) => plugin.toLowerCase() !== 'streamfind');
+  if (!visiblePlugins.length) return '';
+  if (visiblePlugins.length > 1) return 'Multiple plugins';
+  return visiblePlugins[0].replaceAll('-', '_');
 }
-function projectDomainColor(domains?: string[]): string {
-  const colors = (domains?.length ? domains : ['core']).map((domain) => `var(--sf-domain-${domain})`);
+function projectPluginColor(plugins?: string[]): string {
+  const colors = (plugins?.length ? plugins : ['core']).map((plugin) => `var(--sf-plugin-${plugin})`);
   return colors
     .slice(1)
     .reduce(
@@ -777,12 +777,12 @@ function ProjectCard({
     }
   };
 
-  const domains = summary?.domains?.length ? summary.domains : project.domains ?? [];
+  const plugins = summary?.plugins?.length ? summary.plugins : project.plugins ?? [];
 
   return (
     <article
       className="sf-project-row"
-      style={{ '--sf-project-domain-color': projectDomainColor(summary?.domains) } as CSSProperties}
+      style={{ '--sf-project-plugin-color': projectPluginColor(summary?.plugins) } as CSSProperties}
     >
       <div>
         <strong>{projectFileName(project)}</strong>
@@ -937,7 +937,7 @@ const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: 
               return (
                 <g
                   key={operation.id}
-                  className={`sf-workflow-overview-node sf-domain-${workflowDomainClass(operation.operation)}`}
+                  className={`sf-workflow-overview-node sf-plugin-${workflowPluginClass(operation.operation)}`}
                   transform={`translate(${position.x}, ${position.y})`}
                 >
                   <rect width={nodeWidth} height={nodeHeight} rx="8" />
@@ -1026,7 +1026,7 @@ function ProjectPreview({
         : workflowState === 'failed'
           ? 'failed'
           : 'idle';
-  const overviewDomainLabel = domainLabel(workflow ? workflowDomains(workflow) : project.domains);
+  const overviewPluginLabel = pluginLabel(workflow ? workflowPlugins(workflow) : project.plugins);
   return (
     <div
       className="sf-dialog-backdrop"
@@ -1045,8 +1045,8 @@ function ProjectPreview({
         </div>
         <div className="sf-project-overview-grid">
           <section className="sf-project-overview-details">
-            {overviewDomainLabel ? (
-              <span className="sf-project-preview-domain">{overviewDomainLabel}</span>
+            {overviewPluginLabel ? (
+              <span className="sf-project-preview-plugin">{overviewPluginLabel}</span>
             ) : null}
             <code>{project.project_path}</code>
             <div className="sf-workflow-summary">
@@ -1264,7 +1264,7 @@ function ProjectHub({
                 ? {
                     operationCount: workflow.operations.length,
                     revision: workflow.version,
-                    domains: workflowDomains(workflow),
+                    plugins: workflowPlugins(workflow),
                   }
                 : {}),
               state: stateResult.value.state,
@@ -1312,7 +1312,7 @@ function ProjectHub({
                 ? {
                     operationCount: entry[2].operations.length,
                     revision: entry[2].version,
-                    domains: workflowDomains(entry[2]),
+                    plugins: workflowPlugins(entry[2]),
                   }
                 : {}),
               state: entry[1],
@@ -1443,7 +1443,7 @@ function ProjectHub({
       <div className="sf-card-grid">
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': 'var(--sf-plugin-core)' } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
             setParentPath('');
@@ -1460,7 +1460,7 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': 'var(--sf-plugin-core)' } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
             setProjectPath('');
@@ -1474,7 +1474,7 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': 'var(--sf-plugin-core)' } as CSSProperties}
           disabled={!canInteract}
           onClick={() => setDemosOpen(true)}
         >
@@ -1524,7 +1524,7 @@ function ProjectHub({
                     className="sf-demo-list-item"
                     style={
                       {
-                        '--sf-project-domain-color': projectDomainColor(workflowDomains(demo.workflow)),
+                        '--sf-project-plugin-color': projectPluginColor(workflowPlugins(demo.workflow)),
                       } as CSSProperties
                     }
                     onClick={() => {
@@ -1968,7 +1968,7 @@ function AppShell({
               setActiveProject(null);
               navigateHash('projects');
             }
-          } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.domains)) {
+          } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.plugins)) {
             const project = candidate as ProjectSession;
             setProjects((items) => [project, ...items.filter((item) => item.session_id !== project.session_id)]);
             setActiveProject((current) => (current?.session_id === project.session_id ? project : current));

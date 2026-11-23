@@ -4,6 +4,7 @@ add_library(streamfind_cpp_sdk ${STREAMFIND_CPP_LIBRARY_TYPE}
     src/semantic_resources.cpp
     src/semantic_validator.cpp
     src/catalogue_builder.cpp
+    src/abi_type_profile.cpp
     src/plugin_manifest.cpp
     src/dynamic_plugin_manager.cpp
     src/plugin_data_service.cpp
@@ -23,7 +24,7 @@ target_include_directories(streamfind_cpp_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>
-        $<INSTALL_INTERFACE:sdk/include>
+        $<INSTALL_INTERFACE:sdk/native/include>
 )
 
 add_executable(streamfind_sdk_catalogue tools/streamfind-sdk-catalogue.cpp)
@@ -70,20 +71,20 @@ if(WIN32 AND MINGW)
                     "$<TARGET_FILE_DIR:${_streamfind_sdk_target}>")
         endforeach()
         if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-            install(FILES "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}" DESTINATION sdk/bin)
+            install(FILES "${STREAMFIND_MINGW_RUNTIME_DIR}/${_mingw_runtime}" DESTINATION sdk/native/bin)
         endif()
     endforeach()
 endif()
 
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
     install(TARGETS streamfind_sdk_catalogue streamfind_sdk_plugin_validator
-        RUNTIME DESTINATION sdk/bin)
+        RUNTIME DESTINATION sdk/native/bin)
     install(
         TARGETS streamfind_cpp_sdk
         EXPORT streamfind-cpp-targets
-        ARCHIVE DESTINATION sdk/lib
-        LIBRARY DESTINATION sdk/lib
-        RUNTIME DESTINATION sdk/bin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib
+        RUNTIME DESTINATION sdk/native/bin
     )
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../vendor/apache-jena/"
         DESTINATION sdk/tools/jena)

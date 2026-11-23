@@ -23,7 +23,7 @@ Json fixture() {
     return Json::parse(std::string(std::istreambuf_iterator<char>(input), {}));
 }
 
-Json domain_schema_fixture() {
+Json plugin_schema_fixture() {
     std::ifstream input(STREAMFIND_DOMAIN_SCHEMA_FIXTURE);
     return Json::parse(std::string(std::istreambuf_iterator<char>(input), {}));
 }
@@ -57,14 +57,14 @@ void run() {
     ProjectOptions second_options{second_path, {{"owner", "project-b"}}};
     auto first = Project::create(first_options);
     first.set_metadata({{"owner", "project-a"}});
-    const auto schema = domain_schema_fixture();
-    bool missing_domain_table_rejected = false;
+    const auto schema = plugin_schema_fixture();
+    bool missing_plugin_table_rejected = false;
     try {
         ProjectTableStore(first).require_manifest("mass_spec", "mass_spec.base");
     } catch (const Error &error) {
-        missing_domain_table_rejected = error.code() == ErrorCode::SchemaMismatch;
+        missing_plugin_table_rejected = error.code() == ErrorCode::SchemaMismatch;
     }
-    if (!missing_domain_table_rejected) throw std::runtime_error("missing domain table was accepted");
+    if (!missing_plugin_table_rejected) throw std::runtime_error("missing plugin table was accepted");
     const std::array modules{"mass_spec.base", "mass_spec.chromatograms", "mass_spec.nta"};
     std::vector<Json> manifests;
     for (const auto module : modules) {
@@ -72,7 +72,7 @@ void run() {
         if (!manifest) throw std::runtime_error("MassSpec table manifest unavailable");
         manifests.push_back(*manifest);
     }
-    for (const auto &table : schema.at("domains").at("mass_spec").at("required_tables")) {
+    for (const auto &table : schema.at("plugins").at("mass_spec").at("required_tables")) {
         const Json *found = nullptr;
         for (const auto &manifest : manifests) {
             const auto candidate = std::find_if(manifest.begin(), manifest.end(), [&](const auto &entry) {
@@ -106,7 +106,7 @@ void run() {
     second.close();
     auto reopened_first = Project::open(first_options);
     auto reopened_second = Project::open(second_options);
-    if (!reopened_first.get_domains().empty() || !reopened_second.get_domains().empty()) {
+    if (!reopened_first.get_plugins().empty() || !reopened_second.get_plugins().empty()) {
         throw std::runtime_error("separate project files did not reopen");
     }
     reopened_first.close();

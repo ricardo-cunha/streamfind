@@ -1668,7 +1668,7 @@ export default function CanvasShell({
         capability?.canonical_id,
         capability?.label,
         capability?.definition,
-        capability?.domain,
+        capability?.plugin,
         capability?.module_id,
       ]
         .filter((value): value is string => typeof value === 'string')
@@ -2544,7 +2544,7 @@ export default function CanvasShell({
           const capability = node.capabilityId
             ? capabilities.operations.find((item) => item.canonical_id === node.capabilityId)
             : undefined;
-          const domainClass = (capability?.domain || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const pluginClass = (capability?.plugin || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const outputArtifact = (port: NodePort) =>
             currentResults
               .filter(
@@ -2557,7 +2557,7 @@ export default function CanvasShell({
           return (
             <div
               key={node.id}
-              className={`sf-canvas-node ${node.kind} sf-domain-${domainClass} ${node.executionState === 'running' ? 'running' : ''}${selectedNodeIds.includes(node.id) ? ' selected' : ''}`}
+              className={`sf-canvas-node ${node.kind} sf-plugin-${pluginClass} ${node.executionState === 'running' ? 'running' : ''}${selectedNodeIds.includes(node.id) ? ' selected' : ''}`}
               style={{ left: node.x, top: node.y }}
               onMouseDown={(event) => beginNodeDrag(event, node)}
               onMouseUp={() => {
@@ -3537,13 +3537,13 @@ export default function CanvasShell({
               const metadata = `${template.module || 'core'} · ${ports.inputs.length} input${ports.inputs.length === 1 ? '' : 's'} · ${ports.outputs.length} output${ports.outputs.length === 1 ? '' : 's'}`;
               return (
                 <article
-                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(
-                    template.domain || 'unknown'
+                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-plugin-${(
+                    template.plugin || 'unknown'
                   )
                     .replace(/[^a-z0-9]+/gi, '-')
                     .toLowerCase()}`}
                   key={template.id}
-                  data-domain={template.domain || 'unknown'}
+                  data-plugin={template.plugin || 'unknown'}
                 >
                   <div className="sf-operation-deck-card-content">
                     <strong>{template.title}</strong>

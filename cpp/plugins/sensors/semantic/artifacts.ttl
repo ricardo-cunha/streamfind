@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfsensors: <https://streamfind.dev/catalogue/domains/sensors#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfsensors:tableInputPort
     a sf:Table ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Sensor table input" ;
     skos:definition "Any persisted table whose explicitly mapped columns are normalized into SENSOR_TIMESERIES." ;
@@ -17,7 +17,7 @@ sfsensors:tableInputPort
 
 sfsensors:sensorTimeseriesTable
     a sf:Table ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Sensor time series" ;
     skos:definition "Version 1 long-format observation table shared by sensor acquisition adapters and time-series processing operations." ;
@@ -43,7 +43,7 @@ sfsensors:sensorTimeseriesTable
 
 sfsensors:sensorAlignedTable
     a sf:Table ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Aligned sensor measurements" ;
     skos:definition "Long-format nearest-time alignment result with one row for each reference observation and signal, including match status and signed time delta." ;
@@ -73,7 +73,7 @@ sfsensors:sensorAlignedTable
 
 sfsensors:opcuaDataTable
     a sf:Table ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "OPC UA data table" ;
     skos:definition "One row per requested OPC UA node containing its NodeClass category, an indicator of whether a value was read, decoded value data for Variables, and read status." ;
@@ -93,7 +93,7 @@ sfsensors:opcuaDataTable
 
 sfsensors:opcuaExploration
     a sf:OperationResult ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:dataKind "json" ;
     sf:type "object" ;
     sf:portId "opcuaExploration" ;
@@ -104,7 +104,7 @@ sfsensors:opcuaExploration
 
 sfsensors:sensorValidationReport
     a sf:OperationResult ;
-    sf:availableInDomain sfsensors:sensors ;
+    sf:availableInPlugin sfsensors:sensors ;
     sf:dataKind "json" ;
     sf:type "object" ;
     sf:portId "sensorValidationReport" ;

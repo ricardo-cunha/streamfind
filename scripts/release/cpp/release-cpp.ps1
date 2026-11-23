@@ -45,7 +45,7 @@ Write-ReleaseLog "Building C++ backend ($Config)..."
     "-DSTREAMFIND_ENABLED_PLUGINS=$($Plugins -replace ',', ';')" `
     -DSTREAMFIND_BUILD_TESTS=ON -DSTREAMFIND_BUILD_SHARED=OFF `
     "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)" `
-    -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=OFF `
+    -DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=ON `
     "-DSTREAMFIND_APP_DIR=$frontendDist" `
     "-B $buildDir" "-S $(Join-Path $root 'cpp')"
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
