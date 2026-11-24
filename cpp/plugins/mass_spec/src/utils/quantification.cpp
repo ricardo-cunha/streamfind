@@ -82,8 +82,9 @@ std::vector<ValidationError> validate_method(const nlohmann::json &targets)
     const std::set<std::string> roles{"analyte", "internal_standard"};
     const std::set<std::string> metrics{"area", "height"};
     const std::set<std::string> normalizations{"none", "internal_standard"};
-    const std::set<std::string> models{"linear", "quadratic", "wagner"};
-    const std::set<std::string> weightings{"none", "1/x", "1/x2"};
+    const std::set<std::string> models{
+        "linear", "linear_through_zero", "mean_response_factor", "quadratic", "power", "wagner", "hill"};
+    const std::set<std::string> weightings{"none", "1/x", "1/x2", "1/y", "1/y2", "ln x", "ln y"};
     const std::set<std::string> intercepts{"free", "forced_zero"};
     const std::set<std::string> replicate_modes{"individual", "average_by_level"};
     std::set<std::string> ids;
@@ -121,11 +122,11 @@ std::vector<ValidationError> validate_method(const nlohmann::json &targets)
         const auto model = row.contains("regression_model") && !row.at("regression_model").is_null()
             ? detail::value_or_empty(row, "regression_model") : std::string{"linear"};
         if (role != "internal_standard" && !detail::contains(models, model))
-            errors.push_back({path + ".regression_model", "must be linear, quadratic, or wagner"});
+            errors.push_back({path + ".regression_model", "must be linear, linear_through_zero, mean_response_factor, quadratic, power, wagner, or hill"});
         const auto weighting = row.contains("weighting") && !row.at("weighting").is_null()
             ? detail::value_or_empty(row, "weighting") : std::string{"none"};
         if (!detail::contains(weightings, weighting))
-            errors.push_back({path + ".weighting", "must be none, 1/x, or 1/x2"});
+            errors.push_back({path + ".weighting", "must be none, 1/x, 1/x2, 1/y, 1/y2, ln x, or ln y"});
         const auto intercept = row.contains("intercept_mode") && !row.at("intercept_mode").is_null()
             ? detail::value_or_empty(row, "intercept_mode") : std::string{"free"};
         if (!detail::contains(intercepts, intercept))

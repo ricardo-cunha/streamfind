@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResultDataResponse, ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, ResultQueryResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -7,7 +7,7 @@ import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
 import { buildResultQueryFilter, formatFilterValue } from './massSpecFilterUtils';
 
-type TicRow = Record<string, string | null>;
+type TicRow = Record<string, unknown>;
 type PlotTheme = { text: string; grid: string; background: string };
 
 const SELECT_BY_COLUMNS = [
@@ -39,7 +39,8 @@ function getPlotTheme(): PlotTheme {
 }
 
 function value(row: TicRow, column: string): string {
-  return row[column] ?? '(empty)';
+  const cell = row[column];
+  return cell === null || cell === undefined ? '(empty)' : String(cell);
 }
 
 function number(row: TicRow, column: string): number {
@@ -136,7 +137,7 @@ function makeSpec(rows: TicRow[], grouping: string[], resultId: string, theme: P
 export function TicTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
+  const [data, setData] = useState<{ resultId: string; response: ResultQueryResponse<unknown> } | null>(null);
   const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
   const [grouping, setGrouping] = useState<SelectByColumn[]>(DEFAULT_GROUP);
   const [filters, setFilters] = useState<MassSpecFilterValues>({});
@@ -198,6 +199,7 @@ export function TicTableViewer({ context }: ViewerComponentProps) {
           filters: filtersForQuery,
           offset,
           limit: PAGE_SIZE,
+          preserveComplexCells: true,
         });
         rows.push(...response.rows);
         offset += response.rows.length;
@@ -214,6 +216,9 @@ export function TicTableViewer({ context }: ViewerComponentProps) {
             offset: 0,
             limit: rows.length,
             total_rows: Number.isFinite(totalRows) ? totalRows : rows.length,
+            returned_rows: rows.length,
+            mode: 'page',
+            has_more: false,
           },
         });
         setLoadState({ key: queryKey });

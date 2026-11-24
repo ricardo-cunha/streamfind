@@ -381,7 +381,7 @@ sfms:setQuantificationPlan
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Set quantification plan" ;
-    skos:definition "Validate and persist the quantification method and project-specific analysis assignments together. The single plan node publishes the lean method and analysis tables consumed by response extraction and downstream calibration." ;
+    skos:definition "Validate and persist the quantification method and project-specific sample assignments together. Method rows define analyte/internal-standard matching, response normalization, regression, weighting, intercept mode, and transition criteria; assignments define analysis role, nominal concentration, dilution, and exclusion state. With an internal standard, fit response ratio against nominal analyte concentration divided by dilution and assigned internal-standard concentration; without one, fit response against nominal concentration divided by dilution. Supported regressions are linear, linear_through_zero, mean_response_factor, quadratic, power, wagner, and hill; supported weights are none, 1/x, 1/x2, 1/y, 1/y2, ln x, and ln y." ;
     sf:hasParameter
         sfms:quantificationMethodParameter,
         sfms:quantSampleAssignmentsParameter ;
@@ -395,7 +395,7 @@ sfms:quantify
     sf:providedByModule sfms:chromatogramsModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quantify samples" ;
-    skos:definition "Run the complete quantification workflow from the configured plan and chromatogram peak table: extract quantifier and qualifier responses, calculate internal-standard ratios, fit calibration models and diagnostics, and quantify calibrators, QCs, and unknown samples with dilution and QC policy." ;
+    skos:definition "Run quantification from the configured plan and chromatogram peak table: extract quantifier and qualifier responses, calculate analyte-to-internal-standard response ratios, fit weighted linear, through-zero, mean-response-factor, quadratic, power, Wagner, or Hill models, and quantify calibrators, QCs, and unknowns. For internal-standard normalization, regress the response ratio against nominal analyte concentration divided by dilution and assigned internal-standard concentration, then restore those concentration scales when back-calculating. Review fit status, monotonicity, residuals, calibration limits, and QC diagnostics before interpreting results." ;
     sf:hasParameter
         sfcore:debugAnalysisParameter,
         sfms:minimumCalibrationPointsParameter,

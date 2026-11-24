@@ -8,6 +8,7 @@
   overflow: visible;
   position: relative;
   z-index: 5;
+  min-width: 0;
 }
 
 .sf-mass-spec-filter-row {
@@ -15,16 +16,16 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  width: 100%;
+  flex-wrap: wrap;
   overflow: visible;
 }
 
 .sf-mass-spec-select-by-row {
-  flex-wrap: nowrap;
   min-height: 25px;
 }
 
 .sf-mass-spec-values-row {
-  flex-wrap: nowrap;
   padding-bottom: 2px;
 }
 
@@ -94,11 +95,17 @@
   flex-direction: column;
   min-width: 230px;
   max-width: 340px;
+  box-sizing: border-box;
   padding: 6px;
   border: 1px solid var(--sf-border);
   border-radius: 5px;
   background: var(--sf-surface-raised, var(--sf-surface));
   box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+.sf-mass-spec-filter--right .sf-mass-spec-filter-menu {
+  right: 0;
+  left: auto;
 }
 
 .sf-mass-spec-filter--up .sf-mass-spec-filter-menu {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResultDataResponse, ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, ResultQueryResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -7,7 +7,7 @@ import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
 import { buildResultQueryFilter, formatFilterValue } from './massSpecFilterUtils';
 
-type EicRow = Record<string, string | null>;
+type EicRow = Record<string, unknown>;
 
 const SELECT_BY_COLUMNS = [
   ['analysis', 'analysis'],
@@ -39,7 +39,8 @@ function getPlotTheme(): PlotTheme {
 }
 
 function text(row: EicRow, column: string): string {
-  return row[column] ?? '';
+  const value = row[column];
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function number(row: EicRow, column: string): number {
@@ -123,7 +124,7 @@ function makeSpec(rows: EicRow[], colorGrouping: string[], resultId: string, the
 export function EicTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
+  const [data, setData] = useState<{ resultId: string; response: ResultQueryResponse<unknown> } | null>(null);
   const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
   const [grouping, setGrouping] = useState<SelectByColumn[]>(DEFAULT_GROUP);
   const [filters, setFilters] = useState<MassSpecFilterValues>({});
@@ -183,6 +184,7 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
         // scalar filters before it reads the trace data.
         limit: 65536,
         eic_max_points: 512,
+        preserveComplexCells: true,
       });
       if (!cancelled) {
         setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });

@@ -1047,6 +1047,7 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                             {"distinct", distinct}};
             }
             const auto format = descriptor.value("format", std::string{});
+            const bool compact_rows = request.value("compact_rows", false);
             Json columns = descriptor.value("schema", Json::array());
             std::vector<std::string> projected_columns;
             if (!request.contains("columns") && columns.is_array()) {
@@ -1086,7 +1087,7 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                 // Arrow payloads contain only operation columns.  Give every
                 // immutable row the same stable offset key used by the query
                 // and trace APIs without storing a redundant key column.
-                if (format == "arrow-ipc-file") {
+                if (format == "arrow-ipc-file" && !compact_rows) {
                     auto &batch_rows = batch["rows"];
                     if (batch_rows.is_array()) {
                         for (std::size_t index = 0; index < batch_rows.size(); ++index)
@@ -1095,6 +1096,17 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     }
                 }
                 return batch;
+            };
+            const auto compact_result_rows = [&](Json &rows) {
+                if (!compact_rows || !rows.is_array()) return;
+                for (auto &row : rows) {
+                    if (!row.is_object()) continue;
+                    Json compact = Json::array();
+                    compact.get_ref<Json::array_t &>().reserve(projected_columns.size());
+                    for (const auto &name : projected_columns)
+                        compact.push_back(row.contains(name) ? row.at(name) : Json(nullptr));
+                    row = std::move(compact);
+                }
             };
             // An unfiltered table page is a row-range read, not a filtered
             // query. Use the immutable manifest row count and let the Arrow
@@ -1123,6 +1135,7 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     for (const auto &row : batch_rows) page_rows.push_back(row);
                     page_offset += batch_rows.size();
                 }
+                compact_result_rows(page_rows);
                 return Json{{"result_id", result_id}, {"columns", columns}, {"rows", page_rows},
                             {"offset", offset}, {"limit", limit}, {"total_rows", row_count},
                             {"returned_rows", page_rows.size()}, {"mode", mode},
@@ -1149,7 +1162,26 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     if (row_offset.is_number_unsigned() || row_offset.is_number_integer())
                         selected_offsets.push_back(row_offset.get<std::uintmax_t>());
 
-                const auto page_size = std::uintmax_t{4096};
+                if (native_scan.value("indexed", false)) {
+                    auto selected_rows = store.read_arrow_ipc_rows(result_id, selected_offsets, projected_columns);
+                    for (std::size_t index = 0; index < selected_rows.size(); ++index) {
+                        auto &row = selected_rows[index];
+                        if (!compact_rows && row.is_object() && !row.contains("row_key"))
+                            row["row_key"] = std::to_string(selected_offsets[index]);
+                    }
+                    compact_result_rows(selected_rows);
+                    return Json{{"result_id", result_id}, {"columns", columns}, {"rows", selected_rows},
+                                {"offset", offset}, {"limit", limit}, {"total_rows", matched_rows},
+                                {"returned_rows", selected_rows.size()}, {"mode", mode},
+                                {"has_more", offset + selected_rows.size() < matched_rows},
+                                {"query_stats", query_stats}};
+                }
+
+                // Fetch matching rows in the largest supported Arrow block.
+                // Reading many small pages repeatedly reopened the IPC reader
+                // and walked its record-batch directory for every page, which
+                // made large filtered chromatogram results appear stuck.
+                const auto page_size = std::uintmax_t{65536};
                 std::unordered_set<std::uintmax_t> pages;
                 for (const auto source_offset : selected_offsets)
                     pages.insert((source_offset / page_size) * page_size);
@@ -1175,6 +1207,7 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     }
                     filtered_rows.push_back(std::move(projected));
                 }
+                compact_result_rows(filtered_rows);
                 return Json{{"result_id", result_id}, {"columns", columns}, {"rows", filtered_rows},
                             {"offset", offset}, {"limit", limit}, {"total_rows", matched_rows},
                             {"returned_rows", filtered_rows.size()}, {"mode", mode},
@@ -1222,6 +1255,7 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                         row = std::move(projected);
                     }
                 }
+                compact_result_rows(cached_rows);
                 return Json{{"result_id", result_id}, {"columns", columns}, {"rows", cached_rows},
                             {"offset", 0}, {"limit", limit}, {"total_rows", cached_rows.size()},
                             {"returned_rows", cached_rows.size()}, {"mode", mode}, {"has_more", false}};

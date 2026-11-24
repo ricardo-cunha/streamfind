@@ -215,8 +215,21 @@ int main()
                  "Forced-zero Wagner coefficient 1 is incorrect.");
     require_near(forced_zero_wagner.coefficient_2, 0.1, 1.0e-10,
                  "Forced-zero Wagner coefficient 2 is incorrect.");
-    require(fit_wagner(wagner_points, 3, LinearFitOptions{"1/x", "free"}).status == "unsupported_weighting",
-            "Wagner accepted unsupported inverse-concentration weighting.");
+    auto weighted_wagner_points = wagner_points;
+    weighted_wagner_points.push_back({
+        16.0, 1.8 * std::exp(0.4 + 0.8 * std::log(16.0) + 0.1 * std::log(16.0) * std::log(16.0))});
+    const auto inverse_x_wagner = fit_wagner(
+        weighted_wagner_points, 3, LinearFitOptions{"1/x", "free"});
+    const auto inverse_x2_wagner = fit_wagner(
+        weighted_wagner_points, 3, LinearFitOptions{"1/x2", "free"});
+    require(inverse_x_wagner.status == "ok", "Wagner 1/x weighted calibration did not fit successfully.");
+    require(inverse_x2_wagner.status == "ok", "Wagner 1/x2 weighted calibration did not fit successfully.");
+    require(std::abs(inverse_x_wagner.coefficient_2 - wagner.coefficient_2) > 1.0e-6,
+            "Wagner 1/x weighting did not affect the fit.");
+    require(std::abs(inverse_x2_wagner.coefficient_2 - inverse_x_wagner.coefficient_2) > 1.0e-6,
+            "Wagner 1/x2 weighting did not differ from 1/x weighting.");
+    require(fit_wagner(wagner_points, 3, LinearFitOptions{"invalid", "free"}).status == "unsupported_weighting",
+            "Wagner accepted an unsupported weighting option.");
 
     WagnerFit two_wagner_roots;
     two_wagner_roots.coefficient_0 = 0.0;

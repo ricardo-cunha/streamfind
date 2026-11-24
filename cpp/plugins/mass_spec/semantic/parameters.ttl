@@ -253,7 +253,8 @@ sfms:quantificationMethodParameter
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quantification method" ;
-    skos:definition "Editable horizontal method rows for the quantification plan, with one analyte or internal standard per row, retention-time selection settings, calibration settings, and quantifier plus optional qualifier transition matching columns. The Set quantification plan operation publishes this table together with the project-specific analysis assignments. Output contains only fields consumed by quantification; activation energy and audit timestamps remain in raw chromatogram metadata rather than being duplicated here. If rt is omitted or null, response extraction selects the strongest matching peak by the row's response_metric (area by default, or height)." ;
+    skos:definition "Editable horizontal quantification method rows. Each analyte row can select regression_model linear, linear_through_zero, mean_response_factor, quadratic, power, wagner, or hill; choose weighting none, 1/x, 1/x2, 1/y, 1/y2, ln x, or ln y; set intercept_mode to free or forced_zero where applicable; and optionally assign a directly linked internal_standard_id. With internal-standard normalization, calibration uses x = analyte nominal concentration / (dilution factor × assigned internal-standard nominal concentration) and y = analyte response / internal-standard response. Without an internal standard, x = nominal concentration / dilution factor and y is the analyte response. Internal-standard rows have no regression model or weighting. Set quantification plan publishes this table with sample assignments. If rt is omitted or null, response extraction selects the strongest matching peak by response_metric (area by default, or height)." ;
+    sf:guidance "Regression equations: linear y=m*x+b; linear_through_zero y=m*x; mean_response_factor y=m*x where m is the weighted mean of y/x and zero-concentration points are ignored; quadratic y=a2*x^2+a1*x+a0; power y=a*x^p (positive x and y required); wagner ln(y)=a2*ln(x)^2+a1*ln(x)+a0 (positive x and y required); hill y=(a+b*x^n)/(c+x^n), an iterative saturating model. Weight options are point weights: none=1; 1/x=1/max(|x|,1e-5); 1/x2=1/max(x^2,1e-10); 1/y=1/max(|y|,1e-8); 1/y2=1/max(y^2,1e-16); ln x=max(|ln(x)|,|ln(1e-5)|), rejecting negative x; ln y=max(|ln(y)|,|ln(1e-8)|), rejecting negative y. Example: {\"target_id\":\"ciprofloxacin\",\"role\":\"analyte\",\"internal_standard_id\":\"ciprofloxacin_d8\",\"normalization\":\"internal_standard\",\"regression_model\":\"hill\",\"weighting\":\"1/x2\",\"intercept_mode\":\"free\"}. Select models using fit diagnostics, residuals, monotonicity, calibration range, and back-calculated accuracy; R squared alone is insufficient." ;
     sf:type "table" ;
     sf:tableContract sfms:quantificationMethodTable ;
     sf:required true ;
@@ -265,12 +266,12 @@ sfms:quantSampleAssignmentsParameter
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Quantification sample assignments" ;
-    skos:definition "Editable project-specific rows for the quantification plan, identifying blanks, calibrators, QCs, and unknowns with concentration, dilution, and exclusion context. The Set quantification plan operation publishes these assignments together with the method table; transition and calibration settings remain in the method rows." ;
+    skos:definition "Editable project-specific sample assignments. Set sample_type to blank, zero, calibrator, qc, or unknown; provide nominal_concentration for calibrators and QCs; and use a positive dilution_factor to restore the original sample concentration. When an analyte uses an internal standard, assign that internal-standard target in the same analysis with its positive nominal concentration. Set exclude=true to omit a calibrator observation from model fitting." ;
     sf:type "table" ;
     sf:tableContract sfms:quantificationAnalysesTable ;
     sf:required true ;
     sf:default "[]" ;
-    sf:example "[{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine\",\"sample_type\":\"calibrator\",\"calibration_level\":5,\"nominal_concentration\":5.0,\"dilution_factor\":1.0}]" .
+    sf:example "[{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine\",\"sample_type\":\"calibrator\",\"calibration_level\":5,\"nominal_concentration\":5.0,\"dilution_factor\":1.0},{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine_d9\",\"sample_type\":\"calibrator\",\"nominal_concentration\":10.0,\"dilution_factor\":1.0}]" .
 
 sfms:minimumCalibrationPointsParameter
     a sf:Parameter ;

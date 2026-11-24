@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResultDataResponse, ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, ResultQueryResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -8,7 +8,7 @@ import { colorFor } from './featurePlotUtils';
 import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
 import { buildResultQueryFilter, filterValueMatches, formatFilterValue } from './massSpecFilterUtils';
 
-type ChromatogramRow = Record<string, string | null>;
+type ChromatogramRow = Record<string, unknown>;
 type PlotTheme = { text: string; grid: string; background: string };
 type SelectByColumn =
   | 'analysis'
@@ -24,7 +24,10 @@ type SelectByColumn =
 
 const EMPTY_ROWS: ChromatogramRow[] = [];
 const INITIAL_POINT_LIMIT = 65536;
-const FILTERED_POINT_LIMIT = 250000;
+// Keep filtered plot responses bounded to the same interactive point budget
+// as the initial sample. Returning hundreds of thousands of JSON row objects
+// can stall the browser before Plotly gets a chance to render the new filter.
+const FILTERED_POINT_LIMIT = 65536;
 const TABLE_COLUMNS = [
   'analysis',
   'index',
@@ -78,7 +81,8 @@ function getPlotTheme(): PlotTheme {
 }
 
 function text(row: ChromatogramRow, column: string): string {
-  return row[column] ?? '';
+  const value = row[column];
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function number(row: ChromatogramRow, column: string): number {
@@ -214,7 +218,12 @@ export function ChromatogramsTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
   const resultId = artifact?.result_id ?? '';
-  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
+  const [data, setData] = useState<{
+    resultId: string;
+    queryKey: string;
+    filters: MassSpecFilterValues;
+    response: ResultQueryResponse<unknown>;
+  } | null>(null);
   const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
   const [selectBy, setSelectBy] = useState<SelectByColumn[]>(DEFAULT_SELECT_BY);
   const [filters, setFilters] = useState<MassSpecFilterValues>({});
@@ -224,9 +233,10 @@ export function ChromatogramsTableViewer({ context }: ViewerComponentProps) {
   const queryKey = `${resultId}:${JSON.stringify(activeFilters)}`;
   const loading = !loadState || loadState.key !== queryKey;
   const error = loadState?.key === queryKey ? loadState.error : undefined;
-  // Keep the previous plot mounted while a new multi-value filter request is
-  // in flight so the dropdown can accept several checks without closing.
-  const currentData = data?.resultId === resultId ? data.response : null;
+  const dataMatchesQuery = data?.resultId === resultId && data.queryKey === queryKey;
+  // Do not keep plotting the previous filter result while a new server query
+  // is pending; otherwise the loading indicator sits over misleading traces.
+  const currentData = dataMatchesQuery ? data.response : null;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -235,11 +245,11 @@ export function ChromatogramsTableViewer({ context }: ViewerComponentProps) {
   }, []);
 
   useEffect(() => {
-    if (!artifact || !client) return;
+    if (!resultId || !client) return;
     let cancelled = false;
     const loadDistinctOptions = async () => {
       const response = await client.resultQuery(context.sessionId, {
-        result_id: artifact.result_id,
+        result_id: resultId,
         mode: 'distinct',
         distinct_columns: FILTER_COLUMNS.map(([column]) => column),
       });
@@ -251,45 +261,58 @@ export function ChromatogramsTableViewer({ context }: ViewerComponentProps) {
       }
       setOptionValues(values);
     };
-    void loadDistinctOptions();
+    void loadDistinctOptions().catch(() => {
+      if (!cancelled) setOptionValues({});
+    });
     return () => {
       cancelled = true;
     };
-  }, [artifact, client, context.sessionId]);
+  }, [client, context.sessionId, resultId]);
 
   useEffect(() => {
-    if (!artifact || !client) return;
+    if (!resultId || !client) return;
     let cancelled = false;
     const filtersForQuery: ResultQueryFilter[] = activeFilters.map(([column, values]) =>
       buildResultQueryFilter(column, values),
     );
     const loadRows = async () => {
       const response = await client.resultQuery(context.sessionId, {
-        result_id: artifact.result_id,
+        result_id: resultId,
         mode: activeFilters.length ? 'page' : 'sample',
         columns: TABLE_COLUMNS,
         filters: filtersForQuery,
         limit: activeFilters.length ? FILTERED_POINT_LIMIT : INITIAL_POINT_LIMIT,
+        preserveComplexCells: true,
+        compact_rows: true,
       });
       if (!cancelled) {
-        setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });
+        setData({
+          resultId,
+          queryKey,
+          filters: Object.fromEntries(activeFilters),
+          response: { ...response, offset: 0, limit: response.rows.length },
+        });
         setLoadState({ key: queryKey });
       }
     };
-    void loadRows().catch((reason: unknown) => {
-      if (!cancelled)
-        setLoadState({
-          key: queryKey,
-          error: reason instanceof Error ? reason.message : 'Unable to load chromatogram rows.',
-        });
-    });
+    const timer = window.setTimeout(() => {
+      void loadRows().catch((reason: unknown) => {
+        if (!cancelled)
+          setLoadState({
+            key: queryKey,
+            error: reason instanceof Error ? reason.message : 'Unable to load chromatogram rows.',
+          });
+      });
+    }, 120);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [activeFilters, artifact, client, context.sessionId, queryKey]);
+  }, [activeFilters, client, context.sessionId, queryKey, resultId]);
 
   const rows = currentData?.rows ?? EMPTY_ROWS;
-  const visibleRows = useMemo(() => filterRows(rows, filters), [filters, rows]);
+  const displayedFilters = dataMatchesQuery ? filters : data?.filters ?? filters;
+  const visibleRows = useMemo(() => filterRows(rows, displayedFilters), [displayedFilters, rows]);
   const theme = getPlotTheme();
   const spec = useMemo(
     () => (visibleRows.length ? makeSpec(visibleRows, resultId, theme, selectBy) : null),
@@ -297,16 +320,7 @@ export function ChromatogramsTableViewer({ context }: ViewerComponentProps) {
   );
 
   if (!artifact || !client) return <div role="alert">Chromatogram result data is unavailable.</div>;
-  if (loading && !currentData) return <LoadingLogo label="Loading chromatograms…" />;
-  if (error)
-    return (
-      <div className="sf-chromatograms-table-viewer-state" role="alert">
-        {error}
-      </div>
-    );
-  if (!visibleRows.length || !spec)
-    return <div className="sf-chromatograms-table-viewer-state">No chromatogram rows match the selected filters.</div>;
-
+  if (loading) return <LoadingLogo label="Loading chromatograms…" />;
   return (
     <div className="sf-chromatograms-table-viewer">
       <MassSpecFilterToolbar
@@ -323,14 +337,23 @@ export function ChromatogramsTableViewer({ context }: ViewerComponentProps) {
             {currentData && currentData.total_rows > visibleRows.length
               ? ` of ${currentData.total_rows.toLocaleString()}`
               : ''}{' '}
-            · {spec.payload.data.length} traces
-            {loading ? ' · loading…' : ''}
+            · {spec?.payload.data.length ?? 0} traces
           </>
         }
       />
-      <div className="sf-chromatograms-table-viewer-plot">
-        <VisualizationRenderer spec={spec} />
-      </div>
+      {error ? (
+        <div className="sf-chromatograms-table-viewer-state" role="alert">
+          {error}
+        </div>
+      ) : spec ? (
+        <div className="sf-chromatograms-table-viewer-plot">
+          <VisualizationRenderer spec={spec} />
+        </div>
+      ) : (
+        <div className="sf-chromatograms-table-viewer-state">
+          {activeFilters.length ? 'No chromatogram rows match the selected filters.' : 'No chromatogram rows are available.'}
+        </div>
+      )}
     </div>
   );
 }

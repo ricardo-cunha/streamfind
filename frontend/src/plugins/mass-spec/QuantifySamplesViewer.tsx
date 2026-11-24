@@ -10,7 +10,7 @@ import './QuantifySamplesViewer.css';
 import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
 import { filterValueMatches } from './massSpecFilterUtils';
 
-type QuantRow = Record<string, string | null>;
+type QuantRow = Record<string, unknown>;
 type TableRows = Record<string, QuantRow[]>;
 type PlotTheme = { text: string; grid: string; background: string };
 type Tab = 'calibration' | 'results';
@@ -25,6 +25,7 @@ const MODEL_COLUMNS = [
   'coefficient_0',
   'coefficient_1',
   'coefficient_2',
+  'coefficient_3',
   'r_squared',
   'adjusted_r_squared',
   'rmse',
@@ -58,6 +59,9 @@ const CALIBRATION_COLUMNS = [
   'internal_standard_peak_rt_end',
   'calibration_level',
   'nominal_concentration',
+  'regression_concentration',
+  'dilution_factor',
+  'internal_standard_concentration',
   'response',
   'internal_standard_response',
   'response_ratio',
@@ -78,6 +82,7 @@ const QUANTIFICATION_QUERY_COLUMNS = [
   'sample_type',
   'calibration_level',
   'nominal_concentration',
+  'regression_concentration',
   'dilution_factor',
   'exclude',
   'internal_standard_id',
@@ -117,6 +122,7 @@ const QUANTIFICATION_QUERY_COLUMNS = [
   'response_metric',
   'response',
   'internal_standard_response',
+  'internal_standard_concentration',
   'response_ratio',
   'qualifier_response',
   'qualifier_ratio',
@@ -204,7 +210,8 @@ function theme(): PlotTheme {
 }
 
 function text(row: QuantRow | undefined, column: string): string {
-  return row?.[column] ?? '';
+  const value = row?.[column];
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function number(row: QuantRow | undefined, column: string): number | null {
@@ -216,7 +223,8 @@ function number(row: QuantRow | undefined, column: string): number | null {
 
 function numericArray(row: QuantRow, column: string): number[] {
   const raw = row[column];
-  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(Number).filter(Number.isFinite);
+  if (typeof raw !== 'string' || !raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -475,11 +483,41 @@ function modelValue(model: QuantRow, x: number): number {
   const c0 = number(model, 'coefficient_0') ?? 0;
   const c1 = number(model, 'coefficient_1') ?? 0;
   const c2 = number(model, 'coefficient_2') ?? 0;
-  if (text(model, 'model') === 'wagner') {
+  const c3 = number(model, 'coefficient_3') ?? 0;
+  const modelName = text(model, 'model');
+  if (modelName === 'wagner') {
     const logX = Math.log(x);
     return Math.exp(c0 + c1 * logX + c2 * logX * logX);
   }
+  if (modelName === 'power') return c0 * x ** c1;
+  if (modelName === 'hill') return (c0 + c1 * x ** c3) / (c2 + x ** c3);
+  if (modelName === 'linear_through_zero' || modelName === 'mean_response_factor') return c1 * x;
+  if (modelName === 'quadratic') return c0 + c1 * x + c2 * x * x;
   return c0 + c1 * x + c2 * x * x;
+}
+
+function regressionX(row: QuantRow): number | null {
+  return number(row, 'regression_concentration') ?? number(row, 'nominal_concentration');
+}
+
+function reportedConcentrationScale(rows: QuantRow[], targetId: string): number | null {
+  const scales = rows
+    .filter(
+      (row) =>
+        text(row, 'target_id') === targetId &&
+        text(row, 'role') === 'analyte' &&
+        text(row, 'sample_type') === 'calibrator',
+    )
+    .map((row) => {
+      const nominal = number(row, 'nominal_concentration');
+      const regression = number(row, 'regression_concentration');
+      return nominal !== null && regression !== null && regression > 0 ? nominal / regression : null;
+    })
+    .filter((value): value is number => value !== null && Number.isFinite(value) && value > 0)
+    .sort((left, right) => left - right);
+  if (!scales.length) return null;
+  const middle = Math.floor(scales.length / 2);
+  return scales.length % 2 ? scales[middle] : (scales[middle - 1] + scales[middle]) / 2;
 }
 
 function downloadRows(filename: string, rows: QuantRow[], columns: string[], format: 'csv' | 'json') {
@@ -489,7 +527,7 @@ function downloadRows(filename: string, rows: QuantRow[], columns: string[], for
     : [
         columns.join(','),
         ...rows.map((row) => columns.map((column) => {
-          const value = row[column] ?? '';
+          const value = String(row[column] ?? '');
           return /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
         }).join(',')),
       ].join('\n');
@@ -515,20 +553,20 @@ function calibrationSpec(
     const targetId = text(model, 'target_id');
     const targetPoints = points.filter((row) => text(row, 'target_id') === targetId);
     const included = targetPoints.filter(
-      (row) => text(row, 'included') === 'true' && number(row, 'nominal_concentration') !== null,
+      (row) => text(row, 'included') === 'true' && regressionX(row) !== null,
     );
     const excluded = targetPoints.filter(
-      (row) => text(row, 'included') !== 'true' && number(row, 'nominal_concentration') !== null,
+      (row) => text(row, 'included') !== 'true' && regressionX(row) !== null,
     );
     const yColumn = targetPoints.some((row) => number(row, 'response_ratio') !== null) ? 'response_ratio' : 'response';
     const allX = targetPoints
-      .map((row) => number(row, 'nominal_concentration'))
+      .map(regressionX)
       .filter((value): value is number => value !== null);
     const min = number(model, 'range_min') ?? Math.min(...allX, 0);
     const max = number(model, 'range_max') ?? Math.max(...allX, 1);
     const modelName = text(model, 'model') || 'linear';
     const curveX =
-      modelName === 'wagner'
+      modelName === 'wagner' || modelName === 'power'
         ? Array.from({ length: 80 }, (_, index) =>
             Math.exp(Math.log(min) + ((Math.log(max) - Math.log(min)) * index) / 79),
           )
@@ -539,11 +577,11 @@ function calibrationSpec(
       name: targetId,
       showlegend: included.length > 0,
       legendgroup: targetId,
-      x: included.map((row) => number(row, 'nominal_concentration')),
+      x: included.map(regressionX),
       y: included.map((row) => number(row, yColumn)),
       marker: { color: color(modelIndex), size: 8 },
       customdata: included.map((row) => [quantificationRowKey(row), text(row, 'analysis')]),
-      hovertemplate: `${targetId}<br>Analysis: %{customdata[1]}<br>Nominal: %{x}<br>${yColumn}: %{y}<extra>included</extra>`,
+      hovertemplate: `${targetId}<br>Analysis: %{customdata[1]}<br>Regression concentration: %{x}<br>${yColumn}: %{y}<extra>included</extra>`,
     });
     if (excluded.length)
       traces.push({
@@ -552,11 +590,11 @@ function calibrationSpec(
         name: targetId,
         showlegend: included.length === 0,
         legendgroup: targetId,
-        x: excluded.map((row) => number(row, 'nominal_concentration')),
+        x: excluded.map(regressionX),
         y: excluded.map((row) => number(row, yColumn)),
         marker: { color: color(modelIndex), size: 9, symbol: 'x' },
         customdata: excluded.map((row) => [quantificationRowKey(row), text(row, 'exclusion_reason') || 'excluded']),
-        hovertemplate: `${targetId}<br>Nominal: %{x}<br>${yColumn}: %{y}<br>Reason: %{customdata[1]}<extra>excluded</extra>`,
+        hovertemplate: `${targetId}<br>Regression concentration: %{x}<br>${yColumn}: %{y}<br>Reason: %{customdata[1]}<extra>excluded</extra>`,
       });
     if (text(model, 'fit_status') === 'ok')
       traces.push({
@@ -568,7 +606,7 @@ function calibrationSpec(
         x: curveX,
         y: curveX.map((x) => modelValue(model, x)),
         line: { color: color(modelIndex), width: 2.5 },
-        hovertemplate: `${targetId} ${modelName} fit<br>Concentration: %{x}<br>Response: %{y}<extra></extra>`,
+        hovertemplate: `${targetId} ${modelName} fit<br>Regression concentration: %{x}<br>Response: %{y}<extra></extra>`,
       });
   });
   if (!traces.length) return null;
@@ -581,7 +619,7 @@ function calibrationSpec(
     renderer: { engine: 'plotly', renderer_id: 'core.plotly', spec_version: '1' },
     payload: {
       data: traces,
-      layout: plotLayout(plotTheme, 'Nominal concentration', 'Response /<br>internal-standard ratio'),
+      layout: plotLayout(plotTheme, 'Regression concentration (dilution / internal-standard corrected)', 'Response /<br>internal-standard ratio'),
       config: { responsive: true, displaylogo: false },
     },
     provenance: {
@@ -607,7 +645,7 @@ function calibrationResidualSpec(
     const targetPoints = points.filter(
       (row) =>
         text(row, 'target_id') === targetId &&
-        number(row, 'nominal_concentration') !== null &&
+        regressionX(row) !== null &&
         number(row, 'residual') !== null,
     );
     const included = targetPoints.filter((row) => text(row, 'included') === 'true');
@@ -618,11 +656,11 @@ function calibrationResidualSpec(
         mode: 'markers',
         name: targetId,
         legendgroup: targetId,
-        x: included.map((row) => number(row, 'nominal_concentration')),
+        x: included.map(regressionX),
         y: included.map((row) => number(row, 'residual')),
         marker: { color: color(modelIndex), size: 8 },
         customdata: included.map((row) => [quantificationRowKey(row), text(row, 'analysis')]),
-        hovertemplate: `${targetId}<br>Analysis: %{customdata[1]}<br>Nominal: %{x}<br>Residual: %{y}<extra>included</extra>`,
+        hovertemplate: `${targetId}<br>Analysis: %{customdata[1]}<br>Regression concentration: %{x}<br>Residual: %{y}<extra>included</extra>`,
       });
     if (excluded.length)
       traces.push({
@@ -631,17 +669,17 @@ function calibrationResidualSpec(
         name: `${targetId} excluded`,
         legendgroup: targetId,
         showlegend: !included.length,
-        x: excluded.map((row) => number(row, 'nominal_concentration')),
+        x: excluded.map(regressionX),
         y: excluded.map((row) => number(row, 'residual')),
         marker: { color: color(modelIndex), size: 9, symbol: 'x' },
         customdata: excluded.map((row) => [quantificationRowKey(row), text(row, 'analysis')]),
-        hovertemplate: `${targetId}<br>Analysis: %{customdata[1]}<br>Nominal: %{x}<br>Residual: %{y}<extra>excluded</extra>`,
+        hovertemplate: `${targetId}<br>Analysis: %{customdata[1]}<br>Regression concentration: %{x}<br>Residual: %{y}<extra>excluded</extra>`,
       });
   });
   if (!traces.length) return null;
   const residuals = points.map((row) => number(row, 'residual')).filter((value): value is number => value !== null);
   const maximum = Math.max(...residuals.map((value) => Math.abs(value)), 1e-12);
-  const maximumConcentration = Math.max(...points.map((row) => number(row, 'nominal_concentration') ?? 0), 1);
+  const maximumConcentration = Math.max(...points.map((row) => regressionX(row) ?? 0), 1);
   traces.push({
     type: 'scattergl',
     mode: 'lines',
@@ -664,12 +702,12 @@ function calibrationResidualSpec(
       layout: {
         ...plotLayout(
           plotTheme,
-          'Nominal concentration',
-          models.some((model) => text(model, 'model') === 'wagner') ? 'Log-response residual' : 'Residual',
+          'Regression concentration (dilution / internal-standard corrected)',
+          'Response residual',
         ),
         yaxis: {
           title: {
-            text: models.some((model) => text(model, 'model') === 'wagner') ? 'Log-response residual' : 'Residual',
+            text: 'Response residual',
           },
           range: [-maximum * 1.15, maximum * 1.15],
           gridcolor: plotTheme.grid,
@@ -690,6 +728,7 @@ function calibrationResidualSpec(
 
 function resultsSpec(
   rows: QuantRow[],
+  calibrationRows: QuantRow[],
   models: QuantRow[],
   target: string,
   metric: Metric,
@@ -788,9 +827,11 @@ function resultsSpec(
       });
     });
     const model = models.find((row) => text(row, 'target_id') === targetId);
+    const concentrationScale = reportedConcentrationScale(calibrationRows, targetId);
     if (
       metric === 'final_concentration' &&
       model &&
+      concentrationScale !== null &&
       number(model, 'range_min') !== null &&
       number(model, 'range_max') !== null
     ) {
@@ -803,8 +844,8 @@ function resultsSpec(
         const padding = Math.max((maximumRt - minimumRt) * 0.03, 0.25);
         const x = [minimumRt - padding, maximumRt + padding];
         for (const [label, value, dash] of [
-          ['lower calibration limit', number(model, 'range_min'), 'dash'],
-          ['upper calibration limit', number(model, 'range_max'), 'dashdot'],
+          ['lower calibration limit', (number(model, 'range_min') ?? 0) * concentrationScale, 'dash'],
+          ['upper calibration limit', (number(model, 'range_max') ?? 0) * concentrationScale, 'dashdot'],
         ] as const) {
           traces.push({
             type: 'scattergl',
@@ -1151,6 +1192,8 @@ function QuantificationRowDetailModal({ row, onClose }: { row: QuantRow; onClose
 
 export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
+  const artifactRef = useRef(artifact);
+  artifactRef.current = artifact;
   const client = context.pluginApi?.client;
   const [tables, setTables] = useState<TableRows>({});
   const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
@@ -1162,6 +1205,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
   const [detailRow, setDetailRow] = useState<QuantRow | null>(null);
   const [loadNotice, setLoadNotice] = useState('');
   const resultId = artifact?.result_id ?? '';
+  const producerInstance = artifact?.producer_instance ?? '';
   const loading = !loadState || loadState.resultId !== resultId;
   const error = loadState?.resultId === resultId ? loadState.error : undefined;
   useEffect(() => {
@@ -1173,22 +1217,28 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [detailRow]);
   useEffect(() => {
-    if (!artifact || !client) return undefined;
+    if (!resultId || !client) return undefined;
     let cancelled = false;
     void client
       .currentResults(context.sessionId)
       .then(async (inventory) => {
         const siblings = inventory.filter(
           (candidate) =>
-            candidate.producer_instance === artifact.producer_instance &&
+            candidate.producer_instance === producerInstance &&
             CONTRACTS.includes(localArtifactContract(candidate.contract_id) as (typeof CONTRACTS)[number]),
         );
-        if (!siblings.some((candidate) => candidate.result_id === artifact.result_id)) siblings.push(artifact);
+        const currentArtifact = artifactRef.current;
+        if (!siblings.some((candidate) => candidate.result_id === resultId) && currentArtifact)
+          siblings.push(currentArtifact);
         const loaded = await Promise.all(
           siblings.map(async (candidate) => {
             const contract = localArtifactContract(candidate.contract_id);
-            const columns =
+            const requestedColumns =
               contract === 'quantificationCalibrationModelsTable' ? MODEL_COLUMNS : QUANTIFICATION_QUERY_COLUMNS;
+            const availableColumns = new Set(candidate.columns?.map((column) => column.name) ?? []);
+            const columns = availableColumns.size
+              ? requestedColumns.filter((column) => availableColumns.has(column))
+              : requestedColumns;
             const rows: QuantRow[] = [];
             let offset = 0;
             let hasMore = false;
@@ -1199,6 +1249,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
                 columns,
                 offset,
                 limit: 10000,
+                preserveComplexCells: true,
                 ...(contract === 'quantificationTable' ? { eic_max_points: 256 } : {}),
               });
               rows.push(...response.rows);
@@ -1225,7 +1276,7 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [artifact, client, context.sessionId, resultId]);
+  }, [client, context.sessionId, producerInstance, resultId]);
 
   const models = useMemo(() => tables.quantificationCalibrationModelsTable ?? [], [tables]);
   const quantification = useMemo(() => tables.quantificationTable ?? [], [tables]);
@@ -1277,8 +1328,8 @@ export function QuantifySamplesViewer({ context }: ViewerComponentProps) {
     [points, plotTheme, resultId, visibleModels],
   );
   const resultPlot = useMemo(
-    () => resultsSpec(results, visibleModels, '__all__', metric, accuracyLimit, resultId, plotTheme),
-    [accuracyLimit, metric, plotTheme, resultId, results, visibleModels],
+    () => resultsSpec(results, quantification, visibleModels, '__all__', metric, accuracyLimit, resultId, plotTheme),
+    [accuracyLimit, metric, plotTheme, quantification, resultId, results, visibleModels],
   );
   const handlePlotPointClick = (point: VisualizationPointClick) => {
     const key = plotRowKey(point.customdata);

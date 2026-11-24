@@ -39,6 +39,7 @@ function MultiValueFilter({
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [openDirection, setOpenDirection] = useState<'down' | 'up'>('down');
+  const [openAlignment, setOpenAlignment] = useState<'left' | 'right'>('left');
   const availableOptions = sortedOptions([...options, ...selected]);
   const summary = selected.length ? `${selected.length} selected` : 'All';
 
@@ -51,10 +52,15 @@ function MultiValueFilter({
       const menu = details.querySelector('.sf-mass-spec-filter-menu');
       if (!summaryElement || !menu) return;
       const summaryBounds = summaryElement.getBoundingClientRect();
+      const row = details.closest('.sf-mass-spec-filter-row');
+      const rowBounds = row?.getBoundingClientRect();
       const menuHeight = menu.getBoundingClientRect().height;
+      const menuWidth = menu.getBoundingClientRect().width;
       const spaceAbove = summaryBounds.top;
       const spaceBelow = window.innerHeight - summaryBounds.bottom;
+      const spaceRight = (rowBounds?.right ?? window.innerWidth) - summaryBounds.left;
       setOpenDirection(spaceBelow < menuHeight + 8 && spaceAbove > spaceBelow ? 'up' : 'down');
+      setOpenAlignment(spaceRight < menuWidth ? 'right' : 'left');
     };
 
     const frame = window.requestAnimationFrame(updateDirection);
@@ -70,7 +76,7 @@ function MultiValueFilter({
   return (
     <details
       ref={detailsRef}
-      className={`sf-mass-spec-filter sf-mass-spec-filter--${openDirection}`}
+      className={`sf-mass-spec-filter sf-mass-spec-filter--${openDirection} sf-mass-spec-filter--${openAlignment}`}
       data-filter-column={column}
     >
       <summary aria-label={`Filter by ${label}`}>

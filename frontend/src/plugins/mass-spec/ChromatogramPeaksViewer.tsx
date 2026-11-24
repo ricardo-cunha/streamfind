@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResultDataResponse, ResultQueryFilter } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, ResultQueryResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { PlotlyTrace, VisualizationSpec } from '../../framework/visualization/visualizationTypes';
@@ -8,12 +8,13 @@ import { colorFor } from './featurePlotUtils';
 import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
 import { buildResultQueryFilter, filterValueMatches, formatFilterValue } from './massSpecFilterUtils';
 
-type PeakRow = Record<string, string | null>;
+type PeakRow = Record<string, unknown>;
 type PlotTheme = { text: string; grid: string; background: string };
 
 const EMPTY_PEAK_ROWS: PeakRow[] = [];
-const PEAK_QUERY_LIMIT = 4096;
-const FILTERED_PEAK_QUERY_LIMIT = 250000;
+const PEAK_QUERY_LIMIT = 1024;
+const FILTERED_PEAK_QUERY_LIMIT = 2048;
+const MAX_POINTS_PER_PEAK = 128;
 
 const SELECT_BY_COLUMNS = [
   ['analysis', 'analysis'],
@@ -52,7 +53,15 @@ function getPlotTheme(): PlotTheme {
 }
 
 function text(row: PeakRow, column: string): string {
-  return row[column] ?? '';
+  const value = row[column];
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function number(row: PeakRow, column: string): number {
@@ -62,14 +71,22 @@ function number(row: PeakRow, column: string): number {
 
 function numericArray(row: PeakRow, column: string): number[] {
   const raw = row[column];
-  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((value) => (value === null ? Number.NaN : Number(value)));
+  if (typeof raw !== 'string' || !raw.trim()) return [];
   try {
-    const value: unknown = JSON.parse(raw);
+    let value: unknown = JSON.parse(raw);
+    if (typeof value === 'string') value = JSON.parse(value);
     if (!Array.isArray(value)) return [];
-    return value.map(Number).filter(Number.isFinite);
+    return value.map((entry) => (entry === null ? Number.NaN : Number(entry)));
   } catch {
     return [];
   }
+}
+
+function maxFinite(values: number[]): number {
+  let maximum = Number.NEGATIVE_INFINITY;
+  for (const value of values) if (Number.isFinite(value) && value > maximum) maximum = value;
+  return maximum;
 }
 
 function withAlpha(hex: string, alpha: number): string {
@@ -135,7 +152,7 @@ function hoverNumber(row: PeakRow, column: string, digits = 3): string {
   return value.toLocaleString('en-US', { maximumFractionDigits: digits, useGrouping: false });
 }
 
-function peakHoverTemplate(row: PeakRow): string {
+function peakHoverData(row: PeakRow): string[] {
   const analysis = escapeHoverText(text(row, 'analysis') || '(unassigned)');
   const channelDetails = [
     text(row, 'chromatogram_type'),
@@ -146,24 +163,37 @@ function peakHoverTemplate(row: PeakRow): string {
     .filter(Boolean)
     .map(escapeHoverText)
     .join(' · ');
-  const wavelength = text(row, 'wavelength_nm') ? `Wavelength: ${hoverNumber(row, 'wavelength_nm', 1)} nm` : '';
-  const peakId = text(row, 'peak_id') ? `Peak: ${escapeHoverText(text(row, 'peak_id'))}` : '';
-  const metadata = [
-    `<b>${analysis}</b>`,
-    `Q1 → Q3: ${hoverNumber(row, 'precursor_mz', 4)} → ${hoverNumber(row, 'product_mz', 4)}`,
-    channelDetails ? `Channel: ${channelDetails}` : '',
-    wavelength,
-    peakId,
-    `Peak RT: ${hoverNumber(row, 'rt', 2)} s · window ${hoverNumber(row, 'rt_start', 2)}–${hoverNumber(row, 'rt_end', 2)} s`,
-    `Area: ${hoverNumber(row, 'area')} · Height: ${hoverNumber(row, 'height')}`,
-    `Noise: ${hoverNumber(row, 'noise')} · S/N: ${hoverNumber(row, 'snr', 2)}`,
-    `RT: %{x:.2f} s · Intensity: %{y:.4~f}`,
-  ]
-    .filter(Boolean)
-    .join('<br>');
+  return [
+    analysis,
+    hoverNumber(row, 'precursor_mz', 4),
+    hoverNumber(row, 'product_mz', 4),
+    channelDetails,
+    hoverNumber(row, 'wavelength_nm', 1),
+    escapeHoverText(text(row, 'peak_id')),
+    hoverNumber(row, 'rt', 2),
+    hoverNumber(row, 'rt_start', 2),
+    hoverNumber(row, 'rt_end', 2),
+    hoverNumber(row, 'area'),
+    hoverNumber(row, 'height'),
+    hoverNumber(row, 'noise'),
+    hoverNumber(row, 'snr', 2),
+  ];
+}
+
+function peakHoverTemplate(): string {
   // Keep the Plotly extra field empty: it otherwise renders the full SCIEX
   // chromatogram ID as a second, green hover line.
-  return `${metadata}<extra></extra>`;
+  return [
+    '<b>%{customdata[0]}</b>',
+    'Q1 → Q3: %{customdata[1]} → %{customdata[2]}',
+    'Channel: %{customdata[3]}',
+    'Wavelength: %{customdata[4]} nm',
+    'Peak: %{customdata[5]}',
+    'Peak RT: %{customdata[6]} s · window %{customdata[7]}–%{customdata[8]} s',
+    'Area: %{customdata[9]} · Height: %{customdata[10]}',
+    'Noise: %{customdata[11]} · S/N: %{customdata[12]}',
+    'RT: %{x:.2f} s · Intensity: %{y:.4~f}<extra></extra>',
+  ].join('<br>');
 }
 
 function interpolateAt(x: number[], y: number[], target: number): number | null {
@@ -201,71 +231,186 @@ function boundedPeakTrace(row: PeakRow, x: number[], y: number[]): { x: number[]
   return { x: windowX, y: windowY };
 }
 
+function downsamplePeakTrace(x: number[], y: number[], maximumPoints: number): { x: number[]; y: number[] } {
+  if (x.length <= maximumPoints) return { x, y };
+  const bucketCount = Math.max(1, Math.floor((maximumPoints - 2) / 2));
+  const bucketWidth = (x.length - 2) / bucketCount;
+  const sampledX = [x[0]];
+  const sampledY = [y[0]];
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const start = 1 + Math.floor(bucket * bucketWidth);
+    const end = Math.min(x.length - 1, 1 + Math.floor((bucket + 1) * bucketWidth));
+    let minIndex = start;
+    let maxIndex = start;
+    for (let index = start + 1; index < end; index += 1) {
+      if (y[index] < y[minIndex]) minIndex = index;
+      if (y[index] > y[maxIndex]) maxIndex = index;
+    }
+    for (const index of minIndex <= maxIndex ? [minIndex, maxIndex] : [maxIndex, minIndex]) {
+      if (sampledX[sampledX.length - 1] !== x[index] || sampledY[sampledY.length - 1] !== y[index]) {
+        sampledX.push(x[index]);
+        sampledY.push(y[index]);
+      }
+    }
+  }
+  sampledX.push(x[x.length - 1]);
+  sampledY.push(y[y.length - 1]);
+  return { x: sampledX, y: sampledY };
+}
+
+type ParsedPeak = {
+  row: PeakRow;
+  x: number[];
+  y: number[];
+  integrated: { x: number[]; y: number[] } | null;
+};
+
+function parsePeakRows(rows: PeakRow[]): ParsedPeak[] {
+  const parsed: ParsedPeak[] = [];
+  for (const row of rows) {
+    const rawRt = numericArray(row, 'eic_rt');
+    const rawIntensity = numericArray(row, 'eic_intensity');
+    const pointCount = Math.min(rawRt.length, rawIntensity.length);
+    const fullX: number[] = [];
+    const fullY: number[] = [];
+    for (let index = 0; index < pointCount; index += 1) {
+      if (!Number.isFinite(rawRt[index]) || !Number.isFinite(rawIntensity[index])) continue;
+      fullX.push(rawRt[index]);
+      fullY.push(rawIntensity[index]);
+    }
+    if (!fullX.length) continue;
+    const integratedFull = boundedPeakTrace(row, fullX, fullY);
+    const trace = downsamplePeakTrace(fullX, fullY, MAX_POINTS_PER_PEAK);
+    parsed.push({
+      row,
+      x: trace.x,
+      y: trace.y,
+      integrated: integratedFull
+        ? downsamplePeakTrace(integratedFull.x, integratedFull.y, MAX_POINTS_PER_PEAK)
+        : null,
+    });
+  }
+  return parsed;
+}
+
+type PeakPlotGroup = {
+  row: PeakRow;
+  label: string;
+  color: string;
+  lineX: Array<number | null>;
+  lineY: Array<number | null>;
+  lineSnr: Array<number | null>;
+  fillX: Array<number | null>;
+  fillY: Array<number | null>;
+  apexX: number[];
+  apexY: number[];
+  apexData: string[][];
+};
+
 function makePeakSpec(
-  rows: PeakRow[],
+  peaks: ParsedPeak[],
   resultId: string,
   theme: PlotTheme,
   selectBy: SelectByColumn[],
 ): VisualizationSpec {
+  const groups = new Map<string, PeakPlotGroup>();
   const legendGroups = new Set<string>();
-  const traces = rows.flatMap((row) => {
-    const rt = numericArray(row, 'eic_rt');
-    const intensity = numericArray(row, 'eic_intensity');
-    if (!rt.length || !intensity.length) return [];
-    const pointCount = Math.min(rt.length, intensity.length);
-    const x = rt.slice(0, pointCount);
-    const y = intensity.slice(0, pointCount);
+  const orderedPeaks = [...peaks].sort((left, right) => number(left.row, 'rt') - number(right.row, 'rt'));
+  for (const peak of orderedPeaks) {
+    const { row, x, y, integrated } = peak;
     const legendLabel = compactLegendLabel(row, selectBy);
-    const showLegend = !legendGroups.has(legendLabel);
-    legendGroups.add(legendLabel);
-    const color = colorFor(`${text(row, 'analysis')}\n${text(row, 'chromatogram_id')}`);
-    const peakRt = number(row, 'rt');
-    const peakHeight = number(row, 'height') || Math.max(...y);
-    const integrated = boundedPeakTrace(row, x, y);
-    const result: PlotlyTrace[] = [
-      {
+    const chromatogramKey = [
+      text(row, 'analysis'),
+      text(row, 'chromatogram_index') || text(row, 'index') || text(row, 'chromatogram_id'),
+      legendLabel,
+    ].join('\n');
+    let group = groups.get(chromatogramKey);
+    if (!group) {
+      group = {
+        row,
+        label: legendLabel,
+        color: colorFor(`${text(row, 'analysis')}\n${text(row, 'chromatogram_id')}`),
+        lineX: [],
+        lineY: [],
+        lineSnr: [],
+        fillX: [],
+        fillY: [],
+        apexX: [],
+        apexY: [],
+        apexData: [],
+      };
+      groups.set(chromatogramKey, group);
+    }
+    if (group.lineX.length) {
+      group.lineX.push(null);
+      group.lineY.push(null);
+      group.lineSnr.push(null);
+    }
+    group.lineX.push(...x);
+    group.lineY.push(...y);
+    const snr = Number(text(row, 'snr'));
+    for (let index = 0; index < x.length; index += 1) group.lineSnr.push(Number.isFinite(snr) ? snr : null);
+    if (integrated) {
+      if (group.fillX.length) {
+        group.fillX.push(null);
+        group.fillY.push(null);
+      }
+      group.fillX.push(...integrated.x);
+      group.fillY.push(...integrated.y);
+    }
+    group.apexX.push(number(row, 'rt'));
+    group.apexY.push(number(row, 'height') || maxFinite(y));
+    group.apexData.push(peakHoverData(row));
+  }
+
+  const traces: PlotlyTrace[] = [];
+  for (const group of groups.values()) {
+    const showLegend = !legendGroups.has(group.label);
+    legendGroups.add(group.label);
+    traces.push({
+      type: 'scattergl',
+      mode: 'lines',
+      name: group.label,
+      showlegend: showLegend,
+      legendgroup: group.label,
+      line: { color: group.color, width: 1.8 },
+      x: group.lineX,
+      y: group.lineY,
+      customdata: group.lineSnr,
+      hovertemplate:
+        `<b>${escapeHoverText(text(group.row, 'analysis') || '(unassigned)')}</b><br>` +
+        `Q1 → Q3: ${hoverNumber(group.row, 'precursor_mz', 4)} → ${hoverNumber(group.row, 'product_mz', 4)}<br>` +
+        `Wavelength: ${hoverNumber(group.row, 'wavelength_nm', 1)} nm<br>` +
+        'S/N: %{customdata:.2f}<br>RT: %{x:.2f} s · Intensity: %{y:.4~f}<extra></extra>',
+    });
+    if (group.fillX.length) {
+      traces.push({
         type: 'scattergl',
         mode: 'lines',
-        name: legendLabel,
-        showlegend: showLegend,
-        legendgroup: legendLabel,
-        line: { color, width: 1.8 },
-        x,
-        y,
-        hovertemplate: peakHoverTemplate(row),
-      },
-      ...(integrated
-        ? [{
-            type: 'scattergl',
-            mode: 'lines',
-            name: `${legendLabel} integrated area`,
-            showlegend: false,
-            legendgroup: legendLabel,
-            line: { color, width: 0 },
-            fill: 'tozeroy',
-            fillcolor: withAlpha(color, 0.21),
-            x: integrated.x,
-            y: integrated.y,
-            hovertemplate: '<extra></extra>',
-          }]
-        : []),
-      {
-        type: 'scattergl',
-        mode: 'markers',
-        name: `${legendLabel} apex`,
-        legendgroup: legendLabel,
+        name: `${group.label} integrated area`,
         showlegend: false,
-        marker: { color, size: 8, symbol: 'diamond' },
-        x: [peakRt],
-        y: [peakHeight],
-        hovertemplate: peakHoverTemplate(row),
-      },
-    ];
-    return result;
-  });
-  const plottedPeaks = rows.filter(
-    (row) => numericArray(row, 'eic_rt').length && numericArray(row, 'eic_intensity').length,
-  );
+        legendgroup: group.label,
+        line: { color: group.color, width: 0 },
+        fill: 'tozeroy',
+        fillcolor: withAlpha(group.color, 0.21),
+        x: group.fillX,
+        y: group.fillY,
+        hovertemplate: '<extra></extra>',
+      });
+    }
+    traces.push({
+      type: 'scattergl',
+      mode: 'markers',
+      name: `${group.label} apex`,
+      legendgroup: group.label,
+      showlegend: false,
+      marker: { color: group.color, size: 8, symbol: 'diamond' },
+      x: group.apexX,
+      y: group.apexY,
+      customdata: group.apexData,
+      hovertemplate: peakHoverTemplate(),
+    });
+  }
   return {
     schema: 'streamfind.visualization/v1',
     visualization_id: 'mass_spec.chromatogram_peaks_viewer',
@@ -293,7 +438,7 @@ function makePeakSpec(
           zerolinecolor: theme.grid,
         },
         hovermode: 'closest',
-        showlegend: plottedPeaks.length > 1,
+        showlegend: peaks.length > 1,
         legend: { bgcolor: theme.background, font: { color: theme.text } },
         paper_bgcolor: theme.background,
         plot_bgcolor: theme.background,
@@ -314,20 +459,27 @@ function makePeakSpec(
 export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
+  const [data, setData] = useState<{
+    resultId: string;
+    queryKey: string;
+    filters: MassSpecFilterValues;
+    response: ResultQueryResponse<unknown>;
+  } | null>(null);
   const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
   const [selectBy, setSelectBy] = useState<SelectByColumn[]>(DEFAULT_SELECT_BY);
   const [filters, setFilters] = useState<MassSpecFilterValues>({});
+  const [pageOffset, setPageOffset] = useState(0);
   const [loadState, setLoadState] = useState<{ key: string; error?: string } | null>(null);
-  const [, setThemeRevision] = useState(0);
+  const [themeRevision, setThemeRevision] = useState(0);
   const resultId = artifact?.result_id ?? '';
   const activeFilters = useMemo(() => Object.entries(filters).filter(([, values]) => values.length), [filters]);
-  const queryKey = `${resultId}:${JSON.stringify(activeFilters)}`;
+  const queryKey = `${resultId}:${JSON.stringify(activeFilters)}:${pageOffset}`;
   const loading = !loadState || loadState.key !== queryKey;
   const error = loadState?.key === queryKey ? loadState.error : undefined;
   // Keep the previous plot mounted while a new multi-value filter request is
   // in flight so the dropdown can accept several checks without closing.
   const currentData = data?.resultId === resultId ? data.response : null;
+  const dataMatchesQuery = data?.resultId === resultId && data.queryKey === queryKey;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -336,11 +488,11 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
   }, []);
 
   useEffect(() => {
-    if (!artifact || !client) return;
+    if (!resultId || !client) return;
     let cancelled = false;
     const loadDistinctOptions = async () => {
       const response = await client.resultQuery(context.sessionId, {
-        result_id: artifact.result_id,
+        result_id: resultId,
         mode: 'distinct',
         distinct_columns: FILTER_COLUMNS.map(([column]) => column),
       });
@@ -352,22 +504,25 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
       }
       setOptionValues(values);
     };
-    void loadDistinctOptions();
+    void loadDistinctOptions().catch(() => {
+      if (!cancelled) setOptionValues({});
+    });
     return () => {
       cancelled = true;
     };
-  }, [artifact, client, context.sessionId]);
+  }, [client, context.sessionId, resultId]);
 
   useEffect(() => {
-    if (!artifact || !client) return;
+    if (!resultId || !client) return;
     let cancelled = false;
     const filtersForQuery: ResultQueryFilter[] = activeFilters.map(([column, values]) =>
       buildResultQueryFilter(column, values),
     );
     const loadPeakRows = async () => {
       const response = await client.resultQuery(context.sessionId, {
-        result_id: artifact.result_id,
-        mode: activeFilters.length ? 'page' : 'sample',
+        result_id: resultId,
+        mode: activeFilters.length || pageOffset > 0 ? 'page' : 'sample',
+        offset: activeFilters.length ? pageOffset : 0,
         filters: filtersForQuery,
         columns: [
           'analysis',
@@ -393,43 +548,46 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
         // Peak rows already contain bounded per-peak windows. Limit the
         // number of plotted peaks so a large result remains interactive.
         limit: activeFilters.length ? FILTERED_PEAK_QUERY_LIMIT : PEAK_QUERY_LIMIT,
+        preserveComplexCells: true,
       });
       if (!cancelled) {
-        setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });
+        setData({
+          resultId,
+          queryKey,
+          filters: Object.fromEntries(activeFilters),
+          response: { ...response, limit: response.rows.length },
+        });
         setLoadState({ key: queryKey });
       }
     };
-    void loadPeakRows().catch((reason: unknown) => {
-      if (!cancelled)
-        setLoadState({
-          key: queryKey,
-          error: reason instanceof Error ? reason.message : 'Unable to load chromatogram peak rows.',
-        });
-    });
+    const timer = window.setTimeout(() => {
+      void loadPeakRows().catch((reason: unknown) => {
+        if (!cancelled)
+          setLoadState({
+            key: queryKey,
+            error: reason instanceof Error ? reason.message : 'Unable to load chromatogram peak rows.',
+          });
+      });
+    }, 120);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [activeFilters, artifact, client, context.sessionId, queryKey]);
+  }, [activeFilters, client, context.sessionId, pageOffset, queryKey, resultId]);
 
   const rows = currentData?.rows ?? EMPTY_PEAK_ROWS;
-  const visibleRows = useMemo(() => filterRows(rows, filters), [filters, rows]);
-  const theme = getPlotTheme();
+  const displayedFilters = dataMatchesQuery ? filters : data?.filters ?? filters;
+  const visibleRows = useMemo(() => filterRows(rows, displayedFilters), [displayedFilters, rows]);
+  const parsedPeaks = useMemo(() => parsePeakRows(visibleRows), [visibleRows]);
+  const theme = useMemo(() => getPlotTheme(), [themeRevision]);
   const spec = useMemo(
-    () => (visibleRows.length ? makePeakSpec(visibleRows, resultId, theme, selectBy) : null),
-    [resultId, selectBy, theme, visibleRows],
+    () => (parsedPeaks.length ? makePeakSpec(parsedPeaks, resultId, theme, selectBy) : null),
+    [parsedPeaks, resultId, selectBy, theme],
   );
+  const hasPlotData = Boolean(spec?.payload.data.length);
 
   if (!artifact || !client) return <div role="alert">Chromatogram peak result data is unavailable.</div>;
   if (loading && !currentData) return <LoadingLogo label="Loading chromatogram peaks…" />;
-  if (error)
-    return (
-      <div className="sf-chromatogram-peaks-viewer-state" role="alert">
-        {error}
-      </div>
-    );
-  if (!rows.length)
-    return <div className="sf-chromatogram-peaks-viewer-state">No chromatogram peak rows are available.</div>;
-
   return (
     <div className="sf-chromatogram-peaks-viewer">
       <MassSpecFilterToolbar
@@ -439,24 +597,65 @@ export function ChromatogramPeaksViewer({ context }: ViewerComponentProps) {
         onSelectByChange={(columns) => setSelectBy(columns as SelectByColumn[])}
         optionValues={optionValues}
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={(nextFilters) => {
+          setFilters(nextFilters);
+          setPageOffset(0);
+        }}
         summary={
           <>
             {currentData && currentData.total_rows > rows.length
-              ? `showing ${rows.length} of ${currentData.total_rows} peaks`
+              ? activeFilters.length
+                ? `showing ${(currentData.offset ?? 0) + 1}–${(currentData.offset ?? 0) + rows.length} of ${currentData.total_rows} peaks`
+                : `showing ${rows.length} of ${currentData.total_rows} peaks`
               : `${rows.length} rows`}
             {visibleRows.length !== rows.length ? ` · ${visibleRows.length} selected` : ''}
             {spec ? ` · ${spec.payload.data.length} traces` : ''}
+            {currentData && currentData.total_rows > rows.length ? (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  disabled={(currentData.offset ?? 0) === 0}
+                  onClick={() => setPageOffset(Math.max(0, (currentData.offset ?? 0) - FILTERED_PEAK_QUERY_LIMIT))}
+                >
+                  Previous peaks
+                </button>{' '}
+                <button
+                  type="button"
+                  disabled={!currentData.has_more}
+                  onClick={() => setPageOffset((currentData.offset ?? 0) + rows.length)}
+                >
+                  Next peaks
+                </button>
+              </>
+            ) : null}
           </>
         }
       />
-      {spec ? (
-        <div className="sf-chromatogram-peaks-viewer-plot">
-          <VisualizationRenderer spec={spec} />
-        </div>
-      ) : (
-        <div className="sf-chromatogram-peaks-viewer-state">No peak rows match the selected filters.</div>
-      )}
+      <div className="sf-chromatogram-peaks-viewer-content">
+        {error ? (
+          <div className="sf-chromatogram-peaks-viewer-state" role="alert">
+            {error}
+          </div>
+        ) : spec && hasPlotData ? (
+          <div className="sf-chromatogram-peaks-viewer-plot">
+            <VisualizationRenderer spec={spec} />
+          </div>
+        ) : loading ? null : (
+          <div className="sf-chromatogram-peaks-viewer-state">
+            {!rows.length
+              ? activeFilters.length
+                ? 'No chromatogram peak rows match the selected filters.'
+                : 'No chromatogram peak rows are available.'
+              : 'The selected peak rows do not contain parseable EIC point arrays.'}
+          </div>
+        )}
+        {loading ? (
+          <div className="sf-chromatogram-peaks-viewer-loading">
+            <LoadingLogo label="Loading chromatogram peaks…" />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

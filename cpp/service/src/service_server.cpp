@@ -434,7 +434,12 @@ std::string websocket_frame(const std::string &payload, unsigned char opcode = 0
     std::string frame{static_cast<char>(0x80 | opcode)};
     if (payload.size() < 126) frame.push_back(static_cast<char>(payload.size()));
     else if (payload.size() <= 65535) { frame.push_back(126); frame.push_back(static_cast<char>(payload.size() >> 8)); frame.push_back(static_cast<char>(payload.size())); }
-    else throw std::runtime_error("event payload too large");
+    else {
+        frame.push_back(127);
+        const auto payload_size = static_cast<std::uint64_t>(payload.size());
+        for (int shift = 56; shift >= 0; shift -= 8)
+            frame.push_back(static_cast<char>(payload_size >> shift));
+    }
     return frame + payload;
 }
 

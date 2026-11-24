@@ -23,7 +23,8 @@ export function VirtualArtifactTable({
     () =>
       columns.map((column) => {
         const longestValue = (pages[pageOffset]?.rows ?? []).reduce((longest, row) => {
-          const valueLength = String(row[column.name] ?? 'NULL').length;
+          const value = row[column.name];
+          const valueLength = typeof value === 'string' ? value.length : value == null ? 4 : 20;
           return Math.max(longest, valueLength);
         }, column.name.length);
         return Math.max(longestValue, column.type.length) * 8 + 32;
@@ -93,7 +94,8 @@ export function VirtualArtifactTable({
           const row = rows[virtualRow.index];
           return virtualColumns.map((virtualColumn) => {
             const column = columns[virtualColumn.index];
-            const cellValue = row ? (row[column.name] ?? 'NULL') : 'Loading…';
+            const value = row?.[column.name];
+            const cellValue = !row ? 'Loading…' : value == null ? 'NULL' : typeof value === 'string' ? value : JSON.stringify(value);
             return (
               <div
                 className="sf-artifact-virtual-cell sf-artifact-virtual-body-cell"

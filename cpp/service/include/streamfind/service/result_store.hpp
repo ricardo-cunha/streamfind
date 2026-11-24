@@ -113,6 +113,10 @@ public:
                               std::uintmax_t offset,
                               std::uintmax_t limit,
                               const std::vector<std::string> &columns = {}) const;
+    /** Read selected immutable Arrow row offsets with one projected IPC reader. */
+    Json read_arrow_ipc_rows(const std::string &result_id,
+                             const std::vector<std::uintmax_t> &offsets,
+                             const std::vector<std::string> &columns = {}) const;
     /** Scan Arrow columns natively and serialize only unique values for a distinct query. */
     Json distinct_arrow_values(const std::string &result_id,
                                const std::vector<std::string> &columns) const;

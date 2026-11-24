@@ -63,6 +63,36 @@ struct WagnerFit
     std::string status = "insufficient_data";
 };
 
+struct PowerFit
+{
+    double coefficient_0 = 0.0;
+    double coefficient_1 = 0.0;
+    double r_squared = 0.0;
+    double adjusted_r_squared = 0.0;
+    double rmse = 0.0;
+    std::size_t n_points = 0;
+    double range_min = 0.0;
+    double range_max = 0.0;
+    std::string monotonicity_status = "unknown";
+    std::string status = "insufficient_data";
+};
+
+struct HillFit
+{
+    double coefficient_0 = 0.0;
+    double coefficient_1 = 0.0;
+    double coefficient_2 = 0.0;
+    double coefficient_3 = 0.0;
+    double r_squared = 0.0;
+    double adjusted_r_squared = 0.0;
+    double rmse = 0.0;
+    std::size_t n_points = 0;
+    double range_min = 0.0;
+    double range_max = 0.0;
+    std::string monotonicity_status = "unknown";
+    std::string status = "insufficient_data";
+};
+
 struct InverseResult
 {
     double concentration = 0.0;
@@ -78,7 +108,17 @@ double predict_quadratic(const QuadraticFit &fit, double concentration);
 WagnerFit fit_wagner(const std::vector<LinearPoint> &points, int minimum_points,
                      const LinearFitOptions &options);
 double predict_wagner(const WagnerFit &fit, double concentration);
+LinearFit fit_mean_response_factor(const std::vector<LinearPoint> &points, int minimum_points,
+                                   const LinearFitOptions &options);
+PowerFit fit_power(const std::vector<LinearPoint> &points, int minimum_points,
+                   const LinearFitOptions &options);
+double predict_power(const PowerFit &fit, double concentration);
+HillFit fit_hill(const std::vector<LinearPoint> &points, int minimum_points,
+                 const LinearFitOptions &options);
+double predict_hill(const HillFit &fit, double concentration);
 InverseResult inverse_linear(const LinearFit &fit, double response);
 InverseResult inverse_quadratic(const QuadraticFit &fit, double response);
 InverseResult inverse_wagner(const WagnerFit &fit, double response);
+InverseResult inverse_power(const PowerFit &fit, double response);
+InverseResult inverse_hill(const HillFit &fit, double response);
 }

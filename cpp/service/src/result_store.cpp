@@ -971,12 +971,114 @@ Json ResultStore::read_arrow_ipc_batch(const std::string &result_id,
                 {"has_more", offset + rows.size() < manifest.value("row_count", std::uint64_t{0})}};
 }
 
+Json ResultStore::read_arrow_ipc_rows(const std::string &result_id,
+                                      const std::vector<std::uintmax_t> &offsets,
+                                      const std::vector<std::string> &columns) const {
+    if (offsets.empty()) return Json::array();
+    const auto manifest = detail::validated_manifest(root_, result_id);
+    if (manifest.value("format", std::string{}) != "arrow-ipc-file")
+        throw std::invalid_argument("selected row read requires an Arrow IPC table result");
+    const auto counts = manifest.value("batch_row_counts", Json::array());
+    if (!counts.is_array()) throw std::runtime_error("Arrow result has no row-batch directory");
+    std::vector<std::uint64_t> starts;
+    starts.reserve(counts.size() + 1);
+    starts.push_back(0);
+    for (const auto &count : counts) starts.push_back(starts.back() + count.get<std::uint64_t>());
+    const auto row_count = manifest.value("row_count", std::uint64_t{0});
+    for (const auto offset : offsets)
+        if (offset >= row_count) throw std::out_of_range("selected Arrow row offset is outside the result");
+    const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
+    auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
+    if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
+    const auto file = *file_result;
+    auto base_result = arrow::ipc::RecordBatchFileReader::Open(file);
+    if (!base_result.ok()) throw std::runtime_error(base_result.status().ToString());
+    auto reader = *base_result;
+    if (!columns.empty()) {
+        auto options = arrow::ipc::IpcReadOptions::Defaults();
+        for (const auto &name : columns) {
+            const auto index = reader->schema()->GetFieldIndex(name);
+            if (index < 0) throw std::invalid_argument("selected Arrow column not found: " + name);
+            options.included_fields.push_back(index);
+        }
+        auto projected = arrow::ipc::RecordBatchFileReader::Open(file, options);
+        if (!projected.ok()) throw std::runtime_error(projected.status().ToString());
+        reader = *projected;
+    }
+    std::vector<std::pair<std::uint64_t, std::size_t>> ordered;
+    ordered.reserve(offsets.size());
+    for (std::size_t index = 0; index < offsets.size(); ++index)
+        ordered.emplace_back(offsets[index], index);
+    std::stable_sort(ordered.begin(), ordered.end());
+    Json result = Json::array();
+    result.get_ref<Json::array_t &>().resize(offsets.size());
+    std::size_t selected = 0;
+    for (int batch_index = 0; batch_index < reader->num_record_batches() && selected < ordered.size(); ++batch_index) {
+        const auto batch_start = starts.at(static_cast<std::size_t>(batch_index));
+        const auto batch_end = starts.at(static_cast<std::size_t>(batch_index) + 1);
+        if (ordered[selected].first >= batch_end) continue;
+        auto batch_result = reader->ReadRecordBatch(batch_index);
+        if (!batch_result.ok()) throw std::runtime_error(batch_result.status().ToString());
+        const auto batch = *batch_result;
+        while (selected < ordered.size() && ordered[selected].first < batch_end) {
+            const auto first = ordered[selected].first - batch_start;
+            auto last = selected + 1;
+            while (last < ordered.size() && ordered[last].first == ordered[last - 1].first + 1 &&
+                   ordered[last].first < batch_end) ++last;
+            auto rows = detail::arrow_record_batch_rows(
+                batch->Slice(static_cast<std::int64_t>(first), static_cast<std::int64_t>(last - selected)), columns);
+            for (std::size_t row = 0; row < rows.size(); ++row)
+                result[ordered[selected + row].second] = std::move(rows[row]);
+            selected = last;
+        }
+    }
+    if (selected != ordered.size()) throw std::runtime_error("could not read all selected Arrow row offsets");
+    return result;
+}
+
 Json ResultStore::distinct_arrow_values(const std::string &result_id,
                                         const std::vector<std::string> &columns) const {
     if (columns.empty()) throw std::invalid_argument("distinct Arrow scan requires columns");
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("format", std::string{}) != "arrow-ipc-file")
         throw std::invalid_argument("distinct Arrow scan requires an Arrow IPC table result");
+    auto index_descriptor = manifest.value("navigation_index", Json{});
+    Json navigation_index;
+    if (index_descriptor.is_object() && index_descriptor.value("version", 0) == 1 &&
+        index_descriptor.value("path", std::string{}) == "navigation-index.json" &&
+        index_descriptor.value("entry_count", Json{}).is_number()) {
+        try {
+            const auto payload = std::filesystem::path(manifest.at("payload").get<std::string>());
+            navigation_index = read_json_file(detail::storage_path(root_ / payload.parent_path() /
+                                                                      "navigation-index.json"));
+            if (navigation_index.value("result_id", std::string{}) != result_id ||
+                navigation_index.value("payload_digest", std::string{}) !=
+                    manifest.value("payload_digest", std::string{}) ||
+                !navigation_index.value("entries", Json{}).is_array() ||
+                navigation_index.at("entries").size() != index_descriptor.at("entry_count").get<std::size_t>())
+                navigation_index = nullptr;
+        } catch (...) { navigation_index = nullptr; }
+    }
+    if (navigation_index.is_object() && navigation_index.value("version", 0) == 1 &&
+        navigation_index.value("entries", Json{}).is_array()) {
+        const auto &entries = navigation_index.at("entries");
+        const bool all_columns_indexed = std::all_of(columns.begin(), columns.end(), [&](const auto &name) {
+            return entries.empty() || (entries.front().is_object() && entries.front().contains(name));
+        });
+        if (all_columns_indexed) {
+            Json values = Json::object();
+            for (const auto &name : columns) {
+                std::map<std::string, Json> ordered;
+                for (const auto &entry : entries) {
+                    if (!entry.is_object() || !entry.contains(name) || entry.at(name).is_null()) continue;
+                    ordered.emplace(entry.at(name).dump(), entry.at(name));
+                }
+                values[name] = Json::array();
+                for (const auto &[key, value] : ordered) values[name].push_back(value);
+            }
+            return values;
+        }
+    }
     const auto payload_path = root_ / std::filesystem::path(manifest.at("payload").get<std::string>());
     auto file_result = arrow::io::ReadableFile::Open(detail::storage_path(payload_path).string());
     if (!file_result.ok()) throw std::runtime_error(file_result.status().ToString());
@@ -1042,6 +1144,110 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
     if (!filters.is_array() || (filters.empty() && search.empty() && sort_column.empty()) || limit == 0) return nullptr;
     const auto manifest = detail::validated_manifest(root_, result_id);
     if (manifest.value("format", std::string{}) != "arrow-ipc-file") return nullptr;
+    auto index_descriptor = manifest.value("navigation_index", Json{});
+    Json navigation_index;
+    if (index_descriptor.is_object() && index_descriptor.value("version", 0) == 1 &&
+        index_descriptor.value("path", std::string{}) == "navigation-index.json" &&
+        index_descriptor.value("entry_count", Json{}).is_number()) {
+        try {
+            const auto payload = std::filesystem::path(manifest.at("payload").get<std::string>());
+            navigation_index = read_json_file(detail::storage_path(root_ / payload.parent_path() /
+                                                                      "navigation-index.json"));
+            if (navigation_index.value("result_id", std::string{}) != result_id ||
+                navigation_index.value("payload_digest", std::string{}) !=
+                    manifest.value("payload_digest", std::string{}) ||
+                !navigation_index.value("entries", Json{}).is_array() ||
+                navigation_index.at("entries").size() != index_descriptor.at("entry_count").get<std::size_t>())
+                navigation_index = nullptr;
+        } catch (...) { navigation_index = nullptr; }
+    }
+    if (search.empty() && sort_column.empty() && navigation_index.is_object() &&
+        navigation_index.value("version", 0) == 1 &&
+        navigation_index.value("entries", Json{}).is_array()) {
+        std::unordered_set<std::string> indexed_columns;
+        for (const auto &entry : navigation_index.at("entries"))
+            if (entry.is_object()) for (auto it = entry.begin(); it != entry.end(); ++it)
+                if (it.key() != "ranges") indexed_columns.insert(it.key());
+        for (const auto &filter : filters) {
+            if (!filter.is_object() || !filter.value("column", Json{}).is_string()) return nullptr;
+            const auto operation = filter.value("operator", std::string{"eq"});
+            if (operation != "eq" && operation != "neq" && operation != "in" &&
+                operation != "gt" && operation != "gte" && operation != "lt" &&
+                operation != "lte" && operation != "between" &&
+                operation != "is_null" && operation != "is_not_null") return nullptr;
+            if (!indexed_columns.contains(filter.at("column").get<std::string>())) return nullptr;
+            if (operation == "in" && !filter.value("values", Json{}).is_array()) return nullptr;
+        }
+        const auto matches = [](const Json &entry, const Json &filter) {
+            const auto &actual = entry.at(filter.at("column").get<std::string>());
+            const auto op = filter.value("operator", std::string{"eq"});
+            if (op == "is_null") return actual.is_null();
+            if (op == "is_not_null") return !actual.is_null();
+            if (actual.is_null()) return false;
+            const auto equal = [&](const Json &expected) {
+                if (actual.is_number() && expected.is_number())
+                    return actual.get<double>() == expected.get<double>();
+                return actual == expected;
+            };
+            if (op == "eq") return filter.contains("value") && equal(filter.at("value"));
+            if (op == "neq") return filter.contains("value") && !equal(filter.at("value"));
+            if (op == "in") {
+                for (const auto &value : filter.at("values")) if (equal(value)) return true;
+                return false;
+            }
+            if (!actual.is_number()) return false;
+            const auto value = actual.get<double>();
+            if (op == "between")
+                return filter.value("min", Json{}).is_number() && filter.value("max", Json{}).is_number() &&
+                    value >= filter.at("min").get<double>() && value <= filter.at("max").get<double>();
+            if (!filter.value("value", Json{}).is_number()) return false;
+            const auto target = filter.at("value").get<double>();
+            if (op == "gt") return value > target;
+            if (op == "gte") return value >= target;
+            if (op == "lt") return value < target;
+            if (op == "lte") return value <= target;
+            return false;
+        };
+        Json selected_offsets = Json::array();
+        std::uintmax_t match_count = 0;
+        const auto batch_counts = manifest.value("batch_row_counts", Json::array());
+        std::vector<std::uint64_t> batch_starts{0};
+        for (const auto &count : batch_counts)
+            batch_starts.push_back(batch_starts.back() + count.get<std::uint64_t>());
+        std::vector<bool> batches_with_matches(batch_counts.size(), false);
+        const auto end = offset > std::numeric_limits<std::uintmax_t>::max() - limit
+            ? std::numeric_limits<std::uintmax_t>::max() : offset + limit;
+        for (const auto &entry : navigation_index.at("entries")) {
+            if (!entry.is_object() || !entry.value("ranges", Json{}).is_array()) continue;
+            bool accepted = true;
+            for (const auto &filter : filters)
+                if (!matches(entry, filter)) { accepted = false; break; }
+            if (!accepted) continue;
+            for (const auto &range : entry.at("ranges")) {
+                const auto range_offset = range.at("offset").get<std::uint64_t>();
+                const auto range_count = range.at("count").get<std::uint64_t>();
+                const auto range_end = match_count + range_count;
+                const auto absolute_range_end = range_offset + range_count;
+                const auto batch_boundary = std::upper_bound(batch_starts.begin(), batch_starts.end(), range_offset);
+                auto batch_index = static_cast<std::size_t>(batch_boundary - batch_starts.begin());
+                if (batch_index > 0) --batch_index;
+                while (batch_index < batch_counts.size() && batch_starts[batch_index] < absolute_range_end) {
+                    batches_with_matches[batch_index] = true;
+                    ++batch_index;
+                }
+                const auto selected_begin = std::max<std::uintmax_t>(match_count, offset);
+                const auto selected_end = std::min<std::uintmax_t>(range_end, end);
+                for (auto row = selected_begin; row < selected_end; ++row)
+                    selected_offsets.push_back(range_offset + (row - match_count));
+                match_count = range_end;
+            }
+        }
+        const auto matching_batches = static_cast<std::uintmax_t>(std::count(
+            batches_with_matches.begin(), batches_with_matches.end(), true));
+        return Json{{"total_rows", match_count}, {"offsets", std::move(selected_offsets)},
+                    {"batches_skipped", batch_counts.size() - matching_batches},
+                    {"batches_scanned", 0}, {"indexed", true}};
+    }
     const auto batch_counts = manifest.value("batch_row_counts", Json::array());
     if (!batch_counts.is_array()) throw std::runtime_error("Arrow result has no row-batch directory");
     std::vector<std::string> filter_columns;
@@ -1448,6 +1654,7 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
             ", error=" + payload_error.message() + ")");
     }
     Json batch_row_counts = Json::array();
+    Json navigation_index = Json::object();
     if (lease.format == "arrow-ipc-file") {
         if (metadata.value("kind", std::string{}) != "table")
             throw std::invalid_argument("Arrow IPC file publication requires a table result");
@@ -1457,12 +1664,86 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
         if (!reader_result.ok()) throw std::runtime_error("Arrow result has no valid IPC file footer: " + reader_result.status().ToString());
         const auto reader = *reader_result;
         std::uint64_t rows = 0;
+        std::vector<std::string> index_columns;
+        std::unordered_map<std::string, std::size_t> indexed_groups;
+        const auto declared_navigation = metadata.value("navigation_columns", Json::array());
+        if (declared_navigation.is_array() && !declared_navigation.empty()) {
+            for (const auto &column : declared_navigation) {
+                if (!column.is_string()) continue;
+                const auto name = column.get<std::string>();
+                const auto field = reader->schema()->GetFieldIndex(name);
+                if (field < 0) continue;
+                const auto type = reader->schema()->field(field)->type()->id();
+                const bool scalar = type == arrow::Type::STRING || type == arrow::Type::LARGE_STRING ||
+                    type == arrow::Type::BOOL || type == arrow::Type::INT8 || type == arrow::Type::INT16 ||
+                    type == arrow::Type::INT32 || type == arrow::Type::INT64 || type == arrow::Type::UINT8 ||
+                    type == arrow::Type::UINT16 || type == arrow::Type::UINT32 || type == arrow::Type::UINT64 ||
+                    type == arrow::Type::FLOAT || type == arrow::Type::DOUBLE;
+                if (!scalar) continue;
+                if (std::find(index_columns.begin(), index_columns.end(), name) == index_columns.end())
+                    index_columns.push_back(name);
+            }
+        }
+        if (!index_columns.empty()) navigation_index["entries"] = Json::array();
+        constexpr std::size_t max_navigation_groups = 100000;
         for (int index = 0; index < reader->num_record_batches(); ++index) {
             auto batch = reader->ReadRecordBatch(index);
             if (!batch.ok()) throw std::runtime_error("Arrow result batch is invalid: " + batch.status().ToString());
-            const auto batch_rows = static_cast<std::uint64_t>((*batch)->num_rows());
+            const auto &record_batch = *batch;
+            const auto batch_rows = static_cast<std::uint64_t>(record_batch->num_rows());
             if (batch_rows > std::numeric_limits<std::uint64_t>::max() - rows)
                 throw std::runtime_error("Arrow result row count exceeds the supported range");
+            if (!index_columns.empty()) {
+                std::unordered_map<std::string, int> fields;
+                for (const auto &name : index_columns) fields.emplace(name, record_batch->schema()->GetFieldIndex(name));
+                for (std::int64_t row = 0; row < record_batch->num_rows(); ++row) {
+                    Json group_values = Json::array();
+                    for (const auto &name : index_columns) {
+                        const auto scalar = record_batch->column(fields.at(name))->GetScalar(row);
+                        if (!scalar.ok()) throw std::runtime_error(scalar.status().ToString());
+                        if (!(*scalar)->is_valid) {
+                            group_values.push_back(nullptr);
+                            continue;
+                        }
+                        const auto type = record_batch->schema()->field(fields.at(name))->type()->id();
+                        const auto value = (*scalar)->ToString();
+                        Json parsed_value;
+                        if (type == arrow::Type::STRING || type == arrow::Type::LARGE_STRING)
+                            parsed_value = value;
+                        else if (type == arrow::Type::BOOL)
+                            parsed_value = value == "true";
+                        else parsed_value = std::stold(value);
+                        group_values.push_back(std::move(parsed_value));
+                    }
+                    const auto key = group_values.dump();
+                    auto found = indexed_groups.find(key);
+                    std::size_t entry_index = 0;
+                    if (found == indexed_groups.end()) {
+                        if (indexed_groups.size() >= max_navigation_groups) {
+                            navigation_index = Json::object();
+                            indexed_groups.clear();
+                            index_columns.clear();
+                            break;
+                        }
+                        Json entry = Json::object();
+                        for (std::size_t column_index = 0; column_index < index_columns.size(); ++column_index)
+                            entry[index_columns[column_index]] = group_values.at(column_index);
+                        entry["ranges"] = Json::array({Json{{"offset", rows + static_cast<std::uint64_t>(row)},
+                                                             {"count", 1}}});
+                        entry_index = navigation_index["entries"].size();
+                        navigation_index["entries"].push_back(std::move(entry));
+                        indexed_groups.emplace(key, entry_index);
+                    } else {
+                        entry_index = found->second;
+                        auto &ranges = navigation_index["entries"][entry_index]["ranges"];
+                        auto &last = ranges.back();
+                        const auto absolute_row = rows + static_cast<std::uint64_t>(row);
+                        if (last.at("offset").get<std::uint64_t>() + last.at("count").get<std::uint64_t>() == absolute_row)
+                            last["count"] = last.at("count").get<std::uint64_t>() + 1;
+                        else ranges.push_back({{"offset", absolute_row}, {"count", 1}});
+                    }
+                }
+            }
             rows += batch_rows;
             batch_row_counts.push_back(batch_rows);
         }
@@ -1477,9 +1758,25 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
         }
         if (!reader->schema()->Equals(*expected_schema, false))
             throw std::runtime_error("Arrow result physical schema does not match its declared column order and types");
+        if (!index_columns.empty()) {
+            navigation_index["version"] = 1;
+            navigation_index["columns"] = index_columns;
+            navigation_index["entry_count"] = navigation_index["entries"].size();
+        }
     }
     std::uintmax_t payload_size = 0;
     const auto payload_digest_value = detail::payload_digest(native_staging_payload, payload_size);
+    bool publish_navigation_index = navigation_index.contains("entries");
+    Json navigation_index_payload;
+    if (publish_navigation_index) {
+        navigation_index_payload = navigation_index;
+        navigation_index_payload["result_id"] = lease.result_id;
+        navigation_index_payload["payload_digest"] = payload_digest_value;
+        if (navigation_index_payload.dump().size() > 32 * 1024 * 1024) {
+            publish_navigation_index = false;
+            navigation_index_payload = Json::object();
+        }
+    }
     std::error_code error;
     const auto native_published_directory = detail::storage_path(lease.published_directory);
     if (std::filesystem::exists(native_published_directory, error))
@@ -1488,6 +1785,10 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     if (lease.format == "arrow-ipc-file") {
         manifest["batch_row_counts"] = std::move(batch_row_counts);
         manifest["row_batch_directory_version"] = 1;
+        if (publish_navigation_index)
+            manifest["navigation_index"] = {{"version", 1},
+                                             {"entry_count", navigation_index.at("entry_count")},
+                                             {"path", "navigation-index.json"}};
     }
     manifest["result_id"] = lease.result_id;
     manifest["run_id"] = lease.run_id;
@@ -1504,6 +1805,9 @@ Json ResultStore::publish(const ResultLease &lease, const Json &metadata) {
     manifest["cacheable"] = metadata.value("cacheable", false);
     if (!manifest.contains("computation_key")) manifest["computation_key"] = nullptr;
     if (!manifest.contains("provenance")) manifest["provenance"] = Json::object();
+    if (publish_navigation_index)
+        write_json_file(detail::storage_path(lease.staging_directory / "navigation-index.json"),
+                        navigation_index_payload);
     // Prepare the complete publication unit while it is still private. A
     // process crash must never expose a promoted payload directory without its
     // manifest; the directory rename is the single visibility boundary.
@@ -1524,6 +1828,7 @@ void ResultStore::abort(const ResultLease &lease) const {
     // remove_all may spend an unbounded time walking the directory.  Cleanup
     // the known files explicitly and fail fast if an unexpected entry remains.
     for (const auto &path : {detail::storage_path(lease.staging_payload),
+                             detail::storage_path(lease.staging_directory / "navigation-index.json"),
                              detail::storage_path(lease.staging_directory / "manifest.json")}) {
         error.clear();
         static_cast<void>(std::filesystem::remove(path, error));

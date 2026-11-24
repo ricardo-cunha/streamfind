@@ -73,7 +73,7 @@ function normalizeCell(value: unknown): string | null {
   }
 }
 
-function normalizeResultData(value: unknown): ResultDataResponse {
+function normalizeResultData(value: unknown, preserveComplexCells = false): ResultDataResponse {
   const candidate = (value && typeof value === 'object' ? value : {}) as Partial<ResultDataResponse> & {
     data?: Partial<ResultDataResponse>;
     rows?: unknown;
@@ -83,16 +83,17 @@ function normalizeResultData(value: unknown): ResultDataResponse {
   const rows = rawRows.map((row) => {
     if (Array.isArray(row)) {
       const columns = Array.isArray(nested.columns) ? nested.columns : [];
-      return Object.fromEntries(columns.map((column, index) => [column.name, normalizeCell(row[index])])) as Record<
-        string,
-        string | null
-      >;
+      return Object.fromEntries(
+        columns.map((column, index) => [column.name, preserveComplexCells ? row[index] : normalizeCell(row[index])]),
+      ) as Record<string, unknown>;
     }
     if (!row || typeof row !== 'object') return {};
-    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<
-      string,
-      string | null
-    >;
+    if (preserveComplexCells) {
+      // Plot viewers can consume decoded arrays directly; stringify+parse of
+      // large EIC columns otherwise copies the same point arrays twice.
+      return row as Record<string, unknown>;
+    }
+    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<string, unknown>;
   });
   const columns = Array.isArray(nested.columns)
     ? nested.columns
@@ -104,7 +105,7 @@ function normalizeResultData(value: unknown): ResultDataResponse {
   return {
     result_id: typeof nested.result_id === 'string' ? nested.result_id : '',
     columns,
-    rows,
+    rows: rows as Array<Record<string, string | null>>,
     offset: typeof nested.offset === 'number' ? nested.offset : 0,
     limit: typeof nested.limit === 'number' ? nested.limit : rows.length,
     total_rows: typeof nested.total_rows === 'number' ? nested.total_rows : rows.length,
@@ -140,8 +141,13 @@ export type ResultQueryRequest = {
   eic_max_points?: number;
   trace_columns?: string[];
   max_points_per_trace?: number;
+  /** Keep decoded JSON arrays/objects intact for viewers that plot them. */
+  preserveComplexCells?: boolean;
+  /** Encode result rows as positional arrays to reduce large JSON responses. */
+  compact_rows?: boolean;
 };
-export type ResultQueryResponse = ResultDataResponse & {
+export type ResultQueryResponse<TCell = string | null> = Omit<ResultDataResponse, 'rows'> & {
+  rows: Array<Record<string, TCell>>;
   returned_rows: number;
   mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
   has_more: boolean;
@@ -165,7 +171,7 @@ export type ResultTraceResponse = {
 // queries prevents tab switches and repeated viewer mounts from transferring
 // and normalizing the same rows again. The bounded cache is keyed by project
 // session and the complete query, so filters and viewports remain isolated.
-const resultQueryCache = new Map<string, Promise<ResultQueryResponse>>();
+const resultQueryCache = new Map<string, Promise<ResultQueryResponse<unknown>>>();
 const RESULT_QUERY_CACHE_LIMIT = 128;
 
 function resultQueryCacheKey(endpoint: string, sessionId: string, request: ResultQueryRequest): string {
@@ -179,7 +185,7 @@ function invalidateResultQueryCache(endpoint: string, sessionId: string): void {
   }
 }
 
-function rememberResultQuery(key: string, request: Promise<ResultQueryResponse>): Promise<ResultQueryResponse> {
+function rememberResultQuery(key: string, request: Promise<ResultQueryResponse<unknown>>): Promise<ResultQueryResponse<unknown>> {
   resultQueryCache.set(key, request);
   while (resultQueryCache.size > RESULT_QUERY_CACHE_LIMIT) {
     const oldest = resultQueryCache.keys().next().value;
@@ -479,7 +485,7 @@ export class StreamFindApiClient {
       body: JSON.stringify(request),
     });
     if (!response.ok) throw new Error(`Result data request failed (${response.status})`);
-    return normalizeResultData(await response.json());
+    return normalizeResultData(await response.json()) as ResultDataResponse;
   }
 
   async resultPayload(sessionId: string, resultId: string): Promise<JsonValue> {
@@ -495,7 +501,12 @@ export class StreamFindApiClient {
     return raw.payload as JsonValue;
   }
 
-  async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse> {
+  resultQuery(
+    sessionId: string,
+    request: ResultQueryRequest & { preserveComplexCells: true },
+  ): Promise<ResultQueryResponse<unknown>>;
+  resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse>;
+  async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse<unknown>> {
     const key = resultQueryCacheKey(this.baseUrl, sessionId, request);
     const cached = resultQueryCache.get(key);
     if (cached) return cached;
@@ -505,16 +516,23 @@ export class StreamFindApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
-      if (!response.ok) throw new Error(`Result query request failed (${response.status})`);
-      const raw = (await response.json()) as Partial<ResultQueryResponse>;
-      const result = normalizeResultData(raw);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
+        const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
+        throw new Error(`Result query request failed (${response.status})${detail}`);
+      }
+      const raw = (await response.json()) as Partial<ResultQueryResponse<unknown>>;
+      const result = request.preserveComplexCells === true && Array.isArray(raw.rows) &&
+        raw.rows.every((row) => row && typeof row === 'object' && !Array.isArray(row))
+        ? (raw as ResultQueryResponse<unknown>)
+        : normalizeResultData(raw, request.preserveComplexCells === true);
       return {
         ...result,
         returned_rows: typeof raw.returned_rows === 'number' ? raw.returned_rows : result.rows.length,
         mode: raw.mode ?? 'page',
         has_more: Boolean(raw.has_more),
         distinct: raw.distinct,
-      };
+      } as ResultQueryResponse<unknown>;
     })();
     const remembered = rememberResultQuery(key, pending);
     void remembered.catch(() => {

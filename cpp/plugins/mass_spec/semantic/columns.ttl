@@ -1837,7 +1837,7 @@ sfms:regressionModelColumn
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Regression model" ;
-    skos:definition "Calibration model selected for an analyte target: linear, quadratic, or Wagner log-quadratic; null for internal-standard rows because they are not calibrated." ;
+    skos:definition "Calibration regression selected for an analyte target. Allowed values: linear, linear_through_zero, mean_response_factor, quadratic, power, wagner, and hill. Power and Wagner require positive regression concentration and response; Hill models saturation. Null for internal-standard rows because they are not calibrated." ;
     sf:columnName "regression_model" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
@@ -1847,7 +1847,7 @@ sfms:weightingColumn
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Calibration weighting" ;
-    skos:definition "Weighting applied to analyte calibration points; null for internal-standard rows." ;
+    skos:definition "Regression point weighting applied to analyte calibration points. Allowed values: none, 1/x, 1/x2, 1/y, 1/y2, ln x, and ln y; formulas and small-value thresholds are documented in the quantification method parameter guidance. Null for internal-standard rows." ;
     sf:columnName "weighting" ;
     sf:type "string" ;
     sf:storageType "VARCHAR" .
@@ -1902,6 +1902,16 @@ sfms:coefficient2Column
     sf:type "real" ;
     sf:storageType "DOUBLE" .
 
+sfms:coefficient3Column
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 3" ;
+    skos:definition "Fourth fitted coefficient, used as Hill exponent n in y=(a+b*x^n)/(c+x^n); unused for models with fewer coefficients." ;
+    sf:columnName "coefficient_3" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
 sfms:rSquaredColumn
     a sf:Column ;
     sf:availableInPlugin sfms:mass_spec ;
@@ -1947,7 +1957,7 @@ sfms:rangeMinColumn
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Calibration range minimum" ;
-    skos:definition "Lowest nominal concentration included in the calibration fit." ;
+    skos:definition "Lowest regression concentration included in the calibration fit, after dilution and internal-standard concentration scaling where applicable." ;
     sf:columnName "range_min" ;
     sf:type "real" ;
     sf:storageType "DOUBLE" .
@@ -1957,7 +1967,7 @@ sfms:rangeMaxColumn
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Calibration range maximum" ;
-    skos:definition "Highest nominal concentration included in the calibration fit." ;
+    skos:definition "Highest regression concentration included in the calibration fit, after dilution and internal-standard concentration scaling where applicable." ;
     sf:columnName "range_max" ;
     sf:type "real" ;
     sf:storageType "DOUBLE" .
@@ -2370,6 +2380,26 @@ sfms:responseRatioColumn
     skos:prefLabel "Response ratio" ;
     skos:definition "Analyte response divided by the assigned internal-standard response." ;
     sf:columnName "response_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard nominal concentration" ;
+    skos:definition "Positive nominal concentration assigned to the directly linked internal standard in this analysis; used to normalize the calibration concentration coordinate and restore concentration when back-calculating." ;
+    sf:columnName "internal_standard_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:regressionConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Regression concentration" ;
+    skos:definition "Concentration coordinate used by the calibration fit: nominal concentration divided by dilution factor, and also divided by assigned internal-standard concentration when internal-standard normalization is enabled." ;
+    sf:columnName "regression_concentration" ;
     sf:type "real" ;
     sf:storageType "DOUBLE" .
 
