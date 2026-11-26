@@ -58,6 +58,7 @@ if ($LASTEXITCODE -ge 8) {
 }
 
 $quotedRoot = Quote-Bash $LinuxRoot
+Invoke-WslCommand "find $quotedRoot/scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +"
 $setup = "cd $quotedRoot && pwsh -NoProfile -File scripts/sfdev.ps1 setup --components python"
 Invoke-WslCommand $setup
 
@@ -75,6 +76,7 @@ if ($Command -eq 'prepare') {
         "rm -rf tmp/scratch/sfdev-linux-release-verify",
         "mkdir -p tmp/scratch/sfdev-linux-release-verify",
         "tar -xzf tmp/release-output/$archive -C tmp/scratch/sfdev-linux-release-verify",
+        "$quotedPackageRoot/bin/streamfind-dev --version | grep -Fx 'streamfind-dev $Version (protocol streamfind-dev/1)'",
         ".venv/bin/python scripts/dev/validate_native_dependencies.py $quotedPackageRoot --platform linux",
         ".venv/bin/python scripts/release/cpp/test-packaged-mcp-linux.py $quotedPackageRoot"
     ) -join ' && '

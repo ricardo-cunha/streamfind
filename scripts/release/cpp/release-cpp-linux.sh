@@ -46,6 +46,11 @@ mkdir -p "$runtime_root"
 tar -xzf "$archive" -C "$runtime_root"
 package_root="$(find "$runtime_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
 test -n "$package_root"
+reported_dev_version="$("$package_root/bin/streamfind-dev" --version)"
+if [[ "$reported_dev_version" != "streamfind-dev $VERSION (protocol streamfind-dev/1)" ]]; then
+    echo "embedded developer framework version mismatch: expected $VERSION, got '$reported_dev_version'" >&2
+    exit 1
+fi
 PYTHON="${STREAMFIND_PYTHON:-$REPO_ROOT/.venv/bin/python}"
 test -x "$PYTHON"
 "$PYTHON" "$REPO_ROOT/scripts/dev/validate_native_dependencies.py" "$package_root" --platform linux

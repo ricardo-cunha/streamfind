@@ -304,7 +304,7 @@ native platforms.
 The C++ backend is the authoritative native implementation. The current
 workspace version is the value in the repository [`VERSION`](../VERSION) file.
 
-The C++ runtime package contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, runtime vendors, `streamfind-dev`, and the matching native/viewer SDK payload.
+The C++ runtime package contains the native host, MCP/service executables, frontend assets, built-in plugin packages, catalogues, runtime vendors, and `streamfind-dev` with the matching native/viewer SDK payload. The developer dispatcher reports the same product version as the runtime; its provisioning protocol has an independent version identifier.
 
 The `cpp/sdk/` tree defines the plugin ABI, host access services, catalogue projection, package validation, and built-in plugin integration. Its matching installed payload is part of the same runtime release used for external plugin development.
 
@@ -437,7 +437,7 @@ Frontend plugin work also belongs in this repository, under
 `frontend/src/plugins/`, with shared contracts under
 `frontend/src/framework/plugins/`. Use `sfdev build frontend` and
 `sfdev test frontend` for the corresponding checks. Frontend plugins do not
-use the C++ developer kit.
+need the native C++ SDK.
 
 ## Develop an out-of-tree plugin
 
@@ -453,7 +453,7 @@ Generate an external backend/frontend project scaffold:
 .venv\\Scripts\\python.exe scripts\\dev\\plugin_generator.py init tmp\\scratch\\my-plugin --kind full --plugin example --name my-plugin
 ```
 
-Build the generated backend against an installed developer kit:
+Build the generated backend against the SDK extracted from the runtime archive:
 
 ```powershell
 cmake -G Ninja -S tmp\\scratch\\my-plugin\\backend -B tmp\\build\\my-plugin `

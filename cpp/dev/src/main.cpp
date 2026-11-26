@@ -1,4 +1,5 @@
 #include "streamfind/dev/command_protocol.hpp"
+#include "streamfind/version.hpp"
 
 #include <algorithm>
 #include <array>
@@ -69,7 +70,11 @@ int main(int argc, char **argv) {
     try {
         streamfind::dev::install_cancellation_handler();
         const auto request = streamfind::dev::parse_request(argc, argv);
-        if (request.command == "--version") { std::cout << "streamfind-dev/1\n"; return 0; }
+        if (request.command == "--version") {
+            std::cout << "streamfind-dev " << streamfind::version()
+                      << " (protocol streamfind-dev/1)\n";
+            return 0;
+        }
         if (request.command == "doctor") { std::cout << streamfind::dev::doctor_json(request) << '\n'; return 0; }
         if (request.command == "rebuild") return streamfind::dev::rebuild_plugin(request);
         if (request.command == "list") return streamfind::dev::list_extensions(request);

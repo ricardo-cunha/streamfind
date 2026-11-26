@@ -101,6 +101,12 @@ if ($VerifyOnly) {
         $packages = @(Get-ChildItem -LiteralPath $scratch -Directory)
         if ($packages.Count -ne 1) { throw 'Expected one extracted runtime directory' }
         $packageRoot = $packages[0].FullName
+        $devExecutable = Join-Path $packageRoot $(if ($platform -eq 'Windows') { 'bin/streamfind-dev.exe' } else { 'bin/streamfind-dev' })
+        $reportedDevVersion = (& $devExecutable --version | Out-String).Trim()
+        $expectedDevVersion = "streamfind-dev $Version (protocol streamfind-dev/1)"
+        if ($LASTEXITCODE -ne 0 -or $reportedDevVersion -ne $expectedDevVersion) {
+            throw "Embedded developer framework version mismatch: expected '$expectedDevVersion', got '$reportedDevVersion'"
+        }
         $python = Join-Path $root $(if ($platform -eq 'Windows') { '.venv/Scripts/python.exe' } else { '.venv/bin/python' })
         & $python -c 'import sys; print(sys.executable)'
         if ($LASTEXITCODE) { throw 'Repository Python environment unavailable' }

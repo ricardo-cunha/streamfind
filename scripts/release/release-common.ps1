@@ -75,6 +75,13 @@ function Assert-CppDistributionPayload([string]$PackageRoot) {
             throw "C++ distribution payload is missing $relative"
         }
     }
+    if ($env:STREAMFIND_PACKAGE_VERSION) {
+        $reportedDevVersion = (& (Join-Path $PackageRoot 'bin/streamfind-dev.exe') --version | Out-String).Trim()
+        $expectedDevVersion = "streamfind-dev $($env:STREAMFIND_PACKAGE_VERSION) (protocol streamfind-dev/1)"
+        if ($LASTEXITCODE -ne 0 -or $reportedDevVersion -ne $expectedDevVersion) {
+            throw "Embedded developer framework version mismatch: expected '$expectedDevVersion', got '$reportedDevVersion'"
+        }
+    }
     $machineLocal = Get-ChildItem -Recurse -File $PackageRoot | Where-Object {
         $relative = $_.FullName.Substring($PackageRoot.Length).TrimStart('\','/')
         $relative -match '(?i)(^|[\\/])(node_modules|\.venv|tmp[\\/]build)([\\/]|$)|(^|[\\/])(home|Users|mnt)[\\/]'

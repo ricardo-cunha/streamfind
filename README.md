@@ -41,11 +41,11 @@ provide result viewers and other UI capabilities.
 | Native C++ runtime | Windows x64 and Linux x86_64 packages | Standalone use and client applications |
 | MCP | Included with the native C++ package | Applications and AI agents using JSON-RPC over stdio |
 | Browser application | Included in native packages | Local project and workflow editing |
-| C++ developer kit | Separate Windows and Linux archives | Out-of-tree C++ plugins |
+| C++ developer framework and SDK | Included in Windows and Linux runtime archives | Developing and installing external C++ plugins and frontend viewers |
 
-The current native package version is defined in [`VERSION`](VERSION). See
-[Releases](docs/releases.md) for archives, checksums, package contents, and
-developer kits.
+The current native package and embedded developer framework version is defined
+in [`VERSION`](VERSION). See [Releases](docs/releases.md) for archives,
+checksums, and package contents.
 
 ## How it is used
 
@@ -69,10 +69,10 @@ repository and documentation for package status and usage.
 
 The C++ development guide documents the current MSYS2 UCRT64/GCC and Linux GCC
 toolchains, build and test commands, runtime package layout, plugin generator,
-optional developer kit, out-of-tree consumer check, and extracted-package release
-validation routines: [`cpp/README.md`](cpp/README.md). The plugin framework has
-two extension surfaces: native C++ backend plugins and TypeScript frontend
-plugins. See [`docs/plugin-development.md`](docs/plugin-development.md).
+embedded developer framework, out-of-tree consumer check, and extracted-package
+release validation routines: [`cpp/README.md`](cpp/README.md). The plugin
+framework has two extension surfaces: native C++ backend plugins and TypeScript
+frontend plugins. See [`docs/plugin-development.md`](docs/plugin-development.md).
 
 The native archives include the built web app and executables under `bin/`.
 Run `streamfind-app` to open the browser app; use `streamfind` to manage the

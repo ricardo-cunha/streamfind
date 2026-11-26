@@ -43,8 +43,10 @@ The {{ streamfind_version }} runtime distribution contains:
 
 Runtime archives are intended for local use by the browser app, CLI, MCP
 clients, native C++ applications, and external plugin/viewer development. The
-runtime and development payload are version-matched inside the same archive;
-the C++ ABI is not guaranteed across versions.
+runtime and embedded development payload are version-matched inside the same
+archive. `streamfind-dev --version` reports the same product version as the
+runtime; its provisioning protocol has a separate version identifier. The C++
+ABI is not guaranteed across releases.
 
 | Package | Archive | Platform | SHA-256 |
 | --- | --- | --- | --- |
@@ -79,7 +81,8 @@ The runtime archives contain:
 - `bin/streamfind-mcp.exe` or `bin/streamfind-mcp`, the MCP server, plus C++ runtime libraries;
 - `core/catalogue.duckdb` and packaged plugin catalogues;
 - `bin/streamfind-dev` / `bin/streamfind-dev.exe`, the matching native SDK,
-  viewer SDK and verified development provisioning manifests;
+  viewer SDK and verified development provisioning manifests. The developer
+  dispatcher reports the same product version as the runtime archive;
 - the native runtime dependencies assembled by CPack.
 
 Both archives contain the built web app under `app/` and all executable launchers
