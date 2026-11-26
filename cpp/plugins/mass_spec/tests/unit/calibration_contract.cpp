@@ -101,7 +101,7 @@ int main()
     const auto zero_level = fit_linear({{0.0, 0.0}, {1.0, 2.0}, {2.0, 4.0}}, 2,
                                        LinearFitOptions{"1/x", "free"});
     require(zero_level.status == "ok", "Zero-level weighted calibration did not fit.");
-    require(zero_level.n_points == 2, "Zero-level weighted calibration was not excluded from the fit.");
+    require(zero_level.n_points == 3, "Zero-level 1/x calibration did not use its capped weight.");
     require_near(zero_level.range_min, 0.0, 1.0e-12, "Zero-level diagnostic range was not retained.");
     require_near(zero_level.slope, 2.0, 1.0e-12, "Zero-level weighted slope is incorrect.");
 
