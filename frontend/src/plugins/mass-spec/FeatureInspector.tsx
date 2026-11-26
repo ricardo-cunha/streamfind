@@ -216,7 +216,7 @@ export function FeatureInspector({ context }: ViewerComponentProps): ReactNode {
         columns: overviewColumns,
         filters:
           overviewColumns?.includes('filtered') && !showFiltered
-            ? [{ column: 'filtered', operator: 'neq', value: 'true' }]
+            ? [{ column: 'filtered', operator: 'neq', value: true }]
             : undefined,
         x_column: 'rt',
         y_column: 'mz',
@@ -1950,9 +1950,9 @@ function buildFeatureQueryFilters(
   });
   columns.boolean.forEach((column) => {
     if (column.name === 'filtered') {
-      if (!showFiltered) filters.push({ column: column.name, operator: 'neq', value: 'true' });
+      if (!showFiltered) filters.push({ column: column.name, operator: 'neq', value: true });
     } else if (booleanFilters[column.name]) {
-      filters.push({ column: column.name, operator: 'eq', value: 'true' });
+      filters.push({ column: column.name, operator: 'eq', value: true });
     }
   });
   Object.entries(textFilters).forEach(([column, value]) => {

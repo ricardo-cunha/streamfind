@@ -703,16 +703,17 @@ sfms:filterFeaturesMs2
     sf:availableInPlugin sfms:mass_spec ;
     sf:providedByModule sfms:ntaModule ;
     skos:prefLabel "Filter feature MS2 spectra" ;
-    skos:definition "Clean feature MS2 spectra: remove blank contaminants, apply relative intensity and top-N limits." ;
+    skos:definition "Clean MS2 spectra for every analysis in the connected features table by removing blank contaminants, optionally removing peaks above each feature's precursor m/z, and applying intensity and top-N limits." ;
+    sf:guidance "The operation always processes all analyses in the connected featuresTable; there is no analysis-name selector. By default, peaks with m/z greater than the precursor feature m/z are removed because they are not expected to be product-ion fragments." ;
     sf:hasParameter
-        sfcore:analysisNamesParameter,
         sfms:topParameter,
         sfms:minIntensityMs2Parameter,
         sfms:relMinIntensityParameter,
         sfms:blankCleanParameter,
         sfms:mzClustParameter,
         sfms:blankPresenceThresholdParameter,
-        sfms:globalPresenceThresholdParameter ;
+        sfms:globalPresenceThresholdParameter,
+        sfms:removeAbovePrecursorMzParameter ;
     sf:hasInputPort sfms:featuresTable ;
     sf:hasOutputPort sfms:featuresTable, sfcore:operationSuccessSignal .
 

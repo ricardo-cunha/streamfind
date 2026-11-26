@@ -160,17 +160,7 @@ sfms:chromatogramsTable
     skos:definition "Persisted self-describing chromatogram point records for mass spectrometry analyses. Each point carries the channel metadata needed to identify its acquisition transition." ;
     sf:tableContractName "MASS_SPEC_CHROMATOGRAMS" ;
     sf:dataKind "table" ;
-    sf:navigationColumn
-        sfms:analysisNameColumn,
-        sfms:indexColumn,
-        sfms:precursorMzColumn,
-        sfms:productMzColumn,
-        sfms:chromatogramTypeColumn,
-        sfms:signalTypeColumn,
-        sfms:detectorColumn,
-        sfms:channelColumn,
-        sfms:wavelengthNmColumn,
-        sfms:polarityColumn ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:indexColumn, sfms:precursorMzColumn, sfms:productMzColumn, sfms:chromatogramTypeColumn, sfms:signalTypeColumn, sfms:detectorColumn, sfms:channelColumn, sfms:wavelengthNmColumn, sfms:polarityColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:indexColumn,
@@ -199,17 +189,7 @@ sfms:chromatogramPeaksTable
     skos:definition "Persisted chromatographic peak records. Detector-independent: one self-describing row per detected peak within a chromatogram, including channel metadata and optional padded EIC arrays." ;
     sf:tableContractName "MASS_SPEC_CHROMATOGRAM_PEAKS" ;
     sf:dataKind "table" ;
-    sf:navigationColumn
-        sfms:analysisNameColumn,
-        sfms:chromatogramIndexColumn,
-        sfms:precursorMzColumn,
-        sfms:productMzColumn,
-        sfms:chromatogramTypeColumn,
-        sfms:signalTypeColumn,
-        sfms:detectorColumn,
-        sfms:channelColumn,
-        sfms:wavelengthNmColumn,
-        sfms:polarityColumn ;
+    sf:navigationColumn sfms:analysisNameColumn, sfms:chromatogramIndexColumn, sfms:precursorMzColumn, sfms:productMzColumn, sfms:chromatogramTypeColumn, sfms:signalTypeColumn, sfms:detectorColumn, sfms:channelColumn, sfms:wavelengthNmColumn, sfms:polarityColumn ;
     sf:hasColumn
         sfms:analysisNameColumn,
         sfms:chromatogramIndexColumn,

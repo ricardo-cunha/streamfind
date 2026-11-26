@@ -1163,7 +1163,13 @@ Json ResultStore::scan_arrow_scalar_filters(const std::string &result_id,
     }
     if (search.empty() && sort_column.empty() && navigation_index.is_object() &&
         navigation_index.value("version", 0) == 1 &&
-        navigation_index.value("entries", Json{}).is_array()) {
+        navigation_index.value("entries", Json{}).is_array() &&
+        std::all_of(filters.begin(), filters.end(), [&](const Json &filter) {
+            if (!filter.is_object() || !filter.value("column", Json{}).is_string()) return false;
+            const auto column = filter.at("column").get<std::string>();
+            return std::any_of(navigation_index.at("entries").begin(), navigation_index.at("entries").end(),
+                               [&](const Json &entry) { return entry.is_object() && entry.contains(column); });
+        })) {
         std::unordered_set<std::string> indexed_columns;
         for (const auto &entry : navigation_index.at("entries"))
             if (entry.is_object()) for (auto it = entry.begin(); it != entry.end(); ++it)

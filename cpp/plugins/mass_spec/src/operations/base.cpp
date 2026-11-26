@@ -272,9 +272,7 @@ namespace streamfind::mass_spec::base
             {
                 file.select_analysis(descriptor.analysis_index);
                 const auto summary = file.get_summary();
-                const auto analysis = catalog.size() == 1
-                                          ? path.stem().string()
-                                          : path.stem().string() + "_" + descriptor.name;
+                const std::string analysis = path.stem().string() + "_" + descriptor.name;
                 analysis_rows.push_back({analysis, std::to_string(descriptor.analysis_index),
                                          std::to_string(descriptor.source_analysis_number),
                                          replicate, blank, path.filename().string(), path.string(), path.parent_path().string(),
@@ -939,13 +937,23 @@ namespace streamfind::mass_spec::base
                         continue;
                     bool possible = false;
                     for (const auto *target : active_targets)
+                    {
+                        const auto low_mz = source_headers.lowmz[header_index];
+                        const auto high_mz = source_headers.highmz[header_index];
+                        // TOF readers may not know the spectrum m/z bounds
+                        // until the compressed payload is decoded. Treat the
+                        // placeholder range as unknown so targeted EIC does
+                        // not discard every scan before decoding.
+                        const bool unknown_mz_range = !std::isfinite(low_mz) || !std::isfinite(high_mz) || high_mz <= low_mz;
                         if (base::utils::target_may_match_spectrum(*target, analysis, source_headers.polarity[header_index], level,
-                                                                    source_headers.rt[header_index], source_headers.lowmz[header_index],
-                                                                    source_headers.highmz[header_index]))
+                                                                    source_headers.rt[header_index],
+                                                                    unknown_mz_range ? -std::numeric_limits<float>::infinity() : low_mz,
+                                                                    unknown_mz_range ? std::numeric_limits<float>::infinity() : high_mz))
                         {
                             possible = true;
                             break;
                         }
+                    }
                     if (possible)
                         selected_indices.push_back(source_headers.index[header_index]);
                 }

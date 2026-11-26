@@ -481,7 +481,24 @@ function evidenceSpec(
     const databaseCount = Math.min(databaseMz.length, databaseIntensity.length);
     if (!experimentalCount && !databaseCount) return null;
     const experimentalMax = Math.max(...experimentalIntensity.slice(0, experimentalCount), 0);
-    const databaseMax = Math.max(...databaseIntensity.slice(0, databaseCount), 0);
+    // MetFrag's ExplPeaks intensities are internally rescaled values. They
+    // preserve the explained-peak ordering but are not on the raw WIFF
+    // intensity scale. Recover the original experimental intensity for each
+    // explained m/z so both mirror traces use one physically meaningful scale.
+    const explainedExperimentalIntensity = databaseMz.slice(0, databaseCount).map((mz, index) => {
+      let bestIndex = -1;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (let experimentalIndex = 0; experimentalIndex < experimentalCount; experimentalIndex += 1) {
+        const distance = Math.abs(experimentalMz[experimentalIndex] - mz);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = experimentalIndex;
+        }
+      }
+      return bestIndex >= 0 && bestDistance <= 0.05
+        ? experimentalIntensity[bestIndex]
+        : databaseIntensity[index];
+    });
     if (experimentalCount > 0)
       data.push({
         type: 'scatter',
@@ -497,20 +514,29 @@ function evidenceSpec(
       data.push({
         type: 'scatter',
         mode: 'lines',
-        name: 'Database MS2',
+        name: 'MetFrag explained MS2',
         x: databaseMz.slice(0, databaseCount).flatMap((value) => [value, value, null]),
-        y: databaseIntensity
+        y: explainedExperimentalIntensity
           .slice(0, databaseCount)
-          .flatMap((value) => [0, databaseMax > 0 ? -value / databaseMax : 0, null]),
+          .flatMap((value) => [0, experimentalMax > 0 ? -value / experimentalMax : 0, null]),
         customdata: databaseMz.slice(0, databaseCount).flatMap((_, index) => {
           const formula = databaseFormulas[index]?.trim() || 'Formula unavailable';
-          return [formula, formula, null];
+          return [
+            [formula, explainedExperimentalIntensity[index], databaseIntensity[index]],
+            [formula, explainedExperimentalIntensity[index], databaseIntensity[index]],
+            [formula, null, null],
+          ];
         }),
         hovertemplate:
-          'Database fragment formula: %{customdata}<br>m/z %{x:.5f}<br>Relative intensity %{y:.4f}<extra></extra>',
+          'MetFrag explained fragment<br>' +
+          'Formula: %{customdata[0]}<br>' +
+          'm/z: %{x:.5f}<br>' +
+          'Original experimental intensity: %{customdata[1]:.2f}<br>' +
+          'MetFrag reported intensity: %{customdata[2]:.2f}<br>' +
+          'Shared-scale intensity: %{y:.4f}<extra></extra>',
         line: { color: theme.reference, width: 1 },
       });
-    yTitle = 'Relative intensity (experimental + / database −)';
+    yTitle = 'Relative intensity (shared experimental scale; explained −)';
   }
   const showLegend = data.length > 1;
   const maxLabelLength = data.reduce((maximum, trace) => {
@@ -692,7 +718,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
         result_id: suspectsArtifactId,
         columns: overviewColumns,
         filters: overviewColumns?.includes('filtered')
-          ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
+          ? [{ column: 'filtered', operator: 'neq' as const, value: true }]
           : undefined,
       } as const;
       // Load the scatter overview once. A page-then-sample sequence caused
@@ -757,7 +783,7 @@ export function SuspectsExplorer({ context }: ViewerComponentProps): ReactNode {
           filters: [
             ...buildSuspectQueryFilters(numericFilters, booleanFilters, textFilters, isotopeOnly),
             ...(!showFiltered && overviewColumns?.includes('filtered')
-              ? [{ column: 'filtered', operator: 'neq' as const, value: 'true' }]
+              ? [{ column: 'filtered', operator: 'neq' as const, value: true }]
               : []),
             ...(viewport
               ? [

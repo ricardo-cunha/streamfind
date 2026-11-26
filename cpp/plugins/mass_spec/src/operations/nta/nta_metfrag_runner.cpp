@@ -410,13 +410,12 @@ namespace streamfind::mass_spec::nta::metfrag_runner
 #endif
   }
 
-  void forward_metfrag_log(::streamfind::sdk::PluginProjectAccess &access,
-                           const std::string &log_path)
+  void forward_metfrag_log(const std::string &log_path)
   {
     std::ifstream input(log_path);
     std::string line;
     while (std::getline(input, line))
-      if (!line.empty()) access.report_progress(0.0, line);
+      if (!line.empty()) std::cerr << "[metfrag] " << line << std::endl;
   }
 
   // ── CSV parsing ───────────────────────────────────────────────────────────
@@ -592,6 +591,23 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     std::string expl_aromatic_smiles;
   };
 
+  void report_metfrag_fragments(
+      const std::string &analysis,
+      const std::string &feature,
+      const std::vector<MetFragRow> &rows)
+  {
+    for (const auto &row : rows)
+    {
+      const std::string name = row.name.empty() ? row.identifier : row.name;
+      std::cerr << "[metfrag] fragments | analysis=" << analysis
+                << " | feature=" << feature
+                << " | candidate=" << name
+                << " | explained_peaks=" << (row.expl_peaks.empty() ? "none" : row.expl_peaks)
+                << " | formulas=" << (row.expl_formulas.empty() ? "none" : row.expl_formulas)
+                << std::endl;
+    }
+  }
+
   const SuspectQuery *find_target_metadata(
       const MetFragRow &row,
       const std::vector<SuspectQuery> &targets)
@@ -601,7 +617,13 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       if (!row.InChIKey.empty() && !target.InChIKey.empty() &&
           row.InChIKey == target.InChIKey)
         return &target;
-      if (!row.formula.empty() && row.formula == target.formula &&
+      // Formula and neutral mass are not unique for isomers. Only use this
+      // fallback when MetFrag supplied no identity fields at all; otherwise
+      // a conflicting InChIKey/name must not be rebound to another target
+      // sharing the same formula and mass.
+      const bool has_identity = !row.InChIKey.empty() || !row.InChI.empty() ||
+          !row.SMILES.empty() || !row.name.empty();
+      if (!has_identity && !row.formula.empty() && row.formula == target.formula &&
           std::isfinite(row.neutral_mass) && target.has_mass &&
           std::abs(row.neutral_mass - target.mass) <= 1e-6)
         return &target;
@@ -820,11 +842,17 @@ namespace streamfind::mass_spec::nta::metfrag_runner
       { psv_path = cand; break; }
     }
 
-    // Parse CSV for full candidate data.
-    std::vector<MetFragRow> out = parse_metfrag_file(csv_path, false);
+    // Parse CSV for full candidate data when MetFrag emitted one. In the
+    // parameter-file mode used by the packaged MetFragCL, the per-feature
+    // candidate output is commonly PSV-only; that PSV contains the same
+    // candidate fields as CSV plus the fragment SMILES columns and must be
+    // parsed as the primary result rather than as a SMILES supplement.
+    std::vector<MetFragRow> out = !csv_path.empty()
+        ? parse_metfrag_file(csv_path, false)
+        : parse_metfrag_file(psv_path, false);
 
     // Supplement fragment SMILES from PSV (overwrites empty CSV SMILES).
-    if (!psv_path.empty())
+    if (!psv_path.empty() && !csv_path.empty())
     {
       std::vector<MetFragRow> psv_rows = parse_metfrag_file(psv_path, true);
       if (psv_rows.size() == out.size())
@@ -1282,7 +1310,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     // overrides the parameter default during JSON deserialization. Treat that
     // value as the operation default so those projects remain runnable.
     if (out.pre_processing_candidate_filter.empty())
-      out.pre_processing_candidate_filter = {"UnconnectedCompoundFilter", "IsotopeFilter"};
+      out.pre_processing_candidate_filter = {"UnconnectedCompoundFilter"};
     if (out.candidate_writer.empty())
       throw std::invalid_argument("MetFrag candidate_writer must not be empty.");
     for (const auto &writer : out.candidate_writer)
@@ -1380,7 +1408,11 @@ namespace streamfind::mass_spec::nta::metfrag_runner
     std::mutex deferred_cleanup_mutex;
     auto defer_cleanup = [&](const std::string &path)
     {
-      if (path.empty() || path == shared_empty_peak_list)
+      // Debug runs intentionally retain the exact MetFrag inputs and outputs
+      // so that an empty candidate file can be compared with a direct
+      // MetFrag invocation.  Normal runs still remove per-feature scratch
+      // files after all worker futures have completed.
+      if (params.debug || path.empty() || path == shared_empty_peak_list)
         return;
       std::lock_guard<std::mutex> lock(deferred_cleanup_mutex);
       deferred_cleanup.push_back(path);
@@ -1588,6 +1620,14 @@ namespace streamfind::mass_spec::nta::metfrag_runner
               std::to_string(result.status) + "; inspect " + log_path +
               ". No partial results were published.");
           rows = parse_metfrag_output(run_dir, sample_name, params.top_n);
+          // Keep the operation log focused on aggregate progress. Detailed
+          // MetFrag output remains available in the feature log files and is
+          // forwarded to stderr only for explicit debug runs.
+          if (params.debug)
+          {
+            forward_metfrag_log(log_path);
+            report_metfrag_fragments(ana, feats.feature[fi], rows);
+          }
           if (params.cache_candidates)
           {
             std::lock_guard<std::mutex> lock(candidate_cache_mutex);
@@ -1598,14 +1638,20 @@ namespace streamfind::mass_spec::nta::metfrag_runner
         // A local target database can contain multiple compounds with nearby
         // masses but different reference RTs. Retain only the target hits that
         // passed the same mass/RT shortlist used to schedule this feature.
-        // Keep unlinked MetFrag rows: some database exports omit identifiers
-        // needed by find_target_metadata, while MetFrag has already applied
-        // the configured precursor-mass tolerance to those rows.
+        // For an explicit target list, every MetFrag row must resolve to the
+        // feature's mass/RT-shortlisted target. Keeping an unresolved row
+        // would re-introduce isomeric candidates that were deliberately
+        // excluded by the shortlist (for example Iomeprol-D3 versus
+        // Iopamidol-D3).
         if (has_target_list && !rows.empty())
         {
           rows.erase(std::remove_if(rows.begin(), rows.end(), [&](const MetFragRow &row) {
-            const SuspectQuery *target = find_target_metadata(row, params.suspect_targets);
-            return target != nullptr &&
+            // Match candidates only against the targets shortlisted for this
+            // feature. Isomeric targets can share formula and monoisotopic
+            // mass; searching the complete target list can associate a row
+            // with the wrong RT target before the RT filter is applied.
+            const SuspectQuery *target = find_target_metadata(row, feature_targets);
+            return target == nullptr ||
               !target_matches_feature(*target, precursor_mass, feature_rt,
                                       params.ppm, params.sec);
           }), rows.end());
@@ -1641,7 +1687,7 @@ namespace streamfind::mass_spec::nta::metfrag_runner
           db_intf.reserve(db_int.size());
           for (const double value : db_int) db_intf.push_back(static_cast<float>(value));
 
-          const SuspectQuery *target = find_target_metadata(row, params.suspect_targets);
+          const SuspectQuery *target = find_target_metadata(row, feature_targets);
           // Every candidate source must use the same isotope scorer. Database
           // candidates are normally absent from suspect_targets, so construct
           // equivalent metadata from the MetFrag row. Some database exports
@@ -1927,8 +1973,7 @@ using Json = nlohmann::json;
             score_weights.push_back(v.get<double>());
         std::vector<std::string> pre_processing_candidate_filter;
         for (const auto &v : parameters.value("pre_processing_candidate_filter",
-                                              Json::array({Json("UnconnectedCompoundFilter"),
-                                                           Json("IsotopeFilter")})))
+                                              Json::array({Json("UnconnectedCompoundFilter")})))
             pre_processing_candidate_filter.push_back(v.get<std::string>());
         std::vector<std::string> post_processing_candidate_filter;
         for (const auto &v : parameters.value("post_processing_candidate_filter", Json::array({Json("InChIKeyFilter")})))
@@ -1945,8 +1990,7 @@ using Json = nlohmann::json;
             ? std::string("LocalCSV")
             : metfrag_runner::canonicalize_database_type(
                 parameters.value("database_type", std::string("LocalCSV")));
-        // `debug` is accepted for schema parity; the runner keeps the inspectable
-        // PSV output for features with candidates regardless (R never forwards it).
+        const bool debug = parameters.value("debug", false);
 
         if (ppm < 0 || isotope_ppm < 0 || sec < 0 || ppm_ms2 < 0 || mzr_ms2 < 0)
             throw Error(ErrorCode::InvalidArgument, "invalid metfrag_screening parameters: ppm, sec, ppm_ms2, and mzr_ms2 must be >= 0");
@@ -2069,6 +2113,7 @@ using Json = nlohmann::json;
         p.number_threads = number_threads;
         p.use_smiles = use_smiles;
         p.filtered = filtered;
+        p.debug = debug;
         if (const auto *project_database_path = std::getenv("STREAMFIND_PROJECT_DATABASE_PATH"))
           p.project_database_path = project_database_path;
         p.operation_id = output_internal_standards

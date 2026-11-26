@@ -203,6 +203,9 @@ export default function CanvasShell({
   );
   const workflowLoaded = surface !== 'workflow' || !client || loadedWorkflowKey === workflowLoadKey;
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
+  const currentWorkflowFingerprintRef = useRef('');
+  const workflowDirtyRef = useRef(false);
+  const savingWorkflowRef = useRef(false);
   const artifactsLoadedRef = useRef(false);
   const currentResultsRef = useRef<ResultRecord[]>([]);
   const artifactsRefreshInFlightRef = useRef<Promise<ResultRecord[]> | null>(null);
@@ -496,6 +499,11 @@ export default function CanvasShell({
 
   const workflowDirty =
     workflowLoaded && savedWorkflowFingerprint !== null && currentWorkflowFingerprint !== savedWorkflowFingerprint;
+  useEffect(() => {
+    currentWorkflowFingerprintRef.current = currentWorkflowFingerprint;
+    workflowDirtyRef.current = workflowDirty;
+    savingWorkflowRef.current = savingWorkflow;
+  }, [currentWorkflowFingerprint, savingWorkflow, workflowDirty]);
 
   const applyWorkflowEvent = useCallback(
     (event: StreamFindEvent) => {
@@ -626,13 +634,13 @@ export default function CanvasShell({
           const changedMetadata = changedWorkflow.metadata || {};
           const revision = Number(changedWorkflow.version);
           const localDefinitionMatches =
-            changedFingerprint === currentWorkflowFingerprint &&
+            changedFingerprint === currentWorkflowFingerprintRef.current &&
             JSON.stringify(changedMetadata) === JSON.stringify(workflowMetadata);
           if (localDefinitionMatches) {
             setWorkflowRevision(revision);
             setWorkflowDefinitionRevision(changedWorkflow.definition_revision);
             setSavedWorkflowFingerprint(changedFingerprint);
-          } else if (workflowDirty || savingWorkflow) {
+          } else if (workflowDirtyRef.current || savingWorkflowRef.current) {
             setStatus(
               `Workflow changed in another client (revision ${revision}); local edits are preserved. Reload the workflow to view the external changes.`,
             );
@@ -683,15 +691,12 @@ export default function CanvasShell({
     },
     [
       appendLog,
-      currentWorkflowFingerprint,
       project.session_id,
       refreshArtifacts,
       resetActivityLog,
-      savingWorkflow,
       setStatus,
       setWorkflowReloadNonce,
       updateActiveWorker,
-      workflowDirty,
       workflowMetadata,
     ],
   );

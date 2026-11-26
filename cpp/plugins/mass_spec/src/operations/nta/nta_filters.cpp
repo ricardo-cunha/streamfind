@@ -972,7 +972,8 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
       bool blankClean,
       float mzClust,
       float blankPresenceThreshold,
-      float globalPresenceThreshold)
+      float globalPresenceThreshold,
+      bool removeAbovePrecursorMz)
   {
     const auto &analysis_names = nta_data.analysis_names();
     const auto &replicate_names = nta_data.replicate_names();
@@ -1087,6 +1088,27 @@ namespace streamfind::mass_spec::nta::filter_features_ms2
 
         if (mz.empty() || mz.size() != intensity.size())
           continue;
+
+        // Product ions should not have an m/z above the precursor feature m/z.
+        // Keep the option explicit because malformed or unusual source data may
+        // not contain a usable precursor value.
+        if (removeAbovePrecursorMz && std::isfinite(fts.mz[i]) && fts.mz[i] > 0.0f)
+        {
+          const float precursor_mz = fts.mz[i];
+          std::vector<float> fragment_mz, fragment_intensity;
+          fragment_mz.reserve(mz.size());
+          fragment_intensity.reserve(intensity.size());
+          for (size_t k = 0; k < mz.size(); ++k)
+          {
+            if (mz[k] <= precursor_mz)
+            {
+              fragment_mz.push_back(mz[k]);
+              fragment_intensity.push_back(intensity[k]);
+            }
+          }
+          mz = std::move(fragment_mz);
+          intensity = std::move(fragment_intensity);
+        }
 
         // Remove blank background peaks
         if (has_background)
@@ -1209,12 +1231,18 @@ using Json = nlohmann::json;
         const float mz_clust = parameters.value("mz_clust", 0.005);
         const float blank_presence_threshold = parameters.value("blank_presence_threshold", 0.8);
         const float global_presence_threshold = parameters.value("global_presence_threshold", 0.1);
+        const bool remove_above_precursor_mz = parameters.value("remove_above_precursor_mz", true);
         if (top < 0 || mz_clust < 0 || blank_presence_threshold < 0 || blank_presence_threshold > 1 ||
             global_presence_threshold < 0 || global_presence_threshold > 1)
             throw Error(ErrorCode::InvalidArgument, "invalid MS2 feature filtering parameters");
-        auto data = utils::detail::load_analysis_features(access, parameters);
+        // This operation always processes all analyses.  Erase the legacy
+        // selector so older saved workflows cannot accidentally restrict it.
+        Json all_analysis_parameters = parameters;
+        all_analysis_parameters.erase("analysis_names");
+        auto data = utils::detail::load_analysis_features(access, all_analysis_parameters);
         ::streamfind::mass_spec::nta::filter_features_ms2::filter_features_ms2_impl(data, top, min_intensity_ms2, rel_min_intensity,
-                                                           blank_clean, mz_clust, blank_presence_threshold, global_presence_threshold);
+                                                           blank_clean, mz_clust, blank_presence_threshold, global_presence_threshold,
+                                                           remove_above_precursor_mz);
         utils::detail::emit_features(access, data);
         return Json{{"status", "finished"}, {"info", "MS2 peak lists filtered."}};
     }

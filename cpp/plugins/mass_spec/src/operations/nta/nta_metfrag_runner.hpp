@@ -35,7 +35,7 @@ namespace streamfind::mass_spec::nta
       int         top_n          = 5;    ///< Max candidates kept per feature (top-ranked by score).
       std::vector<std::string> score_types = {"FragmenterScore"}; ///< MetFrag score types.
       std::vector<double> score_weights = {1.0}; ///< MetFrag score weights aligned with score_types.
-      std::vector<std::string> pre_processing_candidate_filter = {"UnconnectedCompoundFilter", "IsotopeFilter"}; ///< Candidate pre-filters.
+      std::vector<std::string> pre_processing_candidate_filter = {"UnconnectedCompoundFilter"}; ///< Candidate pre-filters.
       std::vector<std::string> post_processing_candidate_filter = {"InChIKeyFilter"}; ///< Candidate post-filters.
       std::vector<std::string> candidate_writer = {"CSV", "FragmentSmilesPSV"}; ///< Output writers (CSV for standard data, FragmentSmilesPSV for fragment SMILES).
       int         maximum_tree_depth = 2; ///< Maximum fragmentation tree depth.
@@ -46,6 +46,7 @@ namespace streamfind::mass_spec::nta
       bool        include_fragment_smiles = true; ///< Retain MetFrag fragment SMILES PSV output.
       bool        use_smiles = true; ///< Use SMILES rather than InChI for fragmentation.
       bool        filtered       = false;///< Include filtered features when true.
+      bool        debug          = false; ///< Retain per-feature MetFrag inputs and outputs.
       std::string java_path      = "java";///< Path to Java executable (used in JAR mode only).
       std::string run_dir;               ///< Directory for temp files and logs; created if absent.
       std::string project_database_path; ///< Project path used to locate the project-owned data directory.

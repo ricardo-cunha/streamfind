@@ -918,6 +918,17 @@ sfms:blankCleanParameter
     sf:default false ;
     sf:example true .
 
+sfms:removeAbovePrecursorMzParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Remove MS2 peaks above precursor m/z" ;
+    skos:definition "Remove MS2 peaks whose m/z is higher than the precursor m/z of the feature. Such peaks are not expected to be product-ion fragments." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default true ;
+    sf:example true .
+
 sfms:blankPresenceThresholdParameter
     a sf:Parameter ;
     sf:availableInPlugin sfms:mass_spec ;
@@ -1451,12 +1462,12 @@ sfms:preProcessingCandidateFilterParameter
     sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag pre-processing filters" ;
-    skos:definition "MetFrag candidate filters applied before scoring. An empty array is normalized to the operation defaults because MetFrag does not accept an empty pre-processing filter property." ;
+    skos:definition "MetFrag candidate filters applied before scoring. The operation default is UnconnectedCompoundFilter because isotope evidence is scored separately. An empty array is normalized to the operation default because MetFrag does not accept an empty pre-processing filter property." ;
     sf:type "array" ;
     sf:required false ;
-    sf:default "[\"UnconnectedCompoundFilter\", \"IsotopeFilter\"]" ;
+    sf:default "[\"UnconnectedCompoundFilter\"]" ;
     sf:items sfcore:stringItemParameter ;
-    sf:example "[\"UnconnectedCompoundFilter\", \"IsotopeFilter\"]" .
+    sf:example "[\"UnconnectedCompoundFilter\"]" .
 
 sfms:postProcessingCandidateFilterParameter
     a sf:Parameter ;

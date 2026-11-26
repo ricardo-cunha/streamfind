@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <fstream>
@@ -338,6 +339,64 @@ namespace mass_spec
       }
 
     } // namespace utils
+
+    namespace detail
+    {
+      constexpr float kProfileCentroidTolerance = 0.003f;
+
+      std::vector<std::vector<float>> centroid_profile_scan(
+          const std::vector<std::vector<float>> &scan, const float mz_tolerance)
+      {
+        if (scan.size() < 2 || scan[0].empty() || scan[1].empty() || mz_tolerance <= 0.0f)
+          return scan;
+
+        const auto count = std::min(scan[0].size(), scan[1].size());
+        std::vector<std::size_t> order;
+        order.reserve(count);
+        for (std::size_t i = 0; i < count; ++i)
+          if (std::isfinite(scan[0][i]) && std::isfinite(scan[1][i]) && scan[1][i] > 0.0f)
+            order.push_back(i);
+        bool sorted = true;
+        for (std::size_t i = 1; i < order.size(); ++i)
+          if (scan[0][order[i]] < scan[0][order[i - 1]])
+          {
+            sorted = false;
+            break;
+          }
+        if (!sorted)
+          std::sort(order.begin(), order.end(), [&](const std::size_t left, const std::size_t right) {
+            return scan[0][left] < scan[0][right];
+          });
+
+        std::vector<float> mz;
+        std::vector<float> intensity;
+        mz.reserve(order.size());
+        intensity.reserve(order.size());
+        std::size_t group_start = 0;
+        while (group_start < order.size())
+        {
+          std::size_t group_end = group_start + 1;
+          while (group_end < order.size() &&
+                 scan[0][order[group_end]] - scan[0][order[group_end - 1]] <= mz_tolerance &&
+                 scan[0][order[group_end]] - scan[0][order[group_start]] <= mz_tolerance)
+            ++group_end;
+
+          std::size_t apex = order[group_start];
+          for (std::size_t i = group_start; i < group_end; ++i)
+          {
+            const auto index = order[i];
+            if (scan[1][index] > scan[1][apex]) apex = index;
+          }
+          // Height/max peak picking: retain the measured apex trace. This
+          // avoids inventing an m/z between profile bins and avoids changing
+          // the measured peak height by summing neighboring traces.
+          mz.push_back(scan[0][apex]);
+          intensity.push_back(scan[1][apex]);
+          group_start = group_end;
+        }
+        return {std::move(mz), std::move(intensity)};
+      }
+    } // namespace detail
 
     namespace ole
     {
@@ -4048,7 +4107,18 @@ namespace mass_spec
         for (size_t raw_index = 0; raw_index < raw.size() && raw_index < batch_indices.size(); ++raw_index)
         {
           const size_t i = static_cast<size_t>(batch_indices[raw_index]);
-          const auto &scan = raw[raw_index];
+          std::vector<std::vector<float>> centroided_scan;
+          const std::vector<std::vector<float>> *scan_ptr = &raw[raw_index];
+          if (i < hd.array_length.size() && hd.array_length[i] < 0)
+          {
+            // SCIEX TOF WIFF scans expose compressed profile points while
+            // the feature-loading operations require centroid-like peaks.
+            // Keep raw get_spectra() unchanged and convert only at this
+            // targeted extraction boundary used by MS1/MS2 loading.
+            centroided_scan = detail::centroid_profile_scan(raw[raw_index], detail::kProfileCentroidTolerance);
+            scan_ptr = &centroided_scan;
+          }
+          const auto &scan = *scan_ptr;
           if (scan.size() < 2) continue;
           for (const size_t t : targets_by_scan[i])
           {

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
@@ -20,11 +21,25 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 
 namespace mass_spec::reader::sciex
 {
 namespace detail
 {
+std::atomic<int> tof_validation_budget{20};
+
+bool consume_tof_validation_budget()
+{
+  auto remaining = tof_validation_budget.load();
+  while (remaining > 0)
+  {
+    if (tof_validation_budget.compare_exchange_weak(remaining, remaining - 1))
+      return true;
+  }
+  return false;
+}
+
 std::uint32_t read_u32_le(const std::vector<std::uint8_t> &bytes, std::size_t offset)
 {
   if (offset > bytes.size() || bytes.size() - offset < 4)
@@ -269,7 +284,7 @@ MrmExperimentSeries build_compact_mrm_series_from_records(
   return series;
 }
 
-std::vector<ScanPoint> decode_scan_payload(const std::vector<std::uint8_t> &payload)
+std::vector<ScanPoint> decode_scan_payload(const std::vector<std::uint8_t> &payload, const std::uint32_t tdc_step = 4)
 {
   if (payload.size() < 8 || payload[0] != 0xff || payload[1] != 0xff || payload[2] != 0xff || payload[3] != 0xff)
     throw std::runtime_error("Sciex WIFF TOF payload has an invalid profile header.");
@@ -287,30 +302,63 @@ std::vector<ScanPoint> decode_scan_payload(const std::vector<std::uint8_t> &payl
     const auto token = payload[offset];
     if (token == 0xff)
       break;
-    const auto marker = static_cast<std::uint8_t>(token & 0x7f);
+
+    // TOF profile tokens have two different extended-token grammars.  The
+    // low-bit tokens encode a count; the high-bit tokens encode empty TDC
+    // steps.  In particular, FC/FD/FE are extended skip counts, not extended
+    // intensity counts. Treating both grammars through token & 0x7f shifts
+    // the TDC position after long empty regions and loses later high-m/z
+    // product-ion peaks.
+    const bool skip = (token & 0x80u) != 0;
     std::size_t width = 1;
-    std::uint32_t value = marker;
-    if (marker == 124) width = 2;
-    else if (marker == 125) width = 3;
-    else if (marker == 126) width = 5;
-    else if (marker == 127) throw std::runtime_error("Sciex WIFF TOF payload has an unsupported value marker.");
-    if (width > payload.size() - offset)
-      throw std::runtime_error("Sciex WIFF TOF payload has a truncated value.");
-    if (marker == 124) value = payload[offset + 1];
-    else if (marker == 125) value = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8);
-    else if (marker == 126) value = read_u32(offset + 1);
-    if ((token & 0x80) != 0)
+    std::uint32_t value = 0;
+    if (skip)
     {
-      if (value > (std::numeric_limits<std::uint32_t>::max() - mz_bin) / 4)
-        throw std::runtime_error("Sciex WIFF TOF time-bin overflows uint32.");
-      mz_bin += value * 4;
+      if (token <= 0xfb)
+        value = static_cast<std::uint32_t>(token - 0x80);
+      else if (token == 0xfc)
+        width = 2;
+      else if (token == 0xfd)
+        width = 3;
+      else if (token == 0xfe)
+        width = 5;
+      else
+        throw std::runtime_error("Sciex WIFF TOF payload has an unsupported skip marker.");
     }
     else
     {
-      if (value != 0) points.push_back({mz_bin, value});
-      if (mz_bin > std::numeric_limits<std::uint32_t>::max() - 4)
+      const auto marker = token;
+      value = marker;
+      if (marker == 124) width = 2;
+      else if (marker == 125) width = 3;
+      else if (marker == 126) width = 5;
+      else if (marker == 127) throw std::runtime_error("Sciex WIFF TOF payload has an unsupported value marker.");
+    }
+    if (width > payload.size() - offset)
+    {
+      // Some SCIEX files end a scan with an incomplete compression token.
+      // Preserve the decoded peaks and ignore only that trailing token rather
+      // than failing the complete analysis or EIC extraction.
+      break;
+    }
+    if (skip)
+    {
+      if (token == 0xfc) value = payload[offset + 1];
+      else if (token == 0xfd) value = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8);
+      else if (token == 0xfe) value = read_u32(offset + 1);
+      if (value > (std::numeric_limits<std::uint32_t>::max() - mz_bin) / tdc_step)
         throw std::runtime_error("Sciex WIFF TOF time-bin overflows uint32.");
-      mz_bin += 4;
+      mz_bin += value * tdc_step;
+    }
+    else
+    {
+      if (token == 0x7c) value = payload[offset + 1];
+      else if (token == 0x7d) value = static_cast<std::uint32_t>(payload[offset + 1]) | (static_cast<std::uint32_t>(payload[offset + 2]) << 8);
+      else if (token == 0x7e) value = read_u32(offset + 1);
+      if (value != 0) points.push_back({mz_bin, value});
+      if (mz_bin > std::numeric_limits<std::uint32_t>::max() - tdc_step)
+        throw std::runtime_error("Sciex WIFF TOF time-bin overflows uint32.");
+      mz_bin += tdc_step;
     }
     offset += width;
   }
@@ -318,7 +366,8 @@ std::vector<ScanPoint> decode_scan_payload(const std::vector<std::uint8_t> &payl
 }
 
 std::vector<ScanPoint> read_scan_points(const std::string &wiff_path, const IdxRecord &record,
-                                        const IdxRecord *next_record, const std::size_t sample_base)
+                                        const IdxRecord *next_record, const std::size_t sample_base,
+                                        const std::uint32_t tdc_step)
 {
   std::ifstream input(scan_path_for_wiff(wiff_path), std::ios::binary);
   if (!input)
@@ -333,7 +382,11 @@ std::vector<ScanPoint> read_scan_points(const std::string &wiff_path, const IdxR
     return left + right;
   };
   const std::size_t payload_start = checked_add(checked_add(sample_base, record.scan_offset, "payload"), 24, "payload");
-  const std::size_t own_end = checked_add(checked_add(sample_base, record.scan_offset, "scan"), record.scan_size, "scan");
+  // Idx offsets and lengths are relative to the data area immediately after
+  // the 24-byte sample-block header.  Include that same base when computing
+  // the end; omitting it truncated the final 24 bytes of every compressed
+  // scan and disproportionately removed high-m/z product-ion peaks.
+  const std::size_t own_end = checked_add(payload_start, record.scan_size, "scan");
   const std::size_t end = std::min(own_end, static_cast<std::size_t>(file_size));
   if (end <= payload_start)
     return {};
@@ -342,90 +395,124 @@ std::vector<ScanPoint> read_scan_points(const std::string &wiff_path, const IdxR
   input.read(reinterpret_cast<char *>(payload.data()), static_cast<std::streamsize>(payload.size()));
   if (!input)
     throw std::runtime_error("SCIEX WIFF scan payload is truncated.");
-  return decode_scan_payload(payload);
+  return decode_scan_payload(payload, tdc_step);
 }
+
+struct TofDdeRecord
+{
+  float precursor_mz = 0.0f;
+  float precursor_intensity = 0.0f;
+  std::uint32_t time_ms = 0;
+  std::uint32_t position = 0;
+  std::uint32_t cycle = 0;
+};
 
 struct TofMetadata
 {
   std::vector<IdxRecord> records;
   double slope = 0.0;
   double intercept = 0.0;
+  double tdc_bin_width_ns = 0.025;
+  std::uint32_t tdc_step = 4;
+  std::vector<std::uint32_t> tdc_steps;
+  std::vector<std::pair<double, double>> scan_calibrations;
   std::size_t experiment_count = 1;
   std::size_t sample_base = 0;
-  std::vector<float> dde_precursors;
-  std::vector<float> dde_precursor_intensities;
+  std::vector<TofDdeRecord> dde_records;
 };
 
-std::vector<float> read_tof_dde_precursors(const std::string &wiff_path, int source_analysis_number)
+std::vector<TofDdeRecord> read_tof_dde_records(const std::string &wiff_path, int source_analysis_number)
 {
   std::vector<std::uint8_t> bytes;
+  bool extended = true;
   try
   {
     bytes = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/DDERealTimeDataEx");
   }
   catch (const std::exception &)
   {
-    try { bytes = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/DDERealTimeData"); }
+    try { bytes = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/DDERealTimeData"); extended = false; }
     catch (const std::exception &) { return {}; }
   }
-  const bool alternate = bytes.size() >= 32 && (bytes.size() - 32) % 32 == 0;
-  const std::size_t stride = alternate ? 32 : 76;
-  const std::size_t value_offset = alternate ? 0 : 4;
-  std::vector<float> result;
+  const std::size_t stride = extended ? 76 : 32;
+  std::vector<TofDdeRecord> result;
   for (std::size_t offset = 32; offset + stride <= bytes.size(); offset += stride)
   {
-    const auto value = detail::read_f64_le(bytes, offset + value_offset);
-    if (std::isfinite(value) && value > 0.0 && value < 5000.0)
-      result.push_back(static_cast<float>(value));
+    const auto value = detail::read_f64_le(bytes, offset + (extended ? 4 : 0));
+    if (!std::isfinite(value) || value <= 0.0 || value >= 5000.0)
+      continue;
+    TofDdeRecord record;
+    record.precursor_mz = static_cast<float>(value);
+    if (extended)
+    {
+      record.time_ms = detail::read_u32_le(bytes, offset + 12);
+      record.precursor_intensity = detail::read_f32_le(bytes, offset + 26);
+      record.position = detail::read_u32_le(bytes, offset + 40);
+      record.cycle = detail::read_u32_le(bytes, offset + 44);
+    }
+    else
+    {
+      const auto intensity = detail::read_f64_le(bytes, offset + 16);
+      record.precursor_intensity = std::isfinite(intensity) ? static_cast<float>(intensity) : 0.0f;
+    }
+    result.push_back(record);
   }
   return result;
 }
 
-std::vector<float> read_tof_dde_precursor_intensities(const std::string &wiff_path, int source_analysis_number)
+std::uint32_t read_tof_tdc_step(const std::string &wiff_path, const int experiment)
 {
-  try
+  const auto suffix = "/period0/experiment" + std::to_string(experiment) + "/experimentheaderex";
+  for (const auto &stream : ole::list_streams(wiff_path))
   {
-    const auto bytes = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/DDERealTimeData");
-    std::vector<float> result;
-    for (std::size_t offset = 32; offset + 32 <= bytes.size(); offset += 32)
+    if (!stream.normalized_path.starts_with("methodsubtree/method") || !stream.normalized_path.ends_with(suffix))
+      continue;
+    try
     {
-      const auto precursor = detail::read_f64_le(bytes, offset);
-      if (std::isfinite(precursor) && precursor > 0.0 && precursor < 5000.0)
-        result.push_back(static_cast<float>(detail::read_f64_le(bytes, offset + 16)));
+      const auto bytes = ole::read_stream(wiff_path, stream.normalized_path);
+      if (bytes.size() >= 0x3c)
+      {
+        const auto step = detail::read_u32_le(bytes, 0x38);
+        if (step > 0 && step <= 1024)
+          return step;
+      }
     }
-    return result;
+    catch (const std::exception &)
+    {
+    }
   }
-  catch (const std::exception &)
-  {
-    return {};
-  }
+  return 4;
+}
+
+const TofDdeRecord *tof_dde_record_for_position(const TofMetadata &metadata, const std::size_t position)
+{
+  if (position >= metadata.records.size() || metadata.experiment_count == 0)
+    return nullptr;
+  const auto source_index = metadata.records[position].source_index;
+  const auto experiment = source_index % metadata.experiment_count;
+  if (experiment == 0)
+    return nullptr;
+  const auto cycle = source_index / metadata.experiment_count;
+  for (const auto &record : metadata.dde_records)
+    if (record.cycle == cycle && (record.position == experiment || record.position == experiment + 1))
+      return &record;
+  std::size_t ordinal = 0;
+  for (std::size_t index = 0; index <= position; ++index)
+    if (metadata.records[index].source_index % metadata.experiment_count != 0)
+      ++ordinal;
+  return ordinal == 0 || ordinal > metadata.dde_records.size() ? nullptr : &metadata.dde_records[ordinal - 1];
 }
 
 float tof_precursor_for_position(const TofMetadata &metadata, std::size_t position)
 {
-  if (position >= metadata.records.size() || metadata.records[position].source_index % metadata.experiment_count == 0)
-    return 0.0f;
-  std::size_t ms2_index = 0;
-  for (std::size_t index = 0; index <= position; ++index)
-  {
-    const auto record_is_ms1 = metadata.experiment_count > 1 ? metadata.records[index].source_index % metadata.experiment_count == 0 : metadata.records[index].ms_level_flag == 1;
-    if (!record_is_ms1) ++ms2_index;
-  }
-  return ms2_index == 0 || ms2_index - 1 >= metadata.dde_precursors.size() ? 0.0f : metadata.dde_precursors[ms2_index - 1];
+  const auto *record = tof_dde_record_for_position(metadata, position);
+  return record == nullptr ? 0.0f : record->precursor_mz;
 }
 
 float tof_precursor_intensity_for_position(const TofMetadata &metadata, std::size_t position)
 {
-  if (position >= metadata.records.size()) return 0.0f;
-  const auto is_ms1 = metadata.experiment_count > 1 ? metadata.records[position].source_index % metadata.experiment_count == 0 : metadata.records[position].ms_level_flag == 1;
-  if (is_ms1) return 0.0f;
-  std::size_t ms2_index = 0;
-  for (std::size_t index = 0; index <= position; ++index)
-  {
-    const auto record_is_ms1 = metadata.experiment_count > 1 ? metadata.records[index].source_index % metadata.experiment_count == 0 : metadata.records[index].ms_level_flag == 1;
-    if (!record_is_ms1) ++ms2_index;
-  }
-  return ms2_index == 0 || ms2_index - 1 >= metadata.dde_precursor_intensities.size() ? 0.0f : metadata.dde_precursor_intensities[ms2_index - 1];
+  const auto *record = tof_dde_record_for_position(metadata, position);
+  return record == nullptr ? 0.0f : record->precursor_intensity;
 }
 
 TofMetadata read_tof_metadata(const std::string &wiff_path, int source_analysis_number)
@@ -439,6 +526,37 @@ TofMetadata read_tof_metadata(const std::string &wiff_path, int source_analysis_
   std::memcpy(&metadata.intercept, calibration.data() + 40, sizeof(double));
   if (!std::isfinite(metadata.slope) || !std::isfinite(metadata.intercept) || metadata.slope == 0.0)
     throw std::runtime_error("SCIEX TOF calibration contains invalid slope or intercept.");
+  if (calibration.size() >= 56)
+  {
+    const auto calibration_count = static_cast<std::size_t>(detail::read_u32_le(calibration, 52));
+    const auto available_count = (calibration.size() - 56) / 20;
+    const auto count = std::min(calibration_count, available_count);
+    metadata.scan_calibrations.reserve(count);
+    for (std::size_t index = 0; index < count; ++index)
+    {
+      const auto offset = 56 + index * 20;
+      const auto slope = detail::read_f64_le(calibration, offset);
+      const auto intercept = detail::read_f64_le(calibration, offset + 8);
+      if (std::isfinite(slope) && std::isfinite(intercept) && slope != 0.0)
+        metadata.scan_calibrations.emplace_back(slope, intercept);
+      else
+        metadata.scan_calibrations.emplace_back(metadata.slope, metadata.intercept);
+    }
+  }
+  try
+  {
+    const auto tdc_info = ole::read_stream(
+        wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/TDCInfo");
+    if (tdc_info.size() >= 40)
+    {
+      const auto width = detail::read_f64_le(tdc_info, 32);
+      if (std::isfinite(width) && width > 0.0 && width < 100.0)
+        metadata.tdc_bin_width_ns = width;
+    }
+  }
+  catch (const std::exception &)
+  {
+  }
   metadata.records = read_idx_records(wiff_path, source_analysis_number);
   metadata.sample_base = detail::sample_block_offset(detail::read_file(scan_path_for_wiff(wiff_path)), static_cast<std::uint32_t>(source_analysis_number));
   if (metadata.records.size() >= 2)
@@ -452,17 +570,22 @@ TofMetadata read_tof_metadata(const std::string &wiff_path, int source_analysis_
       metadata.experiment_count = i;
       break;
     }
-  metadata.dde_precursors = read_tof_dde_precursors(wiff_path, source_analysis_number);
-  metadata.dde_precursor_intensities = read_tof_dde_precursor_intensities(wiff_path, source_analysis_number);
+  metadata.tdc_step = read_tof_tdc_step(wiff_path, 0);
+  metadata.tdc_steps.assign(metadata.experiment_count, metadata.tdc_step);
+  for (std::size_t experiment = 0; experiment < metadata.experiment_count; ++experiment)
+    metadata.tdc_steps[experiment] = read_tof_tdc_step(wiff_path, static_cast<int>(experiment));
+  metadata.dde_records = read_tof_dde_records(wiff_path, source_analysis_number);
   return metadata;
 }
 
 MASS_SPEC_SPECTRUM decode_tof_spectrum(const std::string &wiff_path, const TofMetadata &metadata, std::size_t position)
 {
   const auto &record = metadata.records.at(position);
-  const auto points = read_scan_points(wiff_path, record, position + 1 < metadata.records.size() ? &metadata.records[position + 1] : nullptr, metadata.sample_base);
-  MASS_SPEC_SPECTRUM spectrum{};
   const bool is_ms1 = metadata.experiment_count > 1 ? record.source_index % metadata.experiment_count == 0 : record.ms_level_flag == 1;
+  const auto experiment = metadata.experiment_count > 1 ? record.source_index % metadata.experiment_count : 0;
+  const auto tdc_step = experiment < metadata.tdc_steps.size() ? metadata.tdc_steps[experiment] : metadata.tdc_step;
+  const auto points = read_scan_points(wiff_path, record, position + 1 < metadata.records.size() ? &metadata.records[position + 1] : nullptr, metadata.sample_base, tdc_step);
+  MASS_SPEC_SPECTRUM spectrum{};
   spectrum.index = static_cast<int>(position);
   spectrum.scan = static_cast<int>(record.source_index);
   spectrum.array_length = static_cast<int>(points.size());
@@ -477,15 +600,23 @@ MASS_SPEC_SPECTRUM decode_tof_spectrum(const std::string &wiff_path, const TofMe
   spectrum.binary_data.resize(2);
   spectrum.binary_data[0].reserve(points.size());
   spectrum.binary_data[1].reserve(points.size());
+  std::uint32_t apex_bin = 0;
   if (!is_ms1)
   {
     spectrum.precursor_mz = tof_precursor_for_position(metadata, position);
     spectrum.precursor_intensity = tof_precursor_intensity_for_position(metadata, position);
   }
+  double slope = metadata.slope;
+  double intercept = metadata.intercept;
+  if (record.source_index < metadata.scan_calibrations.size())
+  {
+    slope = metadata.scan_calibrations[record.source_index].first;
+    intercept = metadata.scan_calibrations[record.source_index].second;
+  }
   for (const auto &point : points)
   {
-    const double calibrated_time = static_cast<double>(point.raw_mz_bin) * 0.025 - metadata.intercept;
-    const float mz = static_cast<float>((metadata.slope * calibrated_time) * (metadata.slope * calibrated_time));
+    const double tof_ns = metadata.tdc_bin_width_ns * static_cast<double>(point.raw_mz_bin);
+    const float mz = static_cast<float>((slope * (tof_ns - intercept)) * (slope * (tof_ns - intercept)));
     const float intensity = static_cast<float>(point.raw_intensity);
     spectrum.binary_data[0].push_back(mz);
     spectrum.binary_data[1].push_back(intensity);
@@ -494,8 +625,19 @@ MASS_SPEC_SPECTRUM decode_tof_spectrum(const std::string &wiff_path, const TofMe
     {
       spectrum.bpint = intensity;
       spectrum.bpmz = mz;
+      apex_bin = point.raw_mz_bin;
     }
   }
+  const bool tic_mismatch = record.tic > 0.0 &&
+                            std::fabs(static_cast<double>(spectrum.tic) - record.tic) >
+                                std::max(1.0, std::fabs(record.tic) * 0.001);
+  const bool apex_mismatch = record.grid_field > 0.0 &&
+                             std::fabs(record.grid_field - static_cast<double>(apex_bin)) >
+                                 static_cast<double>(tdc_step);
+  if ((tic_mismatch || apex_mismatch) && detail::consume_tof_validation_budget())
+    std::cerr << "[SciexReader] TOF validation mismatch for scan " << record.source_index
+              << ": TIC=" << spectrum.tic << "/" << record.tic
+              << ", base-bin=" << apex_bin << "/" << record.grid_field << std::endl;
   if (!spectrum.binary_data[0].empty())
   {
     spectrum.lowmz = spectrum.binary_data[0].front();
@@ -536,14 +678,38 @@ std::vector<ScanBlock> read_scan_blocks(const std::string &wiff_path)
 
 std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_path)
 {
-  const auto blocks = read_scan_blocks(wiff_path);
+  std::set<int> sample_numbers;
+  for (const auto &stream : ole::list_streams(wiff_path))
+  {
+    constexpr std::string_view prefix = "samplesubtree/sample";
+    constexpr std::string_view suffix = "/idx";
+    if (!stream.normalized_path.starts_with(prefix) || !stream.normalized_path.ends_with(suffix))
+      continue;
+    const auto number_begin = prefix.size();
+    const auto number_end = stream.normalized_path.size() - suffix.size();
+    if (number_end <= number_begin)
+      continue;
+    const auto number_text = stream.normalized_path.substr(number_begin, number_end - number_begin);
+    if (!std::all_of(number_text.begin(), number_text.end(), [](const char value) { return value >= '0' && value <= '9'; }))
+      continue;
+    try
+    {
+      sample_numbers.insert(std::stoi(number_text));
+    }
+    catch (const std::exception &)
+    {
+    }
+  }
+  if (sample_numbers.empty())
+    throw std::runtime_error("SCIEX WIFF contains no SampleSubtree/SampleN/Idx streams.");
+
   std::vector<MASS_SPEC_ANALYSIS> out;
-  out.reserve(blocks.size());
+  out.reserve(sample_numbers.size());
 
   std::set<std::string> names;
-  for (std::size_t i = 0; i < blocks.size(); ++i)
+  std::size_t analysis_index = 0;
+  for (const int source_number : sample_numbers)
   {
-    const int source_number = static_cast<int>(blocks[i].sample_number);
     std::string name = "sample_" + std::to_string(source_number);
     try
     {
@@ -590,7 +756,7 @@ std::vector<MASS_SPEC_ANALYSIS> read_analysis_catalog(const std::string &wiff_pa
         name = base_name + " (" + std::to_string(duplicate++) + ")";
       while (!names.insert(name).second);
     }
-    out.push_back({static_cast<int>(i), source_number, name});
+    out.push_back({static_cast<int>(analysis_index++), source_number, name});
   }
   return out;
 }
@@ -691,9 +857,19 @@ TracePair decode_tic_bpc(const ScanBlock &block)
 
 std::vector<Transition> read_transitions_for_experiment(const std::string &wiff_path, int source_analysis_number, int period, int experiment)
 {
-  const auto bytes = ole::read_stream(
-      wiff_path,
-      "MethodSubtree/Method1/DeviceMethod0/Period" + std::to_string(period) + "/Experiment" + std::to_string(experiment) + "/MassRangeEx/MassRangeEx");
+  const std::string experiment_suffix = "/period" + std::to_string(period) + "/experiment" + std::to_string(experiment) + "/massrangeex/massrangeex";
+  std::string method_stream;
+  for (const auto &stream : ole::list_streams(wiff_path))
+  {
+    if (stream.normalized_path.starts_with("methodsubtree/method") && stream.normalized_path.ends_with(experiment_suffix))
+    {
+      method_stream = stream.normalized_path;
+      break;
+    }
+  }
+  if (method_stream.empty())
+    throw std::runtime_error("SCIEX WIFF contains no MassRangeEx stream for period " + std::to_string(period) + " experiment " + std::to_string(experiment) + ".");
+  const auto bytes = ole::read_stream(wiff_path, method_stream);
   std::vector<Transition> out;
   std::set<std::string> seen;
   for (std::size_t pos = 0; pos + 4 < bytes.size(); pos += 2)
@@ -1033,46 +1209,16 @@ std::optional<float> detect_tagged_mrm_record_marker(const std::vector<IndexedFl
 
 std::vector<MASS_SPEC_SPECTRUM> read_tof_spectra(const std::string &wiff_path, int source_analysis_number)
 {
-  const auto index_bytes = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/Idx");
-  const auto &scan_bytes = cached_scan_file(wiff_path);
-  const auto sample_base = detail::sample_block_offset(scan_bytes, static_cast<std::uint32_t>(source_analysis_number));
-  const auto calibration = ole::read_stream(wiff_path, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/TOFCalibrationData");
-  if (calibration.size() < 48) throw std::runtime_error("SCIEX TOF calibration stream is missing or incomplete.");
-  double slope = 0.0, intercept = 0.0;
-  std::memcpy(&slope, calibration.data() + 32, sizeof(double));
-  std::memcpy(&intercept, calibration.data() + 40, sizeof(double));
-  if (!std::isfinite(slope) || !std::isfinite(intercept) || slope == 0.0)
-    throw std::runtime_error("SCIEX TOF calibration contains invalid slope or intercept.");
-  struct RawRecord { std::uint32_t offset, size; float rt; std::uint8_t ms_level_flag; };
-  std::vector<RawRecord> records;
-  for (std::size_t offset = 32; offset + 54 <= index_bytes.size(); offset += 54)
-    records.push_back({detail::read_u32_le(index_bytes, offset), detail::read_u32_le(index_bytes, offset + 4), static_cast<float>(detail::read_f64_le(index_bytes, offset + 8) / 60000.0), index_bytes[offset + 16]});
-  std::size_t experiment_count = 1;
-  for (std::size_t i = 1; i < records.size() && i <= 128; ++i)
-    if (records[i].size != 0) { experiment_count = i; break; }
-  const auto dde_precursors = read_tof_dde_precursors(wiff_path, source_analysis_number);
+  const auto metadata = read_tof_metadata(wiff_path, source_analysis_number);
   std::size_t ms1_count = 0;
   std::size_t ms2_count = 0;
   std::vector<MASS_SPEC_SPECTRUM> spectra;
-  for (std::size_t i = 0; i < records.size(); ++i) {
-    if (i == 0 || i + 1 == records.size()) continue;
-    if (records[i].size == 0) continue;
-    const auto payload_start = sample_base + records[i].offset + 24;
-    const auto own_end = sample_base + records[i].offset + records[i].size;
-    const auto end = std::min(own_end, scan_bytes.size());
-    if (end <= payload_start) continue;
-    const auto points = decode_scan_payload(std::vector<std::uint8_t>(scan_bytes.begin() + payload_start, scan_bytes.begin() + end));
-    MASS_SPEC_SPECTRUM spectrum{};
-    const bool is_ms1 = records[i].ms_level_flag == 1;
-    if (is_ms1) ++ms1_count;
+  spectra.reserve(metadata.records.size());
+  for (std::size_t position = 0; position < metadata.records.size(); ++position)
+  {
+    auto spectrum = decode_tof_spectrum(wiff_path, metadata, position);
+    if (spectrum.level == 1) ++ms1_count;
     else ++ms2_count;
-    spectrum.index = static_cast<int>(spectra.size()); spectrum.scan = static_cast<int>(i); spectrum.array_length = static_cast<int>(points.size()); spectrum.level = is_ms1 ? 1 : 2; spectrum.polarity = 1; spectrum.rt = records[i].rt * 60.0f; spectrum.binary_arrays_count = 2;
-    if (!is_ms1 && ms2_count > 0 && ms2_count - 1 < dde_precursors.size()) spectrum.precursor_mz = dde_precursors[ms2_count - 1];
-    spectrum.binary_names = {"m/z", "intensity"}; spectrum.binary_data.resize(2);
-    spectrum.binary_data[0].reserve(points.size()); spectrum.binary_data[1].reserve(points.size());
-    spectrum.tic = 0.0f; spectrum.bpint = 0.0f; spectrum.bpmz = 0.0f;
-    for (const auto &point : points) { const float mz = static_cast<float>(slope * point.raw_mz_bin + intercept); const float intensity = static_cast<float>(point.raw_intensity); spectrum.binary_data[0].push_back(mz); spectrum.binary_data[1].push_back(intensity); spectrum.tic += intensity; if (intensity > spectrum.bpint) { spectrum.bpint = intensity; spectrum.bpmz = mz; } }
-    if (!spectrum.binary_data[0].empty()) { spectrum.lowmz = spectrum.binary_data[0].front(); spectrum.highmz = spectrum.binary_data[0].back(); }
     spectra.push_back(std::move(spectrum));
   }
   return spectra;
@@ -1126,6 +1272,7 @@ public:
   {
     const auto catalog = read_analysis_catalog(file);
     if (catalog.empty()) throw std::runtime_error("SCIEX WIFF has no analyses.");
+    std::string tof_error;
     try {
       const auto calibration = ole::read_stream(file, "SampleSubtree/Sample" + std::to_string(source_analysis_number) + "/TOFCalibrationData");
       if (calibration.size() >= 48)
@@ -1133,7 +1280,6 @@ public:
         tof_metadata_ = read_tof_metadata(file, source_analysis_number);
         tof_ = true;
         spectra_.resize(tof_metadata_.records.size());
-        std::size_t ms2_count = 0;
         for (std::size_t i = 0; i < spectra_.size(); ++i)
         {
           auto &spectrum = spectra_[i];
@@ -1145,9 +1291,8 @@ public:
           spectrum.rt = tof_metadata_.records[i].retention_time_minutes * 60.0f;
           if (spectrum.level == 2)
           {
-            spectrum.precursor_mz = tof_metadata_.dde_precursors.size() > ms2_count ? tof_metadata_.dde_precursors[ms2_count] : 0.0f;
-            spectrum.precursor_intensity = tof_metadata_.dde_precursor_intensities.size() > ms2_count ? tof_metadata_.dde_precursor_intensities[ms2_count] : 0.0f;
-            ++ms2_count;
+            spectrum.precursor_mz = tof_precursor_for_position(tof_metadata_, i);
+            spectrum.precursor_intensity = tof_precursor_intensity_for_position(tof_metadata_, i);
           }
           spectrum.tic = static_cast<float>(tof_metadata_.records[i].tic);
           spectrum.binary_arrays_count = 2;
@@ -1155,10 +1300,20 @@ public:
         }
         return;
       }
-    } catch (const std::exception &) {
+    } catch (const std::exception &error) {
+      tof_error = error.what();
     }
     // MRM construction is metadata-only. Payload records are decoded on demand.
-    mrm_metadata_.experiments.push_back({0, read_transitions_for_experiment(file, source_analysis_number, 0, 0)});
+    try
+    {
+      mrm_metadata_.experiments.push_back({0, read_transitions_for_experiment(file, source_analysis_number, 0, 0)});
+    }
+    catch (const std::exception &error)
+    {
+      if (!tof_error.empty())
+        throw std::runtime_error("SCIEX TOF initialization failed: " + tof_error + "; MRM fallback failed: " + error.what());
+      throw;
+    }
     for (int experiment = 1; experiment < 128; ++experiment)
     {
       try
@@ -1173,7 +1328,11 @@ public:
       }
     }
     if (mrm_metadata_.experiments.front().transitions.empty())
+    {
+      if (!tof_error.empty())
+        throw std::runtime_error("SCIEX TOF initialization failed: " + tof_error + "; MRM fallback failed: Unsupported native SCIEX MRM payload grammar.");
       throw std::runtime_error("Unsupported native SCIEX MRM payload grammar.");
+    }
     mrm_metadata_.sparse_tagged = mrm_metadata_.experiments.size() == 1 &&
                                   mrm_metadata_.experiments.front().transitions.size() != 2;
     const auto count = 2 + std::accumulate(mrm_metadata_.experiments.begin(), mrm_metadata_.experiments.end(), std::size_t{0},
@@ -1247,7 +1406,35 @@ public:
   std::vector<float> get_spectra_precursor_window_mzhigh(std::vector<int> = {}) override { return {}; } std::vector<float> get_spectra_collision_energy(std::vector<int> = {}) override { return {}; }
   MASS_SPEC_SPECTRA_HEADERS get_spectra_headers(std::vector<int> indices = {}, bool = false) override { MASS_SPEC_SPECTRA_HEADERS out; if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); out.resize_all(indices.size()); for (std::size_t i = 0; i < indices.size(); ++i) { const auto &s = spectra_.at(indices[i]); out.index[i] = s.index; out.scan[i] = s.scan; out.array_length[i] = s.array_length; out.level[i] = s.level; out.polarity[i] = s.polarity; out.lowmz[i] = s.lowmz; out.highmz[i] = s.highmz; out.bpmz[i] = s.bpmz; out.bpint[i] = s.bpint; out.tic[i] = s.tic; out.rt[i] = s.rt; out.precursor_mz[i] = s.precursor_mz; out.precursor_intensity[i] = s.precursor_intensity; } return out; }
   MASS_SPEC_CHROMATOGRAMS_HEADERS get_chromatograms_headers(std::vector<int> indices = {}) override { if (indices.empty()) return headers_; return select_chromatogram_headers(headers_, indices); }
-  std::vector<std::vector<std::vector<float>>> get_spectra(std::vector<int> indices = {}) override { std::vector<std::vector<std::vector<float>>> out; if (indices.empty()) for (std::size_t i = 0; i < spectra_.size(); ++i) indices.push_back(static_cast<int>(i)); for (int i : indices) out.push_back(tof_ ? decode_tof_spectrum(file_, tof_metadata_, static_cast<std::size_t>(i)).binary_data : spectra_.at(i).binary_data); return out; }
+  std::vector<std::vector<std::vector<float>>> get_spectra(std::vector<int> indices = {}) override
+  {
+    std::vector<std::vector<std::vector<float>>> out;
+    if (indices.empty())
+      for (std::size_t i = 0; i < spectra_.size(); ++i)
+        indices.push_back(static_cast<int>(i));
+    out.reserve(indices.size());
+    for (const int index : indices)
+    {
+      if (!tof_)
+      {
+        out.push_back(spectra_.at(index).binary_data);
+        continue;
+      }
+      try
+      {
+        out.push_back(decode_tof_spectrum(file_, tof_metadata_, static_cast<std::size_t>(index)).binary_data);
+      }
+      catch (const std::exception &error)
+      {
+        // Keep the positional result aligned with the requested scan batch.
+        // A small number of SCIEX TOF files contain non-profile MS2 records;
+        // one such record must not discard all other candidate spectra.
+        std::cerr << "[SciexReader] skipping undecodable TOF scan " << index << ": " << error.what() << std::endl;
+        out.push_back({{}, {}});
+      }
+    }
+    return out;
+  }
   std::vector<std::vector<std::vector<float>>> get_chromatograms(std::vector<int> indices = {}) override
   {
     if (indices.empty())
