@@ -49,6 +49,7 @@ New-Item -ItemType Directory -Force -Path $uncRoot | Out-Null
 $robocopyArguments = @(
     $root, $uncRoot, '/MIR', '/NFL', '/NDL', '/NJH', '/NJS', '/NP',
     '/XD', (Join-Path $root 'tmp'), (Join-Path $root '.git'),
+    (Join-Path $root '.worktrees'),
     (Join-Path $root '.venv'), (Join-Path $root 'frontend\node_modules'),
     (Join-Path $root 'frontend\dist')
 )
