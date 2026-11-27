@@ -1,4 +1,5 @@
 #include "streamfind/sdk/dynamic_plugin_manager.hpp"
+#include "streamfind/sdk/abi_type_profile.hpp"
 #include "streamfind/operation_execution_context.hpp"
 
 #include <atomic>
@@ -12,10 +13,13 @@
 #include <iostream>
 #include <mutex>
 #include <streambuf>
+#include <tuple>
 #include <unordered_map>
 
 #include "streamfind/catalogue.hpp"
 #include "streamfind/sdk/plugin_data_service.hpp"
+
+#include <arrow/c/bridge.h>
 
 namespace streamfind::sdk::detail {
 
@@ -91,88 +95,6 @@ namespace streamfind::sdk {
 
 namespace detail {
 
-streamfind_plugin_column_type dynamic_column_type(const std::string &duckdb_type) {
-    std::string type;
-    type.reserve(duckdb_type.size());
-    for (const auto character : duckdb_type)
-        type.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
-    if (type == "BOOLEAN") return STREAMFIND_PLUGIN_COLUMN_BOOL;
-    if (type.find("INT") != std::string::npos || type == "HUGEINT" || type == "UBIGINT")
-        return STREAMFIND_PLUGIN_COLUMN_INT64;
-    if (type.find("DOUBLE") != std::string::npos || type.find("FLOAT") != std::string::npos ||
-        type.find("DECIMAL") != std::string::npos || type == "REAL")
-        return STREAMFIND_PLUGIN_COLUMN_FLOAT64;
-    if (type.find("TIMESTAMP") != std::string::npos || type == "DATE" || type == "TIME")
-        return STREAMFIND_PLUGIN_COLUMN_TIMESTAMP;
-    return STREAMFIND_PLUGIN_COLUMN_UTF8;
-}
-
-std::string quoted_identifier(const std::string &value) {
-    std::string result = "\"";
-    for (const auto character : value)
-        result += character == '"' ? "\"\"" : std::string(1, character);
-    result += '"';
-    return result;
-}
-
-Json table_batch_rows(const streamfind_plugin_batch_column *columns,
-                      uint32_t column_count, uint64_t row_count) {
-    Json rows = Json::array();
-    for (uint64_t row = 0; row < row_count; ++row) {
-        Json value = Json::object();
-        for (uint32_t column_index = 0; column_index < column_count; ++column_index) {
-            const auto &column = columns[column_index];
-            if (column.name == nullptr || column.name_size == 0 || column.data == nullptr ||
-                column.element_size == 0)
-                throw std::invalid_argument("table output contains an invalid column");
-            const auto valid = column.validity_bitmap == nullptr ||
-                (column.validity_bitmap[row / 8] & static_cast<uint8_t>(1u << (row % 8))) != 0;
-            const std::string name(column.name, column.name_size);
-            if (!valid) {
-                value[name] = nullptr;
-                continue;
-            }
-            switch (column.type) {
-            case STREAMFIND_PLUGIN_COLUMN_UTF8:
-            case STREAMFIND_PLUGIN_COLUMN_TIMESTAMP:
-            case STREAMFIND_PLUGIN_COLUMN_DECIMAL:
-            case STREAMFIND_PLUGIN_COLUMN_BINARY: {
-                if (column.element_size != sizeof(streamfind_plugin_string_view))
-                    throw std::invalid_argument("table output string column has invalid element size");
-                const auto &item = static_cast<const streamfind_plugin_string_view *>(column.data)[row];
-                const std::string text(item.data == nullptr ? "" : item.data, item.size);
-                if ((column.flags & STREAMFIND_PLUGIN_COLUMN_FLAG_ARRAY) != 0) {
-                    const auto array = Json::parse(text, nullptr, false);
-                    if (array.is_discarded() || !array.is_array())
-                        throw std::invalid_argument("table output array column is not valid JSON");
-                    value[name] = array;
-                } else value[name] = text;
-                break;
-            }
-            case STREAMFIND_PLUGIN_COLUMN_INT64:
-                if (column.element_size != sizeof(int64_t))
-                    throw std::invalid_argument("table output integer column has invalid element size");
-                value[name] = static_cast<const int64_t *>(column.data)[row];
-                break;
-            case STREAMFIND_PLUGIN_COLUMN_FLOAT64:
-                if (column.element_size != sizeof(double))
-                    throw std::invalid_argument("table output real column has invalid element size");
-                value[name] = static_cast<const double *>(column.data)[row];
-                break;
-            case STREAMFIND_PLUGIN_COLUMN_BOOL:
-                if (column.element_size != sizeof(uint8_t))
-                    throw std::invalid_argument("table output boolean column has invalid element size");
-                value[name] = static_cast<const uint8_t *>(column.data)[row] != 0;
-                break;
-            default:
-                throw std::invalid_argument("table output column type is unsupported");
-            }
-        }
-        rows.push_back(std::move(value));
-    }
-    return rows;
-}
-
 Json invoke_dynamic(
     DynamicPluginLoadResult &plugin,
     OperationExecutionContext &execution_context,
@@ -195,11 +117,10 @@ Json invoke_dynamic(
     const auto workflow_revision = execution_context.workflow_revision();
     Json runtime_inputs = input_artifacts;
     if (runtime_inputs.is_object()) {
-        for (auto &[port, artifact] : runtime_inputs.items()) {
+        for (auto &[_, artifact] : runtime_inputs.items()) {
             if (!artifact.is_object()) continue;
             const auto result_id = artifact.value("result_id", std::string{});
-            if (!result_id.empty() && !artifact.contains("physical_table"))
-                artifact["physical_table"] = "result:" + result_id;
+            if (!result_id.empty()) artifact["result_ref"] = "result:" + result_id;
         }
     }
     Json request = {{"capability_id", capability_id}, {"parameters", parameters},
@@ -208,29 +129,56 @@ Json invoke_dynamic(
     Json emitted_results = Json::object();
     std::unordered_map<std::string, std::string> table_output_handles;
     std::unordered_map<std::string, std::uint64_t> table_output_sequences;
-    const auto manifest = !plugin.manifest.domain.empty()
-        ? catalogue::table_manifest_json(plugin.manifest.domain, "")
+    std::unordered_map<std::string, std::string> output_contract_port_ids;
+    for (const auto &port : output_ports) {
+        if (!port.is_object()) continue;
+        const auto contract = port.value("semantic_contract", std::string{});
+        const auto port_id = port.value("id", std::string{});
+        if (contract.empty() || port_id.empty()) continue;
+        const auto [found, inserted] = output_contract_port_ids.emplace(contract, port_id);
+        if (!inserted && found->second != port_id)
+            throw Error(ErrorCode::SchemaMismatch,
+                "dynamic output contract is ambiguous across ports: " + contract);
+    }
+    const auto manifest = !plugin.manifest.plugin.empty()
+        ? catalogue::table_manifest_json(plugin.manifest.plugin, "")
         : std::optional<Json>{};
 
     OperationOutputSink *operation_output_sink = &execution_context.outputs();
     auto execute_body = [&]() {
         PluginDataServiceContext context;
-        std::atomic_bool cancelled{false};
         const auto producer_instance = workflow_instance;
         std::vector<std::tuple<std::string, std::string, std::string>> lineage_inputs;
+        const auto add_lineage = [&](const std::string &result_id, const std::string &source_port,
+                                     const std::string &target_port) {
+            const auto edge = std::make_tuple(result_id, source_port, target_port);
+            if (std::find(lineage_inputs.begin(), lineage_inputs.end(), edge) == lineage_inputs.end())
+                lineage_inputs.push_back(edge);
+        };
         if (runtime_inputs.is_object()) {
             for (const auto &[target_port, artifact] : runtime_inputs.items()) {
                 if (!artifact.is_object()) continue;
-                lineage_inputs.emplace_back(
-                    artifact.value("result_id", artifact.value("result_id", "")),
-                    artifact.value("contract_id", ""), target_port);
+                const auto result_id = artifact.value("result_id", std::string{});
+                const auto source_port = artifact.value(
+                    "output_port_id", artifact.value("contract_id", std::string{}));
+                if (!result_id.empty() && !source_port.empty())
+                    add_lineage(result_id, source_port, target_port);
+            }
+        }
+        if (request.contains("parameters") && request.at("parameters").is_object()) {
+            for (const auto &[parameter_name, value] : request.at("parameters").items()) {
+                if (!value.is_object() || !value.contains("$result_ref") ||
+                    !value.at("$result_ref").is_string()) continue;
+                const auto result_id = value.at("$result_ref").get<std::string>();
+                const auto source_port = value.value("output_port_id", std::string{});
+                if (!result_id.empty() && !source_port.empty())
+                    add_lineage(result_id, source_port, "parameter:" + parameter_name);
             }
         }
         context.operation_instance = workflow_instance;
         context.data_proxy_operation_id = capability_id;
         context.data_proxy_session_id = execution_context.data_proxy_session_id();
         context.data_proxy_run_id = execution_context.data_proxy_run_id();
-        context.cancelled = &cancelled;
         context.cancellation_requested = [&execution_context] { return execution_context.cancellation_requested(); };
         context.progress = [&execution_context](double fraction, std::string_view message) {
             if (message.empty()) return;
@@ -246,111 +194,43 @@ Json invoke_dynamic(
         context.receive_result_input_handle = [&execution_context] {
             return execution_context.receive_result_input_handle();
         };
-        context.output_sink = operation_output_sink;
-        if (manifest) {
-            for (const auto &table : *manifest) {
-                const auto table_name = table.value("table_name", std::string{});
-                for (const auto &column : table.value("columns", Json::array())) {
-                    const auto column_name = column.value("name", std::string{});
-                    if (column_name.empty()) continue;
-                    context.readable_columns[table_name].insert(column_name);
-                    context.writable_columns[table_name].insert(column_name);
-                    const auto semantic_type = column.value("type", std::string{"string"});
-                    const auto type = semantic_type == "integer"
-                        ? STREAMFIND_PLUGIN_COLUMN_INT64
-                        : semantic_type == "boolean"
-                        ? STREAMFIND_PLUGIN_COLUMN_BOOL
-                        : semantic_type == "real"
-                        ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
-                        : semantic_type == "timestamp"
-                        ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
-                        : STREAMFIND_PLUGIN_COLUMN_UTF8;
-                    context.column_types[table_name][column_name] = type;
-                    if (semantic_type == "array")
-                        context.array_columns[table_name].insert(column_name);
-                }
+        std::unordered_set<std::string> registered_input_results;
+        const auto register_table_input = [&](const std::string &result_id) {
+            if (result_id.empty() || !registered_input_results.insert(result_id).second) return;
+            const auto response_json = execution_context.request_data(data_proxy::request(
+                "describe-result-" + result_id,
+                execution_context.data_proxy_session_id(),
+                execution_context.data_proxy_run_id(), {}, producer_instance, {},
+                Json{{"method", "describe_result"}, {"result_id", result_id}}));
+            const auto response = data_proxy::Envelope::from_json(response_json);
+            if (!response.error_code.empty())
+                throw Error(ErrorCode::MethodExecution,
+                    response.error_code + ": " + response.error_message);
+            if (response.payload.value("state", std::string{}) != "published" ||
+                response.payload.value("kind", std::string{}) != "table" ||
+                response.payload.value("format", std::string{}) != "arrow-ipc-file")
+                throw Error(ErrorCode::MethodExecution,
+                    "workflow input is not a published Arrow table: " + result_id);
+            const auto result_reference = "result:" + result_id;
+            const auto schema = response.payload.value("schema", Json::array());
+            if (!schema.is_array())
+                throw Error(ErrorCode::MethodExecution,
+                    "published result schema is invalid: " + result_id);
+            for (const auto &column : schema) {
+                const auto name = column.value("name", std::string{});
+                if (name.empty())
+                    throw Error(ErrorCode::MethodExecution,
+                        "published result schema contains an empty column name: " + result_id);
+                context.readable_columns[result_reference].insert(name);
             }
-        }
-        if (manifest && runtime_inputs.is_object()) {
-            for (const auto &[target_port, artifact] : runtime_inputs.items()) {
-                if (!artifact.is_object()) continue;
-                const auto physical_table = artifact.value("physical_table", std::string{});
-                const auto contract = artifact.value("contract_id", std::string{});
-                if (physical_table.empty() || contract.empty()) continue;
-                if (std::find(context.allowed_tables.begin(), context.allowed_tables.end(), physical_table) ==
-                    context.allowed_tables.end())
-                    context.allowed_tables.push_back(physical_table);
-                bool schema_found = false;
-                for (const auto &table : *manifest) {
-                    if (table.value("resource_id", std::string{}) != contract) continue;
-                    schema_found = true;
-                    for (const auto &column : table.value("columns", Json::array())) {
-                        const auto name = column.value("name", std::string{});
-                        if (name.empty()) continue;
-                        context.readable_columns[physical_table].insert(name);
-                        const auto semantic_type = column.value("type", std::string{});
-                        context.column_types[physical_table][name] = semantic_type == "integer"
-                            ? STREAMFIND_PLUGIN_COLUMN_INT64
-                            : semantic_type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
-                            : semantic_type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
-                            : semantic_type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
-                            : STREAMFIND_PLUGIN_COLUMN_UTF8;
-                        if (semantic_type == "array")
-                            context.array_columns[physical_table].insert(name);
-                    }
-                    break;
-                }
-                if (!schema_found && physical_table.rfind("result:", 0) == 0) {
-                    const auto result_id = physical_table.substr(std::string("result:").size());
-                    const auto response_json = execution_context.request_data(data_proxy::request(
-                        "describe-result-" + result_id,
-                        execution_context.data_proxy_session_id(),
-                        execution_context.data_proxy_run_id(), {}, producer_instance, {},
-                        Json{{"method", "describe_result"}, {"result_id", result_id}}));
-                    const auto response = data_proxy::Envelope::from_json(response_json);
-                    if (!response.error_code.empty())
-                        throw Error(ErrorCode::MethodExecution, response.error_code + ": " + response.error_message);
-                    for (const auto &column : response.payload.value("schema", Json::array())) {
-                        const auto name = column.value("name", std::string{});
-                        if (name.empty()) continue;
-                        context.readable_columns[physical_table].insert(name);
-                        context.column_types[physical_table][name] = detail::dynamic_column_type(
-                            column.value("type", std::string{}));
-                        if (column.value("type", std::string{}) == "array")
-                            context.array_columns[physical_table].insert(name);
-                    }
-                }
-            }
-        }
-        // Dynamic input ports such as anyTable intentionally do not declare a
-        // fixed column manifest. Resolve their runtime schema through the
-        // service proxy when running in a worker.
+            context.allowed_result_refs.push_back(result_reference);
+        };
         if (runtime_inputs.is_object()) {
-            for (const auto &[target_port, artifact] : runtime_inputs.items()) {
+            for (const auto &[_, artifact] : runtime_inputs.items()) {
                 if (!artifact.is_object()) continue;
-                const auto physical_table = artifact.value("physical_table", std::string{});
-                if (physical_table.empty()) continue;
-                if (std::find(context.allowed_tables.begin(), context.allowed_tables.end(), physical_table) ==
-                    context.allowed_tables.end())
-                    context.allowed_tables.push_back(physical_table);
-                if (physical_table.rfind("result:", 0) == 0) continue;
-                Json description;
-                const auto response_json = execution_context.request_data(data_proxy::request(
-                    "describe-table-" + physical_table,
-                    execution_context.data_proxy_session_id(),
-                    execution_context.data_proxy_run_id(), {}, producer_instance, {},
-                    Json{{"method", "describe"}, {"table", physical_table}}));
-                const auto response = data_proxy::Envelope::from_json(response_json);
-                if (!response.error_code.empty())
-                    throw Error(ErrorCode::MethodExecution, response.error_code + ": " + response.error_message);
-                description = response.payload.value("columns", Json::array());
-                for (const auto &column : description) {
-                    const auto name = column.value("column_name", std::string{});
-                    if (name.empty()) continue;
-                    context.readable_columns[physical_table].insert(name);
-                    context.column_types[physical_table][name] = detail::dynamic_column_type(
-                        column.value("column_type", std::string{}));
-                }
+                const auto result_id = artifact.value("result_id", std::string{});
+                if (result_id.empty()) continue;
+                register_table_input(result_id);
             }
         }
         for (const auto &port : output_ports) {
@@ -363,7 +243,6 @@ Json invoke_dynamic(
             for (const auto &table : *manifest) {
                 if (table.value("resource_id", std::string{}) != contract) continue;
                 const auto columns = table.value("columns", Json::array());
-                std::string output_table_key;
                 if (operation_output_sink) {
                     const auto allocation = operation_output_sink->begin(Json{
                         {"contract_id", contract}, {"kind", "table"},
@@ -372,7 +251,7 @@ Json invoke_dynamic(
                         {"producer_operation", capability_id},
                         {"producer_instance", producer_instance},
                         {"workflow_revision", workflow_revision},
-                        {"output_port_id", contract},
+                        {"output_port_id", output_contract_port_ids.at(contract)},
                         {"computation_key", execution_context.computation_key()},
                         {"cacheable", !execution_context.computation_key().empty()}});
                     const auto handle = allocation.value("output_handle", std::string{});
@@ -380,20 +259,6 @@ Json invoke_dynamic(
                                                     "service did not allocate table output lease: " + contract);
                     table_output_handles[contract] = handle;
                     table_output_sequences[contract] = 0;
-                    context.output_tables[contract] = handle;
-                    output_table_key = handle;
-                }
-                for (const auto &column : columns) {
-                    const auto name = column.value("name", std::string{});
-                    if (name.empty()) continue;
-                    context.writable_columns[output_table_key].insert(name);
-                    const auto type = column.value("type", std::string{"string"});
-                    context.column_types[output_table_key][name] = type == "integer"
-                        ? STREAMFIND_PLUGIN_COLUMN_INT64
-                        : type == "boolean" ? STREAMFIND_PLUGIN_COLUMN_BOOL
-                        : type == "real" ? STREAMFIND_PLUGIN_COLUMN_FLOAT64
-                        : type == "timestamp" ? STREAMFIND_PLUGIN_COLUMN_TIMESTAMP
-                        : STREAMFIND_PLUGIN_COLUMN_UTF8;
                 }
                 break;
             }
@@ -401,21 +266,23 @@ Json invoke_dynamic(
         context.emit_table_batch = [&context, &table_output_handles, &table_output_sequences,
                                     operation_output_sink](
             void *execution_context, const char *contract, uint32_t contract_size,
-            const streamfind_plugin_batch_column *columns, uint32_t column_count,
-            uint64_t row_count, void *user_data) -> streamfind_plugin_status {
+            struct ArrowArray *array, struct ArrowSchema *schema,
+            void *user_data) -> streamfind_plugin_status {
             if (contract == nullptr || contract_size == 0)
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             const std::string contract_id(contract, contract_size);
-            const auto output = context.output_tables.find(contract_id);
-            if (output == context.output_tables.end() || output->second.empty()) {
+            const auto output = table_output_handles.find(contract_id);
+            if (output == table_output_handles.end() || output->second.empty()) {
                 if (context.report_error)
                     context.report_error("workflow output contract is not allocated: " + contract_id);
                 return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             }
             try {
-                const auto rows = table_batch_rows(columns, column_count, row_count);
-                operation_output_sink->write_rows(output->second,
-                                                  table_output_sequences[contract_id]++, rows);
+                auto batch = arrow::ImportRecordBatch(array, schema);
+                if (!batch.ok()) throw std::runtime_error(batch.status().ToString());
+                operation_output_sink->write_table_batch(
+                    output->second, table_output_sequences[contract_id]++,
+                    *batch);
                 return STREAMFIND_PLUGIN_OK;
             } catch (const std::exception &error) {
                 if (context.report_error) context.report_error(error.what());
@@ -423,8 +290,8 @@ Json invoke_dynamic(
             }
         };
         context.emit_result = [&emitted_results, &capability_id, &producer_instance, &lineage_inputs,
-                               workflow_revision, operation_output_sink,
-                               &execution_context](
+                               &output_contract_port_ids, workflow_revision, operation_output_sink,
+                               &execution_context, &context, &plugin](
             void *, const char *contract, uint32_t contract_size,
             const char *payload, uint64_t payload_size, void *) -> streamfind_plugin_status {
             if (contract == nullptr || contract_size == 0 || payload == nullptr)
@@ -432,6 +299,12 @@ Json invoke_dynamic(
             const auto parsed = Json::parse(payload, payload + payload_size, nullptr, false);
             if (parsed.is_discarded()) return STREAMFIND_PLUGIN_SCHEMA_ERROR;
             const auto contract_id = std::string(contract, contract_size);
+            const auto output_port = output_contract_port_ids.find(contract_id);
+            if (output_port == output_contract_port_ids.end()) {
+                if (context.report_error)
+                    context.report_error("workflow JSON output contract is not declared: " + contract_id);
+                return STREAMFIND_PLUGIN_SCHEMA_ERROR;
+            }
             {
                 const auto descriptor = Json{
                     {"contract_id", contract_id},
@@ -461,66 +334,54 @@ Json invoke_dynamic(
                              {"producer_operation", capability_id},
                              {"producer_instance", producer_instance},
                              {"workflow_revision", workflow_revision},
-                             {"output_port_id", contract_id},
+                             {"output_port_id", output_port->second},
                              {"computation_key", execution_context.computation_key()},
                              {"cacheable", !execution_context.computation_key().empty()},
-                             {"provenance", Json{{"lineage_inputs", lineage}}}});
+                             {"provenance", Json{{"lineage_inputs", lineage},
+                                                   {"plugin_id", plugin.manifest.plugin_id},
+                                                   {"plugin_version", plugin.manifest.version},
+                                                   {"package_digest", plugin.package_digest},
+                                                   {"operation_id", capability_id},
+                                                   {"result_contract", contract_id}}}});
                     const auto result_id = manifest.value("result_id", allocation.value("result_id", std::string{}));
                     if (result_id.empty()) return STREAMFIND_PLUGIN_ERROR;
-                    emitted_results[contract_id] = Json{
+                    emitted_results[output_port->second] = Json{
                         {"result_id", result_id},
                         {"payload_ref", "result:" + result_id},
                         {"contract_id", contract_id},
+                        {"output_port_id", output_port->second},
                         {"representation", "json"},
                         {"payload", parsed},
                         {"state", "published"}};
                     return STREAMFIND_PLUGIN_OK;
+                } catch (const std::exception &error) {
+                    if (context.report_error) context.report_error(error.what());
+                    try {
+                        operation_output_sink->abort(output_handle, "dynamic plugin result emission failed");
+                    } catch (...) {
+                        // Keep the publication failure as the primary diagnostic.
+                    }
+                    return STREAMFIND_PLUGIN_ERROR;
                 } catch (...) {
-                    operation_output_sink->abort(output_handle, "dynamic plugin result emission failed");
+                    if (context.report_error)
+                        context.report_error("unknown error while publishing dynamic plugin JSON result");
+                    try {
+                        operation_output_sink->abort(output_handle, "dynamic plugin result emission failed");
+                    } catch (...) {
+                        // Keep the publication failure as the primary diagnostic.
+                    }
                     return STREAMFIND_PLUGIN_ERROR;
                 }
             }
         };
         if (request.contains("parameters") && request.at("parameters").is_object()) {
-            std::uint64_t parameter_request_sequence = 0;
             for (auto &[parameter_name, value] : request["parameters"].items()) {
-                if (!value.is_object() || value.size() != 1 || !value.contains("$result_ref")) continue;
+                if (!value.is_object() || !value.contains("$result_ref") ||
+                    !value.at("$result_ref").is_string()) continue;
                 const auto result_id = value.at("$result_ref").get<std::string>();
                 if (result_id.empty()) throw Error(ErrorCode::MethodExecution,
                     "table parameter has an empty result reference: " + parameter_name);
-                const auto call_service = [&](std::string method, Json payload) {
-                    payload["method"] = method;
-                    const auto response_json = context.data_proxy_request(data_proxy::request(
-                        "parameter-result-" + result_id + "-" + method + "-" +
-                            std::to_string(parameter_request_sequence++),
-                        context.data_proxy_session_id, context.data_proxy_run_id,
-                        context.data_proxy_operation_id, producer_instance, {}, std::move(payload)));
-                    const auto envelope = data_proxy::Envelope::from_json(response_json);
-                    if (!envelope.error_code.empty())
-                        throw Error(ErrorCode::MethodExecution,
-                            envelope.error_code + ": " + envelope.error_message);
-                    return envelope.payload;
-                };
-                const auto descriptor = call_service("describe_result", {{"result_id", result_id}});
-                if (descriptor.value("kind", std::string{}) != "table" ||
-                    descriptor.value("format", std::string{}) != "arrow-ipc-file")
-                    throw Error(ErrorCode::MethodExecution,
-                        "table parameter result is not a published Arrow table: " + result_id);
-                const auto schema = descriptor.value("schema", Json::array());
-                if (!schema.is_array())
-                    throw Error(ErrorCode::MethodExecution, "table parameter result has an invalid schema");
-                const auto physical_table = "result:" + result_id;
-                for (const auto &column : schema) {
-                    const auto name = column.value("name", std::string{});
-                    if (name.empty()) throw Error(ErrorCode::MethodExecution,
-                        "table parameter result schema contains an empty column name");
-                    const auto type = column.value("type", std::string{"string"});
-                    context.readable_columns[physical_table].insert(name);
-                    context.column_types[physical_table][name] = detail::dynamic_column_type(type);
-                    if (type == "array")
-                        context.array_columns[physical_table].insert(name);
-                }
-                context.allowed_tables.push_back(physical_table);
+                register_table_input(result_id);
             }
         }
         streamfind_plugin_buffer buffer{};
@@ -533,9 +394,8 @@ Json invoke_dynamic(
         const auto status = plugin.plugin.invoke(
             &context, text.data(), static_cast<uint32_t>(text.size()), &buffer, plugin.plugin.user_data);
         if (status != STREAMFIND_PLUGIN_OK) {
-            if (operation_output_sink)
-                for (const auto &[contract, handle] : table_output_handles)
-                    operation_output_sink->abort(handle, "dynamic plugin invocation failed");
+            if (buffer.data != nullptr || buffer.size != 0)
+                plugin.plugin.release_buffer(&buffer, plugin.plugin.user_data);
             throw Error(status == STREAMFIND_PLUGIN_CANCELLED ? ErrorCode::Cancelled : ErrorCode::MethodExecution,
                         "dynamic plugin invocation failed with status " + std::to_string(status) +
                         (plugin.runtime_diagnostics.empty() ? std::string{} : ": " + plugin.runtime_diagnostics));
@@ -565,25 +425,52 @@ Json invoke_dynamic(
                          {"producer_operation", capability_id},
                          {"producer_instance", producer_instance},
                          {"workflow_revision", workflow_revision},
-                         {"output_port_id", contract},
+                         {"output_port_id", output_contract_port_ids.at(contract)},
                          {"computation_key", execution_context.computation_key()},
                          {"cacheable", !execution_context.computation_key().empty()},
-                         {"provenance", Json{{"lineage_inputs", lineage_inputs}}}});
+                         {"provenance", Json{{"lineage_inputs", [&] {
+                             Json lineage = Json::array();
+                             for (const auto &[result_id, source_port, target_port] : lineage_inputs)
+                                 lineage.push_back({{"result_id", result_id},
+                                                    {"source_port", source_port},
+                                                    {"target_port", target_port}});
+                             return lineage;
+                         }()}, {"plugin_id", plugin.manifest.plugin_id},
+                         {"plugin_version", plugin.manifest.version},
+                         {"package_digest", plugin.package_digest},
+                         {"operation_id", capability_id},
+                         {"result_contract", contract}}}});
                 const auto result_id = manifest.value("result_id", std::string{});
                 if (result_id.empty())
                     throw Error(ErrorCode::MethodExecution,
                                 "service did not return a published table result: " + contract);
-                emitted_results[contract] = Json{
-                    {"result_id", result_id}, {"payload_ref", "result:" + result_id},
-                    {"physical_table", "result:" + result_id},
+                const auto output_port = output_contract_port_ids.at(contract);
+                emitted_results[output_port] = Json{
+                    {"result_id", result_id}, {"result_ref", "result:" + result_id},
+                    {"payload_ref", "result:" + result_id},
                     {"contract_id", contract}, {"representation", "table"},
+                    {"output_port_id", output_port},
                     {"format", "arrow-ipc-file"}, {"state", "published"}};
             }
         }
         if (!emitted_results.empty())
             response["emitted_results"] = std::move(emitted_results);
     };
-    execute_body();
+    try {
+        execute_body();
+    } catch (...) {
+        if (operation_output_sink) {
+            for (const auto &[_, handle] : table_output_handles) {
+                try {
+                    operation_output_sink->abort(handle, "dynamic plugin invocation did not complete");
+                } catch (...) {
+                    // Keep the invocation failure as the primary diagnostic;
+                    // the sink owns any remaining lease cleanup on teardown.
+                }
+            }
+        }
+        throw;
+    }
     return response;
 }
 
@@ -598,6 +485,17 @@ DynamicPluginLoadResult load_dynamic_plugin_package(const std::filesystem::path 
         return result;
     }
     result.manifest = manifest_result.manifest;
+    const auto provenance_path = package_root / "provenance.json";
+    if (std::filesystem::is_regular_file(provenance_path)) {
+        try {
+            std::ifstream provenance(provenance_path);
+            const auto document = Json::parse(provenance);
+            result.package_digest = document.value("package_digest", std::string{});
+        } catch (...) {
+            result.diagnostics = "plugin provenance is invalid";
+            return result;
+        }
+    }
 
     if (result.manifest.abi_major != STREAMFIND_PLUGIN_ABI_MAJOR) {
         result.diagnostics = "plugin ABI major is incompatible with the host";
@@ -708,6 +606,7 @@ void register_dynamic_plugin_capabilities(
     const Json &catalogue_entries,
     MethodRegistry &methods,
     OperationRegistry &operations) {
+    validate_abi_type_profile(catalogue_entries);
     if (!plugin.loaded || !catalogue_entries.is_array()) {
         throw Error(ErrorCode::InvalidArgument,
                     "dynamic plugin registration requires a loaded plugin and catalogue entries");
@@ -742,7 +641,7 @@ void register_dynamic_plugin_capabilities(
             definition.id = id;
             definition.name = entry.value("label", id);
             definition.description = entry.value("definition", "");
-            definition.domain = entry.value("domain", "");
+            definition.plugin = entry.value("plugin", "");
             definition.version = entry.value("operation_version", "1");
             definition.project_entry = entry.value("project_entry", false);
 

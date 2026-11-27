@@ -1,7 +1,13 @@
 import { notifyApp } from '../notifications/notificationBus';
-import { artifactContractMatches } from '../artifacts/artifactContracts';
+import { artifactContractMatches, isQualifiedArtifactContract, localArtifactContract } from '../artifacts/artifactContracts';
 import { StreamFindApiClient } from '../backend/StreamFindApiClient';
-import { viewerRegistry, type ViewerRegistry, type ViewerRegistration } from '../viewers/viewerTypes';
+import {
+  viewerRegistry,
+  viewerMatchesArtifact,
+  viewerMatchesManifest,
+  type ViewerRegistry,
+  type ViewerRegistration,
+} from '../viewers/viewerTypes';
 import { visualizationRegistry, type VisualizationRegistry } from '../visualization/VisualizationRegistry';
 import {
   FRONTEND_PLUGIN_API_VERSION,
@@ -55,12 +61,20 @@ export class FrontendPluginRegistry {
       this.plugins.delete(plugin.manifest.id);
       throw error;
     }
-    this.setupViewerIds.delete(plugin.manifest.id);
-    this.setupRendererIds.delete(plugin.manifest.id);
   }
 
   has(id: string): boolean {
     return this.plugins.has(id);
+  }
+
+  unregister(id: string): boolean {
+    if (!this.plugins.has(id)) return false;
+    for (const viewerId of this.setupViewerIds.get(id) ?? []) this.viewers.unregister(viewerId);
+    for (const rendererId of this.setupRendererIds.get(id) ?? []) this.visualizations.unregister(rendererId);
+    this.setupViewerIds.delete(id);
+    this.setupRendererIds.delete(id);
+    this.plugins.delete(id);
+    return true;
   }
 
   ids(): string[] {
@@ -74,6 +88,39 @@ export class FrontendPluginRegistry {
       )
       .map((entry) => entry.manifest.id)
       .sort();
+  }
+
+  compatibleArtifactViewers(
+    pluginId: string,
+    query: { semanticType: string; representation?: string },
+  ): ViewerRegistration[] {
+    const matches = new Map<string, ViewerRegistration>();
+    for (const id of this.viewers.ids()) {
+      const viewer = this.viewers.get(id);
+      if (!viewer) continue;
+
+      if (viewer.accepts.length === 0) {
+        if (viewerMatchesArtifact(viewer, query)) matches.set(viewer.id, viewer);
+        continue;
+      }
+
+      const contracts = isQualifiedArtifactContract(query.semanticType)
+        ? viewer.accepts.filter((contract) => contract === query.semanticType)
+        : viewer.accepts.filter((contract) => {
+            if (localArtifactContract(contract) !== query.semanticType) return false;
+            const declaredByPlugin = [...this.plugins.values()].some(
+              (entry) =>
+                entry.manifest.plugins?.includes(pluginId) &&
+                entry.manifest.artifactContracts?.some((declared) => declared === contract),
+            );
+            return declaredByPlugin || contract.includes(`/plugins/${pluginId}#`);
+          });
+
+      if (contracts.some((semanticType) => viewerMatchesArtifact(viewer, { ...query, semanticType }))) {
+        matches.set(viewer.id, viewer);
+      }
+    }
+    return [...matches.values()].sort((left, right) => left.id.localeCompare(right.id));
   }
 
   api(client: StreamFindApiClient = this.client): FrontendPluginApi {
@@ -108,11 +155,8 @@ export class FrontendPluginRegistry {
     if (before) throw new Error(`Viewer already registered: ${viewer.id}`);
     const contracts = plugin.manifest.artifactContracts ?? [];
     const representations = plugin.manifest.artifactRepresentations ?? [];
-    if (
-      (contracts.length || representations.length) &&
-      !viewer.accepts.some((accepted) => contracts.some((declared) => sameContract(accepted, declared))) &&
-      !(viewer.representations ?? []).some((representation) => representations.includes(representation))
-    ) {
+    const compatible = viewerMatchesManifest({ accepts: viewer.accepts, representations: viewer.representations }, contracts, representations);
+    if ((contracts.length || representations.length) && !compatible) {
       throw new Error(`Viewer contracts are incompatible with frontend plugin: ${viewer.id}`);
     }
     this.viewers.register(viewer);
@@ -133,11 +177,6 @@ export class FrontendPluginRegistry {
 type FrontendPluginManifestEntry = {
   manifest: FrontendPlugin['manifest'];
 };
-
-function sameContract(left: string, right: string): boolean {
-  const local = (value: string) => value.split('#').at(-1)?.split(':').at(-1) ?? value;
-  return left === right || local(left) === local(right);
-}
 
 function validateManifest(plugin: FrontendPlugin): void {
   const { manifest } = plugin;

@@ -11,7 +11,7 @@ describe('workflow capability model', () => {
           label: 'Operation',
           definition: 'Runs an operation.',
           project_entry: true,
-          domain: 'core',
+          plugin: 'core',
           module_id: 'core',
         },
       ],

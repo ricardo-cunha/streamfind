@@ -1,39 +1,121 @@
 #include "streamfind/service/project_runtime_manager.hpp"
+#include "streamfind/plugin_configuration.hpp"
+#include "streamfind/plugin_lockfile.hpp"
+#include "streamfind/plugin_registry.hpp"
 #include "streamfind/service/worker_handle_broker.hpp"
 #include "streamfind/fingerprint.hpp"
+#include "streamfind/project_layout.hpp"
 #include "streamfind/service_configuration.hpp"
 
 #include <algorithm>
 #include <atomic>
-#include <cctype>
+#include <charconv>
 #include <cmath>
 #include <chrono>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <stdexcept>
+#include <cstdlib>
 #include <system_error>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#include <arrow/io/file.h>
+#include <arrow/ipc/api.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace streamfind::service {
 
+namespace lockfile_detail {
+
+std::filesystem::path configured_registry_path(const std::filesystem::path &configuration_path) {
+    if (!configuration_path.empty()) {
+        const auto configuration = load_plugin_configuration_file(configuration_path);
+        if (configuration.valid && !configuration.configuration.registry_path.empty())
+            return configuration.configuration.registry_path;
+    }
+    if (const auto *home = std::getenv("STREAMFIND_HOME"); home != nullptr && *home)
+        return std::filesystem::path(home) / "extensions" / "registry.json";
+    return {};
+}
+
+void enforce_project_plugin_lockfile(const std::filesystem::path &container,
+                                     const std::filesystem::path &configuration_path) {
+    const auto lock_path = container / "project.extensions.lock.json";
+    if (!std::filesystem::exists(lock_path)) return;
+    const auto lock = load_plugin_lockfile(lock_path);
+    if (!lock.valid) throw std::runtime_error(lock.diagnostics);
+    const auto registry_path = configured_registry_path(configuration_path);
+    if (registry_path.empty() || !std::filesystem::exists(registry_path))
+        throw std::runtime_error("project plugin lockfile requires an installed plugin registry: " + lock_path.string());
+    const auto registry = load_plugin_registry(registry_path);
+    if (!registry.valid) throw std::runtime_error(registry.diagnostics);
+    validate_plugin_lockfile_against_registry(lock.lockfile, registry.registry);
+}
+
+}  // namespace lockfile_detail
+
 namespace detail {
+
+class ProjectFolderLock {
+public:
+    explicit ProjectFolderLock(const std::filesystem::path &container) {
+        const auto path = container / ".streamfind.lock";
+#ifdef _WIN32
+        handle_ = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                              FILE_ATTRIBUTE_HIDDEN, nullptr);
+        if (handle_ == INVALID_HANDLE_VALUE)
+            throw std::runtime_error("Project folder is already open by another StreamFind service: " + path.string());
+#else
+        descriptor_ = ::open(path.c_str(), O_CREAT | O_RDWR, 0600);
+        if (descriptor_ < 0 || flock(descriptor_, LOCK_EX | LOCK_NB) != 0) {
+            if (descriptor_ >= 0) ::close(descriptor_);
+            descriptor_ = -1;
+            throw std::runtime_error("Project folder is already open by another StreamFind service: " + path.string());
+        }
+#endif
+    }
+    ~ProjectFolderLock() {
+#ifdef _WIN32
+        if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);
+#else
+        if (descriptor_ >= 0) {
+            flock(descriptor_, LOCK_UN);
+            ::close(descriptor_);
+        }
+#endif
+    }
+    ProjectFolderLock(const ProjectFolderLock &) = delete;
+    ProjectFolderLock &operator=(const ProjectFolderLock &) = delete;
+private:
+#ifdef _WIN32
+    HANDLE handle_{INVALID_HANDLE_VALUE};
+#else
+    int descriptor_{-1};
+#endif
+};
+
+std::shared_ptr<ProjectFolderLock> lock_project_folder(const std::filesystem::path &container) {
+    return std::make_shared<ProjectFolderLock>(container);
+}
 
 std::uint64_t configured_worker_memory_limit_mb(const std::filesystem::path &configuration_path) {
     return load_service_configuration(configuration_path).worker_memory_limit_mb;
 }
 
-std::string quoted_identifier(const std::string &value) {
-    if (value.empty()) throw std::invalid_argument("data-proxy identifier is empty");
-    for (const auto character : value)
-        if (!(std::isalnum(static_cast<unsigned char>(character)) || character == '_'))
-            throw std::invalid_argument("data-proxy identifier is invalid");
-    return "\"" + value + "\"";
-}
-
-Json workflow_without_positions(Json workflow) {
+Json workflow_without_layout_and_metadata(Json workflow) {
+    workflow.erase("metadata");
     for (auto &operation : workflow["operations"]) operation.erase("position");
     return workflow;
 }
@@ -53,6 +135,98 @@ std::string create_operation_run_id() {
     output << "operation-run-" << std::hex << now << '-'
            << sequence.fetch_add(1, std::memory_order_relaxed);
     return output.str();
+}
+
+std::string discard_failed_worker_results(const std::filesystem::path &database_path,
+                                         const std::string &run_id) noexcept {
+    try {
+        ResultStore(database_path).remove_published_results_for_run(run_id);
+        return {};
+    } catch (const std::exception &error) {
+        return error.what();
+    } catch (...) {
+        return "unknown result-store cleanup failure";
+    }
+}
+
+std::string append_cleanup_diagnostic(std::string message, const std::string &cleanup_error) {
+    if (!cleanup_error.empty())
+        message += "; failed to remove partial outputs from the failed worker run: " + cleanup_error;
+    return message;
+}
+
+int duplicate_arrow_output_descriptor(std::intptr_t native_handle) {
+#ifdef _WIN32
+    HANDLE duplicate = INVALID_HANDLE_VALUE;
+    if (!DuplicateHandle(GetCurrentProcess(), reinterpret_cast<HANDLE>(native_handle),
+                         GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS))
+        throw std::runtime_error("cannot duplicate result output handle for service Arrow query");
+    const auto descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(duplicate), _O_BINARY);
+    if (descriptor < 0) {
+        CloseHandle(duplicate);
+        throw std::runtime_error("cannot adapt result output handle for service Arrow query");
+    }
+    return descriptor;
+#else
+    const auto descriptor = ::dup(static_cast<int>(native_handle));
+    if (descriptor < 0)
+        throw std::runtime_error("cannot duplicate result output handle for service Arrow query");
+    return descriptor;
+#endif
+}
+
+Json stable_result_cache_identity(const Json &descriptor) {
+    const auto producer_key = descriptor.value("computation_key", std::string{});
+    if (descriptor.value("cacheable", false) && !producer_key.empty()) {
+        return Json{
+            {"$producer_computation_key", producer_key},
+            {"output_port_id", descriptor.value("output_port_id",
+                descriptor.value("contract_id", std::string{}))},
+            {"representation", descriptor.value("representation",
+                descriptor.value("kind", std::string{}))},
+            {"format", descriptor.value("format", std::string{})}};
+    }
+
+    const auto digest = descriptor.value("payload_digest", std::string{});
+    if (digest.empty() || descriptor.value("state", std::string{}) != "published")
+        return descriptor;
+
+    return Json{
+        {"$result_content_digest", digest},
+        {"payload_size", descriptor.value("payload_size", std::uintmax_t{0})},
+        {"format", descriptor.value("format", std::string{})},
+        {"representation", descriptor.value("representation",
+            descriptor.value("kind", std::string{}))},
+        {"contract_id", descriptor.value("contract_id", std::string{})}};
+}
+
+Json stable_cache_value(const Json &value, const ResultStore &store) {
+    if (value.is_array()) {
+        Json normalized = Json::array();
+        for (const auto &item : value) normalized.push_back(stable_cache_value(item, store));
+        return normalized;
+    }
+    if (!value.is_object()) return value;
+
+    const auto result_ref = value.find("$result_ref");
+    if (result_ref != value.end() && result_ref->is_string()) {
+        try {
+            return stable_result_cache_identity(store.describe_result(result_ref->get<std::string>()));
+        } catch (...) {
+            // Keep unresolved references identity-sensitive; never let an
+            // unavailable result become a cache hit through an empty digest.
+            return value;
+        }
+    }
+
+    if (value.contains("result_id") && value.contains("payload_digest") &&
+        value.value("state", std::string{}) == "published")
+        return stable_result_cache_identity(value);
+
+    Json normalized = Json::object();
+    for (const auto &[key, item] : value.items())
+        normalized[key] = stable_cache_value(item, store);
+    return normalized;
 }
 
 std::int64_t unix_time_milliseconds() {
@@ -140,11 +314,11 @@ ProjectSessionDto ProjectRuntimeManager::describe(const std::string &session_id,
     // Project opening must not hash every multi-gigabyte payload. Individual result
     // access performs full integrity validation; inspection still reports the
     // lightweight store size for the project card.
-    const auto inspection = result_store.inspect(false);
+    const auto inspection = result_store.inspect(false, true);
     return ProjectSessionDto{session_id,
-                             project.get_database_path().string(),
+                             path_to_utf8(project.get_database_path().parent_path()),
                              error ? 0 : size,
-                             project.get_domains(),
+                             project.get_plugins(),
                              project.get_metadata(),
                              inspection.to_json()};
 }
@@ -153,9 +327,23 @@ ProjectSessionDto ProjectRuntimeManager::create(const std::string &session_id,
                                                  const ProjectOptions &options) {
     std::lock_guard lock(mutex_);
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
-    ensure_database_is_not_open(options.database_path);
-    auto project = std::make_unique<Project>(Project::create(options));
-    ResultStore(project->get_database_path()).initialize(false);
+    const auto layout = ProjectLayout::from_container(options.database_path.parent_path());
+    if (options.database_path.filename() != ProjectLayout::kDatabaseFilename ||
+        canonical_database_path(options.database_path) != canonical_database_path(layout.database()))
+        throw std::invalid_argument("Project database must be project.duckdb inside its .sf folder");
+    ensure_database_is_not_open(layout.database());
+    std::error_code error;
+    if (!std::filesystem::is_directory(layout.container().parent_path(), error) || error)
+        throw std::invalid_argument("Project parent folder does not exist: " + layout.container().parent_path().string());
+    if (!std::filesystem::create_directory(layout.container(), error) || error)
+        throw std::invalid_argument("Project folder already exists or cannot be created: " + layout.container().string());
+    std::shared_ptr<detail::ProjectFolderLock> folder_lock;
+    try {
+    folder_lock = detail::lock_project_folder(layout.container());
+    ProjectOptions initialized_options = options;
+    const auto store = ResultStore(layout.database()).initialize(false);
+    initialized_options.result_store_id = store.store_id;
+    auto project = std::make_unique<Project>(Project::create(initialized_options));
     project->set_result_cache_lookup([database_path = project->get_database_path()](const std::string &key) {
         return ResultStore(database_path).find_cached_results(key);
     });
@@ -186,20 +374,45 @@ ProjectSessionDto ProjectRuntimeManager::create(const std::string &session_id,
     const auto result = describe(session_id, *project);
     workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
+    project_folder_locks_.emplace(session_id, std::move(folder_lock));
     workflow_states_[session_id] = kWorkflowIdle;
     return result;
+    } catch (...) {
+        folder_lock.reset();
+        std::filesystem::remove_all(layout.container(), error);
+        throw;
+    }
 }
 
 ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
                                                const ProjectOptions &options) {
     std::lock_guard lock(mutex_);
+    const auto layout = ProjectLayout::from_container(options.database_path.parent_path());
+    if (options.database_path.filename() != ProjectLayout::kDatabaseFilename ||
+        canonical_database_path(options.database_path) != canonical_database_path(layout.database()))
+        throw std::invalid_argument("Project database must be project.duckdb inside its .sf folder");
+    const auto canonical = canonical_database_path(layout.database());
+    for (const auto &[existing_session, existing_project] : projects_)
+        if (canonical_database_path(existing_project->get_database_path()) == canonical)
+            return describe(existing_session, *existing_project);
     if (projects_.contains(session_id)) throw std::invalid_argument("project session already exists");
-    ensure_database_is_not_open(options.database_path);
-    auto project = std::make_unique<Project>(Project::open(options));
-    // Existing projects may predate the sidecar result store. Initialize it
-    // while the project session is opened so the first worker can publish
-    // results without failing on a missing store.
-    ResultStore(project->get_database_path()).initialize(false);
+    ensure_database_is_not_open(layout.database());
+    if (!std::filesystem::is_regular_file(layout.database()))
+        throw std::runtime_error("Project database is missing at " + layout.database().string());
+    if (!std::filesystem::is_directory(layout.data()))
+        throw std::runtime_error("Project result store is missing at " + layout.data().string());
+    lockfile_detail::enforce_project_plugin_lockfile(layout.container(), configuration_path_);
+    auto folder_lock = detail::lock_project_folder(layout.container());
+    ResultStore result_store(layout.database());
+    const auto prior_store = result_store.inspect(false, false);
+    if (prior_store.status != ResultStoreStatus::ready)
+        throw std::runtime_error("Project result store is unavailable at " + prior_store.root.string() +
+            (prior_store.error.empty() ? std::string{} : ": " + prior_store.error) +
+            ". No files or registrations were changed. Restore the matching data folder or open the project "
+            "with the matching streamfind release and rerun its workflow.");
+    ProjectOptions verified_options = options;
+    verified_options.result_store_id = prior_store.store_id;
+    auto project = std::make_unique<Project>(Project::open(verified_options));
     project->set_result_cache_lookup([database_path = project->get_database_path()](const std::string &key) {
         return ResultStore(database_path).find_cached_results(key);
     });
@@ -227,9 +440,10 @@ ProjectSessionDto ProjectRuntimeManager::open(const std::string &session_id,
             }
             operation_event_callback_(session_id, operation_id, type, payload);
         });
-    const auto result = describe(session_id, *project);
+    auto result = describe(session_id, *project);
     workflow_definitions_[session_id] = project->get_workflow();
     projects_.emplace(session_id, std::move(project));
+    project_folder_locks_.emplace(session_id, std::move(folder_lock));
     workflow_states_[session_id] = kWorkflowIdle;
     return result;
 }
@@ -270,10 +484,9 @@ ProjectSessionDto ProjectRuntimeManager::close(const std::string &session_id) {
     {
         std::lock_guard lock(mutex_);
         projects_.erase(session_id);
+        project_folder_locks_.erase(session_id);
         {
             std::lock_guard cache_lock(result_cache_mutex_);
-            result_row_key_cache_.clear();
-            result_navigation_index_cache_.clear();
         }
         clear_decoded_trace_cache_locked();
         workflow_definitions_.erase(session_id);
@@ -326,19 +539,32 @@ Json ProjectRuntimeManager::audit_trail(const std::string &session_id) const {
 }
 
 Json ProjectRuntimeManager::copy_project(const std::string &session_id,
-                                         const std::filesystem::path &destination_database_path) {
+                                         const std::filesystem::path &destination_project_path) {
     std::lock_guard lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    ensure_database_is_not_open(destination_database_path);
-    ProjectOptions options;
-    options.database_path = destination_database_path;
-    auto copy = iterator->second->copy(options);
-    ResultStore(copy.get_database_path()).initialize();
-    Json response;
-    to_json(response, describe(session_id, copy));
-    response["session_id"] = nullptr;
-    return response;
+    const auto layout = ProjectLayout::from_container(destination_project_path);
+    ensure_database_is_not_open(layout.database());
+    std::error_code error;
+    if (!std::filesystem::create_directory(layout.container(), error) || error)
+        throw std::invalid_argument("Project folder already exists or cannot be created: " + layout.container().string());
+    std::shared_ptr<detail::ProjectFolderLock> folder_lock;
+    try {
+        folder_lock = detail::lock_project_folder(layout.container());
+        ProjectOptions options;
+        options.database_path = layout.database();
+        const auto store = ResultStore(layout.database()).initialize(false);
+        options.result_store_id = store.store_id;
+        auto copy = iterator->second->copy(options);
+        Json response;
+        to_json(response, describe(session_id, copy));
+        response["session_id"] = nullptr;
+        return response;
+    } catch (...) {
+    folder_lock.reset();
+        std::filesystem::remove_all(layout.container(), error);
+        throw;
+    }
 }
 
 Json ProjectRuntimeManager::validate_workflow(const std::string &session_id, const Json &definition) const {
@@ -369,9 +595,11 @@ Json ProjectRuntimeManager::save_workflow(const std::string &session_id, const J
     if (expected_revision != current.definition_revision)
         throw WorkflowRevisionConflict(expected_revision, current.definition_revision);
     if (workflow.workflow_id.empty()) workflow.workflow_id = current.workflow_id.empty() ? "workflow" : current.workflow_id;
-    const bool layout_only = detail::workflow_without_positions(workflow.to_json()) ==
-                             detail::workflow_without_positions(current.to_json());
-    workflow.version = layout_only ? current.version : std::max(current.version + 1, workflow.version);
+    const bool execution_definition_unchanged =
+        detail::workflow_without_layout_and_metadata(workflow.to_json()) ==
+        detail::workflow_without_layout_and_metadata(current.to_json());
+    workflow.version = execution_definition_unchanged
+        ? current.version : std::max(current.version + 1, workflow.version);
     workflow.definition_revision = current.definition_revision + 1;
     iterator->second->set_workflow(workflow, *operations_);
     workflow_definitions_[session_id] = workflow;
@@ -391,73 +619,94 @@ Json ProjectRuntimeManager::clear_result_cache(const std::string &session_id) {
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     iterator->second->clear_result_cache();
+    const auto invalidated_results = ResultStore(iterator->second->get_database_path()).clear_cache();
     {
         std::lock_guard cache_lock(result_cache_mutex_);
-        result_row_key_cache_.clear();
-        result_navigation_index_cache_.clear();
     }
     clear_decoded_trace_cache_locked();
-    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+    return Json{{"workflow", iterator->second->get_workflow().to_json()},
+                {"cleared", true},
+                {"invalidated_results", invalidated_results}};
 }
 
 Json ProjectRuntimeManager::clear_all_results(const std::string &session_id) {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto inventory = iterator->second->get_result_inventory();
+    std::filesystem::path database_path;
+    Json workflow_json;
     std::vector<std::string> result_ids;
-    for (const auto &entry : inventory) {
-        const auto value = entry.find("result_id");
-        if (value != entry.end() && value->is_string() && !value->get<std::string>().empty())
-            result_ids.push_back(value->get<std::string>());
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+        const auto inventory = iterator->second->get_result_inventory();
+        for (const auto &entry : inventory) {
+            const auto value = entry.find("result_id");
+            if (value != entry.end() && value->is_string() && !value->get<std::string>().empty())
+                result_ids.push_back(value->get<std::string>());
+        }
+        for (const auto &manifest : ResultStore(database_path).published_results()) {
+            const auto value = manifest.find("result_id");
+            if (value != manifest.end() && value->is_string() && !value->get<std::string>().empty())
+                result_ids.push_back(value->get<std::string>());
+        }
+        iterator->second->clear_all_results();
+        workflow_json = iterator->second->get_workflow().to_json();
+        workflow_states_[session_id] = kWorkflowIdle;
+        workflow_progress_[session_id] = Json{{"completed", 0},
+                                             {"total", workflow_definitions_.at(session_id).operations.size()},
+                                             {"current_step", 0}};
+        clear_decoded_trace_cache_locked();
     }
-    const ResultStore store(iterator->second->get_database_path());
-    for (const auto &manifest : store.published_results()) {
-        const auto value = manifest.find("result_id");
-        if (value != manifest.end() && value->is_string() && !value->get<std::string>().empty())
-            result_ids.push_back(value->get<std::string>());
-    }
-    iterator->second->clear_all_results();
+
+    // Published result deletion can recurse through large Arrow payloads. Do
+    // not hold the project-manager mutex while performing filesystem cleanup:
+    // health, workflow snapshots, and unrelated project requests must remain
+    // responsive while a result is being removed.
+    const ResultStore store(database_path);
     store.remove_published_results(result_ids);
     {
         std::lock_guard cache_lock(result_cache_mutex_);
-        result_row_key_cache_.clear();
-        result_navigation_index_cache_.clear();
     }
-    clear_decoded_trace_cache_locked();
-    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}};
+    return Json{{"workflow", workflow_json}, {"cleared", true}};
 }
 
 Json ProjectRuntimeManager::clear_node_results(const std::string &session_id, const std::string &producer_instance) {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
-    const auto inventory = iterator->second->get_result_inventory();
+    std::filesystem::path database_path;
+    Json workflow_json;
     std::vector<std::string> result_ids;
-    for (const auto &entry : inventory) {
-        const auto producer = entry.find("producer_instance");
-        const auto result = entry.find("result_id");
-        if (producer != entry.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
-            result != entry.end() && result->is_string() && !result->get<std::string>().empty())
-            result_ids.push_back(result->get<std::string>());
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+        const auto inventory = iterator->second->get_result_inventory();
+        for (const auto &entry : inventory) {
+            const auto producer = entry.find("producer_instance");
+            const auto result = entry.find("result_id");
+            if (producer != entry.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
+                result != entry.end() && result->is_string() && !result->get<std::string>().empty())
+                result_ids.push_back(result->get<std::string>());
+        }
+        for (const auto &manifest : ResultStore(database_path).published_results()) {
+            const auto producer = manifest.find("producer_instance");
+            const auto result = manifest.find("result_id");
+            if (producer != manifest.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
+                result != manifest.end() && result->is_string() && !result->get<std::string>().empty())
+                result_ids.push_back(result->get<std::string>());
+        }
+        iterator->second->clear_results_for_producer_instance(producer_instance);
+        workflow_json = iterator->second->get_workflow().to_json();
+        clear_decoded_trace_cache_locked();
     }
-    const ResultStore store(iterator->second->get_database_path());
-    for (const auto &manifest : store.published_results()) {
-        const auto producer = manifest.find("producer_instance");
-        const auto result = manifest.find("result_id");
-        if (producer != manifest.end() && producer->is_string() && producer->get<std::string>() == producer_instance &&
-            result != manifest.end() && result->is_string() && !result->get<std::string>().empty())
-            result_ids.push_back(result->get<std::string>());
-    }
-    iterator->second->clear_results_for_producer_instance(producer_instance);
+
+    // Keep recursive result-directory removal outside mutex_ so a large Arrow
+    // artifact cannot block service health and workflow-state requests.
+    const ResultStore store(database_path);
     store.remove_published_results(result_ids);
     {
         std::lock_guard cache_lock(result_cache_mutex_);
-        result_row_key_cache_.clear();
-        result_navigation_index_cache_.clear();
     }
-    clear_decoded_trace_cache_locked();
-    return Json{{"workflow", iterator->second->get_workflow().to_json()}, {"cleared", true}, {"producer_instance", producer_instance}};
+    return Json{{"workflow", workflow_json}, {"cleared", true}, {"producer_instance", producer_instance}};
 }
 
 Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) const {
@@ -505,7 +754,8 @@ Json ProjectRuntimeManager::workflow_snapshot(const std::string &session_id) con
         catch (...) { return std::uint64_t{0}; }
     }();
     const auto execution_status = summary.value("execution_status", std::string{"idle"});
-    if (execution_status == "failed") persisted_state = "failed";
+    if (execution_status == "idle") persisted_state = kWorkflowIdle;
+    else if (execution_status == "failed") persisted_state = "failed";
     else if (execution_status == "running") persisted_state = "running";
     else if (execution_status == "completed" || (!workflow.operations.empty() && completed >= workflow.operations.size()))
         persisted_state = "completed";
@@ -670,28 +920,41 @@ Json ProjectRuntimeManager::start_operation(const std::string &session_id,
 }
 
 Json ProjectRuntimeManager::result_inventory(const std::string &session_id) const {
-    std::lock_guard lock(mutex_);
-    const auto iterator = projects_.find(session_id);
-    if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+    std::filesystem::path database_path;
+    Json inventory;
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+        inventory = iterator->second->get_result_inventory();
+    }
     std::unordered_map<std::string, Json> registered_results;
-    for (auto metadata : iterator->second->get_result_inventory()) {
+    for (auto metadata : inventory) {
         const auto id = metadata.value("result_id", std::string{});
         if (id.empty()) continue;
         const auto revision = metadata.find("workflow_revision");
         if (revision != metadata.end() && revision->is_string()) {
-            try { metadata["workflow_revision"] = std::stoi(revision->get<std::string>()); }
-            catch (...) { metadata["workflow_revision"] = 0; }
+            const auto text = revision->get<std::string>();
+            int parsed_revision = 0;
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed_revision);
+            if (error != std::errc{} || end != text.data() + text.size() || parsed_revision < 0)
+                throw std::runtime_error("result registry contains an invalid workflow_revision for " + id);
+            metadata["workflow_revision"] = parsed_revision;
+        } else if (revision != metadata.end() &&
+                   (!revision->is_number_integer() || revision->get<std::int64_t>() < 0)) {
+            throw std::runtime_error("result registry contains an invalid workflow_revision for " + id);
         }
         registered_results[id] = std::move(metadata);
     }
-    const ResultStore store(iterator->second->get_database_path());
+    const ResultStore store(database_path);
     Json results = Json::array();
     for (const auto &manifest : store.published_results()) {
         const auto result_id = manifest.value("result_id", std::string{});
         const auto registration = registered_results.find(result_id);
         // The manifest owns payload availability; DuckDB owns project-local
         // registration and workflow provenance. Expose only committed results
-        // that have both records, and never inspect a historical DuckDB table.
+        // that have both records.
         if (result_id.empty() || registration == registered_results.end() ||
             registration->second.value("status", std::string{}) != "published")
             continue;
@@ -709,20 +972,7 @@ Json ProjectRuntimeManager::result_inventory(const std::string &session_id) cons
         if (result.value("representation", std::string{}) == "table" &&
             result.contains("schema") && result.at("schema").is_array())
             result["columns"] = result["schema"];
-        if (result.value("representation", std::string{}) == "table")
-            result["physical_table"] = "result:" + result_id;
         if (manifest.contains("contract_id")) result["contract_id"] = manifest.at("contract_id");
-        // JSON results are immutable files in the result store.  The frontend
-        // needs the bounded structured payload for JSON viewers; a payload_ref
-        // alone is useful to workers but cannot render a canvas result.
-        if (result.value("representation", std::string{}) == "json") {
-            try {
-                result["payload"] = store.read_json_payload(result.value("result_id", std::string{}));
-            } catch (const std::exception &error) {
-                result["status"] = "stale";
-                result["availability_error"] = error.what();
-            }
-        }
         results.push_back(std::move(result));
     }
     return results;
@@ -768,12 +1018,39 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
         if (descriptor.value("kind", std::string{}) == "table" &&
             descriptor.value("format", std::string{}) == "arrow-ipc-file") {
             const auto mode = request.value("mode", std::string{"page"});
-            if (mode != "page" && mode != "sample" && mode != "detail" && mode != "eic" && mode != "visualization")
-                throw std::invalid_argument("result table query mode must be page, sample, detail, eic, or visualization");
+            if (mode != "page" && mode != "sample" && mode != "detail" && mode != "eic" &&
+                mode != "visualization" && mode != "distinct")
+                throw std::invalid_argument("result table query mode must be page, sample, detail, eic, visualization, or distinct");
             const auto offset = request.value("offset", std::uintmax_t{0});
             const auto limit = std::clamp(request.value("limit", std::uintmax_t{1000}),
                                           std::uintmax_t{1}, std::uintmax_t{250000});
+            if (mode == "distinct") {
+                const auto requested = request.value("distinct_columns", Json::array());
+                if (!requested.is_array() || requested.empty())
+                    throw std::invalid_argument("distinct result query requires a non-empty distinct_columns array");
+                std::vector<std::string> distinct_columns;
+                for (const auto &column : requested) {
+                    if (!column.is_string() || column.get<std::string>().empty())
+                        throw std::invalid_argument("distinct_columns must contain non-empty names");
+                    const auto name = column.get<std::string>();
+                    const auto schema = descriptor.value("schema", Json::array());
+                    const auto schema_column = std::find_if(schema.begin(), schema.end(),
+                        [&](const Json &candidate) { return candidate.value("name", std::string{}) == name; });
+                    if (schema_column == schema.end())
+                        throw std::invalid_argument("distinct result query column not found: " + name);
+                    if (std::find(distinct_columns.begin(), distinct_columns.end(), name) == distinct_columns.end())
+                        distinct_columns.push_back(name);
+                }
+
+                const auto distinct = store.distinct_arrow_values(result_id, distinct_columns);
+                return Json{{"result_id", result_id}, {"columns", Json::array()}, {"rows", Json::array()},
+                            {"offset", 0}, {"limit", 0},
+                            {"total_rows", descriptor.value("row_count", std::uintmax_t{0})},
+                            {"returned_rows", 0}, {"mode", "distinct"}, {"has_more", false},
+                            {"distinct", distinct}};
+            }
             const auto format = descriptor.value("format", std::string{});
+            const bool compact_rows = request.value("compact_rows", false);
             Json columns = descriptor.value("schema", Json::array());
             std::vector<std::string> projected_columns;
             if (!request.contains("columns") && columns.is_array()) {
@@ -808,35 +1085,12 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                 if (projected_columns.empty())
                     throw std::invalid_argument("result query columns must not be empty");
             }
-            for (const auto &filter : request.value("filters", Json::array())) {
-                if (!filter.is_object() || !filter.value("column", Json{}).is_string()) continue;
-                const auto name = filter.at("column").get<std::string>();
-                const auto schema = descriptor.value("schema", Json::array());
-                const auto schema_column = std::find_if(schema.begin(), schema.end(),
-                    [&](const Json &candidate) { return candidate.value("name", std::string{}) == name; });
-                if (schema_column == schema.end())
-                    throw std::invalid_argument("result query filter column not found: " + name);
-                if (std::find(projected_columns.begin(), projected_columns.end(), name) == projected_columns.end())
-                    projected_columns.push_back(name);
-            }
-            std::vector<std::string> navigation_columns;
-            const auto navigation_metadata = descriptor.value("navigation_columns", Json::array());
-            if (navigation_metadata.is_array()) {
-                for (const auto &column : navigation_metadata)
-                    if (column.is_string()) navigation_columns.push_back(column.get<std::string>());
-            }
-            const bool build_navigation_index = (mode == "sample" || mode == "detail") && !navigation_columns.empty();
-            if (build_navigation_index) {
-                for (const auto &name : navigation_columns)
-                    if (std::find(projected_columns.begin(), projected_columns.end(), name) == projected_columns.end())
-                        projected_columns.push_back(name);
-            }
             const auto read_batch = [&](std::uintmax_t batch_offset, std::uintmax_t batch_limit) {
                 auto batch = store.read_arrow_ipc_batch(result_id, batch_offset, batch_limit, projected_columns);
                 // Arrow payloads contain only operation columns.  Give every
                 // immutable row the same stable offset key used by the query
                 // and trace APIs without storing a redundant key column.
-                if (format == "arrow-ipc-file") {
+                if (format == "arrow-ipc-file" && !compact_rows) {
                     auto &batch_rows = batch["rows"];
                     if (batch_rows.is_array()) {
                         for (std::size_t index = 0; index < batch_rows.size(); ++index)
@@ -846,64 +1100,16 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                 }
                 return batch;
             };
-            Json rows = Json::array();
-            const auto matches = [&](const Json &row) {
-                if (!row.is_object()) return false;
-                if (request.contains("row_keys")) {
-                    const auto &requested_keys = request.at("row_keys");
-                    if (!requested_keys.is_array() || requested_keys.empty()) return false;
-                    const auto row_key = row.value("row_key", std::string{});
-                    bool requested = false;
-                    for (const auto &key : requested_keys)
-                        if (key.is_string() && key.get<std::string>() == row_key) { requested = true; break; }
-                    if (!requested) return false;
+            const auto compact_result_rows = [&](Json &rows) {
+                if (!compact_rows || !rows.is_array()) return;
+                for (auto &row : rows) {
+                    if (!row.is_object()) continue;
+                    Json compact = Json::array();
+                    compact.get_ref<Json::array_t &>().reserve(projected_columns.size());
+                    for (const auto &name : projected_columns)
+                        compact.push_back(row.contains(name) ? row.at(name) : Json(nullptr));
+                    row = std::move(compact);
                 }
-                const auto search = request.value("search", std::string{});
-                if (!search.empty()) {
-                    bool found = false;
-                    for (const auto &[name, value] : row.items())
-                        if (value.dump().find(search) != std::string::npos) { found = true; break; }
-                    if (!found) return false;
-                }
-                const auto filters = request.value("filters", Json::array());
-                for (const auto &filter : filters) {
-                    if (!filter.is_object()) continue;
-                    const auto column = filter.value("column", std::string{});
-                    const auto iterator = row.find(column);
-                    const auto value = iterator == row.end() ? Json(nullptr) : *iterator;
-                    const auto operation = filter.value("operator", std::string{"eq"});
-                    if (operation == "is_null" && !value.is_null()) return false;
-                    if (operation == "is_not_null" && value.is_null()) return false;
-                    if (operation == "is_null" || operation == "is_not_null") continue;
-                    const auto scalar_text = [](const Json &item) { return item.is_string() ? item.get<std::string>() : item.dump(); };
-                    const auto left = scalar_text(value);
-                    if (operation == "in") {
-                        bool included = false;
-                        for (const auto &candidate : filter.value("values", Json::array()))
-                            if (left == scalar_text(candidate)) { included = true; break; }
-                        if (!included) return false;
-                        continue;
-                    }
-                    const auto right = filter.contains("value") ? scalar_text(filter.at("value")) : std::string{};
-                    if (operation == "eq" && left != right) return false;
-                    if (operation == "neq" && left == right) return false;
-                    if (operation == "between") {
-                        const auto minimum = scalar_text(filter.value("min", Json{}));
-                        const auto maximum = scalar_text(filter.value("max", Json{}));
-                        try {
-                            const auto numeric = std::stod(left);
-                            if (numeric < std::stod(minimum) || numeric > std::stod(maximum)) return false;
-                        } catch (...) { if (left < minimum || left > maximum) return false; }
-                    }
-                    if (operation == "gt" || operation == "gte" || operation == "lt" || operation == "lte") {
-                        try {
-                            const auto lhs = std::stod(left), rhs = std::stod(right);
-                            if ((operation == "gt" && !(lhs > rhs)) || (operation == "gte" && !(lhs >= rhs)) ||
-                                (operation == "lt" && !(lhs < rhs)) || (operation == "lte" && !(lhs <= rhs))) return false;
-                        } catch (...) { return false; }
-                    }
-                }
-                return true;
             };
             // An unfiltered table page is a row-range read, not a filtered
             // query. Use the immutable manifest row count and let the Arrow
@@ -911,10 +1117,16 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
             // of scanning the whole result merely to calculate total_rows.
             // This is the common path for the table renderer and keeps its
             // latency proportional to the requested page.
+            if (request.contains("filters") && !request.at("filters").is_array())
+                throw std::invalid_argument("result query filters must be an array");
             const auto filters = request.value("filters", Json::array());
             const bool has_filters = filters.is_array() && !filters.empty();
-            if (mode == "page" && !has_filters && !request.contains("search") &&
-                !request.contains("row_keys")) {
+            const auto search_text = request.value("search", std::string{});
+            const auto sort_column = request.value("sort_column", std::string{});
+            const auto descending = request.value("descending", false);
+            if (request.contains("row_keys") && (has_filters || !search_text.empty() || !sort_column.empty()))
+                throw std::invalid_argument("row_keys cannot be combined with filters, search, or sorting");
+            if (!has_filters && search_text.empty() && sort_column.empty() && !request.contains("row_keys")) {
                 const auto row_count = descriptor.value("row_count", std::uintmax_t{0});
                 Json page_rows = Json::array();
                 std::uintmax_t page_offset = offset;
@@ -926,154 +1138,53 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     for (const auto &row : batch_rows) page_rows.push_back(row);
                     page_offset += batch_rows.size();
                 }
+                compact_result_rows(page_rows);
                 return Json{{"result_id", result_id}, {"columns", columns}, {"rows", page_rows},
                             {"offset", offset}, {"limit", limit}, {"total_rows", row_count},
                             {"returned_rows", page_rows.size()}, {"mode", mode},
                             {"has_more", offset + page_rows.size() < row_count}};
-            }
-            const auto project_result_key = session_id + "\n" + result_id;
-            std::shared_ptr<const NavigationIndex> cached_navigation;
-            {
-                std::lock_guard cache_lock(result_cache_mutex_);
-                const auto cached = result_navigation_index_cache_.find(project_result_key);
-                if (cached != result_navigation_index_cache_.end()) cached_navigation = cached->second;
-            }
-            if (!cached_navigation && !navigation_columns.empty()) {
-                const auto persisted = store.read_navigation_index(result_id);
-                if (persisted.is_object()) {
-                    auto restored = std::make_shared<NavigationIndex>();
-                    for (const auto &[column, values] : persisted.items()) {
-                        if (!values.is_object()) continue;
-                        for (const auto &[value, offsets] : values.items()) {
-                            if (!offsets.is_array()) continue;
-                            auto &destination = (*restored)[column][value];
-                            for (const auto &offset : offsets)
-                                if (offset.is_number_unsigned() || offset.is_number_integer())
-                                    destination.push_back(offset.get<std::uintmax_t>());
-                        }
-                    }
-                    if (!restored->empty()) {
-                        cached_navigation = restored;
-                        std::lock_guard cache_lock(result_cache_mutex_);
-                        if (result_navigation_index_cache_.size() >= 4)
-                            result_navigation_index_cache_.erase(result_navigation_index_cache_.begin());
-                        result_navigation_index_cache_[project_result_key] = std::move(restored);
-                    }
-                }
-            }
-            if (!request.contains("search") && !request.contains("row_keys") &&
-                cached_navigation && !cached_navigation->empty()) {
-                std::vector<std::unordered_set<std::uintmax_t>> candidate_sets;
-                bool indexable = true;
-                for (const auto &filter : request.value("filters", Json::array())) {
-                    if (!filter.is_object()) continue;
-                    const auto column = filter.value("column", std::string{});
-                    const auto operation = filter.value("operator", std::string{"eq"});
-                    if (std::find(navigation_columns.begin(), navigation_columns.end(), column) == navigation_columns.end() ||
-                        (operation != "eq" && operation != "in")) {
-                        indexable = false;
-                        break;
-                    }
-                    std::unordered_set<std::uintmax_t> candidates;
-                    const auto add_value = [&](const Json &value) {
-                        const auto column_index = cached_navigation->find(column);
-                        if (column_index == cached_navigation->end()) return;
-                        const auto values = column_index->second.find(value.dump());
-                        if (values == column_index->second.end()) return;
-                        candidates.insert(values->second.begin(), values->second.end());
-                    };
-                    if (operation == "eq") add_value(filter.value("value", Json{}));
-                    else for (const auto &value : filter.value("values", Json::array())) add_value(value);
-                    candidate_sets.push_back(std::move(candidates));
-                }
-                if (indexable && !candidate_sets.empty()) {
-                    std::unordered_set<std::uintmax_t> candidates = std::move(candidate_sets.front());
-                    for (std::size_t index = 1; index < candidate_sets.size(); ++index)
-                        for (auto iterator = candidates.begin(); iterator != candidates.end();)
-                            iterator = candidate_sets[index].contains(*iterator) ? std::next(iterator) : candidates.erase(iterator);
-                    std::vector<std::uintmax_t> ordered(candidates.begin(), candidates.end());
-                    std::sort(ordered.begin(), ordered.end());
-                    Json indexed_rows = Json::array();
-                    std::unordered_set<std::uintmax_t> pages;
-                    const auto page_size = std::uintmax_t{4096};
-                    for (std::size_t index = static_cast<std::size_t>(offset);
-                         index < ordered.size() && indexed_rows.size() < limit; ++index)
-                        pages.insert((ordered[index] / page_size) * page_size);
-                    std::unordered_map<std::uintmax_t, Json> loaded_rows;
-                    for (const auto page : pages) {
-                        const auto batch = read_batch(page, page_size);
-                        const auto source_rows = batch.value("rows", Json::array());
-                        if (!source_rows.is_array()) continue;
-                        for (std::size_t index = 0; index < source_rows.size(); ++index)
-                            loaded_rows.emplace(page + index, source_rows.at(index));
-                    }
-                    for (std::size_t index = static_cast<std::size_t>(offset);
-                         index < ordered.size() && indexed_rows.size() < limit; ++index) {
-                        const auto row = loaded_rows.find(ordered[index]);
-                        if (row != loaded_rows.end() && matches(row->second)) indexed_rows.push_back(row->second);
-                    }
-                    if (columns.is_array() && !columns.empty()) {
-                        for (auto &row : indexed_rows) {
-                            Json projected = Json::object();
-                            for (const auto &column : columns) {
-                                const auto name = column.value("name", std::string{});
-                                if (!name.empty() && row.contains(name)) projected[name] = row.at(name);
-                            }
-                            row = std::move(projected);
-                        }
-                    }
-                    return Json{{"result_id", result_id}, {"columns", columns}, {"rows", indexed_rows},
-                                {"offset", offset}, {"limit", limit}, {"total_rows", ordered.size()},
-                                {"returned_rows", indexed_rows.size()}, {"mode", mode},
-                                {"has_more", offset + indexed_rows.size() < ordered.size()}};
-                }
             }
             // Filter scans should not decode every requested output column.
             // This matters for mass-spectrometry tables where trace columns
             // are large Arrow lists but filters usually target a few scalars.
             // Scan only predicate columns, retain row offsets for the requested
             // page, then fetch/project the matching output rows by Arrow batch.
-            if (has_filters && !request.contains("search") && !request.contains("row_keys")) {
-                std::vector<std::string> filter_columns;
-                for (const auto &filter : filters) {
-                    if (!filter.is_object() || !filter.value("column", Json{}).is_string()) continue;
-                    const auto column = filter.at("column").get<std::string>();
-                    if (std::find(filter_columns.begin(), filter_columns.end(), column) == filter_columns.end())
-                        filter_columns.push_back(column);
-                }
+            if ((has_filters || !search_text.empty() || !sort_column.empty()) && !request.contains("row_keys")) {
                 std::uintmax_t matched_rows = 0;
                 std::vector<std::uintmax_t> selected_offsets;
                 selected_offsets.reserve(static_cast<std::size_t>(std::min<std::uintmax_t>(limit, 65536)));
                 Json query_stats = Json::object();
-                const auto native_scan = store.scan_arrow_scalar_filters(result_id, filters, offset, limit);
-                if (native_scan.is_object()) {
-                    matched_rows = native_scan.value("total_rows", std::uintmax_t{0});
-                    query_stats = {{"arrow_batches_scanned", native_scan.value("batches_scanned", std::uintmax_t{0})},
-                                   {"arrow_batches_skipped", native_scan.value("batches_skipped", std::uintmax_t{0})}};
-                    for (const auto &row_offset : native_scan.value("offsets", Json::array()))
-                        if (row_offset.is_number_unsigned() || row_offset.is_number_integer())
-                            selected_offsets.push_back(row_offset.get<std::uintmax_t>());
-                } else {
-                    std::uintmax_t scan_offset = 0;
-                    constexpr std::uintmax_t scan_batch_size = 65536;
-                    for (;;) {
-                        const auto batch = store.read_arrow_ipc_batch(result_id, scan_offset, scan_batch_size, filter_columns);
-                        const auto batch_rows = batch.value("rows", Json::array());
-                        if (!batch_rows.is_array() || batch_rows.empty()) break;
-                        for (std::size_t index = 0; index < batch_rows.size(); ++index) {
-                            auto row = batch_rows.at(index);
-                            if (row.is_object()) row["row_key"] = std::to_string(scan_offset + index);
-                            if (!matches(row)) continue;
-                            if (matched_rows >= offset && selected_offsets.size() < limit)
-                                selected_offsets.push_back(scan_offset + index);
-                            ++matched_rows;
-                        }
-                        scan_offset += batch_rows.size();
-                        if (!batch.value("has_more", false)) break;
+                const auto native_scan = store.scan_arrow_scalar_filters(
+                    result_id, filters, offset, limit, search_text, sort_column, descending);
+                if (!native_scan.is_object())
+                    throw std::invalid_argument("result query uses an unsupported Arrow filter column or operator");
+                matched_rows = native_scan.value("total_rows", std::uintmax_t{0});
+                query_stats = {{"arrow_batches_scanned", native_scan.value("batches_scanned", std::uintmax_t{0})},
+                               {"arrow_batches_skipped", native_scan.value("batches_skipped", std::uintmax_t{0})}};
+                for (const auto &row_offset : native_scan.value("offsets", Json::array()))
+                    if (row_offset.is_number_unsigned() || row_offset.is_number_integer())
+                        selected_offsets.push_back(row_offset.get<std::uintmax_t>());
+
+                if (native_scan.value("indexed", false)) {
+                    auto selected_rows = store.read_arrow_ipc_rows(result_id, selected_offsets, projected_columns);
+                    for (std::size_t index = 0; index < selected_rows.size(); ++index) {
+                        auto &row = selected_rows[index];
+                        if (!compact_rows && row.is_object() && !row.contains("row_key"))
+                            row["row_key"] = std::to_string(selected_offsets[index]);
                     }
+                    compact_result_rows(selected_rows);
+                    return Json{{"result_id", result_id}, {"columns", columns}, {"rows", selected_rows},
+                                {"offset", offset}, {"limit", limit}, {"total_rows", matched_rows},
+                                {"returned_rows", selected_rows.size()}, {"mode", mode},
+                                {"has_more", offset + selected_rows.size() < matched_rows},
+                                {"query_stats", query_stats}};
                 }
 
-                const auto page_size = std::uintmax_t{4096};
+                // Fetch matching rows in the largest supported Arrow block.
+                // Reading many small pages repeatedly reopened the IPC reader
+                // and walked its record-batch directory for every page, which
+                // made large filtered chromatogram results appear stuck.
+                const auto page_size = std::uintmax_t{65536};
                 std::unordered_set<std::uintmax_t> pages;
                 for (const auto source_offset : selected_offsets)
                     pages.insert((source_offset / page_size) * page_size);
@@ -1099,6 +1210,7 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                     }
                     filtered_rows.push_back(std::move(projected));
                 }
+                compact_result_rows(filtered_rows);
                 return Json{{"result_id", result_id}, {"columns", columns}, {"rows", filtered_rows},
                             {"offset", offset}, {"limit", limit}, {"total_rows", matched_rows},
                             {"returned_rows", filtered_rows.size()}, {"mode", mode},
@@ -1106,20 +1218,17 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                             {"query_stats", query_stats}};
             }
             const auto requested_row_keys = request.value("row_keys", Json::array());
-            std::shared_ptr<const std::unordered_map<std::string, std::uintmax_t>> cached_row_keys;
-            {
-                std::lock_guard cache_lock(result_cache_mutex_);
-                const auto cached = result_row_key_cache_.find(project_result_key);
-                if (cached != result_row_key_cache_.end()) cached_row_keys = cached->second;
-            }
-            if (mode == "detail" && requested_row_keys.is_array() && !requested_row_keys.empty() &&
-                cached_row_keys) {
+            if (request.contains("row_keys") && requested_row_keys.is_array()) {
                 std::vector<std::uintmax_t> requested_offsets;
                 requested_offsets.reserve(requested_row_keys.size());
                 for (const auto &requested : requested_row_keys) {
                     if (!requested.is_string()) continue;
-                    const auto offset = cached_row_keys->find(requested.get<std::string>());
-                    if (offset != cached_row_keys->end()) requested_offsets.push_back(offset->second);
+                    const auto &key = requested.get_ref<const std::string &>();
+                    std::uintmax_t row_offset = 0;
+                    const auto parsed = std::from_chars(key.data(), key.data() + key.size(), row_offset);
+                    if (parsed.ec == std::errc{} && parsed.ptr == key.data() + key.size() &&
+                        row_offset < descriptor.value("row_count", std::uintmax_t{0}))
+                        requested_offsets.push_back(row_offset);
                 }
                 Json cached_rows = Json::array();
                 const auto page_size = std::uintmax_t{4096};
@@ -1149,110 +1258,12 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
                         row = std::move(projected);
                     }
                 }
+                compact_result_rows(cached_rows);
                 return Json{{"result_id", result_id}, {"columns", columns}, {"rows", cached_rows},
                             {"offset", 0}, {"limit", limit}, {"total_rows", cached_rows.size()},
                             {"returned_rows", cached_rows.size()}, {"mode", mode}, {"has_more", false}};
             }
-            std::uintmax_t total_rows = 0;
-            std::uintmax_t source_offset = 0;
-            constexpr std::uintmax_t source_page_size = 65536;
-            const bool build_row_key_index = mode == "sample" || mode == "detail";
-            bool collect_row_key_index = build_row_key_index;
-            std::size_t row_key_index_estimated_bytes = 0;
-            std::unordered_map<std::string, std::uintmax_t> row_key_index;
-            NavigationIndex navigation_index;
-            bool collect_navigation_index = build_navigation_index;
-            std::size_t navigation_index_estimated_bytes = 0;
-            std::uintmax_t row_offset = source_offset;
-            for (;;) {
-                const auto batch = read_batch(source_offset, source_page_size);
-                const auto batch_rows = batch.value("rows", Json::array());
-                if (!batch_rows.is_array() || batch_rows.empty()) break;
-                for (const auto &row : batch_rows) {
-                    const auto current_row_offset = row_offset++;
-                    if (collect_row_key_index && row.is_object()) {
-                        const auto row_key = row.value("row_key", std::string{});
-                        if (!row_key.empty()) {
-                            row_key_index_estimated_bytes += row_key.size() + sizeof(std::uintmax_t) + 32;
-                            if (row_key_index_estimated_bytes > 16 * 1024 * 1024) {
-                                row_key_index.clear();
-                                collect_row_key_index = false;
-                            } else {
-                                row_key_index.emplace(row_key, current_row_offset);
-                            }
-                        }
-                    }
-                    if (collect_navigation_index && row.is_object()) {
-                        for (const auto &name : navigation_columns) {
-                            if (!row.contains(name)) continue;
-                            const auto value = row.at(name).dump();
-                            navigation_index_estimated_bytes += name.size() + value.size() + 64;
-                            if (navigation_index_estimated_bytes > 32 * 1024 * 1024) {
-                                navigation_index.clear();
-                                collect_navigation_index = false;
-                                break;
-                            }
-                            navigation_index[name][value].push_back(current_row_offset);
-                        }
-                    }
-                    if (!matches(row)) continue;
-                    ++total_rows;
-                    if (mode == "sample" && rows.size() >= limit) continue;
-                    if (mode != "sample" && total_rows <= offset) continue;
-                    if (rows.size() < limit) rows.push_back(row);
-                }
-                source_offset += batch_rows.size();
-                row_offset = source_offset;
-                if (!batch.value("has_more", false)) break;
-            }
-            if (collect_navigation_index && !navigation_index.empty()) {
-                Json persisted_index = Json::object();
-                for (const auto &[column, values] : navigation_index) {
-                    auto &column_index = persisted_index[column];
-                    for (const auto &[value, offsets] : values)
-                        column_index[value] = offsets;
-                }
-                store.write_navigation_index(result_id, persisted_index);
-                if (persisted_index.dump().size() <= 32 * 1024 * 1024) {
-                    std::lock_guard cache_lock(result_cache_mutex_);
-                    if (result_navigation_index_cache_.size() >= 4)
-                        result_navigation_index_cache_.erase(result_navigation_index_cache_.begin());
-                    result_navigation_index_cache_[project_result_key] =
-                        std::make_shared<const NavigationIndex>(navigation_index);
-                }
-            }
-            if (collect_row_key_index && !row_key_index.empty()) {
-                std::lock_guard cache_lock(result_cache_mutex_);
-                if (result_row_key_cache_.size() >= 4) result_row_key_cache_.erase(result_row_key_cache_.begin());
-                result_row_key_cache_[project_result_key] =
-                    std::make_shared<const std::unordered_map<std::string, std::uintmax_t>>(std::move(row_key_index));
-            }
-            if ((!columns.is_array() || columns.empty()) && !rows.empty() && rows.front().is_object()) {
-                columns = Json::array();
-                for (const auto &[name, value] : rows.front().items()) {
-                    std::string type = "VARCHAR";
-                    if (value.is_boolean()) type = "BOOLEAN";
-                    else if (value.is_number_integer()) type = "BIGINT";
-                    else if (value.is_number_float()) type = "DOUBLE";
-                    else if (value.is_array() || value.is_object()) type = "JSON";
-                    columns.push_back({{"name", name}, {"type", type}});
-                }
-            }
-            if (columns.is_array() && !columns.empty() && !rows.empty()) {
-                for (auto &row : rows) {
-                    if (!row.is_object()) continue;
-                    Json projected = Json::object();
-                    for (const auto &column : columns) {
-                        const auto name = column.value("name", std::string{});
-                        if (!name.empty() && row.contains(name)) projected[name] = row.at(name);
-                    }
-                    row = std::move(projected);
-                }
-            }
-            return Json{{"result_id", result_id},
-                        {"columns", columns}, {"rows", rows}, {"offset", offset},
-                        {"limit", limit}, {"total_rows", total_rows}, {"returned_rows", rows.size()},
-                        {"mode", mode}, {"has_more", offset + rows.size() < total_rows}};
+            throw std::invalid_argument("result query requires page, sample, detail row keys, or Arrow predicates");
         }
     } catch (const std::exception &error) {
         // A published result that fails to decode must report the reader
@@ -1267,6 +1278,19 @@ Json ProjectRuntimeManager::result_query(const std::string &session_id, const Js
 }
 
 Json ProjectRuntimeManager::result_data(const std::string &session_id, const Json &request) const {
+    const auto result_id = request.value("result_id", std::string{});
+    if (result_id.empty()) throw std::invalid_argument("result_id is required");
+    std::filesystem::path database_path;
+    {
+        std::lock_guard lock(mutex_);
+        const auto iterator = projects_.find(session_id);
+        if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
+        database_path = iterator->second->get_database_path();
+    }
+    const ResultStore store(database_path);
+    const auto descriptor = store.describe_result(result_id);
+    if (descriptor.value("kind", std::string{}) == "json")
+        return Json{{"result_id", result_id}, {"payload", store.read_json_payload(result_id)}};
     return result_query(session_id, request);
 }
 
@@ -1356,6 +1380,36 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
         return iterator->second->get_database_path();
     }();
     const ResultStore store(project_snapshot);
+    const auto materialize_json_artifact = [&store](Json artifact) {
+        if (!artifact.is_object()) return artifact;
+        const auto result_id = artifact.value("result_id", std::string{});
+        const auto representation = artifact.value("representation",
+                                                   artifact.value("kind", std::string{}));
+        if (result_id.empty() || representation != "json") return artifact;
+        const auto payload = artifact.find("payload");
+        if (payload == artifact.end() || payload->is_string()) {
+            try {
+                artifact["payload"] = store.read_json_payload(result_id);
+            } catch (...) {
+                // Keep the reference intact when the result is unavailable;
+                // downstream validation will report the missing payload.
+            }
+        }
+        return artifact;
+    };
+    const auto table_reference = [](const Json &descriptor, const WorkflowConnection &connection) {
+        const auto result_id = descriptor.value("result_id", std::string{});
+        if (result_id.empty())
+            throw Error(ErrorCode::WorkflowValidation,
+                        "Table result has no result_id for connection " +
+                        connection.source_operation + "." + connection.source_port);
+        return Json{{"$result_ref", result_id}, {"result_id", result_id},
+                    {"result_ref", "result:" + result_id},
+                    {"output_port_id", connection.source_port},
+                    {"contract_id", descriptor.value("contract_id", std::string{})},
+                    {"producer_operation", descriptor.value("producer_operation", std::string{})},
+                    {"producer_instance", descriptor.value("producer_instance", connection.source_operation)}};
+    };
     Json resolved = Json::object();
     for (const auto &connection : workflow.connections) {
         if (connection.target_operation != operation_id) continue;
@@ -1366,20 +1420,17 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
                 if (connection.target_port.rfind("parameter:", 0) == 0 && output->is_object() &&
                     output->contains("result_id")) {
                     const auto result_id = output->value("result_id", std::string{});
-                    try {
-                        const auto descriptor = store.describe_result(result_id);
-                        if (descriptor.value("representation", std::string{}) == "table" ||
-                            descriptor.value("kind", std::string{}) == "table")
-                            resolved[connection.target_port] = Json{{"$result_ref", result_id}};
-                        else if (descriptor.value("representation", std::string{}) == "json")
-                            resolved[connection.target_port] = store.read_json_payload(result_id);
-                        else
-                            resolved[connection.target_port] = *output;
-                    } catch (...) {
+                    const auto descriptor = store.describe_result(result_id);
+                    const auto kind = descriptor.value(
+                        "representation", descriptor.value("kind", std::string{}));
+                    if (kind == "table")
+                        resolved[connection.target_port] = table_reference(descriptor, connection);
+                    else if (kind == "json")
+                        resolved[connection.target_port] = store.read_json_payload(result_id);
+                    else
                         resolved[connection.target_port] = *output;
-                    }
                 } else {
-                    resolved[connection.target_port] = *output;
+                    resolved[connection.target_port] = materialize_json_artifact(*output);
                 }
                 continue;
             }
@@ -1405,7 +1456,7 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
             } catch (...) { continue; }
             if (revision > workflow.version) continue;
             const auto created_at = result.value("created_at", std::string{});
-    const auto result_id = result.value("result_id", std::string{});
+            const auto result_id = result.value("result_id", std::string{});
             if (revision < selected_revision ||
                 (revision == selected_revision &&
                  (created_at < selected_created_at ||
@@ -1420,20 +1471,22 @@ Json ProjectRuntimeManager::resolve_workflow_inputs(const std::string &session_i
                         "No published result for connection " +
                         connection.source_operation + "." + connection.source_port);
         if (connection.target_port.rfind("parameter:", 0) == 0) {
-            const auto payload = selected->find("payload");
-            if (payload != selected->end()) {
-                resolved[connection.target_port] = payload->is_string()
-                    ? Json::parse(payload->get<std::string>()) : *payload;
-            } else if (selected->value("representation", std::string{}) == "json") {
-                resolved[connection.target_port] = store.read_json_payload(
-                    selected->value("result_id", std::string{}));
-            } else if (selected->value("kind", std::string{}) == "table") {
-                resolved[connection.target_port] = Json{{"$result_ref", selected->value("result_id", std::string{})}};
+            const auto representation = selected->value(
+                "representation", selected->value("kind", std::string{}));
+            if (representation == "table") {
+                resolved[connection.target_port] = table_reference(*selected, connection);
+            } else if (representation == "json") {
+                const auto payload = selected->find("payload");
+                if (payload != selected->end() && !payload->is_null())
+                    resolved[connection.target_port] = *payload;
+                else
+                    resolved[connection.target_port] = store.read_json_payload(
+                        selected->value("result_id", std::string{}));
             } else {
                 resolved[connection.target_port] = nullptr;
             }
         } else {
-            resolved[connection.target_port] = *selected;
+            resolved[connection.target_port] = materialize_json_artifact(*selected);
         }
     }
     return resolved;
@@ -1444,10 +1497,22 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
     request.validate();
     if (request.session_id != session_id)
         throw std::invalid_argument("data-proxy session does not match the request path");
-    std::lock_guard lock(mutex_);
+    std::unique_lock lock(mutex_);
     const auto iterator = projects_.find(session_id);
     if (iterator == projects_.end()) throw std::invalid_argument("project session not found");
     const auto method = request.payload.value("method", std::string{});
+    if (method == "cancellation_status") {
+        const auto worker = active_workers_.find(session_id);
+        const auto active_run = active_worker_run_ids_.find(session_id);
+        if (worker == active_workers_.end() || !worker->second ||
+            worker->second->metadata().operation_id != request.operation_id ||
+            active_run == active_worker_run_ids_.end() || request.run_id != active_run->second)
+            throw std::invalid_argument("cancellation status request does not match the active worker");
+        const auto cancellation = operation_cancellations_.find(session_id);
+        if (cancellation == operation_cancellations_.end() || !cancellation->second)
+            return data_proxy::response(request, {{"cancelled", false}}).to_json();
+        return data_proxy::response(request, {{"cancelled", cancellation->second->load()}}).to_json();
+    }
     ResultStore store(iterator->second->get_database_path());
     if (method == "describe_result") {
         const auto result_id = request.payload.value("result_id", std::string{});
@@ -1461,6 +1526,14 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         const auto length = request.payload.value("length", std::uintmax_t{0});
         return data_proxy::response(request, store.read_result_range(result_id, offset, length)).to_json();
     }
+    if (method == "query" || method == "execute") {
+        const auto sql = request.payload.value("sql", std::string{});
+        if (sql.empty()) throw std::invalid_argument("data-proxy " + method + " requires sql");
+        if (method == "query")
+            return data_proxy::response(request, {{"rows", iterator->second->query_json(sql)}}).to_json();
+        iterator->second->execute_sql(sql);
+        return data_proxy::response(request, {{"executed", true}}).to_json();
+    }
     const auto lease_key = session_id + ":" + request.lease_id;
     if (method == "allocate_result") {
         const auto result_id = request.payload.value("result_id", std::string{});
@@ -1472,9 +1545,12 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         if (run_id != request.run_id)
             throw std::invalid_argument("result lease run_id does not match the active worker");
         const auto worker_iterator = active_workers_.find(session_id);
-        if (worker_iterator == active_workers_.end() || !worker_iterator->second)
+        const auto active_run = active_worker_run_ids_.find(session_id);
+        if (worker_iterator == active_workers_.end() || !worker_iterator->second ||
+            active_run == active_worker_run_ids_.end() || request.run_id != active_run->second)
             throw std::runtime_error("no active worker owns this result lease");
-        const auto worker = worker_iterator->second->metadata();
+        const auto worker_process = worker_iterator->second;
+        const auto worker = worker_process->metadata();
         if (worker.state != "running" || worker.operation_id != request.operation_id)
             throw std::invalid_argument("result lease request does not match the active worker");
         const auto lease_id = detail::create_data_proxy_lease_id();
@@ -1482,6 +1558,7 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         lease.owner_session_id = session_id;
         lease.owner_operation_id = request.operation_id;
         lease.owner_worker_id = worker.id;
+        lease.schema = request.payload.value("schema", Json::array());
         data_proxy_leases_[session_id + ":" + lease_id] = lease;
         WorkerHandleGrant grant;
         grant.session_id = session_id;
@@ -1491,12 +1568,17 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         grant.lease_id = lease_id;
         grant.access = WorkerHandleAccess::WriteOnly;
         grant.expires_at = std::chrono::steady_clock::now() + std::chrono::minutes(2);
+        const auto source_handle = static_cast<std::uintptr_t>(lease.writer->native_handle());
+        lock.unlock();
         try {
-            worker_iterator->second->transfer_handle(std::move(grant),
-                static_cast<std::uintptr_t>(lease.writer->native_handle()));
+            worker_process->transfer_handle(std::move(grant), source_handle);
         } catch (...) {
-            data_proxy_leases_.erase(session_id + ":" + lease_id);
-            store.abort(lease);
+            lock.lock();
+            const auto failed_lease = data_proxy_leases_.find(session_id + ":" + lease_id);
+            if (failed_lease != data_proxy_leases_.end()) {
+                store.abort(failed_lease->second);
+                data_proxy_leases_.erase(failed_lease);
+            }
             throw;
         }
         return data_proxy::response(request, { {"lease_id", lease_id}, {"result_id", result_id},
@@ -1530,17 +1612,27 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
             active_worker == active_workers_.end() || !active_worker->second ||
             active_worker->second->metadata().id != lease_iterator->second.owner_worker_id)
             throw std::invalid_argument("result abort request does not own this lease");
-        store.abort(lease_iterator->second);
+        // Filesystem cleanup can recurse through a result staging directory and
+        // can block on Windows while an inherited/duplicated handle is being
+        // released.  Do not hold the project manager mutex across that work:
+        // health, workflow snapshots, and unrelated project requests must not
+        // become hostage to a failed output cleanup.
+        auto lease = std::move(lease_iterator->second);
         data_proxy_leases_.erase(lease_iterator);
+        lock.unlock();
+        store.abort(lease);
         return data_proxy::response(request, {{"lease_id", request.lease_id}, {"state", "aborted"}}).to_json();
     }
     if (method == "lease_result_input") {
         const auto result_id = request.payload.value("result_id", std::string{});
         if (result_id.empty()) throw std::invalid_argument("lease_result_input requires result_id");
         const auto worker_iterator = active_workers_.find(session_id);
-        if (worker_iterator == active_workers_.end() || !worker_iterator->second)
+        const auto active_run = active_worker_run_ids_.find(session_id);
+        if (worker_iterator == active_workers_.end() || !worker_iterator->second ||
+            active_run == active_worker_run_ids_.end() || request.run_id != active_run->second)
             throw std::runtime_error("no active worker can receive the result input");
-        const auto worker = worker_iterator->second->metadata();
+        const auto worker_process = worker_iterator->second;
+        const auto worker = worker_process->metadata();
         if (worker.state != "running" || worker.operation_id != request.operation_id ||
             request.run_id.empty())
             throw std::invalid_argument("result input request does not match the active worker");
@@ -1554,73 +1646,92 @@ Json ProjectRuntimeManager::data_proxy(const std::string &session_id,
         grant.lease_id = read_lease_id;
         grant.access = WorkerHandleAccess::ReadOnly;
         grant.expires_at = std::chrono::steady_clock::now() + std::chrono::minutes(2);
-        worker_iterator->second->transfer_handle(std::move(grant),
-            static_cast<std::uintptr_t>(reader->native_handle()));
+        const auto source_handle = static_cast<std::uintptr_t>(reader->native_handle());
+        lock.unlock();
+        worker_process->transfer_handle(std::move(grant), source_handle);
         return data_proxy::response(request, {{"result_id", result_id},
             {"lease_id", read_lease_id}, {"format", "arrow-ipc-file"},
             {"capabilities", {"read_handle"}}}).to_json();
     }
-    const auto table = request.payload.value("table", std::string{});
-    if (table.empty()) throw std::invalid_argument("data-proxy request requires table");
-    if (method == "count_rows" && table.rfind("result:", 0) == 0) {
-        const auto result_id = table.substr(std::string("result:").size());
-        if (result_id.empty()) throw std::invalid_argument("result reference is empty");
-        const auto descriptor = store.describe_result(result_id);
-        return data_proxy::response(
-            request, {{"row_count", descriptor.value("row_count", std::uint64_t{0})}})
-            .to_json();
-    }
-    const auto quoted_table = detail::quoted_identifier(table);
-    if (method == "has_table") {
-        const auto tables = iterator->second->list_tables();
-        return data_proxy::response(request, {{"exists", std::find(tables.begin(), tables.end(), table) != tables.end()}}).to_json();
-    }
-    if (method == "describe") {
-        return data_proxy::response(request, {{"columns", iterator->second->query_json("DESCRIBE " + quoted_table)}}).to_json();
+    if (method == "write_query_result") {
+        if (request.lease_id.empty())
+            throw std::invalid_argument("write_query_result requires an output lease");
+        const auto lease_iterator = data_proxy_leases_.find(lease_key);
+        if (lease_iterator == data_proxy_leases_.end())
+            throw std::invalid_argument("result lease not found");
+        auto &lease = lease_iterator->second;
+        const auto active_worker = active_workers_.find(session_id);
+        if (lease.format != "arrow-ipc-file" || lease.run_id != request.run_id ||
+            lease.owner_operation_id != request.operation_id || active_worker == active_workers_.end() ||
+            !active_worker->second || active_worker->second->metadata().id != lease.owner_worker_id)
+            throw std::invalid_argument("direct SQL output request does not own an active Arrow result lease");
+        const auto sql = request.payload.value("sql", std::string{});
+        const auto first = sql.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos || sql.find(';') != std::string::npos ||
+            (sql.compare(first, 6, "SELECT") != 0 && sql.compare(first, 4, "WITH") != 0))
+            throw std::invalid_argument("direct SQL output requires one SELECT or WITH query");
+
+        const auto descriptor = detail::duplicate_arrow_output_descriptor(lease.writer->native_handle());
+        auto output_result = arrow::io::FileOutputStream::Open(descriptor);
+        if (!output_result.ok()) {
+#ifdef _WIN32
+            _close(descriptor);
+#else
+            ::close(descriptor);
+#endif
+            throw std::runtime_error(output_result.status().ToString());
+        }
+        const auto output = *output_result;
+        std::shared_ptr<arrow::ipc::RecordBatchWriter> arrow_writer;
+        std::uint64_t row_count = 0;
+        try {
+            iterator->second->query_arrow_batches(sql,
+                [&](const std::shared_ptr<arrow::Schema> &schema) {
+                    if (!lease.schema.is_array() || lease.schema.size() !=
+                            static_cast<std::size_t>(schema->num_fields()))
+                        throw std::runtime_error("SQL result column count does not match its declared output schema");
+                    for (std::int64_t index = 0; index < schema->num_fields(); ++index)
+                        if (lease.schema.at(static_cast<std::size_t>(index)).value("name", std::string{}) !=
+                            schema->field(index)->name())
+                            throw std::runtime_error("SQL result columns do not match their declared output order");
+                    auto created = arrow::ipc::MakeFileWriter(output, schema);
+                    if (!created.ok()) throw std::runtime_error(created.status().ToString());
+                    arrow_writer = *created;
+                },
+                [&](const std::shared_ptr<arrow::RecordBatch> &batch) {
+                    if (!arrow_writer || !batch)
+                        throw std::runtime_error("DuckDB returned an invalid Arrow result batch");
+                    const auto status = arrow_writer->WriteRecordBatch(*batch);
+                    if (!status.ok()) throw std::runtime_error(status.ToString());
+                    const auto count = static_cast<std::uint64_t>(batch->num_rows());
+                    if (count > std::numeric_limits<std::uint64_t>::max() - row_count)
+                        throw std::runtime_error("SQL result row count exceeds the supported range");
+                    row_count += count;
+                });
+            const auto writer_status = arrow_writer->Close();
+            if (!writer_status.ok()) throw std::runtime_error(writer_status.ToString());
+            const auto output_status = output->Close();
+            if (!output_status.ok()) throw std::runtime_error(output_status.ToString());
+        } catch (...) {
+            if (arrow_writer) static_cast<void>(arrow_writer->Close());
+            static_cast<void>(output->Close());
+            throw;
+        }
+        return data_proxy::response(request, {{"row_count", row_count}, {"written", true}}).to_json();
     }
     if (method == "count_rows") {
-        const auto rows = iterator->second->query_json("SELECT COUNT(*) AS row_count FROM " + quoted_table);
-        return data_proxy::response(request, {{"row_count", rows.empty() ? 0 : std::stoull(rows.front().value("row_count", std::string{"0"}))}}).to_json();
-    }
-    if (method == "append_rows") {
-        const auto columns = request.payload.value("columns", Json::array());
-        const auto rows = request.payload.value("rows", Json::array());
-        if (!columns.is_array() || columns.empty() || !rows.is_array())
-            throw std::invalid_argument("data-proxy append_rows requires columns and rows");
-        std::vector<std::string> column_names;
-        column_names.reserve(columns.size());
-        for (const auto &column : columns) {
-            if (!column.is_string() || column.get<std::string>().empty())
-                throw std::invalid_argument("data-proxy append_rows has an invalid column");
-            column_names.push_back(column.get<std::string>());
-        }
-        std::vector<std::vector<std::optional<std::string>>> values;
-        values.reserve(rows.size());
-        for (const auto &row : rows) {
-            if (!row.is_array() || row.size() != column_names.size())
-                throw std::invalid_argument("data-proxy append_rows row width does not match columns");
-            std::vector<std::optional<std::string>> value;
-            value.reserve(row.size());
-            for (const auto &cell : row) {
-                if (cell.is_null()) value.push_back(std::nullopt);
-                else if (cell.is_string()) value.push_back(cell.get<std::string>());
-                else value.push_back(cell.dump());
-            }
-            values.push_back(std::move(value));
-        }
-        iterator->second->append_rows(table, column_names, values);
-        return data_proxy::response(request, {{"appended_rows", values.size()}}).to_json();
-    }
-    if (method == "query") {
-        const auto sql = request.payload.value("sql", std::string{});
-        if (sql.empty()) throw std::invalid_argument("data-proxy query requires sql");
-        return data_proxy::response(request, {{"rows", iterator->second->query_json(sql)}}).to_json();
-    }
-    if (method == "execute") {
-        const auto sql = request.payload.value("sql", std::string{});
-        if (sql.empty()) throw std::invalid_argument("data-proxy execute requires sql");
-        iterator->second->execute_sql(sql);
-        return data_proxy::response(request, {{"executed", true}}).to_json();
+        const auto result_ref = request.payload.value("result_ref", std::string{});
+        constexpr std::string_view prefix = "result:";
+        if (!result_ref.starts_with(prefix) || result_ref.size() == prefix.size())
+            throw std::invalid_argument("count_rows requires a published Arrow result_ref");
+        const auto result_id = result_ref.substr(prefix.size());
+        const auto descriptor = store.describe_result(result_id);
+        if (descriptor.value("state", std::string{}) != "published" ||
+            descriptor.value("kind", std::string{}) != "table" ||
+            descriptor.value("format", std::string{}) != "arrow-ipc-file")
+            throw std::invalid_argument("result_ref does not identify a published Arrow table: " + result_id);
+        return data_proxy::response(
+            request, {{"row_count", descriptor.value("row_count", std::uint64_t{0})}}).to_json();
     }
     throw std::invalid_argument("unsupported data-proxy method: " + method);
 }
@@ -1632,7 +1743,7 @@ Json ProjectRuntimeManager::result_cache_lookup(const std::string &session_id, c
     const auto computation_key = request.value("computation_key", std::string{});
     if (computation_key.empty()) throw std::invalid_argument("computation_key is required");
     const ResultStore store(iterator->second->get_database_path());
-    const auto inspection = store.inspect();
+    const auto inspection = store.inspect(false, false);
     const auto results = inspection.status == ResultStoreStatus::ready
                              ? store.find_cached_results(computation_key)
                              : Json::array();
@@ -1679,8 +1790,6 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
         workflow_states_[session_id] = "queued";
         {
             std::lock_guard cache_lock(result_cache_mutex_);
-            result_row_key_cache_.clear();
-            result_navigation_index_cache_.clear();
         }
         clear_decoded_trace_cache_locked();
         workflow_execution_modes_[session_id] = execution_mode;
@@ -1699,16 +1808,21 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                 if (execution_mode != "pipeline") return errors;
                 try {
                     const ResultStore result_store(project->get_database_path());
+                    std::vector<Json> manifests;
+                    manifests.reserve(run_result_ids.size());
                     for (const auto &result_id : run_result_ids) {
                         try {
-                            project->register_result_manifest(result_store.describe_result(result_id));
+                            manifests.push_back(result_store.describe_result(result_id));
                         } catch (const std::exception &error) {
                             if (!errors.empty()) errors += "; ";
                             errors += result_id + ": " + error.what();
                         }
                     }
+                    if (errors.empty())
+                        project->register_result_manifests(manifests);
                 } catch (const std::exception &error) {
-                    errors = error.what();
+                    if (!errors.empty()) errors += "; ";
+                    errors += error.what();
                 }
                 return errors;
             };
@@ -1730,6 +1844,7 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                                                                         const Json &inputs,
                                                                         const std::string &computation_key,
                                                                         bool) {
+                    const auto worker_run_id = detail::create_operation_run_id();
                     WorkerRequest request;
                     request.executable = configuration_path_.parent_path() /
 #ifdef _WIN32
@@ -1741,7 +1856,7 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                     request.memory_limit_mb = detail::configured_worker_memory_limit_mb(configuration_path_);
                     request.service_port = service_port_;
                     request.session_id = session_id;
-                    request.run_id = instance;
+                    request.run_id = worker_run_id;
                     request.operation_id = operation;
                     request.operation_instance = instance;
                     request.computation_key = computation_key;
@@ -1773,17 +1888,34 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                     {
                         std::lock_guard lock(mutex_);
                         active_workers_[session_id] = worker;
+                        active_worker_run_ids_[session_id] = worker_run_id;
                     }
                     WorkerResult worker_result;
                     try {
                         worker_result = worker->run();
-                    } catch (...) {
-                        abort_worker_output_leases(session_id, instance);
+                    } catch (const std::exception &error) {
+                        abort_worker_output_leases(session_id, worker_run_id);
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
                         std::lock_guard lock(mutex_);
                         active_workers_.erase(session_id);
+                        active_worker_run_ids_.erase(session_id);
+                        if (!cleanup_error.empty())
+                            throw std::runtime_error(detail::append_cleanup_diagnostic(error.what(), cleanup_error));
+                        throw;
+                    } catch (...) {
+                        abort_worker_output_leases(session_id, worker_run_id);
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
+                        std::lock_guard lock(mutex_);
+                        active_workers_.erase(session_id);
+                        active_worker_run_ids_.erase(session_id);
+                        if (!cleanup_error.empty())
+                            throw std::runtime_error(detail::append_cleanup_diagnostic(
+                                "unknown worker execution failure", cleanup_error));
                         throw;
                     }
-                    abort_worker_output_leases(session_id, instance);
+                    abort_worker_output_leases(session_id, worker_run_id);
                     if (operation_event_callback_) {
                         const auto worker_event = worker_result.cancelled
                             ? "worker.cancelled"
@@ -1796,20 +1928,45 @@ std::string ProjectRuntimeManager::start_workflow(const std::string &session_id,
                     {
                         std::lock_guard lock(mutex_);
                         active_workers_.erase(session_id);
+                        active_worker_run_ids_.erase(session_id);
                     }
-                    if (worker_result.cancelled) throw Error(ErrorCode::Cancelled, "Workflow worker cancelled");
-                    if (!worker_result.error.empty()) throw Error(ErrorCode::MethodExecution, worker_result.error);
+                    if (worker_result.cancelled) {
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
+                        throw Error(ErrorCode::Cancelled, detail::append_cleanup_diagnostic(
+                            "Workflow worker cancelled", cleanup_error));
+                    }
+                    if (!worker_result.error.empty()) {
+                        const auto cleanup_error = detail::discard_failed_worker_results(
+                            project->get_database_path(), worker_run_id);
+                        throw Error(ErrorCode::MethodExecution, detail::append_cleanup_diagnostic(
+                            worker_result.error, cleanup_error));
+                    }
                     const auto emitted = worker_result.result.value("emitted_results", Json::object());
                     if (emitted.is_object()) {
                         const ResultStore result_store(project->get_database_path());
+                        std::vector<Json> manifests;
                         for (const auto &[output_port, reference] : emitted.items()) {
                             static_cast<void>(output_port);
                             if (!reference.is_object()) continue;
                             const auto result_id = reference.value("result_id", std::string{});
                             if (result_id.empty()) continue;
                             run_result_ids.push_back(result_id);
-                            if (execution_mode == "detailed")
-                                project->register_result_manifest(result_store.describe_result(result_id));
+                            if (execution_mode == "detailed") {
+                                manifests.push_back(result_store.describe_result(result_id));
+                            }
+                        }
+                        if (execution_mode == "detailed") {
+                            try {
+                                project->register_result_manifests(manifests);
+                            } catch (...) {
+                                const auto cleanup_error = detail::discard_failed_worker_results(
+                                    project->get_database_path(), worker_run_id);
+                                if (!cleanup_error.empty())
+                                    throw std::runtime_error(detail::append_cleanup_diagnostic(
+                                        "Could not register all operation outputs", cleanup_error));
+                                throw;
+                            }
                         }
                     }
                     return worker_result.result;
@@ -1925,8 +2082,6 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
         project = iterator->second.get();
         {
             std::lock_guard cache_lock(result_cache_mutex_);
-            result_row_key_cache_.clear();
-            result_navigation_index_cache_.clear();
         }
         clear_decoded_trace_cache_locked();
     }
@@ -1937,10 +2092,12 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
         effective_inputs = resolve_workflow_inputs(session_id, effective_instance);
     if (!effective_inputs.is_object()) effective_inputs = Json::object();
     const auto resolved_parameters = operation->resolve_parameters(parameters);
+    const ResultStore store(project->get_database_path());
+    const auto cache_parameters = detail::stable_cache_value(resolved_parameters, store);
+    const auto cache_inputs = detail::stable_cache_value(effective_inputs, store);
     const auto computation_key = fingerprint::operation(
         operation_id, effective_instance, operation->definition().version,
-        resolved_parameters, effective_inputs);
-    const ResultStore store(project->get_database_path());
+        cache_parameters, cache_inputs);
     const auto cached_results = store.find_cached_results(computation_key);
     if (cached_results.is_array() && !cached_results.empty()) {
         bool complete = true;
@@ -1965,8 +2122,6 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
                                {"representation", result.value("representation", result.value("kind", std::string{}))}};
                 if (reference.value("representation", std::string{}) == "json")
                     reference["payload"] = store.read_json_payload(reference.value("result_id", std::string{}));
-                if (reference.value("representation", std::string{}) == "table")
-                    reference["physical_table"] = "result:" + reference.value("result_id", std::string{});
                 emitted_results[output_port] = std::move(reference);
             }
             if (operation_log_callback_)
@@ -1975,6 +2130,11 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
             return Json{{"emitted_results", std::move(emitted_results)}, {"cache_hit", true}};
         }
     }
+
+    if (operation_log_callback_)
+        operation_log_callback_(session_id, operation_id,
+            "operation.cache_miss (" + operation_id + "): No complete checksum-validated result set matched computation key " +
+            computation_key + ".");
 
     if (cancellation->load()) throw Error(ErrorCode::Cancelled, "Operation cancelled");
 
@@ -1988,6 +2148,7 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
         operation_cancellations_[session_id] = cancellation;
     }
 
+    const auto worker_run_id = detail::create_operation_run_id();
     WorkerRequest request;
     request.executable = configuration_path_.parent_path() /
 #ifdef _WIN32
@@ -1999,7 +2160,7 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     request.memory_limit_mb = detail::configured_worker_memory_limit_mb(configuration_path_);
     request.service_port = service_port_;
     request.session_id = session_id;
-    request.run_id = effective_instance;
+    request.run_id = worker_run_id;
     request.operation_id = operation_id;
     request.operation_instance = effective_instance;
     request.operation = operations_->find(operation_id)->definition().id;
@@ -2008,6 +2169,11 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     request.workflow = project->get_workflow().to_json();
     request.parameters = parameters;
     request.inputs = effective_inputs;
+    {
+        std::lock_guard lock(mutex_);
+        request.plugin_generation = plugin_snapshot_.value("generation", static_cast<std::uint64_t>(0));
+        request.plugin_versions = plugin_snapshot_.value("plugins", Json::array());
+    }
     auto worker = std::make_shared<WorkerProcess>(std::move(request),
         [this, session_id](const WorkerMetadata &metadata, std::string_view type,
                            std::string_view message, const Json &payload) {
@@ -2024,19 +2190,37 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
     {
         std::lock_guard lock(mutex_);
         active_workers_[session_id] = worker;
+        active_worker_run_ids_[session_id] = worker_run_id;
     }
     try {
         WorkerResult worker_result;
         try {
             worker_result = worker->run();
-        } catch (...) {
-            abort_worker_output_leases(session_id, effective_instance);
+        } catch (const std::exception &error) {
+            abort_worker_output_leases(session_id, worker_run_id);
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
             std::lock_guard lock(mutex_);
             operation_cancellations_.erase(session_id);
             active_workers_.erase(session_id);
+            active_worker_run_ids_.erase(session_id);
+            if (!cleanup_error.empty())
+                throw std::runtime_error(detail::append_cleanup_diagnostic(error.what(), cleanup_error));
+            throw;
+        } catch (...) {
+            abort_worker_output_leases(session_id, worker_run_id);
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
+            std::lock_guard lock(mutex_);
+            operation_cancellations_.erase(session_id);
+            active_workers_.erase(session_id);
+            active_worker_run_ids_.erase(session_id);
+            if (!cleanup_error.empty())
+                throw std::runtime_error(detail::append_cleanup_diagnostic(
+                    "unknown worker execution failure", cleanup_error));
             throw;
         }
-        abort_worker_output_leases(session_id, effective_instance);
+        abort_worker_output_leases(session_id, worker_run_id);
         if (operation_event_callback_) {
             const auto worker_event = worker_result.cancelled
                 ? "worker.cancelled"
@@ -2046,28 +2230,51 @@ Json ProjectRuntimeManager::run_operation(const std::string &session_id,
             operation_event_callback_(session_id, worker_result.worker.operation_id,
                                       worker_event, worker_result.worker.to_json());
         }
-        if (worker_result.cancelled) throw Error(ErrorCode::Cancelled, "Operation cancelled");
-        if (!worker_result.error.empty()) throw Error(ErrorCode::MethodExecution, worker_result.error);
+        if (worker_result.cancelled) {
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
+            throw Error(ErrorCode::Cancelled, detail::append_cleanup_diagnostic(
+                "Operation cancelled", cleanup_error));
+        }
+        if (!worker_result.error.empty()) {
+            const auto cleanup_error = detail::discard_failed_worker_results(
+                project->get_database_path(), worker_run_id);
+            throw Error(ErrorCode::MethodExecution, detail::append_cleanup_diagnostic(
+                worker_result.error, cleanup_error));
+        }
         const auto emitted = worker_result.result.value("emitted_results", Json::object());
         if (emitted.is_object()) {
+            std::vector<Json> manifests;
             for (const auto &[output_port, reference] : emitted.items()) {
                 static_cast<void>(output_port);
                 if (!reference.is_object()) continue;
                 const auto result_id = reference.value("result_id", std::string{});
                 if (result_id.empty()) continue;
-                project->register_result_manifest(store.describe_result(result_id));
+                manifests.push_back(store.describe_result(result_id));
+            }
+            try {
+                project->register_result_manifests(manifests);
+            } catch (...) {
+                const auto cleanup_error = detail::discard_failed_worker_results(
+                    project->get_database_path(), worker_run_id);
+                if (!cleanup_error.empty())
+                    throw std::runtime_error(detail::append_cleanup_diagnostic(
+                        "Could not register all operation outputs", cleanup_error));
+                throw;
             }
         }
         {
             std::lock_guard lock(mutex_);
             operation_cancellations_.erase(session_id);
             active_workers_.erase(session_id);
+            active_worker_run_ids_.erase(session_id);
         }
         return worker_result.result;
     } catch (...) {
         std::lock_guard lock(mutex_);
         operation_cancellations_.erase(session_id);
         active_workers_.erase(session_id);
+        active_worker_run_ids_.erase(session_id);
         throw;
     }
 }
@@ -2095,6 +2302,11 @@ void ProjectRuntimeManager::set_operation_event_callback(
     std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> callback) {
     std::lock_guard lock(mutex_);
     operation_event_callback_ = std::move(callback);
+}
+
+void ProjectRuntimeManager::set_plugin_snapshot(const Json &snapshot) {
+    std::lock_guard lock(mutex_);
+    plugin_snapshot_ = snapshot;
 }
 
 }  // namespace streamfind::service

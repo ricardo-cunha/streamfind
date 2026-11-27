@@ -31,9 +31,12 @@ public:
     void write(const std::string &output_handle,
                std::uint64_t sequence,
                const std::vector<unsigned char> &batch) override;
-    void write_rows(const std::string &output_handle,
-                    std::uint64_t sequence,
-                    const Json &rows) override;
+    void write_table_batch(const std::string &output_handle,
+                           std::uint64_t sequence,
+                           const std::shared_ptr<arrow::RecordBatch> &batch) override;
+    std::uint64_t write_query_result(const std::string &output_handle,
+                                     std::uint64_t sequence,
+                                     std::string_view sql) override;
     Json finish(const std::string &output_handle,
                 const Json &metadata = Json::object()) override;
     void abort(const std::string &output_handle,
@@ -50,11 +53,13 @@ private:
         std::uint64_t row_count{0};
         std::intptr_t writer{-1};
         std::unique_ptr<output_detail::ArrowFileWriter> arrow_writer;
-        Json schema{Json::array()};
-        Json navigation_columns{Json::array()};
+        Json schema = Json::array();
+        Json descriptor_metadata = Json::object();
+        Json navigation_columns = Json::array();
         std::string contract_id;
         std::string output_port;
         std::string result_name;
+        bool written_by_service{false};
     };
 
     Json request(const std::string &method,
@@ -68,7 +73,7 @@ private:
     std::string run_id_;
     std::string operation_id_;
     std::string operation_instance_;
-    Json navigation_columns_by_contract_{Json::object()};
+    Json navigation_columns_by_contract_ = Json::object();
     ReceiveWriter receive_writer_;
     std::unordered_map<std::string, Lease> leases_;
 };

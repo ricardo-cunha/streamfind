@@ -1,11 +1,11 @@
-@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sfms: <https://streamfind.dev/catalogue/plugins/mass_spec#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfms:debugRtParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug RT" ;
     skos:definition "Optional retention time used to select a component-creation diagnostic trace. Zero disables RT debugging." ;
@@ -16,7 +16,7 @@ sfms:debugRtParameter
 
 sfms:debugComponentParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug component" ;
     skos:definition "Optional component identifier to include in annotation diagnostics. Empty disables component debugging." ;
@@ -27,7 +27,7 @@ sfms:debugComponentParameter
 
 sfms:debugFeatureGroupParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug feature group" ;
     skos:definition "Optional feature-group identifier to include in feature gap-filling diagnostics." ;
@@ -38,7 +38,7 @@ sfms:debugFeatureGroupParameter
 
 sfms:levelsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MS levels" ;
     skos:definition "Optional mass spectrometry levels to include." ;
@@ -49,78 +49,9 @@ sfms:levelsParameter
     sf:items sfcore:integerItemParameter ;
     sf:example "[1,2]" .
 
-sfms:plotDownsizeParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot downsize" ;
-    skos:definition "Optional retention-time bin width used to average TIC points before plotting." ;
-    sf:type "real" ;
-    sf:required false ;
-    sf:default 0.0 ;
-    sf:units "seconds" ;
-    sf:example 5.0 .
-
-sfms:plotMaxPointsParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Maximum TIC points per trace" ;
-    skos:definition "Maximum number of averaged retention-time points emitted for each plotted trace when Plot downsize is zero. The backend chooses an adaptive bin width to keep large multi-sample TIC visualizations responsive; zero disables the automatic cap." ;
-    sf:type "integer" ;
-    sf:required false ;
-    sf:default 5000 ;
-    sf:units "points per trace" ;
-    sf:example 5000 .
-
-sfms:plotGroupByParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot group" ;
-    skos:definition "TIC trace grouping key." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "analysis" ;
-    sf:enum "analysis,replicate,polarity,level" ;
-    sf:example "analysis" .
-
-sfms:plotTitleParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot title" ;
-    skos:definition "Optional visualization title." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "Total Ion Chromatograms (TICs)" ;
-    sf:example "Total Ion Chromatograms (TICs)" .
-
-sfms:plotXLabelParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot x-axis label" ;
-    skos:definition "Optional x-axis label." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "Retention time / seconds" ;
-    sf:example "Retention time / seconds" .
-
-sfms:plotYLabelParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Plot y-axis label" ;
-    skos:definition "Optional y-axis label." ;
-    sf:type "string" ;
-    sf:required false ;
-    sf:default "Intensity / counts" ;
-    sf:example "Intensity / counts" .
-
 sfms:rtMinParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum retention time" ;
     skos:definition "Optional lower retention-time bound." ;
@@ -132,7 +63,7 @@ sfms:rtMinParameter
 
 sfms:rtMaxParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum retention time" ;
     skos:definition "Optional upper retention-time bound." ;
@@ -144,7 +75,7 @@ sfms:rtMaxParameter
 
 sfms:mzMinParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum m/z" ;
     skos:definition "Optional lower m/z bound." ;
@@ -156,7 +87,7 @@ sfms:mzMinParameter
 
 sfms:mzMaxParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum m/z" ;
     skos:definition "Optional upper m/z bound." ;
@@ -168,7 +99,7 @@ sfms:mzMaxParameter
 
 sfms:indicesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Indices" ;
     skos:definition "Optional zero-based data row indices." ;
@@ -181,7 +112,7 @@ sfms:indicesParameter
 
 sfms:rtWindowsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention-time windows" ;
     skos:definition "Optional retention-time windows for feature detection. Each row contains an inclusive lower bound in rtmin and upper bound in rtmax; omitted or empty means the full retention-time range." ;
@@ -195,7 +126,7 @@ sfms:rtWindowsParameter
 
 sfms:groupingMethodParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature grouping alignment method" ;
     skos:definition "Alignment method used when grouping features across analyses: internal_standards or obi_warp." ;
@@ -208,7 +139,7 @@ sfms:groupingMethodParameter
 
 sfms:internalStandardsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Internal standards for feature grouping" ;
     skos:definition "Internal-standard assignments used to align features when groupingMethodParameter is internal_standards. The table is optional for other alignment methods and is supplied through a table connection." ;
@@ -222,7 +153,7 @@ sfms:internalStandardsParameter
 
 sfms:ppmThresholdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature ppm threshold" ;
     skos:definition "Maximum relative m/z distance used to group MS1 traces." ;
@@ -234,7 +165,7 @@ sfms:ppmThresholdParameter
 
 sfms:noiseThresholdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature noise threshold" ;
     skos:definition "Minimum MS1 intensity considered during feature detection." ;
@@ -246,7 +177,7 @@ sfms:noiseThresholdParameter
 
 sfms:minSnrParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum feature SNR" ;
     skos:definition "Minimum signal-to-noise ratio for a detected feature." ;
@@ -257,7 +188,7 @@ sfms:minSnrParameter
 
 sfms:minTracesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum feature traces" ;
     skos:definition "Minimum number of spectra contributing to a detected feature." ;
@@ -269,7 +200,7 @@ sfms:minTracesParameter
 
 sfms:baselineWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Baseline window" ;
     skos:definition "Retention-time baseline window used by NTA peak detection." ;
@@ -281,7 +212,7 @@ sfms:baselineWindowParameter
 
 sfms:maxFeatureWidthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum feature width" ;
     skos:definition "Maximum chromatographic peak width used by NTA peak detection." ;
@@ -293,7 +224,7 @@ sfms:maxFeatureWidthParameter
 
 sfms:baseQuantileParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Base noise quantile" ;
     skos:definition "Base percentile (strictly between 0 and 1) used to estimate the per-bin noise threshold from positive spectrum intensities. Lower values estimate a lower noise floor and can preserve weaker peaks; higher values apply stronger noise filtering. The operation adapts this percentile to spectrum variability and signal-to-noise ratio, then applies noise_threshold as a minimum." ;
@@ -306,7 +237,7 @@ sfms:baseQuantileParameter
 
 sfms:targetsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry targets" ;
     skos:definition "Optional mass-spectrometry target rows supplied inline as schema-validated JSON or through a connection to a persisted targets table artifact. The matching contract contains mass/mz and optional retention-time, analysis, polarity, level, and name fields; chemical identity fields are not part of this table." ;
@@ -317,9 +248,94 @@ sfms:targetsParameter
     sf:default "[]" ;
     sf:example "[{\"name\":\"caffeine\",\"mass\":194.0804},{\"name\":\"acetaminophen\",\"mass\":151.0633}]" .
 
+sfms:quantificationMethodParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification method" ;
+    skos:definition "Editable horizontal quantification method rows. Each analyte row can select regression_model linear, linear_through_zero, mean_response_factor, quadratic, power, wagner, or hill; choose weighting none, 1/x, 1/x2, 1/y, 1/y2, ln x, or ln y; set intercept_mode to free or forced_zero where applicable; and optionally assign a directly linked internal_standard_id. With internal-standard normalization, calibration uses x = analyte nominal concentration / (dilution factor × assigned internal-standard nominal concentration) and y = analyte response / internal-standard response. Without an internal standard, x = nominal concentration / dilution factor and y is the analyte response. Internal-standard rows have no regression model or weighting. Set quantification plan publishes this table with sample assignments. If rt is omitted or null, response extraction selects the strongest matching peak by response_metric (area by default, or height)." ;
+    sf:guidance "Regression equations: linear y=m*x+b; linear_through_zero y=m*x; mean_response_factor y=m*x where m is the weighted mean of y/x and zero-concentration points are ignored; quadratic y=a2*x^2+a1*x+a0; power y=a*x^p (positive x and y required); wagner ln(y)=a2*ln(x)^2+a1*ln(x)+a0 (positive x and y required); hill y=(a+b*x^n)/(c+x^n), an iterative saturating model. Weight options are point weights: none=1; 1/x=1/max(|x|,1e-5); 1/x2=1/max(x^2,1e-10); 1/y=1/max(|y|,1e-8); 1/y2=1/max(y^2,1e-16); ln x=max(|ln(x)|,|ln(1e-5)|), rejecting negative x; ln y=max(|ln(y)|,|ln(1e-8)|), rejecting negative y. Example: {\"target_id\":\"ciprofloxacin\",\"role\":\"analyte\",\"internal_standard_id\":\"ciprofloxacin_d8\",\"normalization\":\"internal_standard\",\"regression_model\":\"hill\",\"weighting\":\"1/x2\",\"intercept_mode\":\"free\"}. Select models using fit diagnostics, residuals, monotonicity, calibration range, and back-calculated accuracy; R squared alone is insufficient." ;
+    sf:type "table" ;
+    sf:tableContract sfms:quantificationMethodTable ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[{\"target_id\":\"caffeine\",\"role\":\"analyte\",\"internal_standard_id\":\"caffeine_d9\",\"rt\":1020.0,\"rt_tolerance\":30.0,\"response_metric\":\"area\",\"normalization\":\"internal_standard\",\"quantifier_signal_type\":\"MS\",\"quantifier_precursor_mz\":195.1,\"quantifier_product_mz\":138.1,\"qualifier_signal_type\":\"MS\",\"qualifier_precursor_mz\":195.1,\"qualifier_product_mz\":110.1},{\"target_id\":\"caffeine_d9\",\"role\":\"internal_standard\",\"rt\":1018.0,\"rt_tolerance\":30.0,\"response_metric\":\"area\",\"normalization\":\"none\",\"quantifier_signal_type\":\"MS\",\"quantifier_precursor_mz\":204.1,\"quantifier_product_mz\":144.1}]" .
+
+sfms:quantSampleAssignmentsParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification sample assignments" ;
+    skos:definition "Editable project-specific sample assignments. Set sample_type to blank, zero, calibrator, qc, or unknown; provide nominal_concentration for calibrators and QCs; and use a positive dilution_factor to restore the original sample concentration. When an analyte uses an internal standard, assign that internal-standard target in the same analysis with its positive nominal concentration. Set exclude=true to omit a calibrator observation from model fitting." ;
+    sf:type "table" ;
+    sf:tableContract sfms:quantificationAnalysesTable ;
+    sf:required true ;
+    sf:default "[]" ;
+    sf:example "[{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine\",\"sample_type\":\"calibrator\",\"calibration_level\":5,\"nominal_concentration\":5.0,\"dilution_factor\":1.0},{\"analysis\":\"cal_5ugL\",\"target_id\":\"caffeine_d9\",\"sample_type\":\"calibrator\",\"nominal_concentration\":10.0,\"dilution_factor\":1.0}]" .
+
+sfms:minimumCalibrationPointsParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum calibration points" ;
+    skos:definition "Minimum number of valid calibrator observations required for a calibration model." ;
+    sf:type "integer" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 3 ;
+    sf:example 3 .
+
+sfms:requireQualifierParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Require qualifier" ;
+    skos:definition "When enabled, a result with a missing or failing qualifier is not accepted as quantified." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default false ;
+    sf:example false .
+
+sfms:qcMaxRelativeErrorParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "QC maximum relative error percent" ;
+    skos:definition "Maximum absolute deviation from 100 percent allowed for QC accuracy." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default 20.0 ;
+    sf:example 20.0 .
+
+sfms:blankMaxResponseParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Blank maximum normalized response" ;
+    skos:definition "Optional maximum response or internal-standard response ratio accepted for blank samples. When omitted, blank status remains not_evaluated." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default -1.0 ;
+    sf:example -1.0 .
+
+sfms:carryoverMaxResponseParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Carryover maximum normalized response" ;
+    skos:definition "Optional maximum response or internal-standard response ratio accepted for a blank after a preceding matched sample. When omitted, carryover status remains not_evaluated." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:defaultRequired true ;
+    sf:default -1.0 ;
+    sf:example -1.0 .
+
 sfms:targetsCsvPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Targets CSV path" ;
     skos:definition "CSV file containing mass-spectrometry target rows. A target requires mass or mz; optional formula, SMILES, InChI, and InChIKey columns are ignored because they are not part of the targetsTable contract." ;
@@ -332,7 +348,7 @@ sfms:targetsCsvPathParameter
 
 sfms:suspectTargetsCsvPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Suspect targets CSV path" ;
     skos:definition "CSV file containing validated suspect chemical identities and optional positive- and negative-mode MS2 reference peaks." ;
@@ -345,7 +361,7 @@ sfms:suspectTargetsCsvPathParameter
 
 sfms:molFilePathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MOL file path" ;
     skos:definition "Path to one MDL MOL file containing a chemical structure. Open Babel reads the structure and derives the canonical SMILES, formula, InChI, InChIKey, exact mass, and optional xLogP." ;
@@ -358,7 +374,7 @@ sfms:molFilePathParameter
 
 sfms:compoundNameParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Compound name" ;
     skos:definition "Optional name assigned to the suspect target. When empty, the MOL title is used and then Compound is used as a fallback." ;
@@ -370,7 +386,7 @@ sfms:compoundNameParameter
 
 sfms:suspectTargetsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass spectrometry suspect targets" ;
     skos:definition "Optional suspect or candidate rows supplied inline or through a persisted suspect-targets table. Rows may provide chemical identity through SMILES, InChI, formula, mass, or m/z; retention time and positive- or negative-mode MS2 reference fragments are optional." ;
@@ -382,7 +398,7 @@ sfms:suspectTargetsParameter
 
 sfms:polarityParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Ion polarity" ;
     skos:definition "Ion polarity: use 1 for positive ions, -1 for negative ions, or omit it to use the operation's default polarity handling." ;
@@ -394,7 +410,7 @@ sfms:polarityParameter
 
 sfms:ppmParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass tolerance" ;
     skos:definition "Mass tolerance in parts per million. For an exact mz or mass target, this expands the matching interval around the target." ;
@@ -407,7 +423,7 @@ sfms:ppmParameter
 
 sfms:rtToleranceParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention-time tolerance" ;
     skos:definition "Retention-time tolerance in seconds applied when a target supplies exact rt. It is not a substitute for rt_min/rt_max when an explicit interval is needed." ;
@@ -420,7 +436,7 @@ sfms:rtToleranceParameter
 
 sfms:chargeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Ion charge" ;
     skos:definition "Positive integer charge used when converting a neutral mass target to m/z. Omit it to use charge 1." ;
@@ -432,7 +448,7 @@ sfms:chargeParameter
 
 sfms:mzClustParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "m/z clustering tolerance" ;
     skos:definition "Maximum m/z distance used when merging points." ;
@@ -443,7 +459,7 @@ sfms:mzClustParameter
 
 sfms:presenceParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Trace presence" ;
     skos:definition "Minimum fraction of unique retention times in which a cluster must appear." ;
@@ -454,7 +470,7 @@ sfms:presenceParameter
 
 sfms:isolationWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Isolation window" ;
     skos:definition "Precursor isolation window width." ;
@@ -465,7 +481,7 @@ sfms:isolationWindowParameter
 
 sfms:minIntensityMs1Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum MS1 intensity" ;
     skos:definition "Minimum peak intensity retained from MS1 spectra." ;
@@ -476,7 +492,7 @@ sfms:minIntensityMs1Parameter
 
 sfms:minIntensityMs2Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum MS2 intensity" ;
     skos:definition "Minimum peak intensity retained from MS2 spectra." ;
@@ -487,7 +503,7 @@ sfms:minIntensityMs2Parameter
 
 sfms:chromatogramIdRegexParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatogram ID regular expressions" ;
     skos:definition "Regular expressions used to select chromatogram identifiers." ;
@@ -499,7 +515,7 @@ sfms:chromatogramIdRegexParameter
 
 sfms:ignoreCaseParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Ignore chromatogram ID case" ;
     skos:definition "Whether chromatogram ID matching ignores case." ;
@@ -510,7 +526,7 @@ sfms:ignoreCaseParameter
 
 sfms:invertParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Invert chromatogram ID selection" ;
     skos:definition "Keep chromatograms that do not match the supplied regular expressions." ;
@@ -521,7 +537,7 @@ sfms:invertParameter
 
 sfms:filteredParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Include filtered features" ;
     skos:definition "When false (default), rows marked filtered=true are excluded from operation processing. Set true to include those rows." ;
@@ -532,7 +548,7 @@ sfms:filteredParameter
 
 sfms:rtWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention-time window" ;
     skos:definition "Two-element [min, max] retention-time offset applied to each feature's detection window." ;
@@ -544,7 +560,7 @@ sfms:rtWindowParameter
 
 sfms:maxComponentRtSpanParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum component RT span" ;
     skos:definition "Maximum total difference in seconds between the earliest and latest feature RT in a component. Pairwise RT and EIC/isotope compatibility still determine candidate links; candidate links are processed strongest-first, and a link is rejected if merging its two groups would exceed this total-span limit. This prevents transitive RT chaining from creating very broad components." ;
@@ -557,7 +573,7 @@ sfms:maxComponentRtSpanParameter
 
 sfms:mzWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "m/z window" ;
     skos:definition "Two-element [min, max] m/z offset applied to each feature's m/z bounds." ;
@@ -569,7 +585,7 @@ sfms:mzWindowParameter
 
 sfms:minTracesIntensityParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum trace intensity" ;
     skos:definition "Minimum intensity a spectrum must meet to be considered for feature spectrum loading." ;
@@ -580,7 +596,7 @@ sfms:minTracesIntensityParameter
 
 sfms:rtExpandParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention-time expansion" ;
     skos:definition "Retention-time window expanded around a target feature when matching across analyses." ;
@@ -591,7 +607,7 @@ sfms:rtExpandParameter
 
 sfms:mzExpandParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "m/z expansion" ;
     skos:definition "m/z tolerance expanded around a target feature when matching across analyses." ;
@@ -602,7 +618,7 @@ sfms:mzExpandParameter
 
 sfms:minCorrelationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum correlation" ;
     skos:definition "Minimum Pearson correlation between feature EICs required to join them into a component." ;
@@ -613,7 +629,7 @@ sfms:minCorrelationParameter
 
 sfms:maxIsotopesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum isotopes" ;
     skos:definition "Maximum number of isotopes considered per element during annotation." ;
@@ -624,7 +640,7 @@ sfms:maxIsotopesParameter
 
 sfms:maxChargeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum charge" ;
     skos:definition "Maximum charge state considered during isotope annotation." ;
@@ -635,7 +651,7 @@ sfms:maxChargeParameter
 
 sfms:maxGapsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum gaps" ;
     skos:definition "Maximum allowed gaps in a feature annotation chain." ;
@@ -646,7 +662,7 @@ sfms:maxGapsParameter
 
 sfms:isotopeElementsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Isotope elements" ;
     skos:definition "Elements and allowed isotope-count ranges for annotation. Each entry must use Element:min-max syntax, such as C:1-80. D is an opt-in stable-label transition and uses the exact deuterium-minus-hydrogen mass shift." ;
@@ -658,7 +674,7 @@ sfms:isotopeElementsParameter
 
 sfms:formulaElementsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Formula elements" ;
     skos:definition "Allowed elemental symbols for estimated formula generation in annotate_components. The default is an organic non-target screening set. Boron, silicon, selenium, arsenic, and deuterium can be added explicitly when the sample context supports them. C and H are required." ;
@@ -670,7 +686,7 @@ sfms:formulaElementsParameter
 
 sfms:formulaConstraintsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Formula constraints" ;
     skos:definition "Optional elemental-count constraints for estimated formulas. Entries use Element:count or Element:min-max syntax, such as D:22 or D:0-22. This is useful for stable-isotope-labelled compounds; constrained elements are enabled for formula generation automatically." ;
@@ -682,7 +698,7 @@ sfms:formulaConstraintsParameter
 
 sfms:annotationModificationsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Annotation modifications" ;
     skos:definition "Optional allow-list of built-in or validated signed molecular-formula modification expressions used by annotate_components. Entries use expressions such as +Na, +NH4, 2M+H, -H2O, -CO2, or +2NOH. The polarity-specific base ions [M+H]+ and [M-H]- are assigned implicitly and are not modifications. A leading plus selects an adduct-like modification and a leading minus selects a neutral loss; formulas and leading coefficients are validated and their masses are derived at runtime. When omitted, the common small-molecule NTS modifications are used: +Na, +NH4, +K, +Cl, +FA-H, +CH3COO, -H2O, -CO2, -NH3, and -CO. Less frequent solvent, dimer, halogen, and other loss rules remain available through an explicit list; an explicit empty array disables modification matching." ;
@@ -694,7 +710,7 @@ sfms:annotationModificationsParameter
 
 sfms:minSamplesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum samples" ;
     skos:definition "Minimum number of analyses in which a feature must appear to form a group." ;
@@ -705,7 +721,7 @@ sfms:minSamplesParameter
 
 sfms:binSizeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Group bin size" ;
     skos:definition "Retention-time bin size used when grouping features." ;
@@ -716,7 +732,7 @@ sfms:binSizeParameter
 
 sfms:rtDeviationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "RT deviation" ;
     skos:definition "Retention-time deviation tolerance used when grouping features." ;
@@ -727,7 +743,7 @@ sfms:rtDeviationParameter
 
 sfms:minNumberTracesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum number of traces" ;
     skos:definition "Minimum number of EIC traces required to fill a feature gap." ;
@@ -738,7 +754,7 @@ sfms:minNumberTracesParameter
 
 sfms:rtApexDeviationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "RT apex deviation" ;
     skos:definition "Maximum retention-time deviation of a detected peak apex from the expected feature RT." ;
@@ -749,7 +765,7 @@ sfms:rtApexDeviationParameter
 
 sfms:minSignalToNoiseRatioParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum signal-to-noise ratio" ;
     skos:definition "Minimum signal-to-noise ratio for a filled feature peak." ;
@@ -760,7 +776,7 @@ sfms:minSignalToNoiseRatioParameter
 
 sfms:minGaussianFitParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum Gaussian fit" ;
     skos:definition "Minimum Gaussian fit R-squared for a filled feature peak." ;
@@ -771,7 +787,7 @@ sfms:minGaussianFitParameter
 
 sfms:maxPeakWidthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum peak width" ;
     skos:definition "Maximum chromatographic peak width allowed for a filled feature." ;
@@ -782,7 +798,7 @@ sfms:maxPeakWidthParameter
 
 sfms:withinReplicateParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Within replicate" ;
     skos:definition "Whether gap filling considers only intra-replicate feature groups." ;
@@ -793,7 +809,7 @@ sfms:withinReplicateParameter
 
 sfms:blankThresholdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank threshold" ;
     skos:definition "Fraction of blank intensity above which a feature is flagged as contamination." ;
@@ -804,7 +820,7 @@ sfms:blankThresholdParameter
 
 sfms:secParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "RT tolerance seconds" ;
     skos:definition "Retention-time tolerance in seconds used during suspect screening." ;
@@ -815,7 +831,7 @@ sfms:secParameter
 
 sfms:isotopePpmParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Isotope m/z tolerance" ;
     skos:definition "m/z tolerance in ppm used when matching theoretical isotope peaks to observed MS1 peaks." ;
@@ -827,7 +843,7 @@ sfms:isotopePpmParameter
 
 sfms:ppmMs2Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MS2 ppm tolerance" ;
     skos:definition "m/z tolerance in ppm used when matching MS2 fragments." ;
@@ -838,7 +854,7 @@ sfms:ppmMs2Parameter
 
 sfms:mzrMs2Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MS2 m/z ratio tolerance" ;
     skos:definition "m/z tolerance used when matching MS2 fragment ratios." ;
@@ -849,7 +865,7 @@ sfms:mzrMs2Parameter
 
 sfms:minCosineSimilarityParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum cosine similarity" ;
     skos:definition "Minimum cosine similarity for an MS2 match to be accepted." ;
@@ -860,7 +876,7 @@ sfms:minCosineSimilarityParameter
 
 sfms:minSharedFragmentsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum shared fragments" ;
     skos:definition "Minimum number of shared MS2 fragments required for an assignment." ;
@@ -871,7 +887,7 @@ sfms:minSharedFragmentsParameter
 
 sfms:topParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Top peaks" ;
     skos:definition "Maximum number of MS2 peaks retained per feature; 0 means no limit." ;
@@ -882,7 +898,7 @@ sfms:topParameter
 
 sfms:relMinIntensityParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Relative minimum intensity" ;
     skos:definition "Relative minimum intensity threshold applied to MS2 peaks." ;
@@ -893,7 +909,7 @@ sfms:relMinIntensityParameter
 
 sfms:blankCleanParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank clean MS2" ;
     skos:definition "Whether MS2 peaks found in blank analyses are removed." ;
@@ -902,9 +918,20 @@ sfms:blankCleanParameter
     sf:default false ;
     sf:example true .
 
+sfms:removeAbovePrecursorMzParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Remove MS2 peaks above precursor m/z" ;
+    skos:definition "Remove MS2 peaks whose m/z is higher than the precursor m/z of the feature. Such peaks are not expected to be product-ion fragments." ;
+    sf:type "boolean" ;
+    sf:required false ;
+    sf:default true ;
+    sf:example true .
+
 sfms:blankPresenceThresholdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank presence threshold" ;
     skos:definition "Minimum presence across blanks for an MS2 peak to be treated as a blank contaminant." ;
@@ -915,7 +942,7 @@ sfms:blankPresenceThresholdParameter
 
 sfms:globalPresenceThresholdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Global presence threshold" ;
     skos:definition "Minimum presence across all analyses for an MS2 peak to be retained." ;
@@ -926,7 +953,7 @@ sfms:globalPresenceThresholdParameter
 
 sfms:mpRtWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Matrix suppression RT window" ;
     skos:definition "Retention-time window used when computing matrix/suppression factors." ;
@@ -937,7 +964,7 @@ sfms:mpRtWindowParameter
 
 sfms:refBlankReplicateParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Reference blank replicate" ;
     skos:definition "Name of the blank replicate used as reference for matrix/suppression correction." ;
@@ -948,7 +975,7 @@ sfms:refBlankReplicateParameter
 
 sfms:minSnParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum signal-to-noise" ;
     skos:definition "Optional minimum signal-to-noise threshold; null disables." ;
@@ -959,7 +986,7 @@ sfms:minSnParameter
 
 sfms:minIntensityParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum feature intensity" ;
     skos:definition "Optional minimum feature apex intensity; null disables." ;
@@ -970,7 +997,7 @@ sfms:minIntensityParameter
 
 sfms:minAreaParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum feature area" ;
     skos:definition "Optional minimum integrated feature area; null disables." ;
@@ -981,7 +1008,7 @@ sfms:minAreaParameter
 
 sfms:minWidthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum peak width" ;
     skos:definition "Optional minimum chromatographic peak width in seconds; null disables." ;
@@ -992,7 +1019,7 @@ sfms:minWidthParameter
 
 sfms:maxWidthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum peak width" ;
     skos:definition "Optional maximum chromatographic peak width in seconds; null disables." ;
@@ -1003,7 +1030,7 @@ sfms:maxWidthParameter
 
 sfms:maxPpmParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum mass error ppm" ;
     skos:definition "Optional maximum acceptable mass error in ppm; null disables." ;
@@ -1014,7 +1041,7 @@ sfms:maxPpmParameter
 
 sfms:minFwhmRtParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum RT full width half max" ;
     skos:definition "Optional minimum RT full width at half maximum; null disables." ;
@@ -1025,7 +1052,7 @@ sfms:minFwhmRtParameter
 
 sfms:maxFwhmRtParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum RT full width half max" ;
     skos:definition "Optional maximum RT full width at half maximum; null disables." ;
@@ -1036,7 +1063,7 @@ sfms:maxFwhmRtParameter
 
 sfms:minFwhmMzParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum m/z full width half max" ;
     skos:definition "Optional minimum m/z full width at half maximum; null disables." ;
@@ -1047,7 +1074,7 @@ sfms:minFwhmMzParameter
 
 sfms:maxFwhmMzParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum m/z full width half max" ;
     skos:definition "Optional maximum m/z full width at half maximum; null disables." ;
@@ -1058,7 +1085,7 @@ sfms:maxFwhmMzParameter
 
 sfms:minGaussianAParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum Gaussian amplitude" ;
     skos:definition "Optional minimum fitted Gaussian amplitude; null disables." ;
@@ -1069,7 +1096,7 @@ sfms:minGaussianAParameter
 
 sfms:minGaussianMuParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum Gaussian centre" ;
     skos:definition "Optional minimum fitted Gaussian centre; null disables." ;
@@ -1080,7 +1107,7 @@ sfms:minGaussianMuParameter
 
 sfms:maxGaussianMuParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum Gaussian centre" ;
     skos:definition "Optional maximum fitted Gaussian centre; null disables." ;
@@ -1091,7 +1118,7 @@ sfms:maxGaussianMuParameter
 
 sfms:minGaussianSigmaParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum Gaussian sigma" ;
     skos:definition "Optional minimum fitted Gaussian sigma; null disables." ;
@@ -1102,7 +1129,7 @@ sfms:minGaussianSigmaParameter
 
 sfms:maxGaussianSigmaParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum Gaussian sigma" ;
     skos:definition "Optional maximum Gaussian sigma; null disables." ;
@@ -1113,7 +1140,7 @@ sfms:maxGaussianSigmaParameter
 
 sfms:minGaussianR2Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum Gaussian R-squared" ;
     skos:definition "Optional minimum Gaussian fit R-squared; null disables." ;
@@ -1124,7 +1151,7 @@ sfms:minGaussianR2Parameter
 
 sfms:maxJaggednessParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum jaggedness" ;
     skos:definition "Optional maximum permitted peak jaggedness; null disables." ;
@@ -1135,7 +1162,7 @@ sfms:maxJaggednessParameter
 
 sfms:minSharpnessParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum sharpness" ;
     skos:definition "Optional minimum peak sharpness; null disables." ;
@@ -1146,7 +1173,7 @@ sfms:minSharpnessParameter
 
 sfms:minAsymmetryParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum asymmetry" ;
     skos:definition "Optional minimum accepted peak asymmetry; null disables." ;
@@ -1157,7 +1184,7 @@ sfms:minAsymmetryParameter
 
 sfms:maxAsymmetryParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum asymmetry" ;
     skos:definition "Optional maximum accepted peak asymmetry; null disables." ;
@@ -1168,7 +1195,7 @@ sfms:maxAsymmetryParameter
 
 sfms:maxModalityParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum modality" ;
     skos:definition "Optional maximum number of local maxima; null disables." ;
@@ -1179,7 +1206,7 @@ sfms:maxModalityParameter
 
 sfms:minPlatesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum theoretical plates" ;
     skos:definition "Optional minimum theoretical plate count; null disables." ;
@@ -1191,7 +1218,7 @@ sfms:minPlatesParameter
 
 sfms:removeFilledParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Remove filled features" ;
     skos:definition "Whether features marked as filled should be removed." ;
@@ -1202,7 +1229,7 @@ sfms:removeFilledParameter
 
 sfms:minSizeEicParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum EIC size" ;
     skos:definition "Optional minimum number of points in the stored extracted-ion chromatogram; null disables." ;
@@ -1213,7 +1240,7 @@ sfms:minSizeEicParameter
 
 sfms:minSizeMs1Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum MS1 size" ;
     skos:definition "Optional minimum number of stored MS1 points; null disables." ;
@@ -1224,7 +1251,7 @@ sfms:minSizeMs1Parameter
 
 sfms:minSizeMs2Parameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum MS2 size" ;
     skos:definition "Optional minimum number of stored MS2 fragment peaks; null disables." ;
@@ -1235,7 +1262,7 @@ sfms:minSizeMs2Parameter
 
 sfms:minRelPresenceReplicateParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum relative presence in replicate" ;
     skos:definition "Optional minimum relative presence within replicate analyses; null disables." ;
@@ -1246,7 +1273,7 @@ sfms:minRelPresenceReplicateParameter
 
 sfms:removeIsotopesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Remove isotopes" ;
     skos:definition "Whether isotope-annotated features should be removed." ;
@@ -1257,7 +1284,7 @@ sfms:removeIsotopesParameter
 
 sfms:removeAdductsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Remove adducts" ;
     skos:definition "Whether annotated adduct features should be removed." ;
@@ -1268,7 +1295,7 @@ sfms:removeAdductsParameter
 
 sfms:removeLossesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Remove losses" ;
     skos:definition "Whether annotated neutral-loss or in-source fragment features should be removed." ;
@@ -1279,7 +1306,7 @@ sfms:removeLossesParameter
 
 sfms:namesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Names" ;
     skos:definition "Optional names to match; empty keeps all." ;
@@ -1291,7 +1318,7 @@ sfms:namesParameter
 
 sfms:minScoreParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum score" ;
     skos:definition "Optional minimum match score to keep; null disables." ;
@@ -1302,7 +1329,7 @@ sfms:minScoreParameter
 
 sfms:maxErrorRtParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum RT error" ;
     skos:definition "Optional maximum absolute retention-time error; null disables." ;
@@ -1314,7 +1341,7 @@ sfms:maxErrorRtParameter
 
 sfms:maxErrorMassParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum mass error" ;
     skos:definition "Optional maximum absolute mass error; null disables." ;
@@ -1326,7 +1353,7 @@ sfms:maxErrorMassParameter
 
 sfms:deduplicateInternalStandardsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Deduplicate internal-standard matches" ;
     skos:definition "Keep one candidate per analysis, polarity, and chemical identity when duplicate internal-standard matches remain. Candidates are prioritized by absolute RT error, absolute mass error, shared fragments, score, intensity, area, cosine similarity, identification level, and candidate rank." ;
@@ -1337,7 +1364,7 @@ sfms:deduplicateInternalStandardsParameter
 
 sfms:idLevelsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Identification levels" ;
     skos:definition "Optional identification levels to keep; empty keeps all." ;
@@ -1349,7 +1376,7 @@ sfms:idLevelsParameter
 
 sfms:transformationProductsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Transformation products" ;
     skos:definition "Optional transformation-product candidate rows supplied inline as schema-validated JSON or through a persisted table connection." ;
@@ -1361,7 +1388,7 @@ sfms:transformationProductsParameter
 
 sfms:chromatographicPhaseParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatographic phase" ;
     skos:definition "Chromatographic phase used for RT-plausibility scoring: reverse_phase or hilic." ;
@@ -1373,7 +1400,7 @@ sfms:chromatographicPhaseParameter
 
 sfms:topNParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag top N candidates" ;
     skos:definition "Maximum number of score-ranked MetFrag candidates StreamFind evaluates and retains per feature. MetFrag still performs its configured database search; this limit bounds downstream structure normalization, isotope scoring, and result construction." ;
@@ -1384,7 +1411,7 @@ sfms:topNParameter
 
 sfms:databaseTypeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag database type" ;
     skos:definition "Candidate database used by MetFrag for suspect screening." ;
@@ -1396,7 +1423,7 @@ sfms:databaseTypeParameter
 
 sfms:databasePathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag database path" ;
     skos:definition "Path to the local CSV, PSV, or SDF database used by MetFrag. For PubChemLite or CompToxCSV, provide the selected database file; for LocalCSV, provide this path when no suspect-target rows are supplied." ;
@@ -1408,7 +1435,7 @@ sfms:databasePathParameter
 
 sfms:scoreTypesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag score types" ;
     skos:definition "MetFrag scoring method names; paired with score_weights." ;
@@ -1420,7 +1447,7 @@ sfms:scoreTypesParameter
 
 sfms:scoreWeightsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag score weights" ;
     skos:definition "Weights paired with score_types (same length)." ;
@@ -1432,19 +1459,19 @@ sfms:scoreWeightsParameter
 
 sfms:preProcessingCandidateFilterParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag pre-processing filters" ;
-    skos:definition "MetFrag candidate filters applied before scoring. An empty array is normalized to the operation defaults because MetFrag does not accept an empty pre-processing filter property." ;
+    skos:definition "MetFrag candidate filters applied before scoring. The operation default is UnconnectedCompoundFilter because isotope evidence is scored separately. An empty array is normalized to the operation default because MetFrag does not accept an empty pre-processing filter property." ;
     sf:type "array" ;
     sf:required false ;
-    sf:default "[\"UnconnectedCompoundFilter\", \"IsotopeFilter\"]" ;
+    sf:default "[\"UnconnectedCompoundFilter\"]" ;
     sf:items sfcore:stringItemParameter ;
-    sf:example "[\"UnconnectedCompoundFilter\", \"IsotopeFilter\"]" .
+    sf:example "[\"UnconnectedCompoundFilter\"]" .
 
 sfms:postProcessingCandidateFilterParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag post-processing filters" ;
     skos:definition "MetFrag candidate filters applied after scoring. The default InChIKeyFilter collapses equivalent structures; set this array to [] to disable post-processing filters and retain otherwise equivalent candidates." ;
@@ -1456,7 +1483,7 @@ sfms:postProcessingCandidateFilterParameter
 
 sfms:maximumTreeDepthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag maximum tree depth" ;
     skos:definition "Maximum MetFrag fragmentation tree depth." ;
@@ -1467,7 +1494,7 @@ sfms:maximumTreeDepthParameter
 
 sfms:numberThreadsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag number of threads" ;
     skos:definition "Thread count for the MetFrag command line." ;
@@ -1478,7 +1505,7 @@ sfms:numberThreadsParameter
 
 sfms:featureParallelismParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag feature parallelism" ;
     skos:definition "Maximum number of independent feature-level MetFrag jobs running at once. Keep this low when number_threads is high." ;
@@ -1490,7 +1517,7 @@ sfms:featureParallelismParameter
 
 sfms:featureTimeoutSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature timeout" ;
     skos:definition "Maximum seconds allowed for one MetFrag child-process search. Zero disables the timeout. If any selected feature times out, the whole operation fails and no partial result is published; the error identifies the analysis and feature." ;
@@ -1503,7 +1530,7 @@ sfms:featureTimeoutSecondsParameter
 
 sfms:cacheCandidatesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cache MetFrag candidate results" ;
     skos:definition "Reuse results for identical database, mass, polarity, tolerance, and MS2 queries within the operation." ;
@@ -1514,7 +1541,7 @@ sfms:cacheCandidatesParameter
 
 sfms:includeFragmentSmilesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Include MetFrag fragment SMILES" ;
     skos:definition "Write and retain MetFrag FragmentSmilesPSV output used for fragment-level SMILES annotations. Disable to reduce output I/O when those annotations are not needed." ;
@@ -1525,7 +1552,7 @@ sfms:includeFragmentSmilesParameter
 
 sfms:useSmilesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MetFrag use SMILES" ;
     skos:definition "Whether the candidate SMILES is passed to MetFrag." ;
@@ -1536,7 +1563,7 @@ sfms:useSmilesParameter
 
 sfms:debugParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug" ;
     skos:definition "Whether to keep debug/result files (e.g. MetFrag PSV outputs)." ;
@@ -1547,29 +1574,29 @@ sfms:debugParameter
 
 sfms:mergeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Merge peaks" ;
     skos:definition "Whether to merge nearby chromatographic peaks." ;
     sf:type "boolean" ;
     sf:required false ;
-    sf:default false ;
+    sf:default true ;
     sf:example true .
 
 sfms:mergeDistanceParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Merge distance" ;
     skos:definition "Maximum distance between peak apices for merging, in retention-time units." ;
     sf:type "real" ;
     sf:required false ;
-    sf:default 0.0 ;
-    sf:example 45.0 .
+    sf:default 5.0 ;
+    sf:example 5.0 .
 
 sfms:minPeakHeightParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum peak height" ;
     skos:definition "Minimum apex intensity for a chromatographic peak to be accepted." ;
@@ -1580,7 +1607,7 @@ sfms:minPeakHeightParameter
 
 sfms:minPeakDistanceParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum peak distance" ;
     skos:definition "Minimum distance between adjacent peak apices, in retention-time units." ;
@@ -1591,7 +1618,7 @@ sfms:minPeakDistanceParameter
 
 sfms:minPeakWidthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum peak width" ;
     skos:definition "Minimum chromatographic peak width in retention-time units." ;
@@ -1600,9 +1627,20 @@ sfms:minPeakWidthParameter
     sf:default 0.0 ;
     sf:example 5.0 .
 
+sfms:peakTracePaddingSecondsParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Peak trace padding" ;
+    skos:definition "Retention-time padding added on both sides of each detected peak when storing its EIC arrays." ;
+    sf:type "real" ;
+    sf:required false ;
+    sf:default 10.0 ;
+    sf:example 10.0 .
+
 sfms:smoothingEnabledParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Enable peak-detection smoothing" ;
     skos:definition "Apply the adaptive intensity smoother before chromatographic peak detection. When false, raw intensities are used and eic_smoothed is an exact copy of eic_intensity." ;
@@ -1614,7 +1652,7 @@ sfms:smoothingEnabledParameter
 
 sfms:smoothingWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main smoothing window (data points)" ;
     skos:definition "Length of the main adaptive smoothing window in sampled EIC data points used during find_features peak detection. The default is 7; larger values suppress more noise but can merge, flatten, or remove nearby weak peaks. This is a point count, not a retention-time duration in seconds." ;
@@ -1626,7 +1664,7 @@ sfms:smoothingWindowParameter
 
 sfms:smoothingSharpWindowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Sharp-peak smoothing window (data points)" ;
     skos:definition "Reduced adaptive smoothing window in sampled EIC data points for sharp peaks and cluster edges. The default is 3 and it must be positive and no larger than the main smoothing window. This is a point count, not a retention-time duration in seconds." ;
@@ -1638,7 +1676,7 @@ sfms:smoothingSharpWindowParameter
 
 sfms:smoothingStrengthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak-detection smoothing strength" ;
     skos:definition "Blend between raw and fully smoothed intensities during find_features peak detection: 0 uses raw data and 1 uses the configured adaptive smoother." ;
@@ -1650,7 +1688,7 @@ sfms:smoothingStrengthParameter
 
 sfms:analysisNamesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis names" ;
     skos:definition "Array of analysis names to process. When omitted or empty, all analyses in the project are processed. Use this to limit baseline correction, smoothing, or peak detection to specific analyses." ;
@@ -1663,7 +1701,7 @@ sfms:analysisNamesParameter
 
 sfms:baselineAlgorithmParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Baseline correction algorithm" ;
     skos:definition "Algorithm used to estimate the chromatographic baseline before peak detection. Supported values: none (no correction), rolling_min (sliding-window minimum, fast and robust for well-separated peaks, controlled by window_size), als (asymmetric least-squares, fits a smooth baseline that hugs signal minima while ignoring peaks, controlled by lambda and asymmetry_penalty, better for drifting baselines or overlapping peaks), moving_average (sliding-window arithmetic mean, follows broad trends well, controlled by window_size, best for smooth gradient elution profiles without sharp peaks)." ;
@@ -1675,7 +1713,7 @@ sfms:baselineAlgorithmParameter
 
 sfms:smoothingAlgorithmParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Smoothing algorithm" ;
     skos:definition "Algorithm used to reduce high-frequency noise in the processed chromatogram signal. Supported values: none (no smoothing), moving_average (sliding-window arithmetic mean, removes noise but broadens peaks, controlled by window_size), savitzky_golay (polynomial local regression, preserves peak shape and height better than moving average, controlled by window_size and poly_order)." ;
@@ -1687,7 +1725,7 @@ sfms:smoothingAlgorithmParameter
 
 sfms:windowSizeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window size" ;
     skos:definition "Number of data points in the sliding window. For rolling_min baseline: half-width of the minimum-finding window, typical range 20-200 points. For moving_average smoothing: full width of the averaging window, must be odd. For savitzky_golay smoothing: full width of the polynomial fitting window, must be odd and at least poly_order + 1, typical range 5-21 points." ;
@@ -1698,7 +1736,7 @@ sfms:windowSizeParameter
 
 sfms:polyOrderParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Polynomial order" ;
     skos:definition "Order of the local polynomial used by Savitzky-Golay smoothing. Must be less than window_size. A value of 2 (quadratic) preserves peak heights well and is the most common choice. Higher orders (3-5) follow the signal more closely but remove less noise. Typical range: 2-3." ;
@@ -1710,7 +1748,7 @@ sfms:polyOrderParameter
 
 sfms:lambdaParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "ALS smoothness parameter" ;
     skos:definition "Smoothness penalty (lambda) for asymmetric least-squares baseline correction. Lambda is auto-scaled by the signal range squared, so this value controls relative smoothness. A larger value produces a smoother baseline that follows broad trends; a smaller value allows the baseline to follow rapid changes. Typical range: 0.1-10. Default 1.0 works well for most chromatographic data. Only used when baseline_algorithm is als." ;
@@ -1722,7 +1760,7 @@ sfms:lambdaParameter
 
 sfms:asymmetryPenaltyParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "ALS asymmetry penalty" ;
     skos:definition "Asymmetry weight (p) for ALS baseline correction. Controls how aggressively the baseline avoids peaks: a smaller value places more weight below peaks, producing a lower baseline; a larger value (closer to 0.5) treats the signal more symmetrically. Typical range: 0.001-0.1. Default 0.01 works well for most chromatographic data. Only used when baseline_algorithm is als." ;
@@ -1734,7 +1772,7 @@ sfms:asymmetryPenaltyParameter
 
 sfms:maxIterationsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "ALS maximum iterations" ;
     skos:definition "Maximum number of iterations for the asymmetric least-squares baseline algorithm. More iterations give a more converged baseline but take longer. Typical range: 5-20. Default 10 is sufficient for most chromatograms. Only used when baseline_algorithm is als." ;
@@ -1746,7 +1784,7 @@ sfms:maxIterationsParameter
 
 sfms:sourcePathsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "MS source paths" ;
     skos:definition "Files or vendor directories to read and discover as logical mass-spectrometry analyses." ;
@@ -1758,7 +1796,7 @@ sfms:sourcePathsParameter
 
 sfms:fragmentationDepthParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragmentation depth" ;
     skos:definition "Maximum top-down MetFrag fragmentation depth for each suspect target structure. Values from 1 to 8 are supported; higher depths can grow the fragment tree rapidly." ;
@@ -1771,7 +1809,7 @@ sfms:fragmentationDepthParameter
 
 sfms:fragmenterTimeoutSecondsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragmenter component timeout" ;
     skos:definition "Maximum wall-clock time for one MetFrag Fragmenter process handling a disconnected SMILES component. Each component gets its own timeout." ;
@@ -1785,7 +1823,7 @@ sfms:fragmenterTimeoutSecondsParameter
 
 sfms:fragmenterOutputLimitMbParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragmenter output limit" ;
     skos:definition "Maximum combined standard output and error file size for one component's MetFrag Fragmenter process. The process is stopped if it exceeds this limit." ;
@@ -1799,7 +1837,7 @@ sfms:fragmenterOutputLimitMbParameter
 
 sfms:maximumFragmentRowsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum fragment rows" ;
     skos:definition "Maximum total number of fragment rows emitted by one operation across all target structures and disconnected components. Exceeding the limit fails the operation instead of publishing a silently truncated tree." ;
@@ -1813,7 +1851,7 @@ sfms:maximumFragmentRowsParameter
 
 sfms:maxInverseCandidatesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum inverse candidates per root" ;
     skos:definition "Maximum number of unique structure-bearing inverse-fragmentation rows generated for the single MOL-derived main compound root by bounded graph edits." ;
@@ -1825,7 +1863,7 @@ sfms:maxInverseCandidatesParameter
 
 sfms:maxAttachmentVariantsPerFragmentParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum attachment variants per fragment" ;
     skos:definition "Maximum number of valid Open Babel attachment positions retained for each unique observed fragment unit. A bounded value prevents attachment-site enumeration from dominating inverse expansion." ;
@@ -1838,7 +1876,7 @@ sfms:maxAttachmentVariantsPerFragmentParameter
 
 sfms:maxFragmentUnitsPerCandidateParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum fragment units per candidate" ;
     skos:definition "Maximum number of distinct observed fragment structures attached to one MOL-derived root candidate. The bounded structure path supports one or two units; formula-only combinations belong to a separate future operation." ;
@@ -1851,7 +1889,7 @@ sfms:maxFragmentUnitsPerCandidateParameter
 
 sfms:maxLocalEditCandidatesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum local edit candidates" ;
     skos:definition "Maximum number of validated root-local structure hypotheses, including positional H/D exchange, oxygenation, fluorination, chlorination, and bromination, retained before bond-order isomers use the remaining budget." ;
@@ -1864,7 +1902,7 @@ sfms:maxLocalEditCandidatesParameter
 
 sfms:numberDuplicateFormulasParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of duplicate formulas" ;
     skos:definition "Maximum number of fragment SMILES retained for each chemical formula. Zero keeps all fragments and positive values keep the first rows in input order for each formula." ;
@@ -1876,7 +1914,7 @@ sfms:numberDuplicateFormulasParameter
 
 sfms:fragmentationTreeMinimumMassParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum fragment mass" ;
     skos:definition "Optional inclusive lower bound for fragment exact mass. Null keeps the lower side unbounded." ;
@@ -1889,7 +1927,7 @@ sfms:fragmentationTreeMinimumMassParameter
 
 sfms:fragmentationTreeMaximumMassParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum fragment mass" ;
     skos:definition "Optional inclusive upper bound for fragment exact mass. Null keeps the upper side unbounded." ;
@@ -1902,7 +1940,7 @@ sfms:fragmentationTreeMaximumMassParameter
 
 sfms:neutralLossItemParameter
     a sf:Parameter ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Neutral-loss JSON item" ;
     skos:definition "One MetFrag-matched neutral-loss record in the fragmentation table." ;

@@ -31,7 +31,7 @@ function Read-ReaderArtifacts {
         [Parameter(Mandatory = $true)][string]$SourcePath
     )
 
-    Invoke-McpTool $Process $Id 'create' @{ database_path = $Database; domain = 'mass_spec' } | Out-Null
+    Invoke-McpTool $Process $Id 'create' @{ project_path = $Database; plugin = 'mass_spec' } | Out-Null
     $analysisName = [System.IO.Path]::GetFileNameWithoutExtension($SourcePath)
     $workflow = @{
         schema_version = 2
@@ -47,18 +47,18 @@ function Read-ReaderArtifacts {
             @{ source_operation = 2; source_port = 'spectraHeadersTable'; target_operation = 3; target_port = 'spectraHeadersTable' }
         )
     }
-    Invoke-McpTool $Process ($Id + 1) 'set_workflow' @{ database_path = $Database; workflow = $workflow } | Out-Null
-    $validation = Invoke-McpTool $Process ($Id + 2) 'validate_workflow' @{ database_path = $Database; workflow = $workflow }
+    Invoke-McpTool $Process ($Id + 1) 'set_workflow' @{ project_path = $Database; workflow = $workflow } | Out-Null
+    $validation = Invoke-McpTool $Process ($Id + 2) 'validate_workflow' @{ project_path = $Database; workflow = $workflow }
     if (-not $validation.valid) { throw "Cross-format workflow validation failed for $SourcePath" }
-    Invoke-McpTool $Process ($Id + 3) 'run_workflow' @{ database_path = $Database } | Out-Null
-    $inventory = @((Invoke-McpTool $Process ($Id + 4) 'get_artifact_inventory' @{ database_path = $Database }).GetEnumerator())
+    Invoke-McpTool $Process ($Id + 3) 'run_workflow' @{ project_path = $Database } | Out-Null
+    $inventory = @((Invoke-McpTool $Process ($Id + 4) 'get_artifact_inventory' @{ project_path = $Database }).GetEnumerator())
     $header = $inventory | Where-Object { $_.contract_id -eq 'spectraHeadersTable' -and $_.producer_instance -eq '1' } | Select-Object -Last 1
     $spectra = $inventory | Where-Object { $_.contract_id -eq 'spectraTable' } | Select-Object -Last 1
     if ($null -eq $header -or $null -eq $spectra) {
         throw "Cross-format artifacts were not published for ${SourcePath}: $($inventory | ConvertTo-Json -Compress -Depth 5)"
     }
-    $headerData = @((Invoke-McpTool $Process ($Id + 6) 'request_artifact' @{ database_path = $Database; artifact_id = [string]$header.artifact_id; include_data = $true; limit = 10000 }).GetEnumerator())
-    $spectraData = @((Invoke-McpTool $Process ($Id + 7) 'request_artifact' @{ database_path = $Database; artifact_id = [string]$spectra.artifact_id; include_data = $true; limit = 20 }).GetEnumerator())
+    $headerData = @((Invoke-McpTool $Process ($Id + 6) 'request_artifact' @{ project_path = $Database; artifact_id = [string]$header.artifact_id; include_data = $true; limit = 10000 }).GetEnumerator())
+    $spectraData = @((Invoke-McpTool $Process ($Id + 7) 'request_artifact' @{ project_path = $Database; artifact_id = [string]$spectra.artifact_id; include_data = $true; limit = 20 }).GetEnumerator())
     if (@($headerData).Count -eq 0) {
         throw "Cross-format header artifact data was empty for $SourcePath"
     }
@@ -135,8 +135,8 @@ function Compare-HeaderTables {
 
 try {
     Initialize-Mcp $process | Out-Null
-    $databases = 1..3 | ForEach-Object { Join-Path $repoRoot "tmp\projects\thermo-cross-format-$($_).duckdb" }
-    foreach ($database in $databases) { Remove-Item -Force -ErrorAction SilentlyContinue $database }
+    $databases = 1..3 | ForEach-Object { Join-Path $repoRoot "tmp\projects\thermo-cross-format-$($_).sf" }
+    foreach ($database in $databases) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database }
     $results = @(
         Read-ReaderArtifacts $process 10 $databases[0] $RawPath
         Read-ReaderArtifacts $process 30 $databases[1] $ProfileMzmlPath
@@ -177,6 +177,6 @@ try {
     Write-Host "RAW and centroid mzML first spectrum point matched."
 }
 finally {
-    foreach ($database in $databases) { Remove-Item -Force -ErrorAction SilentlyContinue $database }
+    foreach ($database in $databases) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database }
     Stop-StreamfindMcp $process
 }

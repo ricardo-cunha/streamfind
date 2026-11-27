@@ -19,11 +19,11 @@ if (-not $SkipBuild) {
 
 $executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
 $catalogue = Join-Path $repoRoot 'tmp\build\windows\core\semantic_catalogue\catalogue.duckdb'
-$database = Join-Path $repoRoot 'tmp\projects\streamfind-cpp-data-script.duckdb'
+$database = Join-Path $repoRoot 'tmp\projects\streamfind-cpp-data-script.sf'
 $projectId = 'data-cpp'
 $analysisName = [System.IO.Path]::GetFileNameWithoutExtension($dataFile)
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
-Remove-Item -Force -ErrorAction SilentlyContinue $database
+Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
 $env:PATH = (Join-Path $repoRoot 'tmp\build\windows\core\tests') + ';' + $env:PATH
 
@@ -42,24 +42,24 @@ try {
     }
 
     Invoke-McpTool $process 3 'create' @{
-        database_path = $database
-        domain = 'mass_spec'
+        project_path = $database
+        plugin = 'mass_spec'
     } | Out-Null
     $added = Invoke-McpTool $process 4 'mass_spec.add_analyses' @{
-        database_path = $database
+        project_path = $database
         analyses = @(@{ path = $dataFile })
     }
     if ([int]$added.row_count -ne 1) {
         throw "Expected one parsed analysis, received $($added.row_count)"
     }
     $info = Invoke-McpTool $process 5 'mass_spec.get_analyses' @{
-        database_path = $database
+        project_path = $database
     }
     if ([int]$info.row_count -ne 1) {
         throw "Expected one persisted analysis, received $($info.row_count)"
     }
     $headers = Invoke-McpTool $process 6 'mass_spec.get_spectra_headers' @{
-        database_path = $database
+        project_path = $database
         analysis_names = @($analysisName)
     }
     if ([int]$headers.row_count -le 0) {
@@ -74,5 +74,5 @@ try {
     Write-Host "C++ data test passed: $RelativePath ($($headers.row_count) spectrum headers)."
 } finally {
     Stop-StreamfindMcp $process
-    Remove-Item -Force -ErrorAction SilentlyContinue $database
+    Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database
 }

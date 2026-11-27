@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "viewer",
+  "id": "native.viewer.mass_spec.eicTable.eic_table_explorer",
+  "name": "EIC viewer",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/mass-spec/viewers/eicTableEicExplorer/index.ts",
+  "plugins": ["mass_spec"],
+  "artifactContracts": ["https://streamfind.dev/catalogue/plugins/mass_spec#eicTable"]
+}

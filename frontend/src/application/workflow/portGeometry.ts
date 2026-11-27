@@ -15,7 +15,7 @@ export function portPosition(
   const ports = nodePorts(capability)[direction === 'input' ? 'inputs' : 'outputs'];
   if (direction === 'input' && portId.startsWith('parameter:')) {
     const parameterIndex = (capability?.parameters || [])
-      .filter((parameter) => parameter.name !== 'database_path')
+      .filter((parameter) => parameter.name !== 'project_path')
       .findIndex((parameter) => `parameter:${parameter.name}` === portId);
     const inputCount = ports.length;
     const outputCount = Math.max(1, nodePorts(capability).outputs.length);

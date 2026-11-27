@@ -446,18 +446,12 @@
     {
       "id": 13,
       "inputs": {},
-      "operation": "mass_spec.plot_spectra_tic",
+      "operation": "mass_spec.get_spectra_tic",
       "parameters": {
         "analysis_names": [],
         "levels": [
           1
         ],
-        "plot_downsize": 0,
-        "plot_group_by": "analysis",
-        "plot_max_points": 5000,
-        "plot_title": "Total Ion Chromatograms (TICs)",
-        "plot_x_label": "Retention time / seconds",
-        "plot_y_label": "Intensity / counts",
         "rt_max": 0,
         "rt_min": 0
       },

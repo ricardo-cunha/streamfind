@@ -19,8 +19,17 @@ if(UNIX AND NOT APPLE)
 endif()
 
 option(STREAMFIND_BUILD_TESTS "Build native tests" ON)
-set(STREAMFIND_DATA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../streamfind.data" CACHE PATH
-    "Sibling streamfind.data repository used by official tests")
+if(DEFINED ENV{STREAMFIND_EXAMPLE_DATA_ROOT} AND NOT "$ENV{STREAMFIND_EXAMPLE_DATA_ROOT}" STREQUAL "")
+    get_filename_component(_streamfind_data_root "$ENV{STREAMFIND_EXAMPLE_DATA_ROOT}" DIRECTORY)
+elseif(DEFINED ENV{STREAMFIND_HOME} AND NOT "$ENV{STREAMFIND_HOME}" STREQUAL "")
+    set(_streamfind_data_root "$ENV{STREAMFIND_HOME}/streamfind.data")
+elseif(WIN32)
+    set(_streamfind_data_root "$ENV{USERPROFILE}/.streamfind/streamfind.data")
+else()
+    set(_streamfind_data_root "$ENV{HOME}/.streamfind/streamfind.data")
+endif()
+set(STREAMFIND_DATA_ROOT "${_streamfind_data_root}" CACHE PATH
+    "User-managed streamfind.data repository used by official tests")
 option(STREAMFIND_BUILD_SHARED "Build shared native libraries" OFF)
 option(STREAMFIND_STATIC_MSVC_RUNTIME "Link the MSVC runtime statically" OFF)
 option(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT
@@ -135,7 +144,7 @@ endif()
 add_library(streamfind_duckdb_runtime INTERFACE)
 if(STREAMFIND_DUCKDB_STATIC_LIBRARIES)
     if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-        set(STREAMFIND_DUCKDB_INSTALL_ROOT "$<INSTALL_PREFIX>/sdk/lib")
+        set(STREAMFIND_DUCKDB_INSTALL_ROOT "$<INSTALL_PREFIX>/sdk/native/lib")
     else()
         set(STREAMFIND_DUCKDB_INSTALL_ROOT "$<INSTALL_PREFIX>/bin")
     endif()
@@ -155,7 +164,7 @@ if(STREAMFIND_DUCKDB_STATIC_LIBRARIES)
     )
 else()
     if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-        set(STREAMFIND_DUCKDB_INSTALL_LINK "$<INSTALL_PREFIX>/sdk/lib/duckdb.lib")
+        set(STREAMFIND_DUCKDB_INSTALL_LINK "$<INSTALL_PREFIX>/sdk/native/lib/duckdb.lib")
     else()
         set(STREAMFIND_DUCKDB_INSTALL_LINK "$<INSTALL_PREFIX>/bin/duckdb.dll")
     endif()
@@ -220,11 +229,15 @@ set(STREAMFIND_CORE_SOURCES
     core/src/project_table_store.cpp
     core/src/data_proxy_protocol.cpp
     core/src/data_proxy_output_sink.cpp
+    core/src/result_table_schema.cpp
     core/src/service_runtime_client.cpp
     core/src/service_configuration.cpp
+    core/src/service_port.cpp
     core/src/operations/operations.cpp
     core/src/plugin_loader.cpp
     core/src/plugin_configuration.cpp
+    core/src/plugin_registry.cpp
+    core/src/plugin_lockfile.cpp
     core/src/vendor_runtime.cpp
     service/src/service_discovery.cpp
     service/src/worker_supervisor.cpp
@@ -279,7 +292,7 @@ target_include_directories(streamfind_cpp_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
-        $<INSTALL_INTERFACE:sdk/include>
+        $<INSTALL_INTERFACE:sdk/native/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor>
     PRIVATE
         service/include
@@ -293,27 +306,27 @@ if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
     install(
         TARGETS streamfind_cpp_core
         EXPORT streamfind-cpp-targets
-        ARCHIVE DESTINATION sdk/lib
-        LIBRARY DESTINATION sdk/lib
-        RUNTIME DESTINATION sdk/bin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib
+        RUNTIME DESTINATION sdk/native/bin
     )
     install(
         TARGETS streamfind_zlib
         EXPORT streamfind-cpp-targets
-        ARCHIVE DESTINATION sdk/lib
-        LIBRARY DESTINATION sdk/lib
-        RUNTIME DESTINATION sdk/bin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib
+        RUNTIME DESTINATION sdk/native/bin
     )
     install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/vendor/zlib/zlib-develop/zlib.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/vendor/zlib/zlib-develop/zconf.h"
-        DESTINATION sdk/include)
+        DESTINATION sdk/native/include)
     install(
         TARGETS streamfind_inchi streamfind_openbabel
         EXPORT streamfind-cpp-targets
-        ARCHIVE DESTINATION sdk/lib
-        LIBRARY DESTINATION sdk/lib
-        RUNTIME DESTINATION sdk/bin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib
+        RUNTIME DESTINATION sdk/native/bin
     )
 endif()
 install(TARGETS streamfind_openbabel_runtime
@@ -321,7 +334,9 @@ install(TARGETS streamfind_openbabel_runtime
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION bin)
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-    install(TARGETS streamfind_openbabel_runtime ARCHIVE DESTINATION sdk/lib)
+    install(TARGETS streamfind_openbabel_runtime
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib)
 endif()
 install(DIRECTORY "${STREAMFIND_OPENBABEL_DATA_DIR}/"
     DESTINATION bin/data/openbabel)
@@ -329,9 +344,13 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/openbabel/openbabel-3-2-0/COPY
     DESTINATION licenses RENAME openbabel-COPYING.txt)
 
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-    install(DIRECTORY core/include/ DESTINATION sdk/include)
-    install(DIRECTORY sdk/include/ DESTINATION sdk/include)
-    install(FILES vendor/nlohmann/json.hpp DESTINATION sdk/include/nlohmann)
+    install(DIRECTORY core/include/ DESTINATION sdk/native/include)
+    install(DIRECTORY sdk/include/ DESTINATION sdk/native/include)
+    install(FILES vendor/nlohmann/json.hpp DESTINATION sdk/native/include/nlohmann)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../frontend/packages/viewer-sdk")
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../frontend/packages/viewer-sdk/"
+            DESTINATION sdk/viewer/@streamfind/viewer-sdk)
+    endif()
 endif()
 
 install(
@@ -356,18 +375,51 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/nlohmann/LICENSE"
     DESTINATION licenses RENAME nlohmann-json-LICENSE.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/json-schema-validator/LICENSE"
     DESTINATION licenses RENAME json-schema-validator-LICENSE.txt)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/open62541/LICENSE"
+    DESTINATION licenses RENAME open62541-LICENSE.txt)
 
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/sdk/include/streamfind/plugin_abi.h"
+        STREAMFIND_PLUGIN_ABI_DEFINITIONS
+        REGEX "STREAMFIND_PLUGIN_ABI_(MAJOR|MINOR) +=" )
+    foreach(_abi_definition IN LISTS STREAMFIND_PLUGIN_ABI_DEFINITIONS)
+        if(_abi_definition MATCHES "STREAMFIND_PLUGIN_ABI_(MAJOR|MINOR) += +([0-9]+)")
+            set("STREAMFIND_PLUGIN_ABI_${CMAKE_MATCH_1}" "${CMAKE_MATCH_2}")
+        endif()
+    endforeach()
+    if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(STREAMFIND_SDK_ARCHITECTURE "windows-x86_64")
+    elseif(UNIX AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(STREAMFIND_SDK_ARCHITECTURE "linux-x86_64")
+    else()
+        set(STREAMFIND_SDK_ARCHITECTURE "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    if(WIN32 AND MINGW)
+        set(STREAMFIND_SDK_COMPILER "mingw-ucrt64-gcc")
+        set(STREAMFIND_SDK_RUNTIME_PROFILE "ucrt64")
+    elseif(UNIX)
+        set(STREAMFIND_SDK_COMPILER "gnu-gcc")
+        set(STREAMFIND_SDK_RUNTIME_PROFILE "glibc")
+    else()
+        set(STREAMFIND_SDK_COMPILER "${CMAKE_CXX_COMPILER_ID}")
+        set(STREAMFIND_SDK_RUNTIME_PROFILE "${CMAKE_SYSTEM_NAME}")
+    endif()
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/sdk-manifest.json.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/sdk-manifest.json"
+        @ONLY)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sdk-manifest.json"
+        DESTINATION sdk/native)
     install(
         EXPORT streamfind-cpp-targets
         FILE streamfind-cpp-targets.cmake
         NAMESPACE streamfind::
-        DESTINATION sdk/cmake/streamfind
+        DESTINATION sdk/native/cmake/streamfind
     )
     configure_package_config_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/streamfindConfig.cmake.in"
         "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfig.cmake"
-        INSTALL_DESTINATION sdk/cmake/streamfind
+        INSTALL_DESTINATION sdk/native/cmake/streamfind
     )
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfigVersion.cmake"
@@ -378,17 +430,27 @@ if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
         "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfig.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/streamfindConfigVersion.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/sdk/cmake/streamfindAddPlugin.cmake"
-        DESTINATION sdk/cmake/streamfind
+        DESTINATION sdk/native/cmake/streamfind
     )
 endif()
+
+# The standalone dispatcher is shipped with both runtime and developer-kit
+# packages. Provisioning is release-distributed and must work without a source
+# checkout, so these files are not conditional on SDK installation.
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/release/dev/StreamFindProvisioning.psm1"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/release/dev/streamfind-dev-setup.ps1"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/release/dev/toolchains.lock.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/release/dev/setup-manifest.json"
+    DESTINATION dev)
 
 if(STREAMFIND_DUCKDB_RUNTIME AND EXISTS "${STREAMFIND_DUCKDB_RUNTIME}")
     install(FILES "${STREAMFIND_DUCKDB_RUNTIME}" DESTINATION bin)
 endif()
 
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT AND STREAMFIND_DUCKDB_STATIC_LIBRARIES)
-    install(FILES ${STREAMFIND_DUCKDB_STATIC_LIBRARIES} DESTINATION sdk/lib)
-    install(DIRECTORY "${STREAMFIND_DUCKDB_INCLUDE_DIR}/" DESTINATION sdk/include)
+    install(FILES ${STREAMFIND_DUCKDB_STATIC_LIBRARIES} DESTINATION sdk/native/lib)
+    install(DIRECTORY "${STREAMFIND_DUCKDB_INCLUDE_DIR}/" DESTINATION sdk/native/include)
 endif()
 
 if(MINGW AND WIN32)
@@ -411,7 +473,7 @@ if(MINGW AND WIN32)
 endif()
 
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT AND STREAMFIND_DUCKDB_IMPORT_LIBRARY AND EXISTS "${STREAMFIND_DUCKDB_IMPORT_LIBRARY}")
-    install(FILES "${STREAMFIND_DUCKDB_IMPORT_LIBRARY}" DESTINATION sdk/lib)
+    install(FILES "${STREAMFIND_DUCKDB_IMPORT_LIBRARY}" DESTINATION sdk/native/lib)
 endif()
 
 # catalogue.duckdb is a required installation artifact (the runtime knowledge
@@ -439,9 +501,20 @@ if(STREAMFIND_BUILD_TESTS)
     enable_testing()
     if(NOT EXISTS "${STREAMFIND_DATA_ROOT}/data")
         message(FATAL_ERROR
-            "Official tests require the sibling streamfind.data repository with a data directory: ${STREAMFIND_DATA_ROOT}")
+            "Official tests require streamfind.data at ${STREAMFIND_DATA_ROOT}. Run 'sfdev setup --components data' or set STREAMFIND_EXAMPLE_DATA_ROOT to its data directory.")
     endif()
     add_subdirectory(core/tests)
+    add_executable(streamfind_workflow_demo_discovery_contract
+        core/tests/unit/workflow_demo_discovery_contract.cpp
+        service/src/workflow_demo_discovery.cpp)
+    target_include_directories(streamfind_workflow_demo_discovery_contract PRIVATE
+        service/include)
+    target_compile_definitions(streamfind_workflow_demo_discovery_contract PRIVATE
+        STREAMFIND_TEST_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+    add_test(NAME streamfind_workflow_demo_discovery_contract
+        COMMAND streamfind_workflow_demo_discovery_contract)
+    set_tests_properties(streamfind_workflow_demo_discovery_contract
+        PROPERTIES LABELS "framework;service")
     add_dependencies(streamfind_project_table_store_manifest_contract streamfind_core_catalogue)
     if(TARGET streamfind_mass_spec_project_isolation_contract)
         add_dependencies(streamfind_mass_spec_project_isolation_contract streamfind_aggregate_catalogue)
@@ -452,26 +525,29 @@ if(STREAMFIND_BUILD_TESTS)
 endif()
 
 add_executable(streamfind_mcp
-    core/src/streamfind-mcp.cpp)
+    core/src/streamfind-mcp.cpp
+    dev/src/command_protocol.cpp)
 add_dependencies(streamfind_mcp streamfind_aggregate_catalogue streamfind_cpp_sdk
     streamfind_plugins)
 target_link_libraries(streamfind_mcp PRIVATE streamfind::cpp_core streamfind::cpp_sdk)
-target_include_directories(streamfind_mcp PRIVATE service/include)
+target_include_directories(streamfind_mcp PRIVATE service/include dev/include)
 set_target_properties(streamfind_mcp PROPERTIES OUTPUT_NAME streamfind-mcp)
 streamfind_add_windows_version_resource(streamfind_mcp "streamfind-mcp.exe" "streamfind MCP server")
 set(STREAMFIND_ENABLED_PLUGINS_JSON)
-foreach(_plugin_domain IN LISTS STREAMFIND_PLUGIN_DOMAINS)
+foreach(_plugin_plugin IN LISTS STREAMFIND_PLUGIN_DOMAINS)
     if(STREAMFIND_ENABLED_PLUGINS_JSON)
         string(APPEND STREAMFIND_ENABLED_PLUGINS_JSON ", ")
     endif()
-    string(APPEND STREAMFIND_ENABLED_PLUGINS_JSON "\"${_plugin_domain}\"")
+    string(APPEND STREAMFIND_ENABLED_PLUGINS_JSON "\"native.plugin.${_plugin_plugin}\"")
 endforeach()
+set(STREAMFIND_ENABLED_VIEWERS_JSON
+    "\"native.viewer.mass_spec.featuresTable.feature_inspector\", \"native.viewer.mass_spec.suspectTargetsTable.suspect_targets_viewer\", \"native.viewer.mass_spec.eicTable.eic_table_explorer\", \"native.viewer.mass_spec.ticTable.tic_table_explorer\", \"native.viewer.mass_spec.chromatogramPeaksTable.chromatogram_peaks_viewer\", \"native.viewer.mass_spec.chromatogramsTable.chromatograms_table_viewer\", \"native.viewer.mass_spec.suspectsTable.suspects_explorer\", \"native.viewer.mass_spec.internalStandardsTable.suspects_explorer\", \"native.viewer.mass_spec.findFeaturesDebugResult.find_features_debug_viewer\", \"native.viewer.mass_spec.quantificationTable.quantification_viewer\", \"native.viewer.mass_spec.quantificationCalibrationModelsTable.quantification_viewer\", \"native.viewer.raman\", \"native.viewer.sensors\", \"native.viewer.statistics\"")
 file(GENERATE
     OUTPUT "$<TARGET_FILE_DIR:streamfind_mcp>/streamfind.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"${CMAKE_BINARY_DIR}/plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787, \"automatic_port_fallback\": true},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": {\"development\": [], \"deployment\": [\"${CMAKE_BINARY_DIR}/plugins/native\"]},\n  \"viewer_roots\": {\"development\": [], \"deployment\": [\"${CMAKE_BINARY_DIR}/viewers/native\"]},\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}],\n  \"enabled_viewers\": [${STREAMFIND_ENABLED_VIEWERS_JSON}]\n}\n")
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
-    CONTENT "{\n  \"server\": {\"port\": 8787},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": [\"../plugins\"],\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}]\n}\n")
+    CONTENT "{\n  \"server\": {\"port\": 8787, \"automatic_port_fallback\": true},\n  \"worker\": {\"memory_limit_mb\": 0},\n  \"tray\": {\"enabled\": true, \"start_with_app\": true, \"start_with_service\": true, \"status_interval_ms\": 2000, \"notifications\": true},\n  \"plugin_roots\": {\"development\": [], \"deployment\": [\"../plugins/native\"]},\n  \"viewer_roots\": {\"development\": [], \"deployment\": [\"../viewers/native\"]},\n  \"enabled_plugins\": [${STREAMFIND_ENABLED_PLUGINS_JSON}],\n  \"enabled_viewers\": [${STREAMFIND_ENABLED_VIEWERS_JSON}]\n}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/streamfind-install.json"
     DESTINATION bin RENAME streamfind.json)
 add_executable(streamfind_cli
@@ -486,9 +562,44 @@ target_include_directories(streamfind_cli PRIVATE service/include)
 set_target_properties(streamfind_cli PROPERTIES OUTPUT_NAME streamfind)
 streamfind_add_windows_version_resource(streamfind_cli "streamfind.exe" "streamfind command line")
 
+add_executable(streamfind_dev
+    dev/src/main.cpp
+    dev/src/command_protocol.cpp
+    dev/src/scaffold.cpp
+    dev/src/plugin_lifecycle.cpp
+    dev/src/viewer_lifecycle.cpp
+    dev/src/viewer_development.cpp)
+target_include_directories(streamfind_dev PRIVATE
+    dev/include
+    core/include
+    vendor)
+set_target_properties(streamfind_dev PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    OUTPUT_NAME streamfind-dev)
+streamfind_static_mingw_executable(streamfind_dev)
+target_link_libraries(streamfind_dev PRIVATE streamfind::cpp_core)
+if(WIN32)
+    streamfind_add_windows_version_resource(streamfind_dev "streamfind-dev.exe" "streamfind developer dispatcher")
+endif()
+if(STREAMFIND_BUILD_TESTS)
+    add_executable(streamfind_dev_protocol_contract
+        dev/tests/command_protocol_contract.cpp
+        dev/src/command_protocol.cpp)
+    target_include_directories(streamfind_dev_protocol_contract PRIVATE dev/include core/include vendor)
+    set_target_properties(streamfind_dev_protocol_contract PROPERTIES
+        CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(streamfind_dev_protocol_contract PRIVATE streamfind::cpp_core)
+    add_test(NAME streamfind_dev_protocol_contract COMMAND streamfind_dev_protocol_contract)
+    add_test(NAME streamfind_dev_version_contract COMMAND streamfind_dev --version)
+    add_test(NAME streamfind_dev_run_contract
+        COMMAND streamfind_dev run --program $<TARGET_FILE:streamfind_dev> --json -- --version)
+endif()
+
 add_executable(streamfind_service
     service/src/streamfind-service.cpp
     service/src/result_store.cpp
+    service/src/workflow_demo_discovery.cpp
     service/src/service_server.cpp
     service/src/service_plugin_runtime.cpp
     service/src/project_runtime_manager.cpp)
@@ -565,6 +676,7 @@ if(WIN32)
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/streamfind-app.rc")
     add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE streamfind::cpp_core ws2_32 shell32)
+    target_include_directories(streamfind_service_host PRIVATE service/include)
     set_target_properties(streamfind_service_host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON OUTPUT_NAME streamfind-app)
     streamfind_add_windows_version_resource(streamfind_service_host "streamfind-app.exe" "streamfind app launcher")
     streamfind_static_mingw_executable(streamfind_service_host)
@@ -573,6 +685,7 @@ else()
         service/src/streamfind-service-launcher.cpp)
     add_dependencies(streamfind_service_host streamfind_service)
     target_link_libraries(streamfind_service_host PRIVATE streamfind::cpp_core)
+    target_include_directories(streamfind_service_host PRIVATE service/include)
     set_target_properties(streamfind_service_host PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
@@ -590,6 +703,7 @@ if(WIN32 AND STREAMFIND_DUCKDB_RUNTIME)
     foreach(_streamfind_host_target IN ITEMS
         streamfind_mcp
         streamfind_cli
+        streamfind_dev
         streamfind_service
         streamfind_worker
         streamfind_tray)
@@ -653,6 +767,7 @@ if(MSVC)
     foreach(_target IN ITEMS
         streamfind_mcp
         streamfind_cli
+        streamfind_dev
         streamfind_service
         streamfind_worker
         streamfind_tray
@@ -672,7 +787,7 @@ install(
     TARGETS streamfind_mcp
     RUNTIME DESTINATION bin
 )
-install(TARGETS streamfind_cli RUNTIME DESTINATION bin)
+install(TARGETS streamfind_cli streamfind_dev RUNTIME DESTINATION bin)
 install(TARGETS streamfind_service RUNTIME DESTINATION bin)
 install(TARGETS streamfind_worker RUNTIME DESTINATION bin)
 install(TARGETS streamfind_tray RUNTIME DESTINATION bin)
@@ -684,15 +799,16 @@ else()
         RUNTIME DESTINATION bin)
 endif()
 if(STREAMFIND_APP_DIR AND EXISTS "${STREAMFIND_APP_DIR}")
-    install(DIRECTORY "${STREAMFIND_APP_DIR}/" DESTINATION app)
+    install(DIRECTORY "${STREAMFIND_APP_DIR}/" DESTINATION app
+        PATTERN viewers EXCLUDE)
+    if(EXISTS "${STREAMFIND_APP_DIR}/viewers")
+        install(DIRECTORY "${STREAMFIND_APP_DIR}/viewers/" DESTINATION viewers)
+    endif()
 endif()
 
 # cached defaults CPack::Configure writes into CPackConfig.cmake.
 set(CPACK_PACKAGE_NAME "streamfind-core-cpp")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-    set(CPACK_PACKAGE_NAME "streamfind-plugin-dev")
-endif()
 if(WIN32)
     set(CPACK_GENERATOR "ZIP")
     set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-Windows-x86_64")

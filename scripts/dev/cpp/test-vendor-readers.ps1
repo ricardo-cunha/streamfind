@@ -41,10 +41,10 @@ if (-not $SkipBuild) {
 }
 
 $executable = Get-BackendMcpExecutable -RepositoryRoot $repoRoot
-$database = Join-Path $repoRoot "tmp\projects\streamfind-cpp-$($Vendor.ToLowerInvariant())-reader-script.duckdb"
+$database = Join-Path $repoRoot "tmp\projects\streamfind-cpp-$($Vendor.ToLowerInvariant())-reader-script.sf"
 $projectId = "reader-cpp-$($Vendor.ToLowerInvariant())"
 New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-Null
-Remove-Item -Force -ErrorAction SilentlyContinue $database
+Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database
 $env:STREAMFIND_CATALOGUE = $catalogue
 $env:PATH = (Join-Path $repoRoot 'tmp\build\windows\core\tests') + ';' + $env:PATH
 
@@ -52,8 +52,8 @@ $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
 try {
     Initialize-Mcp $process | Out-Null
     Invoke-McpTool $process 2 'create' @{
-        database_path = $database
-        domain = 'mass_spec'
+        project_path = $database
+        plugin = 'mass_spec'
     } | Out-Null
     $workflow = @{
         schema_version = 2
@@ -108,26 +108,26 @@ try {
         )
     }
     Invoke-McpTool $process 3 'set_workflow' @{
-        database_path = $database
+        project_path = $database
         workflow = $workflow
     } | Out-Null
     $validation = Invoke-McpTool $process 4 'validate_workflow' @{
-        database_path = $database
+        project_path = $database
         workflow = $workflow
     }
     if (-not $validation.valid) {
         throw "Thermo workflow validation failed: $($validation | ConvertTo-Json -Compress -Depth 8)"
     }
-    $execution = Invoke-McpTool $process 5 'run_workflow' @{ database_path = $database }
+    $execution = Invoke-McpTool $process 5 'run_workflow' @{ project_path = $database }
     if ($null -eq $execution) {
         throw "Expected a completed $Vendor reader workflow execution"
     }
-    $inventory = Invoke-McpTool $process 6 'get_artifact_inventory' @{ database_path = $database }
+    $inventory = Invoke-McpTool $process 6 'get_artifact_inventory' @{ project_path = $database }
     if (@($inventory).Count -lt 3) {
         throw "Expected analyses, spectra headers, and spectra artifacts after $Vendor reader workflow"
     }
     Write-Host "C++ $Vendor reader workflow test passed: $InputPath ($(@($inventory).Count) artifacts)"
 } finally {
     Stop-StreamfindMcp $process
-    Remove-Item -Force -ErrorAction SilentlyContinue $database
+    Remove-Item -Force -Recurse -ErrorAction SilentlyContinue $database
 }

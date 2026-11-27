@@ -1,17 +1,25 @@
-import { FRONTEND_PLUGIN_API_VERSION, type FrontendPlugin, type FrontendPluginManifest } from './pluginTypes';
+import {
+  FRONTEND_PLUGIN_API_VERSION,
+  FRONTEND_PLUGIN_MANIFEST_KIND,
+  FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION,
+  type FrontendPlugin,
+  type FrontendPluginManifest,
+} from './pluginTypes';
 import { FrontendPluginRegistry } from './FrontendPluginRegistry';
 import { notifyApp } from '../notifications/notificationBus';
 
 export type RuntimeFrontendPluginManifest = FrontendPluginManifest & {
   entry: string;
   css?: string[];
+  packageDigest?: string;
+  trust?: 'trusted' | 'sandboxed';
 };
 
 type PluginModule = { default?: FrontendPlugin; plugin?: FrontendPlugin };
 type Importer = (entry: string) => Promise<PluginModule>;
 
 export class FrontendPluginLoader {
-  private readonly loaded = new Set<string>();
+  private readonly loaded = new Map<string, string>();
 
   constructor(
     private readonly registry: FrontendPluginRegistry,
@@ -55,7 +63,12 @@ export class FrontendPluginLoader {
   async load(manifest: RuntimeFrontendPluginManifest): Promise<boolean> {
     try {
       validateManifest(manifest, this.allowedOrigins);
-      if (this.loaded.has(manifest.id)) return true;
+      const fingerprint = `${manifest.version}\u0000${manifest.packageDigest ?? ''}\u0000${manifest.entry}`;
+      if (this.loaded.get(manifest.id) === fingerprint) return true;
+      if (this.loaded.has(manifest.id)) {
+        this.registry.unregister(manifest.id);
+        this.loaded.delete(manifest.id);
+      }
       await loadStylesheets(manifest);
       const module = await this.importer(manifest.entry);
       const plugin = module.default ?? module.plugin;
@@ -64,7 +77,7 @@ export class FrontendPluginLoader {
         throw new Error(`Frontend plugin ID does not match its manifest: ${manifest.id}`);
       }
       this.registry.register(plugin);
-      this.loaded.add(manifest.id);
+      this.loaded.set(manifest.id, fingerprint);
       return true;
     } catch (error) {
       notifyApp({
@@ -78,6 +91,12 @@ export class FrontendPluginLoader {
 
 function validateManifest(manifest: RuntimeFrontendPluginManifest, allowedOrigins: ReadonlySet<string>): void {
   if (!manifest || typeof manifest !== 'object') throw new Error('Frontend plugin manifest entry must be an object');
+  if (manifest.schemaVersion !== FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION) {
+    throw new Error(`Unsupported frontend plugin manifest schema: ${manifest.schemaVersion}`);
+  }
+  if (manifest.kind !== FRONTEND_PLUGIN_MANIFEST_KIND) {
+    throw new Error(`Unsupported frontend plugin manifest kind: ${manifest.kind}`);
+  }
   if (typeof manifest.id !== 'string' || !manifest.id.trim()) throw new Error('Frontend plugin id must not be empty');
   if (typeof manifest.name !== 'string' || !manifest.name.trim())
     throw new Error(`Frontend plugin name must not be empty: ${manifest.id}`);
@@ -94,11 +113,23 @@ function validateManifest(manifest: RuntimeFrontendPluginManifest, allowedOrigin
   ) {
     throw new Error(`Frontend plugin css must be a string array: ${manifest.id}.css`);
   }
-  for (const field of ['domains', 'artifactContracts', 'artifactRepresentations', 'visualizationTypes']) {
+  if (manifest.packageDigest !== undefined && (typeof manifest.packageDigest !== 'string' || !manifest.packageDigest.trim())) {
+    throw new Error(`Frontend plugin package digest must be a non-empty string: ${manifest.id}`);
+  }
+  if (manifest.trust !== undefined && manifest.trust !== 'trusted' && manifest.trust !== 'sandboxed') {
+    throw new Error(`Unsupported frontend viewer trust policy: ${manifest.id}`);
+  }
+  if (manifest.trust === 'sandboxed') {
+    throw new Error(`Sandboxed viewer loading is not enabled by this host: ${manifest.id}`);
+  }
+  for (const field of ['plugins', 'artifactContracts', 'artifactRepresentations']) {
     const value = manifest[field as keyof RuntimeFrontendPluginManifest];
     if (value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
       throw new Error(`Frontend plugin manifest field must be a string array: ${manifest.id}.${field}`);
     }
+  }
+  if (manifest.artifactContracts?.some((contract) => !isQualifiedContract(contract))) {
+    throw new Error(`Frontend plugin artifact contracts must be qualified IRIs: ${manifest.id}`);
   }
 
   const url = new URL(manifest.entry, typeof window === 'undefined' ? 'http://localhost/' : window.location.href);
@@ -120,6 +151,10 @@ function validateManifest(manifest: RuntimeFrontendPluginManifest, allowedOrigin
       throw new Error(`Frontend plugin stylesheet origin is not allowed: ${manifest.id}`);
     }
   }
+}
+
+function isQualifiedContract(value: string): boolean {
+  return value.includes('#') || /^[A-Za-z][A-Za-z0-9+.-]*:\S+$/.test(value);
 }
 
 async function loadStylesheets(manifest: RuntimeFrontendPluginManifest): Promise<void> {

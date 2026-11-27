@@ -1,0 +1,2833 @@
+{
+  "connections": [
+    {
+      "source_operation": 1,
+      "source_port": "analysesTable",
+      "target_operation": 2,
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": 1,
+      "source_port": "analysesTable",
+      "target_operation": 4,
+      "target_port": "analysesTable"
+    },
+    {
+      "source_operation": 2,
+      "source_port": "chromatogramsTable",
+      "target_operation": 3,
+      "target_port": "chromatogramsTable"
+    },
+    {
+      "source_operation": 4,
+      "source_port": "quantificationMethodTable",
+      "target_operation": 5,
+      "target_port": "quantificationMethodTable"
+    },
+    {
+      "source_operation": 4,
+      "source_port": "quantificationAnalysesTable",
+      "target_operation": 5,
+      "target_port": "quantificationAnalysesTable"
+    },
+    {
+      "source_operation": 3,
+      "source_port": "chromatogramPeaksTable",
+      "target_operation": 5,
+      "target_port": "chromatogramPeaksTable"
+    },
+    {
+      "source_operation": 1,
+      "source_port": "chromatogramsHeadersTable",
+      "target_operation": 2,
+      "target_port": "chromatogramsHeadersTable"
+    }
+  ],
+  "metadata": {
+    "plugin": "mass_spec",
+    "description": "MRM quantification demo using deuterated internal standards, compound-specific calibration models, qualifier transitions, QC samples, unknowns, and blanks.",
+    "id": "mass-spec-mrm-quantification",
+    "methods": [
+      "MRM quantifier and qualifier transitions",
+      "Deuterated internal-standard normalization",
+      "Compound-specific linear and Wagner calibration models",
+      "QC, unknown, and blank result inspection"
+    ],
+    "owner": "StreamFind mass-spectrometry demos",
+    "purpose": "Demonstrate targeted MRM quantification with internal-standard normalization and peak inspection",
+    "sample_type": "MRM sample",
+    "use_case": "MRM quantification",
+    "name": "MRM Quantification"
+  },
+  "name": "MRM Quantification",
+  "operations": [
+    {
+      "id": 1,
+      "inputs": {},
+      "operation": "mass_spec.read_mass_spec_files",
+      "parameters": {
+        "source_paths": []
+      },
+      "position": {
+        "x": 700,
+        "y": 650
+      }
+    },
+    {
+      "id": 2,
+      "inputs": {},
+      "operation": "mass_spec.load_chromatograms",
+      "parameters": {
+        "analysis_names": [],
+        "chromatogram_id_regex": [
+          "^SRM.*name=Diclofenac_[12]$",
+          "^SRM.*name=IS_Diclofenac_D4$",
+          "^SRM.*name=Sulfamethoxazol_[12]$",
+          "^SRM.*name=IS_Sulfamethoxazol_D4$"
+        ],
+        "ignore_case": false,
+        "invert": false
+      },
+      "position": {
+        "x": 1108.6203941730935,
+        "y": 1013.3397600685519
+      }
+    },
+    {
+      "id": 3,
+      "inputs": {},
+      "operation": "mass_spec.find_chromatogram_peaks",
+      "parameters": {
+        "analysis_names": [],
+        "indices": [],
+        "merge": true,
+        "merge_distance": 5,
+        "min_peak_height": 0,
+        "min_peak_distance": 0,
+        "min_peak_width": 0,
+        "max_peak_width": 30,
+        "min_snr": 3,
+        "peak_trace_padding_seconds": 10
+      },
+      "position": {
+        "x": 1449.2759211653815,
+        "y": 1030.8461868037705
+      }
+    },
+    {
+      "id": 4,
+      "inputs": {},
+      "operation": "mass_spec.set_quantification_plan",
+      "parameters": {
+        "quant_sample_assignments": [
+          {
+            "analysis": "250124_Mix1_0.009",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.009",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.009",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.045",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.045",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.09",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.09",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.225",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.225",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.45",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.45",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.9",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.9",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_2.25",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_2.25",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_4.5",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_4.5",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_14",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_14",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_14",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_14",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_SPE QC 10",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_SPE QC 10",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_SPE QC 10",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_SPE QC 10",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199 SPE",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3659",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3659",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3659",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3659",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250121/198",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250121/199",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250116/3658 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (3)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (3)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (3)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (3)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_QC 10 Schlamm",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_QC 10 Schlamm",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_QC 10 Schlamm",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_QC 10 Schlamm",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/103 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/106 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/109 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_241205/112 dot.",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (2)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (2)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (2)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (2)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (2)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (2)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (2)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (2)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (2)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (2)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (2)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (2)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (2)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (2)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (2)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (2)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (2)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (2)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (2)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (2)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (2)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (2)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (2)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (2)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (2)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (2)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (2)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (2)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (2)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (2)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (2)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (2)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (2)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (2)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (2)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (2)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_60",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_60",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_60",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_60",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_22.5",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 22.5,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_22.5",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_22.5",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 22.5,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_22.5",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_62",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_62",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_62",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_62",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_63",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_63",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_63",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_63",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (3)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (3)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (3)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (3)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (3)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (3)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (3)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (3)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (3)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (3)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (3)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (3)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (3)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (3)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (3)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (3)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (3)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (3)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (3)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (3)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (3)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (3)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (3)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (3)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (3)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (3)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (3)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (3)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (3)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (3)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (3)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (3)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (3)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (3)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (3)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (3)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_81",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_81",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_81",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_81",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (4)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (4)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (4)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 (4)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 9,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_Kontrolle 9 filtriert (2)",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "qc",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/075",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/075",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/075",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/075",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/076",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/076",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/076",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/076",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/077",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/077",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/077",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/077",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/078",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/078",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/078",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/078",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/079",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/079",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/079",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/079",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/081",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/081",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/081",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/081",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/082",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/082",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/082",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/082",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080 dot",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080 dot",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080 dot",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_250130/080 dot",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (4)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (4)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (4)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.009,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.009 (4)",
+            "calibration_level": 1,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (4)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (4)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (4)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.0225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.0225 (4)",
+            "calibration_level": 2,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (4)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (4)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (4)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.045,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.045 (4)",
+            "calibration_level": 3,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (4)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (4)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (4)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.09,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.09 (4)",
+            "calibration_level": 4,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (4)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (4)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (4)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.225,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.225 (4)",
+            "calibration_level": 5,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (4)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (4)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (4)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.45,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.45 (4)",
+            "calibration_level": 6,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (4)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (4)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (4)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 0.9,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_0.9 (4)",
+            "calibration_level": 7,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (4)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (4)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (4)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 2.25,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_2.25 (4)",
+            "calibration_level": 8,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (4)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (4)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (4)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 4.5,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_4.5 (4)",
+            "calibration_level": 9,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_108",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_108",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_108",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_108",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_22.5 (2)",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 22.5,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_22.5 (2)",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_22.5 (2)",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 22.5,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_22.5 (2)",
+            "calibration_level": 10,
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "calibrator",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_110",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_110",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_110",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_110",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_111",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "diclofenac"
+          },
+          {
+            "analysis": "250124_Mix1_sample_111",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "diclofenac_d4"
+          },
+          {
+            "analysis": "250124_Mix1_sample_111",
+            "dilution_factor": 1,
+            "exclude": false,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol"
+          },
+          {
+            "analysis": "250124_Mix1_sample_111",
+            "dilution_factor": 1,
+            "exclude": false,
+            "nominal_concentration": 10,
+            "sample_type": "unknown",
+            "target_id": "sulfamethoxazol_d4"
+          }
+        ],
+        "quantification_method": [
+          {
+            "enabled": true,
+            "intercept_mode": "free",
+            "internal_standard_id": "diclofenac_d4",
+            "name": "Diclofenac",
+            "normalization": "internal_standard",
+            "qualifier_chromatogram_type": "SRM",
+            "qualifier_detector": "SCIEX",
+            "qualifier_mz_tolerance_ppm": 30,
+            "qualifier_polarity": 1,
+            "qualifier_precursor_mz": 296,
+            "qualifier_product_mz": 250,
+            "qualifier_signal_type": "MS",
+            "quantifier_chromatogram_type": "SRM",
+            "quantifier_detector": "SCIEX",
+            "quantifier_mz_tolerance_ppm": 30,
+            "quantifier_polarity": 1,
+            "quantifier_precursor_mz": 296,
+            "quantifier_product_mz": 214.1,
+            "quantifier_signal_type": "MS",
+            "regression_model": "wagner",
+            "response_metric": "area",
+            "role": "analyte",
+            "rt": 378.4,
+            "rt_tolerance": 10,
+            "target_id": "diclofenac",
+            "weighting": "none"
+          },
+          {
+            "enabled": true,
+            "intercept_mode": "free",
+            "name": "Diclofenac-D4",
+            "normalization": "none",
+            "quantifier_chromatogram_type": "SRM",
+            "quantifier_detector": "SCIEX",
+            "quantifier_mz_tolerance_ppm": 30,
+            "quantifier_polarity": 1,
+            "quantifier_precursor_mz": 300,
+            "quantifier_product_mz": 218,
+            "quantifier_signal_type": "MS",
+            "regression_model": "linear",
+            "response_metric": "area",
+            "role": "internal_standard",
+            "rt": 377.1,
+            "rt_tolerance": 10,
+            "target_id": "diclofenac_d4",
+            "weighting": "none"
+          },
+          {
+            "enabled": true,
+            "intercept_mode": "free",
+            "internal_standard_id": "sulfamethoxazol_d4",
+            "name": "Sulfamethoxazol",
+            "normalization": "internal_standard",
+            "qualifier_chromatogram_type": "SRM",
+            "qualifier_detector": "SCIEX",
+            "qualifier_mz_tolerance_ppm": 30,
+            "qualifier_polarity": 1,
+            "qualifier_precursor_mz": 254.1,
+            "qualifier_product_mz": 92.1,
+            "qualifier_signal_type": "MS",
+            "quantifier_chromatogram_type": "SRM",
+            "quantifier_detector": "SCIEX",
+            "quantifier_mz_tolerance_ppm": 30,
+            "quantifier_polarity": 1,
+            "quantifier_precursor_mz": 254.1,
+            "quantifier_product_mz": 156.1,
+            "quantifier_signal_type": "MS",
+            "regression_model": "wagner",
+            "response_metric": "area",
+            "role": "analyte",
+            "rt": 175.55,
+            "rt_tolerance": 10,
+            "target_id": "sulfamethoxazol",
+            "weighting": "none"
+          },
+          {
+            "enabled": true,
+            "intercept_mode": "free",
+            "name": "Sulfamethoxazol-D4",
+            "normalization": "none",
+            "quantifier_chromatogram_type": "SRM",
+            "quantifier_detector": "SCIEX",
+            "quantifier_mz_tolerance_ppm": 30,
+            "quantifier_polarity": 1,
+            "quantifier_precursor_mz": 258.108,
+            "quantifier_product_mz": 96.1,
+            "quantifier_signal_type": "MS",
+            "regression_model": "linear",
+            "response_metric": "area",
+            "role": "internal_standard",
+            "rt": 174.25,
+            "rt_tolerance": 10,
+            "target_id": "sulfamethoxazol_d4",
+            "weighting": "none"
+          }
+        ]
+      },
+      "position": {
+        "x": 1316.6666666666665,
+        "y": 638.3333333333335
+      }
+    },
+    {
+      "id": 5,
+      "inputs": {},
+      "operation": "mass_spec.quantify",
+      "parameters": {
+        "debug_analysis": "",
+        "minimum_calibration_points": 3,
+        "qc_max_relative_error": 20,
+        "require_qualifier": false
+      },
+      "position": {
+        "x": 1915.1692373607534,
+        "y": 735.2656383890317
+      }
+    }
+  ],
+  "schema_version": 2,
+  "version": 39,
+  "workflow_id": "mass-spec-mrm-quantification",
+  "plugin": "mass_spec",
+  "definition_revision": 1
+}

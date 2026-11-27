@@ -27,7 +27,7 @@ target_link_libraries(streamfind_mass_spec_project_isolation_contract PRIVATE st
 target_compile_definitions(streamfind_mass_spec_project_isolation_contract PRIVATE
     STREAMFIND_CATALOGUE_PATH="${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
     STREAMFIND_MULTIPROJECT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../core/tests/fixtures/project/multiproject.json"
-    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/domain_schema_manifest.json")
+    STREAMFIND_DOMAIN_SCHEMA_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/project/plugin_schema_manifest.json")
 add_test(NAME streamfind_mass_spec_project_isolation_contract
     COMMAND streamfind_mass_spec_project_isolation_contract)
 set_tests_properties(streamfind_mass_spec_project_isolation_contract PROPERTIES
@@ -46,6 +46,7 @@ target_include_directories(streamfind_mass_spec_filter_reason_contract PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_compile_features(streamfind_mass_spec_filter_reason_contract PRIVATE cxx_std_20)
 add_test(NAME streamfind_mass_spec_filter_reason_contract
     COMMAND streamfind_mass_spec_filter_reason_contract)
 set_tests_properties(streamfind_mass_spec_filter_reason_contract PROPERTIES
@@ -58,6 +59,7 @@ target_include_directories(streamfind_mass_spec_blank_replicate_matching_contrac
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_compile_features(streamfind_mass_spec_blank_replicate_matching_contract PRIVATE cxx_std_20)
 add_test(NAME streamfind_mass_spec_blank_replicate_matching_contract
     COMMAND streamfind_mass_spec_blank_replicate_matching_contract)
 set_tests_properties(streamfind_mass_spec_blank_replicate_matching_contract PROPERTIES
@@ -71,6 +73,7 @@ target_include_directories(streamfind_mass_spec_find_features_noise_quantile_con
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../sdk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_compile_features(streamfind_mass_spec_find_features_noise_quantile_contract PRIVATE cxx_std_20)
 add_test(NAME streamfind_mass_spec_find_features_noise_quantile_contract
     COMMAND streamfind_mass_spec_find_features_noise_quantile_contract)
 set_tests_properties(streamfind_mass_spec_find_features_noise_quantile_contract PROPERTIES
@@ -111,6 +114,39 @@ add_test(NAME streamfind_mass_spec_bruker_calibration_contract
     COMMAND streamfind_mass_spec_bruker_calibration_contract)
 set_tests_properties(streamfind_mass_spec_bruker_calibration_contract PROPERTIES
     LABELS "mass_spec;reader;calibration")
+
+add_executable(streamfind_mass_spec_quantification_validation_contract
+    unit/quantification_validation_contract.cpp
+    ../src/utils/quantification.cpp)
+target_include_directories(streamfind_mass_spec_quantification_validation_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_quantification_validation_contract
+    COMMAND streamfind_mass_spec_quantification_validation_contract)
+set_tests_properties(streamfind_mass_spec_quantification_validation_contract PROPERTIES
+    LABELS "mass_spec;quantification;configuration")
+
+add_executable(streamfind_mass_spec_calibration_contract
+    unit/calibration_contract.cpp
+    ../src/utils/calibration.cpp)
+target_include_directories(streamfind_mass_spec_calibration_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_compile_features(streamfind_mass_spec_calibration_contract PRIVATE cxx_std_20)
+add_test(NAME streamfind_mass_spec_calibration_contract
+    COMMAND streamfind_mass_spec_calibration_contract)
+set_tests_properties(streamfind_mass_spec_calibration_contract PROPERTIES
+    LABELS "mass_spec;quantification;calibration")
+
+add_executable(streamfind_mass_spec_chromatogram_peak_contract
+    unit/chromatogram_peak_contract.cpp
+    ../src/utils/chromatograms.cpp)
+target_include_directories(streamfind_mass_spec_chromatogram_peak_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+add_test(NAME streamfind_mass_spec_chromatogram_peak_contract
+    COMMAND streamfind_mass_spec_chromatogram_peak_contract)
+set_tests_properties(streamfind_mass_spec_chromatogram_peak_contract PROPERTIES
+    LABELS "mass_spec;chromatograms;quantification")
 
 foreach(_test_target IN ITEMS
     streamfind_mass_spec_mcp_discovery_contract

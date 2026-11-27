@@ -85,7 +85,7 @@ export function schemaShape(schema: JsonSchema | undefined): string {
 
 export function typeIcon(typeKey: string): string {
   const type = typeKey.toLowerCase();
-  if (type.includes('duckdb_table') || type === 'table') return 'fa-solid fa-table';
+  if (type === 'table') return 'fa-solid fa-table';
   if (type.startsWith('array<')) {
     if (type.includes('integer') || type.includes('number') || type.includes('real') || type.includes('double'))
       return 'fa-solid fa-list-ol';
@@ -106,7 +106,7 @@ export function typeIcon(typeKey: string): string {
 
 export function typeClass(typeKey: string): string {
   const type = typeKey.toLowerCase();
-  if (type.includes('duckdb_table') || type === 'table') return 'sf-port-type-table';
+  if (type === 'table') return 'sf-port-type-table';
   if (type.startsWith('array<')) {
     if (type.includes('integer') || type.includes('number') || type.includes('real') || type.includes('double'))
       return 'sf-port-type-array-number';
@@ -168,7 +168,7 @@ export function portMatchesParameter(sourcePort: NodePort, parameter: Capability
       : parameter.schema.type === 'object' || parameter.schema.type === 'array'
         ? 'structured_value'
         : parameter.schema.type;
-  const sourceKind = sourcePort.dataKind === 'duckdb_table' ? 'table' : sourcePort.dataKind;
+  const sourceKind = sourcePort.dataKind;
   const parameterContract =
     parameter.semantic_contract ||
     (typeof parameter.schema['x-streamfind-semantic-contract'] === 'string'
@@ -183,8 +183,8 @@ export function portMatchesParameter(sourcePort: NodePort, parameter: Capability
 export function portMatchesPort(sourcePort: NodePort, targetPort: NodePort): boolean {
   const dynamicTableConnection =
     (targetPort.semanticContract === 'anyTable' || sourcePort.semanticContract === 'anyTable') &&
-    targetPort.dataKind === 'duckdb_table' &&
-    sourcePort.dataKind === 'duckdb_table';
+    targetPort.dataKind === 'table' &&
+    sourcePort.dataKind === 'table';
   const typeCompatible = dynamicTableConnection || sourcePort.typeKey === targetPort.typeKey;
   return (
     Boolean(sourcePort.semanticContract) &&

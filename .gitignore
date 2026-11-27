@@ -33,9 +33,6 @@ _skbuild/
 # Nested git repositories (have their own .git file); local developer state.
 .worktrees/
 
-# Completed plan records are retained locally but are not active tracked inputs.
-/.plans/completed/
-
 # Hermes session and workspace metadata ----------------------------------------
 .hermes/
 

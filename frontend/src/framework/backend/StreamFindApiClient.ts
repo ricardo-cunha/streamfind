@@ -36,7 +36,6 @@ export type ResultRecord = {
   result_name?: string;
   contract_id: string;
   representation: 'json' | 'table' | string;
-  physical_table?: string | null;
   payload?: JsonValue | null;
   row_count?: number;
   columns?: Array<{ name: string; type: string }>;
@@ -74,7 +73,7 @@ function normalizeCell(value: unknown): string | null {
   }
 }
 
-function normalizeResultData(value: unknown): ResultDataResponse {
+function normalizeResultData(value: unknown, preserveComplexCells = false): ResultDataResponse {
   const candidate = (value && typeof value === 'object' ? value : {}) as Partial<ResultDataResponse> & {
     data?: Partial<ResultDataResponse>;
     rows?: unknown;
@@ -84,16 +83,17 @@ function normalizeResultData(value: unknown): ResultDataResponse {
   const rows = rawRows.map((row) => {
     if (Array.isArray(row)) {
       const columns = Array.isArray(nested.columns) ? nested.columns : [];
-      return Object.fromEntries(columns.map((column, index) => [column.name, normalizeCell(row[index])])) as Record<
-        string,
-        string | null
-      >;
+      return Object.fromEntries(
+        columns.map((column, index) => [column.name, preserveComplexCells ? row[index] : normalizeCell(row[index])]),
+      ) as Record<string, unknown>;
     }
     if (!row || typeof row !== 'object') return {};
-    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<
-      string,
-      string | null
-    >;
+    if (preserveComplexCells) {
+      // Plot viewers can consume decoded arrays directly; stringify+parse of
+      // large EIC columns otherwise copies the same point arrays twice.
+      return row as Record<string, unknown>;
+    }
+    return Object.fromEntries(Object.entries(row).map(([key, cell]) => [key, normalizeCell(cell)])) as Record<string, unknown>;
   });
   const columns = Array.isArray(nested.columns)
     ? nested.columns
@@ -105,7 +105,7 @@ function normalizeResultData(value: unknown): ResultDataResponse {
   return {
     result_id: typeof nested.result_id === 'string' ? nested.result_id : '',
     columns,
-    rows,
+    rows: rows as Array<Record<string, string | null>>,
     offset: typeof nested.offset === 'number' ? nested.offset : 0,
     limit: typeof nested.limit === 'number' ? nested.limit : rows.length,
     total_rows: typeof nested.total_rows === 'number' ? nested.total_rows : rows.length,
@@ -121,7 +121,8 @@ export type ResultQueryFilter = {
 };
 export type ResultQueryRequest = {
   result_id: string;
-  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
+  mode?: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
+  distinct_columns?: string[];
   columns?: string[];
   filters?: ResultQueryFilter[];
   offset?: number;
@@ -140,11 +141,17 @@ export type ResultQueryRequest = {
   eic_max_points?: number;
   trace_columns?: string[];
   max_points_per_trace?: number;
+  /** Keep decoded JSON arrays/objects intact for viewers that plot them. */
+  preserveComplexCells?: boolean;
+  /** Encode result rows as positional arrays to reduce large JSON responses. */
+  compact_rows?: boolean;
 };
-export type ResultQueryResponse = ResultDataResponse & {
+export type ResultQueryResponse<TCell = string | null> = Omit<ResultDataResponse, 'rows'> & {
+  rows: Array<Record<string, TCell>>;
   returned_rows: number;
-  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization';
+  mode: 'page' | 'sample' | 'detail' | 'eic' | 'visualization' | 'distinct';
   has_more: boolean;
+  distinct?: Record<string, JsonValue[]>;
 };
 export type ResultTraceRequest = {
   result_id: string;
@@ -164,14 +171,21 @@ export type ResultTraceResponse = {
 // queries prevents tab switches and repeated viewer mounts from transferring
 // and normalizing the same rows again. The bounded cache is keyed by project
 // session and the complete query, so filters and viewports remain isolated.
-const resultQueryCache = new Map<string, Promise<ResultQueryResponse>>();
+const resultQueryCache = new Map<string, Promise<ResultQueryResponse<unknown>>>();
 const RESULT_QUERY_CACHE_LIMIT = 128;
 
-function resultQueryCacheKey(sessionId: string, request: ResultQueryRequest): string {
-  return `${sessionId}\n${JSON.stringify(request)}`;
+function resultQueryCacheKey(endpoint: string, sessionId: string, request: ResultQueryRequest): string {
+  return `${endpoint}\n${sessionId}\n${JSON.stringify(request)}`;
 }
 
-function rememberResultQuery(key: string, request: Promise<ResultQueryResponse>): Promise<ResultQueryResponse> {
+function invalidateResultQueryCache(endpoint: string, sessionId: string): void {
+  const prefix = `${endpoint}\n${sessionId}\n`;
+  for (const key of resultQueryCache.keys()) {
+    if (key.startsWith(prefix)) resultQueryCache.delete(key);
+  }
+}
+
+function rememberResultQuery(key: string, request: Promise<ResultQueryResponse<unknown>>): Promise<ResultQueryResponse<unknown>> {
   resultQueryCache.set(key, request);
   while (resultQueryCache.size > RESULT_QUERY_CACHE_LIMIT) {
     const oldest = resultQueryCache.keys().next().value;
@@ -183,9 +197,10 @@ function rememberResultQuery(key: string, request: Promise<ResultQueryResponse>)
 
 function normalizeResultRecord(value: ResultRecord): ResultRecord {
   const candidate = value as ResultRecord & { columns?: unknown };
+  if (typeof candidate.result_id !== 'string' || !candidate.result_id.trim())
+    throw new Error('Result inventory record is missing its published result_id.');
   return {
     ...candidate,
-    result_id: candidate.result_id || candidate.physical_table || '',
     columns: Array.isArray(candidate.columns) ? candidate.columns : [],
   };
 }
@@ -211,9 +226,7 @@ export type IsotopePatternResponse = {
 
 type EventHandler = (event: StreamFindEvent) => void;
 
-const defaultBaseUrl = import.meta.env.DEV
-  ? import.meta.env.VITE_STREAMFIND_SERVICE_URL || 'http://127.0.0.1:8790'
-  : window.location.origin;
+const defaultBaseUrl = window.location.origin;
 
 export class StreamFindApiClient {
   private socket: WebSocket | null = null;
@@ -282,8 +295,8 @@ export class StreamFindApiClient {
     return response.json() as Promise<CapabilityIndexResponse>;
   }
 
-  async capabilityModules(domain: string): Promise<CapabilityModulesResponse> {
-    const response = await fetch(`${this.baseUrl}/capabilities/domains/${encodeURIComponent(domain)}/modules`);
+  async capabilityModules(plugin: string): Promise<CapabilityModulesResponse> {
+    const response = await fetch(`${this.baseUrl}/capabilities/plugins/${encodeURIComponent(plugin)}/modules`);
     if (!response.ok) throw new Error(`Capability module request failed (${response.status})`);
     return response.json() as Promise<CapabilityModulesResponse>;
   }
@@ -297,7 +310,7 @@ export class StreamFindApiClient {
   async capabilityOperations(
     options: CapabilityOperationsRequest,
   ): Promise<CapabilityOperationSummary[] | BackendCapability[]> {
-    const query = new URLSearchParams({ domain: options.domain });
+    const query = new URLSearchParams({ plugin: options.plugin });
     if (options.module) query.set('module', options.module);
     if (options.search) query.set('search', options.search);
     if (options.includeSchema) query.set('include_schema', 'true');
@@ -324,6 +337,24 @@ export class StreamFindApiClient {
     const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`Project close request failed (${response.status})`);
     return response.json() as Promise<ProjectSession>;
+  }
+
+  async copyProject(sessionId: string, destinationProjectPath: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/copy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ destination_project_path: destinationProjectPath }),
+    });
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const payload = (await response.json()) as { error?: string };
+        detail = payload.error ? `: ${payload.error}` : '';
+      } catch {
+        // Keep the HTTP status when the service returned a non-JSON response.
+      }
+      throw new Error(`Project copy request failed (${response.status})${detail}`);
+    }
   }
 
   async runOperation(
@@ -401,6 +432,7 @@ export class StreamFindApiClient {
     });
     const result = (await response.json()) as WorkflowDefinitionResponse & { error?: string };
     if (!response.ok) throw new Error(result.error || `Result clear request failed (${response.status})`);
+    invalidateResultQueryCache(this.baseUrl, sessionId);
     return result;
   }
 
@@ -443,6 +475,7 @@ export class StreamFindApiClient {
       const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
       throw new Error(`Node result cleanup failed (${response.status})${detail}`);
     }
+    invalidateResultQueryCache(this.baseUrl, sessionId);
   }
 
   async resultData(sessionId: string, request: ResultDataRequest): Promise<ResultDataResponse> {
@@ -452,11 +485,29 @@ export class StreamFindApiClient {
       body: JSON.stringify(request),
     });
     if (!response.ok) throw new Error(`Result data request failed (${response.status})`);
-    return normalizeResultData(await response.json());
+    return normalizeResultData(await response.json()) as ResultDataResponse;
   }
 
-  async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse> {
-    const key = resultQueryCacheKey(sessionId, request);
+  async resultPayload(sessionId: string, resultId: string): Promise<JsonValue> {
+    const response = await fetch(`${this.baseUrl}/projects/${encodeURIComponent(sessionId)}/results/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result_id: resultId }),
+    });
+    if (!response.ok) throw new Error(`Result payload request failed (${response.status})`);
+    const raw = (await response.json()) as { result_id?: unknown; payload?: unknown };
+    if (raw.result_id !== resultId || !('payload' in raw))
+      throw new Error('Result payload response did not match the requested result');
+    return raw.payload as JsonValue;
+  }
+
+  resultQuery(
+    sessionId: string,
+    request: ResultQueryRequest & { preserveComplexCells: true },
+  ): Promise<ResultQueryResponse<unknown>>;
+  resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse>;
+  async resultQuery(sessionId: string, request: ResultQueryRequest): Promise<ResultQueryResponse<unknown>> {
+    const key = resultQueryCacheKey(this.baseUrl, sessionId, request);
     const cached = resultQueryCache.get(key);
     if (cached) return cached;
     const pending = (async () => {
@@ -465,15 +516,23 @@ export class StreamFindApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
-      if (!response.ok) throw new Error(`Result query request failed (${response.status})`);
-      const raw = (await response.json()) as Partial<ResultQueryResponse>;
-      const result = normalizeResultData(raw);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
+        const detail = typeof body?.error === 'string' && body.error.trim() ? `: ${body.error}` : '';
+        throw new Error(`Result query request failed (${response.status})${detail}`);
+      }
+      const raw = (await response.json()) as Partial<ResultQueryResponse<unknown>>;
+      const result = request.preserveComplexCells === true && Array.isArray(raw.rows) &&
+        raw.rows.every((row) => row && typeof row === 'object' && !Array.isArray(row))
+        ? (raw as ResultQueryResponse<unknown>)
+        : normalizeResultData(raw, request.preserveComplexCells === true);
       return {
         ...result,
         returned_rows: typeof raw.returned_rows === 'number' ? raw.returned_rows : result.rows.length,
         mode: raw.mode ?? 'page',
         has_more: Boolean(raw.has_more),
-      };
+        distinct: raw.distinct,
+      } as ResultQueryResponse<unknown>;
     })();
     const remembered = rememberResultQuery(key, pending);
     void remembered.catch(() => {
@@ -578,15 +637,6 @@ export class StreamFindApiClient {
     if (!response.ok) throw new Error(`Service ${action} failed (${response.status})`);
   }
 
-  async pickDatabaseFile(mode: 'open' | 'create' = 'open'): Promise<string> {
-    const endpoint = mode === 'create' ? '/projects/file-picker/create' : '/projects/file-picker';
-    const response = await fetch(`${this.baseUrl}${endpoint}`);
-    const result = (await response.json()) as { database_path?: string; error?: string };
-    if (!response.ok || !result.database_path)
-      throw new Error(result.error || `Database file selection failed (${response.status})`);
-    return result.database_path;
-  }
-
   async pickFiles(extensions: string[]): Promise<string[]> {
     const response = await fetch(`${this.baseUrl}/projects/file-picker/files`, {
       method: 'POST',
@@ -609,7 +659,11 @@ export class StreamFindApiClient {
   async pickFolders(): Promise<string[]> {
     const response = await fetch(`${this.baseUrl}/projects/file-picker/folders`, { method: 'POST' });
     const result = (await response.json()) as { paths?: string[]; error?: string };
-    if (!response.ok || !result.paths) throw new Error(result.error || `Folder selection failed (${response.status})`);
+    if (!response.ok) {
+      if (result.error?.toLocaleLowerCase().includes('cancel')) return [];
+      throw new Error(result.error || `Folder selection failed (${response.status})`);
+    }
+    if (!result.paths) throw new Error(`Folder selection failed (${response.status})`);
     return result.paths;
   }
 
@@ -638,7 +692,7 @@ export class StreamFindApiClient {
 
   async createProject(input: {
     session_id: string;
-    database_path: string;
+    project_path: string;
     metadata?: Record<string, unknown>;
     workflow_metadata?: Record<string, unknown>;
     mode?: 'create' | 'open';

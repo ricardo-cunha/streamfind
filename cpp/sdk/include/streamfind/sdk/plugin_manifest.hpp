@@ -12,6 +12,7 @@
 namespace streamfind::sdk {
 
 struct STREAMFIND_SDK_API PluginManifest {
+    int schema_version{0};
     std::string plugin_id;
     std::string name;
     std::string version;
@@ -20,7 +21,8 @@ struct STREAMFIND_SDK_API PluginManifest {
     std::string sdk_minimum;
     std::string sdk_maximum;
     std::map<std::string, std::string> libraries;
-    std::string domain;
+    std::string plugin;
+    std::string ontology_namespace;
     std::string semantic_catalogue;
     bool static_composition{false};
     std::vector<std::string> platforms;

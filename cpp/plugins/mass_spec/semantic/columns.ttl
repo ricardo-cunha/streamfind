@@ -1,11 +1,11 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfms: <https://streamfind.dev/catalogue/domains/mass_spec#> .
+@prefix sfms: <https://streamfind.dev/catalogue/plugins/mass_spec#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfms:analysisNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis" ;
     skos:definition "Analysis identifier." ;
@@ -15,7 +15,7 @@ sfms:analysisNameColumn
 
 sfms:analysisIndexColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis index" ;
     skos:definition "Zero-based logical analysis index within the physical source file." ;
@@ -25,7 +25,7 @@ sfms:analysisIndexColumn
 
 sfms:sourceAnalysisNumberColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source analysis number" ;
     skos:definition "Vendor-provided analysis number within the physical source file." ;
@@ -35,7 +35,7 @@ sfms:sourceAnalysisNumberColumn
 
 sfms:replicateNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Replicate" ;
     skos:definition "Optional replicate label." ;
@@ -45,7 +45,7 @@ sfms:replicateNameColumn
 
 sfms:blankNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank" ;
     skos:definition "Optional blank label." ;
@@ -55,7 +55,7 @@ sfms:blankNameColumn
 
 sfms:fileNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File name" ;
     skos:definition "Source file name." ;
@@ -65,7 +65,7 @@ sfms:fileNameColumn
 
 sfms:filePathColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File path" ;
     skos:definition "Source file path persisted in a mass-spectrometry result table." ;
@@ -77,7 +77,7 @@ sfms:filePathColumn
 
 sfms:fileDirColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File directory" ;
     skos:definition "Source file directory." ;
@@ -87,7 +87,7 @@ sfms:fileDirColumn
 
 sfms:fileExtensionColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "File extension" ;
     skos:definition "Source file extension." ;
@@ -97,7 +97,7 @@ sfms:fileExtensionColumn
 
 sfms:formatColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Format" ;
     skos:definition "Detected source format." ;
@@ -107,7 +107,7 @@ sfms:formatColumn
 
 sfms:typeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Type" ;
     skos:definition "Source data type." ;
@@ -117,7 +117,7 @@ sfms:typeColumn
 
 sfms:timeStampColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Time stamp" ;
     skos:definition "Source acquisition timestamp." ;
@@ -127,7 +127,7 @@ sfms:timeStampColumn
 
 sfms:numberSpectraColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of spectra" ;
     skos:definition "Number of spectra." ;
@@ -137,7 +137,7 @@ sfms:numberSpectraColumn
 
 sfms:numberChromatogramsColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of chromatograms" ;
     skos:definition "Number of chromatograms." ;
@@ -147,7 +147,7 @@ sfms:numberChromatogramsColumn
 
 sfms:numberSpectraBinaryArraysColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Number of binary arrays" ;
     skos:definition "Number of binary spectrum arrays." ;
@@ -157,7 +157,7 @@ sfms:numberSpectraBinaryArraysColumn
 
 sfms:minMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum m/z" ;
     skos:definition "Minimum mass-to-charge value." ;
@@ -167,7 +167,7 @@ sfms:minMzColumn
 
 sfms:maxMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum m/z" ;
     skos:definition "Maximum mass-to-charge value." ;
@@ -177,7 +177,7 @@ sfms:maxMzColumn
 
 sfms:startRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Start retention time" ;
     skos:definition "Start retention time." ;
@@ -187,7 +187,7 @@ sfms:startRtColumn
 
 sfms:endRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "End retention time" ;
     skos:definition "End retention time." ;
@@ -197,7 +197,7 @@ sfms:endRtColumn
 
 sfms:hasIonMobilityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Has ion mobility" ;
     skos:definition "Whether ion mobility data exists." ;
@@ -207,7 +207,7 @@ sfms:hasIonMobilityColumn
 
 sfms:concentrationColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Concentration" ;
     skos:definition "Analysis concentration." ;
@@ -217,7 +217,7 @@ sfms:concentrationColumn
 
 sfms:indexColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Index" ;
     skos:definition "Header row index." ;
@@ -227,7 +227,7 @@ sfms:indexColumn
 
 sfms:scanColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Scan" ;
     skos:definition "Scan number." ;
@@ -237,7 +237,7 @@ sfms:scanColumn
 
 sfms:arrayLengthColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Array length" ;
     skos:definition "Binary array length." ;
@@ -247,7 +247,7 @@ sfms:arrayLengthColumn
 
 sfms:levelColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Level" ;
     skos:definition "MS level." ;
@@ -257,7 +257,7 @@ sfms:levelColumn
 
 sfms:modeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mode" ;
     skos:definition "Acquisition mode." ;
@@ -267,7 +267,7 @@ sfms:modeColumn
 
 sfms:polarityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Polarity" ;
     skos:definition "Ion polarity." ;
@@ -277,7 +277,7 @@ sfms:polarityColumn
 
 sfms:configurationColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Configuration" ;
     skos:definition "Instrument configuration." ;
@@ -287,7 +287,7 @@ sfms:configurationColumn
 
 sfms:lowMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Low m/z" ;
     skos:definition "Low m/z bound." ;
@@ -297,7 +297,7 @@ sfms:lowMzColumn
 
 sfms:highMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "High m/z" ;
     skos:definition "High m/z bound." ;
@@ -307,7 +307,7 @@ sfms:highMzColumn
 
 sfms:bpMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Base peak m/z" ;
     skos:definition "Base peak m/z." ;
@@ -317,7 +317,7 @@ sfms:bpMzColumn
 
 sfms:bpIntColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Base peak intensity" ;
     skos:definition "Base peak intensity." ;
@@ -327,7 +327,7 @@ sfms:bpIntColumn
 
 sfms:ticColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "TIC" ;
     skos:definition "Total ion current." ;
@@ -337,7 +337,7 @@ sfms:ticColumn
 
 sfms:rtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Retention time" ;
     skos:definition "Retention time." ;
@@ -348,7 +348,7 @@ sfms:rtColumn
 
 sfms:mobilityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mobility" ;
     skos:definition "Ion mobility." ;
@@ -358,7 +358,7 @@ sfms:mobilityColumn
 
 sfms:windowMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window m/z" ;
     skos:definition "Isolation window center." ;
@@ -368,7 +368,7 @@ sfms:windowMzColumn
 
 sfms:windowMzLowColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window low m/z" ;
     skos:definition "Isolation window lower bound." ;
@@ -378,7 +378,7 @@ sfms:windowMzLowColumn
 
 sfms:windowMzHighColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Window high m/z" ;
     skos:definition "Isolation window upper bound." ;
@@ -388,7 +388,7 @@ sfms:windowMzHighColumn
 
 sfms:precursorMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor m/z" ;
     skos:definition "Precursor m/z." ;
@@ -398,7 +398,7 @@ sfms:precursorMzColumn
 
 sfms:precursorIntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor intensity" ;
     skos:definition "Precursor intensity." ;
@@ -408,7 +408,7 @@ sfms:precursorIntensityColumn
 
 sfms:precursorChargeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor charge" ;
     skos:definition "Precursor charge." ;
@@ -418,7 +418,7 @@ sfms:precursorChargeColumn
 
 sfms:activationCeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Activation energy" ;
     skos:definition "Activation collision energy." ;
@@ -428,7 +428,7 @@ sfms:activationCeColumn
 
 sfms:chromatogramIdColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatogram ID" ;
     skos:definition "Chromatogram identifier." ;
@@ -438,7 +438,7 @@ sfms:chromatogramIdColumn
 
 sfms:productMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Product m/z" ;
     skos:definition "Product m/z." ;
@@ -448,7 +448,7 @@ sfms:productMzColumn
 
 sfms:signalTypeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Signal type" ;
     skos:definition "Signal type." ;
@@ -458,7 +458,7 @@ sfms:signalTypeColumn
 
 sfms:chromatogramTypeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatogram type" ;
     skos:definition "Chromatogram type." ;
@@ -468,7 +468,7 @@ sfms:chromatogramTypeColumn
 
 sfms:detectorColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Detector" ;
     skos:definition "Detector name." ;
@@ -478,7 +478,7 @@ sfms:detectorColumn
 
 sfms:channelColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Channel" ;
     skos:definition "Acquisition channel." ;
@@ -488,7 +488,7 @@ sfms:channelColumn
 
 sfms:unitsColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Units" ;
     skos:definition "Measurement units." ;
@@ -498,7 +498,7 @@ sfms:unitsColumn
 
 sfms:wavelengthNmColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Wavelength" ;
     skos:definition "Wavelength in nanometers." ;
@@ -508,7 +508,7 @@ sfms:wavelengthNmColumn
 
 sfms:intervalMsColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Interval" ;
     skos:definition "Interval in milliseconds." ;
@@ -518,7 +518,7 @@ sfms:intervalMsColumn
 
 sfms:startTimeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Start time" ;
     skos:definition "Chromatogram start time." ;
@@ -528,7 +528,7 @@ sfms:startTimeColumn
 
 sfms:endTimeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "End time" ;
     skos:definition "Chromatogram end time." ;
@@ -538,7 +538,7 @@ sfms:endTimeColumn
 
 sfms:intensityMultiplierColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Intensity multiplier" ;
     skos:definition "Intensity multiplier." ;
@@ -548,7 +548,7 @@ sfms:intensityMultiplierColumn
 
 sfms:preMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor m/z" ;
     skos:definition "Precursor m/z value." ;
@@ -558,7 +558,7 @@ sfms:preMzColumn
 
 sfms:preMzLowColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor low m/z" ;
     skos:definition "Lower precursor isolation m/z value." ;
@@ -568,7 +568,7 @@ sfms:preMzLowColumn
 
 sfms:preMzHighColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor high m/z" ;
     skos:definition "Upper precursor isolation m/z value." ;
@@ -578,7 +578,7 @@ sfms:preMzHighColumn
 
 sfms:preCeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor collision energy" ;
     skos:definition "Precursor collision energy." ;
@@ -588,7 +588,7 @@ sfms:preCeColumn
 
 sfms:mzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Observed m/z" ;
     skos:definition "Observed mass-to-charge value." ;
@@ -598,7 +598,7 @@ sfms:mzColumn
 
 sfms:intensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Observed intensity" ;
     skos:definition "Observed intensity." ;
@@ -608,7 +608,7 @@ sfms:intensityColumn
 
 sfms:featureColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Feature" ;
     skos:definition "Stable feature identifier within an analysis." ;
@@ -618,7 +618,7 @@ sfms:featureColumn
 
 sfms:snColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "SNR" ;
     skos:definition "Signal-to-noise ratio." ;
@@ -628,7 +628,7 @@ sfms:snColumn
 
 sfms:traceCountColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Trace count" ;
     skos:definition "Number of spectra contributing to the row." ;
@@ -638,7 +638,7 @@ sfms:traceCountColumn
 
 sfms:rawIntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raw intensity" ;
     skos:definition "Original chromatogram intensity." ;
@@ -648,7 +648,7 @@ sfms:rawIntensityColumn
 
 sfms:baselineColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Baseline" ;
     skos:definition "Chromatogram baseline value." ;
@@ -660,7 +660,7 @@ sfms:baselineColumn
 
 sfms:featureComponentColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Feature component" ;
     skos:definition "Feature component identifier." ;
     sf:columnName "feature_component" ;
@@ -669,7 +669,7 @@ sfms:featureComponentColumn
 
 sfms:featureGroupColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Feature group" ;
     skos:definition "Feature group identifier." ;
     sf:columnName "feature_group" ;
@@ -678,7 +678,7 @@ sfms:featureGroupColumn
 
 sfms:adductColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Adduct" ;
     skos:definition "Assigned ion adduct." ;
     sf:columnName "adduct" ;
@@ -687,7 +687,7 @@ sfms:adductColumn
 
 sfms:massColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Mass" ;
     skos:definition "Neutral mass." ;
     sf:columnName "mass" ;
@@ -696,7 +696,7 @@ sfms:massColumn
 
 sfms:noiseColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Noise" ;
     skos:definition "Estimated noise." ;
     sf:columnName "noise" ;
@@ -705,7 +705,7 @@ sfms:noiseColumn
 
 sfms:rtMinColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "RT minimum" ;
     skos:definition "Lower retention-time boundary." ;
     sf:columnName "rtmin" ;
@@ -714,7 +714,7 @@ sfms:rtMinColumn
 
 sfms:rtMaxColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "RT maximum" ;
     skos:definition "Upper retention-time boundary." ;
     sf:columnName "rtmax" ;
@@ -723,7 +723,7 @@ sfms:rtMaxColumn
 
 sfms:widthColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Width" ;
     skos:definition "Feature retention-time width." ;
     sf:columnName "width" ;
@@ -732,7 +732,7 @@ sfms:widthColumn
 
 sfms:mzMinColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "MZ minimum" ;
     skos:definition "Lower m/z boundary." ;
     sf:columnName "mzmin" ;
@@ -741,7 +741,7 @@ sfms:mzMinColumn
 
 sfms:mzMaxColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "MZ maximum" ;
     skos:definition "Upper m/z boundary." ;
     sf:columnName "mzmax" ;
@@ -750,7 +750,7 @@ sfms:mzMaxColumn
 
 sfms:ppmColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "PPM" ;
     skos:definition "Feature m/z spread in parts per million." ;
     sf:columnName "ppm" ;
@@ -759,7 +759,7 @@ sfms:ppmColumn
 
 sfms:fwhmRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "RT FWHM" ;
     skos:definition "Full width at half maximum in retention time." ;
     sf:columnName "fwhm_rt" ;
@@ -768,7 +768,7 @@ sfms:fwhmRtColumn
 
 sfms:fwhmMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "MZ FWHM" ;
     skos:definition "Full width at half maximum in m/z." ;
     sf:columnName "fwhm_mz" ;
@@ -777,7 +777,7 @@ sfms:fwhmMzColumn
 
 sfms:gaussianAColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Gaussian A" ;
     skos:definition "Mass-spectrometry table column gaussian_A." ;
     sf:columnName "gaussian_A" ;
@@ -786,7 +786,7 @@ sfms:gaussianAColumn
 
 sfms:gaussianMuColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Gaussian Mu" ;
     skos:definition "Mass-spectrometry table column gaussian_mu." ;
     sf:columnName "gaussian_mu" ;
@@ -795,7 +795,7 @@ sfms:gaussianMuColumn
 
 sfms:gaussianSigmaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Gaussian Sigma" ;
     skos:definition "Mass-spectrometry table column gaussian_sigma." ;
     sf:columnName "gaussian_sigma" ;
@@ -804,7 +804,7 @@ sfms:gaussianSigmaColumn
 
 sfms:gaussianR2Column
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Gaussian R2" ;
     skos:definition "Mass-spectrometry table column gaussian_r2." ;
     sf:columnName "gaussian_r2" ;
@@ -813,7 +813,7 @@ sfms:gaussianR2Column
 
 sfms:jaggednessColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Jaggedness" ;
     skos:definition "Mass-spectrometry table column jaggedness." ;
     sf:columnName "jaggedness" ;
@@ -822,7 +822,7 @@ sfms:jaggednessColumn
 
 sfms:sharpnessColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Sharpness" ;
     skos:definition "Mass-spectrometry table column sharpness." ;
     sf:columnName "sharpness" ;
@@ -831,7 +831,7 @@ sfms:sharpnessColumn
 
 sfms:asymmetryColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Asymmetry" ;
     skos:definition "Mass-spectrometry table column asymmetry." ;
     sf:columnName "asymmetry" ;
@@ -840,7 +840,7 @@ sfms:asymmetryColumn
 
 sfms:modalityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Modality" ;
     skos:definition "Mass-spectrometry table column modality." ;
     sf:columnName "modality" ;
@@ -849,7 +849,7 @@ sfms:modalityColumn
 
 sfms:platesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Plates" ;
     skos:definition "Mass-spectrometry table column plates." ;
     sf:columnName "plates" ;
@@ -858,7 +858,7 @@ sfms:platesColumn
 
 sfms:filteredColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Filtered" ;
     skos:definition "Mass-spectrometry table column filtered." ;
     sf:columnName "filtered" ;
@@ -867,7 +867,7 @@ sfms:filteredColumn
 
 sfms:filterColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Filter" ;
     skos:definition "Mass-spectrometry table column filter." ;
     sf:columnName "filter" ;
@@ -876,7 +876,7 @@ sfms:filterColumn
 
 sfms:filledColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Filled" ;
     skos:definition "Mass-spectrometry table column filled." ;
     sf:columnName "filled" ;
@@ -885,7 +885,7 @@ sfms:filledColumn
 
 sfms:correctionColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Correction" ;
     skos:definition "Mass-spectrometry table column correction." ;
     sf:columnName "correction" ;
@@ -894,7 +894,7 @@ sfms:correctionColumn
 
 sfms:eicSizeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Eic Size" ;
     skos:definition "Mass-spectrometry table column eic_size." ;
     sf:columnName "eic_size" ;
@@ -903,7 +903,7 @@ sfms:eicSizeColumn
 
 sfms:eicRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Eic Rt" ;
     skos:definition "Retention-time axis for a feature EIC, as a typed numeric array." ;
     sf:columnName "eic_rt" ;
@@ -913,7 +913,7 @@ sfms:eicRtColumn
 
 sfms:eicMzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Eic Mz" ;
     skos:definition "Observed m/z values paired with the feature EIC points, as a typed numeric array." ;
     sf:columnName "eic_mz" ;
@@ -923,17 +923,92 @@ sfms:eicMzColumn
 
 sfms:eicIntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Eic Intensity" ;
-    skos:definition "Raw EIC intensities, as a typed numeric array paired with eic_rt." ;
+    skos:definition "Processed chromatogram intensities, as a typed numeric array paired with eic_rt." ;
     sf:columnName "eic_intensity" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:qualifierEicSizeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier Eic Size" ;
+    skos:definition "Number of points in the qualifier transition EIC attached to a quantification row." ;
+    sf:columnName "qualifier_eic_size" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierEicRtColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier Eic Rt" ;
+    skos:definition "Retention-time axis for the qualifier transition EIC attached to a quantification row." ;
+    sf:columnName "qualifier_eic_rt" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:qualifierEicIntensityColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier Eic Intensity" ;
+    skos:definition "Intensity values for the qualifier transition EIC attached to a quantification row." ;
+    sf:columnName "qualifier_eic_intensity" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:internalStandardEicSizeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal standard Eic Size" ;
+    skos:definition "Number of points in the assigned internal-standard EIC attached to an analyte quantification row." ;
+    sf:columnName "internal_standard_eic_size" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:internalStandardEicRtColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal standard Eic Rt" ;
+    skos:definition "Retention-time axis for the assigned internal-standard EIC attached to an analyte quantification row." ;
+    sf:columnName "internal_standard_eic_rt" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:internalStandardEicIntensityColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal standard Eic Intensity" ;
+    skos:definition "Intensity values for the assigned internal-standard EIC attached to an analyte quantification row." ;
+    sf:columnName "internal_standard_eic_intensity" ;
+    sf:type "array" ;
+    sf:storageType "JSON" ;
+    sf:items sfcore:realItemParameter .
+
+sfms:eicRawIntensityColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Eic Raw Intensity" ;
+    skos:definition "Raw chromatogram intensities paired with eic_rt for a detected peak window." ;
+    sf:columnName "eic_raw_intensity" ;
     sf:type "array" ;
     sf:storageType "JSON" ;
     sf:items sfcore:realItemParameter .
 
 sfms:eicBaselineColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Eic Baseline" ;
     skos:definition "Baseline values paired with the feature EIC points, as a typed numeric array." ;
     sf:columnName "eic_baseline" ;
@@ -943,7 +1018,7 @@ sfms:eicBaselineColumn
 
 sfms:eicSmoothedColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Eic Smoothed" ;
     skos:definition "Smoothed EIC intensities paired with eic_rt, as a typed numeric array." ;
     sf:columnName "eic_smoothed" ;
@@ -953,7 +1028,7 @@ sfms:eicSmoothedColumn
 
 sfms:ms1SizeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Ms1 Size" ;
     skos:definition "Mass-spectrometry table column ms1_size." ;
     sf:columnName "ms1_size" ;
@@ -962,7 +1037,7 @@ sfms:ms1SizeColumn
 
 sfms:ms1MzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Ms1 Mz" ;
     skos:definition "MS1 centroid m/z values, as a typed numeric array." ;
     sf:columnName "ms1_mz" ;
@@ -972,7 +1047,7 @@ sfms:ms1MzColumn
 
 sfms:ms1IntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Ms1 Intensity" ;
     skos:definition "MS1 centroid intensities paired with ms1_mz, as a typed numeric array." ;
     sf:columnName "ms1_intensity" ;
@@ -982,7 +1057,7 @@ sfms:ms1IntensityColumn
 
 sfms:ms2SizeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Ms2 Size" ;
     skos:definition "Mass-spectrometry table column ms2_size." ;
     sf:columnName "ms2_size" ;
@@ -991,7 +1066,7 @@ sfms:ms2SizeColumn
 
 sfms:ms2MzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Ms2 Mz" ;
     skos:definition "MS2 fragment m/z values, as a typed numeric array." ;
     sf:columnName "ms2_mz" ;
@@ -1001,7 +1076,7 @@ sfms:ms2MzColumn
 
 sfms:ms2IntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Ms2 Intensity" ;
     skos:definition "MS2 fragment intensities paired with ms2_mz, as a typed numeric array." ;
     sf:columnName "ms2_intensity" ;
@@ -1011,7 +1086,7 @@ sfms:ms2IntensityColumn
 
 sfms:isotopeTheoreticalPeaksColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Theoretical isotope peaks" ;
     skos:definition "Number of theoretical isotope peaks retained for suspect matching." ;
     sf:columnName "isotope_theoretical_peaks" ;
@@ -1020,7 +1095,7 @@ sfms:isotopeTheoreticalPeaksColumn
 
 sfms:isotopeMatchedPeaksColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Matched isotope peaks" ;
     skos:definition "Number of theoretical isotope peaks matched in the observed MS1 spectrum." ;
     sf:columnName "isotope_matched_peaks" ;
@@ -1029,7 +1104,7 @@ sfms:isotopeMatchedPeaksColumn
 
 sfms:isotopeSimilarityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Isotope similarity" ;
     skos:definition "Cosine similarity between theoretical and observed isotope intensities." ;
     sf:columnName "isotope_similarity" ;
@@ -1038,7 +1113,7 @@ sfms:isotopeSimilarityColumn
 
 sfms:isotopeMatchColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Isotope match" ;
     skos:definition "Whether the observed MS1 isotope pattern satisfies the configured suspect match thresholds." ;
     sf:columnName "isotope_match" ;
@@ -1047,7 +1122,7 @@ sfms:isotopeMatchColumn
 
 sfms:annotationCategoryColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Category" ;
     skos:definition "Mass-spectrometry table column annotation_category." ;
     sf:columnName "annotation_category" ;
@@ -1056,7 +1131,7 @@ sfms:annotationCategoryColumn
 
 sfms:annotationTypeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Type" ;
     skos:definition "Mass-spectrometry table column annotation_type." ;
     sf:columnName "annotation_type" ;
@@ -1065,7 +1140,7 @@ sfms:annotationTypeColumn
 
 sfms:annotationParentFeatureColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Parent Feature" ;
     skos:definition "Mass-spectrometry table column annotation_parent_feature." ;
     sf:columnName "annotation_parent_feature" ;
@@ -1074,7 +1149,7 @@ sfms:annotationParentFeatureColumn
 
 sfms:annotationElementColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Element" ;
     skos:definition "Mass-spectrometry table column annotation_element." ;
     sf:columnName "annotation_element" ;
@@ -1083,7 +1158,7 @@ sfms:annotationElementColumn
 
 sfms:annotationMassErrorDaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Mass Error Da" ;
     skos:definition "Mass-spectrometry table column annotation_mass_error_da." ;
     sf:columnName "annotation_mass_error_da" ;
@@ -1092,7 +1167,7 @@ sfms:annotationMassErrorDaColumn
 
 sfms:annotationMassErrorPpmColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Mass Error Ppm" ;
     skos:definition "Mass-spectrometry table column annotation_mass_error_ppm." ;
     sf:columnName "annotation_mass_error_ppm" ;
@@ -1101,7 +1176,7 @@ sfms:annotationMassErrorPpmColumn
 
 sfms:annotationRtErrorColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Rt Error" ;
     skos:definition "Mass-spectrometry table column annotation_rt_error." ;
     sf:columnName "annotation_rt_error" ;
@@ -1110,7 +1185,7 @@ sfms:annotationRtErrorColumn
 
 sfms:annotationRelIntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Rel Intensity" ;
     skos:definition "Mass-spectrometry table column annotation_rel_intensity." ;
     sf:columnName "annotation_rel_intensity" ;
@@ -1119,7 +1194,7 @@ sfms:annotationRelIntensityColumn
 
 sfms:annotationExpectedRelIntensityMinColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Expected Rel Intensity Min" ;
     skos:definition "Mass-spectrometry table column annotation_expected_rel_intensity_min." ;
     sf:columnName "annotation_expected_rel_intensity_min" ;
@@ -1128,7 +1203,7 @@ sfms:annotationExpectedRelIntensityMinColumn
 
 sfms:annotationExpectedRelIntensityMaxColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Expected Rel Intensity Max" ;
     skos:definition "Mass-spectrometry table column annotation_expected_rel_intensity_max." ;
     sf:columnName "annotation_expected_rel_intensity_max" ;
@@ -1137,7 +1212,7 @@ sfms:annotationExpectedRelIntensityMaxColumn
 
 sfms:annotationScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Annotation Score" ;
     skos:definition "Mass-spectrometry table column annotation_score." ;
     sf:columnName "annotation_score" ;
@@ -1146,7 +1221,7 @@ sfms:annotationScoreColumn
 
 sfms:annotationEstimatedCarbonCountColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Estimated Carbon Count" ;
     skos:definition "Estimated number of carbon atoms derived from the observed M+1-to-M intensity ratio using the natural-abundance 13C contribution. This is a screening estimate and may be affected by overlapping isotopologues, adducts, charge state, and coelution." ;
@@ -1156,7 +1231,7 @@ sfms:annotationEstimatedCarbonCountColumn
 
 sfms:annotationMassToCarbonColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass to Carbon" ;
     skos:definition "Accurate feature mass divided by the isotope-derived estimated carbon count. The descriptor supports fluorinated-compound prioritisation using the MD/C-m/C approach." ;
@@ -1166,7 +1241,7 @@ sfms:annotationMassToCarbonColumn
 
 sfms:annotationMassDefectToCarbonColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Mass Defect to Carbon" ;
     skos:definition "Exact-mass defect relative to the nearest nominal mass, divided by the isotope-derived estimated carbon count. It is a prioritisation descriptor and not a formula identification result." ;
@@ -1176,7 +1251,7 @@ sfms:annotationMassDefectToCarbonColumn
 
 sfms:annotationEstimatedFormulaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Estimated Formula" ;
     skos:definition "Best constrained elemental formula candidate generated from the feature exact mass and the isotope-derived carbon-count estimate. The value is empty when no suitable formula is found and must be treated as a hypothesis rather than a confirmed identification." ;
@@ -1186,7 +1261,7 @@ sfms:annotationEstimatedFormulaColumn
 
 sfms:annotationFluorineToCarbonColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fluorine to Carbon" ;
     skos:definition "Formula-derived fluorine atom count divided by carbon atom count; zero when the estimated formula is unavailable or contains no carbon." ;
@@ -1196,7 +1271,7 @@ sfms:annotationFluorineToCarbonColumn
 
 sfms:annotationHydrogenToFluorineColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Hydrogen to Fluorine" ;
     skos:definition "Formula-derived hydrogen atom count divided by fluorine atom count; zero when no fluorine is present." ;
@@ -1206,7 +1281,7 @@ sfms:annotationHydrogenToFluorineColumn
 
 sfms:annotationFluorineMassPercentColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fluorine Mass Percent" ;
     skos:definition "Percentage of the formula-derived exact mass contributed by fluorine atoms." ;
@@ -1216,7 +1291,7 @@ sfms:annotationFluorineMassPercentColumn
 
 sfms:annotationFluorinationScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fluorination Score" ;
     skos:definition "Bounded formula-composition score F/(C+F), useful for prioritising fluorinated organic candidates and not a confirmed fluorination identity." ;
@@ -1226,7 +1301,7 @@ sfms:annotationFluorinationScoreColumn
 
 sfms:annotationChlorineToCarbonColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chlorine to Carbon" ;
     skos:definition "Formula-derived chlorine atom count divided by carbon atom count." ;
@@ -1236,7 +1311,7 @@ sfms:annotationChlorineToCarbonColumn
 
 sfms:annotationHydrogenToChlorineColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Hydrogen to Chlorine" ;
     skos:definition "Formula-derived hydrogen atom count divided by chlorine atom count." ;
@@ -1246,7 +1321,7 @@ sfms:annotationHydrogenToChlorineColumn
 
 sfms:annotationChlorineMassPercentColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chlorine Mass Percent" ;
     skos:definition "Percentage of formula-derived exact mass contributed by chlorine atoms." ;
@@ -1256,7 +1331,7 @@ sfms:annotationChlorineMassPercentColumn
 
 sfms:annotationBromineToCarbonColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Bromine to Carbon" ;
     skos:definition "Formula-derived bromine atom count divided by carbon atom count." ;
@@ -1266,7 +1341,7 @@ sfms:annotationBromineToCarbonColumn
 
 sfms:annotationHydrogenToBromineColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Hydrogen to Bromine" ;
     skos:definition "Formula-derived hydrogen atom count divided by bromine atom count." ;
@@ -1276,7 +1351,7 @@ sfms:annotationHydrogenToBromineColumn
 
 sfms:annotationBromineMassPercentColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Bromine Mass Percent" ;
     skos:definition "Percentage of formula-derived exact mass contributed by bromine atoms." ;
@@ -1286,7 +1361,7 @@ sfms:annotationBromineMassPercentColumn
 
 sfms:annotationIodineToCarbonColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Iodine to Carbon" ;
     skos:definition "Formula-derived iodine atom count divided by carbon atom count." ;
@@ -1296,7 +1371,7 @@ sfms:annotationIodineToCarbonColumn
 
 sfms:annotationHydrogenToIodineColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Hydrogen to Iodine" ;
     skos:definition "Formula-derived hydrogen atom count divided by iodine atom count." ;
@@ -1306,7 +1381,7 @@ sfms:annotationHydrogenToIodineColumn
 
 sfms:annotationIodineMassPercentColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Iodine Mass Percent" ;
     skos:definition "Percentage of formula-derived exact mass contributed by iodine atoms." ;
@@ -1316,7 +1391,7 @@ sfms:annotationIodineMassPercentColumn
 
 sfms:annotationHalogenationScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Halogenation Score" ;
     skos:definition "Bounded formula-composition score (F+Cl+Br+I)/(C+F+Cl+Br+I), intended for halogenated-organic prioritisation." ;
@@ -1326,7 +1401,7 @@ sfms:annotationHalogenationScoreColumn
 
 sfms:componentSizeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Size" ;
     skos:definition "Mass-spectrometry table column component_size." ;
     sf:columnName "component_size" ;
@@ -1335,7 +1410,7 @@ sfms:componentSizeColumn
 
 sfms:componentRtCenterColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Rt Center" ;
     skos:definition "Mass-spectrometry table column component_rt_center." ;
     sf:columnName "component_rt_center" ;
@@ -1344,7 +1419,7 @@ sfms:componentRtCenterColumn
 
 sfms:componentRtSpreadColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Rt Spread" ;
     skos:definition "Mass-spectrometry table column component_rt_spread." ;
     sf:columnName "component_rt_spread" ;
@@ -1353,7 +1428,7 @@ sfms:componentRtSpreadColumn
 
 sfms:componentDensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Density" ;
     skos:definition "Mass-spectrometry table column component_density." ;
     sf:columnName "component_density" ;
@@ -1362,7 +1437,7 @@ sfms:componentDensityColumn
 
 sfms:componentMeanCorrelationColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Mean Correlation" ;
     skos:definition "Mass-spectrometry table column component_mean_correlation." ;
     sf:columnName "component_mean_correlation" ;
@@ -1371,7 +1446,7 @@ sfms:componentMeanCorrelationColumn
 
 sfms:componentBestPartnerColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Best Partner" ;
     skos:definition "Mass-spectrometry table column component_best_partner." ;
     sf:columnName "component_best_partner" ;
@@ -1380,7 +1455,7 @@ sfms:componentBestPartnerColumn
 
 sfms:componentMaxCorrelationColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Max Correlation" ;
     skos:definition "Mass-spectrometry table column component_max_correlation." ;
     sf:columnName "component_max_correlation" ;
@@ -1389,7 +1464,7 @@ sfms:componentMaxCorrelationColumn
 
 sfms:componentMeanCorrelationToComponentColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Mean Correlation To Component" ;
     skos:definition "Mass-spectrometry table column component_mean_correlation_to_component." ;
     sf:columnName "component_mean_correlation_to_component" ;
@@ -1398,7 +1473,7 @@ sfms:componentMeanCorrelationToComponentColumn
 
 sfms:componentMembershipScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Membership Score" ;
     skos:definition "Mass-spectrometry table column component_membership_score." ;
     sf:columnName "component_membership_score" ;
@@ -1407,7 +1482,7 @@ sfms:componentMembershipScoreColumn
 
 sfms:componentIsCoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Is Core" ;
     skos:definition "Mass-spectrometry table column component_is_core." ;
     sf:columnName "component_is_core" ;
@@ -1416,7 +1491,7 @@ sfms:componentIsCoreColumn
 
 sfms:componentBridgeFlagColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:prefLabel "Component Bridge Flag" ;
     skos:definition "Mass-spectrometry table column component_bridge_flag." ;
     sf:columnName "component_bridge_flag" ;
@@ -1425,7 +1500,7 @@ sfms:componentBridgeFlagColumn
 
 sfms:tpPrecursorFeatureGroupColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor feature group" ;
     skos:definition "Direct precursor feature group of the transformation product." ;
@@ -1435,7 +1510,7 @@ sfms:tpPrecursorFeatureGroupColumn
 
 sfms:tpMainPrecursorFeatureGroupColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor feature group" ;
     skos:definition "Main precursor feature group of the transformation product." ;
@@ -1445,7 +1520,7 @@ sfms:tpMainPrecursorFeatureGroupColumn
 
 sfms:tpAssignmentRankColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Assignment rank" ;
     skos:definition "Rank of the transformation-product candidate assignment." ;
@@ -1455,7 +1530,7 @@ sfms:tpAssignmentRankColumn
 
 sfms:tpTransformationColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Transformation" ;
     skos:definition "Name of the transformation applied to the precursor." ;
@@ -1465,7 +1540,7 @@ sfms:tpTransformationColumn
 
 sfms:tpPrecursorNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor name" ;
     skos:definition "Name of the direct precursor." ;
@@ -1475,7 +1550,7 @@ sfms:tpPrecursorNameColumn
 
 sfms:tpPrecursorFormulaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor formula" ;
     skos:definition "Molecular formula of the direct precursor." ;
@@ -1485,7 +1560,7 @@ sfms:tpPrecursorFormulaColumn
 
 sfms:tpPrecursorMassColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor mass" ;
     skos:definition "Monoisotopic mass of the direct precursor." ;
@@ -1495,7 +1570,7 @@ sfms:tpPrecursorMassColumn
 
 sfms:tpPrecursorSmilesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor SMILES" ;
     skos:definition "SMILES structure of the direct precursor." ;
@@ -1505,7 +1580,7 @@ sfms:tpPrecursorSmilesColumn
 
 sfms:tpPrecursorInChIColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor InChI" ;
     skos:definition "InChI structure of the direct precursor." ;
@@ -1515,7 +1590,7 @@ sfms:tpPrecursorInChIColumn
 
 sfms:tpPrecursorInChIKeyColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor InChIKey" ;
     skos:definition "InChIKey structure key of the direct precursor." ;
@@ -1525,7 +1600,7 @@ sfms:tpPrecursorInChIKeyColumn
 
 sfms:tpPrecursorXLogPColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor xLogP" ;
     skos:definition "Predicted logP of the direct precursor." ;
@@ -1535,7 +1610,7 @@ sfms:tpPrecursorXLogPColumn
 
 sfms:tpMainPrecursorNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor name" ;
     skos:definition "Name of the main precursor." ;
@@ -1545,7 +1620,7 @@ sfms:tpMainPrecursorNameColumn
 
 sfms:tpMainPrecursorFormulaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor formula" ;
     skos:definition "Molecular formula of the main precursor." ;
@@ -1555,7 +1630,7 @@ sfms:tpMainPrecursorFormulaColumn
 
 sfms:tpMainPrecursorMassColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor mass" ;
     skos:definition "Monoisotopic mass of the main precursor." ;
@@ -1565,7 +1640,7 @@ sfms:tpMainPrecursorMassColumn
 
 sfms:tpMainPrecursorSmilesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor SMILES" ;
     skos:definition "SMILES structure of the main precursor." ;
@@ -1575,7 +1650,7 @@ sfms:tpMainPrecursorSmilesColumn
 
 sfms:tpMainPrecursorInChIColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor InChI" ;
     skos:definition "InChI structure of the main precursor." ;
@@ -1585,7 +1660,7 @@ sfms:tpMainPrecursorInChIColumn
 
 sfms:tpMainPrecursorInChIKeyColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor InChIKey" ;
     skos:definition "InChIKey structure key of the main precursor." ;
@@ -1595,7 +1670,7 @@ sfms:tpMainPrecursorInChIKeyColumn
 
 sfms:tpMainPrecursorXLogPColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor xLogP" ;
     skos:definition "Predicted logP of the main precursor." ;
@@ -1605,7 +1680,7 @@ sfms:tpMainPrecursorXLogPColumn
 
 sfms:tpMainPrecursorCosineSimilarityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor cosine similarity" ;
     skos:definition "MS2 cosine similarity between the product and the main precursor feature." ;
@@ -1615,7 +1690,7 @@ sfms:tpMainPrecursorCosineSimilarityColumn
 
 sfms:tpRtPlausibilityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "RT plausibility" ;
     skos:definition "Retention-time plausibility of the assignment relative to the direct precursor." ;
@@ -1625,7 +1700,7 @@ sfms:tpRtPlausibilityColumn
 
 sfms:tpMainPrecursorRtPlausibilityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Main precursor RT plausibility" ;
     skos:definition "Retention-time plausibility of the assignment relative to the main precursor." ;
@@ -1635,7 +1710,7 @@ sfms:tpMainPrecursorRtPlausibilityColumn
 
 sfms:tpAssignmentScoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Assignment score" ;
     skos:definition "Combined assignment score of the transformation product." ;
@@ -1645,7 +1720,7 @@ sfms:tpAssignmentScoreColumn
 
 sfms:tpNetworkLevelColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Network level" ;
     skos:definition "Network depth of the transformation product relative to the main precursor." ;
@@ -1655,7 +1730,7 @@ sfms:tpNetworkLevelColumn
 
 sfms:tpAssignmentStatusColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Assignment status" ;
     skos:definition "Status of the transformation-product assignment." ;
@@ -1665,7 +1740,7 @@ sfms:tpAssignmentStatusColumn
 
 sfms:chromatogramIndexColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Chromatogram index" ;
     skos:definition "Zero-based chromatogram index within the analysis, matching MASS_SPEC_CHROMATOGRAMS_HEADERS.index." ;
@@ -1675,7 +1750,7 @@ sfms:chromatogramIndexColumn
 
 sfms:peakIdColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak ID" ;
     skos:definition "Sequential peak identifier within a chromatogram." ;
@@ -1683,9 +1758,936 @@ sfms:peakIdColumn
     sf:type "integer" ;
     sf:storageType "INTEGER" .
 
+sfms:quantTargetIdColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification target ID" ;
+    skos:definition "Stable identifier for an analyte or internal standard in a targeted quantification method." ;
+    sf:columnName "target_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:quantRoleColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification target role" ;
+    skos:definition "Whether the target is an analyte or an internal standard." ;
+    sf:columnName "role" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:internalStandardIdColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal standard ID" ;
+    skos:definition "Target ID of the internal standard assigned to an analyte." ;
+    sf:columnName "internal_standard_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:rtToleranceColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Retention-time tolerance" ;
+    skos:definition "Allowed deviation from the expected target retention time in seconds." ;
+    sf:columnName "rt_tolerance" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:responseMetricColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response metric" ;
+    skos:definition "Peak response used for quantification: area or height." ;
+    sf:columnName "response_metric" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:normalizationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response normalization" ;
+    skos:definition "Whether the target response is unnormalized or divided by an assigned internal-standard response." ;
+    sf:columnName "normalization" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:concentrationUnitColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Concentration unit" ;
+    skos:definition "Unit used for nominal and calculated concentrations." ;
+    sf:columnName "concentration_unit" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:regressionModelColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Regression model" ;
+    skos:definition "Calibration regression selected for an analyte target. Allowed values: linear, linear_through_zero, mean_response_factor, quadratic, power, wagner, and hill. Power and Wagner require positive regression concentration and response; Hill models saturation. Null for internal-standard rows because they are not calibrated." ;
+    sf:columnName "regression_model" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:weightingColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration weighting" ;
+    skos:definition "Regression point weighting applied to analyte calibration points. Allowed values: none, 1/x, 1/x2, 1/y, 1/y2, ln x, and ln y; formulas and small-value thresholds are documented in the quantification method parameter guidance. Null for internal-standard rows." ;
+    sf:columnName "weighting" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:interceptModeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration intercept mode" ;
+    skos:definition "Whether analyte calibration uses a free or forced-zero intercept; null for internal-standard rows." ;
+    sf:columnName "intercept_mode" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationModelColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration model" ;
+    skos:definition "Model family used to fit the quantification calibration." ;
+    sf:columnName "model" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:coefficient0Column
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 0" ;
+    skos:definition "Intercept coefficient of the fitted calibration model." ;
+    sf:columnName "coefficient_0" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:coefficient1Column
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 1" ;
+    skos:definition "Linear slope coefficient of the fitted calibration model." ;
+    sf:columnName "coefficient_1" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:coefficient2Column
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 2" ;
+    skos:definition "Second-order coefficient of the fitted calibration model; for Wagner it is the coefficient of squared log concentration." ;
+    sf:columnName "coefficient_2" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:coefficient3Column
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration coefficient 3" ;
+    skos:definition "Fourth fitted coefficient, used as Hill exponent n in y=(a+b*x^n)/(c+x^n); unused for models with fewer coefficients." ;
+    sf:columnName "coefficient_3" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rSquaredColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "R squared" ;
+    skos:definition "Coefficient of determination for the calibration fit." ;
+    sf:columnName "r_squared" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:adjustedRSquaredColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Adjusted R squared" ;
+    skos:definition "Adjusted coefficient of determination for the calibration fit." ;
+    sf:columnName "adjusted_r_squared" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rmseColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration RMSE" ;
+    skos:definition "Root mean square response residual of the calibration fit." ;
+    sf:columnName "rmse" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:nPointsColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration point count" ;
+    skos:definition "Number of calibrator points included in the fitted model." ;
+    sf:columnName "n_points" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:rangeMinColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration range minimum" ;
+    skos:definition "Lowest regression concentration included in the calibration fit, after dilution and internal-standard concentration scaling where applicable." ;
+    sf:columnName "range_min" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:rangeMaxColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration range maximum" ;
+    skos:definition "Highest regression concentration included in the calibration fit, after dilution and internal-standard concentration scaling where applicable." ;
+    sf:columnName "range_max" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:calibrationPluginStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration plugin status" ;
+    skos:definition "Whether the fitted model used its declared response/concentration plugin without invalid transformed points." ;
+    sf:columnName "plugin_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:fitStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration fit status" ;
+    skos:definition "Whether the calibration model is valid, insufficient, or failed." ;
+    sf:columnName "fit_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:monotonicityStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration monotonicity status" ;
+    skos:definition "Whether the fitted response is strictly increasing over the validated calibration range." ;
+    sf:columnName "monotonicity_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:includedColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Included in calibration" ;
+    skos:definition "Whether this calibration observation was included in the fit." ;
+    sf:columnName "included" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfms:backCalculatedConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Back-calculated concentration" ;
+    skos:definition "Concentration calculated by inverting the fitted calibration model for a calibration point." ;
+    sf:columnName "back_calculated_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:residualColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration residual" ;
+    skos:definition "Observed minus fitted response for a calibration point." ;
+    sf:columnName "residual" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:relativeResidualColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Relative calibration residual" ;
+    skos:definition "Back-calculated concentration residual as a percentage of nominal concentration." ;
+    sf:columnName "relative_residual" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:exclusionReasonColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration exclusion reason" ;
+    skos:definition "Reason a calibration observation was not included in the fit." ;
+    sf:columnName "exclusion_reason" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calculatedConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calculated concentration" ;
+    skos:definition "Concentration obtained by inverting the calibration model before dilution correction." ;
+    sf:columnName "calculated_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:finalConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Final concentration" ;
+    skos:definition "Calculated concentration after applying the assigned dilution factor." ;
+    sf:columnName "final_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierRatioPassColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier ratio pass" ;
+    skos:definition "Whether the observed qualifier ratio passed the configured method check." ;
+    sf:columnName "qualifier_ratio_pass" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfms:accuracyPercentColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification accuracy percent" ;
+    skos:definition "Calculated final concentration divided by nominal concentration as a percentage." ;
+    sf:columnName "accuracy_percent" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:flagsColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification flags" ;
+    skos:definition "Comma-separated diagnostic and QC flags attached to a final result." ;
+    sf:columnName "flags" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:enabledColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Enabled" ;
+    skos:definition "Whether a quantification target or channel participates in the method." ;
+    sf:columnName "enabled" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" ;
+    sf:required true .
+
+sfms:expectedRatioColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Expected qualifier ratio" ;
+    skos:definition "Expected qualifier-to-quantifier response ratio." ;
+    sf:columnName "expected_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:ratioToleranceColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier ratio tolerance" ;
+    skos:definition "Allowed deviation of the observed qualifier-to-quantifier ratio." ;
+    sf:columnName "ratio_tolerance" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakRtColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak retention time" ;
+    skos:definition "Retention time of the peak selected for a quantification response." ;
+    sf:columnName "peak_rt" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakAreaColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak area" ;
+    skos:definition "Integrated area of the selected quantification peak." ;
+    sf:columnName "peak_area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakRtStartColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak start retention time" ;
+    skos:definition "Retention time at which integration of the selected quantification peak starts." ;
+    sf:columnName "peak_rt_start" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakRtEndColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak end retention time" ;
+    skos:definition "Retention time at which integration of the selected quantification peak ends." ;
+    sf:columnName "peak_rt_end" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantPeakHeightColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected peak height" ;
+    skos:definition "Height of the selected quantification peak." ;
+    sf:columnName "peak_height" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierChromatogramIdColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier chromatogram ID" ;
+    skos:definition "Identifier of the chromatogram channel from which the selected quantifier peak was taken." ;
+    sf:columnName "quantifier_chromatogram_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierChromatogramIdColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier chromatogram ID" ;
+    skos:definition "Identifier of the chromatogram channel from which the selected qualifier peak was taken." ;
+    sf:columnName "qualifier_chromatogram_id" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierChromatogramIndexColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier chromatogram index" ;
+    skos:definition "Index of the chromatogram channel containing the selected qualifier peak." ;
+    sf:columnName "qualifier_chromatogram_index" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierPeakIdColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Selected qualifier peak ID" ;
+    skos:definition "Identifier of the selected qualifier peak." ;
+    sf:columnName "qualifier_peak_id" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierPeakRtColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier peak retention time" ;
+    skos:definition "Retention time of the selected qualifier peak." ;
+    sf:columnName "qualifier_peak_rt" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierPeakRtStartColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier peak start retention time" ;
+    skos:definition "Retention time at which integration of the selected qualifier peak starts." ;
+    sf:columnName "qualifier_peak_rt_start" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierPeakRtEndColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier peak end retention time" ;
+    skos:definition "Retention time at which integration of the selected qualifier peak ends." ;
+    sf:columnName "qualifier_peak_rt_end" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierPeakAreaColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier peak area" ;
+    skos:definition "Integrated area of the selected qualifier peak." ;
+    sf:columnName "qualifier_peak_area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierPeakHeightColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier peak height" ;
+    skos:definition "Height of the selected qualifier peak." ;
+    sf:columnName "qualifier_peak_height" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardPeakRtColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard peak retention time" ;
+    skos:definition "Retention time of the internal-standard peak used for normalization." ;
+    sf:columnName "internal_standard_peak_rt" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardPeakRtStartColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard peak start retention time" ;
+    skos:definition "Retention time at which integration of the internal-standard peak starts." ;
+    sf:columnName "internal_standard_peak_rt_start" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardPeakRtEndColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard peak end retention time" ;
+    skos:definition "Retention time at which integration of the internal-standard peak ends." ;
+    sf:columnName "internal_standard_peak_rt_end" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardPeakAreaColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard peak area" ;
+    skos:definition "Integrated area of the internal-standard peak used for normalization." ;
+    sf:columnName "internal_standard_peak_area" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardPeakHeightColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard peak height" ;
+    skos:definition "Height of the internal-standard peak used for normalization." ;
+    sf:columnName "internal_standard_peak_height" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierRtErrorColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier retention-time error" ;
+    skos:definition "Selected qualifier peak retention time minus the configured target retention time." ;
+    sf:columnName "qualifier_rt_error" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierCandidateCountColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier candidate count" ;
+    skos:definition "Number of qualifier peaks eligible after channel and retention-time filtering." ;
+    sf:columnName "qualifier_candidate_count" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:rtErrorColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Retention-time error" ;
+    skos:definition "Observed selected-peak retention time minus the configured target retention time." ;
+    sf:columnName "rt_error" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:responseColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Extracted response" ;
+    skos:definition "Configured area or height response extracted from a selected peak." ;
+    sf:columnName "response" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardResponseColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard response" ;
+    skos:definition "Extracted response of the assigned internal standard in the same analysis." ;
+    sf:columnName "internal_standard_response" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:responseRatioColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Response ratio" ;
+    skos:definition "Analyte response divided by the assigned internal-standard response." ;
+    sf:columnName "response_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:internalStandardConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard nominal concentration" ;
+    skos:definition "Positive nominal concentration assigned to the directly linked internal standard in this analysis; used to normalize the calibration concentration coordinate and restore concentration when back-calculating." ;
+    sf:columnName "internal_standard_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:regressionConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Regression concentration" ;
+    skos:definition "Concentration coordinate used by the calibration fit: nominal concentration divided by dilution factor, and also divided by assigned internal-standard concentration when internal-standard normalization is enabled." ;
+    sf:columnName "regression_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierResponseColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier response" ;
+    skos:definition "Response extracted from the optional qualifier transition." ;
+    sf:columnName "qualifier_response" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierRatioColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier ratio" ;
+    skos:definition "Observed qualifier response divided by quantifier response." ;
+    sf:columnName "qualifier_ratio" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantificationStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification response status" ;
+    skos:definition "Overall response status after quantifier, qualifier, and internal-standard evaluation." ;
+    sf:columnName "status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:quantifierStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier status" ;
+    skos:definition "Primary quantifier peak-assignment status before internal-standard normalization is applied." ;
+    sf:columnName "quantifier_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:internalStandardStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Internal-standard status" ;
+    skos:definition "Status of the assigned internal-standard peak for an analyte response." ;
+    sf:columnName "internal_standard_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:candidateCountColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Candidate peak count" ;
+    skos:definition "Number of peaks inside the configured target window and channel match." ;
+    sf:columnName "candidate_count" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier status" ;
+    skos:definition "Status of optional qualifier matching and ratio evaluation." ;
+    sf:columnName "qualifier_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:sampleTypeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantification sample type" ;
+    skos:definition "Sample role used for quantification: blank, zero, calibrator, QC, or unknown." ;
+    sf:columnName "sample_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:calibrationLevelColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration level" ;
+    skos:definition "Ordered calibration level for a calibrator sample." ;
+    sf:columnName "calibration_level" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:nominalConcentrationColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Nominal concentration" ;
+    skos:definition "Known concentration assigned to a calibrator or QC sample." ;
+    sf:columnName "nominal_concentration" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:dilutionFactorColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Dilution factor" ;
+    skos:definition "Positive factor applied to the calculated concentration." ;
+    sf:columnName "dilution_factor" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:excludeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Exclude from calibration" ;
+    skos:definition "Whether the sample assignment is excluded from calibration fitting." ;
+    sf:columnName "exclude" ;
+    sf:type "boolean" ;
+    sf:storageType "BOOLEAN" .
+
+sfms:quantifierSignalTypeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier signal type" ;
+    skos:definition "Signal family used by the quantifier transition." ;
+    sf:columnName "quantifier_signal_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" ;
+    sf:required true .
+
+sfms:quantifierChromatogramTypeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier chromatogram type" ;
+    skos:definition "Chromatogram type used by the quantifier transition." ;
+    sf:columnName "quantifier_chromatogram_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:quantifierPolarityColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier polarity" ;
+    skos:definition "Ion polarity used by the quantifier transition." ;
+    sf:columnName "quantifier_polarity" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:quantifierPrecursorMzColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier precursor m/z" ;
+    skos:definition "Precursor mass-to-charge value of the quantifier transition." ;
+    sf:columnName "quantifier_precursor_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierProductMzColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier product m/z" ;
+    skos:definition "Product mass-to-charge value of the quantifier transition." ;
+    sf:columnName "quantifier_product_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierDetectorColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier detector" ;
+    skos:definition "Detector identifier of the quantifier channel." ;
+    sf:columnName "quantifier_detector" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:quantifierWavelengthNmColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier wavelength" ;
+    skos:definition "Wavelength in nanometres for a UV quantifier." ;
+    sf:columnName "quantifier_wavelength_nm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:quantifierMzTolerancePpmColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Quantifier m/z tolerance" ;
+    skos:definition "m/z tolerance in parts per million for the quantifier." ;
+    sf:columnName "quantifier_mz_tolerance_ppm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierSignalTypeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier signal type" ;
+    skos:definition "Signal family used by the optional qualifier transition." ;
+    sf:columnName "qualifier_signal_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierChromatogramTypeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier chromatogram type" ;
+    skos:definition "Chromatogram type used by the optional qualifier transition." ;
+    sf:columnName "qualifier_chromatogram_type" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierPolarityColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier polarity" ;
+    skos:definition "Ion polarity used by the optional qualifier transition." ;
+    sf:columnName "qualifier_polarity" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qualifierPrecursorMzColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier precursor m/z" ;
+    skos:definition "Precursor mass-to-charge value of the qualifier transition." ;
+    sf:columnName "qualifier_precursor_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierProductMzColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier product m/z" ;
+    skos:definition "Product mass-to-charge value of the qualifier transition." ;
+    sf:columnName "qualifier_product_mz" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierDetectorColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier detector" ;
+    skos:definition "Detector identifier of the optional qualifier channel." ;
+    sf:columnName "qualifier_detector" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierWavelengthNmColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier wavelength" ;
+    skos:definition "Wavelength in nanometres for an optional UV qualifier." ;
+    sf:columnName "qualifier_wavelength_nm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:qualifierMzTolerancePpmColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier m/z tolerance" ;
+    skos:definition "m/z tolerance in parts per million for the qualifier." ;
+    sf:columnName "qualifier_mz_tolerance_ppm" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
 sfms:rtStartColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "RT start" ;
     skos:definition "Retention time at the start of the chromatographic peak." ;
@@ -1695,7 +2697,7 @@ sfms:rtStartColumn
 
 sfms:rtEndColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "RT end" ;
     skos:definition "Retention time at the end of the chromatographic peak." ;
@@ -1705,7 +2707,7 @@ sfms:rtEndColumn
 
 sfms:peakHeightColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak height" ;
     skos:definition "Maximum intensity of the chromatographic peak." ;
@@ -1715,7 +2717,7 @@ sfms:peakHeightColumn
 
 sfms:peakRawHeightColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raw peak height" ;
     skos:definition "Maximum raw intensity of the chromatographic peak before baseline correction." ;
@@ -1725,7 +2727,7 @@ sfms:peakRawHeightColumn
 
 sfms:areaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Area" ;
     skos:definition "Integrated signal area represented by the row." ;
@@ -1735,7 +2737,7 @@ sfms:areaColumn
 
 sfms:peakRawAreaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Raw peak area" ;
     skos:definition "Integrated area of the chromatographic peak using raw intensity." ;
@@ -1745,7 +2747,7 @@ sfms:peakRawAreaColumn
 
 sfms:peakBaselineAreaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Baseline area" ;
     skos:definition "Area under the baseline within the peak boundaries." ;
@@ -1755,7 +2757,7 @@ sfms:peakBaselineAreaColumn
 
 sfms:peakWidthColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak width" ;
     skos:definition "Retention-time width of the chromatographic peak." ;
@@ -1765,7 +2767,7 @@ sfms:peakWidthColumn
 
 sfms:peakFwhmColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak FWHM" ;
     skos:definition "Full width at half maximum of the chromatographic peak." ;
@@ -1775,7 +2777,7 @@ sfms:peakFwhmColumn
 
 sfms:peakSnrColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak S/N" ;
     skos:definition "Signal-to-noise ratio of the chromatographic peak." ;
@@ -1785,7 +2787,7 @@ sfms:peakSnrColumn
 
 sfms:peakAsymmetryColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak asymmetry" ;
     skos:definition "Asymmetry factor of the chromatographic peak." ;
@@ -1795,7 +2797,7 @@ sfms:peakAsymmetryColumn
 
 sfms:peakSharpnessColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak sharpness" ;
     skos:definition "Sharpness metric of the chromatographic peak." ;
@@ -1805,7 +2807,7 @@ sfms:peakSharpnessColumn
 
 sfms:peakPlatesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak plates" ;
     skos:definition "Theoretical plate count of the chromatographic peak." ;
@@ -1815,7 +2817,7 @@ sfms:peakPlatesColumn
 
 sfms:peakNumberPointsColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Peak point count" ;
     skos:definition "Number of data points within the chromatographic peak boundaries." ;
@@ -1825,7 +2827,7 @@ sfms:peakNumberPointsColumn
 
 sfms:integrationAlgorithmColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Integration algorithm" ;
     skos:definition "Identifier of the algorithm used for peak integration." ;
@@ -1835,7 +2837,7 @@ sfms:integrationAlgorithmColumn
 
 sfms:integrationStatusColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Integration status" ;
     skos:definition "Status of the peak integration (e.g. integrated, manual, rejected)." ;
@@ -1845,7 +2847,7 @@ sfms:integrationStatusColumn
 
 sfms:manualOverrideColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Manual override" ;
     skos:definition "Whether the peak integration has been manually overridden." ;
@@ -1855,7 +2857,7 @@ sfms:manualOverrideColumn
 
 sfms:massMinColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Minimum mass" ;
     skos:definition "Inclusive lower neutral monoisotopic-mass bound in daltons." ;
@@ -1867,7 +2869,7 @@ sfms:massMinColumn
 
 sfms:massMaxColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Maximum mass" ;
     skos:definition "Inclusive upper neutral monoisotopic-mass bound in daltons." ;
@@ -1879,7 +2881,7 @@ sfms:massMaxColumn
 
 sfms:fragmentsMzPosColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Positive-mode fragment m/z" ;
     skos:definition "Positive-mode MS2 fragment m/z values paired with fragments_intensity_pos." ;
@@ -1892,7 +2894,7 @@ sfms:fragmentsMzPosColumn
 
 sfms:fragmentsIntensityPosColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Positive-mode fragment intensities" ;
     skos:definition "Positive-mode MS2 fragment intensities paired with fragments_mz_pos." ;
@@ -1905,7 +2907,7 @@ sfms:fragmentsIntensityPosColumn
 
 sfms:fragmentsMzNegColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Negative-mode fragment m/z" ;
     skos:definition "Negative-mode MS2 fragment m/z values paired with fragments_intensity_neg." ;
@@ -1918,7 +2920,7 @@ sfms:fragmentsMzNegColumn
 
 sfms:fragmentsIntensityNegColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Negative-mode fragment intensities" ;
     skos:definition "Negative-mode MS2 fragment intensities paired with fragments_mz_neg." ;
@@ -1931,7 +2933,7 @@ sfms:fragmentsIntensityNegColumn
 
 sfms:tpProductNameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Name" ;
     skos:definition "Transformation-product candidate field name." ;
@@ -1943,7 +2945,7 @@ sfms:tpProductNameColumn
 
 sfms:candidateRankColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Candidate Rank" ;
     skos:definition "Candidate rank assigned to the row." ;
@@ -1951,9 +2953,199 @@ sfms:candidateRankColumn
     sf:type "integer" ;
     sf:storageType "INTEGER" .
 
+sfms:calibrationLowerLimitColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration lower limit" ;
+    skos:definition "Declared lower concentration limit used for calibration-range diagnostics." ;
+    sf:columnName "calibration_lower_limit" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:calibrationUpperLimitColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration upper limit" ;
+    skos:definition "Declared upper concentration limit used for calibration-range diagnostics." ;
+    sf:columnName "calibration_upper_limit" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:calibrationLimitMinColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Effective calibration minimum" ;
+    skos:definition "Effective lower concentration limit used by the persisted calibration inverse." ;
+    sf:columnName "calibration_limit_min" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:calibrationLimitMaxColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Effective calibration maximum" ;
+    skos:definition "Effective upper concentration limit used by the persisted calibration inverse." ;
+    sf:columnName "calibration_limit_max" ;
+    sf:type "real" ;
+    sf:storageType "DOUBLE" .
+
+sfms:replicateModeColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration replicate mode" ;
+    skos:definition "Whether calibration replicates are fitted individually or averaged by nominal concentration level." ;
+    sf:columnName "replicate_mode" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:candidatePeakIdsColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Candidate peak IDs" ;
+    skos:definition "Comma-separated peak IDs eligible for the selected quantifier channel and retention-time window, ordered by selection preference." ;
+    sf:columnName "candidate_peak_ids" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:qualifierCandidatePeakIdsColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Qualifier candidate peak IDs" ;
+    skos:definition "Comma-separated peak IDs eligible for the selected qualifier channel and retention-time window." ;
+    sf:columnName "qualifier_candidate_peak_ids" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationRangeStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration range status" ;
+    skos:definition "Typed status indicating whether an inverted concentration is inside, below, or above the declared calibration range." ;
+    sf:columnName "calibration_range_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationLevelStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration level status" ;
+    skos:definition "Typed inclusion status for a calibration observation at its nominal level." ;
+    sf:columnName "calibration_level_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationReplicateCountColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration replicate count" ;
+    skos:definition "Number of valid calibration observations sharing the row's nominal concentration level." ;
+    sf:columnName "calibration_replicate_count" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:qcStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "QC status" ;
+    skos:definition "Typed QC accuracy status for a QC row." ;
+    sf:columnName "qc_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:blankStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Blank status" ;
+    skos:definition "Typed blank response status when a blank-response threshold is configured." ;
+    sf:columnName "blank_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:carryoverStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Carryover status" ;
+    skos:definition "Typed carryover status for a blank following a preceding matched sample response." ;
+    sf:columnName "carryover_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:dilutionStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Dilution status" ;
+    skos:definition "Typed status indicating whether the dilution factor was applied, not applied, or invalid." ;
+    sf:columnName "dilution_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationDistinctLevelsColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Distinct calibration levels" ;
+    skos:definition "Number of distinct nominal concentration levels represented by valid calibration observations." ;
+    sf:columnName "distinct_levels" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:minReplicatesPerLevelColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Minimum replicates per level" ;
+    skos:definition "Minimum number of valid observations among calibration levels." ;
+    sf:columnName "min_replicates_per_level" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:maxReplicatesPerLevelColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Maximum replicates per level" ;
+    skos:definition "Maximum number of valid observations among calibration levels." ;
+    sf:columnName "max_replicates_per_level" ;
+    sf:type "integer" ;
+    sf:storageType "INTEGER" .
+
+sfms:replicateStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration replicate status" ;
+    skos:definition "Summary of calibration replicate coverage and the configured replicate policy." ;
+    sf:columnName "replicate_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
+sfms:calibrationAcceptanceStatusColumn
+    a sf:Column ;
+    sf:availableInPlugin sfms:mass_spec ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calibration acceptance status" ;
+    skos:definition "Typed summary status for calibration fit acceptance based on fit and monotonicity diagnostics." ;
+    sf:columnName "calibration_acceptance_status" ;
+    sf:type "string" ;
+    sf:storageType "VARCHAR" .
+
 sfms:nameColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Name" ;
     skos:definition "Name associated with the row." ;
@@ -1963,7 +3155,7 @@ sfms:nameColumn
 
 sfms:dbMassColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Mass" ;
     skos:definition "Database candidate mass." ;
@@ -1973,7 +3165,7 @@ sfms:dbMassColumn
 
 sfms:expMassColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Mass" ;
     skos:definition "Experimental mass." ;
@@ -1983,7 +3175,7 @@ sfms:expMassColumn
 
 sfms:errorMassColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Error Mass" ;
     skos:definition "Mass error." ;
@@ -1993,7 +3185,7 @@ sfms:errorMassColumn
 
 sfms:dbRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Rt" ;
     skos:definition "Database candidate retention time." ;
@@ -2003,7 +3195,7 @@ sfms:dbRtColumn
 
 sfms:expRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Exp Rt" ;
     skos:definition "Experimental retention time." ;
@@ -2013,7 +3205,7 @@ sfms:expRtColumn
 
 sfms:errorRtColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Error Rt" ;
     skos:definition "Retention-time error." ;
@@ -2023,7 +3215,7 @@ sfms:errorRtColumn
 
 sfms:idLevelColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Id Level" ;
     skos:definition "Identification level." ;
@@ -2033,7 +3225,7 @@ sfms:idLevelColumn
 
 sfms:scoreColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Score" ;
     skos:definition "Candidate score." ;
@@ -2043,7 +3235,7 @@ sfms:scoreColumn
 
 sfms:sharedFragmentsColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Shared Fragments" ;
     skos:definition "Number of shared fragments." ;
@@ -2053,7 +3245,7 @@ sfms:sharedFragmentsColumn
 
 sfms:cosineSimilarityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Cosine Similarity" ;
     skos:definition "Cosine similarity score." ;
@@ -2063,7 +3255,7 @@ sfms:cosineSimilarityColumn
 
 sfms:formulaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Formula" ;
     skos:definition "Molecular formula." ;
@@ -2073,7 +3265,7 @@ sfms:formulaColumn
 
 sfms:smilesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Smiles" ;
     skos:definition "SMILES structure string." ;
@@ -2083,7 +3275,7 @@ sfms:smilesColumn
 
 sfms:inChIColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Inchi" ;
     skos:definition "IUPAC InChI structure string." ;
@@ -2093,7 +3285,7 @@ sfms:inChIColumn
 
 sfms:inChIKeyColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Inchikey" ;
     skos:definition "InChIKey structure identifier." ;
@@ -2103,7 +3295,7 @@ sfms:inChIKeyColumn
 
 sfms:xLogPColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Xlogp" ;
     skos:definition "Predicted octanol-water partition coefficient." ;
@@ -2113,7 +3305,7 @@ sfms:xLogPColumn
 
 sfms:dbMs2SizeColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Size" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_size." ;
@@ -2123,7 +3315,7 @@ sfms:dbMs2SizeColumn
 
 sfms:dbMs2MzColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Mz" ;
     skos:definition "Database MS2 fragment m/z values as a typed numeric array." ;
@@ -2134,7 +3326,7 @@ sfms:dbMs2MzColumn
 
 sfms:dbMs2IntensityColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Intensity" ;
     skos:definition "Database MS2 fragment intensities as a typed numeric array paired with db_ms2_mz." ;
@@ -2145,7 +3337,7 @@ sfms:dbMs2IntensityColumn
 
 sfms:dbMs2FormulaColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Formula" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_formula." ;
@@ -2155,7 +3347,7 @@ sfms:dbMs2FormulaColumn
 
 sfms:dbMs2SmilesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Db Ms2 Smiles" ;
     skos:definition "NTA suspect or internal-standard table column db_ms2_smiles." ;
@@ -2165,7 +3357,7 @@ sfms:dbMs2SmilesColumn
 
 sfms:fragmentIdColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragment identifier" ;
     skos:definition "MetFrag identifier for this generated fragment." ;
@@ -2175,7 +3367,7 @@ sfms:fragmentIdColumn
 
 sfms:fragmentParentIdColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Parent fragment identifier" ;
     skos:definition "Identifier of the MetFrag-generated parent fragment, when the CLI exposes it." ;
@@ -2185,7 +3377,7 @@ sfms:fragmentParentIdColumn
 
 sfms:fragmentDepthColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragmentation depth" ;
     skos:definition "Top-down tree depth assigned by MetFrag." ;
@@ -2195,7 +3387,7 @@ sfms:fragmentDepthColumn
 
 sfms:fragmentAtomIndicesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Precursor atom indices" ;
     skos:definition "JSON array of precursor-relative atom indices retained in the fragment, when available." ;
@@ -2206,7 +3398,7 @@ sfms:fragmentAtomIndicesColumn
 
 sfms:fragmentBrokenBondIndicesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Broken bond indices" ;
     skos:definition "JSON array of precursor-relative bond indices broken to generate the fragment, when available." ;
@@ -2217,7 +3409,7 @@ sfms:fragmentBrokenBondIndicesColumn
 
 sfms:fragmentNeutralLossesColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Matched neutral losses" ;
     skos:definition "JSON array of neutral-loss structures matched to MetFrag patterns, when available." ;
@@ -2228,7 +3420,7 @@ sfms:fragmentNeutralLossesColumn
 
 sfms:fragmentDataColumn
     a sf:Column ;
-    sf:availableInDomain sfms:mass_spec ;
+    sf:availableInPlugin sfms:mass_spec ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fragment data" ;
     skos:definition "Complete JSON object emitted for this fragment by the MetFrag Fragmenter CLI, preserving additional reported metadata." ;

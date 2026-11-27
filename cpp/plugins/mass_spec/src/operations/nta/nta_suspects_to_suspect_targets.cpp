@@ -1,10 +1,12 @@
 #include "operations/nta/operations.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 #include "utils/nta.hpp"
 
 #include "readers/reader.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -52,31 +54,93 @@ struct Compound
     std::vector<double> xlogp_values;
 };
 
-std::string text(const Json &row, const char *column)
+struct SuspectRow
 {
-    const auto it = row.find(column);
-    if (it == row.end() || it->is_null()) return {};
-    if (it->is_string()) return it->get<std::string>();
-    return it->dump();
+    std::string analysis, name, formula, smiles, inchi, inchikey, db_ms2_formula;
+    double db_mass = std::numeric_limits<double>::quiet_NaN();
+    double error_mass = std::numeric_limits<double>::quiet_NaN();
+    double exp_rt = std::numeric_limits<double>::quiet_NaN();
+    double intensity = std::numeric_limits<double>::quiet_NaN();
+    double area = std::numeric_limits<double>::quiet_NaN();
+    double cosine_similarity = std::numeric_limits<double>::quiet_NaN();
+    double xlogp = std::numeric_limits<double>::quiet_NaN();
+    int polarity = 0, id_level = 0, candidate_rank = 0, shared_fragments = 0, db_ms2_size = 0;
+    std::vector<double> db_ms2_mz, db_ms2_intensity;
+};
+
+std::string text(const SuspectRow &row, const char *column)
+{
+    if (std::strcmp(column, "analysis") == 0) return row.analysis;
+    if (std::strcmp(column, "name") == 0) return row.name;
+    if (std::strcmp(column, "formula") == 0) return row.formula;
+    if (std::strcmp(column, "SMILES") == 0) return row.smiles;
+    if (std::strcmp(column, "InChI") == 0) return row.inchi;
+    if (std::strcmp(column, "InChIKey") == 0) return row.inchikey;
+    if (std::strcmp(column, "db_ms2_formula") == 0) return row.db_ms2_formula;
+    return {};
 }
 
-double number(const Json &row, const char *column)
+double number(const SuspectRow &row, const char *column)
 {
-    const auto it = row.find(column);
-    if (it == row.end() || it->is_null()) return std::numeric_limits<double>::quiet_NaN();
-    if (it->is_number()) return it->get<double>();
-    if (it->is_string())
-    {
-        try { return std::stod(it->get<std::string>()); }
-        catch (...) { return std::numeric_limits<double>::quiet_NaN(); }
-    }
+    if (std::strcmp(column, "db_mass") == 0) return row.db_mass;
+    if (std::strcmp(column, "error_mass") == 0) return row.error_mass;
+    if (std::strcmp(column, "exp_rt") == 0) return row.exp_rt;
+    if (std::strcmp(column, "intensity") == 0) return row.intensity;
+    if (std::strcmp(column, "area") == 0) return row.area;
+    if (std::strcmp(column, "cosine_similarity") == 0) return row.cosine_similarity;
+    if (std::strcmp(column, "xLogP") == 0) return row.xlogp;
     return std::numeric_limits<double>::quiet_NaN();
 }
 
-int integer(const Json &row, const char *column)
+int integer(const SuspectRow &row, const char *column)
 {
-    const auto value = number(row, column);
-    return std::isfinite(value) ? static_cast<int>(value) : 0;
+    if (std::strcmp(column, "polarity") == 0) return row.polarity;
+    if (std::strcmp(column, "id_level") == 0) return row.id_level;
+    if (std::strcmp(column, "candidate_rank") == 0) return row.candidate_rank;
+    if (std::strcmp(column, "shared_fragments") == 0) return row.shared_fragments;
+    if (std::strcmp(column, "db_ms2_size") == 0) return row.db_ms2_size;
+    return 0;
+}
+
+SuspectRow read_row(const sdk::PluginProjectAccess::BatchView &batch, std::uint64_t row,
+                    const std::map<std::string, std::uint32_t> &columns)
+{
+    SuspectRow result;
+    const auto get_text = [&](const char *name) {
+        const auto column = columns.at(name);
+        return batch.is_null(column, row) ? std::string{} : std::string(batch.text(column, row));
+    };
+    const auto get_real = [&](const char *name) {
+        const auto column = columns.at(name);
+        return batch.is_null(column, row) ? std::numeric_limits<double>::quiet_NaN() : batch.real(column, row);
+    };
+    const auto get_integer = [&](const char *name) {
+        const auto column = columns.at(name);
+        return batch.is_null(column, row) ? 0 : static_cast<int>(batch.integer(column, row));
+    };
+    const auto get_list = [&](const char *name) {
+        const auto column = columns.at(name);
+        std::vector<double> values;
+        if (batch.is_null(column, row)) return values;
+        const auto size = batch.list_size(column, row);
+        values.reserve(static_cast<std::size_t>(size));
+        for (std::uint64_t index = 0; index < size; ++index)
+            values.push_back(batch.list_is_null(column, row, index)
+                ? std::numeric_limits<double>::quiet_NaN() : batch.list_real(column, row, index));
+        return values;
+    };
+    result.analysis = get_text("analysis"); result.name = get_text("name");
+    result.formula = get_text("formula"); result.smiles = get_text("SMILES");
+    result.inchi = get_text("InChI"); result.inchikey = get_text("InChIKey");
+    result.db_ms2_formula = get_text("db_ms2_formula"); result.db_mass = get_real("db_mass");
+    result.error_mass = get_real("error_mass"); result.exp_rt = get_real("exp_rt");
+    result.intensity = get_real("intensity"); result.area = get_real("area");
+    result.cosine_similarity = get_real("cosine_similarity"); result.xlogp = get_real("xLogP");
+    result.polarity = get_integer("polarity"); result.id_level = get_integer("id_level");
+    result.candidate_rank = get_integer("candidate_rank"); result.shared_fragments = get_integer("shared_fragments");
+    result.db_ms2_size = get_integer("db_ms2_size");
+    result.db_ms2_mz = get_list("db_ms2_mz"); result.db_ms2_intensity = get_list("db_ms2_intensity");
+    return result;
 }
 
 void add_value(std::map<std::string, int> &counts, std::string &selected, const std::string &value)
@@ -84,16 +148,6 @@ void add_value(std::map<std::string, int> &counts, std::string &selected, const 
     if (value.empty()) return;
     const auto count = ++counts[value];
     if (selected.empty() || count > counts[selected]) selected = value;
-}
-
-std::vector<double> numeric_array(const Json &value)
-{
-    if (!value.is_array()) return {};
-    std::vector<double> values;
-    values.reserve(value.size());
-    for (const auto &entry : value)
-        if (entry.is_number()) values.push_back(entry.get<double>());
-    return values;
 }
 
 std::vector<std::string> fragment_formulas(const std::string &encoded)
@@ -107,7 +161,7 @@ std::vector<std::string> fragment_formulas(const std::string &encoded)
     return result;
 }
 
-std::string compound_key(const Json &row)
+std::string compound_key(const SuspectRow &row)
 {
     const auto inchikey = text(row, "InChIKey");
     if (!inchikey.empty()) return "inchikey:" + inchikey;
@@ -118,13 +172,13 @@ std::string compound_key(const Json &row)
     return "fallback:" + formula + "|" + std::to_string(mass) + "|" + text(row, "name");
 }
 
-double quality_number(const Json &row, const char *column)
+double quality_number(const SuspectRow &row, const char *column)
 {
     const auto value = number(row, column);
     return std::isfinite(value) ? value : -std::numeric_limits<double>::infinity();
 }
 
-bool better_representative(const Json &candidate, const Json &current)
+bool better_representative(const SuspectRow &candidate, const SuspectRow &current)
 {
     const auto candidate_shared = integer(candidate, "shared_fragments");
     const auto current_shared = integer(current, "shared_fragments");
@@ -156,11 +210,11 @@ bool better_representative(const Json &candidate, const Json &current)
     return text(candidate, "name") < text(current, "name");
 }
 
-void add_spectrum(Compound &compound, const Json &row, const int polarity)
+void add_spectrum(Compound &compound, const SuspectRow &row, const int polarity)
 {
     const auto size = integer(row, "db_ms2_size");
-    const auto mz = numeric_array(row.value("db_ms2_mz", Json::array()));
-    const auto intensity = numeric_array(row.value("db_ms2_intensity", Json::array()));
+    const auto &mz = row.db_ms2_mz;
+    const auto &intensity = row.db_ms2_intensity;
     const auto formulas = fragment_formulas(text(row, "db_ms2_formula"));
     if (size <= 0 || mz.empty() || mz.size() != intensity.size() || formulas.size() != mz.size()) return;
     const auto count = std::min(static_cast<std::size_t>(size), mz.size());
@@ -196,13 +250,6 @@ double rounded(const double value, const int decimals)
 {
     const auto factor = std::pow(10.0, static_cast<double>(decimals));
     return std::round(value * factor) / factor;
-}
-
-Json numeric_array(const std::vector<double> &values, const int decimals)
-{
-    Json result = Json::array();
-    for (const auto value : values) result.push_back(rounded(value, decimals));
-    return result;
 }
 
 std::vector<double> harmonize(const std::vector<Peak> &peaks, double tolerance)
@@ -251,10 +298,10 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("suspectsTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table"))
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref"))
         throw std::invalid_argument("Connect a suspectsTable or internalStandardsTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const double tolerance = parameters.value("mz_clust", 0.003);
     const double minimum_cosine = parameters.value("min_cosine_similarity", 0.7);
     const int minimum_shared = parameters.value("min_shared_fragments", 3);
@@ -268,27 +315,32 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     const std::vector<std::string> input_columns = {
         "analysis", "name", "polarity", "db_mass", "error_mass", "exp_rt", "intensity", "area", "id_level", "candidate_rank", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
         "shared_fragments", "cosine_similarity", "db_ms2_size", "db_ms2_mz", "db_ms2_intensity", "db_ms2_formula"};
-    const auto rows = access.read(table, input_columns, "analysis");
     std::map<std::string, detail::Compound> compounds;
-    std::map<std::string, Json> representatives;
+    std::map<std::string, detail::SuspectRow> representatives;
     std::size_t accepted_rows = 0;
-    for (const auto &row : rows)
-    {
-        const auto shared = detail::integer(row, "shared_fragments");
-        const auto cosine = detail::number(row, "cosine_similarity");
-        const auto db_ms2_size = detail::integer(row, "db_ms2_size");
-        if (db_ms2_size <= 0 || shared < minimum_shared || !std::isfinite(cosine) || cosine < minimum_cosine)
-            continue;
-
-        const int polarity = detail::integer(row, "polarity");
-        const auto key = detail::compound_key(row);
-        const auto analysis = detail::text(row, "analysis");
-        const auto representative_key = analysis + "|" + key + "|polarity:" + std::to_string(polarity);
-        const auto representative = representatives.find(representative_key);
-        if (representative == representatives.end() || detail::better_representative(row, representative->second))
-            representatives[representative_key] = row;
-        ++accepted_rows;
-    }
+    std::size_t input_rows = 0;
+    access.read_typed_batches(table, input_columns,
+        [&](const sdk::PluginProjectAccess::BatchView &batch) {
+            std::map<std::string, std::uint32_t> columns;
+            for (const auto &name : input_columns) columns.emplace(name, batch.column_index(name));
+            for (std::uint64_t row_index = 0; row_index < batch.row_count(); ++row_index) {
+                ++input_rows;
+                const auto row = detail::read_row(batch, row_index, columns);
+                const auto shared = detail::integer(row, "shared_fragments");
+                const auto cosine = detail::number(row, "cosine_similarity");
+                if (detail::integer(row, "db_ms2_size") <= 0 || shared < minimum_shared ||
+                    !std::isfinite(cosine) || cosine < minimum_cosine)
+                    continue;
+                const auto key = detail::compound_key(row);
+                const auto representative_key = row.analysis + "|" + key + "|polarity:" +
+                                                std::to_string(row.polarity);
+                const auto representative = representatives.find(representative_key);
+                if (representative == representatives.end() ||
+                    detail::better_representative(row, representative->second))
+                    representatives[representative_key] = row;
+                ++accepted_rows;
+            }
+        });
 
     for (const auto &[representative_key, row] : representatives)
     {
@@ -321,55 +373,67 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         detail::add_spectrum(compound, row, polarity);
     }
 
-    const std::vector<std::string> output_columns = {
-        "name", "mass", "polarity", "mz", "rt", "formula", "SMILES", "InChI", "InChIKey", "xLogP",
-        "fragments_mz_pos", "fragments_intensity_pos", "fragments_mz_neg", "fragments_intensity_neg"};
-    const std::vector<std::string> output_types = {
-        "string", "real", "integer", "real", "real", "string", "string", "string", "string", "real",
-        "array", "array", "array", "array"};
-    Json output = Json::array();
+    sdk::TableBatchBuilder output({
+        {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"polarity", STREAMFIND_PLUGIN_COLUMN_INT64}, {"mz", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"rt", STREAMFIND_PLUGIN_COLUMN_FLOAT64}, {"formula", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"SMILES", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"InChI", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"InChIKey", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"xLogP", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"fragments_mz_pos", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"fragments_intensity_pos", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"fragments_mz_neg", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"fragments_intensity_neg", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_FLOAT64}});
+    std::size_t output_rows = 0;
     for (const auto &[key, compound] : compounds)
     {
-        Json row = Json::object();
-        for (const auto &column : output_columns) row[column] = nullptr;
-        row["name"] = detail::mode(compound.names, compound.name);
+        using Cell = sdk::TableBatchBuilder::Cell;
+        using List = std::vector<sdk::TableBatchBuilder::ListCell>;
+        Cell mass = std::monostate{};
         if (!compound.masses.empty())
-            row["mass"] = detail::rounded(std::accumulate(compound.masses.begin(), compound.masses.end(), 0.0) /
-                                           compound.masses.size(), 4);
-        if (compound.polarities.size() == 1) row["polarity"] = compound.polarities.begin()->first;
+            mass = detail::rounded(std::accumulate(compound.masses.begin(), compound.masses.end(), 0.0) /
+                                   compound.masses.size(), 4);
+        Cell polarity = std::monostate{};
+        if (compound.polarities.size() == 1) polarity = static_cast<std::int64_t>(compound.polarities.begin()->first);
+        Cell rt = std::monostate{};
         if (!compound.rts.empty())
-            row["rt"] = detail::rounded(std::accumulate(compound.rts.begin(), compound.rts.end(), 0.0) /
-                                         compound.rts.size(), 0);
-        row["formula"] = detail::mode(compound.formulas, compound.formula);
-        row["SMILES"] = detail::mode(compound.smiles_values, compound.smiles);
-        row["InChI"] = detail::mode(compound.inchi_values, compound.inchi);
-        row["InChIKey"] = detail::mode(compound.inchikey_values, compound.inchikey);
+            rt = detail::rounded(std::accumulate(compound.rts.begin(), compound.rts.end(), 0.0) /
+                                 compound.rts.size(), 0);
+        Cell xlogp = std::monostate{};
         if (!compound.xlogp_values.empty())
-            row["xLogP"] = detail::rounded(std::accumulate(compound.xlogp_values.begin(), compound.xlogp_values.end(), 0.0) /
-                                            compound.xlogp_values.size(), 2);
+            xlogp = detail::rounded(std::accumulate(compound.xlogp_values.begin(), compound.xlogp_values.end(), 0.0) /
+                                    compound.xlogp_values.size(), 2);
+        Cell mz_pos = std::monostate{}, intensity_pos = std::monostate{};
+        Cell mz_neg = std::monostate{}, intensity_neg = std::monostate{};
         for (const auto &[polarity, peaks] : compound.peaks_by_polarity)
         {
             const auto mz = detail::harmonized_mz(peaks, tolerance);
             const auto intensity = detail::harmonize(peaks, tolerance);
             if (mz.size() != intensity.size() || mz.empty()) continue;
+            List mz_values, intensity_values;
+            mz_values.reserve(mz.size()); intensity_values.reserve(intensity.size());
+            for (const auto value : mz) mz_values.emplace_back(detail::rounded(value, 4));
+            for (const auto value : intensity) intensity_values.emplace_back(detail::rounded(value, 1));
             if (polarity > 0)
             {
-                row["fragments_mz_pos"] = detail::numeric_array(mz, 4);
-                row["fragments_intensity_pos"] = detail::numeric_array(intensity, 1);
+                mz_pos = std::move(mz_values); intensity_pos = std::move(intensity_values);
             }
             else if (polarity < 0)
             {
-                row["fragments_mz_neg"] = detail::numeric_array(mz, 4);
-                row["fragments_intensity_neg"] = detail::numeric_array(intensity, 1);
+                mz_neg = std::move(mz_values); intensity_neg = std::move(intensity_values);
             }
         }
-        output.push_back(std::move(row));
+        output.append_row({detail::mode(compound.names, compound.name), mass, polarity,
+            std::monostate{}, rt, detail::mode(compound.formulas, compound.formula),
+            detail::mode(compound.smiles_values, compound.smiles), detail::mode(compound.inchi_values, compound.inchi),
+            detail::mode(compound.inchikey_values, compound.inchikey), xlogp,
+            std::move(mz_pos), std::move(intensity_pos), std::move(mz_neg), std::move(intensity_neg)});
+        ++output_rows;
     }
 
-    access.emit_table_rows("suspectTargetsTable", output_columns, output_types, output);
+    output.emit(access, "suspectTargetsTable");
     access.report_progress(1.0, "Converted and harmonized suspect MS2 spectra.");
-    return Json{{"status", "finished"}, {"input_rows", rows.size()}, {"validated_rows", accepted_rows},
-                {"suspect_target_rows", output.size()}, {"artifact", "suspectTargetsTable"}};
+    return Json{{"status", "finished"}, {"input_rows", input_rows}, {"validated_rows", accepted_rows},
+                {"suspect_target_rows", output_rows}, {"artifact", "suspectTargetsTable"}};
 }
 }
 
@@ -377,24 +441,42 @@ namespace streamfind::mass_spec::nta::internal_standards_to_suspects
 {
 using Json = nlohmann::json;
 
+namespace detail {
+std::vector<sdk::TableBatchBuilder::Column> schema_from_types(
+    const std::vector<std::string> &columns, const std::vector<std::string> &types) {
+    std::vector<sdk::TableBatchBuilder::Column> schema;
+    schema.reserve(columns.size());
+    for (std::size_t index = 0; index < columns.size(); ++index) {
+        const auto &type = types.at(index);
+        if (type == "array") schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_UTF8, true,
+                                                STREAMFIND_PLUGIN_COLUMN_FLOAT64});
+        else if (type == "integer") schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_INT64});
+        else if (type == "real") schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_FLOAT64});
+        else if (type == "boolean") schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_BOOL});
+        else schema.push_back({columns[index], STREAMFIND_PLUGIN_COLUMN_UTF8});
+    }
+    return schema;
+}
+}
+
 Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("internalStandardsTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table"))
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref"))
         throw std::invalid_argument("Connect an internalStandardsTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const auto columns = ::streamfind::mass_spec::nta::utils::suspects_columns();
-    const std::vector<std::string> types = {
-        "string", "string", "string", "string", "string", "string", "integer", "string", "integer",
-        "real", "real", "real", "real", "real", "real", "real", "real", "integer", "real", "integer",
-        "real", "string", "string", "string", "string", "real", "integer", "string", "string", "string",
-        "string", "integer", "string", "string", "string", "string", "string", "integer", "string",
-        "string", "integer", "string", "string", "integer", "integer", "real", "boolean"};
-    const auto rows = access.read(table, columns, "analysis");
-    access.emit_table_rows("suspectsTable", columns, types, rows);
+    const auto types = ::streamfind::mass_spec::nta::utils::detail::suspects_types();
+    sdk::TableBatchBuilder output(detail::schema_from_types(columns, types));
+    const auto rows = access.count_rows(table);
+    access.read_typed_batches(table, columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row)
+            output.append_row(batch, row);
+    });
+    output.emit(access, "suspectsTable");
     access.report_progress(1.0, "Converted internal standards to the suspectsTable contract.");
-    return Json{{"status", "finished"}, {"rows", rows.size()}, {"artifact", "suspectsTable"}};
+    return Json{{"status", "finished"}, {"rows", rows}, {"artifact", "suspectsTable"}};
 }
 }

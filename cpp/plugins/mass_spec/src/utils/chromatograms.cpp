@@ -7,6 +7,15 @@
 
 namespace streamfind::mass_spec::chromatograms::utils
 {
+double normalize_mz(const double value)
+{
+    if (!std::isfinite(value)) return 0.0;
+    // Chromatogram transition metadata is method-level m/z, not a profile
+    // spectrum. Two decimal places remove vendor/parser float noise while
+    // retaining the precision used by the targeted transition methods.
+    return std::round(value * 100.0) / 100.0;
+}
+
 // ─── Savitzky-Golay smoothing ───────────────────────────────────────────────
 
 static std::vector<std::vector<double>> sg_coefficients(int window, int poly_order) {
@@ -251,19 +260,63 @@ double calculate_fwhm(
     return 2.3548 * sigma;
 }
 
-// ─── Signal-to-noise (MAD-based) ────────────────────────────────────────────
+// ─── Signal-to-noise (local peak-to-background ratio) ────────────────────────
+
+static double percentile(std::vector<double> values, double fraction)
+{
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end());
+    const auto position = fraction * static_cast<double>(values.size() - 1);
+    const auto lower = static_cast<std::size_t>(position);
+    const auto upper = std::min(lower + 1, values.size() - 1);
+    const auto weight = position - static_cast<double>(lower);
+    return values[lower] + weight * (values[upper] - values[lower]);
+}
+
+double calculate_noise(
+    const std::vector<double> &intensity, std::size_t start_idx, std::size_t end_idx) {
+    if (intensity.empty() || start_idx >= intensity.size() || end_idx >= intensity.size() || start_idx > end_idx)
+        return 0.0;
+
+    // Estimate noise from local guard regions immediately outside the peak.
+    // Scanning the complete trace makes an unrelated high-intensity peak turn
+    // into the noise floor for a low-level transition.  The guard width scales
+    // with the detected peak while remaining bounded for broad integrations.
+    const auto peak_points = end_idx - start_idx + 1;
+    const auto guard_points = std::clamp(peak_points * 2, std::size_t{10}, std::size_t{50});
+    std::vector<double> background;
+    const auto left_begin = start_idx > guard_points ? start_idx - guard_points : 0;
+    for (std::size_t index = left_begin; index < start_idx; ++index)
+        background.push_back(intensity[index]);
+    const auto right_begin = end_idx + 1;
+    const auto right_end = std::min(intensity.size(), right_begin + guard_points);
+    for (std::size_t index = right_begin; index < right_end; ++index)
+        background.push_back(intensity[index]);
+
+    // Very short traces can leave only one side. Fall back to all outside
+    // points, but retain the robust statistic rather than the global maximum.
+    if (background.size() < 4) {
+        background.clear();
+        for (std::size_t index = 0; index < start_idx; ++index)
+            background.push_back(intensity[index]);
+        for (std::size_t index = end_idx + 1; index < intensity.size(); ++index)
+            background.push_back(intensity[index]);
+    }
+    if (background.empty()) return 0.0;
+
+    const auto background_median = percentile(background, 0.5);
+    const auto background_mad = median_absolute_deviation(background);
+    double noise = background_median + 3.0 * background_mad;
+    if (noise <= 0.0) noise = percentile(background, 0.95);
+    if (noise <= 0.0) noise = *std::max_element(background.begin(), background.end());
+    return noise;
+}
 
 double calculate_snr(
     const std::vector<double> &intensity, std::size_t start_idx, std::size_t end_idx,
     double height) {
-    // S/N = apex height / average of left and right edge intensities.
-    // Use raw chromatogram intensities at the peak boundaries.
-    if (start_idx >= intensity.size() || end_idx >= intensity.size()) return 0.0;
-    double left_edge = intensity[start_idx];
-    double right_edge = intensity[end_idx];
-    double noise = (left_edge + right_edge) * 0.5;
-    if (noise <= 0.0) noise = 1.0;
-    return height / noise;
+    const double noise = calculate_noise(intensity, start_idx, end_idx);
+    return noise > 0.0 ? height / noise : 0.0;
 }
 
 // ─── Tailing factor ──────────────────────────────────────────────────────────
@@ -597,6 +650,32 @@ std::vector<Peak> find_peaks(
         }
     }
 
+    // The derivative detector and the supplemental local-maxima pass can
+    // report the same apex independently.  Keep one candidate for an exact
+    // apex duplicate; otherwise quantification sees two indistinguishable
+    // transitions and reports an ambiguous peak.
+    std::sort(raw.begin(), raw.end(), [](const RawPeak &left, const RawPeak &right) {
+        if (left.apex_rt != right.apex_rt) return left.apex_rt < right.apex_rt;
+        if (left.apex_idx != right.apex_idx) return left.apex_idx < right.apex_idx;
+        if (left.height != right.height) return left.height > right.height;
+        return (left.end_idx - left.start_idx) > (right.end_idx - right.start_idx);
+    });
+    std::vector<RawPeak> unique_raw;
+    unique_raw.reserve(raw.size());
+    for (const auto &candidate : raw) {
+        if (!unique_raw.empty() &&
+            (candidate.apex_idx == unique_raw.back().apex_idx ||
+             std::abs(candidate.apex_rt - unique_raw.back().apex_rt) <= 1e-6)) {
+            auto &kept = unique_raw.back();
+            kept.start_idx = std::min(kept.start_idx, candidate.start_idx);
+            kept.end_idx = std::max(kept.end_idx, candidate.end_idx);
+            kept.height = std::max(kept.height, candidate.height);
+            continue;
+        }
+        unique_raw.push_back(candidate);
+    }
+    raw = std::move(unique_raw);
+
     // Step 8: Build final peaks with full metrics.
     // All reported properties (height, area, S/N) are computed from the
     // ORIGINAL raw chromatogram data — not the smoothed/corrected signal
@@ -680,8 +759,10 @@ std::vector<Peak> find_peaks(
             pk.fwhm = std::max(0.0, right_fwhm - left_fwhm);
         }
 
-        // S/N from raw signal — noise estimated from boundary regions.
-        pk.snr = calculate_snr(intensity, rp.start_idx, rp.end_idx, best_raw);
+        // S/N is the raw apex intensity divided by the maximum local
+        // background outside the detected peak boundaries.
+        pk.noise = calculate_noise(intensity, rp.start_idx, rp.end_idx);
+        pk.snr = pk.noise > 0.0 ? best_raw / pk.noise : 0.0;
 
         // Tailing factor from raw signal.
         pk.tailing_factor = calculate_tailing_factor(rt, intensity, best_idx, pk.rt);
@@ -706,7 +787,7 @@ std::vector<Peak> find_peaks(
         pk.gaussian_r2 = calculate_gaussian_r2(rt, intensity, rp.start_idx, rp.end_idx, pk.rt, pk.height);
 
         // S/N filter.
-        if (pk.snr < min_snr) continue;
+        if (pk.snr <= min_snr) continue;
 
         peaks.push_back(pk);
     }
@@ -724,13 +805,13 @@ const std::vector<std::string> &header_columns()
 
 const std::vector<std::string> &point_columns()
 {
-    static const std::vector<std::string> columns = {"analysis", "index", "rt", "raw_intensity", "baseline", "intensity"};
+    static const std::vector<std::string> columns = {"analysis", "index", "chromatogram_id", "polarity", "precursor_mz", "activation_ce", "product_mz", "signal_type", "chromatogram_type", "detector", "channel", "wavelength_nm", "units", "rt", "raw_intensity", "baseline", "intensity"};
     return columns;
 }
 
 const std::vector<std::string> &peak_columns()
 {
-    static const std::vector<std::string> columns = {"analysis", "chromatogram_index", "peak_id", "rt", "rt_start", "rt_end", "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm", "snr", "asymmetry", "sharpness", "plates", "number_points", "integration_algorithm", "integration_status", "manual_override"};
+    static const std::vector<std::string> columns = {"analysis", "chromatogram_index", "peak_id", "chromatogram_id", "polarity", "precursor_mz", "product_mz", "activation_ce", "signal_type", "chromatogram_type", "detector", "channel", "wavelength_nm", "units", "rt", "rt_start", "rt_end", "height", "raw_height", "area", "raw_area", "baseline_area", "width", "fwhm", "noise", "snr", "asymmetry", "sharpness", "plates", "number_points", "eic_size", "eic_rt", "eic_intensity", "eic_raw_intensity", "eic_baseline", "integration_algorithm", "integration_status", "manual_override"};
     return columns;
 }
 
@@ -771,9 +852,9 @@ HeaderMap make_header_map(const nlohmann::json &rows)
         HeaderInfo info;
         info.chromatogram_id = text(row, "chromatogram_id");
         info.polarity = integer(row, "polarity");
-        info.precursor_mz = real(row, "precursor_mz");
+        info.precursor_mz = normalize_mz(real(row, "precursor_mz"));
         info.activation_ce = real(row, "activation_ce");
-        info.product_mz = real(row, "product_mz");
+        info.product_mz = normalize_mz(real(row, "product_mz"));
         info.signal_type = text(row, "signal_type");
         info.chromatogram_type = text(row, "chromatogram_type");
         info.detector = text(row, "detector");
@@ -789,9 +870,9 @@ void append_header_fields(nlohmann::json &row, const HeaderInfo &header)
 {
     row["chromatogram_id"] = header.chromatogram_id;
     row["polarity"] = header.polarity;
-    row["precursor_mz"] = header.precursor_mz;
+    row["precursor_mz"] = normalize_mz(header.precursor_mz);
     row["activation_ce"] = header.activation_ce;
-    row["product_mz"] = header.product_mz;
+    row["product_mz"] = normalize_mz(header.product_mz);
     row["signal_type"] = header.signal_type;
     row["chromatogram_type"] = header.chromatogram_type;
     row["detector"] = header.detector;

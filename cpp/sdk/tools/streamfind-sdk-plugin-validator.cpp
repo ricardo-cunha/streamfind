@@ -11,14 +11,14 @@ struct Arguments {
     std::filesystem::path source_dir;
     std::filesystem::path output_dir;
     std::filesystem::path manifest;
-    std::string domain;
+    std::string plugin;
     std::string library;
 };
 
 void usage() {
     std::cerr << "usage: streamfind_sdk_plugin_validator"
                  " --source-dir <dir> --output-dir <dir>"
-                 " --manifest <file> --domain <id> --library <file>\n";
+                 " --manifest <file> --plugin <id> --library <file>\n";
 }
 
 bool take_value(int &index, int argc, char **argv, std::string_view option, std::string &value) {
@@ -37,8 +37,8 @@ bool parse_arguments(int argc, char **argv, Arguments &arguments) {
             arguments.output_dir = value;
         else if (take_value(index, argc, argv, "--manifest", value))
             arguments.manifest = value;
-        else if (take_value(index, argc, argv, "--domain", value))
-            arguments.domain = value;
+        else if (take_value(index, argc, argv, "--plugin", value))
+            arguments.plugin = value;
         else if (take_value(index, argc, argv, "--library", value))
             arguments.library = value;
         else {
@@ -47,7 +47,7 @@ bool parse_arguments(int argc, char **argv, Arguments &arguments) {
         }
     }
     return !arguments.source_dir.empty() && !arguments.output_dir.empty() &&
-           !arguments.manifest.empty() && !arguments.domain.empty() && !arguments.library.empty();
+           !arguments.manifest.empty() && !arguments.plugin.empty() && !arguments.library.empty();
 }
 
 bool require_directory(const std::filesystem::path &path, const char *label) {
@@ -82,9 +82,12 @@ int run(const Arguments &arguments) {
         return 2;
     }
     const auto &manifest = source_manifest.manifest;
-    if (manifest.plugin_id != arguments.domain || manifest.domain != arguments.domain) {
-        std::cerr << "plugin validation: manifest domain does not match "
-                  << arguments.domain << '\n';
+    const auto native_id = std::string("native.plugin.") + arguments.plugin;
+    const auto custom_id = std::string("custom.plugin.") + arguments.plugin;
+    if ((manifest.plugin_id != native_id && manifest.plugin_id != custom_id) ||
+        manifest.plugin != arguments.plugin) {
+        std::cerr << "plugin validation: manifest plugin does not match "
+                  << arguments.plugin << '\n';
         return 3;
     }
     if (manifest.static_composition || manifest.semantic_catalogue != "catalogue.duckdb") {
@@ -111,12 +114,12 @@ int run(const Arguments &arguments) {
 
     const auto output_manifest = load_plugin_manifest(output_manifest_path);
     if (!output_manifest.valid || output_manifest.manifest.plugin_id != manifest.plugin_id ||
-        output_manifest.manifest.domain != manifest.domain ||
+        output_manifest.manifest.plugin != manifest.plugin ||
         output_manifest.manifest.version != manifest.version) {
         std::cerr << "plugin validation: staged manifest does not match source manifest\n";
         return 7;
     }
-    std::cout << "SDK plugin validation passed: " << arguments.domain << '\n';
+    std::cout << "SDK plugin validation passed: " << arguments.plugin << '\n';
     return 0;
 }
 

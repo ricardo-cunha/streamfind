@@ -9,9 +9,10 @@ param(
 $packageRoot = (Resolve-Path $PackageRoot -ErrorAction Stop).Path
 $executable = Join-Path $packageRoot 'bin\streamfind-mcp.exe'
 $coreExecutable = Join-Path $packageRoot 'bin\streamfind-mcp.exe'
+$packageCli = Join-Path $packageRoot 'bin\streamfind.exe'
 $catalogue = Join-Path $packageRoot 'core\catalogue.duckdb'
 
-foreach ($path in @($executable, $coreExecutable, $catalogue, (Join-Path $packageRoot 'bin\streamfind.json'), (Join-Path $packageRoot 'plugins\mass_spec\streamfind_mass_spec.dll'))) {
+foreach ($path in @($executable, $coreExecutable, $catalogue, (Join-Path $packageRoot 'bin\streamfind.json'), (Join-Path $packageRoot 'plugins\native\native.plugin.mass_spec\streamfind_mass_spec.dll'))) {
     if (-not (Test-Path $path -PathType Leaf)) {
         throw "Packaged MCP prerequisite is missing: $path"
     }
@@ -40,7 +41,7 @@ try {
         }
     }
     $massSpecOperations = Invoke-McpTool $process 11 'get_operations' @{
-        domain = 'mass_spec'
+        plugin = 'mass_spec'
         search = 'read_mass_spec_files'
     }
     if (-not @($massSpecOperations | Where-Object { $_.canonical_id -eq 'mass_spec.read_mass_spec_files' })) {
@@ -51,6 +52,9 @@ try {
 } finally {
     if ($null -ne $process) {
         Stop-StreamfindMcp $process
+    }
+    if (Test-Path $packageCli -PathType Leaf) {
+        & $packageCli service stop 2>$null | Out-Null
     }
     if ($null -eq $previousCatalogue) {
         Remove-Item Env:STREAMFIND_CATALOGUE -ErrorAction SilentlyContinue

@@ -1,17 +1,17 @@
 import { frontendPluginRegistry, type FrontendPluginRegistry } from '../../framework/plugins/FrontendPluginRegistry';
 import { FRONTEND_PLUGIN_API_VERSION, type FrontendPlugin } from '../../framework/plugins/pluginTypes';
 import { GenericTableViewer } from './artifact-viewers/GenericTableViewer';
-import { VisualizationSpecViewer } from './artifact-viewers/VisualizationSpecViewer';
 
 export const coreFrontendPlugin: FrontendPlugin = {
   manifest: {
-    id: 'streamfind.core',
+    schemaVersion: 1,
+    kind: 'viewer',
+    id: 'native.viewer.core',
     name: 'streamfind core viewers',
     version: '1.0.0',
     apiVersion: FRONTEND_PLUGIN_API_VERSION,
-    artifactContracts: ['table', 'visualizationSpecResult'],
+    artifactContracts: ['https://streamfind.dev/catalogue/core#table'],
     artifactRepresentations: ['table'],
-    visualizationTypes: ['*'],
     capabilities: ['artifact-viewers'],
   },
   setup(api) {
@@ -21,12 +21,6 @@ export const coreFrontendPlugin: FrontendPlugin = {
       accepts: [],
       representations: ['table'],
       component: GenericTableViewer,
-    });
-    api.registerViewer({
-      id: 'core.visualization',
-      label: 'StreamFind visualization',
-      accepts: ['visualizationSpecResult'],
-      component: VisualizationSpecViewer,
     });
   },
 };

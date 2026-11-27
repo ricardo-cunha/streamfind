@@ -28,7 +28,7 @@ namespace streamfind::mass_spec::nta
           ++halogen_isotopes;
       }
 
-      // Organic compounds are the default domain. Prefer a carbon-supported
+      // Organic compounds are the default plugin. Prefer a carbon-supported
       // explanation when the isotope-mass match is effectively tied, while
       // retaining halogen candidates for the complete-envelope comparison.
       return (0.04 * static_cast<double>(carbon_isotopes)) -

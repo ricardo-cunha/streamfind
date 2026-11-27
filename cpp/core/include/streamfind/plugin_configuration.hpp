@@ -9,8 +9,13 @@
 namespace streamfind {
 
 struct STREAMFIND_CORE_API PluginConfiguration {
-    std::vector<std::filesystem::path> plugin_roots;
+    std::vector<std::filesystem::path> plugin_development_roots;
+    std::vector<std::filesystem::path> plugin_deployment_roots;
+    std::vector<std::filesystem::path> viewer_development_roots;
+    std::vector<std::filesystem::path> viewer_deployment_roots;
     std::vector<std::string> enabled_plugins;
+    std::vector<std::string> enabled_viewers;
+    std::filesystem::path registry_path;
 };
 
 struct STREAMFIND_CORE_API PluginConfigurationResult {

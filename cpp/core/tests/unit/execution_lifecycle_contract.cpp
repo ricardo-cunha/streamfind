@@ -145,7 +145,7 @@ void run() {
     }
 
     const std::set<std::string> expected_error_codes = {
-        "project_not_found", "project_domain_mismatch", "workflow_not_found",
+        "project_not_found", "project_plugin_mismatch", "workflow_not_found",
         "workflow_invalid", "execution_not_found", "execution_not_cancellable",
         "execution_state_conflict", "execution_interrupted", "backend_busy",
         "database_error", "method_error"};
@@ -157,12 +157,12 @@ void run() {
             throw std::runtime_error("execution contract: missing MCP request shape");
         }
     }
-    assert_request(mcp.at("requests"), "start", {"database_path"},
+    assert_request(mcp.at("requests"), "start", {"project_path"},
                    {"workflow_revision", "parameters"});
-    assert_request(mcp.at("requests"), "list", {"database_path"},
+    assert_request(mcp.at("requests"), "list", {"project_path"},
                    {"status"});
-    assert_request(mcp.at("requests"), "get", {"database_path"}, {});
-    assert_request(mcp.at("requests"), "cancel", {"database_path"}, {});
+    assert_request(mcp.at("requests"), "get", {"project_path"}, {});
+    assert_request(mcp.at("requests"), "cancel", {"project_path"}, {});
     if (string_set(mcp.at("result_fields")) !=
         std::set<std::string>{"workflow_revision",
                               "status", "progress", "result_reference", "error"}) {
@@ -210,7 +210,11 @@ void run() {
     WorkflowExecutionManager other_manager(other);
     if (!other_manager.list().empty()) throw std::runtime_error("execution manager leaked rows across projects");
     if (other_manager.create({{"workflow_revision", 1}}).at("status") != "queued") throw std::runtime_error("independent project could not queue execution");
-    if (other.run_worker("other-worker", operations).at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
+    const OperationRunner no_op_runner = [](const std::string &, const Json &, const std::string &,
+                                            const Json &, const std::string &, bool) {
+        return Json{{"emitted_results", Json::object()}};
+    };
+    if (other.run_worker("other-worker", operations, no_op_runner).at("status") != "completed") throw std::runtime_error("one-shot worker could not execute and release its workflow");
     manager.scheduler_tick("worker-a");
     project.close();
     auto reopened = Project::open(options);

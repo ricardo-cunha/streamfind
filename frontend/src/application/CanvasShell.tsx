@@ -8,17 +8,18 @@ import {
   useCallback,
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
+  type CSSProperties,
 } from 'react';
 import { StreamFindApiClient, type ResultRecord, type ProjectSession } from '../framework/backend/StreamFindApiClient';
-import type { StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
+import type { JsonValue, StreamFindEvent, WorkflowMetadata } from '../framework/backend/protocol';
 import { LoadingLogo } from '../framework/ui/LoadingLogo';
 
 import { PathFileManager } from './PathFileManager';
 import { subscribeAppNotifications } from '../framework/notifications/notificationBus';
 import { ArtifactViewerHost } from '../framework/viewers/ArtifactViewerHost';
-import { compatibleArtifactViewers } from '../framework/viewers/viewerTypes';
+import { pluginClassName, pluginColor } from '../framework/theme/pluginColors';
 
-import { frontendPluginApi } from '../framework/plugins/FrontendPluginRegistry';
+import { frontendPluginApi, frontendPluginRegistry } from '../framework/plugins/FrontendPluginRegistry';
 import {
   canvasWorkflow,
   canvasSnapshotFingerprint,
@@ -87,7 +88,6 @@ import {
   artifactContractMatches,
   artifactSummary,
   isJsonArtifact,
-  isVisualizationArtifact,
   prettyArtifactPayload,
 } from './results/artifactDisplay';
 import type {
@@ -203,6 +203,9 @@ export default function CanvasShell({
   );
   const workflowLoaded = surface !== 'workflow' || !client || loadedWorkflowKey === workflowLoadKey;
   const [savedWorkflowFingerprint, setSavedWorkflowFingerprint] = useState<string | null>(null);
+  const currentWorkflowFingerprintRef = useRef('');
+  const workflowDirtyRef = useRef(false);
+  const savingWorkflowRef = useRef(false);
   const artifactsLoadedRef = useRef(false);
   const currentResultsRef = useRef<ResultRecord[]>([]);
   const artifactsRefreshInFlightRef = useRef<Promise<ResultRecord[]> | null>(null);
@@ -235,6 +238,8 @@ export default function CanvasShell({
   const [artifactViewer, setArtifactViewer] = useState<ResultRecord | null>(null);
   const [artifactViewerMode, setArtifactViewerMode] = useState<'table' | 'default'>('default');
   const [artifactViewerId, setArtifactViewerId] = useState<string | null>(null);
+  const [artifactPayload, setArtifactPayload] = useState<JsonValue | undefined>(undefined);
+  const [artifactPayloadError, setArtifactPayloadError] = useState<string | null>(null);
   const [hoveredOutputAnchor, setHoveredOutputAnchor] = useState<string | null>(null);
   const outputHoverTimeoutRef = useRef<number | null>(null);
 
@@ -246,14 +251,43 @@ export default function CanvasShell({
     setArtifactViewer(artifact);
     setArtifactViewerMode(mode);
     setArtifactViewerId(viewerId);
+    setArtifactPayload(artifact.payload);
+    setArtifactPayloadError(null);
   };
-  const openDefaultArtifactViewer = (artifact: ResultRecord) => {
-    const defaultViewer = compatibleArtifactViewers({
+  const artifactViewers = (artifact: ResultRecord) => {
+    const pluginId =
+      capabilities.operations.find((operation) => operation.canonical_id === artifact.producer_operation)?.plugin ?? 'core';
+    return frontendPluginRegistry.compatibleArtifactViewers(pluginId, {
       semanticType: artifact.contract_id,
       representation: artifact.representation,
-    })[0];
+    });
+  };
+  const openDefaultArtifactViewer = (artifact: ResultRecord) => {
+    const defaultViewer = artifactViewers(artifact)[0];
     openArtifactViewer(artifact, 'default', defaultViewer?.id ?? null);
   };
+
+  useEffect(() => {
+    if (!artifactViewer || artifactViewer.representation !== 'json' || artifactViewer.payload !== undefined) return;
+    if (!client) {
+      setArtifactPayloadError('The result payload cannot be loaded because no service client is available.');
+      return;
+    }
+    let active = true;
+    setArtifactPayloadError(null);
+    void client
+      .resultPayload(project.session_id, artifactViewer.result_id)
+      .then((payload) => {
+        if (active) setArtifactPayload(payload);
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setArtifactPayloadError(error instanceof Error ? error.message : 'The result payload could not be loaded.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [artifactViewer, client, project.session_id]);
   const showOutputRendererMenu = (key: string) => {
     if (outputHoverTimeoutRef.current !== null) window.clearTimeout(outputHoverTimeoutRef.current);
     setHoveredOutputAnchor(key);
@@ -465,6 +499,11 @@ export default function CanvasShell({
 
   const workflowDirty =
     workflowLoaded && savedWorkflowFingerprint !== null && currentWorkflowFingerprint !== savedWorkflowFingerprint;
+  useEffect(() => {
+    currentWorkflowFingerprintRef.current = currentWorkflowFingerprint;
+    workflowDirtyRef.current = workflowDirty;
+    savingWorkflowRef.current = savingWorkflow;
+  }, [currentWorkflowFingerprint, savingWorkflow, workflowDirty]);
 
   const applyWorkflowEvent = useCallback(
     (event: StreamFindEvent) => {
@@ -595,13 +634,13 @@ export default function CanvasShell({
           const changedMetadata = changedWorkflow.metadata || {};
           const revision = Number(changedWorkflow.version);
           const localDefinitionMatches =
-            changedFingerprint === currentWorkflowFingerprint &&
+            changedFingerprint === currentWorkflowFingerprintRef.current &&
             JSON.stringify(changedMetadata) === JSON.stringify(workflowMetadata);
           if (localDefinitionMatches) {
             setWorkflowRevision(revision);
             setWorkflowDefinitionRevision(changedWorkflow.definition_revision);
             setSavedWorkflowFingerprint(changedFingerprint);
-          } else if (workflowDirty || savingWorkflow) {
+          } else if (workflowDirtyRef.current || savingWorkflowRef.current) {
             setStatus(
               `Workflow changed in another client (revision ${revision}); local edits are preserved. Reload the workflow to view the external changes.`,
             );
@@ -652,15 +691,12 @@ export default function CanvasShell({
     },
     [
       appendLog,
-      currentWorkflowFingerprint,
       project.session_id,
       refreshArtifacts,
       resetActivityLog,
-      savingWorkflow,
       setStatus,
       setWorkflowReloadNonce,
       updateActiveWorker,
-      workflowDirty,
       workflowMetadata,
     ],
   );
@@ -1584,9 +1620,9 @@ export default function CanvasShell({
         nodePorts(targetCapability).inputs.find((port) => sourcePort && portMatchesPort(sourcePort, port))?.id ||
         (sourcePort
           ? targetCapability?.parameters.find(
-              (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
+              (parameter) => parameter.name !== 'project_path' && portMatchesParameter(sourcePort, parameter),
             )?.name
-            ? `parameter:${targetCapability.parameters.find((parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter))?.name}`
+            ? `parameter:${targetCapability.parameters.find((parameter) => parameter.name !== 'project_path' && portMatchesParameter(sourcePort, parameter))?.name}`
             : ''
           : '');
       if (!targetPort) return;
@@ -1617,7 +1653,7 @@ export default function CanvasShell({
             sourcePort &&
             (nodePorts(targetCapability).inputs.some((port) => portMatchesPort(sourcePort, port)) ||
               targetCapability?.parameters.some(
-                (parameter) => parameter.name !== 'database_path' && portMatchesParameter(sourcePort, parameter),
+                (parameter) => parameter.name !== 'project_path' && portMatchesParameter(sourcePort, parameter),
               )),
           )
         );
@@ -1643,7 +1679,7 @@ export default function CanvasShell({
         capability?.canonical_id,
         capability?.label,
         capability?.definition,
-        capability?.domain,
+        capability?.plugin,
         capability?.module_id,
       ]
         .filter((value): value is string => typeof value === 'string')
@@ -2519,7 +2555,8 @@ export default function CanvasShell({
           const capability = node.capabilityId
             ? capabilities.operations.find((item) => item.canonical_id === node.capabilityId)
             : undefined;
-          const domainClass = (capability?.domain || 'core').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const pluginId = capability?.plugin || 'core';
+          const pluginClass = pluginClassName(pluginId);
           const outputArtifact = (port: NodePort) =>
             currentResults
               .filter(
@@ -2532,8 +2569,8 @@ export default function CanvasShell({
           return (
             <div
               key={node.id}
-              className={`sf-canvas-node ${node.kind} sf-domain-${domainClass} ${node.executionState === 'running' ? 'running' : ''}${selectedNodeIds.includes(node.id) ? ' selected' : ''}`}
-              style={{ left: node.x, top: node.y }}
+              className={`sf-canvas-node ${node.kind} sf-plugin-${pluginClass} ${node.executionState === 'running' ? 'running' : ''}${selectedNodeIds.includes(node.id) ? ' selected' : ''}`}
+              style={{ left: node.x, top: node.y, '--sf-domain-base': pluginColor(pluginId) } as CSSProperties}
               onMouseDown={(event) => beginNodeDrag(event, node)}
               onMouseUp={() => {
                 setInteraction(null);
@@ -2729,10 +2766,7 @@ export default function CanvasShell({
                           <span>{artifactSummary(outputArtifact(port) as ResultRecord)}</span>
                           {(() => {
                             const artifact = outputArtifact(port) as ResultRecord;
-                            const compatibleViewers = compatibleArtifactViewers({
-                              semanticType: artifact.contract_id,
-                              representation: artifact.representation,
-                            });
+                            const compatibleViewers = artifactViewers(artifact);
                             return compatibleViewers.length || isJsonArtifact(artifact) ? (
                               <>
                                 {compatibleViewers.map((viewer) => (
@@ -3512,13 +3546,12 @@ export default function CanvasShell({
               const metadata = `${template.module || 'core'} · ${ports.inputs.length} input${ports.inputs.length === 1 ? '' : 's'} · ${ports.outputs.length} output${ports.outputs.length === 1 ? '' : 's'}`;
               return (
                 <article
-                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-domain-${(
-                    template.domain || 'unknown'
-                  )
-                    .replace(/[^a-z0-9]+/gi, '-')
-                    .toLowerCase()}`}
+                  className={`sf-operation-deck-card sf-operation-deck-card-${operationDeckDensity(template.title, metadata)} sf-plugin-${pluginClassName(
+                    template.plugin || 'unknown',
+                  )}`}
+                  style={{ '--sf-domain-color': pluginColor(template.plugin) } as CSSProperties}
                   key={template.id}
-                  data-domain={template.domain || 'unknown'}
+                  data-plugin={template.plugin || 'unknown'}
                 >
                   <div className="sf-operation-deck-card-content">
                     <strong>{template.title}</strong>
@@ -3714,20 +3747,36 @@ export default function CanvasShell({
       ) : null}
       {artifactViewer ? (
         <ArtifactViewerHost
-          artifact={artifactViewer}
+          artifact={
+            artifactViewer.representation === 'json' && artifactPayload !== undefined
+              ? { ...artifactViewer, payload: artifactPayload }
+              : artifactViewer
+          }
           sessionId={project.session_id}
           viewerId={artifactViewerId ?? undefined}
           mode={artifactViewerMode}
           pluginApi={pluginApi}
           variant={
-            artifactViewerId !== null || isVisualizationArtifact(artifactViewer)
+            artifactViewerId !== null
               ? 'visualization'
               : artifactViewer.representation === 'table' || artifactViewerMode === 'table'
                 ? 'wide'
                 : 'json'
           }
           onClose={() => setArtifactViewer(null)}
-          fallback={<pre className="sf-artifact-viewer-json">{prettyArtifactPayload(artifactViewer.payload)}</pre>}
+          fallback={
+            artifactViewer.representation === 'json' &&
+            artifactViewer.payload === undefined &&
+            artifactPayload === undefined ? (
+              <div className="sf-artifact-viewer-json" role={artifactPayloadError ? 'alert' : 'status'}>
+                {artifactPayloadError ?? 'Loading result…'}
+              </div>
+            ) : (
+              <pre className="sf-artifact-viewer-json">
+                {prettyArtifactPayload(artifactPayload ?? artifactViewer.payload)}
+              </pre>
+            )
+          }
         />
       ) : null}
     </div>

@@ -4,16 +4,19 @@ import type { ViewerRegistration, ViewerRegistry } from '../viewers/viewerTypes'
 import type { VisualizationRenderer, VisualizationRegistry } from '../visualization/VisualizationRegistry';
 
 export const FRONTEND_PLUGIN_API_VERSION = '1.0' as const;
+export const FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION = 1 as const;
+export const FRONTEND_PLUGIN_MANIFEST_KIND = 'viewer' as const;
 
 export type FrontendPluginManifest = {
+  schemaVersion: typeof FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION;
+  kind: typeof FRONTEND_PLUGIN_MANIFEST_KIND;
   id: string;
   name: string;
   version: string;
   apiVersion: typeof FRONTEND_PLUGIN_API_VERSION;
   artifactContracts?: string[];
   artifactRepresentations?: string[];
-  visualizationTypes?: string[];
-  domains?: string[];
+  plugins?: string[];
   capabilities?: string[];
 };
 

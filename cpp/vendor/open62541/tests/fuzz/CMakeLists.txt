@@ -1,0 +1,164 @@
+get_property(open62541_BUILD_INCLUDE_DIRS TARGET open62541 PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
+include_directories(${open62541_BUILD_INCLUDE_DIRS})
+include_directories("${PROJECT_SOURCE_DIR}/deps")
+include_directories("${PROJECT_SOURCE_DIR}/src")
+include_directories("${PROJECT_SOURCE_DIR}/src/server")
+include_directories("${PROJECT_SOURCE_DIR}/tests/testing-plugins")
+
+if(NOT MSVC)
+    add_definitions(-Wno-deprecated-declarations)
+endif()
+
+if (UA_BUILD_FUZZING_CORPUS)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+    add_definitions(-DUA_CORPUS_OUTPUT_DIR="${PROJECT_BINARY_DIR}/corpus/custom")
+    file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/corpus/custom)
+
+    add_executable(corpus_generator ua_debug_dump_pkgs_file.c corpus_generator.c
+                                    ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_networklayers.c)
+    target_link_libraries(corpus_generator open62541 ${open62541_LIBRARIES})
+    assign_source_group(corpus_generator)
+    set_target_properties(corpus_generator PROPERTIES FOLDER "open62541/corpus_generator")
+    set_target_properties(corpus_generator PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    return()
+endif()
+
+remove_definitions(-std=c99 -Wmissing-prototypes -Wstrict-prototypes)
+set(CMAKE_CXX_STANDARD 11)
+
+if(NOT UA_BUILD_OSS_FUZZ)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+        MESSAGE(FATAL_ERROR "To build fuzzing, you need to use Clang as the compiler")
+    endif()
+
+    # oss-fuzz builds already include these flags
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O1 -fsanitize=address,undefined,fuzzer-no-link")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O1 -fsanitize=address,undefined,fuzzer-no-link")
+    elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.0)
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=address,undefined,fuzzer-no-link")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address,undefined,fuzzer-no-link")
+    else()
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=address,undefined,fuzzer-no-link")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address,undefined,fuzzer-no-link")
+    endif()
+
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.0)
+        set(LIBS Fuzzer)
+    endif()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+else()
+    set(LIBS $ENV{LIB_FUZZING_ENGINE})
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY $ENV{OUT})
+endif()
+
+list(APPEND LIBS "${open62541_LIBRARIES}")
+if(NOT UA_BUILD_OSS_FUZZ)
+    link_libraries("-fsanitize=address,undefined,fuzzer")
+endif()
+
+# the fuzzer test are built directly on the open62541 object files. so they can
+# access symbols that are hidden/not exported to the shared library
+
+set(FUZZER_TARGETS)
+
+macro(add_fuzzer FUZZER_NAME FUZZER_SOURCE)
+    add_executable(${FUZZER_NAME} ${FUZZER_SOURCE}
+                                  ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_networklayers.c
+                                  $<TARGET_OBJECTS:open62541-object>
+                                  $<TARGET_OBJECTS:open62541-plugins>)
+    target_link_libraries(${FUZZER_NAME} ${LIBS})
+    target_include_directories(${FUZZER_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/server)
+    target_include_directories(${FUZZER_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/client)
+    target_include_directories(${FUZZER_NAME} PRIVATE ${PROJECT_BINARY_DIR}/src_generated/mdnsd)
+    assign_source_group(${FUZZER_SOURCE})
+    list(APPEND FUZZER_TARGETS ${FUZZER_NAME})
+endmacro()
+
+# Add new fuzzers here
+add_fuzzer(fuzz_server_services fuzz_server_services.cc)
+add_fuzzer(fuzz_process_request fuzz_process_request.cc)
+add_fuzzer(fuzz_client fuzz_client.cc)
+# fuzz_client uses UA_Client_newForUnitTest from test_helpers.c (introduced by the
+# 1.5 refactor in commit 391de16e3). testing_clock.c is the transitive dependency
+# of test_helpers.c (UA_DateTime_now_fake). Link both only into this fuzzer so
+# the other fuzzers don't pull in unrelated plugin/eventloop code.
+target_sources(fuzz_client PRIVATE
+    ${PROJECT_SOURCE_DIR}/tests/testing-plugins/test_helpers.c
+    ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_clock.c)
+add_fuzzer(fuzz_pubsub_connection_config fuzz_pubsub_connection_config.cc)
+add_fuzzer(fuzz_binary_message fuzz_binary_message.cc)
+add_fuzzer(fuzz_opn_message fuzz_opn_message.cc)
+add_fuzzer(fuzz_msg_message fuzz_msg_message.cc)
+add_fuzzer(fuzz_tcp_message fuzz_tcp_message.cc)
+add_fuzzer(fuzz_binary_decode fuzz_binary_decode.cc)
+add_fuzzer(fuzz_datatype_description fuzz_datatype_description.cc)
+add_fuzzer(fuzz_src_ua_util fuzz_src_ua_util.cc)
+add_fuzzer(fuzz_attributeoperand fuzz_attributeoperand.cc)
+add_fuzzer(fuzz_parse_string fuzz_parse_string.cc)
+
+# Fuzzer for mdns dependency
+if(UA_ENABLE_DISCOVERY_MULTICAST_MDNSD)
+    add_fuzzer(fuzz_mdns_message fuzz_mdns_message.cc)
+    add_fuzzer(fuzz_mdns_xht fuzz_mdns_xht.cc)
+endif()
+
+add_fuzzer(fuzz_base64_encode fuzz_base64_encode.cc)
+add_fuzzer(fuzz_base64_decode fuzz_base64_decode.cc)
+
+if(UA_ENABLE_JSON_ENCODING)
+    add_fuzzer(fuzz_json_decode fuzz_json_decode.cc)
+    add_fuzzer(fuzz_json_decode_encode fuzz_json_decode_encode.cc)
+    add_fuzzer(fuzz_config_json fuzz_config_json.cc)
+    if(UA_ENABLE_PUBSUB)
+        add_fuzzer(fuzz_pubsub_json fuzz_pubsub_json.cc)
+    endif()
+endif()
+
+if(UA_ENABLE_PUBSUB)
+    add_fuzzer(fuzz_pubsub_binary fuzz_pubsub_binary.cc)
+endif()
+
+if(UA_ENABLE_ENCRYPTION)
+    add_fuzzer(fuzz_certificate_parse fuzz_certificate_parse.cc)
+endif()
+
+if(UA_ENABLE_XML_ENCODING)
+    add_fuzzer(fuzz_xml_decode_encode fuzz_xml_decode_encode.cc)
+endif()
+
+# EventFilter parser fuzzer
+if(UA_ENABLE_SUBSCRIPTIONS_EVENTS)
+    add_fuzzer(fuzz_eventfilter_parse fuzz_eventfilter_parse.cc)
+endif()
+
+# Run fuzzer on existing corpus to avoid regression
+file(GLOB CORPUS_FILES ${PROJECT_SOURCE_DIR}/tests/fuzz/fuzz_binary_message_corpus/generated/*)
+SET(CORPUS_CMDS "")
+FOREACH(f ${CORPUS_FILES})
+    LIST(APPEND CORPUS_CMDS COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/fuzz_binary_message "${f}")
+ENDFOREACH(f)
+
+file(GLOB OPN_CORPUS_FILES
+     ${PROJECT_SOURCE_DIR}/tests/fuzz/fuzz_binary_message_corpus/generated/*_opn.bin)
+FOREACH(f ${OPN_CORPUS_FILES})
+    LIST(APPEND CORPUS_CMDS COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/fuzz_opn_message "${f}")
+ENDFOREACH(f)
+
+file(GLOB MSG_CORPUS_FILES
+     ${PROJECT_SOURCE_DIR}/tests/fuzz/fuzz_binary_message_corpus/generated/*_msg_*.bin)
+FOREACH(f ${MSG_CORPUS_FILES})
+    LIST(APPEND CORPUS_CMDS COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/fuzz_msg_message "${f}")
+ENDFOREACH(f)
+
+
+#file(GLOB CORPUS_FILES ${PROJECT_SOURCE_DIR}/deps/mdnsd/tests/fuzz/fuzz_mdns_message_corpus/*)
+#FOREACH(f ${CORPUS_FILES})
+#    LIST(APPEND CORPUS_CMDS COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/fuzz_mdns_message "${f}")
+#ENDFOREACH(f)
+
+add_custom_target(run_fuzzer ${CORPUS_CMDS}
+                  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                  DEPENDS ${FUZZER_TARGETS}
+                  ${MAYBE_USES_TERMINAL})

@@ -150,7 +150,7 @@ def format_file(path):
 
 
 def discover_ttl_files():
-    """Find maintained Turtle files without hardcoding domain directories."""
+    """Find maintained Turtle files without hardcoding plugin directories."""
     semantic_dirs = sorted(path for path in CPP_ROOT.rglob("semantic") if path.is_dir())
     return sorted(path for directory in semantic_dirs for path in directory.rglob("*.ttl"))
 

@@ -10,8 +10,15 @@ import {
   useState,
 } from 'react';
 import logo from '../assets/streamfind.png';
+import {
+  blendPluginColors,
+  normalizePluginId,
+  pluginClassName,
+  pluginColor,
+} from '../framework/theme/pluginColors';
 
 import WorkflowCanvas from './WorkflowCanvas';
+import { ProjectFolderPicker } from './ProjectFolderPicker';
 import { NotificationToasts } from './NotificationCenter';
 import { StreamFindApiClient, type ProjectSession, type ServiceState } from '../framework/backend/StreamFindApiClient';
 import type {
@@ -29,18 +36,14 @@ import type {
 } from '../framework/backend/protocol';
 import { notifyApp } from '../framework/notifications/notificationBus';
 import {
-  forceDuckDbPath,
+  projectContainerPath,
   navigateHash,
-  navItems,
   palettes,
   projectNameFromPath,
   routeFromHash,
   styles,
   uniqueSessionId,
-  type NavItem,
   type Palette,
-  type ParsedRoute,
-  type RouteKey,
   type Style,
 } from './shell/appShellModel';
 
@@ -58,13 +61,25 @@ type WorkflowSummary = {
   revision?: number;
   state: WorkflowState;
   artifactCount?: number;
-  domains?: string[];
+  plugins?: string[];
 };
 const defaultWorkflowMetadata = {
   name: 'Untitled workflow',
   description: 'Describe the purpose of this workflow.',
 } satisfies Record<string, string>;
 const defaultWorkflowMetadataText = JSON.stringify(defaultWorkflowMetadata, null, 2);
+const recentProjectDiagnostics = new Map<string, number>();
+
+function notifyProjectDiagnostics(project: Partial<ProjectSession>): void {
+  for (const diagnostic of project.diagnostics ?? []) {
+    if (diagnostic.severity !== 'warning' || !diagnostic.message) continue;
+    const key = `${project.session_id ?? 'unknown'}:${diagnostic.code}:${diagnostic.message}`;
+    const now = Date.now();
+    if (now - (recentProjectDiagnostics.get(key) ?? 0) < 5000) continue;
+    recentProjectDiagnostics.set(key, now);
+    notifyApp({ kind: 'warning', message: diagnostic.message });
+  }
+}
 
 function requireWorkflowMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -91,9 +106,8 @@ type OntologyEntry = {
   dataKind?: string;
 };
 
-function workflowDomainClass(operation: string): string {
-  const domain = operation.split('.')[0] || 'core';
-  return domain.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+function workflowPluginClass(operation: string): string {
+  return pluginClassName(operation.split('.')[0]);
 }
 
 function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
@@ -157,7 +171,7 @@ function ontologyEntries(capabilities: ServiceCapabilities): OntologyEntry[] {
   };
   const tableFromPort = (port: CapabilityPort): TableContract | undefined => {
     if (port.table) return port.table;
-    if (port.data_kind !== 'duckdb_table' || !port.schema?.properties) return undefined;
+    if (port.data_kind !== 'table' || !port.schema?.properties) return undefined;
     const required = new Set(port.schema.required || []);
     return {
       table_contract_name: port.id,
@@ -695,11 +709,19 @@ function BootstrapGate({
 }
 function projectFileName(project: ProjectSession): string {
   return (
-    project.database_path
+    project.project_path
       .split(/[\\/]/)
       .pop()
       ?.replace(/\.[^.]+$/, '') || project.session_id
   );
+}
+function projectParentPath(path: string): string {
+  if (/^[A-Za-z]:[\\/]*$/.test(path)) return path.endsWith('\\') || path.endsWith('/') ? path : `${path}\\`;
+  if (path === '/') return '/';
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (separator < 0) return '';
+  if (/^[A-Za-z]:[\\/]/.test(path) && separator === 2) return path.slice(0, 3);
+  return path.slice(0, separator) || path.slice(0, separator + 1);
 }
 function formatDatabaseSize(bytes: number): string {
   const megabytes = bytes / (1024 * 1024);
@@ -707,59 +729,56 @@ function formatDatabaseSize(bytes: number): string {
   if (megabytes >= 1) return `${megabytes.toFixed(2)} MB`;
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
-function workflowDomains(workflow: WorkflowDefinition): string[] {
-  const domains = new Set(
+function workflowPlugins(workflow: WorkflowDefinition): string[] {
+  const plugins = new Set(
     workflow.operations.map((operation) => {
-      const domain = workflowDomainClass(operation.operation);
-      return domain === 'mass-spec' || domain === 'raman' || domain === 'sensors' || domain === 'statistics'
-        ? domain
-        : domain === 'streamfind'
-          ? 'streamfind'
-          : 'core';
+      return normalizePluginId(operation.operation.split('.')[0]);
     }),
   );
-  return domains.size ? [...domains].sort() : ['core'];
+  return [...plugins].sort();
 }
-function projectDomainColor(domains?: string[]): string {
-  const colors = (domains?.length ? domains : ['core']).map((domain) => `var(--sf-domain-${domain})`);
-  return colors
-    .slice(1)
-    .reduce(
-      (blend, color, index) =>
-        `color-mix(in srgb, ${blend} ${(100 * (index + 1)) / (index + 2)}%, ${color} ${100 / (index + 2)}%)`,
-      colors[0],
-    );
+function pluginLabel(plugins?: string[]): string {
+  const visiblePlugins = (plugins ?? []).filter((plugin) => plugin.toLowerCase() !== 'streamfind');
+  if (!visiblePlugins.length) return '';
+  if (visiblePlugins.length > 1) return 'Multiple plugins';
+  return visiblePlugins[0].replaceAll('-', '_');
+}
+function projectPluginColor(plugins?: string[]): string {
+  return blendPluginColors(plugins);
 }
 function ProjectCard({
   project,
   summary,
   onPreview,
   onOpenWorkflow,
+  onCopy,
   onClose,
 }: {
   project: ProjectSession;
   summary?: WorkflowSummary;
   onPreview: (project: ProjectSession) => void;
   onOpenWorkflow: (project: ProjectSession) => void;
+  onCopy: (project: ProjectSession) => void;
   onClose: (project: ProjectSession) => void;
 }) {
   const copyDatabasePath = async () => {
     try {
-      await navigator.clipboard.writeText(project.database_path);
-      notifyApp({ kind: 'success', message: 'Project database path copied.' });
+      await navigator.clipboard.writeText(project.project_path);
+      notifyApp({ kind: 'success', message: 'Project folder path copied.' });
     } catch {
       notifyApp({ kind: 'error', message: 'Project path could not be copied to the clipboard.' });
     }
   };
 
+  const plugins = summary?.plugins?.length ? summary.plugins : project.plugins ?? [];
+
   return (
     <article
       className="sf-project-row"
-      style={{ '--sf-project-domain-color': projectDomainColor(summary?.domains) } as CSSProperties}
+      style={{ '--sf-project-plugin-color': projectPluginColor(plugins) } as CSSProperties}
     >
       <div>
         <strong>{projectFileName(project)}</strong>
-        <span>{project.domains?.join(', ') || 'No domains'}</span>
         <div className="sf-workflow-summary">
           {summary ? (
             <>
@@ -793,13 +812,13 @@ function ProjectCard({
           </span>
         </div>
         <span className="sf-project-path">
-          <code>{project.database_path}</code>{' '}
+          <code>{project.project_path}</code>{' '}
           <button
             type="button"
             className="sf-project-path-copy"
             onClick={() => void copyDatabasePath()}
-            aria-label={`Copy database path for ${projectFileName(project)}`}
-            title="Copy database path"
+            aria-label={`Copy project folder path for ${projectFileName(project)}`}
+            title="Copy project folder path"
           >
             <i className="fa-solid fa-copy" aria-hidden="true" />
           </button>
@@ -821,6 +840,14 @@ function ProjectCard({
           title="Open workflow canvas"
         >
           <i className="fa-solid fa-diagram-project" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onCopy(project)}
+          aria-label={`Copy project ${projectFileName(project)}`}
+          title="Copy project"
+        >
+          <i className="fa-solid fa-clone" />
         </button>
 
         <button
@@ -903,7 +930,10 @@ const WorkflowOverviewGraph = memo(function WorkflowOverviewGraph({ workflow }: 
               return (
                 <g
                   key={operation.id}
-                  className={`sf-workflow-overview-node sf-domain-${workflowDomainClass(operation.operation)}`}
+                  className={`sf-workflow-overview-node sf-plugin-${workflowPluginClass(operation.operation)}`}
+                  style={
+                    { '--sf-overview-node-base': pluginColor(operation.operation.split('.')[0]) } as CSSProperties
+                  }
                   transform={`translate(${position.x}, ${position.y})`}
                 >
                   <rect width={nodeWidth} height={nodeHeight} rx="8" />
@@ -992,6 +1022,7 @@ function ProjectPreview({
         : workflowState === 'failed'
           ? 'failed'
           : 'idle';
+  const overviewPluginLabel = pluginLabel(workflow ? workflowPlugins(workflow) : project.plugins);
   return (
     <div
       className="sf-dialog-backdrop"
@@ -1010,8 +1041,10 @@ function ProjectPreview({
         </div>
         <div className="sf-project-overview-grid">
           <section className="sf-project-overview-details">
-            <span className="sf-project-preview-domain">{project.domains?.join(', ') || 'No domains'}</span>
-            <code>{project.database_path}</code>
+            {overviewPluginLabel ? (
+              <span className="sf-project-preview-plugin">{overviewPluginLabel}</span>
+            ) : null}
+            <code>{project.project_path}</code>
             <div className="sf-workflow-summary">
               <span>
                 {workflow?.operations.length ?? 0} operations · Revision {workflow?.version ?? 0}
@@ -1131,9 +1164,9 @@ function ProjectHub({
   client,
   onOpened,
   onAdded,
+  onProjectsRefreshed,
   onPreview,
   onOpenWorkflow,
-
   onCloseProject,
 }: {
   serviceState: ServiceState;
@@ -1141,13 +1174,20 @@ function ProjectHub({
   client: StreamFindApiClient | null;
   onOpened: (project: ProjectSession) => void;
   onAdded: (project: ProjectSession) => void;
+  onProjectsRefreshed: (projects: ProjectSession[]) => void;
   onPreview: (project: ProjectSession) => void;
   onOpenWorkflow: (project: ProjectSession) => void;
-
   onCloseProject: (project: ProjectSession) => void;
 }) {
   const [mode, setMode] = useState<'create' | 'open' | null>(null);
-  const [databasePath, setDatabasePath] = useState('');
+  const [parentPath, setParentPath] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [projectPath, setProjectPath] = useState('');
+  const [copySource, setCopySource] = useState<ProjectSession | null>(null);
+  const [copyParentPath, setCopyParentPath] = useState('');
+  const [copyProjectName, setCopyProjectName] = useState('');
+  const [copying, setCopying] = useState(false);
+  const [folderPickerMode, setFolderPickerMode] = useState<'parent' | 'project' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, WorkflowSummary>>({});
   const [demos, setDemos] = useState<WorkflowDemoMetadata[]>([]);
@@ -1160,12 +1200,27 @@ function ProjectHub({
       if (event.key !== 'Escape') return;
       if (demosOpen) setDemosOpen(false);
       else if (mode) setMode(null);
+      else if (copySource && !copying) setCopySource(null);
       else if (selectedDemo) setSelectedDemo(null);
       else setMode(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [demosOpen, mode, selectedDemo]);
+  }, [copySource, copying, demosOpen, mode, selectedDemo]);
+
+  useEffect(() => {
+    let active = true;
+    if (!client) return undefined;
+    void client
+      .projects()
+      .then((items) => {
+        if (active) onProjectsRefreshed(items);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [client, onProjectsRefreshed]);
 
   useEffect(() => {
     let active = true;
@@ -1205,7 +1260,7 @@ function ProjectHub({
                 ? {
                     operationCount: workflow.operations.length,
                     revision: workflow.version,
-                    domains: workflowDomains(workflow),
+                    plugins: workflowPlugins(workflow),
                   }
                 : {}),
               state: stateResult.value.state,
@@ -1253,7 +1308,7 @@ function ProjectHub({
                 ? {
                     operationCount: entry[2].operations.length,
                     revision: entry[2].version,
-                    domains: workflowDomains(entry[2]),
+                    plugins: workflowPlugins(entry[2]),
                   }
                 : {}),
               state: entry[1],
@@ -1297,17 +1352,18 @@ function ProjectHub({
     if (!client || !mode) return;
     setSubmitting(true);
     try {
-      const selectedPath = mode === 'create' ? forceDuckDbPath(databasePath) : databasePath.trim();
-      const projectName = projectNameFromPath(selectedPath);
-      const sessionId = mode === 'create' ? uniqueSessionId(projectName, projects) : projectName;
+      const selectedPath = mode === 'create' ? projectContainerPath(parentPath, projectName) : projectPath.trim();
+      const selectedName = projectNameFromPath(selectedPath);
+      const sessionId = mode === 'create' ? uniqueSessionId(selectedName, projects) : selectedName;
       const workflowMetadata =
         mode === 'create' ? requireWorkflowMetadata(JSON.parse(workflowMetadataText)) : undefined;
       const project = await client.createProject({
         session_id: sessionId,
-        database_path: selectedPath,
+        project_path: selectedPath,
         mode,
         workflow_metadata: workflowMetadata,
       });
+      if (mode === 'open') notifyProjectDiagnostics(project);
       if (selectedDemo && mode === 'create') {
         const initialDefinition = await client.workflowDefinition(project.session_id);
         const workflow = {
@@ -1323,7 +1379,7 @@ function ProjectHub({
       (mode === 'open' ? onAdded : onOpened)(project);
       notifyApp({
         kind: 'success',
-        message: `${selectedDemo ? 'Saved' : mode === 'create' ? 'Created' : 'Opened'} project ${projectName}${selectedDemo ? ` with ${selectedDemo.name}` : ''}.`,
+        message: `${selectedDemo ? 'Saved' : mode === 'create' ? 'Created' : 'Opened'} project ${selectedName}${selectedDemo ? ` with ${selectedDemo.name}` : ''}.`,
       });
       setSelectedDemo(null);
       setMode(null);
@@ -1333,16 +1389,61 @@ function ProjectHub({
       setSubmitting(false);
     }
   };
+  const beginCopy = (source: ProjectSession) => {
+    setCopySource(source);
+    setCopyParentPath(projectParentPath(source.project_path));
+    setCopyProjectName(`${projectFileName(source)}-copy`);
+  };
+  const submitCopy = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!client || !copySource) return;
+    setCopying(true);
+    const destinationPath = projectContainerPath(copyParentPath, copyProjectName);
+    let copied = false;
+    try {
+      await client.copyProject(copySource.session_id, destinationPath);
+      copied = true;
+      const name = projectNameFromPath(destinationPath);
+      const opened = await client.createProject({
+        session_id: uniqueSessionId(name, projects),
+        project_path: destinationPath,
+        mode: 'open',
+      });
+      onAdded(opened);
+      setCopySource(null);
+      notifyApp({ kind: 'success', message: `Copied and opened project ${name}.` });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Project copy failed.';
+      if (copied) {
+        setCopySource(null);
+        notifyApp({ kind: 'error', message: `Project was copied to ${destinationPath}, but could not be opened: ${detail}` });
+      } else {
+        notifyApp({ kind: 'error', message: detail });
+      }
+    } finally {
+      setCopying(false);
+    }
+  };
+  const chooseFolder = (targetMode: 'parent' | 'project') => {
+    if (!client) return;
+    setFolderPickerMode(targetMode);
+  };
   const canInteract = serviceState === 'ready' && client !== null;
+  let projectPathPreview = 'Choose a parent folder and project name';
+  if (parentPath && projectName) {
+    try { projectPathPreview = projectContainerPath(parentPath, projectName); }
+    catch { projectPathPreview = 'Enter a valid folder name'; }
+  }
   return (
     <div className="sf-page sf-project-hub">
       <div className="sf-card-grid">
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': projectPluginColor(['core']) } as CSSProperties}
           disabled={!canInteract}
           onClick={() => {
-            setDatabasePath('');
+            setParentPath('');
+            setProjectName('');
             setSelectedDemo(null);
             setWorkflowMetadataText(defaultWorkflowMetadataText);
             setMode('create');
@@ -1355,30 +1456,11 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': projectPluginColor(['core']) } as CSSProperties}
           disabled={!canInteract}
-          onClick={async () => {
-            if (!client) return;
-            setSubmitting(true);
-            try {
-              const path = await client.pickDatabaseFile();
-              const name =
-                path
-                  .split(/[\\/]/)
-                  .pop()
-                  ?.replace(/\.[^.]+$/, '') || 'project-session';
-              const project = await client.createProject({
-                session_id: name,
-                database_path: path,
-                mode: 'open',
-              });
-              onAdded(project);
-              notifyApp({ kind: 'success', message: `Opened project ${name}.` });
-            } catch (error) {
-              notifyApp({ kind: 'error', message: error instanceof Error ? error.message : 'Project open failed.' });
-            } finally {
-              setSubmitting(false);
-            }
+          onClick={() => {
+            setProjectPath('');
+            setMode('open');
           }}
         >
           <span className="sf-card-icon">
@@ -1388,7 +1470,7 @@ function ProjectHub({
         </button>
         <button
           className="sf-card action-card"
-          style={{ '--sf-project-domain-color': 'var(--sf-domain-core)' } as CSSProperties}
+          style={{ '--sf-project-plugin-color': projectPluginColor(['core']) } as CSSProperties}
           disabled={!canInteract}
           onClick={() => setDemosOpen(true)}
         >
@@ -1404,6 +1486,7 @@ function ProjectHub({
             summary={summaries[project.session_id]}
             onPreview={onPreview}
             onOpenWorkflow={onOpenWorkflow}
+            onCopy={beginCopy}
             onClose={onCloseProject}
           />
         ))}
@@ -1437,14 +1520,15 @@ function ProjectHub({
                     className="sf-demo-list-item"
                     style={
                       {
-                        '--sf-project-domain-color': projectDomainColor(workflowDomains(demo.workflow)),
+                        '--sf-project-plugin-color': projectPluginColor(workflowPlugins(demo.workflow)),
                       } as CSSProperties
                     }
                     onClick={() => {
                       const metadata = demo.workflow.metadata ?? {};
                       setSelectedDemo(demo);
                       setWorkflowMetadataText(JSON.stringify(metadata, null, 2));
-                      setDatabasePath('');
+                      setParentPath('');
+                      setProjectName('');
                       setDemosOpen(false);
                     }}
                   >
@@ -1478,7 +1562,10 @@ function ProjectHub({
             if (event.target === event.currentTarget && !submitting) setMode(null);
           }}
         >
-          <form className={`sf-dialog ${mode === 'create' ? 'sf-create-workflow-dialog' : ''}`} onSubmit={submit}>
+          <form
+            className={`sf-dialog ${mode === 'create' ? 'sf-create-workflow-dialog' : ''} ${mode === 'open' ? 'sf-open-project-dialog' : ''}`}
+            onSubmit={submit}
+          >
             <div className="sf-dialog-heading">
               <div>
                 <h2>
@@ -1496,41 +1583,29 @@ function ProjectHub({
               </button>
             </div>
             {mode === 'create' ? (
-              <label>
-                Project file
-                <div className="sf-input-with-button">
-                  <span className="sf-selected-file" title={databasePath || undefined}>
-                    {databasePath || 'No file selected'}
-                  </span>
-                  <button
-                    type="button"
-                    className="sf-button secondary"
-                    onClick={async () => {
-                      if (!client) return;
-                      try {
-                        setDatabasePath(forceDuckDbPath(await client.pickDatabaseFile('create')));
-                      } catch (error) {
-                        notifyApp({
-                          kind: 'error',
-                          message: error instanceof Error ? error.message : 'File selection failed.',
-                        });
-                      }
-                    }}
-                    disabled={submitting}
-                  >
-                    Create file
-                  </button>
+              <>
+                <label>
+                  Parent folder
+                  <div className="sf-input-with-button">
+                    <input value={parentPath} onChange={(event) => setParentPath(event.target.value)} placeholder="C:/projects" required />
+                    <button type="button" className="sf-button secondary" onClick={() => void chooseFolder('parent')} disabled={submitting}>Browse</button>
+                  </div>
+                </label>
+                <label>
+                  Project name
+                  <input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="river-screening" required />
+                </label>
+                <div className="sf-project-path-preview">
+                  Project folder: <code>{projectPathPreview}</code>
                 </div>
-              </label>
+              </>
             ) : (
               <label>
-                Database path
-                <input
-                  value={databasePath}
-                  onChange={(event) => setDatabasePath(event.target.value)}
-                  placeholder="C:/data/project.duckdb"
-                  required
-                />
+                Project folder (.sf)
+                <div className="sf-input-with-button">
+                  <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="C:/projects/river-screening.sf" required />
+                  <button type="button" className="sf-button secondary" onClick={() => void chooseFolder('project')} disabled={submitting}>Browse</button>
+                </div>
               </label>
             )}
 
@@ -1553,7 +1628,7 @@ function ProjectHub({
               <button type="button" className="sf-button secondary" onClick={() => setMode(null)} disabled={submitting}>
                 Cancel
               </button>
-              <button type="submit" className="sf-button" disabled={submitting || (mode === 'create' && !databasePath)}>
+              <button type="submit" className="sf-button" disabled={submitting || (mode === 'create' && (!parentPath || !projectName))}>
                 {submitting
                   ? 'Working…'
                   : mode === 'create'
@@ -1566,29 +1641,81 @@ function ProjectHub({
           </form>
         </div>
       ) : null}
-    </div>
-  );
-}
-function WorkspacePlaceholder({ item }: { item: NavItem }) {
-  return (
-    <div className="sf-page">
-      <div className="sf-page-heading">
-        <div>
-          <span className="sf-eyebrow">Project workspace</span>
-          <h1>{item.label}</h1>
-          <p>{item.hint}. This boundary is ready for the backend contract.</p>
+      {copySource ? (
+        <div
+          className="sf-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !copying) setCopySource(null);
+          }}
+        >
+          <form className="sf-dialog sf-copy-project-dialog" onSubmit={submitCopy}>
+            <div className="sf-dialog-heading">
+              <div><h2>Copy project</h2></div>
+              <button
+                type="button"
+                className="sf-icon-button sf-close-button"
+                onClick={() => setCopySource(null)}
+                disabled={copying}
+                aria-label="Close copy project dialog"
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+            <p>Copying {projectFileName(copySource)} keeps its workflow and project metadata, and starts with an empty results store.</p>
+            <label>
+              Parent folder
+              <div className="sf-input-with-button">
+                <input
+                  aria-label="Copy destination parent folder"
+                  value={copyParentPath}
+                  onChange={(event) => setCopyParentPath(event.target.value)}
+                  required
+                />
+                <button type="button" className="sf-button secondary" onClick={() => void chooseFolder('parent')} disabled={copying}>Browse</button>
+              </div>
+            </label>
+            <label>
+              Project name
+              <input
+                aria-label="Copy destination project name"
+                value={copyProjectName}
+                onChange={(event) => setCopyProjectName(event.target.value)}
+                required
+              />
+            </label>
+            <div className="sf-project-path-preview">
+              Project folder: <code>{copyParentPath && copyProjectName
+                ? projectContainerPath(copyParentPath, copyProjectName)
+                : 'Choose a parent folder and project name'}</code>
+            </div>
+            <div className="sf-dialog-actions">
+              <button type="button" className="sf-button secondary" onClick={() => setCopySource(null)} disabled={copying}>Cancel</button>
+              <button type="submit" className="sf-button" disabled={copying || !copyParentPath || !copyProjectName}>
+                {copying ? 'Copying…' : 'Copy project'}
+              </button>
+            </div>
+          </form>
         </div>
-        <span className="sf-status-pill neutral">No project selected</span>
-      </div>
-      <div className="sf-workspace-placeholder">
-        <div className="sf-placeholder-grid">
-          <span />
-          <span />
-          <span />
-        </div>
-        <strong>{item.label} is waiting for a project session</strong>
-        <p>The frontend shell intentionally contains no hard-coded domain inventory or local database access.</p>
-      </div>
+      ) : null}
+      {folderPickerMode && client ? (
+        <ProjectFolderPicker
+          client={client}
+          mode={folderPickerMode}
+          initialPath={folderPickerMode === 'project'
+            ? projectParentPath(projectPath)
+            : projectParentPath(copySource ? copyParentPath : parentPath)}
+          selectedPath={folderPickerMode === 'project'
+            ? projectPath
+            : copySource ? copyParentPath : parentPath}
+          onClose={() => setFolderPickerMode(null)}
+          onSelect={(path) => {
+            if (folderPickerMode === 'parent' && copySource) setCopyParentPath(path);
+            else if (folderPickerMode === 'parent') setParentPath(path);
+            else setProjectPath(path);
+            setFolderPickerMode(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1681,13 +1808,25 @@ function BackendStatusPane({
   state,
   onClose,
   endpoint,
-  serviceInstance,
+  serviceSession,
 }: {
   state: ServiceState;
   onClose: () => void;
   endpoint: string;
-  serviceInstance?: ServiceSession['service_instance'];
+  serviceSession: ServiceSession | null;
 }) {
+  const serviceInstance = serviceSession?.service_instance;
+  const startedAt = serviceInstance?.started_at;
+  const startedAtLabel = startedAt ? new Date(startedAt).toLocaleString() : 'unavailable';
+  const detail = (label: string, value: string | number | null | undefined, title?: string) => (
+    <div key={label}>
+      <dt>{label}</dt>
+      <dd title={title ?? (typeof value === 'string' ? value : undefined)}>
+        {value === null || value === undefined || value === '' ? 'unavailable' : value}
+      </dd>
+    </div>
+  );
+
   return (
     <div
       className="sf-side-pane-backdrop sf-backend-backdrop"
@@ -1704,36 +1843,25 @@ function BackendStatusPane({
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
-        <div className="sf-backend-state">
-          <span className={`sf-connection-dot ${state}`} />
-          <strong>{state === 'ready' ? 'healthy' : state}</strong>
-        </div>
-        <dl>
-          <div>
-            <dt>App client</dt>
-            <dd>
-              <span className="sf-health-check">running</span>
-            </dd>
+        <section className="sf-backend-section" aria-labelledby="sf-backend-service-heading">
+          <div className="sf-backend-section-heading">
+            <div>
+              <h3 id="sf-backend-service-heading">streamfind service</h3>
+            </div>
+            <span className={`sf-health-check ${state}`}>{state === 'ready' ? 'connected' : state}</span>
           </div>
-          <div>
-            <dt>streamfind service</dt>
-            <dd>
-              <span className={`sf-health-check ${state}`}>{state === 'ready' ? 'connected' : state}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>Endpoint</dt>
-            <dd>{endpoint.replace(/^https?:\/\//, '')}</dd>
-          </div>
-          <div>
-            <dt>Instance</dt>
-            <dd>{serviceInstance?.service_instance_id || 'unavailable'}</dd>
-          </div>
-          <div>
-            <dt>PID</dt>
-            <dd>{serviceInstance?.process_id ?? 'unavailable'}</dd>
-          </div>
-        </dl>
+          <dl>
+            {detail('Endpoint', endpoint.replace(/^https?:\/\//, ''))}
+            {detail('Instance ID', serviceInstance?.service_instance_id)}
+            {detail('Service process ID', serviceInstance?.process_id)}
+            {detail('Service executable', serviceInstance?.executable)}
+            {detail('Tray manager process ID', serviceInstance?.manager_process_id)}
+            {detail('Tray manager executable', serviceInstance?.manager_executable)}
+            {detail('Started', startedAtLabel, startedAt)}
+            {detail('API protocol', serviceInstance?.protocol_version)}
+            {detail('Open projects', serviceSession?.projects?.length ?? 0)}
+          </dl>
+        </section>
       </aside>
     </div>
   );
@@ -1747,13 +1875,11 @@ function AppShell({
   serviceState: ServiceState;
   serviceSession: ServiceSession | null;
 }) {
-  const [routeState, setRouteState] = useState<ParsedRoute>(routeFromHash);
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [palette, setPalette] = useState<Palette>(
     () => (localStorage.getItem('streamfind.palette') as Palette) || 'streamfind',
   );
   const [style, setStyle] = useState<Style>(() => (localStorage.getItem('streamfind.style') as Style) || 'classic');
-  const [collapsed, setCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [backendOpen, setBackendOpen] = useState(false);
   const [ontologyWikiTerm, setOntologyWikiTerm] = useState<string | null>(null);
@@ -1778,23 +1904,21 @@ function AppShell({
   const [activeProject, setActiveProject] = useState<ProjectSession | null>(null);
   const [previewProject, setPreviewProject] = useState<ProjectSession | null>(null);
   const projectOpen = activeProject !== null;
-  const route = routeState.route;
-  const effectiveRoute: RouteKey = projectOpen ? route : 'projects';
   useEffect(() => {
     let active = true;
-    const refreshProjects = () =>
+    const refreshProjects = (updateActiveProject = true) =>
       client
         .projects()
         .then((items) => {
           if (active) {
             setProjects(items);
+            if (!updateActiveProject) return;
             const sessionId = routeFromHash().sessionId;
             if (sessionId) {
               const project = items.find((item) => item.session_id === sessionId);
               if (project) {
                 setActiveProject(project);
               } else {
-                setRouteState({ route: 'projects' });
                 navigateHash('projects');
               }
             }
@@ -1802,8 +1926,27 @@ function AppShell({
         })
         .catch(() => undefined);
     const unsubscribe = client.subscribe((event) => {
-      if (event.type !== 'project.created' && event.type !== 'project.opened' && event.type !== 'project.closed')
+      const refreshAfterExecution =
+        event.type === 'operation.completed' ||
+        event.type === 'workflow.completed' ||
+        event.type === 'workflow.failed' ||
+        event.type === 'workflow.cancelled';
+      if (
+        event.type !== 'project.created' &&
+        event.type !== 'project.opened' &&
+        event.type !== 'project.closed' &&
+        event.type !== 'project.updated' &&
+        !refreshAfterExecution
+      )
         return;
+
+      if (refreshAfterExecution) {
+        // Execution changes result inventory and store size without changing
+        // the project list. Refresh descriptors so the hub card is current,
+        // while leaving the active canvas session untouched.
+        void refreshProjects(false);
+        return;
+      }
 
       // Project lifecycle events carry the session DTO. Apply it immediately so
       // the workspace responds to MCP or CLI changes without waiting for a
@@ -1813,15 +1956,15 @@ function AppShell({
       const changed = event.project;
       if (changed && typeof changed === 'object' && !Array.isArray(changed)) {
         const candidate = changed as Partial<ProjectSession>;
-        if (typeof candidate.session_id === 'string' && typeof candidate.database_path === 'string') {
+        if (typeof candidate.session_id === 'string' && typeof candidate.project_path === 'string') {
+          if (event.type === 'project.opened') notifyProjectDiagnostics(candidate);
           if (event.type === 'project.closed') {
             setProjects((items) => items.filter((item) => item.session_id !== candidate.session_id));
             if (routeFromHash().sessionId === candidate.session_id) {
               setActiveProject(null);
-              setRouteState({ route: 'projects' });
               navigateHash('projects');
             }
-          } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.domains)) {
+          } else if (typeof candidate.database_size_bytes === 'number' && Array.isArray(candidate.plugins)) {
             const project = candidate as ProjectSession;
             setProjects((items) => [project, ...items.filter((item) => item.session_id !== project.session_id)]);
             setActiveProject((current) => (current?.session_id === project.session_id ? project : current));
@@ -1856,10 +1999,16 @@ function AppShell({
     localStorage.setItem('streamfind.style', style);
   }, [style]);
   useEffect(() => {
-    const onHashChange = () => setRouteState(routeFromHash());
+    const onHashChange = () => {
+      const next = routeFromHash();
+      setActiveProject((current) => next.sessionId
+        ? projects.find((item) => item.session_id === next.sessionId) ??
+          (current?.session_id === next.sessionId ? current : null)
+        : null);
+    };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [projects]);
   useEffect(() => {
     if (!settingsOpen && !backendOpen && !previewProject) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1871,32 +2020,20 @@ function AppShell({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [backendOpen, previewProject, settingsOpen]);
-  const visibleNavItems = projectOpen ? navItems : navItems.filter((item) => item.key === 'projects');
-  const activeItem = useMemo(
-    () => navItems.find((item) => item.key === effectiveRoute) ?? navItems[0],
-    [effectiveRoute],
-  );
-  const navigate = (key: RouteKey) => {
-    const sessionId = projectOpen ? activeProject?.session_id : undefined;
-    navigateHash(key, sessionId);
-    setRouteState({ route: key, sessionId });
-  };
   const openProject = (project: ProjectSession) => {
     setPreviewProject(null);
     setActiveProject(project);
-    setRouteState({ route: 'workflow', sessionId: project.session_id });
     navigateHash('workflow', project.session_id);
   };
 
   const closeProject = () => {
     setActiveProject(null);
-    setRouteState({ route: 'projects' });
     navigateHash('projects');
   };
   const copyProjectPath = async () => {
-    if (!activeProject?.database_path) return;
+    if (!activeProject?.project_path) return;
     try {
-      await navigator.clipboard.writeText(activeProject.database_path);
+      await navigator.clipboard.writeText(activeProject.project_path);
       setProjectPathCopied(true);
       window.setTimeout(() => setProjectPathCopied(false), 1600);
     } catch {
@@ -1915,38 +2052,7 @@ function AppShell({
   };
 
   return (
-    <div className={`sf-shell ${collapsed ? 'collapsed' : ''}`}>
-      <aside className="sf-sidebar">
-        <div className="sf-brand">
-          <img src={logo} alt="" />
-          <div>
-            <strong>streamfind</strong>
-            <span>Scientific workspace</span>
-          </div>
-        </div>
-        <button className="sf-collapse" onClick={() => setCollapsed((value) => !value)} aria-label="Toggle navigation">
-          <i className={collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left'} />
-        </button>
-        <nav>
-          {visibleNavItems.map((item) => (
-            <button
-              key={item.key}
-              className={item.key === route ? 'active' : ''}
-              onClick={() => navigate(item.key)}
-              title={item.hint}
-            >
-              <span className="sf-nav-icon">
-                <i className={item.icon} />
-              </span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="sf-sidebar-footer">
-          <span className={`sf-connection-dot ${serviceState}`} />
-          <span>Service {serviceState}</span>
-        </div>
-      </aside>
+    <div className="sf-shell">
       <main className={`sf-main${activeProject ? ' sf-main-workspace' : ''}`}>
         <header className="sf-topbar">
           <div className="sf-context">
@@ -1959,8 +2065,8 @@ function AppShell({
                     type="button"
                     className="sf-context-copy"
                     onClick={() => void copyProjectPath()}
-                    aria-label="Copy project database path"
-                    title={projectPathCopied ? 'Project database path copied' : 'Copy project database path'}
+                    aria-label="Copy project folder path"
+                    title={projectPathCopied ? 'Project folder path copied' : 'Copy project folder path'}
                   >
                     <i className={`fa-solid ${projectPathCopied ? 'fa-check' : 'fa-copy'}`} />
                   </button>
@@ -2010,7 +2116,7 @@ function AppShell({
                 onProjectHub={closeProject}
                 onOpenOntologyWiki={(term) => setOntologyWikiTerm(term || '')}
               />
-            ) : effectiveRoute === 'projects' ? (
+            ) : (
               <ProjectHub
                 serviceState={serviceState}
                 projects={projects}
@@ -2021,12 +2127,11 @@ function AppShell({
                     items.some((item) => item.session_id === project.session_id) ? items : [...items, project],
                   )
                 }
+                onProjectsRefreshed={setProjects}
                 onPreview={setPreviewProject}
                 onOpenWorkflow={openProject}
                 onCloseProject={disconnectProject}
               />
-            ) : (
-              <WorkspacePlaceholder item={activeItem} />
             )}
           </ErrorBoundary>
         </div>
@@ -2064,7 +2169,7 @@ function AppShell({
           state={serviceState}
           onClose={() => setBackendOpen(false)}
           endpoint={client.endpoint()}
-          serviceInstance={serviceSession?.service_instance}
+          serviceSession={serviceSession}
         />
       ) : null}
       <NotificationToasts />

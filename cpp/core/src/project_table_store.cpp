@@ -16,40 +16,6 @@ namespace streamfind {
 
 namespace detail {
 
-void validate_visualization_spec(const std::string &payload) {
-    constexpr std::size_t max_payload_bytes = 16U * 1024U * 1024U;
-    if (payload.size() > max_payload_bytes)
-        throw std::invalid_argument("visualization specification exceeds the 16 MiB payload limit");
-    const auto spec = Json::parse(payload, nullptr, false);
-    if (spec.is_discarded() || !spec.is_object())
-        throw std::invalid_argument("visualization specification must be a JSON object");
-    if (spec.value("schema", "") != "streamfind.visualization/v1")
-        throw std::invalid_argument("visualization specification has an unsupported schema");
-    for (const auto *field : {"visualization_id", "semantic_type", "title", "data_mode"})
-        if (!spec.contains(field) || !spec.at(field).is_string() || spec.at(field).get<std::string>().empty())
-            throw std::invalid_argument(std::string("visualization specification requires ") + field);
-    const auto &renderer = spec.value("renderer", Json::object());
-    if (!renderer.is_object() || renderer.value("engine", "") != "plotly" ||
-        renderer.value("renderer_id", "") != "core.plotly" || renderer.value("spec_version", "") != "1")
-        throw std::invalid_argument("visualization specification has an unsupported renderer");
-    const auto data_mode = spec.at("data_mode").get<std::string>();
-    if (data_mode != "inline" && data_mode != "artifact")
-        throw std::invalid_argument("visualization specification has an unsupported data mode");
-    if (data_mode == "inline" && (!spec.contains("payload") || !spec.at("payload").is_object()))
-        throw std::invalid_argument("inline visualization specification requires an object payload");
-    if (data_mode == "artifact" &&
-        (!spec.contains("data_bindings") || !spec.at("data_bindings").is_array() || spec.at("data_bindings").empty()))
-        throw std::invalid_argument("artifact visualization specification requires data bindings");
-    const auto &provenance = spec.value("provenance", Json::object());
-    if (!provenance.is_object() || !provenance.contains("source_result_ids") ||
-        !provenance.at("source_result_ids").is_array() || provenance.at("source_result_ids").empty() ||
-        provenance.value("producer_operation_id", "").empty() || provenance.value("producer_node_id", "").empty())
-        throw std::invalid_argument("visualization specification requires complete provenance");
-    const auto &fallback = spec.value("fallback", Json::object());
-    if (!fallback.is_object() || fallback.value("description", "").empty())
-        throw std::invalid_argument("visualization specification requires fallback text");
-}
-
 std::string manifest_sql_type(const Json &column) {
     const auto type = column.at("type").get<std::string>();
     if (type == "string") return "VARCHAR";
@@ -339,18 +305,17 @@ void ProjectTableStore::transaction(Project &project,
 }
 
 void ProjectTableStore::install_manifest_schema(Project &project,
-                                                 const std::string &domain,
+                                                 const std::string &plugin,
                                                  const std::string &module_id) {
-    const auto manifest = catalogue::table_manifest_json(domain, "");
+    const auto manifest = catalogue::table_manifest_json(plugin, "");
     if (!manifest) throw Error(ErrorCode::SchemaMismatch, "module table manifest unavailable: " + module_id);
     std::vector<std::string> owned_tables;
     std::set<std::string> modules;
     for (const auto &table : *manifest)
     {
-        // Dynamic input contracts such as anyTable deliberately have no
-        // declared columns. They are resolved from the connected physical
-        // table at invocation time and must not be materialized as an empty
-        // DuckDB table.
+        // Generic input contracts such as anyTable have no owned project
+        // schema. Their column definitions live in published Arrow result
+        // manifests and must not be materialized as empty DuckDB tables.
         if (!table.value("columns", Json::array()).is_array() ||
             table.value("columns", Json::array()).empty()) {
             continue;
@@ -360,9 +325,9 @@ void ProjectTableStore::install_manifest_schema(Project &project,
     }
     ProjectTableStore::transaction(project, owned_tables, [&](ProjectTableStore &tables) {
         tables.execute(
-            "CREATE TABLE IF NOT EXISTS MODULE_SCHEMA (domain_id VARCHAR NOT NULL, module_id VARCHAR NOT NULL, "
+            "CREATE TABLE IF NOT EXISTS MODULE_SCHEMA (plugin_id VARCHAR NOT NULL, module_id VARCHAR NOT NULL, "
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
-            "PRIMARY KEY (domain_id, module_id))");
+            "PRIMARY KEY (plugin_id, module_id))");
         for (const auto &table : *manifest) {
             if (!table.value("columns", Json::array()).is_array() ||
                 table.value("columns", Json::array()).empty()) {
@@ -379,8 +344,8 @@ void ProjectTableStore::install_manifest_schema(Project &project,
         }
         for (const auto &installed_module : modules) {
             if (installed_module.empty()) continue;
-            tables.execute("DELETE FROM MODULE_SCHEMA WHERE domain_id = '" + domain + "' AND module_id = '" + installed_module + "'");
-            tables.execute("INSERT INTO MODULE_SCHEMA (domain_id, module_id, schema_version) VALUES ('" + domain + "', '" + installed_module + "', 1)");
+            tables.execute("DELETE FROM MODULE_SCHEMA WHERE plugin_id = '" + plugin + "' AND module_id = '" + installed_module + "'");
+            tables.execute("INSERT INTO MODULE_SCHEMA (plugin_id, module_id, schema_version) VALUES ('" + plugin + "', '" + installed_module + "', 1)");
         }
     });
 }
@@ -407,7 +372,7 @@ bool ProjectTableStore::has_table(const std::string &table_name) const {
 void ProjectTableStore::require(const std::vector<TableRequirement> &requirements) const {
     for (const auto &requirement : requirements) {
         if (!has_table(requirement.name))
-            throw Error(ErrorCode::SchemaMismatch, "missing domain table: " + requirement.name);
+            throw Error(ErrorCode::SchemaMismatch, "missing plugin table: " + requirement.name);
         if (requirement.required_columns.empty() && requirement.required_column_types.empty()) continue;
         const auto rows = impl_
             ? detail::store_query_json(*impl_, "DESCRIBE \"" + requirement.name + "\"")
@@ -418,7 +383,7 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
             });
             if (found == rows.end())
                 throw Error(ErrorCode::SchemaMismatch,
-                            "missing column " + column + " in domain table " + requirement.name);
+                            "missing column " + column + " in plugin table " + requirement.name);
         }
         for (const auto &[column, semantic_type] : requirement.required_column_types) {
             const auto found = std::find_if(rows.begin(), rows.end(), [&column](const auto &row) {
@@ -426,7 +391,7 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
             });
             if (found == rows.end())
                 throw Error(ErrorCode::SchemaMismatch,
-                            "missing column " + column + " in domain table " + requirement.name);
+                            "missing column " + column + " in plugin table " + requirement.name);
             const std::string actual = found->value("column_type", "");
             const auto hash = semantic_type.rfind('#');
             const std::string expected = hash == std::string::npos ? semantic_type : semantic_type.substr(hash + 1);
@@ -438,14 +403,14 @@ void ProjectTableStore::require(const std::vector<TableRequirement> &requirement
                 : expected == "array" || expected == "object" ? actual == "JSON"
                 : true;
             if (!compatible)
-                throw Error(ErrorCode::SchemaMismatch, "incompatible type for " + column + " in domain table " +
+                throw Error(ErrorCode::SchemaMismatch, "incompatible type for " + column + " in plugin table " +
                                                         requirement.name + ": expected " + expected + ", got " + actual);
         }
     }
 }
 
-void ProjectTableStore::require_manifest(const std::string &domain, const std::string &module_id) const {
-    const auto manifest = catalogue::table_manifest_json(domain, module_id);
+void ProjectTableStore::require_manifest(const std::string &plugin, const std::string &module_id) const {
+    const auto manifest = catalogue::table_manifest_json(plugin, module_id);
     if (!manifest) throw Error(ErrorCode::DatabaseError, "generated table manifest unavailable");
     std::vector<TableRequirement> requirements;
     for (const auto &table : *manifest) {
@@ -458,15 +423,15 @@ void ProjectTableStore::require_manifest(const std::string &domain, const std::s
     require(requirements);
 }
 
-void ProjectTableStore::require_installed_manifest(const std::string &domain,
+void ProjectTableStore::require_installed_manifest(const std::string &plugin,
                                                    const std::string &module_id,
                                                    int minimum_version) const {
     try {
         const auto rows = impl_
-            ? detail::store_query_json(*impl_, "SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = '" +
-                                       domain + "' AND module_id = '" + module_id + "' LIMIT 1")
-            : project_->query_json("SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = '" +
-                                   domain + "' AND module_id = '" + module_id + "' LIMIT 1");
+            ? detail::store_query_json(*impl_, "SELECT schema_version FROM MODULE_SCHEMA WHERE plugin_id = '" +
+                                       plugin + "' AND module_id = '" + module_id + "' LIMIT 1")
+            : project_->query_json("SELECT schema_version FROM MODULE_SCHEMA WHERE plugin_id = '" +
+                                   plugin + "' AND module_id = '" + module_id + "' LIMIT 1");
         if (rows.empty() || rows.at(0).value("schema_version", "") < std::to_string(minimum_version))
             throw Error(ErrorCode::SchemaMismatch, "module schema is not installed: " + module_id);
     } catch (const Error &) {
@@ -474,7 +439,7 @@ void ProjectTableStore::require_installed_manifest(const std::string &domain,
     } catch (const std::exception &) {
         throw Error(ErrorCode::SchemaMismatch, "module schema is not installed: " + module_id);
     }
-    require_manifest(domain, module_id);
+    require_manifest(plugin, module_id);
 }
 
 void ProjectTableStore::ensure_table(const std::string &table_name, const std::string &ddl) const {
@@ -536,80 +501,6 @@ void ProjectTableStore::append(
         return;
     }
     project_->append_rows(table_name, column_names, rows);
-}
-
-std::pair<std::string, std::string> ProjectTableStore::allocate_table_artifact(
-    const std::string &contract_id,
-    const std::string &producer_operation,
-    const std::string &producer_instance,
-    int workflow_revision,
-    const Json &columns) const {
-    if (!impl_ || contract_id.empty() || producer_operation.empty() ||
-        producer_instance.empty() || !columns.is_array() || columns.empty())
-        throw Error(ErrorCode::InvalidArgument, "invalid table artifact allocation");
-    static std::atomic_uint64_t sequence{0};
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto token = std::to_string(stamp) + "_" + std::to_string(sequence.fetch_add(1));
-    const std::string result_id = "artifact_" + token;
-    const std::string physical_table = "ARTIFACT_" + token;
-    std::vector<std::string> definitions;
-    for (const auto &column : columns) {
-        const auto name = column.at("name").get<std::string>();
-        if (name.empty() || name.find('\0') != std::string::npos)
-            throw Error(ErrorCode::InvalidArgument, "invalid dynamic table column name");
-        std::string quoted_name = "\"";
-        for (const char character : name)
-            quoted_name += character == '\"' ? "\"\"" : std::string(1, character);
-        definitions.push_back(quoted_name + "\" " + detail::manifest_sql_type(column));
-    }
-    std::string ddl = "CREATE TABLE " + physical_table + " (";
-    for (std::size_t index = 0; index < definitions.size(); ++index) {
-        if (index != 0) ddl += ", ";
-        ddl += definitions[index];
-    }
-    ddl += ")";
-    impl_->owned_tables.push_back(physical_table);
-    detail::store_query(*impl_, ddl);
-    const auto quote = [](const std::string &value) {
-        std::string output = "'";
-        for (const char character : value)
-            output += character == '\'' ? "''" : std::string(1, character);
-        return output + "'";
-    };
-    detail::store_query(*impl_,
-        "INSERT INTO RESULT_REGISTRY (result_id, contract_id, representation, physical_table, producer_operation, producer_instance, workflow_revision) VALUES (" +
-        quote(result_id) + ", " + quote(contract_id) + ", 'table', " +
-        quote(physical_table) + ", " + quote(producer_operation) + ", " +
-        quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
-    return {result_id, physical_table};
-}
-
-std::string ProjectTableStore::publish_result_artifact(
-    const std::string &contract_id,
-    const std::string &payload,
-    const std::string &producer_operation,
-    const std::string &producer_instance,
-    int workflow_revision) const {
-    if (!impl_ || contract_id.empty() || producer_operation.empty() ||
-        producer_instance.empty())
-        throw Error(ErrorCode::InvalidArgument, "invalid result artifact publication");
-    if (contract_id == "visualizationSpecResult") detail::validate_visualization_spec(payload);
-    static std::atomic_uint64_t sequence{0};
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto result_id = "artifact_" + std::to_string(stamp) + "_" +
-        std::to_string(sequence.fetch_add(1));
-    const auto quote = [](const std::string &value) {
-        std::string output = "'";
-        for (const char character : value)
-            output += character == '\'' ? "''" : std::string(1, character);
-        return output + "'";
-    };
-    detail::store_query(*impl_,
-        "INSERT INTO RESULT_REGISTRY (result_id, contract_id, representation, payload, producer_operation, producer_instance, workflow_revision) VALUES (" +
-        quote(result_id) + ", " + quote(contract_id) + ", 'json', " +
-        quote(payload) + "::JSON, " + quote(producer_operation) + ", " +
-        quote(producer_instance) + ", " + std::to_string(workflow_revision) + ")");
-    return result_id;
 }
 
 void ProjectTableStore::append_artifact_lineage(

@@ -17,6 +17,7 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/operations/fragmentation/expand_fragmentation_tree.cpp
     src/operations/fragmentation/filter_fragmentation_tree.cpp
     src/operations/chromatograms/operations.cpp
+    src/operations/quantification/operations.cpp
     src/operations/nta/operations.cpp
     src/operations/nta/nta_deconvolution.cpp
     src/operations/nta/nta_noise_estimation.cpp
@@ -39,6 +40,8 @@ add_library(streamfind_mass_spec_plugin SHARED
     src/utils/base.cpp
     src/utils/target_csv.cpp
     src/utils/chromatograms.cpp
+    src/utils/calibration.cpp
+    src/utils/quantification.cpp
     src/utils/nta.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/simdutf/simdutf.cpp"
     src/plugin_entrypoint.cpp)
@@ -90,27 +93,28 @@ if(MSVC)
 endif()
 
 install(TARGETS streamfind_mass_spec_plugin
-    RUNTIME DESTINATION plugins/mass_spec
-    LIBRARY DESTINATION plugins/mass_spec)
+    RUNTIME DESTINATION plugins/native/native.plugin.mass_spec
+    LIBRARY DESTINATION plugins/native/native.plugin.mass_spec)
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
     install(TARGETS streamfind_mass_spec_plugin
-        ARCHIVE DESTINATION sdk/lib)
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib)
     install(TARGETS libzstd_static
         EXPORT streamfind-cpp-targets
-        ARCHIVE DESTINATION sdk/lib
-        LIBRARY DESTINATION sdk/lib
-        RUNTIME DESTINATION sdk/bin)
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib
+        RUNTIME DESTINATION sdk/native/bin)
 endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/LICENSE"
     DESTINATION licenses RENAME zstd-LICENSE.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/zstd/COPYING"
     DESTINATION licenses RENAME zstd-COPYING.txt)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
-    DESTINATION plugins/mass_spec/ontology)
+    DESTINATION plugins/native/native.plugin.mass_spec/ontology)
 install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
-    DESTINATION plugins/mass_spec)
+    DESTINATION plugins/native/native.plugin.mass_spec)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
-    DESTINATION plugins/mass_spec/resources)
+    DESTINATION plugins/native/native.plugin.mass_spec/resources)
 if(STREAMFIND_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

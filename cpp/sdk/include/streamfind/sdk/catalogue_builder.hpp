@@ -16,6 +16,7 @@ struct STREAMFIND_SDK_API CatalogueBuildRequest {
     std::filesystem::path output_database;
     std::filesystem::path jena_home;
     std::string catalogue_kind{"plugin"};
+    std::string ontology_namespace;
 };
 
 struct STREAMFIND_SDK_API CatalogueBuildResult {

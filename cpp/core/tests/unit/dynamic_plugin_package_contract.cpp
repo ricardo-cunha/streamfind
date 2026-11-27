@@ -46,7 +46,7 @@ int main() {
             {"canonical_id", "stage9.ping"},
             {"label", "Ping"},
             {"definition", "A dynamic plugin ping operation."},
-            {"domain", "stage9"},
+            {"plugin", "stage9"},
             {"executable", true},
             {"parameters", streamfind::Json::array()},
             {"effects", streamfind::Json{{"reads", streamfind::Json::array()},

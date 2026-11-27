@@ -10,7 +10,7 @@ describe('StreamFindApiClient capability discovery', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(
-        response({ protocol_version: '1.0', domains: ['core'], modules: [{ domain: 'core', module_id: 'io' }] }),
+        response({ protocol_version: '1.0', plugins: ['core'], modules: [{ plugin: 'core', module_id: 'io' }] }),
       );
 
     const result = await new StreamFindApiClient('http://service').capabilitiesIndex();
@@ -19,38 +19,38 @@ describe('StreamFindApiClient capability discovery', () => {
     expect(result.modules[0].module_id).toBe('io');
   });
 
-  it('encodes domain and applies module and search filters for operation summaries', async () => {
+  it('encodes plugin and applies module and search filters for operation summaries', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       response({
         operations: [
-          { canonical_id: 'core:io/read', label: 'Read', domain: 'lab/core', module_id: 'io', definition: 'Read' },
+          { canonical_id: 'core:io/read', label: 'Read', plugin: 'lab/core', module_id: 'io', definition: 'Read' },
         ],
       }),
     );
 
     const result = await new StreamFindApiClient('http://service').capabilityOperations({
-      domain: 'lab/core',
+      plugin: 'lab/core',
       module: 'io',
       search: 'read',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://service/capabilities/operations?domain=lab%2Fcore&module=io&search=read',
+      'http://service/capabilities/operations?plugin=lab%2Fcore&module=io&search=read',
     );
     expect(result[0].canonical_id).toBe('core:io/read');
   });
 
-  it('loads domain modules and a complete operation by canonical id', async () => {
+  it('loads plugin modules and a complete operation by canonical id', async () => {
     const operation = { canonical_id: 'core:io/read', kind: 'operation' };
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(response({ domain: 'core', modules: ['io'] }))
+      .mockResolvedValueOnce(response({ plugin: 'core', modules: ['io'] }))
       .mockResolvedValueOnce(response(operation));
     const client = new StreamFindApiClient('http://service');
 
-    await expect(client.capabilityModules('core')).resolves.toEqual({ domain: 'core', modules: ['io'] });
+    await expect(client.capabilityModules('core')).resolves.toEqual({ plugin: 'core', modules: ['io'] });
     await expect(client.capabilityOperation('core:io/read')).resolves.toEqual(operation);
-    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://service/capabilities/domains/core/modules');
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://service/capabilities/plugins/core/modules');
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://service/capabilities/operations/core%3Aio%2Fread');
   });
 
@@ -154,5 +154,28 @@ describe('StreamFindApiClient capability discovery', () => {
     });
     expect(result.mode).toBe('sample');
     expect(result.total_rows).toBe(1000000);
+  });
+
+  it('loads a selected JSON payload without parsing string values', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ result_id: 'json-1', payload: '42' }));
+
+    await expect(new StreamFindApiClient('http://service').resultPayload('session-1', 'json-1')).resolves.toBe('42');
+    expect(fetchMock).toHaveBeenCalledWith('http://service/projects/session-1/results/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result_id: 'json-1' }),
+    });
+  });
+
+  it('preserves explicit JSON null and rejects a mismatched result payload', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({ result_id: 'json-1', payload: null }))
+      .mockResolvedValueOnce(response({ result_id: 'other', payload: {} }));
+    const client = new StreamFindApiClient('http://service');
+
+    await expect(client.resultPayload('session-1', 'json-1')).resolves.toBeNull();
+    await expect(client.resultPayload('session-1', 'json-1')).rejects.toThrow(
+      'Result payload response did not match the requested result',
+    );
   });
 });

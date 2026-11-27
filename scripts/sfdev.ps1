@@ -1,11 +1,13 @@
 #requires -Version 7.0
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+$scriptRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
+$root = (Resolve-Path -LiteralPath (Join-Path $scriptRoot '..')).Path
 $frontend = Join-Path $root 'frontend'
 $platform = if ($IsWindows) { 'windows-core' } else { 'linux-core' }
 $managedHome = $env:STREAMFIND_HOME ?? (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.streamfind')
 . (Join-Path $PSScriptRoot 'build/msys2-common.ps1')
 . (Join-Path $PSScriptRoot 'build/python-common.ps1')
+. (Join-Path $PSScriptRoot 'build/example-data-common.ps1')
 $ucrt = if ($IsWindows) { Get-StreamFindMSYS2Root $managedHome }
 $msys2ManagedRoot = Join-Path $managedHome 'tools/msys2'
 $bin = if ($IsWindows) { Join-Path $ucrt 'ucrt64/bin' }
@@ -41,34 +43,31 @@ function Show-Help([string]$Topic) {
         'env show' = @('env show [--json]', 'Show the checkout, default build directory, and resolved tool paths.', 'Use --json for machine-readable output.')
         'env shell' = @('env shell [--dry-run]', 'Open PowerShell 7 with a checkout-local sfdev command.', 'Starts in the repository root. Type exit to return to the parent shell.')
         'doctor' = @('doctor [--workflow native|frontend|scripts] [--json]', 'Check tool availability and version commands for a workflow.', 'Without --workflow, checks all listed tools. Returns a nonzero exit code on failure.')
-        'setup' = @('setup --components LIST [--dry-run]', 'Install native, java, frontend, browser, or python prerequisites.', 'Python setup reuses a compatible system interpreter or provisions the pinned Python under .streamfind/tools, then creates the repository .venv.')
+        'setup' = @('setup --components LIST [--dry-run]', 'Install native, java, frontend, browser, python, or data prerequisites.', 'The shared streamfind.data checkout is stored under .streamfind and downloaded on demand.')
         'configure' = @('configure [--config Debug|Release] [--dry-run]', 'Generate a native CMake build tree under the platform build directory.', "Defaults to $platform, Debug, and all plugins. CMake discovers all bundled plugins.", 'Example: sfdev configure --config Release')
         'build backend' = @('build backend [--target NAME] [--jobs N] [--dry-run]', 'Compile an existing native build with CMake.', "Configure first. Defaults to $platform and the default CMake target.", 'Example: sfdev build backend --target streamfind_statistics_unit')
         'build frontend' = @('build frontend [--dry-run]', 'Run npm run build in frontend/ and write assets to frontend/dist/.', 'Run sfdev setup --components frontend when Node.js/npm are missing or frontend dependencies are not installed.')
         'build all' = @('build all [--jobs N] [--dry-run]', 'Build the configured native build, then build frontend assets.', "Defaults to $platform. Requires both native configuration and frontend dependencies.")
         'test backend' = @('test backend [--list] [--filter REGEX] [--label REGEX] [--jobs N] [--dry-run]', 'List or run CTest tests in a native build.', "Defaults to $platform. Build the selected tests first. Use --list to inspect tests without running them.", "Example: sfdev test backend --filter '^streamfind_statistics_unit$'")
         'test frontend' = @('test frontend [--watch] [--dry-run] [-- ARGUMENTS]', 'Run Vitest once, or keep it running with --watch.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed.')
-        'test browser' = @('test browser --url URL [--dry-run]', 'Run the Playwright smoke check against a running frontend.', 'Install frontend dependencies and Playwright Chromium first.')
+        'test browser' = @('test browser [--url URL] [--dry-run]', 'Run the Playwright smoke check against the packaged app.', 'Build or refresh tmp/packaged_build first. Defaults to http://127.0.0.1:8787. Install frontend dependencies and Playwright Chromium first.')
         'check frontend' = @('check frontend [--dry-run]', 'Run the frontend build, lint, and formatting check in order.', 'Requires installed frontend dependencies. Stops at the first failed step.')
-        'run backend' = @('run backend [--url URL] [--dry-run]', 'Start a development service or use one that is already ready.', "Defaults to $platform and http://127.0.0.1:8790. Build the service and worker first.")
-        'run frontend' = @('run frontend [--url URL] [--dry-run]', 'Start Vite and connect it to an existing ready service.', 'Requires frontend dependencies. Run sfdev setup --components frontend first when needed. Defaults to http://127.0.0.1:8790.')
-        'run app' = @('run app [--url URL] [--dry-run]', 'Start Vite and start or reuse a development service.', 'Press Ctrl+C to stop processes started by this command.')
-        'package' = @('package [--frontend-only] [--dry-run]', 'Build the unpacked native-Windows test distribution under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only to refresh assets in an existing complete package.')
+        'package' = @('package [--frontend-only] [--dry-run]', 'Build or refresh the unpacked Windows app used for development verification under tmp/packaged_build/.', 'Run on the Windows development machine, never through WSL. The full workflow builds frontend and native targets, runs CTest, and stages the package. Use --frontend-only after UI changes to rebuild assets and update an existing package.')
         'clean' = @('clean --scope build|all-temp [--dry-run]', 'Remove the platform build tree or the contents of repository tmp/.', 'Use --dry-run to preview deletions. all-temp includes logs, test projects, packages, and release archives.')
         'script list' = @('script list [--json]', 'List public scripts under scripts/dev/ and show interpreter availability.', 'An available interpreter does not guarantee that the script has its required data or arguments.')
         'script info' = @('script info PATH', 'Show the interpreter, working directory, and invocation for a script.', 'Use a path from script list. Example: sfdev script info validate_native_dependencies.py')
         'script run' = @('script run PATH [--dry-run] [-- ARGUMENTS]', 'Run a development script from the checkout root and log to tmp/logs/.', 'Pass the script arguments after --. Python scripts use the repository .venv.', 'Example: sfdev script run validate_native_dependencies.py -- --help')
+        'workflows' = @('workflows nta|impurities|quantification [--project-name NAME] [--url ENDPOINT] [--force] [--dry-run]', 'Create a validated, editable workflow project through MCP in a running service.', 'Creates a .sf folder under tmp/projects/ and does not execute operations. --url selects the service endpoint. --force deletes the named .sf folder and workflow sidecar first; close that project in the app before replacing it.')
         'version show' = @('version show', 'Print the canonical streamfind version from VERSION.')
         'version bump' = @('version bump patch|minor|major [--dry-run]', 'Advance the canonical VERSION.', 'Resets lower components and prints the previous and next version.')
-        'sdk build' = @('sdk build [--dry-run]', 'Build the Windows kit and, when Ubuntu/WSL is available, the Linux kit.', 'Uses the canonical VERSION and runs each platform package validation.')
         'plugin list' = @('plugin list', 'List the bundled native plugin directories.')
-        'plugin new' = @('plugin new PATH [--kind backend|frontend|full] [--domain ID] [--dry-run]', 'Create an external plugin project.')
-        'plugin build' = @('plugin build PATH --sdk PATH [--dry-run]', 'Configure and compile an external native plugin against an installed developer kit.')
+        'plugin new' = @('plugin new PATH [--kind backend|frontend|full] [--plugin ID] [--dry-run]', 'Create an external plugin project.')
+        'plugin build' = @('plugin build PATH --sdk PATH [--dry-run]', 'Configure and compile an external native plugin against the SDK in a matching runtime archive.')
         'plugin test' = @('plugin test PATH [--dry-run]', 'Run the external native plugin CTest suite.')
-        'plugin stage' = @('plugin stage PATH [--dry-run]', 'Install a built external native plugin under tmp/build/.')
-        'plugin validate' = @('plugin validate PATH --sdk PATH [--dry-run]', 'Validate the staged native plugin with the developer kit validator.')
-        'release prepare' = @('release prepare [--dry-run]', 'Build and validate the runtime release archive for this host.', 'Requires a clean committed checkout. Run on Windows and Linux to produce both archives.')
-        'release verify' = @('release verify [--dry-run]', 'Verify checksums and smoke-test the extracted runtime for this host.', 'Uses the canonical VERSION and the repository Python environment.')
+        'plugin stage' = @('plugin stage PATH [--dry-run]', 'Install a built external native plugin under tmp/build/.../stage/plugins/custom/custom.plugin.<name>/.')
+        'plugin validate' = @('plugin validate PATH --sdk PATH [--dry-run]', 'Validate the staged native plugin with the validator from a matching runtime archive.')
+        'release prepare' = @('release prepare [--linux] [--distribution NAME] [--dry-run]', 'Build and validate a runtime release archive.', 'Without --linux, uses the current host. On Windows, --linux mirrors the checkout into the WSL user home under the worktree name, builds and tests there, then exports the archive back to tmp/release-output/. Requires a clean committed checkout.')
+        'release verify' = @('release verify [--linux] [--distribution NAME] [--dry-run]', 'Verify checksums and smoke-test an extracted runtime archive.', 'Without --linux, verifies the current host release. On Windows, --linux runs the extracted Linux package checks inside the native WSL worktree mirror.')
         'release publish' = @('release publish [--dry-run]', 'Publish checksum-verified runtime archives to GitHub.', 'Requires authenticated gh and an existing remote version tag.')
     }
     if (!$Topic) {
@@ -99,7 +98,7 @@ try {
     $command = $args[0]
     $subject = ''
     $index = 1
-    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'run', 'sdk', 'release', 'plugin') {
+    if ($command -in 'env', 'build', 'test', 'check', 'version', 'script', 'release', 'plugin', 'workflows') {
         if ($args.Count -lt 2) { throw "Missing subcommand for $command" }
         $subject = $args[1]
         $index = 2
@@ -128,17 +127,19 @@ try {
         'script/list' { 'json' }
         'script/info' { }
         'script/run' { 'dry-run' }
+        'workflows/nta' { 'project-name', 'url', 'force', 'dry-run' }
+        'workflows/impurities' { 'project-name', 'url', 'force', 'dry-run' }
+        'workflows/quantification' { 'project-name', 'url', 'force', 'dry-run' }
         'doctor/' { 'json', 'workflow' }
         'setup/' { 'components', 'dry-run' }
-        'sdk/build' { 'dry-run' }
         'plugin/list' { }
-        'plugin/new' { 'kind', 'domain', 'dry-run' }
+        'plugin/new' { 'kind', 'plugin', 'dry-run' }
         'plugin/build' { 'sdk', 'dry-run' }
         'plugin/test' { 'dry-run' }
         'plugin/stage' { 'dry-run' }
         'plugin/validate' { 'sdk', 'dry-run' }
-        'release/prepare' { 'dry-run' }
-        'release/verify' { 'dry-run' }
+        'release/prepare' { 'linux', 'distribution', 'dry-run' }
+        'release/verify' { 'linux', 'distribution', 'dry-run' }
         'release/publish' { 'dry-run' }
         'configure/' { 'config', 'dry-run' }
         'build/backend' { 'target', 'jobs', 'dry-run' }
@@ -149,17 +150,15 @@ try {
         'test/browser' { 'url', 'dry-run' }
         'clean/' { 'scope', 'dry-run' }
         'check/frontend' { 'dry-run' }
-        'run/backend' { 'url', 'dry-run' }
-        'run/frontend' { 'url', 'dry-run' }
-        'run/app' { 'url', 'dry-run' }
         'package/' { 'frontend-only', 'dry-run' }
         'version/show' { }
         'version/bump' { 'dry-run' }
         default { throw "Unknown command: $command $subject" }
     }
-    $logExecution = $command -in 'configure', 'build', 'test', 'check', 'package', 'setup', 'sdk', 'release' -or
+    $logExecution = $command -in 'configure', 'build', 'test', 'check', 'package', 'setup', 'release' -or
         ($command -eq 'plugin' -and $subject -ne 'list') -or
         "$command/$subject" -eq 'script/run'
+    if ($command -eq 'workflows') { $logExecution = $true }
     if ($logExecution) { $allowed = @($allowed) + 'json' }
     $options = @{}
     $forward = @()
@@ -173,7 +172,7 @@ try {
         if (!$argument.StartsWith('--') -or $name -notin $allowed -or $options.ContainsKey($name)) {
             throw "Unexpected option: $argument"
         }
-        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only') { $options[$name] = $true; continue }
+        if ($name -in 'json', 'list', 'watch', 'dry-run', 'frontend-only', 'force', 'linux') { $options[$name] = $true; continue }
         if (++$index -ge $args.Count -or ([string]$args[$index]).StartsWith('--')) { throw "Missing value for --$name" }
         $options[$name] = $args[$index]
     }
@@ -185,28 +184,11 @@ try {
     $managedNodeDir = Join-Path $managedHome "tools/node/v$nodeVersion/$(if ($IsWindows) { 'win-x64' } else { 'linux-x64' })"
     $managedNodeBin = Join-Path $managedNodeDir 'bin'
     if ($IsWindows) { $managedNodeBin = $managedNodeDir }
-    $nodeGlobal = Resolve-Tool node
-    $npmGlobal = Resolve-Tool $npmName
-    $nodeGlobalVersion = $null
-    $globalNodeCompatible = $false
-    if ($nodeGlobal -and $npmGlobal) {
-        try {
-            $nodeGlobalVersion = ((& $nodeGlobal --version 2>$null) -join '').Trim()
-            if ($LASTEXITCODE -eq 0 -and $nodeGlobalVersion -match '^v(\d+)\.(\d+)\.(\d+)') {
-                $nodeMajor = [int]$Matches[1]
-                $nodeMinor = [int]$Matches[2]
-                $globalNodeCompatible = ($nodeMajor -eq 22 -and $nodeMinor -ge 12) -or
-                    $nodeMajor -eq 24 -or $nodeMajor -ge 26
-            }
-        } catch { $globalNodeCompatible = $false }
-    }
     $nodeManaged = Join-Path $managedNodeBin $(if ($IsWindows) { 'node.exe' } else { 'node' })
     $npmManaged = Join-Path $managedNodeBin $npmName
-    $useManagedNode = !$globalNodeCompatible
-    $selectedNode = if ($useManagedNode -and (Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and (Test-Path -LiteralPath $npmManaged -PathType Leaf)) {
-        $nodeManaged
-    } elseif (!$useManagedNode) { $nodeGlobal } else { $null }
-    $selectedNpm = if ($selectedNode -eq $nodeManaged) { $npmManaged } elseif (!$useManagedNode) { $npmGlobal } else { $null }
+    $selectedNode = if ((Test-Path -LiteralPath $nodeManaged -PathType Leaf) -and
+        (Test-Path -LiteralPath $npmManaged -PathType Leaf)) { $nodeManaged } else { $null }
+    $selectedNpm = if ($selectedNode) { $npmManaged } else { $null }
     $tools = [ordered]@{
         pwsh = $pwsh
         git = Resolve-Tool git
@@ -219,7 +201,7 @@ try {
         ninja = if ($IsWindows) { Join-Path $bin 'ninja.exe' } else { Resolve-Tool ninja }
         python = Join-Path $root $(if ($IsWindows) { '.venv/Scripts/python.exe' } else { '.venv/bin/python' })
     }
-    $basePython = Get-StreamFindBasePython
+    $basePython = Get-StreamFindManagedPython -ManagedHome $managedHome
     $environment = [ordered]@{}
     if ($IsWindows) {
         $environment.STREAMFIND_MSYS2_ROOT = $ucrt
@@ -255,8 +237,7 @@ try {
                     else { 'MSYS2 UCRT64 found on PATH' }
                 }
                 { $_ -in 'node', 'npm' } {
-                    if ($entry.Value -and $entry.Value.StartsWith($managedNodeDir, [StringComparison]::OrdinalIgnoreCase)) { 'managed .streamfind tools' }
-                    else { 'PATH' }
+                    'managed .streamfind tools'
                 }
                 default { 'PATH' }
             }
@@ -272,13 +253,12 @@ try {
             } else {
                 $diagnostic = switch ($entry.Key) {
                     python {
-                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with Python $($basePython.Version)." }
+                        if ($basePython) { "Run sfdev setup --components python to create the repository .venv with managed Python $($basePython.Version)." }
                         else { 'Run sfdev setup --components python to install the pinned Python under .streamfind/tools and create the repository .venv.' }
                     }
                     { $IsWindows -and $_ -in 'cmake', 'ctest', 'gcc', 'gxx', 'ninja' } { 'Run sfdev setup --components native. Missing MSYS2 and UCRT64 packages are installed under .streamfind/tools.' }
                     { $_ -in 'node', 'npm' } {
-                        if ($nodeGlobal -and !$globalNodeCompatible) { "PATH Node.js $nodeGlobalVersion is incompatible with the frontend dependencies; setup installs the pinned compatible version under .streamfind/tools." }
-                        else { 'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.' }
+                        'Run sfdev setup --components frontend to install the pinned Node.js/npm bundle under .streamfind/tools.'
                     }
                     default { "Install $($entry.Key) and make it available on PATH." }
                 }
@@ -286,8 +266,12 @@ try {
             [ordered]@{ name = $entry.Key; path = $entry.Value; source = $source; available = $available
                 version = $version; diagnostic = $diagnostic }
         }
-        $dataRoot = Join-Path (Split-Path -Parent $root) 'streamfind.data'
+        $exampleData = Resolve-StreamfindExampleData
+        $dataRoot = $exampleData.RepositoryRoot
         $issues = @()
+        if (!(Test-Path -LiteralPath $exampleData.DataRoot -PathType Container)) {
+            $issues += "Shared example data is not installed. Run 'sfdev setup --components data' before data-backed builds or tests."
+        }
         if ($workflow -in 'all', 'native') {
             $cmakeVersion = ($inventory | Where-Object name -eq cmake).version
             if ($cmakeVersion -match '(\d+\.\d+\.\d+)' -and [version]$Matches[1] -lt [version]'3.25') {
@@ -317,7 +301,7 @@ try {
         }
         $report = [ordered]@{ checkout = $root; build_directory = $tree; workflow = $workflow
             managed_home = $managedHome; default_data_root = $dataRoot
-            default_data_available = (Test-Path -LiteralPath (Join-Path $dataRoot 'data') -PathType Container)
+            default_data_available = (Test-Path -LiteralPath $exampleData.DataRoot -PathType Container)
             tools = @($inventory); issues = $issues }
         if ($options.json) { $report | ConvertTo-Json -Depth 5 }
         else {
@@ -402,7 +386,7 @@ try {
         if ($subject -eq 'new') {
             $arguments = @((Join-Path $PSScriptRoot 'dev/plugin_generator.py'), 'init', $pluginPath)
             if ($options.kind) { $arguments += '--kind', $options.kind }
-            if ($options.domain) { $arguments += '--domain', $options.domain }
+            if ($options.plugin) { $arguments += '--plugin', $options.plugin }
             $steps += New-Step $root $tools.python $arguments
         } else {
             $source = Join-Path $pluginPath 'backend'
@@ -412,10 +396,10 @@ try {
             $pluginTree = Join-Path $root "tmp/build/external-plugins/$key"
             $stage = Join-Path $pluginTree 'stage'
             if ($subject -in 'build', 'validate') {
-                if (!$options.sdk) { throw 'Specify the extracted developer kit with --sdk PATH' }
+                if (!$options.sdk) { throw 'Specify the matching runtime archive with --sdk PATH' }
                 $kit = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($options.sdk)
-                $kitConfig = Join-Path $kit 'sdk/cmake/streamfind'
-                if (!(Test-Path -LiteralPath (Join-Path $kitConfig 'streamfindConfig.cmake'))) { throw "Developer kit CMake package missing: $kitConfig" }
+                $kitConfig = Join-Path $kit 'sdk/native/cmake/streamfind'
+                if (!(Test-Path -LiteralPath (Join-Path $kitConfig 'streamfindConfig.cmake'))) { throw "Runtime archive SDK CMake package missing: $kitConfig" }
                 $activePath = $environment.PATH ?? $env:PATH
                 $environment.PATH = (Join-Path $kit 'bin') + [IO.Path]::PathSeparator + $activePath
             }
@@ -436,38 +420,46 @@ try {
                     $manifestFile = Join-Path $pluginTree 'plugin.json'
                     $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
                     $platformKey = if ($IsWindows) { 'windows-x86_64' } else { 'linux-x86_64' }
-                    if ($manifest.domain -notmatch '^[a-z][a-z0-9_]*$') { throw 'Invalid manifest domain' }
-                    $validator = Join-Path $kit $(if ($IsWindows) { 'sdk/bin/streamfind_sdk_plugin_validator.exe' } else { 'sdk/bin/streamfind_sdk_plugin_validator' })
+                    if ($manifest.plugin -notmatch '^[a-z][a-z0-9_]*$') { throw 'Invalid manifest plugin' }
+                    $validator = Join-Path $kit $(if ($IsWindows) { 'sdk/native/bin/streamfind_sdk_plugin_validator.exe' } else { 'sdk/native/bin/streamfind_sdk_plugin_validator' })
+                    $pluginId = "custom.plugin.$($manifest.plugin)"
                     $steps += New-Step $root $validator @('--source-dir', $source,
-                        '--output-dir', (Join-Path $stage "plugins/$($manifest.domain)"),
-                        '--manifest', $manifestFile, '--domain', $manifest.domain, '--library', $manifest.library.$platformKey)
+                        '--output-dir', (Join-Path $stage "plugins/custom/$pluginId"),
+                        '--manifest', $manifestFile, '--plugin', $manifest.plugin, '--library', $manifest.library.$platformKey)
                 }
             }
         }
     }
     if ($command -eq 'setup') {
         $components = @($options.components -split ',')
-        if (!$options.components -or ($components | Where-Object { $_ -notin 'native', 'java', 'frontend', 'browser', 'python' })) {
-            throw 'Choose components from native, java, frontend, browser, python'
+        if (!$options.components -or ($components | Where-Object { $_ -notin 'native', 'java', 'frontend', 'browser', 'python', 'data' })) {
+            throw 'Choose components from native, java, frontend, browser, python, data'
+        }
+        if ('data' -in $components) {
+            $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-example-data.ps1'))
         }
         if ('python' -in $components) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-python.ps1'))
         }
         if ('native' -in $components) {
+            $provisioner = Join-Path $PSScriptRoot 'release/dev/streamfind-dev-setup.ps1'
             if ($IsWindows) {
-                $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-msys2.ps1'), '-Root', $ucrt)
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', $provisioner,
+                    '-Command', 'setup', '-Target', 'native', '-Workspace', $root)
             } elseif ($IsLinux) {
-                $steps += New-Step $root (Resolve-Tool sudo) @('apt-get', 'install', '--no-upgrade',
-                    'build-essential', 'cmake', 'ninja-build', 'libarrow-dev', 'libabsl-dev', 'libbrotli-dev',
-                    'libssl-dev', 'libprotobuf-dev', 'liblz4-dev', 'libre2-dev', 'libbz2-dev',
-                    'libutf8proc-dev', 'libcurl4-openssl-dev', 'zlib1g-dev')
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', $provisioner,
+                    '-Command', 'setup', '-Target', 'native', '-Workspace', $root)
             } else { throw 'Native package setup supports Windows MSYS2 UCRT64 and Ubuntu/Debian APT.' }
         }
         if ('native' -in $components -or 'java' -in $components) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-java.ps1'))
         }
         if (('frontend' -in $components -or 'browser' -in $components) -and !$tools.node) {
-            $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-node.ps1'))
+            $provisioner = Join-Path $PSScriptRoot 'release/dev/streamfind-dev-setup.ps1'
+            $provisionerArguments = @('-NoProfile', '-File', $provisioner,
+                '-Command', 'setup', '-Target', 'viewer', '-Workspace', $root)
+            if ('frontend' -in $components) { $provisionerArguments += @('-Viewer', $frontend) }
+            $steps += New-Step $root $pwsh $provisionerArguments
             $tools.node = $nodeManaged
             $tools.npm = $npmManaged
             $environment.PATH = if ($IsWindows) { "$managedNodeBin;$($environment.PATH ?? $env:PATH)" }
@@ -486,6 +478,7 @@ try {
         }
     }
     if ("$command/$subject" -eq 'test/browser') {
+        if (!$options.url) { $options.url = 'http://127.0.0.1:8787/' }
         $endpoint = $null
         if (![uri]::TryCreate($options.url, [UriKind]::Absolute, [ref]$endpoint) -or $endpoint.Scheme -notin 'http', 'https') {
             throw 'Specify an HTTP or HTTPS frontend URL with --url'
@@ -494,22 +487,38 @@ try {
         $environment.PLAYWRIGHT_BROWSERS_PATH = Join-Path $managedHome 'tools/playwright'
         $steps += New-Step $frontend $tools.npm @('run', 'browser:smoke')
     }
-    if ($command -eq 'run') {
-        $environment.STREAMFIND_DEV_BUILD_DIR = $tree
-        $environment.STREAMFIND_SERVICE_URL = $options.url ?? $env:STREAMFIND_SERVICE_URL ?? 'http://127.0.0.1:8790'
-        $arguments = @((Join-Path $frontend 'tools/dev/start-dev.mjs'))
-        if ($subject -eq 'backend') { $arguments += '--backend-only' }
-        if ($subject -eq 'frontend') { $arguments += '--frontend-only' }
-        $steps += New-Step $frontend $tools.node $arguments
+    if ($command -eq 'workflows') {
+        $workflowScripts = @{
+            nta = 'nta.ps1'
+            impurities = 'impurities.ps1'
+            quantification = 'quantification.ps1'
+        }
+        if (-not $workflowScripts.ContainsKey($subject)) {
+            throw 'Choose a workflow template: nta, impurities, or quantification.'
+        }
+        $workflowScript = Join-Path $PSScriptRoot "dev/workflows/$($workflowScripts[$subject])"
+        if (-not (Test-Path -LiteralPath $workflowScript -PathType Leaf)) { throw "Workflow helper is missing: $workflowScript" }
+        $workflowArguments = @('-NoProfile', '-File', $workflowScript)
+        if ($options['project-name']) { $workflowArguments += '-ProjectName', $options['project-name'] }
+        if ($options.url) { $workflowArguments += '-ServiceEndpoint', $options.url }
+        if ($options.force) { $workflowArguments += '-Force' }
+        $steps += New-Step $root $pwsh $workflowArguments
     }
-    if ($command -eq 'release' -and $subject -in 'verify', 'publish') {
+    if ($command -eq 'release' -and $subject -eq 'verify' -and $options.linux -and $IsWindows) {
+        $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
+        $linuxHelper = Join-Path $PSScriptRoot 'release/cpp/release-cpp-wsl.ps1'
+        $linuxArguments = @('-NoProfile', '-File', $linuxHelper, '-Command', 'verify', '-Version', $version)
+        if ($options.distribution) { $linuxArguments += '-Distribution', $options.distribution }
+        $steps += New-Step $root $pwsh $linuxArguments
+    } elseif ($command -eq 'release' -and $subject -in 'verify', 'publish') {
+        if ($options.linux) { throw '--linux is supported for release prepare and release verify on Windows, not release publish' }
         $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
         $arguments = @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'release/publish-release.ps1'), '-Version', $version)
         if ($subject -eq 'verify') { $arguments += '-VerifyOnly' }
         else { $arguments += '-RequireProvenance' }
         $steps += New-Step $root $pwsh $arguments
     }
-    if ($command -eq 'sdk' -or "$command/$subject" -eq 'release/prepare') {
+    if ("$command/$subject" -eq 'release/prepare') {
         $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
         if ($command -eq 'release' -and !$options['dry-run']) {
             $git = Resolve-Tool git
@@ -519,38 +528,17 @@ try {
             $releaseCommit = & $git -C $root rev-parse HEAD
             if ($LASTEXITCODE -ne 0 -or $releaseCommit -notmatch '^[0-9a-f]{40}$') { throw 'Cannot resolve the release source commit' }
         }
-        $scriptName = if ($command -eq 'sdk') { 'package-plugin-devkit' } else { 'release-cpp' }
         $scriptDirectory = Join-Path $PSScriptRoot 'release/cpp'
-        if ($command -eq 'sdk' -and $IsWindows) {
-            $windowsSdkScript = Join-Path $scriptDirectory 'package-plugin-devkit.ps1'
-            $steps += New-Step $root $pwsh @('-NoProfile', '-File', $windowsSdkScript, '-Version', $version)
-
-            $wsl = Resolve-Tool 'wsl.exe'
-            if ($wsl) {
-                $wslListing = & $wsl --list --quiet 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    $distributionNames = (($wslListing -join "`n").Replace([string][char]0, '') -split '\r?\n' |
-                        ForEach-Object { $_.Trim() } | Where-Object { $_ })
-                    $ubuntu = $distributionNames | Where-Object { $_ -match '^Ubuntu(?:[-_ ].*)?$' } | Select-Object -First 1
-                    if ($ubuntu) {
-                        $linuxSdkScript = Join-Path $scriptDirectory 'package-plugin-devkit-linux.sh'
-                        $linuxScriptPath = & $wsl --distribution $ubuntu --exec wslpath -a $linuxSdkScript
-                        if ($LASTEXITCODE -eq 0 -and $linuxScriptPath) {
-                            $linuxScriptPath = ([string]$linuxScriptPath).Replace([string][char]0, '').Trim()
-                            $steps += New-Step $root $wsl @('--distribution', $ubuntu, '--exec', '/usr/bin/env',
-                                'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-                                'STREAMFIND_SKIP_FRONTEND_BUILD=1', '/bin/bash', $linuxScriptPath, $version)
-                        } else {
-                            Write-Warning "Ubuntu WSL distribution '$ubuntu' is installed but could not resolve the Linux SDK build script path; building the Windows SDK only."
-                        }
-                    }
-                }
-            }
+        if ($IsWindows -and $options.linux) {
+            $linuxHelper = Join-Path $PSScriptRoot 'release/cpp/release-cpp-wsl.ps1'
+            $linuxArguments = @('-NoProfile', '-File', $linuxHelper, '-Command', 'prepare', '-Version', $version)
+            if ($options.distribution) { $linuxArguments += '-Distribution', $options.distribution }
+            $steps += New-Step $root $pwsh $linuxArguments
         } elseif ($IsWindows) {
             $steps += New-Step $root $pwsh @('-NoProfile', '-File',
-                (Join-Path $scriptDirectory "$scriptName.ps1"), '-Version', $version)
+                (Join-Path $scriptDirectory 'release-cpp.ps1'), '-Version', $version)
         } elseif ($IsLinux) {
-            $steps += New-Step $root (Resolve-Tool bash) @((Join-Path $scriptDirectory "$scriptName-linux.sh"), $version)
+            $steps += New-Step $root (Resolve-Tool bash) @((Join-Path $scriptDirectory 'release-cpp-linux.sh'), $version)
         } else { throw 'Release and SDK packaging support Windows and Linux' }
     }
     if ($command -eq 'package') {
@@ -609,6 +597,8 @@ try {
         $steps += New-Step $root $script.interpreter (@($arguments) + $forward)
     }
     if ($command -eq 'configure') {
+        $exampleData = Resolve-StreamfindExampleData
+        $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-example-data.ps1'))
         $config = $options.config ?? 'Debug'
         if ($config -cnotin 'Debug', 'Release') { throw 'Use Debug or Release for --config' }
         $cacheFile = Join-Path $tree 'CMakeCache.txt'
@@ -637,7 +627,8 @@ try {
             }
         }
         $steps += New-Step $root $tools.cmake @('--preset', $platform, '-S', (Join-Path $root 'cpp'),
-            '-B', $tree, "-DCMAKE_BUILD_TYPE=$config", '-DSTREAMFIND_ENABLED_PLUGINS=ALL', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON')
+            '-B', $tree, "-DCMAKE_BUILD_TYPE=$config", '-DSTREAMFIND_ENABLED_PLUGINS=ALL',
+            "-DSTREAMFIND_DATA_ROOT=$($exampleData.RepositoryRoot)", '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON')
     }
     if ($command -in 'build', 'test' -and $subject -in 'backend', 'all') {
         if (!$options['dry-run'] -and !(Test-Path -LiteralPath (Join-Path $tree 'CMakeCache.txt'))) {
@@ -649,6 +640,9 @@ try {
             if ($jobs) { $arguments += '--parallel', $jobs }
             $steps += New-Step $root $tools.cmake $arguments
         } else {
+            if (!$options.list) {
+                $steps += New-Step $root $pwsh @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'build/setup-example-data.ps1'))
+            }
             $arguments = @('--test-dir', $tree, '--output-on-failure')
             if ($options.list) { $arguments += '-N' }
             if ($options.filter) { $arguments += '-R', $options.filter }
@@ -718,12 +712,15 @@ try {
         if ($LASTEXITCODE -ne 0 -or $currentCommit -ne $releaseCommit) { throw 'Source commit changed during release preparation' }
         $changes = & $git -C $root status --porcelain
         if ($LASTEXITCODE -ne 0 -or $changes) { throw 'Checkout changed during release preparation' }
-        $archiveName = if ($IsWindows) { "streamfind-core-cpp-$version-Windows-x86_64.zip" }
-            else { "streamfind-core-cpp-$version-Linux-x86_64.tgz" }
+        $releaseIsLinux = [bool]$options.linux -or $IsLinux
+        $archiveName = if ($releaseIsLinux) { "streamfind-core-cpp-$version-Linux-x86_64.tgz" }
+            else { "streamfind-core-cpp-$version-Windows-x86_64.zip" }
         $archive = Join-Path $root "tmp/release-output/$archiveName"
         [ordered]@{ version = $version; commit = $releaseCommit; archive = $archiveName
             sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-            cmake = $tools.cmake; compiler = $tools.gxx; plugins = 'ALL' } |
+            cmake = if ($releaseIsLinux -and $IsWindows) { "WSL:$($options.distribution ?? 'Ubuntu')/cmake" } else { $tools.cmake }
+            compiler = if ($releaseIsLinux -and $IsWindows) { "WSL:$($options.distribution ?? 'Ubuntu')/g++" } else { $tools.gxx }
+            plugins = 'ALL' } |
             ConvertTo-Json | Set-Content -LiteralPath "$archive.provenance.json" -Encoding utf8
     }
     if ($options.json) {

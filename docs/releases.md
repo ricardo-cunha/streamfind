@@ -9,7 +9,7 @@ the browser workflow and result-viewing capabilities included in this version.
 
 Version {{ streamfind_version }} provides native runtime packages for Windows x64 and Linux
 x86_64. The packages include the built browser application, native service,
-MCP server, semantic catalogues, and built-in domain plugins.
+MCP server, semantic catalogues, and built-in plugins.
 
 The GitHub Release is the authoritative distribution location.
 
@@ -20,6 +20,19 @@ The project source is maintained at
 
 The native C++ project version is **{{ streamfind_version }}**.
 
+### Upgrade notes
+
+- MCP clients that replace a workflow with `set_workflow` must first call
+  `get_workflow` and include its current `definition_revision` in the submitted
+  workflow. Saves without that revision are rejected to prevent overwriting
+  concurrent app or MCP edits.
+- Projects are now `.sf` folders containing `project.duckdb` and `data/`.
+  Earlier standalone `.duckdb` projects are not migrated or opened by this
+  runtime. Open them with their matching streamfind release, export the
+  workflow JSON, then create a new `.sf` project, import and validate the
+  workflow, and rerun it. Keep the original database and sibling `.data`
+  folder unchanged until the rebuilt project has been checked.
+
 ## Available packages
 
 The {{ streamfind_version }} runtime distribution contains:
@@ -29,9 +42,11 @@ The {{ streamfind_version }} runtime distribution contains:
 - a checksum manifest covering both runtime archives.
 
 Runtime archives are intended for local use by the browser app, CLI, MCP
-clients, and native C++ applications.
-Developer kits must be used with the matching runtime version; the C++ ABI is
-not guaranteed across versions.
+clients, native C++ applications, and external plugin/viewer development. The
+runtime and embedded development payload are version-matched inside the same
+archive. `streamfind-dev --version` reports the same product version as the
+runtime; its provisioning protocol has a separate version identifier. The C++
+ABI is not guaranteed across releases.
 
 | Package | Archive | Platform | SHA-256 |
 | --- | --- | --- | --- |
@@ -65,6 +80,9 @@ The runtime archives contain:
   `bin/streamfind-app` browser launcher;
 - `bin/streamfind-mcp.exe` or `bin/streamfind-mcp`, the MCP server, plus C++ runtime libraries;
 - `core/catalogue.duckdb` and packaged plugin catalogues;
+- `bin/streamfind-dev` / `bin/streamfind-dev.exe`, the matching native SDK,
+  viewer SDK and verified development provisioning manifests. The developer
+  dispatcher reports the same product version as the runtime archive;
 - the native runtime dependencies assembled by CPack.
 
 Both archives contain the built web app under `app/` and all executable launchers
@@ -74,15 +92,12 @@ platform-specific instructions.
 
 The service is the shared control plane for the browser app, MCP, and CLI. It
 owns project sessions and DuckDB metadata access, supervises operation workers,
-and publishes validated results in the project `.data` sidecar. Closing the
+and publishes validated results in the project's `data/` directory. Closing the
 browser does not stop the service; use `bin/streamfind service status` or
 `bin/streamfind service stop` to inspect or stop it.
 
-### Developer kit
-
-The developer kit adds the headers, static libraries, CMake package, plugin
-validator, catalogue tools, and example plugin needed to build an out-of-tree
-C++ plugin. It is not required for normal use of the runtime package.
+The same archive supplies the headers, static libraries, CMake package, plugin
+validator, catalogue tools and viewer SDK needed for out-of-tree development.
 
 ## Legal and attribution files
 
@@ -121,14 +136,26 @@ streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64/
 │   ├── streamfind.exe
 │   ├── streamfind-app.exe
 │   ├── streamfind-mcp.exe
+│   ├── streamfind-dev.exe
 │   ├── streamfind-server.exe
 │   ├── streamfind-tray.exe
 │   ├── streamfind-worker.exe
 │   └── streamfind.json
 ├── core/
 │   └── catalogue.duckdb
-└── plugins/
-    └── mass_spec/
+├── plugins/
+│   ├── native/
+│   │   ├── native.plugin.mass_spec/
+│   │   ├── native.plugin.raman/
+│   │   ├── native.plugin.sensors/
+│   │   └── native.plugin.statistics/
+│   └── custom/
+├── viewers/
+│   ├── _shared/
+│   ├── native/
+│   └── custom/
+└── dev/
+    └── streamfind-dev-setup.ps1
 ```
 
 ## Release scope

@@ -40,13 +40,13 @@ void run() {
     const auto &mode = run_workflow.at("properties").at("execution_mode");
     if (mode.at("enum") != Json::array({"detailed", "pipeline"}) ||
         mode.at("default") != "detailed" ||
-        run_workflow.at("required") != Json::array({"database_path"})) {
+        run_workflow.at("required") != Json::array({"project_path"})) {
         throw std::runtime_error("MCP schema contract: run_workflow execution mode schema is misaligned");
     }
 
     const auto &transition = tool_named(tools, "transition_execution").at("inputSchema");
     if (!transition.at("properties").contains("execution_mode") ||
-        transition.at("required") != Json::array({"database_path", "status"})) {
+        transition.at("required") != Json::array({"project_path", "status"})) {
         throw std::runtime_error("MCP schema contract: transition_execution mode must be optional and advertised");
     }
 
@@ -54,7 +54,7 @@ void run() {
         tool_named(tools, "get_workflow_execution").at("inputSchema");
     if (!workflow_execution.at("properties").contains("operation_instance") ||
         workflow_execution.at("properties").at("operation_instance").at("type") != "integer" ||
-        workflow_execution.at("required") != Json::array({"database_path"})) {
+        workflow_execution.at("required") != Json::array({"project_path"})) {
         throw std::runtime_error(
             "MCP schema contract: operation status polling must accept an optional operation_instance");
     }
@@ -68,9 +68,51 @@ void run() {
             "MCP schema contract: set_workflow must require the latest definition_revision");
     }
 
+    const auto &create = tool_named(tools, "create");
+    const auto &create_properties = create.at("inputSchema").at("properties");
+    if (!create_properties.contains("project_metadata") ||
+        !create_properties.contains("workflow_metadata") ||
+        create_properties.contains("metadata") ||
+        create.at("inputSchema").at("required") != Json::array({"project_path"})) {
+        throw std::runtime_error(
+            "MCP schema contract: create must expose project and workflow metadata separately as optional inputs");
+    }
+
+    const auto &set_project_metadata = tool_named(tools, "set_project_metadata");
+    const auto &project_metadata_schema = set_project_metadata.at("inputSchema");
+    if (project_metadata_schema.at("required") != Json::array({"project_path", "project_metadata"}) ||
+        project_metadata_schema.at("properties").contains("metadata") ||
+        project_metadata_schema.at("properties").at("project_metadata").at("additionalProperties").at("type") !=
+            Json::array({"string", "number", "boolean", "null"})) {
+        throw std::runtime_error(
+            "MCP schema contract: set_project_metadata must have a scoped scalar-valued argument");
+    }
+
+    const auto &get_workflow_metadata = tool_named(tools, "get_workflow_metadata");
+    const auto &set_workflow_metadata = tool_named(tools, "set_workflow_metadata");
+    const auto &workflow_metadata_schema = set_workflow_metadata.at("inputSchema");
+    if (workflow_metadata_schema.at("required") !=
+            Json::array({"project_path", "workflow_metadata", "definition_revision"}) ||
+        workflow_metadata_schema.at("properties").contains("metadata") ||
+        workflow_metadata_schema.at("properties").at("workflow_metadata").at("required") !=
+            Json::array({"name", "description"}) ||
+        get_workflow_metadata.value("description", std::string{}).find("workflow definition") == std::string::npos ||
+        set_workflow_metadata.value("description", std::string{}).find("Operations and connections are preserved") == std::string::npos) {
+        throw std::runtime_error(
+            "MCP schema contract: workflow metadata tools must be scoped and preserve workflow structure");
+    }
+
+    for (const auto &tool : tools) {
+        if (tool.value("name", std::string{}) == "get_metadata" ||
+            tool.value("name", std::string{}) == "set_metadata") {
+            throw std::runtime_error(
+                "MCP schema contract: ambiguous metadata tool names must not be exposed");
+        }
+    }
+
     const auto &add = tool_named(tools, "add_operation").at("inputSchema");
     if (add.at("properties").contains("operation_id") ||
-        add.at("required") != Json::array({"database_path", "operation"})) {
+        add.at("required") != Json::array({"project_path", "operation"})) {
         throw std::runtime_error(
             "MCP schema contract: add_operation must omit operation_id and assign it automatically");
     }

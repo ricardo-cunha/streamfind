@@ -6,6 +6,7 @@
 #include "operations/fragmentation/expand_fragmentation_tree.hpp"
 #include "operations/fragmentation/filter_fragmentation_tree.hpp"
 #include "operations/chromatograms/operations.hpp"
+#include "operations/quantification/operations.hpp"
 #include "operations/nta/nta_deconvolution.hpp"
 #include "operations/nta/operations.hpp"
 #include "streamfind/plugin_abi.h"
@@ -54,7 +55,6 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.get_spectra_headers", sdk::CapabilityKind::Operation, &base::get_spectra_headers},
         {"mass_spec.get_chromatograms_headers", sdk::CapabilityKind::Operation, &base::get_chromatograms_headers},
         {"mass_spec.get_spectra_tic", sdk::CapabilityKind::Operation, &base::get_spectra_tic},
-        {"mass_spec.plot_spectra_tic", sdk::CapabilityKind::Operation, &base::plot_spectra_tic},
         {"mass_spec.get_raw_spectra", sdk::CapabilityKind::Operation, &base::get_raw_spectra},
         {"mass_spec.get_raw_spectra_eic", sdk::CapabilityKind::Operation, &base::get_raw_spectra_eic},
         {"mass_spec.get_raw_spectra_ms1", sdk::CapabilityKind::Operation, &base::get_raw_spectra_ms1},
@@ -67,6 +67,8 @@ const sdk::CapabilityRegistry &capabilities() {
         {"mass_spec.find_chromatogram_peaks", sdk::CapabilityKind::Operation, &chromatograms::find_chromatogram_peaks},
         {"mass_spec.correct_chromatogram_baseline", sdk::CapabilityKind::Operation, &chromatograms::correct_chromatogram_baseline},
         {"mass_spec.smooth_chromatograms", sdk::CapabilityKind::Operation, &chromatograms::smooth_chromatograms},
+        {"mass_spec.set_quantification_plan", sdk::CapabilityKind::Operation, &quantification::set_quantification_plan},
+        {"mass_spec.quantify", sdk::CapabilityKind::Operation, &quantification::quantify},
         {"mass_spec.find_features", sdk::CapabilityKind::Operation, &nta::deconvolution::find_features},
         {"mass_spec.load_features_ms1", sdk::CapabilityKind::Operation, &nta::load_features_ms1::run},
         {"mass_spec.load_features_ms2", sdk::CapabilityKind::Operation, &nta::load_features_ms2::run},
@@ -211,7 +213,7 @@ streamfind_plugin_status register_plugin(
     const streamfind_plugin_host_api *host, streamfind_plugin_api *plugin, void *) {
     if (host == nullptr || plugin == nullptr) return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     plugin->module_id = "mass_spec.nta";
-    plugin->domain_id = "mass_spec";
+    plugin->plugin_id = "native.plugin.mass_spec";
     plugin->invoke = &invoke;
     plugin->release_buffer = &release_buffer;
     plugin->describe_dependencies = &describe_dependencies;
@@ -235,7 +237,7 @@ streamfind_plugin_get_descriptor(
     descriptor->struct_size = sizeof(*descriptor);
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
-    descriptor->plugin_id = "mass_spec";
+    descriptor->plugin_id = "native.plugin.mass_spec";
     descriptor->plugin_version = STREAMFIND_BUNDLED_PLUGIN_VERSION;
     descriptor->register_plugin = &streamfind::mass_spec::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::mass_spec::dynamic_detail::shutdown_plugin;

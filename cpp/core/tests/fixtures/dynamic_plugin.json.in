@@ -1,13 +1,15 @@
 {
+  "schema_version": 1,
   "plugin_id": "stage9.fixture",
   "name": "Stage 9 dynamic fixture",
   "version": "0.4.1",
-  "abi_version": { "major": 1, "minor": 0 },
+  "abi_version": { "major": 3, "minor": 0 },
   "sdk_compatibility": { "minimum": "0.4.0", "maximum": "0.4.x" },
   "library": {
     "@STREAMFIND_DYNAMIC_PLATFORM@": "@STREAMFIND_DYNAMIC_LIBRARY@"
   },
-  "domain": "stage9",
+  "plugin": "stage9",
+  "ontology_namespace": "https://streamfind.dev/catalogue/plugins/stage9#",
   "semantic_catalogue": "catalogue.duckdb",
   "static_composition": false,
   "platforms": ["@STREAMFIND_DYNAMIC_PLATFORM@"]

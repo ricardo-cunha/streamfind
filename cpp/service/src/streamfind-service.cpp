@@ -48,6 +48,12 @@ bool process_alive(const std::uint64_t process_id) {
 }  // namespace streamfind::service::process_detail
 
 int main(int argc, char **argv) {
+    try {
+        streamfind::service::ServiceDiscovery::configure_runtime_scope();
+    } catch (const std::exception &error) {
+        std::cerr << "streamfind-server: " << error.what() << '\n';
+        return 2;
+    }
     streamfind::configure_vendor_runtime_paths();
     const auto executable_path = argc > 0
                                      ? std::filesystem::absolute(argv[0])

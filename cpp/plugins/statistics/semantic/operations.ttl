@@ -1,12 +1,12 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/plugins/statistics#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfstat:pca
     a sf:Operation ;
     sf:operationId "statistics.pca" ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Principal component analysis" ;
@@ -34,7 +34,7 @@ sfstat:pca
 sfstat:pls
     a sf:Operation ;
     sf:operationId "statistics.pls" ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Partial least squares" ;
@@ -65,7 +65,7 @@ sfstat:pls
 sfstat:foldChange
     a sf:Operation ;
     sf:operationId "statistics.fold_change" ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Two-group fold-change analysis" ;

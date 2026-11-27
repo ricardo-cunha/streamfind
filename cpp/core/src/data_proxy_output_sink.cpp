@@ -1,4 +1,5 @@
 #include "streamfind/data_proxy_output_sink.hpp"
+#include "streamfind/result_table_schema.hpp"
 
 #include <array>
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <ctime>
 #include <arrow/api.h>
 #include <arrow/io/file.h>
 #include <arrow/io/memory.h>
@@ -38,46 +40,19 @@ public:
 #endif
         if (!opened.ok()) throw std::runtime_error(opened.status().ToString());
         sink_ = *opened;
-        schema_descriptor_ = schema;
         schema_ = schema_from_descriptor(schema);
     }
 
-    void append(const Json &rows) {
-        constexpr std::size_t max_estimated_batch_bytes = 8 * 1024 * 1024;
-        Json bounded_rows = Json::array();
-        std::size_t estimated_bytes = 0;
-        for (const auto &row : rows) {
-            const auto row_bytes = estimate_json_bytes(row);
-            if (!bounded_rows.empty() && row_bytes > max_estimated_batch_bytes -
-                    std::min(estimated_bytes, max_estimated_batch_bytes)) {
-                append_batch(bounded_rows);
-                bounded_rows = Json::array();
-                estimated_bytes = 0;
-            }
-            bounded_rows.push_back(row);
-            estimated_bytes = row_bytes > std::numeric_limits<std::size_t>::max() - estimated_bytes
-                ? std::numeric_limits<std::size_t>::max() : estimated_bytes + row_bytes;
-            if (estimated_bytes >= max_estimated_batch_bytes) {
-                // A single unusually large row is emitted alone. The file-backed
-                // contract has no message-size rejection; memory is bounded by
-                // that row's own payload plus one Arrow batch.
-                append_batch(bounded_rows);
-                bounded_rows = Json::array();
-                estimated_bytes = 0;
-            }
+    void append(const std::shared_ptr<arrow::RecordBatch> &batch) {
+        if (!batch || !schema_ || !batch->schema()->Equals(*schema_))
+            throw std::invalid_argument("Arrow record batch does not match its declared result schema");
+        if (!writer_) {
+            auto created = arrow::ipc::MakeFileWriter(sink_, schema_);
+            if (!created.ok()) throw std::runtime_error(created.status().ToString());
+            writer_ = *created;
         }
-        if (!bounded_rows.empty()) append_batch(bounded_rows);
+        require_arrow(writer_->WriteRecordBatch(*batch));
     }
-
-    Json diagnostics() const {
-        return {
-            {"oversized_row_count", oversized_row_count_},
-            {"largest_encoded_row_bytes", largest_encoded_row_bytes_},
-            {"largest_estimated_field", largest_estimated_field_},
-            {"largest_row_identity", largest_row_identity_}
-        };
-    }
-
     void finish() {
         if (!writer_) {
             auto created = arrow::ipc::MakeFileWriter(sink_, schema_);
@@ -91,131 +66,13 @@ public:
     }
 
 private:
-    static constexpr std::size_t max_arrow_batch_bytes = 8 * 1024 * 1024;
-
-    static std::size_t estimate_json_bytes(const Json &value) {
-        if (value.is_string()) return value.get_ref<const std::string &>().size() + 8;
-        if (value.is_object()) {
-            std::size_t bytes = 16;
-            for (const auto &[name, child] : value.items()) {
-                const auto child_bytes = estimate_json_bytes(child);
-                const auto item_bytes = name.size() + child_bytes + 8;
-                bytes = item_bytes > std::numeric_limits<std::size_t>::max() - bytes
-                    ? std::numeric_limits<std::size_t>::max() : bytes + item_bytes;
-            }
-            return bytes;
-        }
-        if (value.is_array()) {
-            std::size_t bytes = 16;
-            for (const auto &child : value) {
-                const auto child_bytes = estimate_json_bytes(child);
-                bytes = child_bytes > std::numeric_limits<std::size_t>::max() - bytes
-                    ? std::numeric_limits<std::size_t>::max() : bytes + child_bytes;
-            }
-            return bytes;
-        }
-        return 16;
-    }
-
-    void append_batch(const Json &rows) {
-        const auto encoded = data_proxy::arrow_ipc_encode_rows(rows, schema_descriptor_);
-        if (encoded.size() > max_arrow_batch_bytes && rows.size() > 1) {
-            // The JSON-size estimate is deliberately conservative, but nested
-            // Arrow arrays can still exceed it. Split by the encoded Arrow
-            // size before writing so every multi-row record batch respects the
-            // byte budget. A single large row remains allowed and is emitted
-            // alone because table rows are atomic at the operation API.
-            const auto midpoint = rows.size() / 2;
-            Json first = Json::array();
-            Json second = Json::array();
-            first.get_ref<Json::array_t &>().reserve(midpoint);
-            second.get_ref<Json::array_t &>().reserve(rows.size() - midpoint);
-            for (std::size_t index = 0; index < rows.size(); ++index)
-                (index < midpoint ? first : second).push_back(rows.at(index));
-            append_batch(first);
-            append_batch(second);
-            return;
-        }
-        if (rows.size() == 1 && encoded.size() > max_arrow_batch_bytes) {
-            ++oversized_row_count_;
-            if (encoded.size() > largest_encoded_row_bytes_) {
-                largest_encoded_row_bytes_ = encoded.size();
-                std::string largest_field;
-                std::size_t largest_field_bytes = 0;
-                Json identity = Json::object();
-                const auto &row = rows.front();
-                if (row.is_object()) {
-                    for (const auto &[name, value] : row.items()) {
-                        const auto field_bytes = estimate_json_bytes(value);
-                        if (field_bytes > largest_field_bytes) {
-                            largest_field = name;
-                            largest_field_bytes = field_bytes;
-                        }
-                        if (name == "row_key" || name == "feature" || name == "analysis" ||
-                            name == "feature_component")
-                            identity[name] = value;
-                    }
-                }
-                largest_estimated_field_ = {
-                    {"name", largest_field}, {"estimated_bytes", largest_field_bytes}
-                };
-                largest_row_identity_ = std::move(identity);
-            }
-        }
-        auto buffer = std::make_shared<arrow::Buffer>(encoded.data(), static_cast<int64_t>(encoded.size()));
-        auto source = std::make_shared<arrow::io::BufferReader>(buffer);
-        auto opened = arrow::ipc::RecordBatchStreamReader::Open(source);
-        if (!opened.ok()) throw std::runtime_error(opened.status().ToString());
-        const auto reader = *opened;
-        while (true) {
-            auto next = reader->Next();
-            if (!next.ok()) throw std::runtime_error(next.status().ToString());
-            const auto batch = *next;
-            if (!batch) break;
-            if (!writer_) {
-                if (schema_->num_fields() == 0) schema_ = batch->schema();
-                else if (!schema_->Equals(*batch->schema()))
-                    throw std::runtime_error("table output batch does not match its semantic Arrow schema");
-                auto created = arrow::ipc::MakeFileWriter(sink_, schema_);
-                if (!created.ok()) throw std::runtime_error(created.status().ToString());
-                writer_ = *created;
-            }
-            if (!schema_->Equals(*batch->schema()))
-                throw std::runtime_error("table output batch schema changed within one result");
-            require_arrow(writer_->WriteRecordBatch(*batch));
-        }
-    }
     static std::shared_ptr<arrow::Schema> schema_from_descriptor(const Json &columns) {
-        std::vector<std::shared_ptr<arrow::Field>> fields;
-        if (columns.is_array()) for (const auto &column : columns) {
-            if (!column.is_object()) continue;
-            const auto name = column.value("name", std::string{});
-            if (name.empty()) continue;
-            const auto type = column.value("type", std::string{"string"});
-            std::shared_ptr<arrow::DataType> arrow_type = arrow::utf8();
-            if (type == "integer") arrow_type = arrow::int64();
-            else if (type == "real" || type == "number") arrow_type = arrow::float64();
-            else if (type == "boolean") arrow_type = arrow::boolean();
-            else if (type == "array") {
-                const auto item_type = column.value("items", Json::object()).value("type", std::string{"number"});
-                if (item_type == "integer") arrow_type = arrow::list(arrow::int64());
-                else if (item_type == "number" || item_type == "real") arrow_type = arrow::list(arrow::float64());
-                else if (item_type == "string") arrow_type = arrow::list(arrow::utf8());
-                else throw std::invalid_argument("unsupported Arrow table list item type: " + item_type);
-            }
-            fields.push_back(arrow::field(name, arrow_type, column.value("nullable", true)));
-        }
-        return arrow::schema(std::move(fields));
+        return result_table_arrow_schema(columns);
     }
 
     std::shared_ptr<arrow::io::FileOutputStream> sink_;
     std::shared_ptr<arrow::Schema> schema_;
-    Json schema_descriptor_{Json::array()};
     std::shared_ptr<arrow::ipc::RecordBatchWriter> writer_;
-    std::uint64_t oversized_row_count_{0};
-    std::uint64_t largest_encoded_row_bytes_{0};
-    Json largest_estimated_field_{Json::object()};
-    Json largest_row_identity_{Json::object()};
 };
 
 void write_handle_bytes(std::intptr_t handle, std::uint64_t offset,
@@ -321,6 +178,11 @@ Json DataProxyOutputSink::begin(const Json &descriptor) {
     if (!payload.contains("result_id")) payload["result_id"] = create_result_id(payload);
     if (!payload.contains("run_id")) payload["run_id"] = run_id_;
     if (!payload.contains("format")) payload["format"] = "binary";
+    if (!payload.contains("extension")) {
+        const auto kind = payload.value("kind", std::string{});
+        const auto format = payload.value("format", std::string{"binary"});
+        payload["extension"] = kind == "table" && format == "arrow-ipc-file" ? "arrow" : format;
+    }
     payload["storage"] = "published";
     const auto contract_id = payload.value("contract_id", std::string{});
     if (!payload.contains("navigation_columns") && navigation_columns_by_contract_.contains(contract_id))
@@ -332,14 +194,30 @@ Json DataProxyOutputSink::begin(const Json &descriptor) {
     const auto output_port = payload.value("output_port", std::string{});
     const auto result_name = payload.value("result_name", operation_id_ + " / node " + operation_instance_);
     payload["result_name"] = result_name;
+    auto descriptor_metadata = payload;
+    for (const auto *field : {"result_id", "run_id", "extension", "storage"})
+        descriptor_metadata.erase(field);
     const auto response = request("allocate_result", {}, std::move(payload));
     const auto lease_id = response.value("lease_id", std::string{});
     const auto result_id = response.value("result_id", std::string{});
     if (lease_id.empty() || result_id.empty()) throw std::runtime_error("data-proxy did not return an output lease");
-    const auto writer = receive_writer_();
-    if (writer == -1) throw std::runtime_error("service did not provide the leased output handle");
+    std::intptr_t writer = -1;
+    try {
+        writer = receive_writer_();
+        if (writer == -1) throw std::runtime_error("service did not provide the leased output handle");
+    } catch (...) {
+        try {
+            request("abort_result", lease_id,
+                    {{"reason", "worker did not receive the leased output handle"},
+                     {"lease_id", lease_id}});
+        } catch (...) {
+            // Preserve the original handle-receive failure. The service also
+            // expires abandoned leases when the owning worker exits.
+        }
+        throw;
+    }
     Lease lease{lease_id, result_id, kind, format, 0, 0, 0, writer, nullptr, schema,
-                navigation_columns, contract_id, output_port, result_name};
+                std::move(descriptor_metadata), navigation_columns, contract_id, output_port, result_name};
     if (kind == "table")
         lease.arrow_writer = std::make_unique<output_detail::ArrowFileWriter>(writer, schema);
     else
@@ -363,50 +241,59 @@ void DataProxyOutputSink::write(const std::string &output_handle,
     ++iterator->second.next_sequence;
 }
 
-void DataProxyOutputSink::write_rows(const std::string &output_handle,
-                                     std::uint64_t sequence,
-                                     const Json &rows) {
-    if (!rows.is_array()) throw std::invalid_argument("table output rows must be an array");
+void DataProxyOutputSink::write_table_batch(
+    const std::string &output_handle, std::uint64_t sequence,
+    const std::shared_ptr<arrow::RecordBatch> &batch) {
     auto iterator = leases_.find(output_handle);
     if (iterator == leases_.end()) throw std::invalid_argument("output handle is not active");
     if (sequence != iterator->second.next_sequence)
-        throw std::invalid_argument("output row batches must be written sequentially");
-
-    if (iterator->second.schema.empty() && !rows.empty() && rows.front().is_object()) {
-        auto type_name = [](const Json &value) {
-            if (value.is_boolean()) return std::string("boolean");
-            if (value.is_number_integer()) return std::string("integer");
-            if (value.is_number_float()) return std::string("real");
-            if (value.is_array()) return std::string("array");
-            if (value.is_object()) return std::string("object");
-            return std::string("string");
-        };
-        for (const auto &[name, value] : rows.front().items())
-            iterator->second.schema.push_back({{"name", name}, {"type", type_name(value)}});
-    }
-
+        throw std::invalid_argument("typed table batches must be written sequentially");
     if (iterator->second.format != "arrow-ipc-file" || !iterator->second.arrow_writer)
-        throw std::invalid_argument("table result does not have an Arrow IPC file writer");
-    iterator->second.arrow_writer->append(rows);
-    iterator->second.row_count += rows.size();
+        throw std::invalid_argument("typed table batch requires an Arrow IPC result");
+    if (!batch) throw std::invalid_argument("Arrow table batch is null");
+    iterator->second.arrow_writer->append(batch);
+    iterator->second.row_count += static_cast<std::uint64_t>(batch->num_rows());
     ++iterator->second.next_sequence;
+}
+
+std::uint64_t DataProxyOutputSink::write_query_result(
+    const std::string &output_handle, std::uint64_t sequence, std::string_view sql) {
+    auto iterator = leases_.find(output_handle);
+    if (iterator == leases_.end()) throw std::invalid_argument("output handle is not active");
+    if (sequence != iterator->second.next_sequence)
+        throw std::invalid_argument("typed SQL result batches must be written sequentially");
+    if (iterator->second.kind != "table" || iterator->second.format != "arrow-ipc-file")
+        throw std::invalid_argument("direct SQL output requires an Arrow table lease");
+    if (iterator->second.row_count != 0 || iterator->second.written_by_service)
+        throw std::invalid_argument("direct SQL output must be the first and only output batch");
+    if (sql.empty()) throw std::invalid_argument("direct SQL output query is empty");
+    const auto response = request("write_query_result", iterator->second.lease_id,
+                                  {{"sql", std::string(sql)}});
+    const auto rows = response.value("row_count", std::uint64_t{0});
+    iterator->second.row_count = rows;
+    iterator->second.written_by_service = true;
+    ++iterator->second.next_sequence;
+    return rows;
 }
 
 Json DataProxyOutputSink::finish(const std::string &output_handle, const Json &metadata) {
     const auto iterator = leases_.find(output_handle);
     if (iterator == leases_.end()) throw std::invalid_argument("output handle is not active");
     if (!metadata.is_object()) throw std::invalid_argument("output metadata must be an object");
-    auto publish_metadata = metadata;
+    auto publish_metadata = iterator->second.descriptor_metadata;
+    for (const auto &[name, value] : metadata.items()) publish_metadata[name] = value;
     if (!publish_metadata.contains("kind")) publish_metadata["kind"] = iterator->second.kind;
     if (iterator->second.format == "arrow-ipc-file") {
-        if (!iterator->second.arrow_writer)
-            throw std::runtime_error("Arrow result writer is not active");
-        iterator->second.arrow_writer->finish();
-        const auto writer_diagnostics = iterator->second.arrow_writer->diagnostics();
-        if (writer_diagnostics.value("oversized_row_count", std::uint64_t{0}) > 0)
-            publish_metadata["output_diagnostics"] = writer_diagnostics;
-        iterator->second.arrow_writer.reset();
-        iterator->second.writer = -1;
+        if (iterator->second.written_by_service) {
+            iterator->second.arrow_writer.reset();
+            iterator->second.writer = -1;
+        } else {
+            if (!iterator->second.arrow_writer)
+                throw std::runtime_error("Arrow result writer is not active");
+            iterator->second.arrow_writer->finish();
+            iterator->second.arrow_writer.reset();
+            iterator->second.writer = -1;
+        }
     } else if (iterator->second.next_offset == 0) {
         // An operation may allocate an output and finish it without emitting
         // a batch (for example, an empty input produces an empty table).  The

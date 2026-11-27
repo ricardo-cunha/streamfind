@@ -1,15 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResultDataResponse } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryFilter, ResultQueryResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
+import { MassSpecFilterToolbar, type MassSpecFilterValues } from './MassSpecFilterToolbar';
+import { buildResultQueryFilter, filterValueMatches, formatFilterValue } from './massSpecFilterUtils';
 
-type EicRow = Record<string, string | null>;
+type EicRow = Record<string, unknown>;
 
-const GROUP_COLUMNS = ['analysis', 'name', 'replicate', 'polarity', 'level'] as const;
-const DEFAULT_GROUP = ['analysis', 'name'];
+const SELECT_BY_COLUMNS = [
+  ['analysis', 'analysis'],
+  ['name', 'name'],
+  ['replicate', 'replicate'],
+  ['polarity', 'polarity'],
+  ['level', 'level'],
+] as const;
+const FILTER_COLUMNS = [
+  ['analysis', 'Analysis'],
+  ['name', 'Name'],
+  ['replicate', 'Replicate'],
+  ['polarity', 'Polarity'],
+  ['level', 'Level'],
+] as const;
+type SelectByColumn = (typeof SELECT_BY_COLUMNS)[number][0];
+const DEFAULT_GROUP: SelectByColumn[] = ['analysis', 'name'];
 const EMPTY_EIC_ROWS: EicRow[] = [];
+const INITIAL_EIC_ROW_LIMIT = 65536;
+const FILTERED_EIC_ROW_LIMIT = 65536;
 type PlotTheme = { text: string; grid: string; background: string };
 
 function getPlotTheme(): PlotTheme {
@@ -23,12 +41,21 @@ function getPlotTheme(): PlotTheme {
 }
 
 function text(row: EicRow, column: string): string {
-  return row[column] ?? '';
+  const value = row[column];
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function number(row: EicRow, column: string): number {
   const value = Number(row[column]);
   return Number.isFinite(value) ? value : 0;
+}
+
+function filterRows(rows: EicRow[], filters: MassSpecFilterValues): EicRow[] {
+  return rows.filter((row) =>
+    Object.entries(filters).every(
+      ([column, values]) => !values.length || filterValueMatches(column, text(row, column), values),
+    ),
+  );
 }
 
 function makeSpec(rows: EicRow[], colorGrouping: string[], resultId: string, theme: PlotTheme): VisualizationSpec {
@@ -107,14 +134,24 @@ function makeSpec(rows: EicRow[], colorGrouping: string[], resultId: string, the
 export function EicTableViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
-  const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
-  const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
+  const [data, setData] = useState<{
+    resultId: string;
+    queryKey: string;
+    filters: MassSpecFilterValues;
+    response: ResultQueryResponse<unknown>;
+  } | null>(null);
+  const [optionValues, setOptionValues] = useState<Record<string, string[]>>({});
+  const [grouping, setGrouping] = useState<SelectByColumn[]>(DEFAULT_GROUP);
+  const [filters, setFilters] = useState<MassSpecFilterValues>({});
+  const [loadState, setLoadState] = useState<{ key: string; error?: string } | null>(null);
   const [, setThemeRevision] = useState(0);
   const resultId = artifact?.result_id ?? '';
-  const loading = !loadState || loadState.resultId !== resultId;
-  const error = loadState?.resultId === resultId ? loadState.error : undefined;
-  const currentData = data?.resultId === resultId ? data.response : null;
+  const activeFilters = useMemo(() => Object.entries(filters).filter(([, values]) => values.length), [filters]);
+  const queryKey = `${resultId}:${JSON.stringify(activeFilters)}`;
+  const loading = !loadState || loadState.key !== queryKey;
+  const error = loadState?.key === queryKey ? loadState.error : undefined;
+  const dataMatchesQuery = data?.resultId === resultId && data.queryKey === queryKey;
+  const currentData = dataMatchesQuery ? data.response : null;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeRevision((current) => current + 1));
@@ -125,40 +162,79 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
   useEffect(() => {
     if (!artifact || !client) return;
     let cancelled = false;
-    const loadAllRows = async () => {
-      const columns = ['analysis', 'replicate', 'name', 'polarity', 'level', 'rt', 'intensity'];
+    const loadDistinctOptions = async () => {
       const response = await client.resultQuery(context.sessionId, {
         result_id: artifact.result_id,
-        mode: 'eic',
-        columns,
-        // The service downsamples each trace to this point budget. Keeping a
-        // bounded response prevents a large EIC result from blocking the
-        // viewer while preserving the full result for table access.
-        limit: 65536,
-        eic_max_points: 512,
+        mode: 'distinct',
+        distinct_columns: FILTER_COLUMNS.map(([column]) => column),
       });
-      if (!cancelled) {
-        setData({ resultId: artifact.result_id, response: { ...response, offset: 0, limit: response.rows.length } });
-        setLoadState({ resultId: artifact.result_id });
+      if (cancelled) return;
+      const values: Record<string, string[]> = {};
+      for (const [column] of FILTER_COLUMNS) {
+        const rawValues = response.distinct?.[column] ?? [];
+        values[column] = [...new Set(rawValues.map((value) => formatFilterValue(column, value)))];
       }
+      setOptionValues(values);
     };
-    void loadAllRows().catch((reason: unknown) => {
-      if (!cancelled)
-        setLoadState({
-          resultId: artifact.result_id,
-          error: reason instanceof Error ? reason.message : 'Unable to load EIC rows.',
-        });
+    void loadDistinctOptions().catch(() => {
+      if (!cancelled) setOptionValues({});
     });
     return () => {
       cancelled = true;
     };
   }, [artifact, client, context.sessionId]);
 
+  useEffect(() => {
+    if (!artifact || !client) return;
+    let cancelled = false;
+    const filtersForQuery: ResultQueryFilter[] = activeFilters.map(([column, values]) =>
+      buildResultQueryFilter(column, values),
+    );
+    const loadRows = async () => {
+      const response = await client.resultQuery(context.sessionId, {
+        result_id: artifact.result_id,
+        mode: activeFilters.length ? 'page' : 'eic',
+        columns: ['analysis', 'replicate', 'name', 'polarity', 'level', 'rt', 'intensity'],
+        filters: filtersForQuery,
+        // Keep the plotted EIC payload bounded while letting the service apply
+        // scalar filters before it reads the trace data.
+        limit: activeFilters.length ? FILTERED_EIC_ROW_LIMIT : INITIAL_EIC_ROW_LIMIT,
+        eic_max_points: 512,
+        preserveComplexCells: true,
+        compact_rows: true,
+      });
+      if (!cancelled) {
+        setData({
+          resultId: artifact.result_id,
+          queryKey,
+          filters: Object.fromEntries(activeFilters),
+          response: { ...response, offset: 0, limit: response.rows.length },
+        });
+        setLoadState({ key: queryKey });
+      }
+    };
+    const timer = window.setTimeout(() => {
+      void loadRows().catch((reason: unknown) => {
+        if (!cancelled)
+          setLoadState({
+            key: queryKey,
+            error: reason instanceof Error ? reason.message : 'Unable to load EIC rows.',
+          });
+      });
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeFilters, artifact, client, context.sessionId, queryKey]);
+
   const rows = currentData?.rows ?? EMPTY_EIC_ROWS;
+  const displayedFilters = dataMatchesQuery ? filters : data?.filters ?? filters;
+  const visibleRows = useMemo(() => filterRows(rows, displayedFilters), [displayedFilters, rows]);
   const theme = getPlotTheme();
   const spec = useMemo(
-    () => (rows.length ? makeSpec(rows, grouping, resultId, theme) : null),
-    [resultId, grouping, rows, theme],
+    () => (visibleRows.length ? makeSpec(visibleRows, grouping, resultId, theme) : null),
+    [resultId, grouping, visibleRows, theme],
   );
 
   if (!artifact || !client) return <div role="alert">EIC result data is unavailable.</div>;
@@ -169,37 +245,32 @@ export function EicTableViewer({ context }: ViewerComponentProps) {
         {error}
       </div>
     );
-  if (!rows.length || !spec) return <div className="sf-eic-viewer-state">No EIC rows are available.</div>;
-
   return (
     <div className="sf-eic-viewer">
-      <div className="sf-eic-viewer-toolbar" aria-label="EIC trace controls">
-        <span className="sf-eic-viewer-toolbar-label">Color/group traces by</span>
-        {GROUP_COLUMNS.map((column) => (
-          <label key={column}>
-            <input
-              type="checkbox"
-              checked={grouping.includes(column)}
-              onChange={() =>
-                setGrouping((current) => {
-                  if (current.includes(column)) {
-                    const next = current.filter((value) => value !== column);
-                    return next.length ? next : current;
-                  }
-                  return [...current, column];
-                })
-              }
-            />
-            {column}
-          </label>
-        ))}
-        <span className="sf-eic-viewer-summary">
-          {rows.length} rows · {spec.payload.data.length} traces
-        </span>
-      </div>
-      <div className="sf-eic-viewer-plot">
-        <VisualizationRenderer spec={spec} />
-      </div>
+      <MassSpecFilterToolbar
+        selectByColumns={SELECT_BY_COLUMNS}
+        filterColumns={FILTER_COLUMNS}
+        selectBy={grouping}
+        onSelectByChange={(columns) => setGrouping(columns as SelectByColumn[])}
+        optionValues={optionValues}
+        filters={filters}
+        onFiltersChange={setFilters}
+        summary={
+          <>
+            {visibleRows.length.toLocaleString()} rows · {(spec?.payload.data.length ?? 0).toLocaleString()} traces
+            {loading ? ' · loading…' : ''}
+          </>
+        }
+      />
+      {spec ? (
+        <div className="sf-eic-viewer-plot">
+          <VisualizationRenderer spec={spec} />
+        </div>
+      ) : (
+        <div className="sf-eic-viewer-state">
+          {activeFilters.length ? 'No EIC rows match the selected filters.' : 'No EIC rows are available.'}
+        </div>
+      )}
     </div>
   );
 }

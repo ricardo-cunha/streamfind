@@ -1,10 +1,12 @@
 #include "operations/fragmentation/expand_fragmentation_tree.hpp"
 
 #include "streamfind/core/vendors/openbabel.hpp"
+#include "streamfind/sdk/table_batch_builder.hpp"
 
 #include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -13,12 +15,13 @@ namespace streamfind::mass_spec::fragmentation::expand_fragmentation_tree
 using Json = nlohmann::json;
 namespace detail
 {
-std::string scalar_string(const Json &row, const char *key)
+struct SourceFragment
 {
-    const auto value = row.find(key);
-    if (value == row.end() || value->is_null()) return {};
-    return value->is_string() ? value->get<std::string>() : value->dump();
-}
+    std::string name;
+    std::string id;
+    std::string parent_id;
+    std::string smiles;
+};
 
 std::string suffix_after_last_underscore(const std::string &value)
 {
@@ -32,11 +35,11 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
 {
     const auto inputs = parameters.value("_inputs", Json::object());
     const auto input = inputs.find("fragmentationTreeTable");
-    if (input == inputs.end() || !input->is_object() || !input->contains("physical_table") ||
-        !input->at("physical_table").is_string())
+    if (input == inputs.end() || !input->is_object() || !input->contains("result_ref") ||
+        !input->at("result_ref").is_string())
         throw std::invalid_argument("Connect a fragmentationTreeTable input.");
 
-    const auto table = input->at("physical_table").get<std::string>();
+    const auto table = input->at("result_ref").get<std::string>();
     const int max_candidates = parameters.value("max_inverse_candidates", 500);
     if (max_candidates < 1) throw std::invalid_argument("max_inverse_candidates must be at least 1.");
     const int max_attachment_variants = parameters.value("max_attachment_variants_per_fragment", 8);
@@ -52,29 +55,39 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     const std::vector<std::string> columns = {
         "name", "fragment_id", "parent_id", "SMILES", "formula", "mass", "depth",
         "atom_indices", "broken_bond_indices", "neutral_losses", "fragment_data"};
-    const std::vector<std::string> types = {
-        "string", "string", "string", "string", "string", "real", "integer",
-        "array", "array", "array", "object"};
-    const auto source_rows = access.read(table, columns, "name");
+    std::vector<sdk::TableBatchBuilder::Column> schema{
+        {"name", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"fragment_id", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"parent_id", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"SMILES", STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"formula", STREAMFIND_PLUGIN_COLUMN_UTF8}, {"mass", STREAMFIND_PLUGIN_COLUMN_FLOAT64},
+        {"depth", STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"atom_indices", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"broken_bond_indices", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_INT64},
+        {"neutral_losses", STREAMFIND_PLUGIN_COLUMN_UTF8, true, STREAMFIND_PLUGIN_COLUMN_UTF8},
+        {"fragment_data", STREAMFIND_PLUGIN_COLUMN_UTF8}};
+    sdk::TableBatchBuilder output(std::move(schema));
+    std::vector<detail::SourceFragment> source_rows;
+    access.read_typed_batches(table, columns, [&](const sdk::PluginProjectAccess::BatchView &batch) {
+        const auto name_index = batch.column_index("name");
+        const auto id_index = batch.column_index("fragment_id");
+        const auto parent_index = batch.column_index("parent_id");
+        const auto smiles_index = batch.column_index("SMILES");
+        for (std::uint64_t row = 0; row < batch.row_count(); ++row)
+        {
+            const auto value = [&](std::size_t column) {
+                return batch.is_null(column, row) ? std::string{} : std::string(batch.text(column, row));
+            };
+            source_rows.push_back({value(name_index), value(id_index), value(parent_index), value(smiles_index)});
+            output.append_row(batch, row);
+        }
+    });
     if (source_rows.empty()) throw std::invalid_argument("fragmentationTreeTable contains no rows.");
 
-    Json rows = Json::array();
-    for (const auto &source : source_rows)
-    {
-        Json row = Json::object();
-        for (const auto &column : columns)
-            row[column] = source.contains(column) ? source.at(column) : Json(nullptr);
-        rows.push_back(std::move(row));
-    }
-
-    std::vector<Json> roots;
+    std::vector<detail::SourceFragment> roots;
     std::unordered_map<std::string, std::string> parent_by_id;
     for (const auto &source : source_rows)
     {
-        const auto source_id = detail::scalar_string(source, "fragment_id");
-        const auto source_parent = detail::scalar_string(source, "parent_id");
-        if (!source_id.empty() && !source_parent.empty()) parent_by_id[source_id] = source_parent;
-        if (detail::scalar_string(source, "parent_id").empty()) roots.push_back(source);
+        if (!source.id.empty() && !source.parent_id.empty()) parent_by_id[source.id] = source.parent_id;
+        if (source.parent_id.empty()) roots.push_back(source);
     }
     if (roots.empty()) throw std::invalid_argument("fragmentationTreeTable has no MOL-derived main compound row without parent_id.");
 
@@ -84,8 +97,8 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     // context. Expand each root independently while retaining the shared
     // candidate budget and preventing fragments from one component from being
     // attached to another.
-    const auto belongs_to_root = [&parent_by_id](const Json &source, const std::string &root_id) {
-        auto current = detail::scalar_string(source, "fragment_id");
+    const auto belongs_to_root = [&parent_by_id](const detail::SourceFragment &source, const std::string &root_id) {
+        auto current = source.id;
         std::unordered_set<std::string> visited;
         while (!current.empty() && visited.insert(current).second)
         {
@@ -101,11 +114,11 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
     std::size_t skipped = 0;
     for (const auto &root : roots)
     {
-        const auto root_id = detail::scalar_string(root, "fragment_id");
+        const auto root_id = root.id;
         if (root_id.empty()) { ++skipped; continue; }
-        const auto root_smiles = detail::scalar_string(root, "SMILES");
+        const auto root_smiles = root.smiles;
         if (root_smiles.empty()) { ++skipped; continue; }
-        const auto root_name = detail::scalar_string(root, "name");
+        const auto root_name = root.name;
         std::unordered_set<std::string> generated_smiles;
         generated_smiles.insert(root_smiles);
         std::unordered_set<std::string> observed_fragments;
@@ -119,9 +132,9 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         std::vector<FragmentUnit> fragment_units;
         for (const auto &source : source_rows)
         {
-            const auto source_id = detail::scalar_string(source, "fragment_id");
-            const auto source_parent = detail::scalar_string(source, "parent_id");
-            const auto fragment_smiles = detail::scalar_string(source, "SMILES");
+            const auto &source_id = source.id;
+            const auto &source_parent = source.parent_id;
+            const auto &fragment_smiles = source.smiles;
             if (source_id.empty() || source_id == root_id || source_parent.empty() || fragment_smiles.empty() ||
                 !belongs_to_root(source, root_id) ||
                 !observed_fragments.insert(fragment_smiles).second)
@@ -135,21 +148,16 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
             if (generated >= static_cast<std::size_t>(max_candidates) ||
                 candidate.smiles.empty() || !generated_smiles.insert(candidate.smiles).second)
                 return;
-            Json row = Json::object();
-            for (const auto &column : columns) row[column] = nullptr;
-            row["name"] = root_name + " [inv-" + display_label + "]";
-            row["fragment_id"] = "inverse:" + root_id + ":" + label;
-            row["parent_id"] = root_id;
-            row["SMILES"] = candidate.smiles;
-            row["formula"] = candidate.formula;
-            row["mass"] = candidate.exact_mass;
-            row["depth"] = -1;
             provenance["edit_label"] = label;
             provenance["display_label"] = display_label;
-            row["fragment_data"] = {
+            const Json fragment_data = {
                 {"direction", "inverse"}, {"kind", kind}, {"edit", label},
                 {"structure_status", "generated_structure"}, {"provenance", provenance}};
-            rows.push_back(std::move(row));
+            output.append_row({root_name + " [inv-" + display_label + "]",
+                               "inverse:" + root_id + ":" + label, root_id,
+                               candidate.smiles, candidate.formula, candidate.exact_mass,
+                               std::int64_t{-1}, std::monostate{}, std::monostate{},
+                               std::monostate{}, fragment_data.dump()});
             ++generated;
         };
 
@@ -302,7 +310,7 @@ Json run(sdk::PluginProjectAccess &access, const Json &parameters)
         }
     }
 
-    access.emit_table_rows("fragmentationTreeTable", columns, types, rows);
+    output.emit(access, "fragmentationTreeTable");
     return {{"status", "finished"}, {"input_rows", source_rows.size()},
             {"root_rows", roots.size()}, {"generated_inverse_rows", generated},
             {"skipped_roots", skipped}, {"artifact", "fragmentationTreeTable"}};

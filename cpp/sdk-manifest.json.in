@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "runtime_version": "@PROJECT_VERSION@",
+  "abi": {
+    "major": @STREAMFIND_PLUGIN_ABI_MAJOR@,
+    "minor": @STREAMFIND_PLUGIN_ABI_MINOR@
+  },
+  "architecture": "@STREAMFIND_SDK_ARCHITECTURE@",
+  "compiler": "@STREAMFIND_SDK_COMPILER@",
+  "runtime_profile": "@STREAMFIND_SDK_RUNTIME_PROFILE@",
+  "package_hashes": {}
+}

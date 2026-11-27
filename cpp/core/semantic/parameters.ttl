@@ -2,20 +2,20 @@
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
-sfcore:databasePathParameter
+sfcore:projectPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Database path" ;
-    skos:definition "Filesystem path of the DuckDB project database. Use an existing .duckdb file for describe/connect and a new path for create." ;
+    skos:prefLabel "Project folder path" ;
+    skos:definition "Filesystem path of a StreamFind .sf project folder containing project.duckdb and data/." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "/data/project.duckdb" .
+    sf:example "/data/project.sf" .
 
 sfcore:workerIdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Worker ID" ;
     skos:definition "External worker identity used to claim and release one project workflow execution." ;
@@ -26,7 +26,7 @@ sfcore:workerIdParameter
 
 sfcore:executionModeParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution mode" ;
     skos:definition "Controls when workflow node results become published and inspectable. Both modes retain every completed node result on disk and in the project result inventory. detailed publishes each node result immediately; pipeline publishes the retained results together when the workflow reaches a terminal state." ;
@@ -38,7 +38,7 @@ sfcore:executionModeParameter
 
 sfcore:executionStatusParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow execution status" ;
     skos:definition "Requested lifecycle transition for a workflow execution. The running transition starts the saved workflow and may include execution_mode; cancelling or cancelled requests cancellation." ;
@@ -49,43 +49,77 @@ sfcore:executionStatusParameter
     sf:example "running" .
 
 
-sfcore:domainParameter
+sfcore:pluginParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Project domain" ;
-    skos:definition "Domain identifier used to discover canonical workflow operations and capabilities; it is not a project-level assignment." ;
+    skos:prefLabel "Project plugin" ;
+    skos:definition "Plugin identifier used to discover canonical workflow operations and capabilities; it is not a project-level assignment." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
     sf:constraints "mass_spec|raman|sensors|streamfind" ;
     sf:example "mass_spec" .
 
-sfcore:metadataParameter
+sfcore:projectMetadataParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Project metadata" ;
-    skos:definition "JSON object containing project-owned metadata. Metadata is user-owned and may contain arbitrary JSON keys." ;
+    skos:definition "User-defined annotations stored on the .sf project workspace. Separate from workflow metadata and future operational project configuration. Each stored value must be a JSON scalar." ;
     sf:type "object" ;
     sf:required true ;
     sf:default "{}" ;
-    sf:example "{}" .
+    sf:example "{\"owner\":\"research\"}" .
 
-sfcore:workflowMetadataParameter
+sfcore:projectMetadataCreateParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Workflow metadata" ;
-    skos:definition "User-defined JSON metadata for a workflow. Workflow revision is tracked separately by the top-level workflow version." ;
+    skos:prefLabel "Initial project metadata" ;
+    skos:definition "Optional user-defined annotations for a new project workspace. Each value must be a JSON scalar; this field does not configure the workflow or scheduler." ;
     sf:type "object" ;
     sf:required false ;
     sf:default "{}" ;
-    sf:example "{\"owner\":\"research\",\"purpose\":\"feature extraction\"}" .
+    sf:example "{\"owner\":\"research\"}" .
+
+sfcore:workflowMetadataParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow metadata" ;
+    skos:definition "JSON metadata attached to the saved workflow definition, including its required name and description. Distinct from project metadata; replacing it does not modify operations or connections." ;
+    sf:type "object" ;
+    sf:required false ;
+    sf:default "{}" ;
+    sf:example "{\"name\":\"Peak review\",\"description\":\"Review chromatographic peaks\"}" .
+
+sfcore:workflowMetadataReplacementParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Replacement workflow metadata" ;
+    skos:definition "Complete replacement object for workflow.metadata. Must contain a non-empty name and description; additional descriptive keys are allowed. Does not include operations or connections." ;
+    sf:type "object" ;
+    sf:required true ;
+    sf:default "{\"name\":\"Untitled workflow\",\"description\":\"Describe the purpose of this workflow.\"}" ;
+    sf:example "{\"name\":\"Peak review\",\"description\":\"Review chromatographic peaks\"}" .
+
+sfcore:workflowDefinitionRevisionParameter
+    a sf:Parameter ;
+    sf:availableInPlugin sfcore:streamfind ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Workflow definition revision" ;
+    skos:definition "Current concurrency revision returned by get_workflow. Always read and pass the current value to set_workflow_metadata; the initial value 1 is not a safe default for an existing project." ;
+    sf:type "integer" ;
+    sf:required true ;
+    sf:default 1 ;
+    sf:constraints "minimum:1" ;
+    sf:example "3" .
 
 sfcore:workflowParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow" ;
     skos:definition "Persisted operation graph containing configured operation nodes, explicit typed connections, and the definition_revision returned by get_workflow. Preserve that revision when saving so concurrent edits are detected." ;
@@ -96,10 +130,10 @@ sfcore:workflowParameter
 
 sfcore:methodParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method identifier" ;
-    skos:definition "Stable canonical identifier of a workflow operation, for example mass_spec.find_features. Obtain valid operation identifiers and their schemas from get_operations(domain) and get_operation(operation)." ;
+    skos:definition "Stable canonical identifier of a workflow operation, for example mass_spec.find_features. Obtain valid operation identifiers and their schemas from get_operations(plugin) and get_operation(operation)." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
@@ -107,7 +141,7 @@ sfcore:methodParameter
 
 sfcore:parametersParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Method parameters" ;
     skos:definition "JSON object containing operation-specific parameter values. Use the selected operation's schema from get_operation; unknown keys are rejected." ;
@@ -118,7 +152,7 @@ sfcore:parametersParameter
 
 sfcore:pathsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Paths" ;
     skos:definition "Files and vendor directories selected for a workflow input." ;
@@ -130,7 +164,7 @@ sfcore:pathsParameter
 
 sfcore:csvPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "CSV output path" ;
     skos:definition "Filesystem path where a connected table is written as a UTF-8 CSV file, including a header row." ;
@@ -142,7 +176,7 @@ sfcore:csvPathParameter
 
 sfcore:jsonPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "JSON output path" ;
     skos:definition "Filesystem path where a connected JSON artifact is written as formatted UTF-8 JSON." ;
@@ -154,7 +188,7 @@ sfcore:jsonPathParameter
 
 sfcore:csvInputPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "CSV input path" ;
     skos:definition "Filesystem path of a UTF-8 CSV file with a header row to import as a runtime AnyTable." ;
@@ -164,32 +198,20 @@ sfcore:csvInputPathParameter
     sf:default "" ;
     sf:example "data/features.csv" .
 
-sfcore:rowKeyColumnsParameter
+sfcore:destinationProjectPathParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Row key columns" ;
-    skos:definition "One or more columns that uniquely identify and align rows in both tables for horizontal binding." ;
-    sf:type "array" ;
-    sf:items sfcore:stringColumn ;
-    sf:required true ;
-    sf:default "[]" ;
-    sf:example "[\"sample_id\",\"feature_id\"]" .
-
-sfcore:destinationDatabasePathParameter
-    a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
-    skos:inScheme sfcore:scheme ;
-    skos:prefLabel "Destination database path" ;
-    skos:definition "Filesystem path for the copied DuckDB project database." ;
+    skos:prefLabel "Destination project folder path" ;
+    skos:definition "Filesystem path for the copied StreamFind .sf project folder." ;
     sf:type "string" ;
     sf:required true ;
     sf:default "" ;
-    sf:example "/data/copied.duckdb" .
+    sf:example "/data/copied.sf" .
 
 sfcore:operationIdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Workflow operation node ID" ;
     skos:definition "Integer identifier assigned to a workflow operation node." ;
@@ -200,7 +222,7 @@ sfcore:operationIdParameter
 
 sfcore:operationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation identifier" ;
     skos:definition "Canonical catalogue identifier of the operation to add to the workflow." ;
@@ -211,7 +233,7 @@ sfcore:operationParameter
 
 sfcore:sourceOperationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source operation node ID" ;
     skos:definition "Integer identifier of the workflow node that publishes the connected output." ;
@@ -222,7 +244,7 @@ sfcore:sourceOperationParameter
 
 sfcore:sourcePortParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Source output port" ;
     skos:definition "Semantic output contract published by the source operation." ;
@@ -233,7 +255,7 @@ sfcore:sourcePortParameter
 
 sfcore:targetOperationParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target operation node ID" ;
     skos:definition "Integer identifier of the workflow node that consumes the connected input." ;
@@ -244,7 +266,7 @@ sfcore:targetOperationParameter
 
 sfcore:targetPortParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Target input port" ;
     skos:definition "Semantic input contract consumed by the target operation." ;
@@ -255,7 +277,7 @@ sfcore:targetPortParameter
 
 sfcore:outputPortParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Output contract" ;
     skos:definition "Semantic output contract to locate in the artifact inventory." ;
@@ -266,7 +288,7 @@ sfcore:outputPortParameter
 
 sfcore:resultIdParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Result identifier" ;
     skos:definition "Exact immutable result identifier returned by the result inventory." ;
@@ -277,7 +299,7 @@ sfcore:resultIdParameter
 
 sfcore:operationInstanceParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Operation node ID" ;
     skos:definition "Integer workflow node identifier that produced or consumes a result." ;
@@ -288,7 +310,7 @@ sfcore:operationInstanceParameter
 
 sfcore:includeDataParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Include artifact data" ;
     skos:definition "Return the selected JSON payload or bounded rows from a table artifact." ;
@@ -299,7 +321,7 @@ sfcore:includeDataParameter
 
 sfcore:resultLimitParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Result row limit" ;
     skos:definition "Maximum number of table rows returned when result data is requested." ;
@@ -310,7 +332,7 @@ sfcore:resultLimitParameter
 
 sfcore:resultOffsetParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Result row offset" ;
     skos:definition "Number of table rows to skip when result data is requested." ;
@@ -322,7 +344,7 @@ sfcore:resultOffsetParameter
 
 sfcore:analysesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analyses" ;
     skos:definition "Array of analysis file records." ;
@@ -334,7 +356,7 @@ sfcore:analysesParameter
 
 sfcore:analysisFileParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis file" ;
     skos:definition "One analysis file and optional replicate and blank labels." ;
@@ -349,7 +371,7 @@ sfcore:analysisFileParameter
 
 sfcore:analysisNamesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Analysis names" ;
     skos:definition "Array of analysis file names without filename extensions." ;
@@ -362,7 +384,7 @@ sfcore:analysisNamesParameter
 
 sfcore:replicateNamesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Replicate names" ;
     skos:definition "Replicate labels ordered by analysis name." ;
@@ -374,7 +396,7 @@ sfcore:replicateNamesParameter
 
 sfcore:blankNamesParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Blank names" ;
     skos:definition "Blank labels ordered by analysis name." ;
@@ -386,7 +408,7 @@ sfcore:blankNamesParameter
 
 sfcore:concentrationsParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Concentrations" ;
     skos:definition "Analysis concentrations ordered by analysis name." ;
@@ -398,7 +420,7 @@ sfcore:concentrationsParameter
 
 sfcore:stringItemParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "String array item" ;
     skos:definition "One string value in a string array parameter." ;
@@ -409,7 +431,7 @@ sfcore:stringItemParameter
 
 sfcore:integerItemParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Integer array item" ;
     skos:definition "One integer value in an integer array parameter." ;
@@ -420,7 +442,7 @@ sfcore:integerItemParameter
 
 sfcore:realItemParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Real array item" ;
     skos:definition "One real value in a real array parameter." ;
@@ -431,7 +453,7 @@ sfcore:realItemParameter
 
 sfcore:debugAnalysisParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug analysis" ;
     skos:definition "Optional analysis name to include in plugin diagnostic logging. Empty disables the analysis selector." ;
@@ -442,7 +464,7 @@ sfcore:debugAnalysisParameter
 
 sfcore:debugMzParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug m/z" ;
     skos:definition "Optional m/z value to include in plugin diagnostic logging. Zero disables the m/z selector." ;
@@ -453,7 +475,7 @@ sfcore:debugMzParameter
 
 sfcore:debugSpecIdxParameter
     a sf:Parameter ;
-    sf:availableInDomain sfcore:streamfind ;
+    sf:availableInPlugin sfcore:streamfind ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Debug spectrum index" ;
     skos:definition "Optional zero-based spectrum index to include in plugin diagnostic logging. -1 disables the spectrum selector." ;

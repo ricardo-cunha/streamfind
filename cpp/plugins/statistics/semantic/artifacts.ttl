@@ -1,30 +1,30 @@
 @prefix sfcore: <https://streamfind.dev/catalogue/core#> .
-@prefix sfstat: <https://streamfind.dev/catalogue/domains/statistics#> .
+@prefix sfstat: <https://streamfind.dev/catalogue/plugins/statistics#> .
 @prefix sf: <https://streamfind.dev/vocabulary#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 sfstat:tableInputPort
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Input table" ;
     skos:definition "Any persisted table selected as the source of a statistics matrix." ;
     sf:tableContractName "STATISTICS_ANY_TABLE_PORT" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:dynamicSchema true ;
     sf:portId "tableInput" ;
     sf:semanticContract "anyTable" .
 
 sfstat:pcaScoresTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA scores table" ;
     skos:definition "One row per sample and principal component, retaining sample ID and optional group label." ;
     sf:tableContractName "STATISTICS_PCA_SCORES" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:sampleIdColumn,
         sfstat:componentColumn,
@@ -33,13 +33,13 @@ sfstat:pcaScoresTable
 
 sfstat:pcaLoadingsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA loadings table" ;
     skos:definition "One row per input variable and principal component." ;
     sf:tableContractName "STATISTICS_PCA_LOADINGS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:variableIdColumn,
         sfstat:componentColumn,
@@ -47,13 +47,13 @@ sfstat:pcaLoadingsTable
 
 sfstat:pcaVarianceTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA variance table" ;
     skos:definition "Eigenvalue and explained-variance summary by principal component." ;
     sf:tableContractName "STATISTICS_PCA_VARIANCE" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:componentColumn,
         sfstat:eigenvalueColumn,
@@ -62,13 +62,13 @@ sfstat:pcaVarianceTable
 
 sfstat:plsScoresTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS scores table" ;
     skos:definition "One row per sample and latent component with X score, Y score, sample ID, and optional group label." ;
     sf:tableContractName "STATISTICS_PLS_SCORES" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:sampleIdColumn,
         sfstat:componentColumn,
@@ -78,13 +78,13 @@ sfstat:plsScoresTable
 
 sfstat:plsLoadingsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS loadings table" ;
     skos:definition "One row per X or Y block item and latent component." ;
     sf:tableContractName "STATISTICS_PLS_LOADINGS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:blockColumn,
         sfstat:itemIdColumn,
@@ -93,13 +93,13 @@ sfstat:plsLoadingsTable
 
 sfstat:plsCoefficientsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS coefficients table" ;
     skos:definition "Regression coefficient and intercept for each predictor-response pair." ;
     sf:tableContractName "STATISTICS_PLS_COEFFICIENTS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:predictorIdColumn,
         sfstat:responseIdColumn,
@@ -108,13 +108,13 @@ sfstat:plsCoefficientsTable
 
 sfstat:plsPredictionsTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS predictions table" ;
     skos:definition "In-sample fitted value per sample-response for regression or one predicted label and confidence per sample for PLS-DA." ;
     sf:tableContractName "STATISTICS_PLS_PREDICTIONS" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:sampleIdColumn,
         sfstat:responseIdColumn,
@@ -126,13 +126,13 @@ sfstat:plsPredictionsTable
 
 sfstat:foldChangeTable
     a sf:Table ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:providedByModule sfstat:analysisModule ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fold-change results table" ;
     skos:definition "One row per variable with group means, directional log2 fold change, Hedges' g, Welch p-value, Benjamini-Hochberg adjusted p-value, and significance flag." ;
     sf:tableContractName "STATISTICS_FOLD_CHANGE" ;
-    sf:dataKind "duckdb_table" ;
+    sf:dataKind "table" ;
     sf:hasColumn
         sfstat:variableIdColumn,
         sfstat:meanGroupAColumn,
@@ -145,7 +145,7 @@ sfstat:foldChangeTable
 
 sfstat:pcaDiagnostics
     a sf:OperationResult ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PCA diagnostics" ;
@@ -154,7 +154,7 @@ sfstat:pcaDiagnostics
 
 sfstat:plsDiagnostics
     a sf:OperationResult ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "PLS diagnostics" ;
@@ -163,7 +163,7 @@ sfstat:plsDiagnostics
 
 sfstat:foldChangeDiagnostics
     a sf:OperationResult ;
-    sf:availableInDomain sfstat:statistics ;
+    sf:availableInPlugin sfstat:statistics ;
     sf:dataKind "json" ;
     skos:inScheme sfcore:scheme ;
     skos:prefLabel "Fold-change diagnostics" ;

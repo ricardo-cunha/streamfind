@@ -7,8 +7,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $buildRoot = Join-Path $repoRoot 'tmp\build\windows\core'
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
-$database = 'E:\example_files\ms_merck\ACC1_27166_smoothing_comparison.duckdb'
-$workflowPath = 'E:\example_files\ms_merck\streamfind_workflows\ACC1_27166_find_features_smoothing_comparison.json'
+$database = Join-Path $repoRoot 'tmp\projects\ACC1_27166_smoothing_comparison.sf'
+$workflowPath = Join-Path $repoRoot 'tmp\scratch\ACC1_27166_find_features_smoothing_comparison.workflow.json'
 $session = 'acc1_27166_smoothing_comparison'
 $endpoint = 'http://127.0.0.1:8792'
 $sourcePaths = @(
@@ -19,6 +19,7 @@ $matchingRtToleranceSeconds = 120
 
 $logRoot = Join-Path $repoRoot 'tmp\logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot 'tmp\scratch') | Out-Null
 $serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList '8792' -WorkingDirectory $buildRoot -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $logRoot 'find-features-smoothing.stdout.log') `
     -RedirectStandardError (Join-Path $logRoot 'find-features-smoothing.stderr.log')
@@ -29,9 +30,8 @@ function Invoke-JsonPost([string]$uri, [object]$body) {
 
 try {
     Start-Sleep -Milliseconds 700
-    Remove-Item -Force -ErrorAction SilentlyContinue $database
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($database, '.data'))
-    Invoke-JsonPost "$endpoint/projects" @{mode='create';session_id=$session;database_path=$database} | Out-Null
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database
+    Invoke-JsonPost "$endpoint/projects" @{mode='create';session_id=$session;project_path=$database} | Out-Null
 
     # Match the ACC1 Merck workflows (ACC1_27803/ACC1_27989): only the
     # smoothing controls differ between the comparison branches.
@@ -70,7 +70,7 @@ try {
     $expectedPath = 'E:\example_files\ms_merck\More Data OLED Routine for Ricardo\ACC1_27166_4.csv'
     $expected = Import-Csv -LiteralPath $expectedPath
     $results = (Invoke-RestMethod -Uri "$endpoint/projects/$session/results").results
-    $inventoryPath = 'E:\example_files\ms_merck\streamfind_workflows\ACC1_27166_find_features_smoothing_comparison.inventory.json'
+    $inventoryPath = Join-Path $repoRoot 'tmp\scratch\ACC1_27166_find_features_smoothing_comparison.inventory.json'
     $results | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $inventoryPath -Encoding UTF8
     $featureResults = @($results | Where-Object {$_.contract_id -eq 'featuresTable' -and $_.status -eq 'published' -and $_.result_id} | Sort-Object producer_instance)
     $summary = @()
@@ -97,7 +97,7 @@ try {
         }
         $summary += [ordered]@{producer_instance=$result.producer_instance;result_id=$result.result_id;matching_rt_tolerance_seconds=$matchingRtToleranceSeconds;feature_rows=$rows.Count;expected_peaks=$expected.Count;matched_expected_peaks=$matched;matched_targets=$matchedTargets;missing_targets=$missingTargets;raw_eic_equals_smoothed=$rawSmoothedEqual;settings=$operation.parameters}
     }
-    $summaryPath = 'E:\example_files\ms_merck\streamfind_workflows\ACC1_27166_find_features_smoothing_comparison.summary.json'
+    $summaryPath = Join-Path $repoRoot 'tmp\scratch\ACC1_27166_find_features_smoothing_comparison.summary.json'
     $summary | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
     $summary | Format-Table -AutoSize
     Write-Host "Project: $database"
@@ -106,7 +106,6 @@ try {
 } finally {
     if ($serviceProcess -and -not $serviceProcess.HasExited) { $serviceProcess.Kill(); $serviceProcess.WaitForExit() }
     if (-not $KeepProject) {
-        Remove-Item -Force -ErrorAction SilentlyContinue $database
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($database, '.data'))
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database
     }
 }

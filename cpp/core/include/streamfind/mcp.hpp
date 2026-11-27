@@ -15,11 +15,13 @@ public:
     using DependencyList = std::function<Json()>;
     using DependencyInstaller = std::function<Json(const Json &)>;
     using WorkflowDemoDirectories = std::function<std::vector<std::filesystem::path>()>;
+    using DevelopmentInvoker = std::function<Json(const std::string &, const Json &)>;
     explicit Session(const OperationRegistry &operations = mcp::operations(),
                      DependencyList dependencies = {}, DependencyInstaller installer = {},
                      std::filesystem::path worker_executable = {},
                      std::filesystem::path worker_configuration = {},
-                     WorkflowDemoDirectories workflow_demo_directories = {});
+                     WorkflowDemoDirectories workflow_demo_directories = {},
+                     DevelopmentInvoker development_invoker = {});
     Json handle(const Json &request);
 
 private:
@@ -29,6 +31,7 @@ private:
     std::filesystem::path worker_executable_;
     std::filesystem::path worker_configuration_;
     WorkflowDemoDirectories workflow_demo_directories_;
+    DevelopmentInvoker development_invoker_;
     Json project_ = Json::object();
 
 };

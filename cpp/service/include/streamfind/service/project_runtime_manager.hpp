@@ -53,7 +53,7 @@ public:
     Json workflow_definition(const std::string &session_id) const;
     Json set_metadata(const std::string &session_id, const Json &metadata);
     Json audit_trail(const std::string &session_id) const;
-    Json copy_project(const std::string &session_id, const std::filesystem::path &destination_database_path);
+    Json copy_project(const std::string &session_id, const std::filesystem::path &destination_project_path);
     Json resolve_workflow_inputs(const std::string &session_id, const std::string &operation_id,
                                  const Json &current_results = Json::object()) const;
     Json validate_workflow(const std::string &session_id, const Json &definition) const;
@@ -88,6 +88,7 @@ public:
     bool contains(const std::string &session_id) const;
     void set_operation_log_callback(std::function<void(const std::string &, std::string_view, std::string_view)> callback);
     void set_operation_event_callback(std::function<void(const std::string &, std::string_view, std::string_view, const Json &)> callback);
+    void set_plugin_snapshot(const Json &snapshot);
 
 private:
     ProjectSessionDto describe(const std::string &session_id, const Project &project) const;
@@ -98,6 +99,7 @@ private:
     // Result file queries may outlive the session-map lookup. Keep result
     // cache access independent so immutable file reads never hold mutex_.
     mutable std::mutex result_cache_mutex_;
+    std::unordered_map<std::string, std::shared_ptr<void>> project_folder_locks_;
     std::unordered_map<std::string, std::unique_ptr<Project>> projects_;
     std::unordered_map<std::string, Workflow> workflow_definitions_;
     std::unordered_map<std::string, std::string> workflow_states_;
@@ -107,6 +109,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> workflow_cancellations_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> operation_cancellations_;
     std::unordered_map<std::string, std::shared_ptr<WorkerProcess>> active_workers_;
+    std::unordered_map<std::string, std::string> active_worker_run_ids_;
     std::unordered_map<std::string, Json> workflow_progress_;
     std::unordered_map<std::string, std::string> workflow_execution_modes_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::size_t>> workflow_operation_steps_;
@@ -114,14 +117,8 @@ private:
     std::filesystem::path configuration_path_;
     std::uint16_t service_port_{0};
     mutable std::unordered_map<std::string, ResultLease> data_proxy_leases_;
-    // Row-key offsets are prepared while the service reads a sampled/detail
-    // result. Subsequent app and MCP detail requests can jump directly to the
-    // Arrow frame containing the requested rows instead of rescanning the
-    // complete immutable result file.
-    mutable std::unordered_map<std::string, std::shared_ptr<const std::unordered_map<std::string, std::uintmax_t>>> result_row_key_cache_;
-    using NavigationIndex = std::unordered_map<std::string, std::unordered_map<std::string, std::vector<std::uintmax_t>>>;
-    mutable std::unordered_map<std::string, std::shared_ptr<const NavigationIndex>> result_navigation_index_cache_;
     mutable std::unordered_map<std::string, Json> decoded_trace_cache_;
+    Json plugin_snapshot_ = Json{{"generation", 0}, {"plugins", Json::array()}};
     mutable std::deque<std::string> decoded_trace_cache_order_;
     mutable std::size_t decoded_trace_cache_bytes_{0};
     static constexpr std::size_t kDecodedTraceCacheBytes = 32 * 1024 * 1024;

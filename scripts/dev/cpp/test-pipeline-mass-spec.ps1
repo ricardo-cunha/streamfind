@@ -3,7 +3,8 @@ param(
     [switch]$SkipBuild,
     [switch]$KeepProject,
     [switch]$PackagedBuild,
-    [string]$ProjectName = 'pipeline-mass-spec'
+    [string]$ProjectName = 'pipeline-mass-spec',
+    [ValidateRange(1024, 65535)][int]$ServicePort = 8791
 )
 
 . (Join-Path $PSScriptRoot '..\_lib\mcp-common.ps1')
@@ -25,8 +26,8 @@ $executable = if ($PackagedBuild) {
     Get-BackendMcpExecutable $repoRoot
 }
 $serviceExecutable = Join-Path $buildRoot 'streamfind-server.exe'
-$database = Join-Path $repoRoot "tmp\projects\$ProjectName.duckdb"
-$dataStore = [System.IO.Path]::ChangeExtension($database, '.data')
+$database = Join-Path $repoRoot "tmp\projects\$ProjectName.sf"
+$dataStore = Join-Path $database 'data'
 $dataFiles = @(
     (Join-Path $dataRoot 'mass_spec\basic_tof\00_tof_s_is_pos_cent-r001.mzML'),
     (Join-Path $dataRoot 'mass_spec\basic_tof\00_tof_s_is_pos_cent-r002.mzML'),
@@ -46,20 +47,26 @@ New-Item -ItemType Directory -Force -Path (Split-Path $database -Parent) | Out-N
 if ($PackagedBuild -and (Test-Path $database)) {
     throw "Refusing to replace an existing packaged test project: $database"
 }
-Remove-Item -Force -ErrorAction SilentlyContinue $database
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataStore
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database
 $logRoot = Join-Path $repoRoot 'tmp\logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
-$serviceLog = Join-Path $logRoot 'pipeline-mass-spec-service.stdout.log'
-$serviceErrorLog = Join-Path $logRoot 'pipeline-mass-spec-service.stderr.log'
-$serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList '8791' -WorkingDirectory $buildRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $serviceLog -RedirectStandardError $serviceErrorLog
+$listeners = @(Get-NetTCPConnection -LocalPort $ServicePort -State Listen -ErrorAction SilentlyContinue)
+if ($listeners.Count -gt 0) {
+    throw "Service port $ServicePort is already in use. Choose a free port with -ServicePort."
+}
+$serviceLog = Join-Path $logRoot "pipeline-mass-spec-$ServicePort-service.stdout.log"
+$serviceErrorLog = Join-Path $logRoot "pipeline-mass-spec-$ServicePort-service.stderr.log"
+$serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList $ServicePort -WorkingDirectory $buildRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $serviceLog -RedirectStandardError $serviceErrorLog
 Start-Sleep -Milliseconds 500
-$process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
+$endpoint = "http://127.0.0.1:$ServicePort"
+$previousServiceEndpoint = $env:STREAMFIND_SERVICE_ENDPOINT
+$env:STREAMFIND_SERVICE_ENDPOINT = $endpoint
+$process = $null
 try {
+    $process = Start-StreamfindMcp -Executable $executable -Catalogue $catalogue
     Initialize-Mcp $process | Out-Null
-    $endpoint = 'http://127.0.0.1:8791'
-    $session = 'pipeline-mass-spec'
-    $createBody = @{ mode = 'create'; session_id = $session; database_path = $database } |
+    $session = "$ProjectName-session"
+    $createBody = @{ mode = 'create'; session_id = $session; project_path = $database } |
         ConvertTo-Json -Depth 20
     Invoke-RestMethod -Uri "$endpoint/projects" -Method Post -ContentType 'application/json' -Body $createBody | Out-Null
 
@@ -86,6 +93,8 @@ try {
             @{ source_operation = 1; source_port = 'spectraHeadersTable'; target_operation = 4; target_port = 'spectraHeadersTable' }
         )
     }
+    $currentWorkflow = Invoke-RestMethod -Uri "$endpoint/projects/$session/workflow" -Method Get
+    $workflow.definition_revision = [int]$currentWorkflow.workflow.definition_revision
     $workflowBody = $workflow | ConvertTo-Json -Depth 30
     Invoke-RestMethod -Uri "$endpoint/projects/$session/workflow" -Method Post -ContentType 'application/json' -Body $workflowBody | Out-Null
     if ($KeepProject) {
@@ -98,7 +107,7 @@ try {
     $validation = Invoke-RestMethod -Uri "$endpoint/projects/$session/workflow/validate" -Method Post -ContentType 'application/json' -Body $validationBody
     if (-not $validation.valid) { throw "Workflow validation failed: $($validation | ConvertTo-Json -Depth 20 -Compress)" }
 
-    $run = Invoke-McpTool $process 7 'run_workflow' @{ database_path = $database; execution_mode = 'pipeline' }
+    $run = Invoke-McpTool $process 7 'run_workflow' @{ project_path = $database; execution_mode = 'pipeline' }
     Write-Host ("Pipeline run accepted: " + ($run | ConvertTo-Json -Depth 20 -Compress))
 
     $stateUri = "$endpoint/projects/$([uri]::EscapeDataString($session))/workflow/state"
@@ -213,12 +222,12 @@ try {
     # Restart the service to prove that the derived index is persisted and
     # validated independently of the previous process memory cache.
     if (-not $serviceProcess.HasExited) { $serviceProcess.Kill(); $serviceProcess.WaitForExit() }
-    $restartStdout = Join-Path $logRoot 'pipeline-mass-spec-service-restart.stdout.log'
-    $restartStderr = Join-Path $logRoot 'pipeline-mass-spec-service-restart.stderr.log'
-    $serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList '8791' -WorkingDirectory $buildRoot `
+    $restartStdout = Join-Path $logRoot "pipeline-mass-spec-$ServicePort-service-restart.stdout.log"
+    $restartStderr = Join-Path $logRoot "pipeline-mass-spec-$ServicePort-service-restart.stderr.log"
+    $serviceProcess = Start-Process -FilePath $serviceExecutable -ArgumentList $ServicePort -WorkingDirectory $buildRoot `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput $restartStdout -RedirectStandardError $restartStderr
     Start-Sleep -Milliseconds 500
-    $reopenBody = @{ mode = 'open'; session_id = $session; database_path = $database } | ConvertTo-Json -Depth 10
+    $reopenBody = @{ mode = 'open'; session_id = $session; project_path = $database } | ConvertTo-Json -Depth 10
     Invoke-RestMethod -Uri "$endpoint/projects" -Method Post -ContentType 'application/json' -Body $reopenBody | Out-Null
     $reopenedTrace = Invoke-RestMethod -Uri "$endpoint/projects/$([uri]::EscapeDataString($session))/results/trace" `
         -Method Post -ContentType 'application/json' -Body $featureTraceBody
@@ -259,14 +268,14 @@ try {
     Write-Host ("Pipeline mode retained results from all four nodes, including " +
         "$($intermediate.Count) intermediate outputs. Terminal result id: " + $terminal[0].result_id)
 } finally {
-    Stop-StreamfindMcp $process
+    if ($null -ne $process) { Stop-StreamfindMcp $process }
+    $env:STREAMFIND_SERVICE_ENDPOINT = $previousServiceEndpoint
     if ($null -ne $serviceProcess -and -not $serviceProcess.HasExited) {
         $serviceProcess.Kill()
         $serviceProcess.WaitForExit()
     }
     if (-not $KeepProject) {
-        Remove-Item -Force -ErrorAction SilentlyContinue $database
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataStore
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $database
         Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path (Split-Path $database -Parent) "$ProjectName.workflow.json")
     } else {
         Write-Host "Kept editable test project: $database"

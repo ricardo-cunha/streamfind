@@ -6,7 +6,7 @@ import { ViewerRegistry, type ViewerContext } from './viewerTypes';
 const context: ViewerContext = {
   sessionId: 'session-a',
   resultId: 'result-a',
-  semanticType: 'sfvis:visualizationSpecResult',
+  semanticType: 'https://streamfind.dev/catalogue/plugins/test#customResult',
 };
 
 afterEach(() => cleanup());
@@ -17,7 +17,7 @@ describe('viewer registry', () => {
     registry.register({
       id: 'test.viewer',
       label: 'Test viewer',
-      accepts: ['visualizationSpecResult'],
+      accepts: ['https://streamfind.dev/catalogue/plugins/test#customResult'],
       component: ({ context: viewerContext }) => <div>Viewing {viewerContext.resultId}</div>,
     });
 
@@ -45,17 +45,19 @@ describe('viewer registry', () => {
     registry.register({
       id: 'feature.viewer',
       label: 'Feature viewer',
-      accepts: ['featuresTable'],
+      accepts: ['https://streamfind.dev/catalogue/plugins/test#featuresTable'],
       component: ({ context: viewerContext }) => <div>Feature {viewerContext.resultId}</div>,
     });
     registry.register({
       id: 'alternate.viewer',
       label: 'Alternate viewer',
-      accepts: ['featuresTable'],
+      accepts: ['https://streamfind.dev/catalogue/plugins/test#featuresTable'],
       component: ({ context: viewerContext }) => <div>Alternate {viewerContext.resultId}</div>,
     });
 
-    expect(registry.compatible('sf:featuresTable').map((viewer) => viewer.id)).toEqual([
+    expect(
+      registry.compatible('https://streamfind.dev/catalogue/plugins/test#featuresTable').map((viewer) => viewer.id),
+    ).toEqual([
       'alternate.viewer',
       'feature.viewer',
     ]);
@@ -63,7 +65,7 @@ describe('viewer registry', () => {
       <ViewerResolver
         registry={registry}
         viewerId="feature.viewer"
-        context={{ ...context, semanticType: 'featuresTable' }}
+        context={{ ...context, semanticType: 'https://streamfind.dev/catalogue/plugins/test#featuresTable' }}
       />,
     );
     expect(screen.getByText('Feature result-a')).toBeInTheDocument();

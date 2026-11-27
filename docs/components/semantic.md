@@ -1,7 +1,7 @@
 # Semantic catalogue and operation discovery
 
 The semantic catalogue is the machine-readable description of streamfind's
-public interface. It defines operation names, domains, parameters, typed input
+public interface. It defines operation names, plugins, parameters, typed input
 and output ports, constraints, result fields, units, nullability, and usage
 guidance.
 
@@ -22,7 +22,7 @@ tool names, descriptions, input schemas, ports, and result contracts.
 
 ## Operations and operation graphs
 
-- **Operations** are callable project or domain actions. They expose typed
+- **Operations** are callable project or plugin actions. They expose typed
   ports and operation-specific parameters.
 - **Operation graphs** persist operation nodes and typed connections. A node
   stores its operation identifier and JSON parameters.
@@ -30,16 +30,16 @@ tool names, descriptions, input schemas, ports, and result contracts.
 Typical project entry points are:
 
 ```text
-create -> describe/get_metadata
-      -> get_domains -> get_operations -> get_operation
+create -> describe
+      -> get_plugins -> get_operations -> get_operation
       -> add_operation -> connect_operations
       -> validate_workflow -> run_workflow
       -> get_result_inventory -> request_result
         -> close
 ```
 
-`get_domains` lists operation domains in the enabled catalogue.
-`get_project_domains` lists domains inferred from operation nodes already
+`get_plugins` lists operation plugins in the enabled catalogue.
+`get_project_plugins` lists plugins inferred from operation nodes already
 stored in the project's workflow; it is empty for a new workflow.
 
 ## Runtime catalogue

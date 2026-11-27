@@ -60,7 +60,7 @@ MethodDefinition method_definition(const Json &entry) {
     definition.id = entry.at("canonical_id").get<std::string>();
     definition.name = entry.value("label", definition.id);
     definition.description = entry.value("definition", entry.value("label", ""));
-    definition.domain = entry.value("domain", "");
+    definition.plugin = entry.value("plugin", "");
     definition.reads = entry.value("effects", Json::object()).value("reads", std::vector<std::string>{});
     definition.writes = entry.value("effects", Json::object()).value("writes", std::vector<std::string>{});
     for (const auto &item : entry.value("effects", Json::object()).value("conditional_reads", Json::array()))
@@ -75,7 +75,7 @@ OperationDefinition operation_definition(const Json &entry) {
     definition.id = entry.at("canonical_id").get<std::string>();
     definition.name = entry.value("label", definition.id);
     definition.description = entry.value("definition", entry.value("label", ""));
-    definition.domain = entry.value("domain", "");
+    definition.plugin = entry.value("plugin", "");
     definition.version = entry.value("operation_version", "1");
     definition.project_entry = entry.value("project_entry", false);
     definition.parameters = parameter_schema(entry);
@@ -94,7 +94,7 @@ OperationDefinition operation_definition(const Json &entry) {
 }
 
 
-void register_module(const DomainModuleBinding &module,
+void register_module(const PluginModuleBinding &module,
                      const Json &entries,
                      MethodRegistry &method_registry,
                      OperationRegistry &operation_registry) {
@@ -107,7 +107,7 @@ void register_module(const DomainModuleBinding &module,
                                         " for module " + module.module_id);
     }
     if (!module.tables.empty()) {
-        const auto manifest = table_manifest_json(module.domain_id, module.module_id);
+        const auto manifest = table_manifest_json(module.plugin_id, module.module_id);
         if (!manifest)
             throw std::invalid_argument("catalogue: table manifest unavailable for module " +
                                         module.module_id);
@@ -125,7 +125,7 @@ void register_module(const DomainModuleBinding &module,
         for (const auto &entry : entries) {
             if (entry.value("kind", "") == "method" &&
                 entry.value("canonical_id", "") == binding.id &&
-                entry.value("domain", "") == module.domain_id &&
+                entry.value("plugin", "") == module.plugin_id &&
                 entry.value("module_id", "") == module.module_id) {
                 method_registry.register_method(
                     Method(method_definition(entry), binding.executor, binding.validator,
@@ -141,7 +141,7 @@ void register_module(const DomainModuleBinding &module,
         for (const auto &entry : entries) {
             if (entry.value("kind", "") == "operation" &&
                 entry.value("canonical_id", "") == binding.id &&
-                entry.value("domain", "") == module.domain_id &&
+                entry.value("plugin", "") == module.plugin_id &&
                 entry.value("module_id", "") == module.module_id) {
                 const auto result_schema = entry.value("result", Json::object()).value("schema", Json::object());
                 const auto executor = binding.executor;
@@ -162,25 +162,25 @@ void register_module(const DomainModuleBinding &module,
 }
 
 
-void register_module(const DomainModuleBinding &module,
+void register_module(const PluginModuleBinding &module,
                      const Json &entries,
                      MethodRegistry &method_registry) {
     OperationRegistry operations;
     register_module(module, entries, method_registry, operations);
 }
 
-void register_module(const DomainModuleBinding &module,
+void register_module(const PluginModuleBinding &module,
                      const Json &entries,
                      OperationRegistry &operation_registry) {
     MethodRegistry methods;
     register_module(module, entries, methods, operation_registry);
 }
 
-void install_module_schema(const DomainModuleBinding &module, Project &project) {
+void install_module_schema(const PluginModuleBinding &module, Project &project) {
     if (module.schema_version < 1)
         throw std::invalid_argument("catalogue: invalid schema version for module " + module.module_id);
     if (!module.tables.empty()) {
-        const auto manifest = table_manifest_json(module.domain_id, module.module_id);
+        const auto manifest = table_manifest_json(module.plugin_id, module.module_id);
         if (!manifest)
             throw std::invalid_argument("catalogue: table manifest unavailable for module " + module.module_id);
         for (const auto &table : module.tables) {
@@ -195,11 +195,11 @@ void install_module_schema(const DomainModuleBinding &module, Project &project) 
 
     ProjectTableStore::transaction(project, module.tables, [&](ProjectTableStore &tables) {
         tables.execute(
-            "CREATE TABLE IF NOT EXISTS MODULE_SCHEMA (domain_id VARCHAR NOT NULL, module_id VARCHAR NOT NULL, "
+            "CREATE TABLE IF NOT EXISTS MODULE_SCHEMA (plugin_id VARCHAR NOT NULL, module_id VARCHAR NOT NULL, "
             "schema_version INTEGER NOT NULL, installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
-            "PRIMARY KEY (domain_id, module_id))");
-        const auto installed_value = tables.scalar("SELECT schema_version FROM MODULE_SCHEMA WHERE domain_id = '" +
-                                                   module.domain_id + "' AND module_id = '" + module.module_id + "' LIMIT 1");
+            "PRIMARY KEY (plugin_id, module_id))");
+        const auto installed_value = tables.scalar("SELECT schema_version FROM MODULE_SCHEMA WHERE plugin_id = '" +
+                                                   module.plugin_id + "' AND module_id = '" + module.module_id + "' LIMIT 1");
         const int installed_version = installed_value ? std::stoi(*installed_value) : 0;
         if (installed_version > module.schema_version)
             throw std::invalid_argument("catalogue: schema downgrade for module " + module.module_id);
@@ -223,10 +223,10 @@ void install_module_schema(const DomainModuleBinding &module, Project &project) 
             }
             return "'" + escaped + "'";
         };
-        tables.execute("DELETE FROM MODULE_SCHEMA WHERE domain_id = " + quote(module.domain_id) +
+        tables.execute("DELETE FROM MODULE_SCHEMA WHERE plugin_id = " + quote(module.plugin_id) +
                        " AND module_id = " + quote(module.module_id));
-        tables.execute("INSERT INTO MODULE_SCHEMA (domain_id, module_id, schema_version) VALUES (" +
-                       quote(module.domain_id) + ", " + quote(module.module_id) + ", " +
+        tables.execute("INSERT INTO MODULE_SCHEMA (plugin_id, module_id, schema_version) VALUES (" +
+                       quote(module.plugin_id) + ", " + quote(module.module_id) + ", " +
                        std::to_string(module.schema_version) + ")");
     });
 }

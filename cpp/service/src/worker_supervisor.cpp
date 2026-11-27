@@ -158,6 +158,8 @@ struct WorkerProcess::Impl {
                     {"operation_id", request.operation_id}, {"operation", request.operation},
                     {"operation_instance", request.operation_instance}, {"project_database_path", request.project_database_path.string()},
                     {"computation_key", request.computation_key},
+                    {"plugin_generation", request.plugin_generation},
+                    {"plugin_versions", request.plugin_versions},
                     {"worker_handle_endpoint", handle_endpoint ? handle_endpoint->address() : std::string{}},
                     {"workflow", request.workflow},
                     {"parameters", request.parameters},

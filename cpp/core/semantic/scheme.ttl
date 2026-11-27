@@ -4,4 +4,4 @@
 sfcore:scheme
     a skos:ConceptScheme ;
     skos:prefLabel "streamfind semantic catalogue" ;
-    skos:definition "Canonical semantic declarations for streamfind domains, operations, methods, parameters, results, errors, and interfaces." .
+    skos:definition "Canonical semantic declarations for streamfind plugins, operations, methods, parameters, results, errors, and interfaces." .

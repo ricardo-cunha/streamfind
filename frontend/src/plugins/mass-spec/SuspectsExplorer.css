@@ -33,7 +33,7 @@
 .sf-suspects-explorer-selected-feature small,
 .sf-suspects-explorer-empty,
 .sf-suspects-explorer-evidence {
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
 }
 
 .sf-suspects-explorer-eyebrow {
@@ -70,7 +70,7 @@
   display: grid;
   gap: 6px;
   margin-top: 14px;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   font-size: 12px;
 }
 
@@ -127,7 +127,7 @@
 .sf-suspects-explorer-filter-list legend {
   grid-column: 1 / -1;
   margin-bottom: 3px;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   font-size: 11px;
 }
 
@@ -144,17 +144,17 @@
 }
 
 .sf-suspects-explorer-scatter line {
-  stroke: var(--border);
+  stroke: var(--sf-border);
   stroke-width: 1;
 }
 
 .sf-suspects-explorer-scatter text {
-  fill: var(--muted-foreground);
+  fill: var(--sf-text-secondary);
   font-size: 12px;
 }
 
 .sf-suspects-explorer-scatter circle {
-  fill: color-mix(in srgb, var(--accent) 72%, transparent);
+  fill: color-mix(in srgb, var(--sf-accent) 72%, transparent);
   cursor: pointer;
   outline: none;
 }
@@ -162,8 +162,8 @@
 .sf-suspects-explorer-scatter circle:hover,
 .sf-suspects-explorer-scatter circle:focus-visible,
 .sf-suspects-explorer-scatter circle.selected {
-  fill: var(--accent);
-  stroke: var(--foreground);
+  fill: var(--sf-accent);
+  stroke: var(--sf-text);
   stroke-width: 2;
 }
 
@@ -185,12 +185,12 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   cursor: pointer;
 }
 
 .sf-suspects-explorer-tabs button.active {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--sf-accent);
   color: var(--sf-text);
   font-weight: 700;
 }
@@ -235,12 +235,12 @@
 }
 
 .sf-suspects-explorer-row small {
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
 }
 
 .sf-suspects-explorer-level {
   flex: 0 0 auto;
-  color: var(--accent);
+  color: var(--sf-accent);
   font-size: 12px;
   font-weight: 700;
 }
@@ -339,7 +339,7 @@
 }
 
 .sf-suspects-explorer-field span {
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   font-size: 12px;
 }
 

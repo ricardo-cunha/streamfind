@@ -36,10 +36,30 @@ target_link_libraries(streamfind_plugin_abi_contract PRIVATE streamfind::cpp_sdk
 add_test(NAME streamfind_plugin_abi_contract COMMAND streamfind_plugin_abi_contract)
 set_tests_properties(streamfind_plugin_abi_contract PROPERTIES LABELS "framework")
 
+add_executable(streamfind_abi_type_profile_contract unit/abi_type_profile_contract.cpp)
+target_link_libraries(streamfind_abi_type_profile_contract PRIVATE streamfind::cpp_sdk)
+add_test(NAME streamfind_abi_type_profile_contract COMMAND streamfind_abi_type_profile_contract)
+set_tests_properties(streamfind_abi_type_profile_contract PROPERTIES LABELS "framework")
+
 add_executable(streamfind_plugin_manifest_validation unit/plugin_manifest_validation.cpp)
 target_link_libraries(streamfind_plugin_manifest_validation PRIVATE streamfind::cpp_sdk)
 add_test(NAME streamfind_plugin_manifest_validation COMMAND streamfind_plugin_manifest_validation)
 set_tests_properties(streamfind_plugin_manifest_validation PROPERTIES LABELS "framework")
+
+add_executable(streamfind_plugin_registry_contract unit/plugin_registry_contract.cpp)
+target_link_libraries(streamfind_plugin_registry_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_plugin_registry_contract COMMAND streamfind_plugin_registry_contract)
+set_tests_properties(streamfind_plugin_registry_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_plugin_lockfile_contract unit/plugin_lockfile_contract.cpp)
+target_link_libraries(streamfind_plugin_lockfile_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_plugin_lockfile_contract COMMAND streamfind_plugin_lockfile_contract)
+set_tests_properties(streamfind_plugin_lockfile_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_plugin_catalogue_ownership_contract unit/plugin_catalogue_ownership_contract.cpp)
+target_link_libraries(streamfind_plugin_catalogue_ownership_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_plugin_catalogue_ownership_contract COMMAND streamfind_plugin_catalogue_ownership_contract)
+set_tests_properties(streamfind_plugin_catalogue_ownership_contract PROPERTIES LABELS "framework")
 
 add_executable(streamfind_plugin_loader_failure_contract unit/plugin_loader_failure_contract.cpp)
 target_link_libraries(streamfind_plugin_loader_failure_contract PRIVATE streamfind::cpp_core)
@@ -106,6 +126,14 @@ target_compile_definitions(streamfind_table_contract_contract PRIVATE
 )
 add_test(NAME streamfind_table_contract_contract COMMAND streamfind_table_contract_contract)
 set_tests_properties(streamfind_table_contract_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_table_column_binding_contract unit/table_column_binding_contract.cpp)
+target_link_libraries(streamfind_table_column_binding_contract PRIVATE streamfind::cpp_core)
+target_compile_definitions(streamfind_table_column_binding_contract PRIVATE
+    STREAMFIND_CATALOGUE_PATH="${STREAMFIND_SEMANTIC_DIR}/catalogue.duckdb"
+)
+add_test(NAME streamfind_table_column_binding_contract COMMAND streamfind_table_column_binding_contract)
+set_tests_properties(streamfind_table_column_binding_contract PROPERTIES LABELS "framework")
 add_library(streamfind_stage9_fixture SHARED fixtures/dynamic_plugin.cpp)
 target_include_directories(streamfind_stage9_fixture PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../sdk/include)
@@ -138,6 +166,62 @@ target_compile_definitions(streamfind_dynamic_plugin_package_contract PRIVATE
     STREAMFIND_STAGE9_PACKAGE_DIR="${CMAKE_BINARY_DIR}/stage9-plugin")
 add_test(NAME streamfind_dynamic_plugin_package_contract COMMAND streamfind_dynamic_plugin_package_contract)
 set_tests_properties(streamfind_dynamic_plugin_package_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_dynamic_plugin_output_failure_contract unit/dynamic_plugin_output_failure_contract.cpp)
+target_link_libraries(streamfind_dynamic_plugin_output_failure_contract PRIVATE streamfind::cpp_sdk)
+add_test(NAME streamfind_dynamic_plugin_output_failure_contract COMMAND streamfind_dynamic_plugin_output_failure_contract)
+set_tests_properties(streamfind_dynamic_plugin_output_failure_contract PROPERTIES LABELS "framework")
+
+add_executable(streamfind_project_runtime_store_recovery_contract
+    ../../service/tests/project_runtime_store_recovery_contract.cpp
+    ../../service/src/project_runtime_manager.cpp
+    ../../service/src/result_store.cpp
+    ../../service/src/worker_supervisor.cpp
+    ../../service/src/worker_handle_broker.cpp)
+target_link_libraries(streamfind_project_runtime_store_recovery_contract PRIVATE
+    streamfind::cpp_core streamfind::cpp_sdk)
+target_include_directories(streamfind_project_runtime_store_recovery_contract PRIVATE
+    ../../service/include)
+target_compile_definitions(streamfind_project_runtime_store_recovery_contract PRIVATE
+    STREAMFIND_TEST_PROJECTS_DIR="${CMAKE_SOURCE_DIR}/../tmp/projects/native-tests")
+if(WIN32)
+    target_link_libraries(streamfind_project_runtime_store_recovery_contract PRIVATE ws2_32 shell32)
+endif()
+add_test(NAME streamfind_project_runtime_store_recovery_contract
+    COMMAND streamfind_project_runtime_store_recovery_contract)
+set_tests_properties(streamfind_project_runtime_store_recovery_contract PROPERTIES LABELS "framework")
+
+set(STREAMFIND_RUNTIME_RETRY_WORKER_DIR "${CMAKE_CURRENT_BINARY_DIR}/runtime-retry-worker")
+file(MAKE_DIRECTORY "${STREAMFIND_RUNTIME_RETRY_WORKER_DIR}")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/service/worker-runtime-retry.json"
+    "${STREAMFIND_RUNTIME_RETRY_WORKER_DIR}/streamfind.json"
+    COPYONLY)
+add_executable(streamfind_project_runtime_execution_retry_contract
+    ../../service/tests/project_runtime_execution_retry_contract.cpp
+    ../../service/src/project_runtime_manager.cpp
+    ../../service/src/result_store.cpp
+    ../../service/src/worker_supervisor.cpp
+    ../../service/src/worker_handle_broker.cpp)
+target_link_libraries(streamfind_project_runtime_execution_retry_contract PRIVATE
+    streamfind::cpp_core streamfind::cpp_sdk)
+target_include_directories(streamfind_project_runtime_execution_retry_contract PRIVATE
+    ../../service/include)
+target_compile_definitions(streamfind_project_runtime_execution_retry_contract PRIVATE
+    STREAMFIND_TEST_PROJECTS_DIR="${CMAKE_SOURCE_DIR}/../tmp/projects/native-tests"
+    STREAMFIND_RETRY_WORKER_DIR="${STREAMFIND_RUNTIME_RETRY_WORKER_DIR}")
+add_dependencies(streamfind_project_runtime_execution_retry_contract streamfind_worker_fixture)
+add_custom_command(TARGET streamfind_project_runtime_execution_retry_contract POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:streamfind_worker_fixture>"
+        "${STREAMFIND_RUNTIME_RETRY_WORKER_DIR}/streamfind-worker${CMAKE_EXECUTABLE_SUFFIX}")
+if(WIN32)
+    target_link_libraries(streamfind_project_runtime_execution_retry_contract PRIVATE ws2_32 shell32)
+endif()
+add_test(NAME streamfind_project_runtime_execution_retry_contract
+    COMMAND streamfind_project_runtime_execution_retry_contract)
+set_tests_properties(streamfind_project_runtime_execution_retry_contract PROPERTIES
+    LABELS "framework" TIMEOUT 30)
 
 
 add_executable(streamfind_project_table_store_manifest_contract unit/project_table_store_manifest_contract.cpp)
@@ -175,10 +259,10 @@ target_link_libraries(streamfind_artifact_publication_contract PRIVATE streamfin
 add_test(NAME streamfind_artifact_publication_contract COMMAND streamfind_artifact_publication_contract)
 set_tests_properties(streamfind_artifact_publication_contract PROPERTIES LABELS "framework")
 
-add_executable(streamfind_mixed_domain_workflow_artifact_contract unit/mixed_domain_workflow_artifact_contract.cpp)
-target_link_libraries(streamfind_mixed_domain_workflow_artifact_contract PRIVATE streamfind::cpp_core)
-add_test(NAME streamfind_mixed_domain_workflow_artifact_contract COMMAND streamfind_mixed_domain_workflow_artifact_contract)
-set_tests_properties(streamfind_mixed_domain_workflow_artifact_contract PROPERTIES LABELS "framework")
+add_executable(streamfind_mixed_plugin_workflow_artifact_contract unit/mixed_plugin_workflow_artifact_contract.cpp)
+target_link_libraries(streamfind_mixed_plugin_workflow_artifact_contract PRIVATE streamfind::cpp_core)
+add_test(NAME streamfind_mixed_plugin_workflow_artifact_contract COMMAND streamfind_mixed_plugin_workflow_artifact_contract)
+set_tests_properties(streamfind_mixed_plugin_workflow_artifact_contract PROPERTIES LABELS "framework")
 
 add_executable(streamfind_dependency_smoke unit/dependency_smoke.cpp)
 target_link_libraries(streamfind_dependency_smoke PRIVATE streamfind::duckdb streamfind::openbabel)
@@ -209,7 +293,8 @@ foreach(_test_target IN ITEMS
     streamfind_dynamic_schema_contract
     streamfind_project_table_store_manifest_contract
     streamfind_execution_lifecycle_contract
-    streamfind_mixed_domain_workflow_artifact_contract
+    streamfind_mixed_plugin_workflow_artifact_contract
+    streamfind_project_runtime_store_recovery_contract
 )
     add_dependencies(${_test_target} streamfind_aggregate_catalogue)
     if(WIN32)

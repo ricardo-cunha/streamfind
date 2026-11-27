@@ -96,7 +96,8 @@ namespace streamfind::mass_spec::nta
         bool blankClean,
         float mzClust,
         float blankPresenceThreshold,
-        float globalPresenceThreshold);
+        float globalPresenceThreshold,
+        bool removeAbovePrecursorMz);
   } // namespace filter_features_ms2
 } // namespace streamfind::mass_spec::nta
 

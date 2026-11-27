@@ -13,7 +13,7 @@ namespace streamfind::sdk {
  * @brief Project-scoped services available to a plugin method.
  *
  * This is an in-process contract for static plugin composition. It deliberately
- * does not expose Project, MCP, catalogue loading, DuckDB handles, or domain
+ * does not expose Project, MCP, catalogue loading, DuckDB handles, or plugin
  * headers. The binary-safe ABI version will be defined separately before runtime
  * DLL loading.
  */

@@ -1,0 +1,219 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfsensors:exploreOpcuaServer
+    a sf:Operation ;
+    sf:operationId "sensors.explore_opcua_server" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry true ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Explore OPC UA server" ;
+    skos:definition "Connect to an OPC UA endpoint, report endpoint and namespace metadata, and browse a bounded hierarchical node tree from the Objects folder." ;
+    sf:hasParameter
+        sfsensors:endpointParameter,
+        sfsensors:usernameParameter,
+        sfsensors:passwordParameter,
+        sfsensors:timeoutSecondsParameter,
+        sfsensors:maxDepthParameter,
+        sfsensors:maxChildrenParameter ;
+    sf:hasOutputPort sfsensors:opcuaExploration, sfcore:operationSuccessSignal .
+
+sfsensors:inspectOpcuaNode
+    a sf:Operation ;
+    sf:operationId "sensors.inspect_opcua_node" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Inspect OPC UA node" ;
+    skos:definition "Connect to an OPC UA endpoint and read the selected node's definition, attributes, current value snapshot, type definition, and property metadata." ;
+    sf:hasParameter
+        sfsensors:endpointParameter,
+        sfsensors:usernameParameter,
+        sfsensors:passwordParameter,
+        sfsensors:timeoutSecondsParameter,
+        sfsensors:nodeIdParameter ;
+    sf:hasOutputPort sfcore:operationSuccessSignal .
+
+sfsensors:collectOpcuaData
+    a sf:Operation ;
+    sf:operationId "sensors.collect_opcua_data" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry true ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Collect OPC UA data" ;
+    skos:definition "Connect to an OPC UA endpoint, classify each requested node by OPC UA NodeClass, read values only from Variable nodes, and emit one typed row per requested node." ;
+    sf:hasParameter
+        sfsensors:endpointParameter,
+        sfsensors:usernameParameter,
+        sfsensors:passwordParameter,
+        sfsensors:timeoutSecondsParameter,
+        sfsensors:nodesParameter ;
+    sf:hasOutputPort sfsensors:opcuaDataTable, sfcore:operationSuccessSignal .
+
+sfsensors:captureOpcuaTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.capture_opcua_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry true ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Capture OPC UA time series" ;
+    skos:definition "Connect to an OPC UA endpoint and capture a bounded sequence of Variable observations with source/server timestamps, quality, status, and typed values." ;
+    sf:hasParameter
+        sfsensors:endpointParameter,
+        sfsensors:usernameParameter,
+        sfsensors:passwordParameter,
+        sfsensors:timeoutSecondsParameter,
+        sfsensors:nodesParameter,
+        sfsensors:captureDurationParameter,
+        sfsensors:captureIntervalParameter,
+        sfsensors:maxSamplesParameter,
+        sfsensors:maxBufferBytesParameter,
+        sfsensors:captureIdParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
+sfsensors:captureMqttTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.capture_mqtt_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry true ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Capture MQTT time series" ;
+    skos:definition "Subscribe to configured MQTT topics for a bounded interval, decode typed observations, and emit the canonical SENSOR_TIMESERIES table." ;
+    sf:hasParameter
+        sfsensors:brokerEndpointParameter,
+        sfsensors:topicsParameter,
+        sfsensors:payloadFormatParameter,
+        sfsensors:qosParameter,
+        sfsensors:clientIdParameter,
+        sfsensors:maxReconnectAttemptsParameter,
+        sfsensors:reconnectBackoffSecondsParameter,
+        sfsensors:mqttUsernameParameter,
+        sfsensors:mqttPasswordParameter,
+        sfsensors:tlsEnabledParameter,
+        sfsensors:tlsCaFileParameter,
+        sfsensors:tlsClientCertificateParameter,
+        sfsensors:tlsClientKeyParameter,
+        sfsensors:tlsClientKeyPasswordParameter,
+        sfsensors:tlsVerifyServerParameter,
+        sfsensors:captureDurationParameter,
+        sfsensors:maxSamplesParameter,
+        sfsensors:maxBufferBytesParameter,
+        sfsensors:captureIdParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
+sfsensors:normalizeSensorTable
+    a sf:Operation ;
+    sf:operationId "sensors.normalize_sensor_table" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Normalize sensor table" ;
+    skos:definition "Map explicitly selected columns from an input table into the SENSOR_TIMESERIES v1 long-format observation contract with typed values, timestamps, quality, and provenance." ;
+    sf:hasInputPort sfsensors:tableInputPort ;
+    sf:hasParameter
+        sfsensors:layoutParameter,
+        sfsensors:sourceIdColumnParameter,
+        sfsensors:signalIdColumnParameter,
+        sfsensors:eventTimeColumnParameter,
+        sfsensors:valueColumnParameter,
+        sfsensors:variableColumnsParameter,
+        sfsensors:receivedAtColumnParameter,
+        sfsensors:unitColumnParameter,
+        sfsensors:qualityColumnParameter,
+        sfsensors:statusCodeColumnParameter,
+        sfsensors:timeOriginParameter,
+        sfsensors:captureIdParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
+sfsensors:validateTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.validate_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Validate sensor time series" ;
+    skos:definition "Validate a SENSOR_TIMESERIES_V1 result without changing it, reporting missing or invalid observations, quality and time-origin issues, duplicate timestamps, and per-signal out-of-order rows." ;
+    sf:hasInputPort sfsensors:sensorTimeseriesTable ;
+    sf:hasOutputPort sfsensors:sensorValidationReport, sfcore:operationSuccessSignal .
+
+sfsensors:filterTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.filter_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Filter sensor time series" ;
+    skos:definition "Select SENSOR_TIMESERIES observations in an inclusive-start, exclusive-end event-time window without changing their typed values or quality metadata." ;
+    sf:hasInputPort sfsensors:sensorTimeseriesTable ;
+    sf:hasParameter
+        sfsensors:startTimeParameter,
+        sfsensors:endTimeParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
+sfsensors:resampleTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.resample_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Resample sensor time series" ;
+    skos:definition "Aggregate SENSOR_TIMESERIES observations into fixed UTC windows anchored at the Unix epoch, preserving typed values, missing data, and quality metadata." ;
+    sf:hasInputPort sfsensors:sensorTimeseriesTable ;
+    sf:hasParameter
+        sfsensors:windowSecondsParameter,
+        sfsensors:aggregationParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
+sfsensors:rollingStatistics
+    a sf:Operation ;
+    sf:operationId "sensors.rolling_statistics" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Calculate rolling statistics" ;
+    skos:definition "Calculate a trailing statistic for each numeric SENSOR_TIMESERIES observation and emit the derived observations using the same canonical table contract." ;
+    sf:hasInputPort sfsensors:sensorTimeseriesTable ;
+    sf:hasParameter
+        sfsensors:rollingWindowSecondsParameter,
+        sfsensors:rollingStatisticParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .
+
+sfsensors:alignTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.align_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Align sensor time series" ;
+    skos:definition "Align all signals in each source to the nearest observation of a reference signal within an explicit time tolerance, retaining match status and signed time deltas." ;
+    sf:hasInputPort sfsensors:sensorTimeseriesTable ;
+    sf:hasParameter
+        sfsensors:referenceSignalParameter,
+        sfsensors:toleranceSecondsParameter ;
+    sf:hasOutputPort sfsensors:sensorAlignedTable, sfcore:operationSuccessSignal .
+
+sfsensors:projectAlignedTimeseries
+    a sf:Operation ;
+    sf:operationId "sensors.project_aligned_timeseries" ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:providedByModule sfsensors:baseModule ;
+    sf:projectEntry false ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Project aligned time series" ;
+    skos:definition "Convert SENSOR_ALIGNED_V1 back to the canonical SENSOR_TIMESERIES_V1 contract using an explicit reference or observed time axis while retaining missing matches." ;
+    sf:hasInputPort sfsensors:sensorAlignedTable ;
+    sf:hasParameter sfsensors:timeAxisParameter ;
+    sf:hasOutputPort sfsensors:sensorTimeseriesTable, sfcore:operationSuccessSignal .

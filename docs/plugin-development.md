@@ -1,230 +1,191 @@
-# Plugin development
+# Develop plugins with a release package
 
-streamfind supports two extension surfaces:
+The Windows x64 and Linux x86_64 release archives include the **streamfind
+development framework**. Use the matching archive's `streamfind-dev` command to
+create, build, validate, package, install, and activate plugins and viewers.
+This workflow uses the tools and SDK shipped for that runtime version; it does
+not require a source checkout. Follow this guide and the commands reported by
+the extracted package's `bin/streamfind-dev`.
 
-- **Backend plugins** are C++20 dynamic libraries built against the versioned streamfind plugin ABI.
-- **Frontend plugins** are TypeScript packages that consume the frontend plugin and result contracts.
+## 1. Extract a matching release
 
-## Choose a development environment
-
-The streamfind repository is the normal development environment for plugins
-that will ship with streamfind. It contains the backend host and SDK sources,
-all bundled C++ plugins, the frontend application and plugin framework, the
-semantic catalogues, examples, and build tools. You do not need to install a
-separate developer kit to work on these in-repository plugins.
-
-Use the separate backend developer kit when you are building a C++ plugin in
-another repository or distributing a plugin independently of the streamfind
-source tree. The kit supplies the matching public headers, CMake package,
-linkable libraries, catalogue tools, and validator. It is version- and
-platform-specific. It is not needed for frontend plugin development.
-
-| Work | Recommended environment | Separate kit needed? |
-| --- | --- | --- |
-| Modify a bundled C++ plugin | This repository, under `cpp/plugins/<domain>/` | No |
-| Modify the frontend or a bundled UI plugin | This repository, under `frontend/` | No |
-| Build an independent C++ plugin project | External project plus matching backend developer kit | Yes |
-| Build an independent frontend plugin | Frontend plugin contracts and a compatible frontend host | No C++ kit |
-
-The kit is optional: it makes the backend plugin contract consumable without
-cloning or building the whole repository. It does not replace the repository
-as the development environment for streamfind itself.
-
-## Develop bundled plugins in this repository
-
-Backend plugin directories are discovered from `cpp/plugins/` when they
-contain a `CMakeLists.txt`. The default configuration builds all bundled
-plugins. Work in the relevant plugin directory, then configure, build, and run
-its focused CTest selection from the repository root:
+Download and extract the Windows or Linux archive from [Releases](releases.md).
+Keep the extracted package intact: `streamfind-dev` resolves its provisioning
+helper and SDK relative to that package. Use that package to run the service
+that will load the extension.
 
 ```powershell
-sfdev configure
-sfdev build backend
-sfdev test backend --list
+# Windows, from the extracted package
+bin\streamfind-dev.exe --version
+bin\streamfind-dev.exe doctor --json
+bin\streamfind-dev.exe list --target all
 ```
-
-Frontend plugin code lives under `frontend/src/plugins/`; the shared plugin
-framework and contracts live under `frontend/src/framework/plugins/`. Build
-and validate the frontend from the same checkout:
-
-```powershell
-sfdev build frontend
-sfdev test frontend
-```
-
-Use `sfdev run app` to work against the local service while developing the UI.
-See the [C++ guide](https://github.com/ricardo-cunha/streamfind/blob/main/cpp/README.md)
-and [frontend guide](https://github.com/ricardo-cunha/streamfind/blob/main/frontend/README.md)
-for toolchain and application details.
-
-The normal `streamfind-core-cpp` runtime archive is not a development SDK. It contains the built-in plugins and runtime vendor files, but no SDK headers, libraries, CMake package, Jena tools, or plugin validators.
-
-## Build an out-of-tree backend plugin
-
-The main backend areas in the repository are:
-
-```text
-cpp/core/       service lifecycle, DuckDB metadata, transactions, workflow runtime
-cpp/sdk/        ABI, host callbacks, manifests, catalogue projection, loader
-cpp/plugins/    domain readers, algorithms, catalogues, and plugin packages
-```
-
-Plugins use the generic host boundary. Do not pass `Project`, DuckDB handles,
-STL objects, JSON objects, or C++ exceptions across the dynamic boundary.
-
-Run `sfdev sdk build` from the repository development shell. On Windows it
-always builds, tests, installs, packages, and checks the Windows kit. If an
-Ubuntu WSL distribution is installed, it also builds and validates the Linux
-kit there. On Linux, it builds the Linux kit for that host. Archives and
-checksums are written to `tmp/release-output/`. The normal runtime release
-does not include the SDK.
-
-The kit can also be enabled directly in a CMake developer build with:
-
-```text
--DSTREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT=ON
-```
-
-The installed kit contains public headers, the CMake package, libraries,
-catalogue tools, the plugin validator, and semantic tooling. It is separate
-from the runtime package.
-
-A developer-kit consumer uses the installed package:
-
-```cmake
-find_package(streamfind CONFIG REQUIRED)
-streamfind_add_plugin(my_plugin example)
-```
-
-The repository example is `cpp/sdk/examples/minimal_plugin`. Validate a plugin
-by configuring, compiling, linking, and executing an out-of-tree consumer;
-`find_package` alone is not enough.
-
-## Develop frontend plugins
-
-Frontend plugins do not link to the C++ SDK. Develop them in the
-`frontend/src/plugins/` workspace and use the shared contracts in
-`frontend/src/framework/plugins/`. A plugin supplies a manifest and an entry
-module that registers viewers or visualization renderers through the
-versioned frontend plugin API. The frontend build discovers optional plugin
-manifests, bundles their code, and emits a same-origin `plugins.json` manifest;
-the app loads those bundles during startup. Plugins use shared TypeScript
-contracts for operation and capability metadata, results and table schemas,
-viewer registration, service communication, and manifests. Run `sfdev build
-frontend` and `sfdev test frontend` while developing. Keep frontend schemas
-derived from the shared catalogue contracts rather than duplicating backend
-table definitions.
-
-### Run the app during development
-
-From the repository root, start the app development environment with:
-
-```text
-sfdev run app
-```
-
-This starts Vite at `http://127.0.0.1:5173/` and starts or reuses the native
-development service at `http://127.0.0.1:8790`. It selects the native build
-tree for the current platform (`tmp/build/windows/core` or
-`tmp/build/linux/core`) and requires both `streamfind-server` and the matching
-`streamfind-worker` to be built. React and CSS edits use Vite hot module
-replacement. Press Ctrl+C to stop processes started by this command.
-
-`sfdev run app` works on Windows and Linux when the checkout has its native
-build and frontend dependencies. The `npm start` launcher in `frontend/` also
-supports both platforms. If it reuses an already-ready service, that service
-continues running after the launcher exits; if it starts the service, Ctrl+C
-stops the service and Vite together. To start only Vite, use
-`sfdev run frontend --url http://127.0.0.1:8790`; this requires an already-ready
-service.
-
-See the [frontend development guide](https://github.com/ricardo-cunha/streamfind/blob/main/frontend/README.md)
-and [sfdev guide](https://github.com/ricardo-cunha/streamfind/blob/main/scripts/README.md)
-for setup and command details.
-
-## Vendor dependencies
-
-Runtime vendor binaries are centralized beside the executables:
-
-```text
-bin/<vendor-library>
-```
-
-Built-in plugins reuse the CMake targets created by the central vendor layer. Do not search for arbitrary DLL, SO, LIB, or archive files in a plugin's CMake file. Build the vendor once for the selected platform and compiler, then link every consumer to the same target and package the runtime closure once.
-
-On Windows, use one MSYS2 UCRT64 installation for CMake, Ninja, GCC, and G++.
-The UCRT64 build also requires the Apache Arrow development package
-`mingw-w64-ucrt-x86_64-arrow`; install it with `sfdev setup --components native`.
-Arrow IPC is used for bounded worker/service row-batch transport and result
-delivery, and the release package stages its required runtime libraries under
-`bin/`. On Linux, install the distribution's Apache Arrow C++
-development package before configuring CMake. Keep compiler and runtime
-dependencies aligned with the target package.
-
-## Testing, compatibility, and release validation
-
-Run focused checks while developing a plugin. For backend work, list the
-registered native tests and filter to the relevant CTest cases:
-
-```powershell
-sfdev test backend --list
-sfdev test backend --filter <test-name-or-pattern>
-```
-
-For frontend plugins and viewers, run the frontend test suite and type/lint
-checks:
-
-```powershell
-sfdev test frontend
-sfdev check frontend
-```
-
-Official native tests are C++ tests registered with CTest under
-`cpp/core/tests/` or the owning `cpp/plugins/<domain>/tests/` directory.
-Development-stage Python checks, data-backed workflow runs, and integration
-checks belong under `scripts/dev/` and are not part of CTest. Use the
-repository `.venv` for Python development checks. Large mass-spectrometry
-fixtures are maintained in the sibling `streamfind.data` repository rather
-than in the native unit-test directories.
-
-The native C++ package targets Windows x64 and Linux x86_64. It includes the
-runtime, MCP server, browser application, semantic catalogues, and built-in
-domain plugins. Support depends on the backend, domain, file format, and
-platform; confirm vendor-reader availability against the specific format and
-dataset. Keep catalogue files with the executable. Optional scientific tools
-such as Open Babel, Java, and MetFrag are separate dependencies and are not
-automatically installed by the native packages.
-
-The packaged interfaces cover project creation and inspection, metadata and
-operation-graph access, cache and audit operations, catalogue-backed MCP
-schemas, and domain operations supplied by the enabled plugins. The mass-spec
-plugin includes analysis, spectrum, chromatogram, and supported native-file
-reader workflows. For the current platform and format matrix, see the
-[availability page](status.md).
-
-The native packages do not promise a stable cross-version C++ ABI. Match an
-independently developed plugin and its developer kit to the runtime version it
-targets. When reporting a compatibility issue, include the streamfind
-version, operating system, operation name, relevant parameters, and a minimal
-reproducible project or data description. Keep vendor-format support claims
-specific to the tested file family and acquisition mode.
-
-Before publishing a native release, validate both supported package platforms
-with the release scripts. They build the frontend and native runtime, run the
-CTest suite, check package contents and dependency closure, and smoke-test the
-packaged MCP interface:
-
-```powershell
-scripts\release\cpp\release-cpp.ps1
-```
-
-On Linux, run:
 
 ```sh
-scripts/release/cpp/release-cpp-linux.sh
+# Linux, from the extracted package
+./bin/streamfind-dev --version
+./bin/streamfind-dev doctor --json
+./bin/streamfind-dev list --target all
 ```
 
-Confirm that the complete CTest suite passes and packaged MCP smoke validation
-succeeds. Review the generated archives and `sha256sums.txt` in
-`tmp/release-output/` before publishing. See the [release guide](releases.md)
-for the release process.
+The reported product version should match the runtime archive. The
+provisioning protocol version is reported separately. `doctor` shows the
+resolved workspace, managed tool directory, installed SDK/package state, and
+extension registry; `list` reports installed plugins and viewers. The default
+source workspace is `Documents/streamfind-dev` and the managed home is
+`~/.streamfind` (Windows: `%USERPROFILE%\.streamfind`). Override these with
+`--workspace`, `--managed-home`, or `STREAMFIND_HOME`.
+
+## 2. Provision development tools
+
+Provision only the toolchain needed for your extension:
+
+```text
+streamfind-dev setup --target native
+streamfind-dev setup --target viewer
+streamfind-dev setup --target python --workspace <workspace>
+streamfind-dev setup --target all --workspace <workspace>
+```
+
+The native target installs the platform's C++ build prerequisites (MSYS2
+UCRT64 on Windows, native packages on supported Linux distributions). The
+viewer target installs the pinned Node.js and npm toolchain. The Python target
+installs the pinned Python runtime and creates a workspace-local `.venv`; use
+`--requirements <file>` only when you want that requirements file installed.
+`--offline` uses locally available verified tool archives, and `--dry-run`
+prints the planned setup without applying it. Setup is managed by the
+release-bundled provisioner, not by the repository's development scripts.
+
+## 3. Build a native C++ plugin
+
+Create a plugin workspace with the bundled scaffold, then add operations as
+needed:
+
+```text
+streamfind-dev plugin create <name> --workspace <workspace>
+streamfind-dev plugin add-operation <operation-name> --plugin <plugin-path>
+```
+
+The scaffold includes a native CMake project, plugin manifest, semantic
+catalogue, and starter operation. Edit these sources using the generated
+plugin's README and the SDK contract. Plugin IDs and operation IDs are part of
+the package interface; keep them stable across releases of your plugin.
+
+Build and check the plugin against the SDK from the **same extracted runtime
+archive**:
+
+```text
+streamfind-dev plugin build --plugin <plugin-path> --sdk <package-root>
+streamfind-dev plugin test --plugin <plugin-path> --sdk <package-root>
+streamfind-dev plugin validate --plugin <plugin-path> --sdk <package-root>
+streamfind-dev plugin package --plugin <plugin-path> --sdk <package-root>
+```
+
+`package` builds and validates before writing a platform-specific package. You
+can inspect an existing package with:
+
+```text
+streamfind-dev inspect --package <package-path> --target native
+```
+
+Use the `--build` option to select a build directory when needed. The plugin
+commands resolve compilers and CMake from the provisioned native toolchain.
+
+## 4. Build a result viewer
+
+Create a viewer for a fully qualified result contract IRI from the runtime's
+semantic catalogue:
+
+```text
+streamfind-dev viewer create <name> --contract <https-result-contract-IRI> --workspace <workspace>
+streamfind-dev setup --target viewer
+streamfind-dev viewer build --viewer <viewer-path>
+streamfind-dev viewer test --viewer <viewer-path>
+streamfind-dev viewer validate --viewer <viewer-path>
+streamfind-dev viewer package --viewer <viewer-path>
+```
+
+The scaffold uses the TypeScript/React viewer API and the matching viewer SDK
+contract. Build and test use the package-managed Node toolchain. Viewer
+validation checks the viewer manifest, result contract, and built bundle;
+packaging writes a checksummed viewer package.
+
+## 5. Install and activate an extension
+
+Install a validated package into the managed extension store, then activate its
+manifest ID and version:
+
+```text
+streamfind-dev plugin install --package <plugin-package>
+streamfind-dev plugin activate <plugin-id> --version <version>
+
+streamfind-dev viewer install --package <viewer-package>
+streamfind-dev viewer activate <viewer-id> --version <version>
+```
+
+Install and activation are separate so an extension is not loaded until you
+select it. The registry records installed versions, source provenance, and
+compatibility status. `doctor --json` reports the registry and compatibility
+findings; `list --target native|viewer|all` shows installed entries. Use
+`deactivate` to stop selecting a version, or `uninstall` to remove it from the
+registry and managed extension store.
+
+Configure the target streamfind service to use the same extension registry and
+managed deployment roots, then enable the IDs in `streamfind.json`. For example:
+
+```json
+{
+  "plugin_roots": {
+    "deployment": ["C:/Users/<user>/.streamfind/extensions/plugins"]
+  },
+  "viewer_roots": {
+    "deployment": ["C:/Users/<user>/.streamfind/extensions/viewers"]
+  },
+  "registry_path": "C:/Users/<user>/.streamfind/extensions/registry.json",
+  "enabled_plugins": ["custom.plugin.example"],
+  "enabled_viewers": ["@streamfind/example-viewer"]
+}
+```
+
+With `registry_path` set, the service resolves active package versions through
+the shared registry; deployment roots are used for package lookup when no
+registry is configured. The service loads only extension IDs selected in its
+enabled lists. Restart or reload the target service after changing its
+configuration. The extension store is separate from the release directory and
+the source workspace.
+
+## 6. Maintain extensions across runtime updates
+
+Use `streamfind-dev doctor --json` to review installed versions and runtime
+compatibility. Native plugins may need to be rebuilt against the new runtime's
+SDK. When retained source is available, rebuild and revalidate it against the
+matching archive before activating it:
+
+```text
+streamfind-dev rebuild --plugin <plugin-source> --sdk <new-package-root>
+```
+
+The runtime does not promise a stable cross-version C++ ABI. Review viewer API
+and result-contract compatibility as well, then test the selected extension
+with the target package. Keep the previous package and extension source until
+the updated extension has been checked.
+
+## Command reference
+
+The embedded CLI is the authoritative command reference for the release being
+used. Run `streamfind-dev` without arguments to print usage. The main commands
+are:
+
+| Command | Purpose |
+| --- | --- |
+| `doctor` | Inspect workspace, toolchain, registry, and compatibility |
+| `setup` | Provision native, viewer, or Python development tools |
+| `list` / `inspect` | Review installed extensions or a package |
+| `plugin create|add-operation|build|test|validate|package` | Develop native plugins |
+| `plugin install|activate|deactivate|uninstall` | Manage native plugin packages |
+| `viewer create|build|test|validate|package` | Develop result viewers |
+| `viewer install|activate|deactivate|uninstall` | Manage viewer packages |
+| `rebuild` | Rebuild a retained plugin source against a selected SDK |
+
+See [Command-line interfaces](cli.md) for how `streamfind-dev` relates to the
+runtime's `streamfind`, `streamfind-app`, and `streamfind-mcp` executables.

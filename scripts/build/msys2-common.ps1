@@ -13,14 +13,12 @@ function Get-StreamFindMSYS2Root {
             $pathRoot = Split-Path -Parent (Split-Path -Parent $compilerDirectory)
         }
     }
-    $candidates = @(
-        $pathRoot,
-        'C:\msys64',
-        (Join-Path $ManagedHome 'tools/msys2')
-    )
+    $systemRoot = 'C:\msys64'
+    $managedRoot = Join-Path $ManagedHome 'tools/msys2'
+    $candidates = @($pathRoot, $systemRoot, $managedRoot)
     foreach ($candidate in $candidates) {
         if (!$candidate) { continue }
         if (Test-Path -LiteralPath (Join-Path $candidate 'usr/bin/bash.exe') -PathType Leaf) { return $candidate }
     }
-    return $candidates[1]
+    return $managedRoot
 }

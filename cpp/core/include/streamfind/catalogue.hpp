@@ -45,8 +45,9 @@ STREAMFIND_CORE_API std::optional<Json> load(const std::optional<std::string> &p
 STREAMFIND_CORE_API Json import_plugin_catalogue(
     const Json &base,
     const Json &plugin,
-    std::string_view expected_domain,
-    const std::vector<std::string> &expected_modules);
+    std::string_view expected_plugin,
+    const std::vector<std::string> &expected_modules,
+    std::string_view expected_namespace);
 
 /**
  * @brief MCP tool definitions: exposed operations (kind='operation') shaped
@@ -57,7 +58,7 @@ STREAMFIND_CORE_API std::optional<Json> tools_json();
 
 /** @brief All entry documents, for the registry auto-registration loops. */
 STREAMFIND_CORE_API std::optional<Json> entries_json();
-STREAMFIND_CORE_API std::optional<Json> table_manifest_json(const std::string &domain,
+STREAMFIND_CORE_API std::optional<Json> table_manifest_json(const std::string &plugin,
                                                             const std::string &module_id);
 
 /**

@@ -30,20 +30,31 @@ export type ServiceSession = {
     process_id?: number | null;
     endpoint?: string;
     state?: string;
+    protocol_version?: string;
+    executable?: string;
+    manager_process_id?: number | null;
+    manager_executable?: string;
+    started_at?: string;
   };
+  projects?: ProjectSession[];
 };
 
 export type ProjectSession = {
   session_id: string;
-  database_path: string;
+  project_path: string;
   database_size_bytes: number;
-  domains: string[];
+  plugins: string[];
   metadata: Record<string, JsonValue>;
   result_store?: {
     status?: string;
     published_count?: number;
     size_bytes?: number;
   };
+  diagnostics?: Array<{
+    severity: string;
+    code: string;
+    message: string;
+  }>;
   initialization?: ProjectInitialization;
 };
 
@@ -120,7 +131,7 @@ export type WorkflowDemoMetadata = {
   name: string;
   description: string;
   use_case?: string;
-  domain?: string;
+  plugin?: string;
   version?: number;
   workflow: WorkflowDefinition;
   [key: string]: JsonValue | WorkflowDefinition | undefined;
@@ -195,7 +206,7 @@ export type TableContract = {
   table_contract_name: string;
   resource_id?: string;
   module_id?: string;
-  domain?: string;
+  plugin?: string;
   description?: string;
   columns: TableColumnContract[];
   /** Columns that the runtime may index for navigation and row selection. */
@@ -241,7 +252,7 @@ export type CapabilityPort = {
   table?: TableContract;
   schema?: JsonSchema;
   semantic_contract?: string;
-  data_kind?: 'duckdb_table' | 'structured_value' | 'signal';
+  data_kind?: 'table' | 'structured_value' | 'signal';
   representations?: string[];
   optional?: boolean;
 };
@@ -270,7 +281,7 @@ export type CanvasCapability = OperationCanvasCapability | MethodWorkflowCapabil
 
 export type BackendCapabilityBase = {
   canonical_id: string;
-  domain: string;
+  plugin: string;
   label: string;
   definition: string;
   interface: CapabilityInterface;
@@ -332,34 +343,34 @@ export type FrontendNodeCapability = {
   accepted_primitives: DuckDbPrimitiveType[];
   input_ports: CapabilityPort[];
   output_ports: CapabilityPort[];
-  domain?: string;
+  plugin?: string;
   plot?: { chart_type: string; input_result_types: string[]; required_columns?: string[] };
 };
 
 export type CapabilityIndexModule = {
-  domain: string;
+  plugin: string;
   module_id: string;
 };
 
 export type CapabilityIndexResponse = {
   protocol_version: string;
-  domains: string[];
+  plugins: string[];
   modules: CapabilityIndexModule[];
 };
 
 export type CapabilityModulesResponse = {
-  domain: string;
+  plugin: string;
   modules: string[];
 };
 
 /** Lightweight operation metadata returned by filtered discovery. */
 export type CapabilityOperationSummary = Pick<
   BackendCapabilityBase,
-  'canonical_id' | 'label' | 'domain' | 'module_id' | 'definition'
+  'canonical_id' | 'label' | 'plugin' | 'module_id' | 'definition'
 >;
 
 export type CapabilityOperationsRequest = {
-  domain: string;
+  plugin: string;
   module?: string;
   search?: string;
   includeSchema?: boolean;
@@ -370,7 +381,7 @@ export type ServiceCapabilities = {
   /** The current endpoint name is retained; entries are separated by `kind`. */
   operations: BackendCapability[];
   methods?: MethodCapability[];
-  domains?: string[];
+  plugins?: string[];
   tables?: TableContract[];
   frontend_nodes?: FrontendNodeCapability[];
   endpoints: string[];

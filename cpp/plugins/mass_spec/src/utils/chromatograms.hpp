@@ -24,6 +24,7 @@ struct Peak
     double baseline_area = 0.0;
     double width = 0.0;
     double fwhm = 0.0;
+    double noise = 0.0;
     double snr = 0.0;
     double asymmetry = 0.0;
     double tailing_factor = 0.0;
@@ -37,6 +38,8 @@ struct ChromatogramData
 {
     int chromatogram_index = 0;
     std::vector<double> rt;
+    std::vector<double> raw_intensity;
+    std::vector<double> baseline;
     std::vector<double> intensity;
 };
 
@@ -45,9 +48,11 @@ std::vector<double> rolling_min_baseline(const std::vector<double> &, int = 50);
 std::vector<double> als_baseline(const std::vector<double> &, double = 1e6, double = 0.01, int = 10);
 std::vector<double> moving_average_smooth(const std::vector<double> &, int = 5);
 double median_absolute_deviation(const std::vector<double> &);
+double normalize_mz(double);
 std::vector<Peak> find_peaks(const ChromatogramData &, bool = true, double = 45.0, double = 0.0, double = 10.0, double = 5.0, double = 120.0, double = 10.0);
 double trapezoidal_area(const std::vector<double> &, const std::vector<double> &);
 double calculate_fwhm(const std::vector<double> &, const std::vector<double> &, std::size_t, double);
+double calculate_noise(const std::vector<double> &, std::size_t, std::size_t);
 double calculate_snr(const std::vector<double> &, std::size_t, std::size_t, double);
 double calculate_tailing_factor(const std::vector<double> &, const std::vector<double> &, std::size_t, double);
 double calculate_gaussian_r2(const std::vector<double> &, const std::vector<double> &, std::size_t, std::size_t, double, double);

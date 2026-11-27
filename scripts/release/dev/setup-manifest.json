@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "streamfind-development-provisioning",
+  "entrypoint": "streamfind-dev-setup.ps1",
+  "toolchains": "toolchains.lock.json",
+  "supported_hosts": ["windows-x64", "linux-x64"],
+  "offline_cache": "${STREAMFIND_HOME}/downloads",
+  "notes": [
+    "Windows native dependencies are installed in managed MSYS2 UCRT64.",
+    "Ubuntu and Debian native dependencies are installed by apt-get and may require sudo.",
+    "The managed home does not contain system package-manager dependencies."
+  ]
+}

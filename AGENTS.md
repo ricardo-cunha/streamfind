@@ -7,6 +7,87 @@
 - Do not modify third-party or vendored source under `cpp/vendor/` unless explicitly requested.
 - Run the narrowest relevant validation after each change and report concrete results.
 
+## `sfdev` Development Framework
+
+Use `sfdev` as the standard interface for repository setup, native and
+frontend builds, supported tests, app startup, package creation, and releases.
+The command implementation is `scripts/sfdev.ps1`; the detailed user and agent
+guide is [`scripts/README.md`](scripts/README.md). Read that guide when a task
+uses an unfamiliar workflow, and check `sfdev help <command>` before invoking
+commands with effects you have not used in the current checkout.
+
+- `sfdev` requires PowerShell 7 or later. Windows PowerShell 5.1 is not
+  supported. In automation or when the shell alias is unavailable, invoke it
+  with `pwsh -NoProfile -File scripts/sfdev.ps1 <arguments>` from the checkout
+  root. Install PowerShell through the host platform's package manager; do not
+  put it under `.streamfind/tools`. See [`scripts/README.md`](scripts/README.md)
+  for the Windows WinGet command and official Linux install instructions.
+  `sfdev env shell` defines a checkout-local alias for that shell only.
+- At the start of development, inspect `sfdev env show` and run the relevant
+  `sfdev doctor --workflow native|frontend|scripts`. Use
+  `sfdev setup --components ...` to provision supported prerequisites; do not
+  invent tool paths or use system Python for repository scripts.
+- Use the narrowest supported command (`sfdev build backend --target ...`, a
+  CTest filter, a frontend command, or a development script) that covers the
+  change. `sfdev --dry-run` is not a global flag: use it only in the position
+  shown by that command's help. Depending on the command, dry-run prints the
+  planned process steps and environment or the cleanup targets. It does not
+  execute those steps or deletions, and does not prove that a planned build,
+  test, or service operation will succeed.
+- Discover development checks with `sfdev script list`, inspect their
+  invocation with `sfdev script info PATH`, and run them with
+  `sfdev script run PATH -- ARGUMENTS`. Script IDs are relative to
+  `scripts/dev/`; `--dry-run` belongs before the argument separator `--`.
+  Python scripts run with the repository `.venv`.
+- `sfdev workflows nta|impurities|quantification` creates a validated,
+  editable workflow project through MCP in an already-running service. It
+  writes projects under `tmp/projects/` and does not execute their operations.
+  `--url` selects a service endpoint, `--project-name` selects the project
+  basename, and `--force` deletes the existing DuckDB, sibling `.data` store,
+  and workflow sidecar before replacement. Ensure the project is closed in the
+  app first. Do not assume a dry run has created a project or started a service.
+- Keep generated projects, logs, build trees, and packages in this checkout's
+  `tmp/`. For worktrees, follow the isolated paths and port allocation in
+  [Worktree sandbox testing](#worktree-sandbox-testing); never use another
+  checkout's `tmp/` outputs or mistake its running app for this worktree.
+- Use `sfdev clean` only when cleanup is part of the task. Preview destructive
+  cleanup with `sfdev clean --scope ... --dry-run`; `all-temp` removes all
+  contents of `tmp/`, including projects, logs, packages, and release archives.
+
+For command examples, setup details, logging, dry-run output, package and
+release flows, see [`scripts/README.md`](scripts/README.md). That guide and
+`sfdev help` should stay aligned with the implementation.
+
+### Checkout development versus embedded development
+
+`sfdev` is the checkout development framework. It operates on the repository
+source tree and owns repository setup, native/frontend builds, CTest, packaged
+Windows verification, and platform release creation. It writes checkout-local
+builds, logs, packages, and release archives under `tmp/`.
+
+The embedded development framework is the `streamfind-dev` dispatcher and
+provisioning content shipped inside a packaged build or extracted release.
+It is used after a runtime package has been delivered, to create and develop
+external plugins and viewers against that package's SDK. It does not rebuild
+the StreamFind core, does not replace `sfdev`, and does not use the checkout's
+source tree as its development workspace.
+
+From Windows, Linux release creation is explicitly orchestrated by the
+checkout framework with:
+
+```powershell
+sfdev release prepare --linux --distribution Ubuntu
+sfdev release verify --linux --distribution Ubuntu
+```
+
+These commands mirror the current checkout into the selected WSL
+distribution's native Linux home as `/home/<linux-user>/<worktree-name>`.
+The Linux build, tests, package validation, and extracted MCP smoke run there;
+only the verified Linux archive and combined checksums are exported to this
+checkout's `tmp/release-output/`. `/mnt/c` is used only as the WSL bridge for
+source synchronization and final artifact export, never as the Linux build
+tree.
+
 ## C++ Project Rules
 
 - On Windows, build and package the C++ core and native plugins with the MSYS2 MinGW-w64 UCRT64 GCC stack: GCC/G++, CMake, Ninja, and Arrow development packages. Prefer an existing system MSYS2 installation; if unavailable, provision MSYS2 and its packages under `%USERPROFILE%\.streamfind\tools\msys2` (or `%STREAMFIND_HOME%\tools\msys2`). Resolve the root through `STREAMFIND_MSYS2_ROOT`; do not hard-code a machine-specific MSYS2 path. Do not use MSVC, Visual Studio environment initialization, `cl.exe`, or the MSVC linker for streamfind core/plugin builds or release distributions. Package matching MinGW runtime DLLs under the runtime vendor tree when required.
@@ -29,9 +110,12 @@
   `.venv`, and do not register them as official CTest tests.
 - Official native tests may use only small backend-neutral fixtures kept next to
   their owning C++ test area. Mass-spectrometry and other large example data
-  must come from the sibling `streamfind.data` repository at
-  `<parent>/streamfind.data`; development scripts resolve that repository for
-  data-backed checks.
+  must come from the shared `streamfind.data` checkout at
+  `<user>/.streamfind/streamfind.data` (or `$STREAMFIND_HOME/streamfind.data`).
+  Use `sfdev setup --components data` to provision it on demand. Development
+  scripts resolve the same checkout so worktrees and external plugin projects
+  use one data location. `STREAMFIND_EXAMPLE_DATA_ROOT` may explicitly point
+  to a different data directory.
 - Build and release validation may invoke CTest from `scripts/build/`, while
   development-stage Python and workflow validation remains in `scripts/dev/`.
 
@@ -72,9 +156,11 @@ Use the repository-local `.venv` for every Python script, test, formatter, or pa
 
 - Never run repository Python code with the system interpreter.
 - Use `.venv\Scripts\python.exe` on Windows and `.venv/bin/python` on POSIX.
-- Create `.venv` in the repository root if it does not exist, using a
-  compatible installed Python or the managed fallback from `.streamfind/tools/python`.
-- Provision the fallback and create `.venv` with `sfdev setup --components python`.
+- Create `.venv` in the repository root from the pinned managed Python under
+  `.streamfind/tools/python`; do not use a system Python installation or the
+  Windows `py.exe` launcher.
+- Provision the managed runtime and create or repair `.venv` with
+  `sfdev setup --components python`.
 - Install dependencies only into that environment.
 - Prefer `python -m pip` through the selected interpreter.
 - Verify the selected interpreter before running a script:
@@ -84,16 +170,15 @@ Use the repository-local `.venv` for every Python script, test, formatter, or pa
 
 ## User-Managed Development Tools
 
-Install development tools that are missing from the machine under the current
-user's `.streamfind/tools` directory. Python is the only additional standalone
-development tool to provision there: prefer a compatible system Python, and
-otherwise install the pinned Python runtime under `.streamfind/tools/python`.
-Use that interpreter only to create the checkout's `.venv`; all repository
-Python scripts and packages stay in `.venv`. On Windows, default to
+Install development tools under the current user's `.streamfind/tools`
+directory. Python and Node.js are pinned and managed there for reproducible
+repository tooling. Use managed Python only to create the checkout's `.venv`;
+all repository Python scripts and packages stay in `.venv`. On Windows, default to
 `%USERPROFILE%\.streamfind\tools`; on Linux/WSL, default to the Linux user's
 `~/.streamfind/tools`. Respect `STREAMFIND_HOME` when it is set. Prefer a
-compatible system tool already on `PATH`; use the managed copy when the system
-tool is unavailable. Keep repository package dependencies, such as
+compatible system tool already on `PATH` for tools that are not pinned by the
+repository. Python and Node.js must use their pinned managed copies. Keep
+repository package dependencies, such as
 `frontend/node_modules`, in their project directory rather than copying them
 into the user tool cache. Report the resolved tool path through `sfdev doctor`.
 
@@ -196,6 +281,65 @@ run the executable from `tmp/packaged_build/bin/` so package-relative service,
 plugin, catalogue, frontend, and runtime resolution is exercised. Keep
 project databases and result-store sidecars used for testing under
 `tmp/projects/` unless the test explicitly targets a user-provided project.
+
+### Worktree sandbox testing
+
+Treat every Git worktree as an isolated development and test sandbox. Use only
+that worktree's source, build trees, package, release output, test projects,
+result stores, and logs. Never point a worktree test at another checkout's
+`tmp/` outputs, and never overwrite the main checkout's `tmp/packaged_build/`
+or release files from a worktree.
+
+- The packaged app is the only app verification target. Do not start a Vite
+  development server or a build-tree service to inspect UI changes. Refresh
+  frontend-only changes with `sfdev package --frontend-only`; use `sfdev
+  package` for native, worker, packaging, or full app changes.
+- Keep the primary packaged service port `8787` reserved. Allocate each
+  simultaneously tested worktree a unique service port from `8791`–`8890`.
+  Check that the port is free and not assigned to another active worktree
+  before starting; never silently reuse another worktree's port.
+- Build the package inside the target worktree, then start that package's CLI
+  service with its assigned port. Verify the app at that endpoint and confirm
+  the executable path belongs to the intended worktree/package.
+- For a packaged build or extracted release package, use that package's CLI
+  to start its tray-owned service, preserving the normal app/MCP lifecycle and
+  package resource resolution:
+
+  ```powershell
+  bin\streamfind.exe service start --port <assigned-service-port>
+  bin\streamfind.exe service status
+  ```
+
+  Then launch `bin\streamfind-app.exe` or that package's `bin\streamfind-mcp.exe`.
+  Both attach to the same service scope and published endpoint. On Linux, use
+  `bin/streamfind service start --port <assigned-service-port>` and
+  `bin/streamfind-app` / `bin/streamfind-mcp`. Stop the service through the
+  same package CLI when finished. Use the package built or extracted inside
+  the current worktree's `tmp/`. Running `streamfind-server` directly is for
+  server-specific development checks; it does not provide the tray-managed
+  packaged lifecycle.
+- Service discovery and tray-manager ownership are scoped automatically to
+  the directory containing the running StreamFind executables. The CLI, app,
+  tray, server, and MCP from one build/package therefore share one registry;
+  another checkout or package cannot discover, attach to, or stop that service
+  through its default registry. Ports remain machine-wide TCP resources, so
+  keep the allocated service ports unique. An explicit
+  `STREAMFIND_RUNTIME_DIR` intentionally selects a shared/custom discovery
+  scope. MCP can intentionally attach across scopes with
+  `STREAMFIND_SERVICE_ENDPOINT`; when set, MCP does not auto-start its package's
+  service.
+- Keep any temporary project database and its sibling `.data` result store in
+  the current worktree's `tmp/projects/`. Do not open a user's live project for
+  routine worktree validation.
+- Record test server output under the worktree's `tmp/logs/`. Stop only the
+  server process started for that test (Ctrl+C for a foreground server), then
+  verify that the assigned ports are released. Never stop a service merely
+  because it is using one of the worktree test ports unless its executable path
+  confirms it belongs to the current worktree and test.
+- Before reporting a browser or release test as successful, verify the service
+  endpoint and running executable path belong to the intended worktree/package.
+  This prevents false results from a main-checkout service, stale package, or
+  another worktree.
 
 ## Plan Management
 

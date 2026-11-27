@@ -1,0 +1,2363 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Copyright (c) 2017 - 2018 Fraunhofer IOSB (Author: Tino Bischoff)
+ */
+
+#include <open62541/client.h>
+#include <open62541/types.h>
+
+#include "ua_pubsub_networkmessage.h"
+
+#include "check.h"
+#include <stdlib.h>
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS1ValueVariantKeyFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf.fieldCount = 1;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+
+    UA_Int32 iv = 27;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 1);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+
+    //}
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_Decode_KeyFrameFieldCountMustFitBuffer) {
+    UA_Byte data[] = {0x01, 0xff, 0xff};
+    UA_ByteString buffer = {sizeof(data), data};
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    PubSubDecodeCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ctx.pos = buffer.data;
+    ctx.ctx.end = buffer.data + buffer.length;
+    UA_StatusCode res = UA_DataSetMessage_decodeBinary(&ctx, NULL, &dsm, 0);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert_ptr_eq(dsm.data.keyFrameFields, NULL);
+    UA_DataSetMessage_clear(&dsm);
+}
+END_TEST
+
+START_TEST(UA_PubSub_Decode_DeltaFrameFieldCountMustFitBuffer) {
+    UA_Byte data[] = {0x81, 0x01, 0xff, 0xff};
+    UA_ByteString buffer = {sizeof(data), data};
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    PubSubDecodeCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ctx.pos = buffer.data;
+    ctx.ctx.end = buffer.data + buffer.length;
+    UA_StatusCode res = UA_DataSetMessage_decodeBinary(&ctx, NULL, &dsm, 0);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert_ptr_eq(dsm.data.deltaFrameFields, NULL);
+    UA_DataSetMessage_clear(&dsm);
+}
+END_TEST
+
+START_TEST(UA_PubSub_Decode_RawDataSizeMustFitBuffer) {
+    UA_FieldMetaData field;
+    UA_FieldMetaData_init(&field);
+    field.dataType = UA_TYPES[UA_TYPES_BYTE].typeId;
+    field.builtInType = UA_NS0ID_BYTE;
+    field.valueRank = UA_VALUERANK_SCALAR;
+    UA_DataSetMessage_EncodingMetaData em;
+    memset(&em, 0, sizeof(em));
+    em.fieldsSize = 1;
+    em.fields = &field;
+
+    UA_Byte data[] = {0x03, 0xaa};
+    PubSubDecodeCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ctx.pos = data;
+    ctx.ctx.end = data + sizeof(data);
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    UA_StatusCode res = UA_DataSetMessage_decodeBinary(&ctx, &em, &dsm, 1);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert_ptr_eq(ctx.ctx.end, data + sizeof(data));
+    UA_DataSetMessage_clear(&dsm);
+
+    memset(&dsm, 0, sizeof(dsm));
+    ctx.ctx.pos = data;
+    res = UA_DataSetMessage_decodeBinary(&ctx, &em, &dsm, sizeof(data) + 1);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADDECODINGERROR);
+    UA_DataSetMessage_clear(&dsm);
+
+    /* A sized DSM and a single DSM with implicit size both use metadata. */
+    for(size_t size = 0; size <= sizeof(data); size += sizeof(data)) {
+        memset(&dsm, 0, sizeof(dsm));
+        ctx.ctx.pos = data;
+        res = UA_DataSetMessage_decodeBinary(&ctx, &em, &dsm, size);
+        ck_assert_uint_eq(res, UA_STATUSCODE_GOOD);
+        ck_assert_ptr_eq(ctx.ctx.pos, data + sizeof(data));
+        ck_assert_uint_eq(dsm.fieldCount, 1);
+        ck_assert_uint_eq(*(UA_Byte*)dsm.data.keyFrameFields[0].value.data, 0xaa);
+        UA_DataSetMessage_clear(&dsm);
+    }
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS1ValueDataValueKeyFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf.fieldCount = 1;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+
+    UA_Int32 iv = 27;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 1);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    //}
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantKeyFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    UA_UInt16 anzFields = 2;
+    dmkf.fieldCount = anzFields;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[1]);
+
+    UA_Double dv = 231.3;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &dv, &UA_TYPES[UA_TYPES_DOUBLE]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    UA_UInt64 uiv = 98412;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[1].value, &uiv, &UA_TYPES[UA_TYPES_UINT64]);
+    dmkf.data.keyFrameFields[1].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, anzFields);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, &UA_TYPES[UA_TYPES_DOUBLE]);
+    ck_assert(*(UA_Double*)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data == dv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.type, &UA_TYPES[UA_TYPES_UINT64]);
+    ck_assert_uint_eq(*(UA_UInt64 *)m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.data, uiv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[1]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueKeyFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    UA_UInt16 anzFields = 2;
+    dmkf.fieldCount = anzFields;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[1]);
+
+    UA_Double dv = 231.3;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &dv, &UA_TYPES[UA_TYPES_DOUBLE]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    UA_UInt64 uiv = 98412;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[1].value, &uiv, &UA_TYPES[UA_TYPES_UINT64]);
+    dmkf.data.keyFrameFields[1].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, anzFields);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, &UA_TYPES[UA_TYPES_DOUBLE]);
+    ck_assert(*(UA_Double*)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data == dv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.type, &UA_TYPES[UA_TYPES_UINT64]);
+    ck_assert_uint_eq(*(UA_UInt64 *)m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.data, uiv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[1]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS1ValueVariantDeltaFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmdf;
+    memset(&dmdf, 0, sizeof(UA_DataSetMessage));
+    dmdf.header.dataSetMessageValid = true;
+    dmdf.header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmdf.header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    dmdf.fieldCount = 1;
+    size_t memsize = sizeof(UA_DataSetMessage_DeltaFrameField) * dmdf.fieldCount;
+    dmdf.data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)UA_malloc(memsize);
+
+    UA_UInt16 index = 1;
+    dmdf.data.deltaFrameFields[0].index = index;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[0].value);
+
+    UA_Int32 iv = 58;
+    UA_Variant_setScalarCopy(&dmdf.data.deltaFrameFields[0].value.value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmdf.data.deltaFrameFields[0].value.hasValue = true;
+
+    m.payload.dataSetMessages = &dmdf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 1);
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[0].index, index);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    UA_DataValue_clear(&dmdf.data.deltaFrameFields[0].value);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(dmdf.data.deltaFrameFields);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS1ValueDataValueDeltaFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmdf;
+    memset(&dmdf, 0, sizeof(UA_DataSetMessage));
+    dmdf.header.dataSetMessageValid = true;
+    dmdf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmdf.header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    dmdf.fieldCount = 1;
+    size_t memsize = sizeof(UA_DataSetMessage_DeltaFrameField) * dmdf.fieldCount;
+    dmdf.data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)UA_malloc(memsize);
+
+    UA_UInt16 index = 1;
+    dmdf.data.deltaFrameFields[0].index = index;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[0].value);
+
+    UA_Int32 iv = 197;
+    UA_Variant_setScalarCopy(&dmdf.data.deltaFrameFields[0].value.value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmdf.data.deltaFrameFields[0].value.hasValue = true;
+
+    m.payload.dataSetMessages = &dmdf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 1);
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[0].index, index);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    UA_DataValue_clear(&dmdf.data.deltaFrameFields[0].value);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(dmdf.data.deltaFrameFields);
+}
+END_TEST
+
+START_TEST(UA_PubSub_Encode_WithBufferTooSmallShallReturnError) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf.fieldCount = 1;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+
+    UA_Int32 iv = 27;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+
+    // to generate an error we make the buffer too small
+    msgSize -= 5;
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_ne(rv, UA_STATUSCODE_GOOD);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_Decode_WithBufferTooSmallShallReturnError) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf.fieldCount = 1;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+
+    UA_Int32 iv = 27;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    memset(&m2, 0, sizeof(UA_NetworkMessage));
+    UA_ByteString buffer2;
+    UA_ByteString_init(&buffer2);
+    size_t shortLength = buffer.length - 4;
+    UA_ByteString_allocBuffer(&buffer2, shortLength);
+    for (size_t i = 0; i < shortLength; i++)
+    {
+        buffer2.data[i] = buffer.data[i];
+    }
+
+    rv = UA_NetworkMessage_decodeBinary(&buffer2, &m2, NULL, NULL);
+    ck_assert_int_ne(rv, UA_STATUSCODE_GOOD);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_ByteString_clear(&buffer2);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+#ifdef UA_ENABLE_MALLOC_SINGLETON
+
+static size_t fieldCountMaxAlloc = 0;
+
+static void *
+fieldCountTrackingMalloc(size_t size) {
+    if(size > fieldCountMaxAlloc)
+        fieldCountMaxAlloc = size;
+    return malloc(size);
+}
+
+static void *
+fieldCountTrackingCalloc(size_t nelem, size_t elsize) {
+    size_t sz = nelem * elsize;
+    if(sz > fieldCountMaxAlloc)
+        fieldCountMaxAlloc = sz;
+    return calloc(nelem, elsize);
+}
+
+static void *
+fieldCountTrackingRealloc(void *ptr, size_t size) {
+    if(size > fieldCountMaxAlloc)
+        fieldCountMaxAlloc = size;
+    return realloc(ptr, size);
+}
+
+static void
+fieldCountTrackingFree(void *ptr) {
+    free(ptr);
+}
+
+START_TEST(UA_PubSub_Decode_KeyFrameFieldCountExceedsRemainingReturnsBadDecodingError) {
+    /* version=1, no flags -> single DataSetMessage. DSM header valid=1,
+     * fieldEncoding=VARIANT, type=DataKeyFrame (default). fieldCount is set
+     * to 0xFFFF although no bytes remain for even a single field. A correct
+     * decoder must reject this before allocating field storage sized from
+     * the unchecked wire value; the status code alone does not catch this,
+     * since the oversized allocation also ends up failing once the
+     * (nonexistent) field data is decoded. The allocation size is observed
+     * through the UA_ENABLE_MALLOC_SINGLETON hooks. */
+    UA_Byte raw[] = {
+        0x01,             /* NetworkMessage header */
+        0x01,             /* DataSetMessage header */
+        0xFF, 0xFF        /* fieldCount = 65535 */
+    };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    size_t offset = 0;
+
+    void *(*origMalloc)(size_t) = UA_mallocSingleton;
+    void *(*origCalloc)(size_t, size_t) = UA_callocSingleton;
+    void *(*origRealloc)(void *, size_t) = UA_reallocSingleton;
+    void (*origFree)(void *) = UA_freeSingleton;
+
+    fieldCountMaxAlloc = 0;
+    UA_mallocSingleton = fieldCountTrackingMalloc;
+    UA_callocSingleton = fieldCountTrackingCalloc;
+    UA_reallocSingleton = fieldCountTrackingRealloc;
+    UA_freeSingleton = fieldCountTrackingFree;
+
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+
+    UA_mallocSingleton = origMalloc;
+    UA_callocSingleton = origCalloc;
+    UA_reallocSingleton = origRealloc;
+    UA_freeSingleton = origFree;
+
+    ck_assert_int_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert_uint_lt(fieldCountMaxAlloc, 1024 * 1024);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_DeltaFrameFieldCountExceedsRemainingReturnsBadDecodingError) {
+    /* Same as above, but DataSetMessageType=DataDeltaFrame via the Flags2 byte. */
+    UA_Byte raw[] = {
+        0x01,             /* NetworkMessage header */
+        0x81,             /* DataSetMessage header: valid=1, Flags2 enabled */
+        0x01,             /* Flags2: dataSetMessageType = DataDeltaFrame */
+        0xFF, 0xFF        /* fieldCount = 65535 */
+    };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    size_t offset = 0;
+
+    void *(*origMalloc)(size_t) = UA_mallocSingleton;
+    void *(*origCalloc)(size_t, size_t) = UA_callocSingleton;
+    void *(*origRealloc)(void *, size_t) = UA_reallocSingleton;
+    void (*origFree)(void *) = UA_freeSingleton;
+
+    fieldCountMaxAlloc = 0;
+    UA_mallocSingleton = fieldCountTrackingMalloc;
+    UA_callocSingleton = fieldCountTrackingCalloc;
+    UA_reallocSingleton = fieldCountTrackingRealloc;
+    UA_freeSingleton = fieldCountTrackingFree;
+
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+
+    UA_mallocSingleton = origMalloc;
+    UA_callocSingleton = origCalloc;
+    UA_reallocSingleton = origRealloc;
+    UA_freeSingleton = origFree;
+
+    ck_assert_int_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert_uint_lt(fieldCountMaxAlloc, 1024 * 1024);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+#endif /* UA_ENABLE_MALLOC_SINGLETON */
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantDeltaFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmdf;
+    memset(&dmdf, 0, sizeof(UA_DataSetMessage));
+    dmdf.header.dataSetMessageValid = true;
+    dmdf.header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmdf.header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    dmdf.fieldCount = 2;
+    size_t memsize = sizeof(UA_DataSetMessage_DeltaFrameField) * dmdf.fieldCount;
+    dmdf.data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)UA_malloc(memsize);
+
+    UA_UInt16 index1 = 1;
+    dmdf.data.deltaFrameFields[0].index = index1;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[0].value);
+    UA_UInt16 index2 = 3;
+    dmdf.data.deltaFrameFields[1].index = index2;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[1].value);
+
+    UA_Int32 iv = 58;
+    UA_Variant_setScalar(&dmdf.data.deltaFrameFields[0].value.value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmdf.data.deltaFrameFields[0].value.hasValue = true;
+
+    UA_String testString = (UA_String) { 5, (UA_Byte*)"OPCUA" };
+    UA_Variant value;
+    UA_Variant_init(&value);
+    value.data = UA_malloc(sizeof(UA_String));
+    *((UA_String*)value.data) = testString;
+    value.type = &UA_TYPES[UA_TYPES_STRING];
+    dmdf.data.deltaFrameFields[1].value.value = value;
+    dmdf.data.deltaFrameFields[1].value.hasValue = true;
+
+    m.payload.dataSetMessages = &dmdf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 2);
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[0].index, index1);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp);
+
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[1].index, index2);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue);
+    // compare string value
+    UA_String decodedString = *(UA_String*)(m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.value.data);
+    for (UA_Int32 i = 0; i < 5; i++)
+    {
+        ck_assert_int_eq(decodedString.data[i], testString.data[i]);
+    }
+    ck_assert_uint_eq(decodedString.length, testString.length);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp);
+
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    ((UA_String*)value.data)->data = NULL; // the string is statically allocated. do not free it.
+    UA_Variant_clear(&value);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(dmdf.data.deltaFrameFields);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueDeltaFrame) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    UA_DataSetMessage dmdf;
+    memset(&dmdf, 0, sizeof(UA_DataSetMessage));
+    dmdf.header.dataSetMessageValid = true;
+    dmdf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmdf.header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    dmdf.fieldCount = 2;
+    size_t memsize = sizeof(UA_DataSetMessage_DeltaFrameField) * dmdf.fieldCount;
+    dmdf.data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)UA_malloc(memsize);
+
+    UA_UInt16 index1 = 1;
+    dmdf.data.deltaFrameFields[0].index = index1;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[0].value);
+    UA_UInt16 index2 = 3;
+    dmdf.data.deltaFrameFields[1].index = index2;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[1].value);
+
+    UA_Int32 iv = 193;
+    UA_Variant_setScalarCopy(&dmdf.data.deltaFrameFields[0].value.value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmdf.data.deltaFrameFields[0].value.hasValue = true;
+    dmdf.data.deltaFrameFields[0].value.sourceTimestamp = UA_DateTime_now();
+    dmdf.data.deltaFrameFields[0].value.hasSourceTimestamp = true;
+
+    UA_String testString = (UA_String) { 5, (UA_Byte*)"OPCUA" };
+    UA_Variant value;
+    UA_Variant_init(&value);
+    value.data = UA_malloc(sizeof(UA_String));
+    *((UA_String*)value.data) = testString;
+    value.type = &UA_TYPES[UA_TYPES_STRING];
+    dmdf.data.deltaFrameFields[1].value.value = value;
+    dmdf.data.deltaFrameFields[1].value.hasValue = true;
+
+    m.payload.dataSetMessages = &dmdf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 2);
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[0].index, index1);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp);
+
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[1].index, index2);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue);
+    // compare string value
+    UA_String decodedString = *(UA_String*)(m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.value.data);
+    for (UA_Int32 i = 0; i < 5; i++)
+    {
+        ck_assert_int_eq(decodedString.data[i], testString.data[i]);
+    }
+    ck_assert_uint_eq(decodedString.length, testString.length);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp);
+
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    ((UA_String*)value.data)->data = NULL; // the string is statically allocated. do not free it.
+    UA_Variant_clear(&value);
+    UA_DataValue_clear(&dmdf.data.deltaFrameFields[0].value);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(dmdf.data.deltaFrameFields);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantKeyFrameGroupHeader) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.groupHeaderEnabled = true;
+    m.groupHeader.writerGroupIdEnabled = true;
+    UA_UInt16 writerGroupId = 17;
+    m.groupHeader.writerGroupId = writerGroupId;
+    m.groupHeader.groupVersionEnabled = true;
+    UA_UInt32 groupVersion = 573354747; // das sollte irgendwann 2018 sein
+    m.groupHeader.groupVersion = groupVersion;
+
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+
+    UA_UInt16 anzFields = 2;
+    dmkf.fieldCount = anzFields;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[1]);
+
+    UA_Double dv = 231.3;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &dv, &UA_TYPES[UA_TYPES_DOUBLE]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    UA_UInt64 uiv = 98412;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[1].value, &uiv, &UA_TYPES[UA_TYPES_UINT64]);
+    dmkf.data.keyFrameFields[1].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.groupHeader.writerGroupIdEnabled == m2.groupHeader.writerGroupIdEnabled);
+    ck_assert(m.groupHeader.groupVersionEnabled == m2.groupHeader.groupVersionEnabled);
+    ck_assert(m.groupHeader.networkMessageNumberEnabled == m2.groupHeader.networkMessageNumberEnabled);
+    ck_assert(m.groupHeader.sequenceNumberEnabled == m2.groupHeader.sequenceNumberEnabled);
+    ck_assert_uint_eq(m2.groupHeader.writerGroupId, writerGroupId);
+    ck_assert_uint_eq(m2.groupHeader.groupVersion, groupVersion);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, anzFields);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_uint_eq((uintptr_t)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, (uintptr_t)&UA_TYPES[UA_TYPES_DOUBLE]);
+    ck_assert(*(UA_Double*)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data == dv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_uint_eq((uintptr_t)m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.type, (uintptr_t)&UA_TYPES[UA_TYPES_UINT64]);
+    ck_assert_uint_eq(*(UA_UInt64 *)m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.data, uiv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[1]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantDeltaFramePublDSCID) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.publisherIdEnabled = true;
+    m.publisherId.idType = UA_PUBLISHERIDTYPE_UINT32;
+    UA_UInt32 publisherId = 1469;
+    m.publisherId.id.uint32 = publisherId;
+    m.dataSetClassIdEnabled = true;
+    UA_Guid dataSetClassId = UA_Guid_random();
+    m.dataSetClassId = dataSetClassId;
+
+    UA_DataSetMessage dmdf;
+    memset(&dmdf, 0, sizeof(UA_DataSetMessage));
+    dmdf.header.dataSetMessageValid = true;
+    dmdf.header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmdf.header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    dmdf.fieldCount = 2;
+    size_t memsize = sizeof(UA_DataSetMessage_DeltaFrameField) * dmdf.fieldCount;
+    dmdf.data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)UA_malloc(memsize);
+
+    UA_UInt16 index1 = 1;
+    dmdf.data.deltaFrameFields[0].index = index1;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[0].value);
+    UA_UInt16 index2 = 3;
+    dmdf.data.deltaFrameFields[1].index = index2;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[1].value);
+
+    UA_Int32 iv = 58;
+    UA_Variant_setScalarCopy(&dmdf.data.deltaFrameFields[0].value.value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmdf.data.deltaFrameFields[0].value.hasValue = true;
+
+    UA_String testString = (UA_String) { 5, (UA_Byte*)"OPCUA" };
+    UA_Variant value;
+    UA_Variant_init(&value);
+    value.data = UA_malloc(sizeof(UA_String));
+    *((UA_String*)value.data) = testString;
+    value.type = &UA_TYPES[UA_TYPES_STRING];
+    dmdf.data.deltaFrameFields[1].value.value = value;
+    dmdf.data.deltaFrameFields[1].value.hasValue = true;
+
+    m.payload.dataSetMessages = &dmdf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(UA_Guid_equal(&m.dataSetClassId, &m2.dataSetClassId) == true);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert_int_eq(m2.publisherId.idType, m.publisherId.idType);
+    ck_assert_uint_eq(m2.publisherId.id.uint32, publisherId);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 2);
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[0].index, index1);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp);
+
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[1].index, index2);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue);
+    // compare string value
+    UA_String decodedString = *(UA_String*)(m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.value.data);
+    for (UA_Int32 i = 0; i < 5; i++)
+    {
+        ck_assert_int_eq(decodedString.data[i], testString.data[i]);
+    }
+    ck_assert_uint_eq(decodedString.length, testString.length);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp);
+
+    ((UA_String*)value.data)->data = NULL; // the string is statically allocated. do not free it.
+    UA_Variant_clear(&value);
+    UA_DataValue_clear(&dmdf.data.deltaFrameFields[0].value);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(dmdf.data.deltaFrameFields);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueKeyFramePH) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.payloadHeaderEnabled = true;
+
+    UA_UInt16 dataSetWriterId = 1698;
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    m.dataSetWriterIds[0] = dataSetWriterId;
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    UA_UInt16 anzFields = 2;
+    dmkf.fieldCount = anzFields;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[1]);
+
+    UA_Double dv = 231.3;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &dv, &UA_TYPES[UA_TYPES_DOUBLE]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    UA_UInt64 uiv = 98412;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[1].value, &uiv, &UA_TYPES[UA_TYPES_UINT64]);
+    dmkf.data.keyFrameFields[1].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert_uint_eq(m.messageCount, 1);
+    ck_assert_uint_eq(m.dataSetWriterIds[0], dataSetWriterId);
+
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, anzFields);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, &UA_TYPES[UA_TYPES_DOUBLE]);
+    ck_assert(*(UA_Double*)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data == dv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.type, &UA_TYPES[UA_TYPES_UINT64]);
+    ck_assert_uint_eq(*(UA_UInt64 *)m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.data, uiv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[1]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantKeyFrameTSProm) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.timestampEnabled = true;
+    UA_DateTime ts = UA_DateTime_now();
+    m.timestamp = ts;
+    m.promotedFieldsEnabled = true;
+    m.promotedFieldsSize = 1;
+    m.promotedFields = (UA_Variant*)UA_Array_new(m.promotedFieldsSize, &UA_TYPES[UA_TYPES_VARIANT]);
+
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    UA_UInt16 anzFields = 2;
+    dmkf.fieldCount = anzFields;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[1]);
+
+    UA_Double dv = 231.3;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &dv, &UA_TYPES[UA_TYPES_DOUBLE]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    UA_Variant_copy(&dmkf.data.keyFrameFields[0].value, &m.promotedFields[0]);
+
+    UA_UInt64 uiv = 98412;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[1].value, &uiv, &UA_TYPES[UA_TYPES_UINT64]);
+    dmkf.data.keyFrameFields[1].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert_int_eq(m.timestamp, ts);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert_uint_eq(m2.promotedFieldsSize, 1);
+    ck_assert(*((UA_Double*)m2.promotedFields[0].data) == dv);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, anzFields);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, &UA_TYPES[UA_TYPES_DOUBLE]);
+    ck_assert(*(UA_Double*)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data == dv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.type, &UA_TYPES[UA_TYPES_UINT64]);
+    ck_assert_uint_eq(*(UA_UInt64 *)m2.payload.dataSetMessages[0].data.keyFrameFields[1].value.data, uiv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[1].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+
+    UA_Array_delete(m.promotedFields, m.promotedFieldsSize, &UA_TYPES[UA_TYPES_VARIANT]);
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[1]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueDeltaFrameGHProm2) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.groupHeaderEnabled = true;
+    m.groupHeader.networkMessageNumberEnabled = true;
+    UA_UInt16 networkMessageNumber = 2175;
+    m.groupHeader.networkMessageNumber = networkMessageNumber;
+
+    m.promotedFieldsEnabled = true;
+    m.promotedFieldsSize = 2;
+    m.promotedFields = (UA_Variant*)UA_Array_new(m.promotedFieldsSize, &UA_TYPES[UA_TYPES_VARIANT]);
+
+    UA_DataSetMessage dmdf;
+    memset(&dmdf, 0, sizeof(UA_DataSetMessage));
+    dmdf.header.dataSetMessageValid = true;
+    dmdf.header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    dmdf.header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    dmdf.fieldCount = 2;
+    size_t memsize = sizeof(UA_DataSetMessage_DeltaFrameField) * dmdf.fieldCount;
+    dmdf.data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)UA_malloc(memsize);
+
+    UA_UInt16 index1 = 1;
+    dmdf.data.deltaFrameFields[0].index = index1;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[0].value);
+    UA_UInt16 index2 = 3;
+    dmdf.data.deltaFrameFields[1].index = index2;
+    UA_DataValue_init(&dmdf.data.deltaFrameFields[1].value);
+
+    UA_Int32 iv = 1573;
+    UA_Variant_setScalarCopy(&dmdf.data.deltaFrameFields[0].value.value, &iv, &UA_TYPES[UA_TYPES_INT32]);
+    dmdf.data.deltaFrameFields[0].value.hasValue = true;
+    dmdf.data.deltaFrameFields[0].value.sourceTimestamp = UA_DateTime_now();
+    dmdf.data.deltaFrameFields[0].value.hasSourceTimestamp = true;
+
+    UA_Variant_copy(&dmdf.data.deltaFrameFields[0].value.value, &m.promotedFields[0]);
+
+    UA_Float fv = 197.34f;
+    UA_Variant_setScalarCopy(&m.promotedFields[1], &fv, &UA_TYPES[UA_TYPES_FLOAT]);
+
+    UA_String testString = (UA_String) { 5, (UA_Byte*)"OPC24" };
+    UA_Variant value;
+    UA_Variant_init(&value);
+    value.data = UA_malloc(sizeof(UA_String));
+    *((UA_String*)value.data) = testString;
+    value.type = &UA_TYPES[UA_TYPES_STRING];
+    dmdf.data.deltaFrameFields[1].value.value = value;
+    dmdf.data.deltaFrameFields[1].value.hasValue = true;
+
+    m.payload.dataSetMessages = &dmdf;
+    m.messageCount = 1;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.groupHeader.writerGroupIdEnabled == m2.groupHeader.writerGroupIdEnabled);
+    ck_assert(m.groupHeader.groupVersionEnabled == m2.groupHeader.groupVersionEnabled);
+    ck_assert(m.groupHeader.networkMessageNumberEnabled == m2.groupHeader.networkMessageNumberEnabled);
+    ck_assert_uint_eq(m2.groupHeader.networkMessageNumber, networkMessageNumber);
+    ck_assert(m.groupHeader.sequenceNumberEnabled == m2.groupHeader.sequenceNumberEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert_uint_eq(m2.promotedFieldsSize, 2);
+    ck_assert_int_eq(*((UA_Int32*)m2.promotedFields[0].data), iv);
+    ck_assert(*((UA_Float*)m2.promotedFields[1].data) == fv);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, 2);
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[0].index, index1);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_ptr_eq(m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.type, &UA_TYPES[UA_TYPES_INT32]);
+    ck_assert_int_eq(*(UA_Int32 *)m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[0].value.hasSourceTimestamp);
+
+    ck_assert_int_eq(m.payload.dataSetMessages[0].data.deltaFrameFields[1].index, index2);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasValue);
+    // compare string value
+    UA_String decodedString = *(UA_String*)(m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.value.data);
+    for (UA_Int32 i = 0; i < 5; i++)
+    {
+        ck_assert_int_eq(decodedString.data[i], testString.data[i]);
+    }
+    ck_assert_uint_eq(decodedString.length, testString.length);
+    ck_assert(m.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp == m2.payload.dataSetMessages[0].data.deltaFrameFields[1].value.hasSourceTimestamp);
+
+    UA_Array_delete(m.promotedFields, m.promotedFieldsSize, &UA_TYPES[UA_TYPES_VARIANT]);
+    ((UA_String*)value.data)->data = NULL; // the string is statically allocated. do not free it.
+    UA_Variant_clear(&value);
+    UA_DataValue_clear(&dmdf.data.deltaFrameFields[0].value);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(dmdf.data.deltaFrameFields);
+}
+END_TEST
+
+START_TEST(UA_PubSub_EnDecode_ShallWorkOn2DSVariant) {
+    UA_UInt16 dsWriter1 = 4;
+    UA_UInt16 dsWriter2 = 7;
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.payloadHeaderEnabled = true;
+
+    m.payload.dataSetMessages = (UA_DataSetMessage*)
+        UA_calloc(2, sizeof(UA_DataSetMessage));
+    m.messageCount = 2;
+    m.dataSetWriterIds[0] = dsWriter1;
+    m.dataSetWriterIds[1] = dsWriter2;
+
+    //UA_DataSetMessage dmkf;
+    //memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    m.payload.dataSetMessages[0].header.dataSetMessageValid = true;
+    m.payload.dataSetMessages[0].header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    m.payload.dataSetMessages[0].header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    UA_UInt16 fieldCountDS1 = 1;
+    m.payload.dataSetMessages[0].fieldCount = fieldCountDS1;
+    m.payload.dataSetMessages[0].data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(m.payload.dataSetMessages[0].fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&m.payload.dataSetMessages[0].data.keyFrameFields[0]);
+
+    UA_UInt32 iv = 27;
+    UA_Variant_setScalarCopy(&m.payload.dataSetMessages[0].data.keyFrameFields[0].value, &iv, &UA_TYPES[UA_TYPES_UINT32]);
+    m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue = true;
+
+    m.payload.dataSetMessages[1].header.dataSetMessageValid = true;
+    m.payload.dataSetMessages[1].header.fieldEncoding = UA_FIELDENCODING_DATAVALUE;
+    m.payload.dataSetMessages[1].header.dataSetMessageType = UA_DATASETMESSAGE_DATADELTAFRAME;
+    UA_UInt16 fieldCountDS2 = 2;
+    m.payload.dataSetMessages[1].fieldCount = fieldCountDS2;
+    m.payload.dataSetMessages[1].data.deltaFrameFields = (UA_DataSetMessage_DeltaFrameField*)
+        UA_calloc(m.payload.dataSetMessages[1].fieldCount, sizeof(UA_DataSetMessage_DeltaFrameField));
+
+    UA_Guid gv = UA_Guid_random();
+    UA_UInt16 index1 = 2;
+    m.payload.dataSetMessages[1].data.deltaFrameFields[0].index = index1;
+    UA_DataValue_init(&m.payload.dataSetMessages[1].data.deltaFrameFields[0].value);
+    UA_Variant_setScalar(&m.payload.dataSetMessages[1].data.deltaFrameFields[0].value.value, &gv, &UA_TYPES[UA_TYPES_GUID]);
+    m.payload.dataSetMessages[1].data.deltaFrameFields[0].value.hasValue = true;
+
+    UA_UInt16 index2 = 5;
+    m.payload.dataSetMessages[1].data.deltaFrameFields[1].index = index2;
+    UA_DataValue_init(&m.payload.dataSetMessages[1].data.deltaFrameFields[1].value);
+    UA_Int64 iv64 = 152478978534;
+    UA_Variant_setScalar(&m.payload.dataSetMessages[1].data.deltaFrameFields[1].value.value, &iv64, &UA_TYPES[UA_TYPES_INT64]);
+    m.payload.dataSetMessages[1].data.deltaFrameFields[1].value.hasValue = true;
+
+    UA_StatusCode rv = UA_STATUSCODE_UNCERTAININITIALVALUE;
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m.version == m2.version);
+    ck_assert(m.networkMessageType == m2.networkMessageType);
+    ck_assert(m.timestampEnabled == m2.timestampEnabled);
+    ck_assert(m.dataSetClassIdEnabled == m2.dataSetClassIdEnabled);
+    ck_assert(m.groupHeaderEnabled == m2.groupHeaderEnabled);
+    ck_assert(m.picosecondsEnabled == m2.picosecondsEnabled);
+    ck_assert(m.promotedFieldsEnabled == m2.promotedFieldsEnabled);
+    ck_assert(m.publisherIdEnabled == m2.publisherIdEnabled);
+    ck_assert(m.securityEnabled == m2.securityEnabled);
+    ck_assert(m.chunkMessage == m2.chunkMessage);
+    ck_assert(m.payloadHeaderEnabled == m2.payloadHeaderEnabled);
+    ck_assert_uint_eq(m2.dataSetWriterIds[0], dsWriter1);
+    ck_assert_uint_eq(m2.dataSetWriterIds[1], dsWriter2);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid == m2.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[0].header.fieldEncoding == m2.payload.dataSetMessages[0].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[0].fieldCount, fieldCountDS1);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasValue);
+    ck_assert_uint_eq((uintptr_t)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.type, (uintptr_t)&UA_TYPES[UA_TYPES_UINT32]);
+    ck_assert_uint_eq(*(UA_UInt32 *)m2.payload.dataSetMessages[0].data.keyFrameFields[0].value.data, iv);
+    ck_assert(m.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp == m2.payload.dataSetMessages[0].data.keyFrameFields[0].hasSourceTimestamp);
+
+    ck_assert(m.payload.dataSetMessages[1].header.dataSetMessageValid == m2.payload.dataSetMessages[1].header.dataSetMessageValid);
+    ck_assert(m.payload.dataSetMessages[1].header.fieldEncoding == m2.payload.dataSetMessages[1].header.fieldEncoding);
+    ck_assert_int_eq(m2.payload.dataSetMessages[1].fieldCount, fieldCountDS2);
+
+    ck_assert(m.payload.dataSetMessages[1].data.deltaFrameFields[0].value.hasValue == m2.payload.dataSetMessages[1].data.deltaFrameFields[0].value.hasValue);
+    ck_assert_uint_eq(m2.payload.dataSetMessages[1].data.deltaFrameFields[0].index, index1);
+    ck_assert_uint_eq((uintptr_t)m2.payload.dataSetMessages[1].data.deltaFrameFields[0].value.value.type, (uintptr_t)&UA_TYPES[UA_TYPES_GUID]);
+    ck_assert(UA_Guid_equal((UA_Guid*)m2.payload.dataSetMessages[1].data.deltaFrameFields[0].value.value.data, &gv) == true);
+    ck_assert(m.payload.dataSetMessages[1].data.deltaFrameFields[0].value.hasSourceTimestamp == m2.payload.dataSetMessages[1].data.deltaFrameFields[0].value.hasSourceTimestamp);
+
+    ck_assert(m.payload.dataSetMessages[1].data.deltaFrameFields[1].value.hasValue == m2.payload.dataSetMessages[1].data.deltaFrameFields[1].value.hasValue);
+    ck_assert_uint_eq(m2.payload.dataSetMessages[1].data.deltaFrameFields[1].index, index2);
+    ck_assert_uint_eq((uintptr_t)m2.payload.dataSetMessages[1].data.deltaFrameFields[1].value.value.type, (uintptr_t)&UA_TYPES[UA_TYPES_INT64]);
+    ck_assert_int_eq(*(UA_Int64 *)m2.payload.dataSetMessages[1].data.deltaFrameFields[1].value.value.data, iv64);
+    ck_assert(m.payload.dataSetMessages[1].data.deltaFrameFields[1].value.hasSourceTimestamp == m2.payload.dataSetMessages[1].data.deltaFrameFields[1].value.hasSourceTimestamp);
+
+    UA_Array_delete(m.payload.dataSetMessages[0].data.keyFrameFields, m.payload.dataSetMessages[0].fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_free(m.payload.dataSetMessages[1].data.deltaFrameFields);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_free(m.payload.dataSetMessages);
+    //UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+END_TEST
+
+/* ---------------------------------------------------------------------------
+ * Additional coverage tests:
+ * Additional coverage tests (Phase A3):
+ *  - PublisherId of every supported type (Byte/UInt16/UInt32/UInt64/String)
+ *  - Decode of a truncated buffer must fail gracefully
+ *  - Decode of a buffer with the version field set to 0xFF (invalid) must fail
+ * ------------------------------------------------------------------------- */
+
+static void
+encode_decode_with_publisherid(UA_PublisherIdType idType,
+                               const UA_PublisherId *pid) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.publisherIdEnabled = true;
+    m.publisherId = *pid;
+
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf.fieldCount = 1;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_Int32 iv = 0xCAFE;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &iv,
+                             &UA_TYPES[UA_TYPES_INT32]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_ByteString buffer;
+    size_t msgSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, msgSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    ck_assert(m2.publisherIdEnabled);
+    ck_assert_int_eq(m2.publisherId.idType, idType);
+
+    switch(idType) {
+        case UA_PUBLISHERIDTYPE_BYTE:
+            ck_assert_uint_eq(m2.publisherId.id.byte, pid->id.byte);
+            break;
+        case UA_PUBLISHERIDTYPE_UINT16:
+            ck_assert_uint_eq(m2.publisherId.id.uint16, pid->id.uint16);
+            break;
+        case UA_PUBLISHERIDTYPE_UINT32:
+            ck_assert_uint_eq(m2.publisherId.id.uint32, pid->id.uint32);
+            break;
+        case UA_PUBLISHERIDTYPE_UINT64:
+            ck_assert_uint_eq(m2.publisherId.id.uint64, pid->id.uint64);
+            break;
+        case UA_PUBLISHERIDTYPE_STRING:
+            ck_assert(UA_String_equal(&m2.publisherId.id.string, &pid->id.string));
+            break;
+    }
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount,
+                    &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+
+START_TEST(UA_PubSub_EnDecode_PublisherIdByte) {
+    UA_PublisherId pid; pid.idType = UA_PUBLISHERIDTYPE_BYTE; pid.id.byte = 0xA5;
+    encode_decode_with_publisherid(UA_PUBLISHERIDTYPE_BYTE, &pid);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_PublisherIdUInt16) {
+    UA_PublisherId pid; pid.idType = UA_PUBLISHERIDTYPE_UINT16; pid.id.uint16 = 0xBEEF;
+    encode_decode_with_publisherid(UA_PUBLISHERIDTYPE_UINT16, &pid);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_PublisherIdUInt32) {
+    UA_PublisherId pid; pid.idType = UA_PUBLISHERIDTYPE_UINT32; pid.id.uint32 = 0xDEADBEEF;
+    encode_decode_with_publisherid(UA_PUBLISHERIDTYPE_UINT32, &pid);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_PublisherIdUInt64) {
+    UA_PublisherId pid; pid.idType = UA_PUBLISHERIDTYPE_UINT64; pid.id.uint64 = 0x0123456789ABCDEFULL;
+    encode_decode_with_publisherid(UA_PUBLISHERIDTYPE_UINT64, &pid);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_PublisherIdString) {
+    UA_PublisherId pid;
+    pid.idType = UA_PUBLISHERIDTYPE_STRING;
+    pid.id.string = UA_STRING("PubSubPublisher");
+    encode_decode_with_publisherid(UA_PUBLISHERIDTYPE_STRING, &pid);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_TruncatedBufferReturnsError) {
+    /* Build a valid encoded message first */
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.publisherIdEnabled = true;
+    m.publisherId.idType = UA_PUBLISHERIDTYPE_UINT32;
+    m.publisherId.id.uint32 = 4711;
+
+    UA_DataSetMessage dmkf;
+    memset(&dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf.header.dataSetMessageValid = true;
+    dmkf.header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmkf.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf.fieldCount = 1;
+    dmkf.data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(dmkf.fieldCount, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf.data.keyFrameFields[0]);
+    UA_Int32 iv = 7;
+    UA_Variant_setScalarCopy(&dmkf.data.keyFrameFields[0].value, &iv,
+                             &UA_TYPES[UA_TYPES_INT32]);
+    dmkf.data.keyFrameFields[0].hasValue = true;
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_ByteString full;
+    size_t fullSize = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&full, fullSize);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&m, &full, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    /* Truncate to half its size and try to decode -> must fail */
+    UA_ByteString truncated = { full.length / 2, full.data };
+    UA_NetworkMessage m2;
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&truncated, &m2, NULL, NULL);
+    ck_assert_int_ne(rv, UA_STATUSCODE_GOOD);
+    UA_NetworkMessage_clear(&m2);
+
+    /* Also try a single-byte buffer */
+    UA_ByteString tiny = { 1, full.data };
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&tiny, &m2, NULL, NULL);
+    ck_assert_int_ne(rv, UA_STATUSCODE_GOOD);
+    UA_NetworkMessage_clear(&m2);
+
+    /* And an empty buffer */
+    UA_ByteString empty = { 0, NULL };
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&empty, &m2, NULL, NULL);
+    ck_assert_int_ne(rv, UA_STATUSCODE_GOOD);
+    UA_NetworkMessage_clear(&m2);
+
+    UA_DataValue_clear(&dmkf.data.keyFrameFields[0]);
+    UA_ByteString_clear(&full);
+    UA_Array_delete(dmkf.data.keyFrameFields, dmkf.fieldCount,
+                    &UA_TYPES[UA_TYPES_DATAVALUE]);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_InvalidVersionReturnsError) {
+    /* Header byte: bit field with version in low nibble.
+     * Setting all bits to 1 makes the version 0xF (>1) which is invalid. */
+    UA_Byte raw[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+    ck_assert_int_ne(rv, UA_STATUSCODE_GOOD);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_PayloadHeaderCountZeroReturnsBadDecodingError) {
+    /* Header: version=1, payloadHeaderEnabled=1, no extended flags.
+     * Then message count byte set to 0 to hit explicit count==0 reject. */
+    UA_Byte raw[] = { 0x41, 0x00 };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_PayloadHeaderCountTooLargeReturnsBadDecodingError) {
+    /* count=33 while UA_NETWORKMESSAGE_MAXMESSAGECOUNT is 32 */
+    UA_Byte raw[] = { 0x41, 0x21 };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_MultiDsmZeroSizeReturnsBadDecodingError) {
+    /* Header + payload header for two DataSetMessages, then first DSM size = 0. */
+    UA_Byte raw[] = {
+        0x41,             /* version=1, payload header enabled */
+        0x02,             /* messageCount */
+        0x01, 0x00,       /* writerId[0] */
+        0x02, 0x00,       /* writerId[1] */
+        0x00, 0x00        /* dataSetMessageSizes[0] -> invalid */
+    };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_InvalidDsmSizeStaysWithinBuffer) {
+    /* An invalid DSM may be skipped when its declared size is known. The
+     * declared size is attacker-controlled and must neither advance past the
+     * receive buffer nor rewind into the already-decoded header. */
+    UA_Byte raw[] = {0x00}; /* invalid Variant KeyFrame */
+    PubSubDecodeCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ctx.pos = raw;
+    ctx.ctx.end = raw + sizeof(raw);
+
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    UA_StatusCode res =
+        UA_DataSetMessage_decodeBinary(&ctx, NULL, &dsm, 10);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert((uintptr_t)ctx.ctx.pos <= (uintptr_t)ctx.ctx.end);
+    UA_DataSetMessage_clear(&dsm);
+
+    UA_Byte rawWithPayload[] = {0x00, 0x00, 0x00};
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ctx.pos = rawWithPayload;
+    ctx.ctx.end = rawWithPayload + sizeof(rawWithPayload);
+    memset(&dsm, 0, sizeof(dsm));
+    res = UA_DataSetMessage_decodeBinary(&ctx, NULL, &dsm, 1);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADDECODINGERROR);
+    ck_assert((uintptr_t)ctx.ctx.pos >= (uintptr_t)rawWithPayload);
+    UA_DataSetMessage_clear(&dsm);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_InvalidPublisherIdTypeReturnsBadInternalError) {
+    /* Header with publisherIdEnabled + extended flags 1.
+     * ExtendedFlags1 low bits carry idType. Use invalid idType=5. */
+    UA_Byte raw[] = { 0x91, 0x05 };
+    UA_ByteString buf = { sizeof(raw), raw };
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buf, &m, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_BADINTERNALERROR);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+/* -------------------------------------------------------------------------
+ * Coverage for previously untested NetworkMessage encoding/decoding branches:
+ *   - picoseconds (extended NM2 flags)
+ *   - groupHeader with sequenceNumber
+ *   - securityHeader / securityFooter roundtrip (no encryption, just plumbing)
+ *   - default branch in payload-header writerId encoding (multiple writers)
+ *   - calcSizeBinary on minimal message
+ * ------------------------------------------------------------------------- */
+
+static void
+fillKeyFrame(UA_DataSetMessage *dmkf, UA_Int32 v) {
+    memset(dmkf, 0, sizeof(UA_DataSetMessage));
+    dmkf->header.dataSetMessageValid = true;
+    dmkf->header.fieldEncoding = UA_FIELDENCODING_VARIANT;
+    dmkf->header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dmkf->fieldCount = 1;
+    dmkf->data.keyFrameFields =
+        (UA_DataValue*)UA_Array_new(1, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    UA_DataValue_init(&dmkf->data.keyFrameFields[0]);
+    UA_Variant_setScalarCopy(&dmkf->data.keyFrameFields[0].value, &v,
+                             &UA_TYPES[UA_TYPES_INT32]);
+    dmkf->data.keyFrameFields[0].hasValue = true;
+}
+
+static void
+clearKeyFrame(UA_DataSetMessage *dmkf) {
+    UA_DataValue_clear(&dmkf->data.keyFrameFields[0]);
+    UA_Array_delete(dmkf->data.keyFrameFields, dmkf->fieldCount,
+                    &UA_TYPES[UA_TYPES_DATAVALUE]);
+}
+
+START_TEST(UA_PubSub_EnDecode_PicosecondsRoundtrip) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.timestampEnabled = true;
+    m.timestamp = 1234567890;
+    m.picosecondsEnabled = true;
+    m.picoseconds = 0xABCD;
+
+    UA_DataSetMessage dmkf;
+    fillKeyFrame(&dmkf, 11);
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_ByteString buffer;
+    size_t s = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    ck_assert_uint_gt(s, 0);
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, s);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m2.picosecondsEnabled);
+    ck_assert_uint_eq(m2.picoseconds, m.picoseconds);
+    ck_assert(m2.timestampEnabled);
+    ck_assert_int_eq(m2.timestamp, m.timestamp);
+
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    clearKeyFrame(&dmkf);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_GroupHeaderSequenceNumber) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.groupHeaderEnabled = true;
+    m.groupHeader.sequenceNumberEnabled = true;
+    m.groupHeader.sequenceNumber = 42;
+    m.groupHeader.writerGroupIdEnabled = true;
+    m.groupHeader.writerGroupId = 7;
+
+    UA_DataSetMessage dmkf;
+    fillKeyFrame(&dmkf, 22);
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_ByteString buffer;
+    size_t s = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, s);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m2.groupHeaderEnabled);
+    ck_assert(m2.groupHeader.sequenceNumberEnabled);
+    ck_assert_uint_eq(m2.groupHeader.sequenceNumber, m.groupHeader.sequenceNumber);
+    ck_assert_uint_eq(m2.groupHeader.writerGroupId, m.groupHeader.writerGroupId);
+
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    clearKeyFrame(&dmkf);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_SecurityHeaderAndFooter) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.securityEnabled = true;
+    m.securityHeader.networkMessageSigned = true;
+    m.securityHeader.networkMessageEncrypted = false;
+    m.securityHeader.securityFooterEnabled = true;
+    m.securityHeader.forceKeyReset = true;
+    m.securityHeader.securityTokenId = 42;
+    m.securityHeader.messageNonceSize = 0;
+    m.securityHeader.securityFooterSize = 4;
+    UA_Byte footer[4] = {0x10, 0x20, 0x30, 0x40};
+    m.securityFooter.length = 4;
+    m.securityFooter.data = footer;
+
+    UA_DataSetMessage dmkf;
+    fillKeyFrame(&dmkf, 33);
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_ByteString buffer;
+    size_t s = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, s);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m2.securityEnabled);
+    ck_assert(m2.securityHeader.securityFooterEnabled);
+    ck_assert(m2.securityHeader.forceKeyReset);
+    ck_assert_uint_eq(m2.securityHeader.securityTokenId, 42);
+    ck_assert_uint_eq(m2.securityHeader.securityFooterSize, 4);
+    ck_assert_uint_eq(m2.securityFooter.length, 4);
+    ck_assert_int_eq(memcmp(m2.securityFooter.data, footer, 4), 0);
+
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    clearKeyFrame(&dmkf);
+} END_TEST
+
+static void
+assertSecurityHeaderRejected(UA_Byte securityFlags, UA_Byte nonceLength) {
+    UA_Byte raw[10 + UA_NETWORKMESSAGE_MAX_NONCE_LENGTH] = {
+        0x81, /* version=1, ExtendedFlags1 */
+        0x10, /* Security enabled */
+        securityFlags,
+        0x01, 0x00, 0x00, 0x00, /* SecurityTokenId */
+        nonceLength
+    };
+    /* Supply a footer-size field as well. Cases without the footer flag leave
+     * these trailing bytes untouched by header decoding. */
+    raw[8 + nonceLength] = 1;
+    raw[9 + nonceLength] = 0;
+    UA_ByteString buffer = {10 + nonceLength, raw};
+    UA_NetworkMessage message;
+    memset(&message, 0, sizeof(message));
+    size_t payloadOffset = 0;
+    UA_StatusCode res = UA_NetworkMessage_decodeBinaryHeaders(
+        &buffer, &message, NULL, NULL, &payloadOffset);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADSECURITYCHECKSFAILED);
+    UA_NetworkMessage_clear(&message);
+}
+
+START_TEST(UA_PubSub_Decode_RejectsInvalidSecurityFlags) {
+    assertSecurityHeaderRejected(0x10, 0); /* reserved flag */
+    assertSecurityHeaderRejected(0x02, 1); /* encrypt without sign */
+    assertSecurityHeaderRejected(0x03, 0); /* encrypt without nonce */
+    assertSecurityHeaderRejected(0x04, 0); /* unauthenticated footer */
+    assertSecurityHeaderRejected(0x08, 0); /* unauthenticated key reset */
+} END_TEST
+
+START_TEST(UA_PubSub_Encode_RejectsInconsistentSecurityFooter) {
+    UA_NetworkMessage message;
+    memset(&message, 0, sizeof(message));
+    message.version = 1;
+    message.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    message.securityEnabled = true;
+    message.securityHeader.networkMessageSigned = true;
+    message.securityHeader.securityFooterEnabled = true;
+    message.securityHeader.securityFooterSize = 4;
+
+    UA_DataSetMessage dataSetMessage;
+    fillKeyFrame(&dataSetMessage, 1);
+    message.payload.dataSetMessages = &dataSetMessage;
+    message.messageCount = 1;
+
+    UA_ByteString buffer = UA_BYTESTRING_NULL;
+    UA_StatusCode res = UA_NetworkMessage_encodeBinary(&message, &buffer, NULL);
+    ck_assert_uint_eq(res, UA_STATUSCODE_BADENCODINGERROR);
+    UA_ByteString_clear(&buffer);
+    clearKeyFrame(&dataSetMessage);
+} END_TEST
+
+START_TEST(UA_PubSub_Encode_RejectsMissingRawFieldMetadata) {
+    UA_NetworkMessage message;
+    memset(&message, 0, sizeof(message));
+    message.version = 1;
+    message.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    dsm.header.dataSetMessageValid = true;
+    dsm.header.fieldEncoding = UA_FIELDENCODING_RAWDATA;
+    dsm.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dsm.fieldCount = 2;
+    dsm.data.keyFrameFields = (UA_DataValue*)
+        UA_calloc(dsm.fieldCount, sizeof(UA_DataValue));
+    ck_assert_ptr_ne(dsm.data.keyFrameFields, NULL);
+    UA_UInt32 values[2] = {1, 2};
+    for(size_t i = 0; i < dsm.fieldCount; i++) {
+        UA_Variant_setScalar(&dsm.data.keyFrameFields[i].value, &values[i],
+                             &UA_TYPES[UA_TYPES_UINT32]);
+        dsm.data.keyFrameFields[i].hasValue = true;
+    }
+    message.payload.dataSetMessages = &dsm;
+    message.messageCount = 1;
+
+    UA_FieldMetaData field;
+    UA_FieldMetaData_init(&field);
+    field.builtInType = UA_NS0ID_UINT32;
+    field.dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
+    field.valueRank = UA_VALUERANK_SCALAR;
+    UA_DataSetMessage_EncodingMetaData metadata = {0, 1, &field, 0};
+    UA_NetworkMessage_EncodingOptions options = {1, &metadata};
+
+    UA_ByteString buffer = UA_BYTESTRING_NULL;
+    ck_assert_uint_eq(UA_NetworkMessage_encodeBinary(&message, &buffer, &options),
+                      UA_STATUSCODE_BADENCODINGERROR);
+    UA_ByteString_clear(&buffer);
+    UA_free(dsm.data.keyFrameFields);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_DataSetClassIdRoundtrip) {
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    m.dataSetClassIdEnabled = true;
+    UA_Guid g = {0x12345678, 0xABCD, 0xEF01,
+                 {0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80}};
+    m.dataSetClassId = g;
+
+    UA_DataSetMessage dmkf;
+    fillKeyFrame(&dmkf, 99);
+    m.payload.dataSetMessages = &dmkf;
+    m.messageCount = 1;
+
+    UA_ByteString buffer;
+    size_t s = UA_NetworkMessage_calcSizeBinary(&m, NULL);
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, s);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+
+    UA_NetworkMessage m2;
+    memset(&m2, 0, sizeof(m2));
+    rv = UA_NetworkMessage_decodeBinary(&buffer, &m2, NULL, NULL);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert(m2.dataSetClassIdEnabled);
+    ck_assert(UA_Guid_equal(&m2.dataSetClassId, &g));
+
+    UA_NetworkMessage_clear(&m2);
+    UA_ByteString_clear(&buffer);
+    clearKeyFrame(&dmkf);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_DiscoveryRequestType) {
+    /* DISCOVERY_REQUEST messages currently return BADNOTIMPLEMENTED on encode.
+     * Just exercise the early return paths. */
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    m.version = 1;
+    m.networkMessageType = UA_NETWORKMESSAGE_DISCOVERY_REQUEST;
+    UA_ByteString buffer;
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, 64);
+    ck_assert_int_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&m, &buffer, NULL);
+    /* Either succeeds or returns BADNOTIMPLEMENTED -- both exercise code */
+    (void)rv;
+    UA_ByteString_clear(&buffer);
+} END_TEST
+
+START_TEST(UA_PubSub_EnDecode_RawFixedSizeStrings) {
+    UA_FieldMetaData fields[4];
+    memset(fields, 0, sizeof(fields));
+    for(size_t i = 0; i < 4; i++)
+        fields[i].valueRank = UA_VALUERANK_SCALAR;
+
+    fields[0].dataType = UA_TYPES[UA_TYPES_STRING].typeId;
+    fields[0].builtInType = UA_NS0ID_STRING;
+    fields[0].maxStringLength = 8;
+    fields[1].dataType = UA_TYPES[UA_TYPES_UINT32].typeId;
+    fields[1].builtInType = UA_NS0ID_UINT32;
+    fields[2].dataType = UA_TYPES[UA_TYPES_BYTESTRING].typeId;
+    fields[2].builtInType = UA_NS0ID_BYTESTRING;
+    fields[2].maxStringLength = 6;
+    fields[3].dataType = UA_TYPES[UA_TYPES_UINT16].typeId;
+    fields[3].builtInType = UA_NS0ID_UINT16;
+
+    UA_DataSetMessage_EncodingMetaData emd;
+    memset(&emd, 0, sizeof(emd));
+    emd.fields = fields;
+    emd.fieldsSize = 4;
+
+    UA_NetworkMessage_EncodingOptions eo;
+    memset(&eo, 0, sizeof(eo));
+    eo.metaData = &emd;
+    eo.metaDataSize = 1;
+
+    UA_String stringValue = UA_STRING("abc");
+    UA_UInt32 uint32Value = 0x12345678;
+    UA_ByteString byteStringValue = UA_BYTESTRING("xy");
+    UA_UInt16 uint16Value = 0x4321;
+
+    UA_DataValue values[4];
+    memset(values, 0, sizeof(values));
+    UA_Variant_setScalar(&values[0].value, &stringValue,
+                         &UA_TYPES[UA_TYPES_STRING]);
+    UA_Variant_setScalar(&values[1].value, &uint32Value,
+                         &UA_TYPES[UA_TYPES_UINT32]);
+    UA_Variant_setScalar(&values[2].value, &byteStringValue,
+                         &UA_TYPES[UA_TYPES_BYTESTRING]);
+    UA_Variant_setScalar(&values[3].value, &uint16Value,
+                         &UA_TYPES[UA_TYPES_UINT16]);
+    for(size_t i = 0; i < 4; i++)
+        values[i].hasValue = true;
+
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    dsm.header.dataSetMessageValid = true;
+    dsm.header.fieldEncoding = UA_FIELDENCODING_RAWDATA;
+    dsm.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dsm.fieldCount = 4;
+    dsm.data.keyFrameFields = values;
+
+    UA_NetworkMessage nm;
+    memset(&nm, 0, sizeof(nm));
+    nm.version = 1;
+    nm.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    nm.messageCount = 1;
+    nm.payload.dataSetMessages = &dsm;
+
+    UA_ByteString encoded = UA_BYTESTRING_NULL;
+    size_t encodedSize = UA_NetworkMessage_calcSizeBinary(&nm, &eo);
+    ck_assert_uint_gt(encodedSize, 0);
+    UA_StatusCode rv = UA_NetworkMessage_encodeBinary(&nm, &encoded, &eo);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(encoded.length, encodedSize);
+
+    /* A caller-provided buffer must also be checked before writing padding. */
+    UA_ByteString shortBuffer = UA_BYTESTRING_NULL;
+    size_t firstStringDataEnd = 1 + 1 + 4 + stringValue.length;
+    rv = UA_ByteString_allocBuffer(&shortBuffer, firstStringDataEnd);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&nm, &shortBuffer, &eo);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_BADENCODINGLIMITSEXCEEDED);
+    UA_ByteString_clear(&shortBuffer);
+
+    /* The decoder must reject a fixed-size field with missing padding. */
+    UA_ByteString truncated = {firstStringDataEnd, encoded.data};
+    UA_NetworkMessage truncatedDecoded;
+    memset(&truncatedDecoded, 0, sizeof(truncatedDecoded));
+    rv = UA_NetworkMessage_decodeBinary(&truncated, &truncatedDecoded, &eo, NULL);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+    UA_NetworkMessage_clear(&truncatedDecoded);
+
+    UA_NetworkMessage decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    rv = UA_NetworkMessage_decodeBinary(&encoded, &decoded, &eo, NULL);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(decoded.messageCount, 1);
+    UA_DataSetMessage *decodedDsm = &decoded.payload.dataSetMessages[0];
+    ck_assert_uint_eq(decodedDsm->fieldCount, 4);
+
+    UA_String *decodedString =
+        (UA_String *)decodedDsm->data.keyFrameFields[0].value.data;
+    ck_assert(UA_String_equal(decodedString, &stringValue));
+    ck_assert_uint_eq(*(UA_UInt32 *)decodedDsm->data.keyFrameFields[1].value.data,
+                      uint32Value);
+    UA_ByteString *decodedByteString =
+        (UA_ByteString *)decodedDsm->data.keyFrameFields[2].value.data;
+    ck_assert(UA_ByteString_equal(decodedByteString, &byteStringValue));
+    ck_assert_uint_eq(*(UA_UInt16 *)decodedDsm->data.keyFrameFields[3].value.data,
+                      uint16Value);
+
+    UA_NetworkMessage_clear(&decoded);
+    UA_ByteString_clear(&encoded);
+} END_TEST
+
+START_TEST(UA_PubSub_Encode_RawFixedSizeStringTooLong) {
+    UA_FieldMetaData field;
+    memset(&field, 0, sizeof(field));
+    field.dataType = UA_TYPES[UA_TYPES_STRING].typeId;
+    field.builtInType = UA_NS0ID_STRING;
+    field.valueRank = UA_VALUERANK_SCALAR;
+    field.maxStringLength = 3;
+
+    UA_DataSetMessage_EncodingMetaData emd;
+    memset(&emd, 0, sizeof(emd));
+    emd.fields = &field;
+    emd.fieldsSize = 1;
+    UA_NetworkMessage_EncodingOptions eo;
+    memset(&eo, 0, sizeof(eo));
+    eo.metaData = &emd;
+    eo.metaDataSize = 1;
+
+    UA_String value = UA_STRING("toolong");
+    UA_DataValue dataValue;
+    memset(&dataValue, 0, sizeof(dataValue));
+    UA_Variant_setScalar(&dataValue.value, &value, &UA_TYPES[UA_TYPES_STRING]);
+    dataValue.hasValue = true;
+
+    UA_DataSetMessage dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    dsm.header.dataSetMessageValid = true;
+    dsm.header.fieldEncoding = UA_FIELDENCODING_RAWDATA;
+    dsm.header.dataSetMessageType = UA_DATASETMESSAGE_DATAKEYFRAME;
+    dsm.fieldCount = 1;
+    dsm.data.keyFrameFields = &dataValue;
+
+    UA_NetworkMessage nm;
+    memset(&nm, 0, sizeof(nm));
+    nm.version = 1;
+    nm.networkMessageType = UA_NETWORKMESSAGE_DATASET;
+    nm.messageCount = 1;
+    nm.payload.dataSetMessages = &dsm;
+
+    ck_assert_uint_eq(UA_NetworkMessage_calcSizeBinary(&nm, &eo), 0);
+
+    UA_ByteString buffer = UA_BYTESTRING_NULL;
+    UA_StatusCode rv = UA_ByteString_allocBuffer(&buffer, 64);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_GOOD);
+    rv = UA_NetworkMessage_encodeBinary(&nm, &buffer, &eo);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_BADENCODINGLIMITSEXCEEDED);
+    UA_ByteString_clear(&buffer);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_PromotedFieldTruncatedVariant) {
+    /* ExtendedFlags2 announces PromotedFields. The Int32 Variant that follows
+     * needs four bytes of data and only two are left before the end of the
+     * receive buffer, so it fails after allocating its scalar. Nothing is
+     * asserted about the allocation itself, the leak shows up under Valgrind
+     * and AddressSanitizer. */
+    UA_Byte data[] = {0x81, 0x80, 0x02, 0x01, 0x00, 0x06, 0x2a, 0x00};
+    UA_ByteString buffer;
+    buffer.data = data;
+    buffer.length = sizeof(data);
+
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    ck_assert_uint_ne(rv, UA_STATUSCODE_GOOD);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_PromotedFieldsExceedDeclaredSize) {
+    /* ExtendedFlags2 announces PromotedFields of one byte, the Variant that
+     * follows is an Int32 and takes five. */
+    UA_Byte data[] = {0x81, 0x80, 0x02, 0x01, 0x00,
+                      0x06, 0x2a, 0x00, 0x00, 0x00,
+                      0x01, 0x00, 0x00};
+    UA_ByteString buffer;
+    buffer.data = data;
+    buffer.length = sizeof(data);
+
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_DataSetMessageStartsAtDeclaredOffset) {
+    /* The first DataSetMessage declares 5 bytes but fills only 3. The second
+     * one begins at the declared offset, where the flags are 0x00 and mark it
+     * as not valid. Reading on from where the first one ended would find a
+     * valid one instead. */
+    UA_Byte data[] = {0x41, 0x02, 0x01, 0x00, 0x02, 0x00,
+                      0x05, 0x00, 0x03, 0x00,
+                      0x01, 0x00, 0x00, 0x01, 0x00,
+                      0x00, 0x00, 0x00};
+    UA_ByteString buffer;
+    buffer.data = data;
+    buffer.length = sizeof(data);
+
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(UA_NetworkMessage));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(m.messageCount, 2);
+    ck_assert(m.payload.dataSetMessages[0].header.dataSetMessageValid);
+    ck_assert(!m.payload.dataSetMessages[1].header.dataSetMessageValid);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_PromotedFieldsTruncatedAfterString) {
+    /* A complete String followed by an Int32 that crosses the declared end.
+     * Clearing the failed message must also release the String. */
+    UA_Byte data[] = {0x81, 0x80, 0x02, 0x07, 0x00,
+                      0x0c, 0x01, 0x00, 0x00, 0x00, 'a',
+                      0x06, 0x2a, 0x00, 0x00, 0x00,
+                      0x01, 0x00, 0x00};
+    UA_ByteString buffer = {sizeof(data), data};
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    UA_NetworkMessage_clear(&m);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_DataSetMessageSizeMustFit) {
+    /* Oversized first/last DSM, truncated first DSM, zero and maximal size. */
+    const UA_Byte sizes[][4] = {{10, 0, 3, 0}, {3, 0, 4, 0},
+                                 {2, 0, 4, 0}, {0, 0, 3, 0},
+                                 {3, 0, 0xff, 0xff}};
+    UA_Byte data[] = {0x41, 0x02, 0x01, 0x00, 0x02, 0x00,
+                      0x03, 0x00, 0x03, 0x00,
+                      0x01, 0x00, 0x00, 0x01, 0x00, 0x00};
+    memcpy(&data[6], sizes[_i], 4);
+    UA_ByteString buffer = {sizeof(data), data};
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    UA_NetworkMessage_clear(&m);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_BADDECODINGERROR);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_DeclaredSizesPreserveSecurityFooter) {
+    /* Single DSMs have no Sizes array. Multiple DSMs include padding before
+     * the footer, which must be read after the declared payload spans. */
+    UA_Byte single[] = {0x81, 0x10, 0x05, 0, 0, 0, 0, 0, 0x02, 0,
+                        0x01, 0, 0, 0xaa, 0xbb};
+    UA_Byte multiple[] = {0xc1, 0x10, 0x02, 0x01, 0, 0x02, 0,
+                          0x05, 0, 0, 0, 0, 0, 0x02, 0,
+                          0x04, 0, 0x04, 0,
+                          0x01, 0, 0, 0xcc, 0x01, 0, 0, 0xdd,
+                          0xaa, 0xbb};
+    UA_ByteString buffer = {_i ? sizeof(multiple) : sizeof(single),
+                            _i ? multiple : single};
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    ck_assert_uint_eq(rv, UA_STATUSCODE_GOOD);
+    ck_assert_uint_eq(m.securityFooter.length, 2);
+    ck_assert_uint_eq(m.securityFooter.data[0], 0xaa);
+    ck_assert_uint_eq(m.securityFooter.data[1], 0xbb);
+    UA_NetworkMessage_clear(&m);
+} END_TEST
+
+START_TEST(UA_PubSub_Decode_FailingDataSetMessageIsNotIgnored) {
+    /* The first DSM is an Event message, which cannot be decoded. The valid
+     * second DSM must not hide the error. */
+    UA_Byte data[] = {0x41, 0x02, 0x01, 0x00, 0x02, 0x00,
+                      0x02, 0x00, 0x03, 0x00,
+                      0x81, 0x02, 0x01, 0x00, 0x00};
+    UA_ByteString buffer = {sizeof(data), data};
+    UA_NetworkMessage m;
+    memset(&m, 0, sizeof(m));
+    UA_StatusCode rv = UA_NetworkMessage_decodeBinary(&buffer, &m, NULL, NULL);
+    UA_NetworkMessage_clear(&m);
+    ck_assert_uint_ne(rv, UA_STATUSCODE_GOOD);
+} END_TEST
+
+int main(void) {
+    TCase *tc_encode = tcase_create("encode");
+    tcase_add_test(tc_encode, UA_PubSub_Encode_WithBufferTooSmallShallReturnError);
+
+    TCase *tc_decode = tcase_create("decode");
+    tcase_add_test(tc_decode, UA_PubSub_Decode_WithBufferTooSmallShallReturnError);
+#ifdef UA_ENABLE_MALLOC_SINGLETON
+    tcase_add_test(tc_decode, UA_PubSub_Decode_KeyFrameFieldCountExceedsRemainingReturnsBadDecodingError);
+    tcase_add_test(tc_decode, UA_PubSub_Decode_DeltaFrameFieldCountExceedsRemainingReturnsBadDecodingError);
+#endif
+    tcase_add_test(tc_decode, UA_PubSub_Decode_KeyFrameFieldCountMustFitBuffer);
+    tcase_add_test(tc_decode, UA_PubSub_Decode_DeltaFrameFieldCountMustFitBuffer);
+    tcase_add_test(tc_decode, UA_PubSub_Decode_RawDataSizeMustFitBuffer);
+
+    TCase *tc_ende1 = tcase_create("encode_decode1DS");
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS1ValueVariantKeyFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS1ValueDataValueKeyFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantKeyFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueKeyFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS1ValueVariantDeltaFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS1ValueDataValueDeltaFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantDeltaFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueDeltaFrame);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantKeyFrameGroupHeader);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantDeltaFramePublDSCID);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueKeyFramePH);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesVariantKeyFrameTSProm);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_ShallWorkOn1DS2ValuesDataValueDeltaFrameGHProm2);
+    tcase_add_test(tc_ende1, UA_PubSub_EnDecode_RawFixedSizeStrings);
+    tcase_add_test(tc_ende1, UA_PubSub_Encode_RawFixedSizeStringTooLong);
+
+    TCase *tc_ende2 = tcase_create("encode_decode2DS");
+    tcase_add_test(tc_ende2, UA_PubSub_EnDecode_ShallWorkOn2DSVariant);
+
+    TCase *tc_pid = tcase_create("PublisherId roundtrip (all idTypes)");
+    tcase_add_test(tc_pid, UA_PubSub_EnDecode_PublisherIdByte);
+    tcase_add_test(tc_pid, UA_PubSub_EnDecode_PublisherIdUInt16);
+    tcase_add_test(tc_pid, UA_PubSub_EnDecode_PublisherIdUInt32);
+    tcase_add_test(tc_pid, UA_PubSub_EnDecode_PublisherIdUInt64);
+    tcase_add_test(tc_pid, UA_PubSub_EnDecode_PublisherIdString);
+
+    TCase *tc_decode_err = tcase_create("decode error paths");
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_TruncatedBufferReturnsError);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_InvalidVersionReturnsError);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_PayloadHeaderCountZeroReturnsBadDecodingError);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_PayloadHeaderCountTooLargeReturnsBadDecodingError);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_MultiDsmZeroSizeReturnsBadDecodingError);
+    tcase_add_test(tc_decode_err,
+                   UA_PubSub_Decode_InvalidDsmSizeStaysWithinBuffer);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_InvalidPublisherIdTypeReturnsBadInternalError);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_RejectsInvalidSecurityFlags);
+    tcase_add_test(tc_decode_err, UA_PubSub_Decode_PromotedFieldTruncatedVariant);
+
+    TCase *tc_nm_optional = tcase_create("NetworkMessage optional headers");
+    tcase_add_test(tc_nm_optional, UA_PubSub_EnDecode_PicosecondsRoundtrip);
+    tcase_add_test(tc_nm_optional, UA_PubSub_EnDecode_GroupHeaderSequenceNumber);
+    tcase_add_test(tc_nm_optional, UA_PubSub_EnDecode_SecurityHeaderAndFooter);
+    tcase_add_test(tc_nm_optional, UA_PubSub_EnDecode_DataSetClassIdRoundtrip);
+    tcase_add_test(tc_nm_optional, UA_PubSub_EnDecode_DiscoveryRequestType);
+    tcase_add_test(tc_nm_optional, UA_PubSub_Encode_RejectsInconsistentSecurityFooter);
+    tcase_add_test(tc_nm_optional,
+                   UA_PubSub_Encode_RejectsMissingRawFieldMetadata);
+
+    TCase *tc_sizes = tcase_create("declared sizes");
+    tcase_add_test(tc_sizes, UA_PubSub_Decode_PromotedFieldsTruncatedAfterString);
+    tcase_add_loop_test(tc_sizes, UA_PubSub_Decode_DataSetMessageSizeMustFit, 0, 5);
+    tcase_add_loop_test(tc_sizes, UA_PubSub_Decode_DeclaredSizesPreserveSecurityFooter, 0, 2);
+    tcase_add_test(tc_sizes, UA_PubSub_Decode_FailingDataSetMessageIsNotIgnored);
+    tcase_add_test(tc_sizes, UA_PubSub_Decode_PromotedFieldsExceedDeclaredSize);
+    tcase_add_test(tc_sizes, UA_PubSub_Decode_DataSetMessageStartsAtDeclaredOffset);
+
+    Suite *s = suite_create("PubSub NetworkMessage");
+    suite_add_tcase(s, tc_encode);
+    suite_add_tcase(s, tc_decode);
+    suite_add_tcase(s, tc_ende1);
+    suite_add_tcase(s, tc_ende2);
+    suite_add_tcase(s, tc_pid);
+    suite_add_tcase(s, tc_decode_err);
+    suite_add_tcase(s, tc_nm_optional);
+    suite_add_tcase(s, tc_sizes);
+
+    SRunner *sr = srunner_create(s);
+    srunner_set_fork_status(sr, CK_NOFORK);
+    srunner_run_all(sr,CK_NORMAL);
+    int number_failed = srunner_ntests_failed(sr);
+    srunner_free(sr);
+    return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+}

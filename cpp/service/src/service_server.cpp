@@ -1,5 +1,8 @@
 #include "streamfind/service/service_server.hpp"
 #include "streamfind/service/service_protocol.hpp"
+#include "streamfind/service/workflow_demo_discovery.hpp"
+#include "streamfind/project_layout.hpp"
+#include "streamfind/plugin_configuration.hpp"
 #include "streamfind/core/vendors/openbabel.hpp"
 #include "fixedEnvelopes.h"
 #include "element_tables.h"
@@ -46,7 +49,6 @@ struct IsotopePatternFormula {
     std::string natural_formula;
     double fixed_mass_delta = 0.0;
     std::vector<std::string> fixed_labels;
-    int fixed_deuterium_count = 0;
 };
 
 std::string isotope_formula_without_charge(const std::string &formula) {
@@ -123,8 +125,6 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
             add_natural_element(symbol, count);
             result.fixed_mass_delta += static_cast<double>(count) *
                 (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
-            if (symbol == "H" && mass_number == 2)
-                result.fixed_deuterium_count += count;
             for (int repeat = 0; repeat < count; ++repeat)
                 result.fixed_labels.push_back(std::to_string(mass_number) + symbol);
             index = cursor;
@@ -144,8 +144,6 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
             add_natural_element("H", count);
             result.fixed_mass_delta += static_cast<double>(count) *
                 (IsoSpec::elem_table_mass[isotope_index] - IsoSpec::elem_table_mass[base_index]);
-            if (mass_number == 2)
-                result.fixed_deuterium_count += count;
             for (int repeat = 0; repeat < count; ++repeat)
                 result.fixed_labels.push_back(std::to_string(mass_number) + "H");
             continue;
@@ -169,32 +167,6 @@ IsotopePatternFormula parse_isotope_pattern_formula(const std::string &formula) 
 }
 
 #ifdef _WIN32
-std::string pick_database_file(bool create) {
-    const auto owner = GetForegroundWindow();
-    wchar_t filename[MAX_PATH]{};
-    OPENFILENAMEW dialog{};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = owner;
-    dialog.lpstrFile = filename;
-    dialog.nMaxFile = MAX_PATH;
-    dialog.lpstrFilter = L"DuckDB files\0*.duckdb;*.db\0All files\0*.*\0";
-    dialog.nFilterIndex = 1;
-    dialog.Flags = OFN_EXPLORER;
-    if (create) {
-        dialog.Flags |= OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
-        dialog.lpstrDefExt = L"duckdb";
-        if (!GetSaveFileNameW(&dialog)) throw std::invalid_argument("database file selection cancelled");
-    } else {
-        dialog.Flags |= OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-        if (!GetOpenFileNameW(&dialog)) throw std::invalid_argument("database file selection cancelled");
-    }
-    const int size = WideCharToMultiByte(CP_UTF8, 0, filename, -1, nullptr, 0, nullptr, nullptr);
-    std::string result(static_cast<std::size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, filename, -1, result.data(), size, nullptr, nullptr);
-    result.pop_back();
-    return result;
-}
-
 std::string pick_csv_output_file() {
     wchar_t filename[MAX_PATH]{};
     OPENFILENAMEW dialog{};
@@ -308,7 +280,7 @@ Json browse_file_system(const std::string &requested_path) {
         return Json{{"path", ""}, {"entries", std::move(entries)}};
     }
 #endif
-    const auto root = requested_path.empty() ? std::filesystem::current_path() : std::filesystem::path(requested_path);
+    const auto root = requested_path.empty() ? std::filesystem::current_path() : path_from_utf8(requested_path);
     if (!std::filesystem::exists(root) || !std::filesystem::is_directory(root))
         throw std::invalid_argument("filesystem browse path is not a directory");
     Json entries = Json::array();
@@ -316,8 +288,8 @@ Json browse_file_system(const std::string &requested_path) {
         const auto status = entry.symlink_status();
         if (std::filesystem::is_symlink(status)) continue;
         const bool directory = std::filesystem::is_directory(status);
-        Json item{{"name", entry.path().filename().string()},
-                  {"path", entry.path().string()},
+        Json item{{"name", path_to_utf8(entry.path().filename())},
+                  {"path", path_to_utf8(entry.path())},
                   {"isDirectory", directory}};
         if (!directory && std::filesystem::is_regular_file(status)) item["size"] = std::filesystem::file_size(entry.path());
         entries.push_back(std::move(item));
@@ -431,15 +403,24 @@ void send_http(std::intptr_t socket, int status, const Json &body) {
     send_all(socket, "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(text.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n" + text);
 }
 
+bool path_within(const std::filesystem::path &root, const std::filesystem::path &value) {
+    const auto canonical_root = std::filesystem::weakly_canonical(root);
+    const auto canonical_value = std::filesystem::weakly_canonical(value);
+    auto root_it = canonical_root.begin();
+    auto value_it = canonical_value.begin();
+    for (; root_it != canonical_root.end(); ++root_it, ++value_it)
+        if (value_it == canonical_value.end() || *root_it != *value_it) return false;
+    return true;
+}
+
 void send_file(std::intptr_t socket, const std::filesystem::path &root, const std::string &request_path) {
     const auto relative = request_path == "/" ? std::filesystem::path("index.html") : std::filesystem::path(request_path.substr(1));
     if (relative.empty() || relative.string().find("..") != std::string::npos) {
         send_http(socket, 404, Json{{"error", "application asset not found"}});
         return;
     }
-    const auto canonical_root = std::filesystem::weakly_canonical(root);
     const auto file = std::filesystem::weakly_canonical(root / relative);
-    if (!std::filesystem::exists(file) || file.string().rfind(canonical_root.string(), 0) != 0) {
+    if (!std::filesystem::exists(file) || !path_within(root, file)) {
         send_http(socket, 404, Json{{"error", "application asset not found"}});
         return;
     }
@@ -454,7 +435,12 @@ std::string websocket_frame(const std::string &payload, unsigned char opcode = 0
     std::string frame{static_cast<char>(0x80 | opcode)};
     if (payload.size() < 126) frame.push_back(static_cast<char>(payload.size()));
     else if (payload.size() <= 65535) { frame.push_back(126); frame.push_back(static_cast<char>(payload.size() >> 8)); frame.push_back(static_cast<char>(payload.size())); }
-    else throw std::runtime_error("event payload too large");
+    else {
+        frame.push_back(127);
+        const auto payload_size = static_cast<std::uint64_t>(payload.size());
+        for (int shift = 56; shift >= 0; shift -= 8)
+            frame.push_back(static_cast<char>(payload_size >> shift));
+    }
     return frame + payload;
 }
 
@@ -478,19 +464,161 @@ std::string read_text_file(const std::filesystem::path &path) {
     return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
 }
 
-std::vector<std::filesystem::path> workflow_demo_files(const std::filesystem::path &package_root) {
-    std::vector<std::filesystem::path> files;
-    const auto plugins = package_root / "plugins";
-    if (!std::filesystem::exists(plugins)) return files;
-    for (const auto &plugin : std::filesystem::directory_iterator(plugins)) {
-        if (!plugin.is_directory()) continue;
-        const auto workflows = plugin.path() / "resources" / "workflows";
-        if (!std::filesystem::exists(workflows)) continue;
-        for (const auto &entry : std::filesystem::directory_iterator(workflows))
-            if (entry.is_regular_file() && entry.path().extension() == ".json") files.push_back(entry.path());
+std::vector<std::filesystem::path> viewer_roots(const std::vector<std::filesystem::path> &configured_roots) {
+    std::vector<std::filesystem::path> roots = configured_roots;
+    std::sort(roots.begin(), roots.end());
+    roots.erase(std::unique(roots.begin(), roots.end()), roots.end());
+    return roots;
+}
+
+Json installed_viewer_manifest(const std::vector<std::filesystem::path> &configured_roots,
+                               const std::vector<std::string> &enabled_viewers) {
+    Json plugins = Json::array();
+    std::set<std::string> ids;
+    const std::set<std::string> enabled(enabled_viewers.begin(), enabled_viewers.end());
+    for (const auto &root : viewer_roots(configured_roots)) {
+        if (!std::filesystem::is_directory(root)) continue;
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(root)) {
+            if (!entry.is_regular_file() || entry.path().filename() != "plugin.manifest.json") continue;
+            try {
+                const auto package_root = entry.path().parent_path();
+                auto manifest = Json::parse(read_text_file(entry.path()));
+                if (!manifest.is_object() || manifest.value("kind", "") != "viewer") continue;
+                const auto id = manifest.value("id", std::string{});
+                const auto version = manifest.value("version", std::string{});
+                if (id.empty() || version.empty()) continue;
+                if (!enabled.contains(id)) continue;
+                const auto activation_path = package_root / "activation.json";
+                if (std::filesystem::is_regular_file(activation_path)) {
+                    const auto activation = Json::parse(read_text_file(activation_path));
+                    if (!activation.value("active", false) || activation.value("id", std::string{}) != id ||
+                        activation.value("version", std::string{}) != version) continue;
+                    if (activation.contains("package_digest")) manifest["packageDigest"] = activation.at("package_digest");
+                } else if (!manifest.value("active", false)) continue;
+                auto entry_file = manifest.value("entry", std::string("viewer.mjs"));
+                const auto bundle = std::filesystem::weakly_canonical(package_root / entry_file);
+                if (!std::filesystem::is_regular_file(bundle) || !path_within(package_root, bundle)) continue;
+                manifest.erase("active");
+                const auto route = manifest.value("route", std::string("/viewers/"));
+                manifest.erase("route");
+                manifest["entry"] = route +
+                    std::filesystem::relative(bundle, root).generic_string();
+                if (manifest.contains("css") && manifest["css"].is_array()) {
+                    for (auto &stylesheet : manifest["css"]) {
+                        if (!stylesheet.is_string()) throw std::invalid_argument("viewer stylesheet must be a string");
+                        const auto stylesheet_file = std::filesystem::weakly_canonical(
+                            package_root / stylesheet.get<std::string>());
+                        if (!std::filesystem::is_regular_file(stylesheet_file) ||
+                            !path_within(package_root, stylesheet_file))
+                            throw std::invalid_argument("viewer stylesheet is outside its package");
+                        stylesheet = route +
+                            std::filesystem::relative(stylesheet_file, root).generic_string();
+                    }
+                }
+                if (!ids.insert(id).second) continue;
+                plugins.push_back(std::move(manifest));
+            } catch (const std::exception &) {
+                // A broken optional viewer cannot prevent the bundled app from starting.
+            }
+        }
     }
-    std::sort(files.begin(), files.end());
-    return files;
+    return plugins;
+}
+
+void send_combined_plugin_manifest(std::intptr_t socket, const std::filesystem::path &application_root,
+                                   const std::vector<std::filesystem::path> &viewer_deployment_roots,
+                                   const std::vector<std::string> &enabled_viewers) {
+    Json result = Json::object();
+    const auto base = application_root / "plugins.json";
+    if (std::filesystem::is_regular_file(base)) {
+        try { result = Json::parse(read_text_file(base)); } catch (const std::exception &) {}
+    }
+    if (!result.is_object()) result = Json::object();
+    if (!result.contains("plugins") || !result["plugins"].is_array()) result["plugins"] = Json::array();
+    for (const auto &plugin : installed_viewer_manifest(viewer_deployment_roots, enabled_viewers)) result["plugins"].push_back(plugin);
+    send_http(socket, 200, result);
+}
+
+void send_viewer_file(std::intptr_t socket, const std::vector<std::filesystem::path> &viewer_deployment_roots,
+                      const std::string &request_path) {
+    const std::string prefix = "/viewers/";
+    const auto relative_text = request_path.substr(prefix.size());
+    const auto relative = std::filesystem::path(relative_text);
+    if (relative.empty() || relative.is_absolute() || relative_text.find("..") != std::string::npos) {
+        send_http(socket, 404, Json{{"error", "viewer asset not found"}});
+        return;
+    }
+    for (const auto &root : viewer_roots(viewer_deployment_roots)) {
+        const auto file = root / relative;
+        if (std::filesystem::is_regular_file(file) && path_within(root, file)) {
+            send_file(socket, root, "/" + relative.generic_string());
+            return;
+        }
+    }
+    send_http(socket, 404, Json{{"error", "viewer asset not found"}});
+}
+
+void send_viewer_runtime_module(std::intptr_t socket, const std::string &request_path) {
+    static const std::map<std::string, std::string> modules = {
+        {"/extensions/runtime/react.mjs", R"JS(const runtime = globalThis.__streamfindReact;
+if (!runtime) throw new Error('StreamFind React runtime is unavailable');
+export default runtime.default ?? runtime;
+export const Children = runtime.Children;
+export const Component = runtime.Component;
+export const Fragment = runtime.Fragment;
+export const createContext = runtime.createContext;
+export const createElement = runtime.createElement;
+export const forwardRef = runtime.forwardRef;
+export const memo = runtime.memo;
+export const useCallback = runtime.useCallback;
+export const useEffect = runtime.useEffect;
+export const useMemo = runtime.useMemo;
+export const useRef = runtime.useRef;
+export const useState = runtime.useState;
+export const useSyncExternalStore = runtime.useSyncExternalStore;
+export const useContext = runtime.useContext;
+)JS"},
+        {"/extensions/runtime/jsx-runtime.mjs", R"JS(const runtime = globalThis.__streamfindJsxRuntime;
+if (!runtime) throw new Error('StreamFind JSX runtime is unavailable');
+export const Fragment = runtime.Fragment;
+export const jsx = runtime.jsx;
+export const jsxs = runtime.jsxs;
+)JS"},
+        {"/extensions/runtime/jsx-dev-runtime.mjs", R"JS(const runtime = globalThis.__streamfindJsxRuntime;
+if (!runtime) throw new Error('StreamFind JSX runtime is unavailable');
+export const Fragment = runtime.Fragment;
+export const jsxDEV = runtime.jsxDEV ?? runtime.jsx;
+)JS"},
+        {"/extensions/runtime/react-dom.mjs", R"JS(const runtime = globalThis.__streamfindReactDom;
+if (!runtime) throw new Error('StreamFind ReactDOM runtime is unavailable');
+export default runtime.default ?? runtime;
+export const createPortal = runtime.createPortal;
+export const flushSync = runtime.flushSync;
+)JS"},
+        {"/extensions/runtime/react-dom-client.mjs", R"JS(const runtime = globalThis.__streamfindReactDomClient;
+if (!runtime) throw new Error('StreamFind ReactDOM client runtime is unavailable');
+export const createRoot = runtime.createRoot;
+export const hydrateRoot = runtime.hydrateRoot;
+)JS"},
+        {"/extensions/runtime/viewer-sdk.mjs", R"JS(const runtime = globalThis.__streamfindViewerSdk;
+if (!runtime) throw new Error('StreamFind viewer SDK runtime is unavailable');
+export const VIEWER_SDK_API_VERSION = runtime.VIEWER_SDK_API_VERSION;
+export const FRONTEND_PLUGIN_API_VERSION = runtime.FRONTEND_PLUGIN_API_VERSION;
+export const FRONTEND_PLUGIN_MANIFEST_KIND = runtime.FRONTEND_PLUGIN_MANIFEST_KIND;
+export const FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION = runtime.FRONTEND_PLUGIN_MANIFEST_SCHEMA_VERSION;
+export const artifactContractMatches = runtime.artifactContractMatches;
+export const isQualifiedArtifactContract = runtime.isQualifiedArtifactContract;
+export const localArtifactContract = runtime.localArtifactContract;
+)JS"},
+    };
+    const auto module = modules.find(request_path);
+    if (module == modules.end()) {
+        send_http(socket, 404, Json{{"error", "viewer runtime module not found"}});
+        return;
+    }
+    const auto &body = module->second;
+    send_all(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/javascript; charset=utf-8\r\nContent-Length: " +
+        std::to_string(body.size()) + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + body);
 }
 
 }  // namespace detail
@@ -623,7 +751,12 @@ ServiceServer::ServiceServer(std::uint16_t port, const std::filesystem::path &co
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) throw std::runtime_error("Winsock initialization failed");
 #endif
+    const auto extension_configuration = load_plugin_configuration_file(configuration_path);
+    if (!extension_configuration.valid) throw std::runtime_error(extension_configuration.diagnostics);
+    viewer_deployment_roots_ = extension_configuration.configuration.viewer_deployment_roots;
+    enabled_viewers_ = extension_configuration.configuration.enabled_viewers;
     plugin_runtime_.load(configuration_path, methods_, operations_);
+    projects_.set_plugin_snapshot(plugin_runtime_.status());
 }
 ServiceServer::~ServiceServer() { stop();
 #ifdef _WIN32
@@ -649,7 +782,7 @@ Json ServiceServer::workflow_demos() const {
                 {"name", metadata.value("name", parsed.name.empty() ? id : parsed.name)},
                 {"description", metadata.value("description", "Workflow demonstration")},
                 {"use_case", metadata.value("use_case", "")},
-                {"domain", metadata.value("domain", "")},
+                {"plugin", metadata.value("plugin", "")},
                 {"metadata", metadata},
                 {"workflow", parsed.to_json()}
             });
@@ -672,6 +805,14 @@ void ServiceServer::stop() {
 }
 
 void ServiceServer::handle_client(std::intptr_t socket) {
+    const auto publish_project_updated = [this](const std::string &session_id) {
+        for (const auto &project : projects_.list()) {
+            if (project.session_id == session_id) {
+                events_.publish(Json{{"type", "project.updated"}, {"project", project}});
+                return;
+            }
+        }
+    };
     try {
         std::string request;
         std::array<char, 8192> buffer{};
@@ -773,8 +914,14 @@ void ServiceServer::handle_client(std::intptr_t socket) {
             const auto body_start = separator + 4;
             const auto body = body_start < request.size() ? request.substr(body_start) : std::string{};
             if (method == "OPTIONS") detail::send_http(socket, 204, Json::object());
+            else if (method == "GET" && path == "/plugins.json")
+                detail::send_combined_plugin_manifest(socket, application_root_, viewer_deployment_roots_, enabled_viewers_);
+            else if (method == "GET" && path.rfind("/extensions/runtime/", 0) == 0)
+                detail::send_viewer_runtime_module(socket, path);
+            else if (method == "GET" && path.rfind("/viewers/", 0) == 0)
+                detail::send_viewer_file(socket, viewer_deployment_roots_, path);
             else if (method == "GET" && std::filesystem::exists(application_root_) &&
-                     (path == "/" || path == "/plugins.json" || path.rfind("/assets/", 0) == 0))
+                     (path == "/" || path.rfind("/assets/", 0) == 0))
                 detail::send_file(socket, application_root_, path);
             else if (method == "GET" && path == "/health") {
                 auto health = projects_.health_snapshot();
@@ -876,49 +1023,37 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     &isotope_numbers, &atom_counts, &conf_size, false);
                 std::unique_ptr<int[]> isotope_numbers_owner(isotope_numbers);
                 std::unique_ptr<int[]> atom_counts_owner(atom_counts);
-                constexpr int max_deuterium_loss_states = 8;
-                constexpr double deuterium_loss_mass_delta = 1.00627674589;
-                const int deuterium_loss_count = std::min(parsed_formula.fixed_deuterium_count,
-                                                           max_deuterium_loss_states);
-                for (int deuterium_loss = 0; deuterium_loss <= deuterium_loss_count; ++deuterium_loss) {
-                    const double state_weight = std::pow(0.35, deuterium_loss);
-                    for (std::size_t index = 0; index < envelope.confs_no(); ++index) {
-                        if (envelope.prob(index) < 1e-5) continue;
-                        std::vector<std::string> heavy_isotopes;
-                        if (deuterium_loss == 0)
-                            heavy_isotopes = parsed_formula.fixed_labels;
-                        else
-                            heavy_isotopes.push_back("D-loss-" + std::to_string(deuterium_loss));
-                        const auto *configuration = envelope.conf(index);
-                        std::size_t isotope_offset = 0;
-                        for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
-                            for (int isotope = 0; isotope < isotope_numbers[dimension]; ++isotope) {
-                                const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
-                                if (isotope == 0 || count <= 0) continue;
-                                const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
-                                const int table_index = detail::nearest_isotope_table_index(mass);
-                                const auto label = table_index >= 0
-                                    ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) +
-                                          IsoSpec::elem_table_symbol[table_index]
-                                    : element_symbols[dimension];
-                                for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
-                            }
-                            isotope_offset += static_cast<std::size_t>(isotope_numbers[dimension]);
+                for (std::size_t index = 0; index < envelope.confs_no(); ++index) {
+                    if (envelope.prob(index) < 1e-5) continue;
+                    std::vector<std::string> heavy_isotopes = parsed_formula.fixed_labels;
+                    const auto *configuration = envelope.conf(index);
+                    std::size_t isotope_offset = 0;
+                    for (unsigned int dimension = 0; dimension < dimensions; ++dimension) {
+                        for (int isotope = 0; isotope < isotope_numbers[dimension]; ++isotope) {
+                            const auto count = configuration[isotope_offset + static_cast<std::size_t>(isotope)];
+                            if (isotope == 0 || count <= 0) continue;
+                            const auto mass = isotope_masses[isotope_offset + static_cast<std::size_t>(isotope)];
+                            const int table_index = detail::nearest_isotope_table_index(mass);
+                            const auto label = table_index >= 0
+                                ? std::to_string(static_cast<int>(std::llround(IsoSpec::elem_table_massNo[table_index]))) +
+                                      IsoSpec::elem_table_symbol[table_index]
+                                : element_symbols[dimension];
+                            for (int repeat = 0; repeat < count; ++repeat) heavy_isotopes.push_back(label);
                         }
-                        const auto label = heavy_isotopes.empty() ? "M" : [&heavy_isotopes]() {
-                            std::string combined;
-                            for (const auto &isotope : heavy_isotopes) {
-                                if (!combined.empty()) combined += "-";
-                                combined += isotope;
-                            }
-                            return combined;
-                        }();
-                        expected_peaks.push_back({
-                            envelope.mass(index) + parsed_formula.fixed_mass_delta -
-                                deuterium_loss * deuterium_loss_mass_delta + ion_offset,
-                            envelope.prob(index) * state_weight,
-                            label});
+                        isotope_offset += static_cast<std::size_t>(isotope_numbers[dimension]);
                     }
+                    const auto label = heavy_isotopes.empty() ? "M" : [&heavy_isotopes]() {
+                        std::string combined;
+                        for (const auto &isotope : heavy_isotopes) {
+                            if (!combined.empty()) combined += "-";
+                            combined += isotope;
+                        }
+                        return combined;
+                    }();
+                    expected_peaks.push_back({
+                        envelope.mass(index) + parsed_formula.fixed_mass_delta + ion_offset,
+                        envelope.prob(index),
+                        label});
                 }
                 std::sort(expected_peaks.begin(), expected_peaks.end(),
                           [](const ExpectedPeak &lhs, const ExpectedPeak &rhs) {
@@ -945,22 +1080,33 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                     throw std::invalid_argument("dependency installation requires allow_network=true");
                 detail::send_http(socket, 200, plugin_runtime_.install_dependencies(request));
             }
+            else if (method == "GET" && path == "/plugins/status")
+                detail::send_http(socket, 200, plugin_runtime_.status());
+            else if (method == "POST" && path == "/plugins/activate") {
+                const auto request = Json::parse(body);
+                const auto plugin_id = request.value("plugin_id", std::string{});
+                if (plugin_id.empty()) throw std::invalid_argument("plugin_id is required");
+                auto result = plugin_runtime_.activate(plugin_id, methods_, operations_);
+                projects_.set_plugin_snapshot(plugin_runtime_.status());
+                result["service_generation"] = result.value("generation", 0);
+                detail::send_http(socket, 200, result);
+            }
             else if (method == "GET" && route == "/capabilities/index") detail::send_http(socket, 200, capability_index_json());
-            else if (method == "GET" && route.rfind("/capabilities/domains/", 0) == 0 && route.ends_with("/modules")) {
-                const auto domain = detail::percent_decode(route.substr(std::string("/capabilities/domains/").size(), route.size() - std::string("/capabilities/domains/").size() - std::string("/modules").size()));
+            else if (method == "GET" && route.rfind("/capabilities/plugins/", 0) == 0 && route.ends_with("/modules")) {
+                const auto plugin = detail::percent_decode(route.substr(std::string("/capabilities/plugins/").size(), route.size() - std::string("/capabilities/plugins/").size() - std::string("/modules").size()));
                 Json modules = Json::array();
                 const auto entries = catalogue::entries_json();
                 std::set<std::string> unique;
                 if (entries) for (const auto &entry : *entries)
-                    if (entry.value("kind", "") == "operation" && entry.value("exposed", false) && entry.value("executable", false) && entry.value("domain", "") == domain)
+                    if (entry.value("kind", "") == "operation" && entry.value("exposed", false) && entry.value("executable", false) && entry.value("plugin", "") == plugin)
                         unique.insert(entry.value("module_id", ""));
                 for (const auto &module : unique) modules.push_back(module);
-                detail::send_http(socket, 200, Json{{"domain", domain}, {"modules", modules}});
+                detail::send_http(socket, 200, Json{{"plugin", plugin}, {"modules", modules}});
             }
             else if (method == "GET" && route == "/capabilities/operations") {
-                const auto domain = query_value("domain");
-                if (domain.empty()) detail::send_http(socket, 400, Json{{"error", "domain is required"}});
-                else detail::send_http(socket, 200, Json{{"operations", capability_operations_json(domain, query_value("module"), query_value("search"), query_value("include_schema") == "true")} });
+                const auto plugin = query_value("plugin");
+                if (plugin.empty()) detail::send_http(socket, 400, Json{{"error", "plugin is required"}});
+                else detail::send_http(socket, 200, Json{{"operations", capability_operations_json(plugin, query_value("module"), query_value("search"), query_value("include_schema") == "true")} });
             }
             else if (method == "GET" && route.rfind("/capabilities/operations/", 0) == 0) {
                 const auto operation_id = detail::percent_decode(route.substr(std::string("/capabilities/operations/").size()));
@@ -1013,12 +1159,6 @@ void ServiceServer::handle_client(std::intptr_t socket) {
 #else
                 detail::send_http(socket, 501, Json{{"error", "native path picker is only available on Windows"}});
 #endif
-            } else if (method == "GET" && (path == "/projects/file-picker" || path == "/projects/file-picker/create")) {
-#ifdef _WIN32
-                detail::send_http(socket, 200, Json{{"database_path", detail::pick_database_file(path.ends_with("/create"))}});
-#else
-                detail::send_http(socket, 501, Json{{"error", "native file picker is only available on Windows"}});
-#endif
             } else if (method == "GET" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
@@ -1040,7 +1180,7 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto request = Json::parse(body);
                 detail::send_http(socket, 200, projects_.copy_project(
-                    session_id, request.at("destination_database_path").get<std::string>()));
+                    session_id, path_from_utf8(request.at("destination_project_path").get<std::string>())));
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow/history/clear")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow/history/clear");
@@ -1055,13 +1195,17 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/results/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
-                detail::send_http(socket, 200, projects_.clear_all_results(session_id));
+                const auto result = projects_.clear_all_results(session_id);
+                publish_project_updated(session_id);
+                detail::send_http(socket, 200, result);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/results/node/clear")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/results/node/clear");
                 const auto session_id = detail::percent_decode(path.substr(prefix.size(), path.size() - prefix.size() - suffix.size()));
                 const auto request = Json::parse(body);
-                detail::send_http(socket, 200, projects_.clear_node_results(session_id, request.value("producer_instance", std::string{})));
+                const auto result = projects_.clear_node_results(session_id, request.value("producer_instance", std::string{}));
+                publish_project_updated(session_id);
+                detail::send_http(socket, 200, result);
             } else if (method == "POST" && path.rfind("/projects/", 0) == 0 && path.ends_with("/workflow") && !path.ends_with("/workflow/state")) {
                 const auto prefix = std::string("/projects/");
                 const auto suffix = std::string("/workflow");
@@ -1247,14 +1391,19 @@ void ServiceServer::handle_client(std::intptr_t socket) {
                 detail::send_http(socket, 200, project);
             } else if (method == "POST" && path == "/projects") {
                 const auto input = Json::parse(body);
-                ProjectOptions options{input.at("database_path").get<std::string>(), input.value("metadata", Json::object()), input.value("workflow_metadata", ProjectOptions{}.workflow_metadata)};
+                const auto layout = ProjectLayout::from_container(
+                    path_from_utf8(input.at("project_path").get<std::string>()));
+                ProjectOptions options;
+                options.database_path = layout.database();
+                options.metadata = input.value("metadata", Json::object());
+                options.workflow_metadata = input.value("workflow_metadata", ProjectOptions{}.workflow_metadata);
                 const auto session_id = input.at("session_id").get<std::string>();
                 const auto project = input.value("mode", "create") == "open"
                                          ? projects_.open(session_id, options)
                                          : projects_.create(session_id, options);
                 const auto event_type = input.value("mode", "create") == "open" ? "project.opened" : "project.created";
                 Json response = project;
-                response["initialization"] = project_initialization_json(project.domains);
+                response["initialization"] = project_initialization_json(project.plugins);
                 events_.publish(Json{{"type", event_type}, {"project", response}});
                 detail::send_http(socket, 201, response);
             } else if (method == "GET" && path == "/")

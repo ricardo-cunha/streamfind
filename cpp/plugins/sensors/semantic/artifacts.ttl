@@ -1,0 +1,114 @@
+@prefix sfcore: <https://streamfind.dev/catalogue/core#> .
+@prefix sfsensors: <https://streamfind.dev/catalogue/plugins/sensors#> .
+@prefix sf: <https://streamfind.dev/vocabulary#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+sfsensors:tableInputPort
+    a sf:Table ;
+    sf:availableInPlugin sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sensor table input" ;
+    skos:definition "Any persisted table whose explicitly mapped columns are normalized into SENSOR_TIMESERIES." ;
+    sf:tableContractName "SENSORS_ANY_TABLE_PORT" ;
+    sf:dataKind "table" ;
+    sf:dynamicSchema true ;
+    sf:portId "tableInput" ;
+    sf:semanticContract "anyTable" .
+
+sfsensors:sensorTimeseriesTable
+    a sf:Table ;
+    sf:availableInPlugin sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sensor time series" ;
+    skos:definition "Version 1 long-format observation table shared by sensor acquisition adapters and time-series processing operations." ;
+    sf:tableContractName "SENSOR_TIMESERIES_V1" ;
+    sf:dataKind "table" ;
+    sf:hasColumn
+        sfsensors:sourceIdColumn,
+        sfsensors:signalIdColumn,
+        sfsensors:eventTimeColumn,
+        sfsensors:receivedAtColumn,
+        sfsensors:timeOriginColumn,
+        sfsensors:valueTypeColumn,
+        sfsensors:valueDoubleColumn,
+        sfsensors:valueIntColumn,
+        sfsensors:valueBoolColumn,
+        sfsensors:valueTextColumn,
+        sfsensors:sensorValueJsonColumn,
+        sfsensors:unitColumn,
+        sfsensors:qualityColumn,
+        sfsensors:sensorStatusCodeColumn,
+        sfsensors:captureIdColumn,
+        sfsensors:eventIdColumn .
+
+sfsensors:sensorAlignedTable
+    a sf:Table ;
+    sf:availableInPlugin sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Aligned sensor measurements" ;
+    skos:definition "Long-format nearest-time alignment result with one row for each reference observation and signal, including match status and signed time delta." ;
+    sf:tableContractName "SENSOR_ALIGNED_V1" ;
+    sf:dataKind "table" ;
+    sf:hasColumn
+        sfsensors:sourceIdColumn,
+        sfsensors:referenceSignalColumn,
+        sfsensors:referenceEventTimeColumn,
+        sfsensors:signalIdColumn,
+        sfsensors:eventTimeColumn,
+        sfsensors:receivedAtColumn,
+        sfsensors:timeOriginColumn,
+        sfsensors:valueTypeColumn,
+        sfsensors:valueDoubleColumn,
+        sfsensors:valueIntColumn,
+        sfsensors:valueBoolColumn,
+        sfsensors:valueTextColumn,
+        sfsensors:sensorValueJsonColumn,
+        sfsensors:unitColumn,
+        sfsensors:qualityColumn,
+        sfsensors:sensorStatusCodeColumn,
+        sfsensors:captureIdColumn,
+        sfsensors:eventIdColumn,
+        sfsensors:alignmentStatusColumn,
+        sfsensors:timeDeltaMicrosecondsColumn .
+
+sfsensors:opcuaDataTable
+    a sf:Table ;
+    sf:availableInPlugin sfsensors:sensors ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA data table" ;
+    skos:definition "One row per requested OPC UA node containing its NodeClass category, an indicator of whether a value was read, decoded value data for Variables, and read status." ;
+    sf:tableContractName "OPCUA_DATA" ;
+    sf:dataKind "table" ;
+    sf:hasColumn
+        sfsensors:endpointColumn,
+        sfsensors:nodeNameColumn,
+        sfsensors:nodeIdColumn,
+        sfsensors:nodeClassColumn,
+        sfsensors:nodeClassNameColumn,
+        sfsensors:valueAvailableColumn,
+        sfsensors:valueColumn,
+        sfsensors:valueJsonColumn,
+        sfsensors:statusCodeColumn,
+        sfsensors:statusNameColumn .
+
+sfsensors:opcuaExploration
+    a sf:OperationResult ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:dataKind "json" ;
+    sf:type "object" ;
+    sf:portId "opcuaExploration" ;
+    sf:semanticContract "opcuaExploration" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "OPC UA exploration" ;
+    skos:definition "Endpoint metadata, namespace information, the bounded hierarchical node tree discovered from an OPC UA Objects folder, and the operation identifier used to request selected-node metadata and a value snapshot on demand." .
+
+sfsensors:sensorValidationReport
+    a sf:OperationResult ;
+    sf:availableInPlugin sfsensors:sensors ;
+    sf:dataKind "json" ;
+    sf:type "object" ;
+    sf:portId "sensorValidationReport" ;
+    sf:semanticContract "sensorValidationReport" ;
+    skos:inScheme sfcore:scheme ;
+    skos:prefLabel "Sensor time-series validation report" ;
+    skos:definition "Validation diagnostics for a SENSOR_TIMESERIES_V1 result, including quality, typed-value, timestamp-order, and identity checks." .

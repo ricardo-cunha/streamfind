@@ -16,6 +16,8 @@ public:
     ServicePluginRuntime &operator=(const ServicePluginRuntime &) = delete;
 
     void load(const std::filesystem::path &configuration_path, MethodRegistry &methods, OperationRegistry &operations);
+    Json activate(const std::string &plugin_id, MethodRegistry &methods, OperationRegistry &operations);
+    Json status() const;
     Json dependencies() const;
     Json install_dependencies(const Json &request) const;
 
@@ -24,8 +26,12 @@ private:
         sdk::DynamicPluginLoadResult plugin;
         Json catalogue;
         streamfind_plugin_host_api host{};
+        std::filesystem::path package_path;
     };
     std::vector<std::unique_ptr<LoadedPlugin>> plugins_;
+    std::filesystem::path configuration_path_;
+    Json merged_catalogue_;
+    std::uint64_t generation_{0};
 };
 
 }  // namespace streamfind::service

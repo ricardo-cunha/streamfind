@@ -18,7 +18,7 @@ streamfind_add_semantic_catalogue(streamfind_raman_plugin raman
     "${CMAKE_CURRENT_SOURCE_DIR}/semantic")
 target_include_directories(streamfind_raman_plugin PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:sdk/include>
+    $<INSTALL_INTERFACE:sdk/native/include>
 )
 set_target_properties(streamfind_raman_plugin PROPERTIES OUTPUT_NAME "streamfind_raman")
 if(WIN32)
@@ -44,16 +44,18 @@ add_custom_command(TARGET streamfind_raman_plugin POST_BUILD
 streamfind_validate_plugin_build(streamfind_raman_plugin raman)
 streamfind_stage_mingw_plugin_runtime(streamfind_raman_plugin raman)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/semantic/"
-    DESTINATION plugins/raman/ontology)
+    DESTINATION plugins/native/native.plugin.raman/ontology)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
-    DESTINATION plugins/raman/resources)
+    DESTINATION plugins/native/native.plugin.raman/resources)
 install(FILES "${STREAMFIND_BUNDLED_MANIFEST}"
-    DESTINATION plugins/raman)
+    DESTINATION plugins/native/native.plugin.raman)
 install(TARGETS streamfind_raman_plugin
-    RUNTIME DESTINATION plugins/raman
-    LIBRARY DESTINATION plugins/raman)
+    RUNTIME DESTINATION plugins/native/native.plugin.raman
+    LIBRARY DESTINATION plugins/native/native.plugin.raman)
 if(STREAMFIND_INSTALL_PLUGIN_DEVELOPMENT_KIT)
-    install(TARGETS streamfind_raman_plugin ARCHIVE DESTINATION sdk/lib)
+    install(TARGETS streamfind_raman_plugin
+        ARCHIVE DESTINATION sdk/native/lib
+        LIBRARY DESTINATION sdk/native/lib)
 endif()
 if(STREAMFIND_BUILD_TESTS)
     add_subdirectory(tests)

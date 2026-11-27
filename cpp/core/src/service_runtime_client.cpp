@@ -1,4 +1,5 @@
 #include "streamfind/service_runtime_client.hpp"
+#include "streamfind/project_layout.hpp"
 
 #include "streamfind/service/service_discovery.hpp"
 
@@ -234,9 +235,10 @@ Json stop_service(const std::string &instance_id) {
                            {"X-StreamFind-Token: " + record.token});
 }
 
-ServiceProjectAttachment attach_project(const std::filesystem::path &database_path) {
+ServiceProjectAttachment attach_project(const std::filesystem::path &project_path) {
+    const auto layout = ProjectLayout::from_container(project_path);
     std::error_code error;
-    const auto canonical = std::filesystem::weakly_canonical(database_path, error).string();
+    const auto canonical = path_to_utf8(layout.container());
     std::string last_error;
     struct Candidate { std::string instance_id; std::string endpoint; };
     std::vector<Candidate> candidates;
@@ -260,13 +262,14 @@ ServiceProjectAttachment attach_project(const std::filesystem::path &database_pa
             const auto projects = detail::request(endpoint, "GET", "/projects");
             for (const auto &project : projects.value("projects", Json::array())) {
                 std::error_code project_error;
-                if (std::filesystem::weakly_canonical(project.value("database_path", ""), project_error).string() == canonical)
+                if (path_to_utf8(std::filesystem::weakly_canonical(
+                        path_from_utf8(project.value("project_path", "")), project_error)) == canonical)
                     return {candidate.instance_id, candidate.endpoint, endpoint.port,
                             project.value("session_id", std::string{})};
             }
             const auto response = detail::request(endpoint, "POST", "/projects",
                 Json{{"mode", "open"}, {"session_id", detail::create_session_id()},
-                     {"database_path", database_path.string()}});
+                     {"project_path", path_to_utf8(layout.container())}});
             return {candidate.instance_id, candidate.endpoint, endpoint.port,
                     response.value("session_id", std::string{})};
         } catch (const std::exception &caught) {
@@ -278,8 +281,9 @@ ServiceProjectAttachment attach_project(const std::filesystem::path &database_pa
         : "unable to attach project to streamfind service: " + last_error);
 }
 
-ServiceProjectAttachment create_project(const std::filesystem::path &database_path,
-                                        const data_proxy::Json &metadata) {
+ServiceProjectAttachment create_project(const std::filesystem::path &project_path,
+                                        const data_proxy::Json &metadata,
+                                        const data_proxy::Json &workflow_metadata) {
     std::string last_error;
     struct Candidate { std::string instance_id; std::string endpoint; };
     std::vector<Candidate> candidates;
@@ -301,8 +305,9 @@ ServiceProjectAttachment create_project(const std::filesystem::path &database_pa
             const auto response = detail::request(endpoint, "POST", "/projects",
                 data_proxy::Json{{"mode", "create"},
                                  {"session_id", detail::create_session_id()},
-                                 {"database_path", database_path.string()},
-                                 {"metadata", metadata}});
+                                 {"project_path", path_to_utf8(ProjectLayout::from_container(project_path).container())},
+                                 {"metadata", metadata},
+                                 {"workflow_metadata", workflow_metadata}});
             return {candidate.instance_id, candidate.endpoint, endpoint.port,
                     response.value("session_id", std::string{})};
         } catch (const std::exception &caught) { last_error = caught.what(); }
@@ -475,13 +480,13 @@ data_proxy::Json get_audit_trail(const ServiceProjectAttachment &attachment) {
 }
 
 data_proxy::Json copy_project(const ServiceProjectAttachment &attachment,
-                              const std::filesystem::path &destination_database_path) {
+                              const std::filesystem::path &destination_project_path) {
     if (attachment.port == 0 || attachment.session_id.empty())
         throw std::invalid_argument("service project attachment is incomplete");
     const auto endpoint = detail::parse_endpoint(attachment.endpoint);
     return detail::request(endpoint, "POST",
                            "/projects/" + attachment.session_id + "/copy",
-                           data_proxy::Json{{"destination_database_path", destination_database_path.string()}});
+                           data_proxy::Json{{"destination_project_path", path_to_utf8(ProjectLayout::from_container(destination_project_path).container())}});
 }
 
 data_proxy::Json get_results(const ServiceProjectAttachment &attachment) {

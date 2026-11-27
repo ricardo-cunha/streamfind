@@ -53,7 +53,9 @@ describe('statistics frontend plugin', () => {
     for (const contract of STATISTICS_TABLE_CONTRACTS)
       expect(viewers.resolve({ semanticType: contract, representation: 'table' })?.id).toBe('core.table');
     for (const contract of STATISTICS_RESULT_CONTRACTS)
-      expect(viewers.resolve(contract)?.id).toBe('statistics.results-dashboard');
+      expect(viewers.resolve(`https://streamfind.dev/catalogue/plugins/statistics#${contract}`)?.id).toBe(
+        'statistics.results-dashboard',
+      );
   });
 
   it('builds bounded Plotly panels with selectable sample and variable IDs', () => {

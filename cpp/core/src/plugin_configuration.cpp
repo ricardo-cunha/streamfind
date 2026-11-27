@@ -20,6 +20,31 @@ std::string required_string(const nlohmann::json &value, const char *field) {
     return value.get<std::string>();
 }
 
+std::vector<std::filesystem::path> path_array(const nlohmann::json &document,
+                                              const char *field,
+                                              const std::filesystem::path &base) {
+    std::vector<std::filesystem::path> result;
+    if (!document.contains(field)) return result;
+    const auto &roots = document.at(field);
+    if (!roots.is_array()) throw std::invalid_argument(std::string(field) + " must be an array");
+    for (const auto &root : roots) {
+        const auto root_text = required_string(root, field);
+        const std::filesystem::path root_path(root_text);
+        result.push_back(root_path.is_absolute() ? root_path : base / root_path);
+    }
+    return result;
+}
+
+std::vector<std::filesystem::path> extension_path_array(const nlohmann::json &document,
+                                                         const char *root_field,
+                                                         const char *path_kind,
+                                                         const std::filesystem::path &base) {
+    if (!document.contains(root_field)) return {};
+    const auto &section = document.at(root_field);
+    if (!section.is_object()) throw std::invalid_argument(std::string(root_field) + " must be an object");
+    return path_array(section, path_kind, base);
+}
+
 }  // namespace streamfind::detail
 
 namespace streamfind {
@@ -36,20 +61,23 @@ PluginConfigurationResult load_plugin_configuration(
 
         PluginConfiguration configuration;
         const auto base = detail::configuration_directory(configuration_path);
-        if (document.contains("plugin_roots")) {
-            const auto &roots = document.at("plugin_roots");
-            if (!roots.is_array()) {
-                throw std::invalid_argument("plugin_roots must be an array");
-            }
-            for (const auto &root : roots) {
-                const auto root_text = detail::required_string(root, "plugin_roots");
-                const std::filesystem::path root_path(root_text);
-                configuration.plugin_roots.push_back(
-                    root_path.is_absolute() ? root_path : base / root_path);
-            }
-        }
-        if (configuration.plugin_roots.empty()) {
-            configuration.plugin_roots.push_back(base / "plugins");
+        configuration.plugin_development_roots = detail::extension_path_array(
+            document, "plugin_roots", "development", base);
+        configuration.plugin_deployment_roots = detail::extension_path_array(
+            document, "plugin_roots", "deployment", base);
+        configuration.viewer_development_roots = detail::extension_path_array(
+            document, "viewer_roots", "development", base);
+        configuration.viewer_deployment_roots = detail::extension_path_array(
+            document, "viewer_roots", "deployment", base);
+        if (configuration.plugin_deployment_roots.empty())
+            configuration.plugin_deployment_roots.push_back(base / "plugins");
+        if (configuration.viewer_deployment_roots.empty())
+            configuration.viewer_deployment_roots.push_back(base / "viewers" / "native");
+
+        if (document.contains("registry_path")) {
+            const auto registry_text = detail::required_string(document.at("registry_path"), "registry_path");
+            const std::filesystem::path registry(registry_text);
+            configuration.registry_path = registry.is_absolute() ? registry : base / registry;
         }
 
         if (document.contains("enabled_plugins")) {
@@ -64,6 +92,21 @@ PluginConfigurationResult load_plugin_configuration(
                     throw std::invalid_argument("duplicate enabled plugin: " + plugin_id);
                 }
                 configuration.enabled_plugins.push_back(plugin_id);
+            }
+        }
+
+        if (document.contains("enabled_viewers")) {
+            const auto &enabled = document.at("enabled_viewers");
+            if (!enabled.is_array()) {
+                throw std::invalid_argument("enabled_viewers must be an array");
+            }
+            std::unordered_set<std::string> seen;
+            for (const auto &viewer : enabled) {
+                const auto viewer_id = detail::required_string(viewer, "enabled_viewers");
+                if (!seen.insert(viewer_id).second) {
+                    throw std::invalid_argument("duplicate enabled viewer: " + viewer_id);
+                }
+                configuration.enabled_viewers.push_back(viewer_id);
             }
         }
 

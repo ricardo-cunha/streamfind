@@ -20,11 +20,13 @@ enum class ProjectCommand {
     set_workflow,
     validate_workflow,
     validate,
-    get_project_domains,
+    get_project_plugins,
     copy,
     run_workflow,
-    get_metadata,
-    set_metadata,
+    get_project_metadata,
+    set_project_metadata,
+    get_workflow_metadata,
+    set_workflow_metadata,
 
     get_audit_trail,
     close,
@@ -42,7 +44,7 @@ STREAMFIND_CORE_API ProjectCommand command_from_string(std::string_view name);
 /**
  * @brief Execute one JSON request against a Project.
  *
- * Requests use `database_path` to select a project. Commands
+ * Requests use `project_path` to select a project. Commands
  * that modify a workflow additionally require a `workflow` JSON value.
  * Results are JSON objects suitable for direct CLI output.
  *

@@ -3,7 +3,7 @@
     "id": "statistics-example",
     "name": "Statistics example",
     "description": "Import the bundled example CSV and run PCA, PLS, and two-group fold-change analysis from the same input table.",
-    "domain": "statistics",
+    "plugin": "statistics",
     "use_case": "Explore, model, and compare multivariate data",
     "owner": "StreamFind statistics demos"
   },
@@ -15,7 +15,7 @@
     "metadata": {
       "name": "Statistics example",
       "description": "Import one wide table and inspect PCA, PLS, and fold-change results.",
-      "domain": "statistics"
+      "plugin": "statistics"
     },
     "operations": [
       {

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ResultDataResponse } from '../../framework/backend/StreamFindApiClient';
+import type { ResultQueryResponse } from '../../framework/backend/StreamFindApiClient';
 import { LoadingLogo } from '../../framework/ui/LoadingLogo';
 import { VisualizationRenderer } from '../../framework/visualization/VisualizationRenderer';
 import type { VisualizationSpec } from '../../framework/visualization/visualizationTypes';
 import type { ViewerComponentProps } from '../../framework/viewers/viewerTypes';
 import type { VisualizationRelayout } from '../../framework/visualization/VisualizationRegistry';
 
-type RamanRow = Record<string, string | null>;
+type RamanRow = Record<string, unknown>;
 
 const GROUP_COLUMNS = ['analysis_id', 'source_frame_index', 'time_seconds', 'axis_kind', 'signal_kind'] as const;
 const DEFAULT_GROUP = ['analysis_id'];
@@ -17,7 +17,8 @@ const VIEWPORT_MAX_ROWS = 250000;
 const EMPTY_RAMAN_ROWS: RamanRow[] = [];
 
 function text(row: RamanRow, column: string): string {
-  return row[column] ?? '';
+  const value = row[column];
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function number(row: RamanRow, column: string): number {
@@ -152,7 +153,7 @@ function makeSpec(
 export function RamanSpectraViewer({ context }: ViewerComponentProps) {
   const artifact = context.artifact;
   const client = context.pluginApi?.client;
-  const [data, setData] = useState<{ resultId: string; response: ResultDataResponse } | null>(null);
+  const [data, setData] = useState<{ resultId: string; response: ResultQueryResponse<unknown> } | null>(null);
   const [grouping, setGrouping] = useState<string[]>(DEFAULT_GROUP);
   const [loadState, setLoadState] = useState<{ resultId: string; error?: string } | null>(null);
   const [, setThemeRevision] = useState(0);
@@ -202,6 +203,7 @@ export function RamanSpectraViewer({ context }: ViewerComponentProps) {
         // the higher-resolution traces on demand through the same query.
         max_points_per_trace: viewportRange ? VIEWPORT_MAX_POINTS_PER_TRACE : INITIAL_MAX_POINTS_PER_TRACE,
         limit: viewportRange ? VIEWPORT_MAX_ROWS : INITIAL_MAX_ROWS,
+        preserveComplexCells: true,
         ...(viewportRange ? { x_min: viewportRange[0], x_max: viewportRange[1] } : {}),
       });
       if (!cancelled) {

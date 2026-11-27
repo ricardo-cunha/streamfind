@@ -3,7 +3,7 @@
     "id": "raman-read-files",
     "name": "Read Raman files",
     "description": "Starter workflow with a single Read Raman files operation. Update source_paths to the Raman or infrared files you want to import.",
-    "domain": "raman",
+    "plugin": "raman",
     "use_case": "Import Raman or infrared spectra",
     "owner": "StreamFind Raman demos"
   },
@@ -15,7 +15,7 @@
     "metadata": {
       "name": "Read Raman files",
       "description": "Read source spectra into the Raman project. Replace the example path before running this workflow.",
-      "domain": "raman"
+      "plugin": "raman"
     },
     "operations": [
       {

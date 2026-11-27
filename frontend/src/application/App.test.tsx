@@ -1,14 +1,23 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-const project = {
+let project = {
   session_id: 'path-test-a',
-  database_path: 'tmp/projects/path-test.duckdb',
+  project_path: 'tmp/projects/path-test.sf',
   database_size_bytes: 0,
-  domains: ['core'],
+  plugins: ['core'],
   metadata: {},
+  result_store: { size_bytes: 0 },
 };
+let publishedArtifactCount = 0;
+let serviceEventListener: ((event: { type: string; project?: string }) => void) | null = null;
+let createProjectCalls: Array<Record<string, unknown>> = [];
+let copyProjectCalls: Array<{ sessionId: string; destinationPath: string }> = [];
+let createProjectError: Error | null = null;
+let browsedFolders: Array<{ name: string; path: string; isDirectory: boolean }> = [];
+let nativeFolderPickerPaths: string[] = [];
+let nativeFolderPickerError: Error | null = null;
 
 vi.mock('../framework/backend/StreamFindApiClient', () => ({
   StreamFindApiClient: class {
@@ -19,7 +28,7 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
     }
 
     async capabilities() {
-      return { protocol_version: '1.0', operations: [], domains: ['core'], endpoints: [] };
+      return { protocol_version: '1.0', operations: [], plugins: ['core'], endpoints: [] };
     }
 
     async workflowDemos() {
@@ -66,6 +75,36 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return [project];
     }
 
+    async createProject(input: Record<string, unknown>) {
+      createProjectCalls.push(input);
+      if (createProjectError) throw createProjectError;
+      return {
+        ...project,
+        session_id: input.session_id as string,
+        project_path: input.project_path as string,
+      };
+    }
+
+    async copyProject(sessionId: string, destinationPath: string) {
+      copyProjectCalls.push({ sessionId, destinationPath });
+    }
+
+    async browseFileSystem(path = '') {
+      return { path: path || 'C:/projects', entries: browsedFolders };
+    }
+
+    async pickFolders() {
+      if (nativeFolderPickerError) throw nativeFolderPickerError;
+      return nativeFolderPickerPaths;
+    }
+
+    async results() {
+      return Array.from({ length: publishedArtifactCount }, (_, index) => ({
+        result_id: `result-${index}`,
+        status: 'published',
+      }));
+    }
+
     async closeProject() {
       return project;
     }
@@ -86,7 +125,8 @@ vi.mock('../framework/backend/StreamFindApiClient', () => ({
       return { session_id: project.session_id, state: 'cancelled' as const };
     }
 
-    subscribe() {
+    subscribe(listener: (event: { type: string; project?: string }) => void) {
+      serviceEventListener = listener;
       return () => undefined;
     }
 
@@ -100,6 +140,26 @@ describe('application shell', () => {
   beforeEach(() => {
     localStorage.clear();
     window.location.hash = '';
+    project = {
+      session_id: 'path-test-a',
+      project_path: 'tmp/projects/path-test.sf',
+      database_size_bytes: 0,
+      plugins: ['core'],
+      metadata: {},
+      result_store: { size_bytes: 0 },
+    };
+    publishedArtifactCount = 0;
+    serviceEventListener = null;
+    createProjectCalls = [];
+    copyProjectCalls = [];
+    createProjectError = null;
+    nativeFolderPickerPaths = [];
+    nativeFolderPickerError = new Error('Native folder picker unavailable in test environment.');
+    browsedFolders = [
+      { name: 'existing.sf', path: 'C:/projects/existing.sf', isDirectory: true },
+      { name: 'ordinary-folder', path: 'C:/projects/ordinary-folder', isDirectory: true },
+      { name: 'notes.txt', path: 'C:/projects/notes.txt', isDirectory: false },
+    ];
     vi.useFakeTimers();
   });
 
@@ -163,7 +223,7 @@ describe('application shell', () => {
     expect(screen.queryByText(/Revision/)).not.toBeInTheDocument();
     expect(screen.queryByText(/workflow demo/, { selector: '.sf-workflow-summary' })).not.toBeInTheDocument();
     expect(
-      screen.queryByText('Show the workflow demo picker.', { selector: '.sf-project-preview-domain' }),
+      screen.queryByText('Show the workflow demo picker.', { selector: '.sf-project-preview-plugin' }),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/"use_case": "Show the workflow demo picker\."/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create Workflow' })).toBeInTheDocument();
@@ -194,7 +254,115 @@ describe('application shell', () => {
 
     expect(screen.getByText('Open workflow')).toBeInTheDocument();
     expect(screen.getByText('path-test')).toBeInTheDocument();
-    expect(screen.getByText('tmp/projects/path-test.duckdb')).toBeInTheDocument();
+    expect(screen.getByText('tmp/projects/path-test.sf')).toBeInTheDocument();
+  });
+
+  it('previews the .sf destination and submits it when creating a project', async () => {
+    createProjectError = new Error('Simulated service refusal.');
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Create workflow' }));
+    fireEvent.change(screen.getByPlaceholderText('C:/projects'), { target: { value: 'C:/projects' } });
+    fireEvent.change(screen.getByPlaceholderText('river-screening'), { target: { value: 'river-screening' } });
+
+    expect(screen.getByText('C:/projects/river-screening.sf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(createProjectCalls[0]).toMatchObject({
+      project_path: 'C:/projects/river-screening.sf',
+      mode: 'create',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Simulated service refusal.');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('heading', { name: 'Create project' })).not.toBeInTheDocument();
+  });
+
+  it('opens a selected .sf folder and keeps the open dialog when the picker is cancelled', async () => {
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const projectFileList = within(screen.getByRole('main', { name: 'Files and folders' }));
+    expect(projectFileList.getByRole('button', { name: /existing\.sf/ })).toBeInTheDocument();
+    expect(projectFileList.queryByRole('button', { name: /ordinary-folder/ })).not.toBeInTheDocument();
+    expect(projectFileList.queryByRole('button', { name: /notes\.txt/ })).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose a StreamFind project' })).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('heading', { name: 'Open project' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const reopenedProjectFileList = within(screen.getByRole('main', { name: 'Files and folders' }));
+    await act(async () => {
+      fireEvent.click(reopenedProjectFileList.getByRole('button', { name: /existing\.sf/ }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Choose selected folder' }));
+      await Promise.resolve();
+    });
+    expect((screen.getByLabelText('Project folder (.sf)') as HTMLInputElement).value).toBe('C:/projects/existing.sf');
+    fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0]).toMatchObject({ project_path: 'C:/projects/existing.sf', mode: 'open' });
+    expect(screen.getByText('existing')).toBeInTheDocument();
+  });
+
+  it('uses the project folder wizard for open workflow', async () => {
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('dialog', { name: 'Choose a StreamFind project' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('main', { name: 'Files and folders' })).getByRole('button', { name: /existing\.sf/ }),
+    ).toBeInTheDocument();
+    expect(nativeFolderPickerPaths).toEqual([]);
+  });
+
+  it('shows the service guidance when a legacy DuckDB file is entered as a project folder', async () => {
+    createProjectError = new Error('A legacy DuckDB project file cannot be opened as a current project. Create a new .sf project.');
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workflow' }));
+    fireEvent.change(screen.getByLabelText('Project folder (.sf)'), { target: { value: 'C:/projects/legacy.duckdb' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(createProjectCalls[0]).toMatchObject({ project_path: 'C:/projects/legacy.duckdb', mode: 'open' });
+    expect(screen.getByRole('alert')).toHaveTextContent('Create a new .sf project');
+  });
+
+  it('copies a project to a new .sf folder and opens the copy', async () => {
+    await showWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy project path-test' }));
+
+    expect(screen.getByText('tmp/projects/path-test-copy.sf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy project' }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(copyProjectCalls).toEqual([{ sessionId: 'path-test-a', destinationPath: 'tmp/projects/path-test-copy.sf' }]);
+    expect(createProjectCalls[0]).toMatchObject({ project_path: 'tmp/projects/path-test-copy.sf', mode: 'open' });
+    expect(screen.getByText('path-test-copy')).toBeInTheDocument();
   });
 
   it('shows the workflow state when the definition request is temporarily blocked', async () => {
@@ -205,6 +373,27 @@ describe('application shell', () => {
     expect(screen.getByText('Results store: 0.0 KB')).toBeInTheDocument();
     expect(screen.queryByText(/Workflow (queued|running|failed)/)).not.toBeInTheDocument();
     expect(screen.queryByText('Loading workflow summary…')).not.toBeInTheDocument();
+  });
+
+  it('refreshes project card result counts and store size after workflow events', async () => {
+    await showWorkspace();
+    expect(screen.getByText('Results store: 0.0 KB')).toBeInTheDocument();
+
+    project = { ...project, result_store: { size_bytes: 2048 } };
+    publishedArtifactCount = 2;
+    await act(async () => {
+      serviceEventListener?.({ type: 'workflow.completed', project: project.session_id });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Results: 2 published')).toBeInTheDocument();
+    expect(screen.getByText('Results store: 2.0 KB')).toBeInTheDocument();
   });
 
   it('keeps the Project Hub visible when no project session is active', async () => {

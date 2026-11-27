@@ -48,7 +48,7 @@ streamfind_plugin_status register_plugin(
         return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     }
     plugin->module_id = "stage9.base";
-    plugin->domain_id = "stage9";
+    plugin->plugin_id = "stage9";
     plugin->invoke = &invoke;
     plugin->release_buffer = &release_buffer;
     plugin->user_data = const_cast<streamfind_plugin_host_api *>(host);

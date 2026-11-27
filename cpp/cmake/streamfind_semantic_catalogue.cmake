@@ -9,7 +9,7 @@ function(streamfind_add_core_semantic_catalogue target semantic_dir output_dir)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${output_dir}"
         COMMAND $<TARGET_FILE:streamfind_sdk_catalogue>
             --core-semantic "${semantic_dir}"
-            --core-only --catalogue-kind core --domain streamfind
+            --core-only --catalogue-kind core --plugin streamfind
             --output-json "${output_dir}/catalogue.json"
             --output-matrix "${output_dir}/capability_matrix.json"
             --output-db "${output_dir}/catalogue.duckdb"
@@ -53,7 +53,7 @@ function(streamfind_add_aggregate_semantic_catalogue target core_dir output_dir)
 endfunction()
 
 # Generate the validated semantic catalogue owned by one C++ plugin.
-function(streamfind_add_semantic_catalogue target domain semantic_dir)
+function(streamfind_add_semantic_catalogue target plugin semantic_dir)
     file(GLOB semantic_sources CONFIGURE_DEPENDS "${semantic_dir}/*.ttl")
     set(output_dir "${CMAKE_CURRENT_BINARY_DIR}/semantic_catalogue")
     set(output_json "${output_dir}/catalogue.json")
@@ -65,7 +65,8 @@ function(streamfind_add_semantic_catalogue target domain semantic_dir)
         COMMAND $<TARGET_FILE:streamfind_sdk_catalogue>
             --core-semantic "${CMAKE_SOURCE_DIR}/core/semantic"
             --plugin-semantic "${semantic_dir}"
-            --domain "${domain}"
+            --plugin "${plugin}"
+            --ontology-namespace "https://streamfind.dev/catalogue/plugins/${plugin}#"
             --catalogue-kind plugin
             --output-json "${output_json}"
             --output-matrix "${output_matrix}"
@@ -89,5 +90,5 @@ function(streamfind_add_semantic_catalogue target domain semantic_dir)
     add_custom_target(${target}_catalogue_stage DEPENDS "${staged_db}")
     add_dependencies(${target} ${target}_catalogue_stage)
     add_dependencies(${target} ${target}_catalogue)
-    install(FILES "${output_db}" DESTINATION "plugins/${domain}")
+    install(FILES "${output_db}" DESTINATION "plugins/native/native.plugin.${plugin}")
 endfunction()

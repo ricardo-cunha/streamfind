@@ -1,13 +1,20 @@
 # How streamfind works
 
 streamfind separates project coordination from operation computation. Each
-project's DuckDB file stores workflow and metadata; a sibling `<project>.data`
-directory stores published result payloads and their query indexes. The native
+project is a `<name>.sf` folder. Its `project.duckdb` stores workflow and
+metadata; its `data/` directory stores published result payloads and their
+query indexes. The native
 service is the single control plane: it owns project sessions, database
 transactions, workflow scheduling, worker supervision, and result publication.
 The browser app connects over HTTP and WebSocket, while the MCP server connects
 over its local service client and exposes JSON-RPC over stdio. Both clients see
 the same project and runtime state.
+
+The public `streamfind` CLI owns service lifecycle commands, while
+`streamfind-app` launches the browser and `streamfind-mcp` adapts the same
+service to MCP clients. `streamfind-dev` is a separate command surface inside
+the same archive for external plugin and viewer development. See
+[Command-line interfaces](cli.md) for their usage and boundaries.
 
 ```text
                  Shared semantic catalogue
@@ -23,9 +30,10 @@ the same project and runtime state.
        └─────────────────┬──────────────────┘
                          ▼
                  Native streamfind service
-                 ├── Project DuckDB metadata
-                 ├── Supervised operation workers
-                 └── Project .data result store
+                 ├── Project .sf folder
+                 │   ├── project.duckdb metadata
+                 │   └── data/ result store
+                 └── Supervised operation workers
 ```
 
 ## Operations and operation graphs
@@ -56,7 +64,7 @@ remain available for inspection.
 
 A typical application or agent follows this sequence:
 
-1. create or open a project with `database_path`;
+1. create or open a project with `project_path` naming its `.sf` folder;
 2. discover operations and inspect their schemas;
 3. add operation nodes and persist their parameters;
 4. connect compatible output and input ports;
@@ -72,7 +80,7 @@ browser. The [Web app](web-app.md) page documents the platform paths.
 
 ## Backend plugin framework
 
-The C++ backend is divided into a generic host core, an SDK boundary, and domain
+The C++ backend is divided into a generic host core, an SDK boundary, and plugin
 plugins:
 
 - **Service** owns project sessions, DuckDB metadata connections and
@@ -80,7 +88,7 @@ plugins:
   and audit state.
 - **SDK** defines the versioned generic plugin ABI, host callbacks, manifest
   validation, and semantic catalogue integration.
-- **Workers and plugins** own domain schemas, native readers, processing
+- **Workers and plugins** own plugin schemas, native readers, processing
   algorithms, and catalogue-declared Operations. They receive typed inputs and
   deliver typed output batches through the SDK; they do not receive project or
   DuckDB handles.
@@ -90,7 +98,7 @@ transaction-scoped host access context rather than `Project` or DuckDB handles,
 and they use the service data proxy plus generic table/schema/batch callbacks.
 Arrow IPC is used for bounded tabular transport. This keeps persistence
 policy, result validation, and transaction control in the service while
-allowing domain capabilities to be deployed selectively.
+allowing plugin capabilities to be deployed selectively.
 
 ## Frontend plugin framework
 

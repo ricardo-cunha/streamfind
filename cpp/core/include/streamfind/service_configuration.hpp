@@ -9,6 +9,7 @@ namespace streamfind {
 
 struct STREAMFIND_CORE_API ServiceConfiguration {
     std::uint16_t port{8787};
+    bool automatic_port_fallback{true};
     bool tray_enabled{true};
     bool tray_start_with_app{true};
     bool tray_start_with_service{true};

@@ -59,7 +59,7 @@ streamfind_plugin_status register_plugin(
     const streamfind_plugin_host_api *host, streamfind_plugin_api *plugin, void *) {
     if (host == nullptr || plugin == nullptr) return STREAMFIND_PLUGIN_INVALID_ARGUMENT;
     plugin->module_id = "raman.base";
-    plugin->domain_id = "raman";
+    plugin->plugin_id = "native.plugin.raman";
     plugin->invoke = &invoke;
     plugin->release_buffer = &release_buffer;
     plugin->user_data = const_cast<streamfind_plugin_host_api *>(host);
@@ -81,7 +81,7 @@ streamfind_plugin_get_descriptor(
     descriptor->struct_size = sizeof(*descriptor);
     descriptor->abi_major = STREAMFIND_PLUGIN_ABI_MAJOR;
     descriptor->abi_minor = STREAMFIND_PLUGIN_ABI_MINOR;
-    descriptor->plugin_id = "raman";
+    descriptor->plugin_id = "native.plugin.raman";
     descriptor->plugin_version = STREAMFIND_BUNDLED_PLUGIN_VERSION;
     descriptor->register_plugin = &streamfind::raman::dynamic_detail::register_plugin;
     descriptor->shutdown_plugin = &streamfind::raman::dynamic_detail::shutdown_plugin;

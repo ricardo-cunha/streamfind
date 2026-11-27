@@ -10,30 +10,63 @@
 
 namespace streamfind::test_detail {
 
+streamfind::OperationRunner test_runner(streamfind::Project &project,
+                                        const streamfind::OperationRegistry &operations,
+                                        std::atomic<int> &executions) {
+    return [&project, &operations, &executions](const std::string &operation_id, const streamfind::Json &,
+                                                 const std::string &instance, const streamfind::Json &,
+                                                 const std::string &, bool) {
+        const auto *operation = operations.find(operation_id);
+        if (!operation) throw std::runtime_error("test runner received an unknown operation");
+        ++executions;
+        streamfind::Json emitted = streamfind::Json::object();
+        for (const auto &port : operation->definition().output_ports) {
+            if (operation_id == "test.incomplete" && port.id == "test.missing") continue;
+            const auto result_id = "lifecycle-result-" + std::to_string(executions.load());
+            project.register_result_manifest({
+                {"result_id", result_id}, {"contract_id", port.semantic_contract},
+                {"kind", port.data_kind}, {"format", port.data_kind == "table" ? "arrow-ipc-file" : "json"},
+                {"state", "published"}, {"producer_operation", operation_id},
+                {"producer_instance", instance}, {"workflow_revision", project.get_workflow().version},
+                {"schema", streamfind::Json::array()}});
+            emitted[port.id] = {{"result_id", result_id}, {"contract_id", port.semantic_contract},
+                                {"representation", port.data_kind}};
+        }
+        return streamfind::Json{{"status", operation_id == "test.tail" ? "tail" : "finished"},
+                                {"emitted_results", std::move(emitted)}};
+    };
+}
+
 int run() {
-    const auto string_id_workflow = streamfind::Workflow::from_json({
+    bool string_ids_rejected = false;
+    try {
+        static_cast<void>(streamfind::Workflow::from_json({
         {"schema_version", 2}, {"definition_revision", 1},
         {"operations", streamfind::Json::array({
             {{"id", "operation-1"}, {"operation", "test.producer"}},
             {{"id", "operation-2"}, {"operation", "test.consumer"}}})},
         {"connections", streamfind::Json::array({
             {{"source_operation", "operation-1"}, {"source_port", "result"},
-             {"target_operation", "operation-2"}, {"target_port", "input"}}})}});
-    const auto string_id_round_trip = string_id_workflow.to_json();
-    if (string_id_round_trip.at("operations").at(0).at("id") != "operation-1" ||
-        string_id_round_trip.at("connections").at(0).at("source_operation") != "operation-1" ||
-        string_id_round_trip.at("connections").at(0).at("target_operation") != "operation-2") {
-        std::cerr << "workflow string node IDs did not survive parsing and serialization\n";
+             {"target_operation", "operation-2"}, {"target_port", "input"}}})}}));
+    } catch (const streamfind::Error &) {
+        string_ids_rejected = true;
+    }
+    if (!string_ids_rejected) {
+        std::cerr << "workflow string node IDs were accepted\n";
         return 1;
     }
-    auto numeric_id_workflow = string_id_workflow;
-    numeric_id_workflow.operations.front().id = "1";
-    numeric_id_workflow.connections.front().source_operation = "1";
-    numeric_id_workflow.connections.front().target_operation = "2";
+    const auto numeric_id_workflow = streamfind::Workflow::from_json({
+        {"schema_version", 2}, {"definition_revision", 1},
+        {"operations", streamfind::Json::array({
+            {{"id", 1}, {"operation", "test.producer"}},
+            {{"id", 2}, {"operation", "test.consumer"}}})},
+        {"connections", streamfind::Json::array({
+            {{"source_operation", 1}, {"source_port", "result"},
+             {"target_operation", 2}, {"target_port", "input"}}})}});
     const auto numeric_id_round_trip = numeric_id_workflow.to_json();
-    if (!numeric_id_round_trip.at("operations").at(0).at("id").is_number_integer() ||
-        !numeric_id_round_trip.at("connections").at(0).at("source_operation").is_number_integer()) {
-        std::cerr << "numeric workflow node IDs changed JSON representation\n";
+    if (numeric_id_round_trip.at("operations").at(0).at("id") != 1 ||
+        numeric_id_round_trip.at("connections").at(0).at("source_operation") != 1) {
+        std::cerr << "integer workflow node IDs changed JSON representation\n";
         return 1;
     }
 
@@ -46,32 +79,18 @@ int run() {
     streamfind::OperationDefinition definition;
     definition.id = "test.tail";
     definition.name = "Tail operation";
-    definition.domain = "test";
+    definition.plugin = "test";
     definition.parameters.definitions.push_back({"a", "First fingerprint parameter", {streamfind::ParameterType::integer}, nullptr, false});
     definition.parameters.definitions.push_back({"b", "Second fingerprint parameter", {streamfind::ParameterType::integer}, nullptr, false});
     definition.output_ports.push_back({"test.result", "test.result", "one", "json", {"json"}, false});
-    operations.register_operation(streamfind::Operation(
-        definition,
-        [&executions](streamfind::OperationExecutionContext &context, const streamfind::Json &, const std::string &, const streamfind::Json &) {
-            ++executions;
-            const auto published = context.publish_result(
-                "test.result", {{"payload", {{"status", "tail"}}},
-                                  {"producer_operation", "test.tail"}}, {});
-            return streamfind::Json{{"status", "tail"},
-                                    {"emitted_results", {{"test.result", {{"result_id", published.value("result_id", "")},
-                                                                            {"payload", {{"status", "tail"}}}}}}}};
-        }));
+    operations.register_operation(streamfind::Operation(definition));
 
     streamfind::OperationDefinition consumer_definition;
     consumer_definition.id = "test.consumer";
     consumer_definition.name = "Consumer operation";
-    consumer_definition.domain = "test";
-    consumer_definition.input_ports.push_back({"input", "test.table", "one", "duckdb_table", {"table"}, false});
-    operations.register_operation(streamfind::Operation(
-        consumer_definition,
-        [](streamfind::OperationExecutionContext &, const streamfind::Json &, const std::string &, const streamfind::Json &) {
-            return streamfind::Json{{"status", "consumer"}};
-        }));
+    consumer_definition.plugin = "test";
+    consumer_definition.input_ports.push_back({"input", "test.table", "one", "table", {"table"}, false});
+    operations.register_operation(streamfind::Operation(consumer_definition));
 
     auto project = streamfind::Project::create({path, {{"owner", "test"}}});
 
@@ -93,7 +112,7 @@ int run() {
         std::cerr << "workflow definition revision was not persisted\n";
         return 1;
     }
-    const auto result = project.run_operation_graph(operations);
+    const auto result = project.run_operation_graph(operations, test_runner(project, operations, executions));
 
     if (result.at("status") != "completed" ||
         result.at("operations").size() != 1 ||
@@ -101,7 +120,7 @@ int run() {
         std::cerr << "operation graph execution failed\n";
         return 1;
     }
-    const auto second_result = project.run_operation_graph(operations);
+    const auto second_result = project.run_operation_graph(operations, test_runner(project, operations, executions));
 
     if (executions != 1 || !second_result.at("operations").at(0).value("cache_hit", false)) {
         std::cerr << "unchanged operation did not reuse its published artifact\n";
@@ -111,8 +130,8 @@ int run() {
     project.set_workflow(workflow, operations);
     streamfind::Json concurrent_first;
     streamfind::Json concurrent_second;
-    std::thread first_worker([&] { concurrent_first = project.run_operation_graph(operations); });
-    std::thread second_worker([&] { concurrent_second = project.run_operation_graph(operations); });
+    std::thread first_worker([&] { concurrent_first = project.run_operation_graph(operations, test_runner(project, operations, executions)); });
+    std::thread second_worker([&] { concurrent_second = project.run_operation_graph(operations, test_runner(project, operations, executions)); });
     first_worker.join();
     second_worker.join();
 
@@ -125,7 +144,7 @@ int run() {
     workflow.operations.at(0).parameters.values = {{"a", 1}, {"b", 2}};
     project.set_workflow(workflow, operations);
 
-    const auto parameter_result = project.run_operation_graph(operations);
+    const auto parameter_result = project.run_operation_graph(operations, test_runner(project, operations, executions));
 
     if (executions != 3 || parameter_result.at("operations").at(0).value("cache_hit", false)) {
         std::cerr << "changed parameters did not invalidate the artifact cache\n";
@@ -134,7 +153,7 @@ int run() {
     workflow.operations.at(0).parameters.values = {{"b", 2}, {"a", 1}};
     project.set_workflow(workflow, operations);
 
-    const auto reordered_parameter_result = project.run_operation_graph(operations);
+    const auto reordered_parameter_result = project.run_operation_graph(operations, test_runner(project, operations, executions));
 
     if (executions != 3 || !reordered_parameter_result.at("operations").at(0).value("cache_hit", false)) {
         std::cerr << "parameter key order changed the artifact fingerprint\n";
@@ -155,31 +174,23 @@ int run() {
         std::cerr << "current artifact inventory was not filtered to published outputs\n";
         return 1;
     }
-    const auto requested = project.query_json(
-        "SELECT result_id, payload FROM RESULT_REGISTRY WHERE result_id = '" + result_id + "'");
-    const auto requested_it = std::find_if(requested.begin(), requested.end(), [&](const auto &entry) {
+    const auto registered_table = std::find_if(inventory.begin(), inventory.end(), [&](const auto &entry) {
         return entry.value("result_id", "") == result_id;
     });
-    Json requested_payload;
-    if (requested_it != requested.end() && requested_it->contains("payload")) {
-        requested_payload = requested_it->at("payload");
-        if (requested_payload.is_string()) requested_payload = Json::parse(requested_payload.get<std::string>());
-        while (requested_payload.is_array() && requested_payload.size() == 1)
-            requested_payload = requested_payload.at(0);
-        if (requested_payload.is_object() && requested_payload.contains("payload"))
-            requested_payload = requested_payload.at("payload");
-        if (requested_payload.is_string()) requested_payload = Json::parse(requested_payload.get<std::string>());
+    if (registered_table == inventory.end()) {
+        std::cerr << "published table registration was not present in inventory\n";
+        return 1;
     }
-    if (requested_it == requested.end() || !requested_payload.is_object() ||
-        requested_payload.value("status", "") != "tail") {
-        std::cerr << "targeted artifact request failed\n";
+    if (registered_table->value("representation", "") != "json" ||
+        (registered_table->contains("payload") && !registered_table->at("payload").is_null())) {
+        std::cerr << "result registry stored payload data instead of result metadata\n";
         return 1;
     }
     project.clear_workflow_history();
 
     project.validate();
     project.execute_sql("DELETE FROM RESULT_CACHE_OUTPUT WHERE result_id IN (SELECT result_id FROM RESULT_REGISTRY WHERE producer_instance = '3')");
-    const auto stale_cache_result = project.run_operation_graph(operations);
+    const auto stale_cache_result = project.run_operation_graph(operations, test_runner(project, operations, executions));
     if (executions != 4 || stale_cache_result.at("operations").at(0).value("cache_hit", false)) {
         std::cerr << "stale cache output was incorrectly reused\n";
         return 1;
@@ -204,30 +215,65 @@ int run() {
     streamfind::OperationDefinition incomplete_definition;
     incomplete_definition.id = "test.incomplete";
     incomplete_definition.name = "Incomplete output operation";
-    incomplete_definition.domain = "test";
+    incomplete_definition.plugin = "test";
     incomplete_definition.output_ports.push_back({"test.result", "test.result", "one", "json", {"json"}, false});
     incomplete_definition.output_ports.push_back({"test.missing", "test.missing", "one", "json", {"json"}, false});
-    operations.register_operation(streamfind::Operation(
-        incomplete_definition,
-        [&executions](streamfind::OperationExecutionContext &context, const streamfind::Json &, const std::string &, const streamfind::Json &) {
-            ++executions;
-            const auto published = context.publish_result(
-                "test.result", {{"payload", {{"status", "incomplete"}}},
-                                  {"producer_operation", "test.incomplete"}}, {});
-            return streamfind::Json{{"emitted_results", {{"test.result", {{"result_id", published.value("result_id", "")}}}}}};
-        }));
+    operations.register_operation(streamfind::Operation(incomplete_definition));
     workflow.operations = {{"4", "test.incomplete", {streamfind::Json::object()}, streamfind::Json::object(), streamfind::Json::object()}};
     project.set_workflow(workflow, operations);
-    const auto incomplete_first = project.run_operation_graph(operations);
-    const auto incomplete_second = project.run_operation_graph(operations);
+    const auto incomplete_first = project.run_operation_graph(operations, test_runner(project, operations, executions));
+    const auto incomplete_second = project.run_operation_graph(operations, test_runner(project, operations, executions));
     if (executions != 6 || incomplete_first.at("operations").at(0).value("cache_hit", false) ||
         incomplete_second.at("operations").at(0).value("cache_hit", false)) {
         std::cerr << "incomplete cached output set was incorrectly reused\n";
         return 1;
     }
+    project.register_result_manifest({
+        {"result_id", "invalidation-atomic-result"}, {"contract_id", "test.result"},
+        {"kind", "json"}, {"format", "json"}, {"state", "published"},
+        {"producer_operation", "test.producer"}, {"producer_instance", "atomic"},
+        {"workflow_revision", project.get_workflow().version}});
+    project.execute_sql("INSERT INTO RESULT_CACHE (fingerprint, operation_id, status) "
+                        "VALUES ('invalidation-atomic-fingerprint', 'test.producer', 'complete')");
+    project.execute_sql("INSERT INTO RESULT_CACHE_OUTPUT (fingerprint, output_port_id, ordinal, result_id) "
+                        "VALUES ('invalidation-atomic-fingerprint', 'test.result', 0, 'invalidation-atomic-result')");
+    project.execute_sql("DROP TABLE AUDIT_TRAIL");
+    bool invalidation_failed = false;
+    try {
+        static_cast<void>(project.invalidate_published_results("injected audit write failure"));
+    } catch (const std::exception &) {
+        invalidation_failed = true;
+    }
+    if (!invalidation_failed) {
+        std::cerr << "invalidation unexpectedly succeeded without its audit table\n";
+        return 1;
+    }
+    const auto after_failed_invalidation = project.get_result_inventory();
+    const auto atomic_registration = std::find_if(after_failed_invalidation.begin(), after_failed_invalidation.end(),
+        [](const auto &entry) { return entry.value("result_id", "") == "invalidation-atomic-result"; });
+    if (atomic_registration == after_failed_invalidation.end() ||
+        atomic_registration->value("status", "") != "published" ||
+        project.query_json("SELECT fingerprint FROM RESULT_CACHE WHERE fingerprint = 'invalidation-atomic-fingerprint'").empty() ||
+        project.query_json("SELECT result_id FROM RESULT_CACHE_OUTPUT WHERE fingerprint = 'invalidation-atomic-fingerprint'").empty()) {
+        std::cerr << "failed result invalidation partially modified registration or cache metadata\n";
+        return 1;
+    }
+    project.execute_sql("CREATE TABLE AUDIT_TRAIL (operation_type VARCHAR NOT NULL, object_type VARCHAR NOT NULL, "
+                        "operation_details JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+    const auto invalidated_count = project.invalidate_published_results("atomic invalidation contract");
+    const auto after_invalidation = project.get_result_inventory();
+    const auto invalidated_registration = std::find_if(after_invalidation.begin(), after_invalidation.end(),
+        [](const auto &entry) { return entry.value("result_id", "") == "invalidation-atomic-result"; });
+    if (invalidated_count == 0 || invalidated_registration == after_invalidation.end() ||
+        invalidated_registration->value("status", "") != "stale" ||
+        !project.query_json("SELECT fingerprint FROM RESULT_CACHE WHERE fingerprint = 'invalidation-atomic-fingerprint'").empty() ||
+        !project.query_json("SELECT result_id FROM RESULT_CACHE_OUTPUT WHERE fingerprint = 'invalidation-atomic-fingerprint'").empty()) {
+        std::cerr << "successful result invalidation did not stale registrations and clear cache metadata\n";
+        return 1;
+    }
     project.close();
     auto reopened = streamfind::Project::open({path, {}});
-    if (reopened.get_domains().size() != 1 ||
+    if (reopened.get_plugins().size() != 1 ||
         reopened.get_metadata().at("owner") != "test") {
         std::cerr << "project reopen failed\n";
         return 1;

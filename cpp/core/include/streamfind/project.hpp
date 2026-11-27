@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstddef>
 #include <atomic>
 #include <functional>
 #include <limits>
@@ -68,7 +69,7 @@ struct STREAMFIND_CORE_API TableSchema {
     static TableSchema from_json(const Json &value);
 };
 
-/** @brief Runtime metadata for one column of a persisted DuckDB table. */
+/** @brief Runtime column metadata used while importing SQL-described source data. */
 struct STREAMFIND_CORE_API RuntimeTableColumn {
     std::string name;
     std::string duckdb_type;
@@ -76,51 +77,6 @@ struct STREAMFIND_CORE_API RuntimeTableColumn {
     bool nullable{true};
     Json metadata = Json::object();
 };
-
-/** @brief Shared contract representation for static and runtime-resolved tables. */
-class STREAMFIND_CORE_API TableContract {
-public:
-    enum class Kind { static_schema, dynamic_schema };
-
-    virtual ~TableContract() = default;
-    virtual Kind kind() const noexcept = 0;
-    virtual bool accepts(const TableContract &provided) const noexcept;
-
-    const std::string &id() const noexcept { return id_; }
-    const std::string &table_name() const noexcept { return table_name_; }
-    const std::vector<RuntimeTableColumn> &columns() const noexcept { return columns_; }
-    const std::optional<TableSchema> &schema() const noexcept { return schema_; }
-    Json to_json() const;
-
-protected:
-    TableContract(std::string id, std::string table_name,
-                  std::vector<RuntimeTableColumn> columns,
-                  std::optional<TableSchema> schema);
-    std::string id_;
-    std::string table_name_;
-    std::vector<RuntimeTableColumn> columns_;
-    std::optional<TableSchema> schema_;
-};
-
-/** @brief Ontology-defined table contract with a fixed schema. */
-class STREAMFIND_CORE_API StaticTableContract final : public TableContract {
-public:
-    StaticTableContract(std::string id, std::string table_name, TableSchema schema);
-    Kind kind() const noexcept override { return Kind::static_schema; }
-};
-
-/** @brief Schema-free table contract resolved from a physical DuckDB table. */
-class STREAMFIND_CORE_API DynamicTableContract final : public TableContract {
-public:
-    DynamicTableContract(std::string id, std::string table_name,
-                         std::vector<RuntimeTableColumn> columns);
-    Kind kind() const noexcept override { return Kind::dynamic_schema; }
-};
-
-/** @brief Inspect a physical table and resolve its runtime contract. */
-STREAMFIND_CORE_API DynamicTableContract inspect_dynamic_table_contract(
-    const Project &project, const std::string &physical_table,
-    const std::string &contract_id = "anyTable");
 
 /** @brief Central compatibility rule for workflow table contracts. */
 STREAMFIND_CORE_API bool table_contracts_compatible(
@@ -179,11 +135,11 @@ struct STREAMFIND_CORE_API ParameterDefinition {
     /// Recursive type and table/array shape information.
     TypeDescriptor type;
     /// Default value applied when the parameter is omitted.
-    Json default_value{nullptr};
+    Json default_value = nullptr;
     /// Whether a value is required when no default exists.
     bool required{false};
     /// Representative value shown in generated tool documentation.
-    Json example{nullptr};
+    Json example = nullptr;
     /// Machine-readable validation constraints.
     Json constraints = Json::object();
     /// Semantic table contract required when this parameter is connection-bound.
@@ -237,7 +193,7 @@ struct STREAMFIND_CORE_API MethodDefinition {
     /// Human-readable method documentation.
     std::string description;
     std::string version{"1"};
-    std::string domain;
+    std::string plugin;
     /// Tables that must exist before this method can execute.
     std::vector<std::string> reads;
     /// Additional tables required when the named boolean parameter is true.
@@ -296,8 +252,8 @@ public:
     void register_method(Method method);
     /** @brief Find a method by id, or return nullptr. */
     const Method *find(const std::string &id) const noexcept;
-    /** @brief Return metadata for registered methods, optionally filtered by domain. */
-    std::vector<MethodDefinition> list(const std::string &domain = {}) const;
+    /** @brief Return metadata for registered methods, optionally filtered by plugin. */
+    std::vector<MethodDefinition> list(const std::string &plugin = {}) const;
 
 private:
     std::vector<Method> methods_;
@@ -318,7 +274,7 @@ struct STREAMFIND_CORE_API OperationDefinition {
         static Port from_json(const Json &value);
     };
 
-    std::string id, name, description, domain, version{"1"};
+    std::string id, name, description, plugin, version{"1"};
     bool project_entry{false};
 
     ParameterSchema parameters;
@@ -341,9 +297,6 @@ public:
     const OperationDefinition &definition() const noexcept;
     Json to_json() const;
     Json resolve_parameters(const Json &value) const;
-    Json run_workflow(Project &project, const Json &value,
-                      const std::string &operation_instance,
-                      const Json &inputs) const;
     /** Execute using only the runtime context; no Project or database is required. */
     Json run_context(OperationExecutionContext &context, const Json &value,
                      const std::string &operation_instance,
@@ -358,7 +311,7 @@ class STREAMFIND_CORE_API OperationRegistry {
 public:
     void register_operation(Operation operation);
     const Operation *find(const std::string &id) const noexcept;
-    std::vector<OperationDefinition> list(const std::string &domain = {}) const;
+    std::vector<OperationDefinition> list(const std::string &plugin = {}) const;
 private:
     std::vector<Operation> operations_;
 };
@@ -467,15 +420,19 @@ struct STREAMFIND_CORE_API ProjectOptions {
     Json metadata = Json::object();
     /// User-defined metadata for the initial workflow definition.
     Json workflow_metadata = Json::object();
+    /// Result-store identity supplied by the owning service container.
+    std::string result_store_id;
 };
 
 /** @brief Persisted identity and metadata for an open Project. */
 struct STREAMFIND_CORE_API ProjectInfo {
-    /// Domains represented by persisted workflow operations.
-    std::vector<std::string> domains;
+    /// Plugins represented by persisted workflow operations.
+    std::vector<std::string> plugins;
     /// Project-owned metadata.
     Json metadata = Json::object();
-    int schema_version{1};
+    int schema_version{5};
+    /// Identity shared with data/store.json for this container.
+    std::string result_store_id;
     std::string framework_version;
     std::string created_at;
 };
@@ -497,7 +454,6 @@ class STREAMFIND_CORE_API Project {
 public:
     using OperationLogCallback = std::function<void(std::string_view, std::string_view)>;
     using OperationEventCallback = std::function<void(std::string_view, std::string_view, const Json &)>;
-    using DataProxyRequest = std::function<Json(const data_proxy::Envelope &)>;
     /** @internal Implementation state shared by the Project handle. */
     struct Impl;
     /** @internal Construct from initialized implementation state. */
@@ -522,8 +478,8 @@ public:
 
     /** @brief Replace project metadata. */
     void set_metadata(Json metadata);
-    /** @brief Return domains represented by persisted workflow operations. */
-    std::vector<std::string> get_domains() const;
+    /** @brief Return plugins represented by persisted workflow operations. */
+    std::vector<std::string> get_plugins() const;
     /** @brief Validate the project schema and persisted row state. */
     void validate() const;
     Workflow get_workflow() const;
@@ -535,6 +491,8 @@ public:
     void clear_workflow_history();
     /** @brief Remove cache manifests while retaining published artifacts. */
     void clear_result_cache();
+    /** @brief Mark every published result stale and clear cache references. */
+    std::size_t invalidate_published_results(const std::string &reason);
     /** @brief Remove every published artifact and cache entry while retaining the workflow. */
     void clear_all_results();
     /** @brief Remove published artifacts generated by one workflow operation instance. */
@@ -543,10 +501,15 @@ public:
     Project copy(const ProjectOptions &options) const;
     /** @brief List tables visible in the project database. */
     std::vector<std::string> list_tables() const;
-    /** @brief Execute domain-owned SQL using the Project database connection. */
+    /** @brief Execute plugin-owned SQL using the Project database connection. */
     void execute_sql(const std::string &sql) const;
     /** @brief Execute a query and return rows as JSON objects keyed by column name. */
     Json query_json(const std::string &sql) const;
+    /** @brief Stream a SQL result directly as Arrow batches, without materializing row JSON. */
+    void query_arrow_batches(
+        const std::string &sql,
+        const std::function<void(const std::shared_ptr<arrow::Schema> &)> &on_schema,
+        const std::function<void(const std::shared_ptr<arrow::RecordBatch> &)> &on_batch) const;
 
     /** @internal Run a table-store transaction on this project's connection. */
     void table_transaction(const std::vector<std::string> &owned_tables,
@@ -578,49 +541,27 @@ public:
     Json get_result_inventory() const;
     /** @brief Return the newest published result for each producer/output contract. */
     Json get_current_result_inventory() const;
-    /** @brief Publish a structured JSON result for an operation output port. */
-    std::string publish_result_artifact(const std::string &contract_id,
-                                        const Json &payload,
-                                        const std::string &producer_operation,
-                                        const std::string &producer_instance,
-                                        int workflow_revision = 0);
     /** @brief Register a service-published immutable result payload in project metadata. */
     void register_result_manifest(const Json &manifest);
+    /** @brief Register several published result payloads as one project metadata transaction. */
+    void register_result_manifests(const std::vector<Json> &manifests);
     /** @brief Resolve graph connections for one operation to published input artifacts. */
     Json resolve_workflow_inputs(const std::string &operation_id) const;
     Json resolve_workflow_inputs(const std::string &operation_id,
                                  const Json &current_artifacts) const;
     /** @brief Execute the persisted operation graph in topological order. */
     Json run_operation_graph(const OperationRegistry &registry,
-                             OperationRunner runner = {});
+                             OperationRunner runner);
 
     /** @brief Claim, execute, and release one externally-triggered worker run. */
     Json run_worker(const std::string &worker_id,
                     const OperationRegistry &registry,
-                    OperationRunner runner = {});
-    Json run_operation(const std::string &operation_id, const Json &parameters,
-                       const OperationRegistry &registry,
-                       const std::string &operation_instance = {},
-                       const Json &provided_inputs = Json(nullptr));
+                    OperationRunner runner);
     void set_operation_log_callback(OperationLogCallback callback);
     void set_operation_event_callback(OperationEventCallback callback);
-    /** @brief Bind the service-owned data proxy used by plugin execution. */
-    void set_data_proxy_request(DataProxyRequest callback);
-    /** @brief Return the current service-owned data proxy callback. */
-    DataProxyRequest data_proxy_request() const;
-    /** @brief Bind the runtime-owned operation output sink. */
-    void set_operation_output_sink(std::shared_ptr<OperationOutputSink> sink);
-    /** @brief Return the runtime-owned operation output sink, if configured. */
-    std::shared_ptr<OperationOutputSink> operation_output_sink() const;
-    /** @brief Bind the computation key for the current operation output. */
-    void set_operation_computation_key(std::string key);
-    /** @brief Return the computation key for the current operation output. */
-    std::string operation_computation_key() const;
     /** @brief Bind service-owned cache lookup for workflow execution. */
     void set_result_cache_lookup(ResultCacheLookup callback);
     void set_workflow_input_resolver(WorkflowInputResolver callback);
-    /** @brief Bind the live cancellation flag for the current workflow run. */
-    void set_cancellation_flag(std::atomic_bool *flag) noexcept;
     /** @brief Return whether the current workflow run has been cancelled. */
     bool cancellation_requested() const noexcept;
     void log_operation(std::string_view message) const;

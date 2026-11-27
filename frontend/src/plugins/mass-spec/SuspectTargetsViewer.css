@@ -32,7 +32,7 @@
 .sf-suspect-card span,
 .sf-suspect-card small,
 .sf-suspect-eyebrow {
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
 }
 
 .sf-suspect-eyebrow {
@@ -54,7 +54,7 @@
   justify-content: flex-end;
   gap: 14px;
   padding: 0;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
 }
 
 .sf-suspect-pagination button {
@@ -84,7 +84,7 @@
   align-items: end;
   flex-wrap: wrap;
   gap: 10px 14px;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
 }
 
 .sf-suspect-mass-range strong {
@@ -145,7 +145,7 @@
 
 .sf-suspect-card:hover,
 .sf-suspect-card:focus-visible {
-  border-color: var(--accent);
+  border-color: var(--sf-accent);
   transform: translateY(-2px);
 }
 
@@ -184,7 +184,7 @@
   width: 190px;
   height: 145px;
   place-items: center;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   font-size: 12px;
 }
 
@@ -262,7 +262,7 @@
 }
 
 .sf-suspect-property span {
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   font-size: 12px;
 }
 .sf-suspect-property code {
@@ -332,7 +332,7 @@
 }
 
 .sf-suspect-fragment-array span {
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
   font-size: 12px;
 }
 
@@ -420,7 +420,7 @@
   display: grid;
   min-height: 260px;
   place-items: center;
-  color: var(--muted-foreground);
+  color: var(--sf-text-secondary);
 }
 
 @media (max-width: 760px) {

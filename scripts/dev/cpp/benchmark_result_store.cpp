@@ -22,9 +22,16 @@
 #include <unistd.h>
 #endif
 
+#include <arrow/builder.h>
+
 namespace streamfind::dev
 {
     using Clock = std::chrono::steady_clock;
+
+    void check_arrow(const arrow::Status &status)
+    {
+        if (!status.ok()) throw std::runtime_error(status.ToString());
+    }
 
     std::intptr_t duplicate_handle(std::intptr_t source)
     {
@@ -67,7 +74,8 @@ namespace streamfind::dev
                 Json::object(), [this] { return duplicate_writer(); }) {}
 
         Json write(const std::string &result_name, const Json &schema,
-                   const std::function<void(const std::string &)> &write_rows)
+                   const std::function<void(const std::string &)> &write_batches,
+                   const Json &metadata = Json::object())
         {
             const auto output = sink_.begin({
                 {"contract_id", result_name}, {"output_port", result_name},
@@ -76,13 +84,14 @@ namespace streamfind::dev
                 {"media_type", "application/vnd.apache.arrow.file"},
                 {"schema", schema}});
             const auto handle = output.at("output_handle").get<std::string>();
-            write_rows(handle);
-            return sink_.finish(handle);
+            write_batches(handle);
+            return sink_.finish(handle, metadata);
         }
 
-        void write_rows(const std::string &handle, std::uint64_t sequence, const Json &rows)
+        void write_batch(const std::string &handle, std::uint64_t sequence,
+                         const std::shared_ptr<arrow::RecordBatch> &batch)
         {
-            sink_.write_rows(handle, sequence, rows);
+            sink_.write_table_batch(handle, sequence, batch);
         }
 
     private:
@@ -156,6 +165,67 @@ namespace streamfind::dev
             {"rows_returned", cold.at("rows").size()}, {"response_json_bytes", response_bytes}}
             .dump() << '\n';
     }
+
+    template <typename Action>
+    std::int64_t median_latency_us(Action action)
+    {
+        std::vector<std::int64_t> samples;
+        for (int repeat = 0; repeat < 5; ++repeat) {
+            const auto start = Clock::now();
+            action();
+            samples.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
+                Clock::now() - start).count());
+        }
+        std::sort(samples.begin(), samples.end());
+        return samples[samples.size() / 2];
+    }
+
+std::shared_ptr<arrow::RecordBatch> make_table_batch(
+    std::size_t offset, std::size_t count, const std::string &payload)
+{
+    arrow::StringBuilder row_keys;
+    arrow::StringBuilder payloads;
+    for (std::size_t row = 0; row < count; ++row) {
+        check_arrow(row_keys.Append("row-" + std::to_string(offset + row)));
+        check_arrow(payloads.Append(payload));
+    }
+    std::shared_ptr<arrow::Array> row_key_array;
+    std::shared_ptr<arrow::Array> payload_array;
+    check_arrow(row_keys.Finish(&row_key_array));
+    check_arrow(payloads.Finish(&payload_array));
+    auto schema = arrow::schema({arrow::field("row_key", arrow::utf8()),
+                                 arrow::field("payload", arrow::utf8())});
+    return arrow::RecordBatch::Make(std::move(schema), static_cast<std::int64_t>(count),
+                                    {std::move(row_key_array), std::move(payload_array)});
+}
+
+std::shared_ptr<arrow::RecordBatch> make_trace_batch(
+    const std::vector<float> &rt, const std::vector<float> &intensity,
+    const std::vector<float> &ms2_mz, const std::vector<float> &ms2_intensity)
+{
+    arrow::StringBuilder feature;
+    check_arrow(feature.Append("feature-large"));
+    auto make_list = [](const std::vector<float> &values) {
+        auto value_builder = std::make_shared<arrow::DoubleBuilder>();
+        arrow::ListBuilder builder(arrow::default_memory_pool(), value_builder);
+        check_arrow(builder.Append());
+        for (const auto value : values) check_arrow(value_builder->Append(static_cast<double>(value)));
+        std::shared_ptr<arrow::Array> array;
+        check_arrow(builder.Finish(&array));
+        return array;
+    };
+    std::shared_ptr<arrow::Array> feature_array;
+    check_arrow(feature.Finish(&feature_array));
+    auto schema = arrow::schema({
+        arrow::field("feature", arrow::utf8()),
+        arrow::field("eic_rt", arrow::list(arrow::float64())),
+        arrow::field("eic_intensity", arrow::list(arrow::float64())),
+        arrow::field("ms2_mz", arrow::list(arrow::float64())),
+        arrow::field("ms2_intensity", arrow::list(arrow::float64()))});
+    return arrow::RecordBatch::Make(std::move(schema), 1,
+        {std::move(feature_array), make_list(rt), make_list(intensity),
+         make_list(ms2_mz), make_list(ms2_intensity)});
+}
 }
 
 int main()
@@ -186,12 +256,9 @@ int main()
                 constexpr std::size_t rows_per_batch = 256;
                 std::string payload(cell_bytes, 'x');
                 for (std::size_t offset = 0; offset < table_rows; offset += rows_per_batch) {
-                    Json rows = Json::array();
                     const auto count = std::min(rows_per_batch, table_rows - offset);
-                    for (std::size_t row = 0; row < count; ++row)
-                        rows.push_back({{"row_key", "row-" + std::to_string(offset + row)},
-                                        {"payload", payload}});
-                    output.write_rows(handle, offset / rows_per_batch, rows);
+                    output.write_batch(handle, offset / rows_per_batch,
+                                       streamfind::dev::make_table_batch(offset, count, payload));
                 }
             });
         const auto table_id = table_result.at("result_id").get<std::string>();
@@ -216,15 +283,14 @@ int main()
         }
         const auto trace_schema = Json::array({
             {{"name", "feature"}, {"type", "string"}},
-            {{"name", "eic_rt"}, {"type", "array"}},
-            {{"name", "eic_intensity"}, {"type", "array"}},
-            {{"name", "ms2_mz"}, {"type", "array"}},
-            {{"name", "ms2_intensity"}, {"type", "array"}}});
+            {{"name", "eic_rt"}, {"type", "array"}, {"items", {{"type", "number"}}}},
+            {{"name", "eic_intensity"}, {"type", "array"}, {"items", {{"type", "number"}}}},
+            {{"name", "ms2_mz"}, {"type", "array"}, {"items", {{"type", "number"}}}},
+            {{"name", "ms2_intensity"}, {"type", "array"}, {"items", {{"type", "number"}}}}});
         const auto trace_result = output.write("largeFeatureTrace", trace_schema,
             [&](const std::string &handle) {
-                output.write_rows(handle, 0, Json::array({Json{
-                    {"feature", "feature-large"}, {"eic_rt", rt}, {"eic_intensity", intensity},
-                    {"ms2_mz", ms2_mz}, {"ms2_intensity", ms2_intensity}}}));
+                output.write_batch(handle, 0, streamfind::dev::make_trace_batch(
+                    rt, intensity, ms2_mz, ms2_intensity));
             });
         const auto trace_id = trace_result.at("result_id").get<std::string>();
         const auto trace_descriptor = store.describe_result(trace_id);
@@ -236,6 +302,50 @@ int main()
             {"payload_bytes", trace_descriptor.at("payload_size")},
             {"eic_points", trace_points}, {"ms2_peaks", ms2_points},
             {"working_set_bytes", streamfind::dev::working_set_bytes()}}.dump() << '\n';
+
+        constexpr std::size_t small_result_count = 64;
+        const auto small_schema = Json::array({
+            {{"name", "row_key"}, {"type", "string"}},
+            {{"name", "payload"}, {"type", "string"}}});
+        Json target_metadata{{"cacheable", true}, {"computation_key", "benchmark-selected-cache-candidate"}};
+        for (std::size_t index = 0; index < small_result_count; ++index) {
+            const auto name = "smallTable" + std::to_string(index);
+            (void)output.write(name, small_schema, [&](const std::string &handle) {
+                output.write_batch(handle, 0, streamfind::dev::make_table_batch(
+                    index, 1, std::string(128, static_cast<char>('a' + (index % 26)))));
+            }, index == 0 ? target_metadata : Json::object());
+        }
+        const auto metadata_inventory_us = streamfind::dev::median_latency_us([&] {
+            (void)store.inspect(false, false);
+        });
+        const auto full_validation_us = streamfind::dev::median_latency_us([&] {
+            (void)store.inspect(true, true);
+        });
+        const auto cache_candidate_us = streamfind::dev::median_latency_us([&] {
+            const auto candidates = store.find_cached_results("benchmark-selected-cache-candidate");
+            if (candidates.size() != 1)
+                throw std::runtime_error("selected cache candidate was not reusable");
+        });
+        const auto allocation_cleanup_us = streamfind::dev::median_latency_us([&] {
+            const auto sequence = std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count());
+            auto lease = store.allocate("benchmark-allocation-run", "allocation-" + sequence, "binary", "bin");
+            store.abort(lease);
+        });
+        const auto small_descriptor = store.published_results();
+        std::uint64_t all_payload_bytes = 0;
+        for (const auto &descriptor : small_descriptor)
+            all_payload_bytes += descriptor.value("payload_size", std::uint64_t{0});
+        const auto target = store.find_cached_results("benchmark-selected-cache-candidate").front();
+        const auto candidate_bytes = target.value("payload_size", std::uint64_t{0});
+        std::cout << Json{{"benchmark", "metadata and cache work across many results"},
+            {"result_count", small_descriptor.size()}, {"all_published_payload_bytes", all_payload_bytes},
+            {"selected_cache_candidate_payload_bytes", candidate_bytes},
+            {"metadata_inventory_median_us", metadata_inventory_us},
+            {"full_integrity_and_size_scan_median_us", full_validation_us},
+            {"selected_cache_candidate_lookup_median_us", cache_candidate_us},
+            {"small_output_allocate_abort_median_us", allocation_cleanup_us}}
+            .dump() << '\n';
 
         store.remove_published_results({table_id, trace_id});
         fs::remove_all(data_root, error);

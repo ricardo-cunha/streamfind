@@ -11,7 +11,7 @@
     "workflow_id": { "type": "string", "minLength": 1 },
     "name": { "type": "string" },
     "version": { "type": "integer", "minimum": 1 },
-    "domain": { "type": "string", "minLength": 1 },
+    "plugin": { "type": "string", "minLength": 1 },
     "metadata": { "$ref": "#/$defs/metadata" },
     "operations": {
       "type": "array",
@@ -26,7 +26,7 @@
     "metadata": {
       "type": "object",
       "additionalProperties": true,
-      "description": "User-defined workflow metadata. The workflow revision is stored in the top-level version field and is not duplicated here.",
+      "description": "Descriptive metadata for the workflow, including its name and purpose. It is separate from project workspace metadata and does not change operation execution or result provenance. Definition concurrency is tracked by definition_revision.",
       "required": ["name", "description"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },

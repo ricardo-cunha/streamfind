@@ -16,7 +16,7 @@ and configure each node's parameters. Run an operation to inspect one step, or
 run the workflow to execute connected steps in dependency order. The activity
 log shows operation progress and failures. Published results can be opened
 from output ports and explored with the result renderer provided for their
-type, including tables and domain-specific visualizations.
+type, including tables and plugin-specific visualizations.
 
 The app and MCP clients use the same local service. A project opened through
 the service, and results produced by either client, are available to the other
@@ -44,6 +44,12 @@ beyond the local machine by default. On Linux, the
 launcher uses `xdg-open`; if that command is unavailable, copy the URL printed
 by the launcher into a browser manually.
 
+The app is one client of the package-scoped service. Use the public CLI for
+service lifecycle operations and use the MCP adapter when an automation client
+needs the same projects and workflow runs. See [Command-line interfaces](cli.md)
+for the relationship between `streamfind`, `streamfind-app`, `streamfind-mcp`,
+and `streamfind-dev`.
+
 ## Windows release
 
 1. Download and extract `streamfind-core-cpp-{{ streamfind_version }}-Windows-x86_64.zip` from the
@@ -65,9 +71,22 @@ From a terminal, use:
 .\bin\streamfind.exe service stop
 ```
 
-The MCP executable starts or attaches to this same manager when it starts. It
-does not stop the shared server when the MCP client disconnects or exits. The
-app and MCP therefore share projects and active runs through one server.
+The packaged service prefers loopback port `8787`. If another application is
+using it, streamfind automatically selects an available port in the next 128
+ports and reports the selected endpoint in `service list`. Service discovery
+and tray ownership are scoped to the directory containing the package
+executables, so the app and MCP launched from this package share its service
+without attaching to another checkout's service. To require a particular port,
+use `streamfind service start --port <port>`; this explicit choice fails with a
+clear error if the port is unavailable. The behavior can be configured with
+`server.automatic_port_fallback` in `bin/streamfind.json`.
+
+The MCP executable starts or attaches to this same package-scoped manager when
+it starts. It does not stop the shared server when the MCP client disconnects
+or exits. The app and MCP therefore share projects and active runs through one
+server. To deliberately attach an MCP process to another service scope, set
+`STREAMFIND_SERVICE_ENDPOINT` to that service's endpoint; this suppresses local
+service auto-start.
 
 ## Linux release
 
@@ -103,4 +122,4 @@ The browser communicates with the C++ service for:
 
 The browser is therefore a client of the C++ backend, not a second backend. New
 persistence, operation, reader, and plugin capabilities belong in the C++ core
-or its domain plugins first.
+or its backend plugins first.

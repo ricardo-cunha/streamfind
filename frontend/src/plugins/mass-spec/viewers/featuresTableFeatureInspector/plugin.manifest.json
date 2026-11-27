@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "viewer",
+  "id": "native.viewer.mass_spec.featuresTable.feature_inspector",
+  "name": "Mass-spec feature inspector",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "activation": "optional",
+  "source": "src/plugins/mass-spec/viewers/featuresTableFeatureInspector/index.ts",
+  "plugins": ["mass_spec"],
+  "artifactContracts": ["https://streamfind.dev/catalogue/plugins/mass_spec#featuresTable"]
+}

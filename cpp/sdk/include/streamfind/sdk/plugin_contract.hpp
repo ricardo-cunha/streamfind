@@ -18,7 +18,7 @@ class OperationExecutionContext;
 
 namespace catalogue {
 
-/** @brief Stable in-process method binding supplied by a domain plugin. */
+/** @brief Stable in-process method binding supplied by a plugin plugin. */
 struct STREAMFIND_SDK_API MethodBinding {
     std::string_view id;
     std::function<nlohmann::json(Project &, const nlohmann::json &)> executor;
@@ -26,7 +26,7 @@ struct STREAMFIND_SDK_API MethodBinding {
     sdk::ContextMethodExecutor context_executor{};
 };
 
-/** @brief Stable in-process operation binding supplied by a domain plugin. */
+/** @brief Stable in-process operation binding supplied by a plugin plugin. */
 struct STREAMFIND_SDK_API OperationBinding {
     std::string_view id;
     std::function<nlohmann::json(OperationExecutionContext &, const nlohmann::json &,
@@ -34,10 +34,10 @@ struct STREAMFIND_SDK_API OperationBinding {
     std::function<void(const nlohmann::json &)> validator;
 };
 
-/** @brief Module descriptor and executable bindings supplied by a domain plugin. */
-struct STREAMFIND_SDK_API DomainModuleBinding {
+/** @brief Module descriptor and executable bindings supplied by a plugin plugin. */
+struct STREAMFIND_SDK_API PluginModuleBinding {
     std::string module_id;
-    std::string domain_id;
+    std::string plugin_id;
     std::string module_version;
     std::vector<std::string> required_modules;
     std::vector<MethodBinding> methods;

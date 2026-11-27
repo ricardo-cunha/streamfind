@@ -179,7 +179,6 @@ public:
     void execute(std::string_view sql) override {
         static_cast<void>(envelope(Json{{"method", "execute"}, {"sql", std::string(sql)}}));
     }
-    void prepare_table_domain(std::string_view, std::string_view) override {}
     void log(std::string_view message) override { emit_event(Json{
         {"type", "operation.log"}, {"operation_id", operation_id_}, {"message", std::string(message)}}); }
     Json resolve_inputs(const Json &provided_inputs) override { return provided_inputs.is_null() ? inputs_ : provided_inputs; }
@@ -196,12 +195,8 @@ public:
     }
     std::string data_proxy_session_id() const override { return session_id_; }
     std::string data_proxy_run_id() const override { return run_id_; }
-    Json lookup_result_cache(const std::string &) override { return Json::array(); }
     bool has_output_sink() const override { return true; }
     std::string computation_key() const override { return computation_key_; }
-    Json publish_result(const std::string &, const Json &, const Json &) override {
-        throw Error(ErrorCode::MethodExecution, "direct result publication is not supported; use the output sink");
-    }
     OperationOutputSink &outputs() override { return *outputs_; }
     void report_progress(double fraction, std::string_view message) override {
         if (message.empty()) return;
@@ -225,7 +220,23 @@ public:
         emit_event(Json{{"type", "operation.event"}, {"operation_id", operation_id_},
                         {"event", std::string(event)}, {"payload", payload}});
     }
-    bool cancellation_requested() const override { return false; }
+    bool cancellation_requested() const override {
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(cancellation_mutex_);
+        if (last_cancellation_check_.time_since_epoch().count() != 0 &&
+            now - last_cancellation_check_ < std::chrono::milliseconds(200))
+            return cancellation_state_.load(std::memory_order_relaxed);
+        last_cancellation_check_ = now;
+        try {
+            const auto response = envelope(Json{{"method", "cancellation_status"}});
+            cancellation_state_.store(response.payload.value("cancelled", false),
+                                      std::memory_order_relaxed);
+        } catch (...) {
+            // The supervisor remains responsible for terminating a worker if
+            // the service cannot answer a cooperative cancellation poll.
+        }
+        return cancellation_state_.load(std::memory_order_relaxed);
+    }
 
 private:
     data_proxy::Envelope envelope(const Json &payload) const {
@@ -242,6 +253,9 @@ private:
     std::function<std::intptr_t()> receive_input_handle_;
     std::mutex progress_mutex_;
     std::chrono::steady_clock::time_point last_progress_at_{};
+    mutable std::mutex cancellation_mutex_;
+    mutable std::chrono::steady_clock::time_point last_cancellation_check_{};
+    mutable std::atomic_bool cancellation_state_{false};
     int workflow_revision_;
     Json inputs_;
     std::shared_ptr<OperationOutputSink> outputs_;
@@ -275,6 +289,14 @@ int main(int argc, char **argv) {
         OperationRegistry operations;
         ServicePluginRuntime runtime;
         runtime.load(configuration, methods, operations);
+        const auto expected_generation = request_line.value("plugin_generation", static_cast<std::uint64_t>(0));
+        const auto expected_plugins = request_line.value("plugin_versions", Json::array());
+        const auto actual_plugins = runtime.status();
+        if (expected_generation != 0 && actual_plugins.value("generation", static_cast<std::uint64_t>(0)) != expected_generation)
+            throw std::runtime_error("worker plugin generation changed before startup");
+        if (!expected_plugins.is_null() && expected_plugins != Json::array() &&
+            actual_plugins.value("plugins", Json::array()) != expected_plugins)
+            throw std::runtime_error("worker plugin version set changed before startup");
         int exit_code = 0;
         const auto workflow = request_line.value("workflow", Json::object());
         if (!workflow.is_object() || workflow.empty())

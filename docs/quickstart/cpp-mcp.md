@@ -1,5 +1,8 @@
 # Use the C++ MCP server
 
+For the roles of the public CLI, browser launcher, MCP adapter, and embedded
+development CLI, see [Command-line interfaces](../cli.md).
+
 The C++ MCP server is included in the
 [Windows x64 and Linux x86_64 C++ packages](../releases.md). It communicates
 with MCP clients using JSON-RPC messages over standard input/output.
@@ -25,19 +28,35 @@ projects and workflow runs. Close the tray manager or run `streamfind service
 stop` to stop the service; closing the browser alone leaves it running.
 
 The package also contains one `streamfind.json` beside the service binaries.
-It controls the enabled plugins and the default local service port:
+It controls the enabled plugins and the preferred local service port:
 
 ```json
 {
-  "server": {"port": 8787},
-  "plugin_roots": ["../plugins"],
-  "enabled_plugins": ["mass_spec", "raman", "sensors", "statistics"]
+  "server": {"port": 8787, "automatic_port_fallback": true},
+  "plugin_roots": {"development": [], "deployment": ["../plugins"]},
+  "viewer_roots": {"development": [], "deployment": ["../viewers/native"]},
+  "enabled_plugins": ["native.plugin.mass_spec", "native.plugin.raman", "native.plugin.sensors", "native.plugin.statistics"],
+  "enabled_viewers": []
 }
 ```
 
-The CLI, app host, and MCP runtime use this same configuration. An explicit
-CLI port option overrides `server.port`; keep the service bound to loopback
-unless remote access is deliberately configured and secured.
+The CLI, app host, tray, and MCP runtime use this same configuration. Each
+installation or build automatically gets a service-discovery scope derived from
+the executable directory. Its CLI, app, tray, server, and MCP share that scope;
+another checkout/package cannot accidentally attach to or stop its service.
+The service publishes its actual endpoint in that scope, so app and MCP use the
+same port even when automatic fallback was needed.
+
+If the preferred port is busy, automatic fallback selects an available port
+from the next 128 ports. Set `automatic_port_fallback` to `false` to require the
+configured port. `streamfind service start --port <port>` is an explicit
+override and fails if that exact port is unavailable. Ports are still shared
+machine-wide, so use a distinct port for each simultaneously running package or
+worktree. Set `STREAMFIND_RUNTIME_DIR` to intentionally share a custom discovery
+scope. To connect an MCP process to a service in another scope, set
+`STREAMFIND_SERVICE_ENDPOINT`; MCP then uses that endpoint and skips starting
+its own package's service. Keep the service bound to loopback unless remote
+access is deliberately configured and secured.
 
 ## Create and run a project
 
@@ -45,37 +64,37 @@ A typical client or AI agent uses this sequence:
 
 1. call `initialize`;
 2. call `tools/list` to discover callable Operations;
-3. call `create` with `database_path` for a new project;
-4. call `describe` or `get_metadata` to inspect the project, and
-   `get_project_domains` to list domains represented in it;
-5. call `get_domains` to discover available operation domains, then call a
-   domain Operation with `database_path`.
+3. call `create` with `project_path` naming a new `.sf` folder;
+4. call `describe` to inspect the deterministic project descriptor, and
+   `get_project_plugins` to list plugins represented in it;
+5. call `get_plugins` to discover available operation plugins, then call a
+   plugin Operation with `project_path`.
 
 Example requests, one JSON object per line:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create","arguments":{"database_path":"demo.duckdb"}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_domains","arguments":{}}}
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_operations","arguments":{"domain":"mass_spec"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create","arguments":{"project_path":"demo.sf"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_plugins","arguments":{}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_operations","arguments":{"plugin":"mass_spec"}}}
 ```
 
-Include `database_path` on every applicable request. Operation-specific
+Include `project_path` on every applicable request. Operation-specific
 parameters and constraints are returned by `tools/list` and `get_operation`.
 Send the `notifications/initialized` notification after initialization; because
 it is a notification, the server correctly sends no response.
 
-`get_domains` lists domains that expose operations in the enabled catalogue.
-`get_project_domains` instead reports domains represented by operation nodes in
+`get_plugins` lists plugins that expose operations in the enabled catalogue.
+`get_project_plugins` instead reports plugins represented by operation nodes in
 the selected project's workflow; it is normally empty immediately after
-`create` and fills as domain operations are added.
+`create` and fills as plugin operations are added.
 
 ## Build a workflow
 
 Use a persisted operation graph for every multi-step workflow:
 
-1. call `get_operations` to discover operations in a domain;
+1. call `get_operations` to discover operations in a plugin;
 2. call `get_operation` to inspect parameters and typed ports;
 3. call `add_operation` with the canonical operation ID and a JSON
    `parameters` object; the service assigns the node's unique integer ID;
@@ -91,8 +110,8 @@ Use a persisted operation graph for every multi-step workflow:
 
 The workflow is stored in the project database, so it can be reopened,
 validated, rerun, and inspected by another client. Published result payloads
-are stored in the sibling `.data` folder and their registry is managed by the
-service. Use direct operation calls for independent queries; use a persisted
+are stored under `data/` inside the project `.sf` folder and their registry is
+managed by the service. Use direct operation calls for independent queries; use a persisted
 graph when downstream steps depend on upstream results.
 
 Workflow and direct-operation submissions are asynchronous. Once accepted, the

@@ -1,0 +1,79 @@
+.sf-quantification-viewer { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; height: 100%; overflow-x: hidden; overflow-y: auto; color: var(--sf-text); }
+.sf-quantification-viewer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 0; position: sticky; top: 0; z-index: 2; background: var(--sf-surface-raised); }
+.sf-quantification-viewer-toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--sf-text-secondary); font-size: .82rem; }
+.sf-quantification-viewer select, .sf-quantification-viewer input { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text); padding: 4px 7px; font: inherit; }
+.sf-quantification-viewer input { width: 64px; }
+.sf-quantification-tabs { display: inline-flex; gap: 4px; }
+.sf-quantification-tabs button { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text-secondary); padding: 5px 10px; cursor: pointer; font: inherit; }
+.sf-quantification-tabs button.is-active { background: var(--sf-accent); color: var(--sf-text-on-accent); border-color: var(--sf-accent); }
+.sf-quantification-summary { margin-left: auto; color: var(--sf-text-secondary); white-space: nowrap; font-size: .8rem; }
+.sf-quantification-load-notice { color: var(--sf-warning, #b47700); font-size: .78rem; }
+.sf-quantification-export { display: inline-flex; gap: 5px; }
+.sf-quantification-export button { border: 1px solid var(--sf-border); border-radius: 4px; background: var(--sf-surface); color: var(--sf-text-secondary); padding: 4px 7px; cursor: pointer; font: inherit; font-size: .78rem; }
+.sf-quantification-export button:hover { border-color: var(--sf-accent); color: var(--sf-accent); }
+.sf-quantification-calibration-top { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.45fr) minmax(280px, 1fr); gap: 12px; min-width: 0; align-items: stretch; }
+.sf-quantification-calibration-top > section { min-width: 0; border: 0; border-radius: 0; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-calibration-top > .sf-quantification-table-card { min-height: 0; }
+.sf-quantification-plot { min-height: 360px; height: 42vh; min-width: 0; }
+.sf-quantification-calibration-top .sf-quantification-plot { min-height: 180px; height: min(22vh, 260px); }
+.sf-quantification-results-plot { min-height: 220px; height: min(28vh, 320px); }
+.sf-quantification-plot > section, .sf-quantification-plot > section > [role='img'], .sf-quantification-plot > div, .sf-quantification-plot .js-plotly-plot, .sf-quantification-plot .plot-container, .sf-quantification-plot .svg-container { width: 100% !important; height: 100% !important; }
+.sf-quantification-table-card { display: flex; flex: 0 0 auto; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-table-card table { user-select: text; }
+.sf-quantification-table-card--fill { flex: 1 1 0; }
+.sf-quantification-table-card h3 { margin: 0; padding: 9px 12px; font-size: .9rem; border-bottom: 1px solid var(--sf-border); }
+.sf-quantification-table-card h3 small { color: var(--sf-text-secondary); font-weight: normal; margin-left: 6px; }
+.sf-quantification-table-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.sf-quantification-table-card table { width: 100%; border-collapse: collapse; font-size: .75rem; white-space: nowrap; }
+.sf-quantification-table-card th, .sf-quantification-table-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--sf-border); }
+.sf-quantification-table-card th { position: sticky; top: 0; background: var(--sf-surface-raised); color: var(--sf-text-secondary); font-weight: 600; }
+.sf-quantification-table-card tbody tr { cursor: pointer; }
+.sf-quantification-table-card tbody tr:hover { background: color-mix(in srgb, var(--sf-accent) 8%, transparent); }
+.sf-quantification-table-card tbody tr.is-selected { background: color-mix(in srgb, var(--sf-accent) 16%, transparent); outline: 1px solid var(--sf-accent); outline-offset: -1px; }
+.sf-quantification-eic { display: block; width: 92px; height: 24px; overflow: visible; }
+.sf-quantification-eic-line { fill: none; stroke: var(--sf-accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.sf-quantification-eic-area { fill: color-mix(in srgb, var(--sf-accent) 18%, transparent); stroke: none; }
+.sf-quantification-eic-boundary { stroke: color-mix(in srgb, var(--sf-accent) 72%, transparent); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+.sf-quantification-eic-empty { color: var(--sf-text-secondary); display: inline-block; width: 92px; text-align: center; }
+.sf-quantification-table-card td.is-good { color: var(--sf-success, #258a52); }
+.sf-quantification-table-card td.is-warning { color: var(--sf-warning, #b47700); }
+.sf-quantification-table-card td.is-bad { color: var(--sf-error); }
+.sf-quantification-status { font-weight: 600; }
+.sf-quantification-note { margin: 0; padding: 7px 10px; color: var(--sf-text-secondary); font-size: .78rem; }
+.sf-quantification-viewer-state { display: grid; min-height: 180px; place-items: center; color: var(--sf-text-secondary); }
+.sf-quantification-detail-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: color-mix(in srgb, var(--sf-overlay, #061314) 74%, transparent); }
+.sf-quantification-detail-modal { display: flex; flex-direction: column; width: min(1240px, calc(100vw - 36px)); max-height: calc(100vh - 36px); min-height: 0; overflow: hidden; border: 1px solid var(--sf-border); border-radius: 10px; background: var(--sf-surface-raised); color: var(--sf-text); box-shadow: var(--sf-modal-shadow); user-select: text; }
+.sf-quantification-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px 13px; border-bottom: 0; }
+.sf-quantification-detail-header h2 { margin: 2px 0 3px; font-size: 1.05rem; }
+.sf-quantification-detail-subtitle { margin: 0; color: var(--sf-text-secondary); font-size: .82rem; }
+.sf-quantification-detail-close { width: 30px; height: 30px; border: 0; border-radius: 5px; background: var(--sf-surface); color: var(--sf-text); font-size: 1.3rem; line-height: 1; cursor: pointer; }
+.sf-quantification-detail-close:hover { border-color: var(--sf-accent); color: var(--sf-accent); }
+.sf-quantification-detail-body { min-height: 0; overflow: auto; padding: 16px 20px 20px; }
+.sf-quantification-detail-peak-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.sf-quantification-detail-peak-card, .sf-quantification-detail-section { min-width: 0; border: 1px solid var(--sf-border); border-radius: 7px; background: var(--sf-surface); overflow: hidden; }
+.sf-quantification-detail-peak-card h3, .sf-quantification-detail-section h3 { margin: 0; padding: 9px 11px; border-bottom: 1px solid var(--sf-border); color: var(--sf-text-secondary); font-size: .82rem; }
+.sf-quantification-detail-eic { display: block; width: 100%; height: 190px; padding: 8px 10px 0; overflow: visible; }
+.sf-quantification-detail-eic .is-axis { stroke: var(--sf-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sf-quantification-detail-eic .is-line { fill: none; stroke: var(--sf-accent); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.sf-quantification-detail-eic .is-area { fill: color-mix(in srgb, var(--sf-accent) 18%, transparent); stroke: none; }
+.sf-quantification-detail-eic .is-integration-window { fill: color-mix(in srgb, var(--sf-accent) 6%, transparent); stroke: none; }
+.sf-quantification-detail-eic .is-boundary { stroke: var(--sf-accent); stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.sf-quantification-detail-eic .is-boundary-label { fill: var(--sf-accent); font-size: 10px; font-weight: 600; }
+.sf-quantification-detail-eic .is-axis-label { fill: var(--sf-text-secondary); font-size: 10px; }
+.sf-quantification-detail-eic-empty { display: grid; height: 190px; place-items: center; padding: 8px; color: var(--sf-text-secondary); font-size: .78rem; }
+.sf-quantification-detail-metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0 11px 10px; }
+.sf-quantification-detail-metrics > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--sf-border) 62%, transparent); font-size: .74rem; }
+.sf-quantification-detail-metrics > div:last-child { border-bottom: 0; }
+.sf-quantification-detail-metrics dt { color: var(--sf-text-secondary); overflow-wrap: anywhere; }
+.sf-quantification-detail-metrics dd { margin: 0; color: var(--sf-text); text-align: right; overflow-wrap: anywhere; }
+.sf-quantification-detail-section { margin-top: 14px; }
+.sf-quantification-detail-section .sf-quantification-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; padding-top: 3px; }
+.sf-quantification-detail-empty { margin: 0; padding: 12px; color: var(--sf-text-secondary); font-size: .78rem; }
+@media (max-width: 900px) {
+  .sf-quantification-detail-backdrop { padding: 8px; }
+  .sf-quantification-detail-modal { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+  .sf-quantification-detail-body { padding: 12px; }
+  .sf-quantification-detail-peak-grid, .sf-quantification-detail-section .sf-quantification-detail-metrics { grid-template-columns: 1fr; }
+}
+@media (max-width: 1100px) { .sf-quantification-calibration-top { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sf-quantification-calibration-top > .sf-quantification-table-card { grid-column: 1 / -1; } }
+@media (max-width: 900px) { .sf-quantification-viewer { overflow: auto; } .sf-quantification-calibration-top { grid-template-columns: 1fr; } .sf-quantification-calibration-top > .sf-quantification-table-card { grid-column: auto; } .sf-quantification-table-card--fill { flex: 0 0 auto; } .sf-quantification-table-scroll { max-height: 280px; } }
